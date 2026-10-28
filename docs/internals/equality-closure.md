@@ -11,6 +11,13 @@ resource-value, range, and resource-lookup consumers query it. Ordinary C
 pointer loads keep a storage-relative representation. Wider theories mentioned
 here are not implemented and have no current acceptance criteria.
 
+Premise-withdrawal controls described below are test-only: they check that a
+result depends on its support. Production branches retain the parent context
+and extend a persistent clone. Opposite assumptions record `false` without
+replacing the original condition
+or deleting its equality support. Explicit context restriction remains separate
+from branch backtracking and subject to the checking cost contract.
+
 ## Pointer comparison evidence
 
 Symbolic pointer equality and disequality retain both complete addresses,
@@ -40,7 +47,7 @@ sides must match; coordinate keys only nominate candidates. This avoids
 repeatedly proving restricted subsets of a connected component merely to
 rediscover the address alias, and withdrawing the named premise invalidates
 the derivation. The scaling control
-`simp_retains_common_base_pointer_equality_for_load_congruence` covers a field
+`solve_retains_common_base_pointer_equality_for_load_congruence` covers a field
 displacement and increasing connected aliases.
 
 The bridge registers only the selected addresses and offsets. It neither

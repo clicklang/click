@@ -888,7 +888,9 @@ impl PureFactContext {
         };
         terms_equal(a, c) && terms_equal(b, d)
     }
+}
 
+impl SelectedFacts<'_> {
     /// Whether the atomic theory checkers settle `proposition` against this
     /// exact premise set.
     ///
@@ -898,9 +900,9 @@ impl PureFactContext {
     pub(in crate::kernel) fn proves_atomic_for_derivation(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> bool {
-        self.proves_atomic_for_derivation_with_id(proposition, for_simp)
+        self.proves_atomic_for_derivation_with_id(proposition, extended_rules)
             .0
             .is_some()
     }
@@ -908,13 +910,13 @@ impl PureFactContext {
     pub(crate) fn proves_atomic_for_derivation_with_id(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> (Option<AtomicPropositionDerivationEvidence>, u64) {
         let id_scope = PureFactContextIdScope::enter(self);
         let premises_id = id_scope.id;
         if let Some(result) = ATOMIC_DERIVATION_MEMO.with(|memo| {
             memo.borrow()
-                .get(&atomic_derivation_memo_key(premises_id, for_simp))
+                .get(&atomic_derivation_memo_key(premises_id, extended_rules))
                 .and_then(|entries| entries.get(proposition))
                 .cloned()
         }) {
@@ -1726,14 +1728,14 @@ impl PureFactContext {
             .or(pointer_word_evidence)
             .or(algebraic_constructor_no_confusion_evidence)
             .or_else(|| {
-                let proved = if for_simp {
+                let proved = if extended_rules {
                     match proposition {
                         Proposition::ConditionIs(condition, value) => {
-                            self.decide_condition_for_simp(condition) == Some(*value)
+                            self.decide_selected_condition(condition) == Some(*value)
                         }
                         Proposition::Not(body) => match body.as_ref() {
                             Proposition::ConditionIs(condition, value) => {
-                                self.decide_condition_for_simp(condition) == Some(!*value)
+                                self.decide_selected_condition(condition) == Some(!*value)
                             }
                             _ => self.prop_facts.contains(proposition),
                         },
@@ -1751,7 +1753,7 @@ impl PureFactContext {
                     memo.clear();
                 }
                 let entries = memo
-                    .entry(atomic_derivation_memo_key(premises_id, for_simp))
+                    .entry(atomic_derivation_memo_key(premises_id, extended_rules))
                     .or_default();
                 if entries.len() >= DECIDE_MEMO_LIMIT {
                     entries.clear();
@@ -1765,7 +1767,7 @@ impl PureFactContext {
     pub(super) fn checks_atomic_derivation(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
         premises_id: u64,
         evidence: &AtomicPropositionDerivationEvidence,
     ) -> bool {
@@ -2640,15 +2642,17 @@ impl PureFactContext {
         }
         if let Some(result) = ATOMIC_DERIVATION_MEMO.with(|memo| {
             memo.borrow()
-                .get(&atomic_derivation_memo_key(premises_id, for_simp))
+                .get(&atomic_derivation_memo_key(premises_id, extended_rules))
                 .and_then(|entries| entries.get(proposition))
                 .cloned()
         }) {
             return result.is_some();
         }
-        self.proves_atomic_for_derivation(proposition, for_simp)
+        self.proves_atomic_for_derivation(proposition, extended_rules)
     }
+}
 
+impl PureFactContext {
     /// The signed-order bound entries for a term, looked up under its own
     /// term and, when different, its canonical form. Each entry yields the
     /// fact's own endpoint term first, so callers can cite the exact fact
@@ -3046,17 +3050,18 @@ impl PureFactContext {
     /// premise context [`Self::proves_atomic_from_premises`].
     pub(crate) fn proves_condition_from_facts(
         &self,
+        permission: crate::SearchPermission,
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
         self.condition_facts
-            .scan_for_search()
+            .scan_for_search(&permission)
             .any(|(fact_condition, fact_value)| {
                 fact_value == &value && self.condition_matches(fact_condition, condition)
             })
             || self
                 .prop_facts
-                .scan_for_search()
+                .scan_for_search(&permission)
                 .any(|proposition| self.proposition_proves_condition(proposition, condition, value))
             || self.proves_condition_from_derived_order_facts(condition, value)
     }
@@ -3091,16 +3096,18 @@ impl PureFactContext {
         // general prover and instantiating quantifiers inside a theory query.
         self.difference_graph_proves_order(&left, &right, strict)
     }
+}
 
+impl SelectedFacts<'_> {
     pub(super) fn collect_quantified_order_facts_for_condition(
         &self,
         condition: &ConditionTerm,
         order_facts: &mut Vec<(Bitvector32Term, Bitvector32Term, bool)>,
     ) {
-        // Only `simp` reaches this.
+        // Only `solve` reaches this.
         for proposition in self
             .atomic_quantified_facts
-            .scan_for_search()
+            .scan_explicit_input()
             .map(|fact| fact.as_ref())
         {
             for instance in self.forall_instantiations_for_condition(proposition, condition) {
@@ -3108,7 +3115,9 @@ impl PureFactContext {
             }
         }
     }
+}
 
+impl PureFactContext {
     pub(crate) fn proposition_proves_condition(
         &self,
         proposition: &Proposition,
@@ -4228,6 +4237,14 @@ impl PureFactContext {
     }
 
     pub(crate) fn is_inconsistent(&self) -> bool {
+        // Exact opposite assumptions construct this fact directly, without
+        // deleting the original condition or invalidating derived indexes.
+        if self.prop_facts.contains(&Proposition::ConditionIs(
+            ConditionTerm::Constant(false),
+            true,
+        )) {
+            return true;
+        }
         // The closure can discover a constant conflict on demand, after its
         // facts were filed.
         if self.equality_graph.has_scalar_constant_conflict()
@@ -4679,10 +4696,10 @@ mod constant_prefix_certificate_tests {
 /// active (`order_paths.rs`), and the DAG modes are scoped so that answers
 /// outside them stay unchanged, so an answer is reused only in the modes it
 /// was computed in.
-fn atomic_derivation_memo_key(premises_id: u64, for_simp: bool) -> (u64, bool, bool, bool) {
+fn atomic_derivation_memo_key(premises_id: u64, extended_rules: bool) -> (u64, bool, bool, bool) {
     (
         premises_id,
-        for_simp,
+        extended_rules,
         crate::kernel::api::extended_dag_bridging_active(),
         crate::kernel::api::explicit_dag_check_active(),
     )
@@ -4694,11 +4711,11 @@ fn atomic_derivation_memo_key(premises_id: u64, for_simp: bool) -> (u64, bool, b
 pub(crate) fn atomic_derivation_is_memoized(
     premises_id: u64,
     proposition: &Proposition,
-    for_simp: bool,
+    extended_rules: bool,
 ) -> bool {
     ATOMIC_DERIVATION_MEMO.with(|memo| {
         memo.borrow()
-            .get(&atomic_derivation_memo_key(premises_id, for_simp))
+            .get(&atomic_derivation_memo_key(premises_id, extended_rules))
             .is_some_and(|entries| entries.contains_key(proposition))
     })
 }

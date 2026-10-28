@@ -972,30 +972,12 @@ fn unproved_contract_path_condition(
     // Its order is index order, not execution order. These are the facts
     // consulted by certification, including resource population facts,
     // rather than a second execution or a speculative proof search.
-    let mut first = Vec::new();
-    let mut last = std::collections::VecDeque::new();
-    let mut count = 0;
-    let facts = assumptions
-        .condition_fact_pairs()
-        .map(|(condition, polarity)| Proposition::ConditionIs(condition.clone(), polarity))
-        .chain(assumptions.proposition_facts().cloned());
-    for fact in facts {
-        count += 1;
-        if first.len() < 8 {
-            first.push(fact);
-        } else {
-            if last.len() == 24 {
-                last.pop_front();
-            }
-            last.push_back(fact);
-        }
-    }
-    first.extend(last);
+    let (available, available_count) = assumptions.diagnostic_fact_sample(8, 24);
     ContractPathPreparationFailure {
         reason,
         obligation: Some(obligation.proposition().clone()),
-        available: first,
-        available_count: count,
+        available,
+        available_count,
     }
 }
 
@@ -3614,4 +3596,12 @@ mod materialized_function_load_tests {
             &original, &changed, &address, &facts
         ));
     }
+}
+
+#[cfg(test)]
+mod diagnostic_scaling_tests {
+    use super::*;
+    include!(
+        "../../../scaling_tests/kernel/api/contract_certification/contract_claims/diagnostic_sample_tests.rs"
+    );
 }

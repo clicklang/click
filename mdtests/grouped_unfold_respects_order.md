@@ -1,4 +1,4 @@
-# A later predicate unfold does not affect an earlier simp
+# A later predicate unfold does not affect an earlier solve
 
 Predicate unfolding and claim closing follow source order in a grouped proof.
 

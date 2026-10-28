@@ -102,6 +102,7 @@ struct SourceExecutionLayoutData {
     /// `<region>.result`, and the call region of each frontend result
     /// temporary, which no other name spells.
     call_results: BTreeMap<usize, String>,
+    allocation_regions: BTreeSet<usize>,
     temporary_call_regions: BTreeMap<String, usize>,
     /// The source path of the statement each region belongs to: the inverse
     /// of `source_statements`, for spelling a region by its statement.
@@ -499,6 +500,10 @@ impl SourceExecutionLayout {
                 }
                 _ => {
                     let statement_index = *next_statement_index;
+                    if let CStatement::HeapAllocate { target, .. } = statement {
+                        layout.call_results.insert(statement_index, target.clone());
+                        layout.allocation_regions.insert(statement_index);
+                    }
                     if let CStatement::Assign { name, .. }
                     | CStatement::CallAssign { target: name, .. }
                     | CStatement::Update {
@@ -607,13 +612,21 @@ impl SourceExecutionLayout {
             if let syntax::C0Statement::CallAssign { function_name, .. }
             | syntax::C0Statement::Call { function_name, .. } = statement
             {
-                layout.call_targets.insert(index, function_name.clone());
+                layout.call_targets.insert(
+                    index,
+                    crate::surface::call_source_spelling(function_name).to_string(),
+                );
             }
-            if let syntax::C0Statement::CallAssign { target, .. } = statement {
+            if let syntax::C0Statement::CallAssign { target, .. }
+            | syntax::C0Statement::HeapAllocate { target, .. } = statement
+            {
                 layout.call_results.insert(index, target.clone());
                 if crate::surface::diagnostics::is_call_result_temporary(target) {
                     layout.temporary_call_regions.insert(target.clone(), index);
                 }
+            }
+            if matches!(statement, syntax::C0Statement::HeapAllocate { .. }) {
+                layout.allocation_regions.insert(index);
             }
             let site = statement
                 .site()
@@ -1006,6 +1019,16 @@ impl SourceExecutionLayout {
     /// The local the call at `region` assigns its result to.
     pub(in crate::surface) fn call_result_local(&self, region: usize) -> Option<&str> {
         self.data.call_results.get(&region).map(String::as_str)
+    }
+
+    /// The local receiving a fresh allocation, rather than an arbitrary
+    /// call result that may alias an allocation introduced elsewhere.
+    pub(in crate::surface) fn allocation_result_local(&self, region: usize) -> Option<&str> {
+        self.data
+            .allocation_regions
+            .contains(&region)
+            .then(|| self.call_result_local(region))
+            .flatten()
     }
 
     /// The call region whose result the frontend temporary `local` holds.
@@ -1632,6 +1655,22 @@ mod source_execution_layout_tests {
     use super::*;
 
     #[test]
+    fn allocation_regions_are_named_for_source_and_typed_execution() {
+        let function = syntax::parse_function("void f() { int32* p; p = malloc(4); }").unwrap();
+        let typed = function
+            .clone()
+            .with_prelowered_kernel_function(function.to_kernel_function());
+        let source = SourceExecutionLayout::for_function(&function).unwrap();
+        let native = SourceExecutionLayout::for_function(&typed).unwrap();
+        assert_eq!(source.data.allocation_regions.len(), 1);
+        assert_eq!(
+            source.data.allocation_regions,
+            native.data.allocation_regions
+        );
+        assert_eq!(source.data.call_results, native.data.call_results);
+    }
+
+    #[test]
     fn typed_automatic_scope_exits_match_c_for_nested_and_abrupt_paths() {
         for source in [
             "int32 f(int32 n) {int32 root; root=0; while(root<n) {int32 local; local=1; if(n==2) {int32 child; child=3; return child;} else {local=2;} root=root+1;} return root;}",
@@ -1831,6 +1870,7 @@ mod source_execution_layout_tests {
                 source_statements: BTreeMap::new(),
                 call_targets: BTreeMap::new(),
                 call_results: BTreeMap::new(),
+                allocation_regions: BTreeSet::new(),
                 temporary_call_regions: BTreeMap::new(),
                 region_paths: BTreeMap::new(),
                 loop_paths: BTreeMap::new(),

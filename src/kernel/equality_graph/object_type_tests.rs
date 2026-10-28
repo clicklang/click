@@ -146,7 +146,8 @@ fn model_type_support_survives_only_the_kept_fact_partition() {
         assert_eq!(can_type(&context, &q), condition);
         if let Proposition::ConditionIs(condition, _) = model {
             context = context.assume_proposition(Proposition::ConditionIs(condition, false));
-            assert!(!can_type(&context, &q));
+            assert!(context.is_inconsistent());
+            assert!(can_type(&context, &q));
         }
     }
 }

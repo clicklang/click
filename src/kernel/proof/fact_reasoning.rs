@@ -66,7 +66,7 @@ fn normalizes_context_free_reduced(goal: &Proposition) -> bool {
     // case splits over disjunction facts, universal instantiation,
     // singleton substitution, the inconsistency fallback -- are vacuous
     // here by construction.
-    PureFactContext::new().proves_atomic_for_derivation(goal, false)
+    SelectedFacts::from_propositions(&[]).proves_atomic_for_derivation(goal, false)
 }
 
 /// Decide a C machine equality whose sides are sums and differences, at
@@ -920,12 +920,9 @@ pub(crate) fn check_forall_instantiation(
     discharge_instantiated_guards(instantiated, premises).map(|(_, conclusion)| conclusion)
 }
 
-fn assumptions_from_propositions(propositions: &[Proposition]) -> PureFactContext {
+fn assumptions_from_propositions(propositions: &[Proposition]) -> SelectedFacts<'static> {
     crate::kernel::reasoning::path_facts::count_context_rebuild_entries(propositions.len());
-    propositions
-        .iter()
-        .map(crate::kernel::clone_proposition_iteratively)
-        .fold(PureFactContext::new(), PureFactContext::assume_proposition)
+    SelectedFacts::from_propositions(propositions)
 }
 
 pub(crate) fn is_implicit_fact_transport_context(proposition: &Proposition) -> bool {
@@ -3507,14 +3504,24 @@ mod annotated_address_condition_tests {
                 let branch = parent.clone().assume_proposition(source.clone());
                 let queried = comparison(!annotated);
                 assert_eq!(branch.decide(&queried), Some(value));
-                assert_eq!(branch.decide_condition_for_simp(&queried), Some(value));
+                assert_eq!(
+                    branch
+                        .selected_for_test()
+                        .decide_selected_condition(&queried),
+                    Some(value)
+                );
                 for context in [
                     parent,
                     branch.without_exact_fact(&source),
                     branch.restricted_to_facts(&[], &[]),
                 ] {
                     assert_eq!(context.decide(&queried), None);
-                    assert_eq!(context.decide_condition_for_simp(&queried), None);
+                    assert_eq!(
+                        context
+                            .selected_for_test()
+                            .decide_selected_condition(&queried),
+                        None
+                    );
                 }
             }
         }

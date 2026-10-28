@@ -723,7 +723,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     set_function_result(&mut state, &function, result);
     let context = PureFactContext::new();
     let proof = context
-        .derive_simp_atomic_proposition(&equality(state.memory()))
+        .derive_solve_atomic_proposition(&equality(state.memory()))
         .expect("a returned record leaves the caller's byte unchanged");
     assert!(proof.check(&context));
     assert!(proof.context_premises().is_empty());
@@ -734,7 +734,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
         .store(input.clone(), CValue::UInt8(Bitvector32Term::Constant(7)));
     assert!(
         context
-            .derive_simp_atomic_proposition(&equality(&written))
+            .derive_solve_atomic_proposition(&equality(&written))
             .is_none()
     );
 }

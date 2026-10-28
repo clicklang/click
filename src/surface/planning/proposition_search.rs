@@ -12,8 +12,7 @@
 //! It plans; it does not issue authority. It advances state only through
 //! checked kernel operations ([`PureFactContext::assume_proposition`],
 //! [`PureFactContext::restricted_to_facts`],
-//! [`PureFactContext::with_only_proposition_facts`],
-//! [`PureFactContext::without_exact_fact`]) and public exact queries, and
+//! [`PureFactContext::with_only_proposition_facts`]) and public exact queries, and
 //! everything it finds is returned as a [`PropositionDerivation`] whose
 //! checker is local, deterministic, and still in the kernel. The atomic
 //! theory checkers the leaves call (`decide`, `proves_memory_loadable`,
@@ -26,6 +25,7 @@
 //! operation that needs to know whether a proposition holds uses an exact
 //! route or emits the proposition as an obligation.
 
+use super::SearchPermission;
 use crate::kernel::planning_api::*;
 use crate::kernel::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -44,15 +44,15 @@ enum AtomicReductionQuery {
 type AtomicReductionKey = (u64, (bool, bool), AtomicReductionQuery);
 
 thread_local! {
-    static SIMP_ATOMIC_REDUCTIONS: std::cell::RefCell<Option<BTreeMap<AtomicReductionKey, ReducedAtomicPremises>>> = const { std::cell::RefCell::new(None) };
+    static SOLVE_ATOMIC_REDUCTIONS: std::cell::RefCell<Option<BTreeMap<AtomicReductionKey, ReducedAtomicPremises>>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Share completed scalar reductions across one simplification's strategies.
 /// Keys use the selected context's identity and logical-read generation,
 /// scoped reasoning modes, and fixed-size operands or interned Integer ids.
 /// No ambient context or term tree is hashed.
-pub(crate) fn with_simp_atomic_reduction_cache<T>(body: impl FnOnce() -> T) -> T {
-    let root = SIMP_ATOMIC_REDUCTIONS.with(|cache| {
+pub(crate) fn with_solve_atomic_reduction_cache<T>(body: impl FnOnce() -> T) -> T {
+    let root = SOLVE_ATOMIC_REDUCTIONS.with(|cache| {
         let mut cache = cache.borrow_mut();
         if cache.is_some() {
             false
@@ -65,7 +65,7 @@ pub(crate) fn with_simp_atomic_reduction_cache<T>(body: impl FnOnce() -> T) -> T
     impl Drop for Scope {
         fn drop(&mut self) {
             if self.0 {
-                SIMP_ATOMIC_REDUCTIONS.with(|cache| *cache.borrow_mut() = None);
+                SOLVE_ATOMIC_REDUCTIONS.with(|cache| *cache.borrow_mut() = None);
             }
         }
     }
@@ -131,18 +131,19 @@ fn connected_trial(
     context: &PureFactContext,
     selected: &[(ConditionTerm, bool)],
     proposition: &Proposition,
-    for_simp: bool,
+    extended_rules: bool,
 ) -> ConnectedTrial {
     let decide = || {
         let candidate = atomic_context_from_facts(context, selected, &[]);
         let (evidence, premises_id) =
-            candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+            crate::kernel::SelectedFacts::for_search(&candidate, SearchPermission::new())
+                .proves_atomic_for_derivation_with_id(proposition, extended_rules);
         evidence.map(|evidence| (candidate, premises_id, evidence))
     };
     if !DisjunctionSplitDepth::active() {
         return decide();
     }
-    let key = (selected.to_vec(), proposition.clone(), for_simp);
+    let key = (selected.to_vec(), proposition.clone(), extended_rules);
     if let Some(known) = SPLIT_CONNECTED_TRIALS.with(|trials| trials.borrow().get(&key).cloned()) {
         return known;
     }
@@ -160,9 +161,9 @@ pub(crate) trait PropositionSearch {
 
     fn derive_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation>;
 
-    fn derive_simp_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation>;
+    fn derive_solve_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation>;
 
-    fn derive_simp_proposition_without_exact_goal(
+    fn derive_solve_proposition_without_exact_goal(
         &self,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation>;
@@ -170,7 +171,7 @@ pub(crate) trait PropositionSearch {
     fn derive_atomic_proposition(&self, proposition: &Proposition)
     -> Option<PropositionDerivation>;
 
-    fn derive_simp_atomic_proposition(
+    fn derive_solve_atomic_proposition(
         &self,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation>;
@@ -178,53 +179,53 @@ pub(crate) trait PropositionSearch {
     fn derive_atomic_proposition_using(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivation>;
 
     fn atomic_derivation_premises(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
         exclude_exact_goal: bool,
     ) -> Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)>;
 
     fn derive_proposition_using(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<Box<PropositionDerivation>>;
 
     fn derive_structural_rule(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_and_rule(
         &self,
         left: &Proposition,
         right: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_or_rule(
         &self,
         left: &Proposition,
         right: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_double_negation_rule(
         &self,
         inner: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_implies_rule(
         &self,
         left: &Proposition,
         right: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_forall_rule(
@@ -232,25 +233,25 @@ pub(crate) trait PropositionSearch {
         proposition: &Proposition,
         var: Variable,
         body: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_atomic_rule(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_by_algebraic_constructor_rules(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_finite_forall(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_exists_from_fact(
@@ -282,13 +283,13 @@ pub(crate) trait PropositionSearch {
     fn derive_by_singleton_substitution(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn derive_by_disjunction_cases(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule>;
 
     fn proves_finite_forall(&self, proposition: &Proposition) -> bool;
@@ -379,7 +380,7 @@ impl PropositionSearch for PureFactContext {
                                 if canonicalize_atomic_loads(left)
                                         == canonicalize_atomic_loads(right)
                         )
-                    || self.proves_condition_from_facts(condition, *value)
+                    || self.proves_condition_from_facts(SearchPermission::new(), condition, *value)
             }
             Proposition::And(left, right) => self.proves(left) && self.proves(right),
             Proposition::Or(left, right) => self.proves(left) || self.proves(right),
@@ -464,7 +465,7 @@ impl PropositionSearch for PureFactContext {
             .map(|derivation| *derivation)
     }
 
-    fn derive_simp_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation> {
+    fn derive_solve_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation> {
         self.derive_proposition_using(proposition, true)
             .map(|derivation| *derivation)
     }
@@ -473,24 +474,24 @@ impl PropositionSearch for PureFactContext {
     /// ambient fact as a premise. Keep the ambient graph intact: dropping a
     /// fact from it would rebuild its equality closure just to avoid the
     /// circular `assumption()` candidate.
-    fn derive_simp_proposition_without_exact_goal(
+    fn derive_solve_proposition_without_exact_goal(
         &self,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
-        if let Some(derivation) = self.derive_simp_proposition(proposition)
+        if let Some(derivation) = self.derive_solve_proposition(proposition)
             && !derivation.context_premises().contains(proposition)
         {
             return Some(derivation);
         }
         self.atomic_derivation_premises(proposition, true, true)
-            .and_then(|selected| reduce_simp_atomic_premises(proposition, true, selected))
+            .and_then(|selected| reduce_solve_atomic_premises(proposition, true, selected))
             .map(|(premises, premises_id, evidence)| {
                 proposition_derivation(
                     proposition,
                     PropositionDerivationRule::ContextualAtomic {
                         premises: RetainedPremises::from_context(&premises),
                         premises_id,
-                        for_simp: true,
+                        extended_rules: true,
                         evidence,
                     },
                 )
@@ -509,7 +510,7 @@ impl PropositionSearch for PureFactContext {
     }
 
     /// The simplifier's atomic theory check, without structural proof search.
-    fn derive_simp_atomic_proposition(
+    fn derive_solve_atomic_proposition(
         &self,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
@@ -519,20 +520,22 @@ impl PropositionSearch for PureFactContext {
     fn derive_atomic_proposition_using(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivation> {
-        if simp_reasoning_interrupted() {
+        if solve_reasoning_interrupted() {
             return None;
         }
-        self.atomic_derivation_premises(proposition, for_simp, false)
-            .and_then(|selected| reduce_simp_atomic_premises(proposition, for_simp, selected))
+        self.atomic_derivation_premises(proposition, extended_rules, false)
+            .and_then(|selected| {
+                reduce_solve_atomic_premises(proposition, extended_rules, selected)
+            })
             .map(|(premises, premises_id, evidence)| {
                 proposition_derivation(
                     proposition,
                     PropositionDerivationRule::ContextualAtomic {
                         premises: RetainedPremises::from_context(&premises),
                         premises_id,
-                        for_simp,
+                        extended_rules,
                         evidence,
                     },
                 )
@@ -548,13 +551,14 @@ impl PropositionSearch for PureFactContext {
     fn atomic_derivation_premises(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
         exclude_exact_goal: bool,
     ) -> Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)> {
         if !exclude_exact_goal && self.proves_exact(proposition) {
             let exact = PureFactContext::new().assume_proposition(proposition.clone());
             let (evidence, premises_id) =
-                exact.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                crate::kernel::SelectedFacts::for_search(&exact, SearchPermission::new())
+                    .proves_atomic_for_derivation_with_id(proposition, extended_rules);
             if let Some(evidence) = evidence {
                 return Some((exact, premises_id, evidence));
             }
@@ -571,7 +575,8 @@ impl PropositionSearch for PureFactContext {
                     context.assume_proposition(premise)
                 });
             let (evidence, premises_id) =
-                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                crate::kernel::SelectedFacts::for_search(&candidate, SearchPermission::new())
+                    .proves_atomic_for_derivation_with_id(proposition, extended_rules);
             if let Some(evidence) = evidence {
                 return Some((candidate, premises_id, evidence));
             }
@@ -585,7 +590,8 @@ impl PropositionSearch for PureFactContext {
                     context.assume_proposition(premise)
                 });
             let (evidence, premises_id) =
-                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                crate::kernel::SelectedFacts::for_search(&candidate, SearchPermission::new())
+                    .proves_atomic_for_derivation_with_id(proposition, extended_rules);
             if matches!(
                 evidence,
                 Some(AtomicPropositionDerivationEvidence::WidenedUnsignedSumBound)
@@ -604,7 +610,8 @@ impl PropositionSearch for PureFactContext {
                 candidate = candidate.assume_proposition(premise);
             }
             let (evidence, premises_id) =
-                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                crate::kernel::SelectedFacts::for_search(&candidate, SearchPermission::new())
+                    .proves_atomic_for_derivation_with_id(proposition, extended_rules);
             if matches!(
                 evidence,
                 Some(AtomicPropositionDerivationEvidence::ForallInt32Instantiation(_))
@@ -617,13 +624,13 @@ impl PropositionSearch for PureFactContext {
         // comparison. Query the existing indexes before rebuilding the facts
         // connected through its operands. A positive answer still needs the
         // ordinary selected-premise derivation below.
-        if for_simp
+        if extended_rules
             && matches!(
                 proposition,
                 Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), _)
             )
-            && self
-                .proves_atomic_for_derivation_with_id(proposition, for_simp)
+            && crate::kernel::SelectedFacts::for_search(self, SearchPermission::new())
+                .proves_atomic_for_derivation_with_id(proposition, extended_rules)
                 .0
                 .is_none()
         {
@@ -632,7 +639,7 @@ impl PropositionSearch for PureFactContext {
         if condition_goal {
             let (selected, _, _, _) =
                 connected_atomic_premises(self, proposition, &[], false, true, exclude_exact_goal)?;
-            if let Some(found) = connected_trial(self, &selected, proposition, for_simp) {
+            if let Some(found) = connected_trial(self, &selected, proposition, extended_rules) {
                 return Some(found);
             }
             condition_sources = selected
@@ -654,11 +661,10 @@ impl PropositionSearch for PureFactContext {
             }
             _ => false,
         };
-        // A loadability or store goal is decided from the loadability facts
-        // of its own block and from nothing else in that family: that is
-        // the only bucket the kernel's loadable prover reads. Selecting
-        // from the same index keeps every answer while leaving facts about
-        // other objects unvisited.
+        // The planner may enumerate an address's ambiguous loadability
+        // bucket. Each trial below gives the checker an explicitly selected
+        // source; the checker itself refuses ambiguous buckets. Other address
+        // shapes remain unvisited unless a structural anchor or alias names them.
         let goal_base = match proposition {
             Proposition::CMemoryLoadable { base, .. } => Some(base),
             Proposition::CMemoryCanStore { pointer, .. } => Some(pointer),
@@ -670,39 +676,47 @@ impl PropositionSearch for PureFactContext {
         // two memory ranges of the facts its block pair and the non-memory
         // residue hold. Those are the buckets the kernel's provers consult
         // directly.
-        let indexed = match proposition {
-            _ if goal_base.is_some() => goal_base.map(|base| {
-                self.memory_loadable_candidates_for_base(base)
-                    .inspect(|_| record_candidate_visit())
-                    .filter(usable)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            }),
-            Proposition::CMemoryReadDefined {
-                pointer,
-                value_type,
-                ..
-            } => Some(
-                self.memory_read_defined_candidates(pointer, *value_type)
+        let indexed =
+            match proposition {
+                _ if goal_base.is_some() => goal_base.map(|base| {
+                    self.search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
+                        .inspect(|_| record_candidate_visit())
+                        .filter(usable)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                }),
+                Proposition::CMemoryReadDefined {
+                    pointer,
+                    value_type,
+                    ..
+                } => Some(
+                    self.search_memory_read_defined_candidates(
+                        SearchPermission::new(),
+                        pointer,
+                        *value_type,
+                    )
                     .into_iter()
-                    .chain(self.memory_loadable_candidates_for_base(pointer))
+                    .chain(self.search_memory_loadable_candidates_for_base(
+                        SearchPermission::new(),
+                        pointer,
+                    ))
                     .inspect(|_| record_candidate_visit())
                     .filter(usable)
                     .cloned()
                     .collect(),
-            ),
-            Proposition::CResourceSeparate { left, right } => self
-                .resource_separation_candidates(left, right)
-                .map(|facts| {
-                    facts
-                        .into_iter()
-                        .inspect(|_| record_candidate_visit())
-                        .filter(usable)
-                        .cloned()
-                        .collect()
-                }),
-            _ => None,
-        };
+                ),
+                Proposition::CResourceSeparate { left, right } => self
+                    .resource_separation_candidates(left, right)
+                    .map(|facts| {
+                        facts
+                            .into_iter()
+                            .inspect(|_| record_candidate_visit())
+                            .filter(usable)
+                            .cloned()
+                            .collect()
+                    }),
+                _ => None,
+            };
         // The rest of the family is a fallback, reached only when no indexed
         // source justified the goal: a read whose address is itself computed
         // from another read, or a separation entailed through containment in
@@ -716,7 +730,7 @@ impl PropositionSearch for PureFactContext {
                 return Vec::new();
             }
             let tried = tried.iter().collect::<BTreeSet<_>>();
-            self.proposition_facts()
+            self.proposition_facts(SearchPermission::new())
                 .inspect(|_| record_candidate_visit())
                 .filter(|fact| candidate_family(fact) && usable(fact) && !tried.contains(fact))
                 .cloned()
@@ -728,13 +742,14 @@ impl PropositionSearch for PureFactContext {
         let trial = |sources: &[Proposition]| {
             let direct = atomic_context_from_facts(self, &[], sources);
             let (evidence, premises_id) =
-                direct.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                crate::kernel::SelectedFacts::for_search(&direct, SearchPermission::new())
+                    .proves_atomic_for_derivation_with_id(proposition, extended_rules);
             if let Some(evidence) = evidence {
                 return Some((direct, premises_id, evidence));
             }
             // A native prefix needs its source view and the selected coverage
             // path, not every comparison connected to the source's length.
-            if for_simp
+            if extended_rules
                 && sources.len() == 1
                 && let Some(premises) = native_view_prefix_premises(self, proposition, &sources[0])
             {
@@ -744,7 +759,8 @@ impl PropositionSearch for PureFactContext {
                         context.assume_proposition(fact)
                     });
                 let (evidence, premises_id) =
-                    candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                    crate::kernel::SelectedFacts::for_search(&candidate, SearchPermission::new())
+                        .proves_atomic_for_derivation_with_id(proposition, extended_rules);
                 if let Some(evidence) = evidence {
                     return Some((candidate, premises_id, evidence));
                 }
@@ -759,12 +775,13 @@ impl PropositionSearch for PureFactContext {
             )?;
             let candidate = atomic_context_from_facts(self, &conditions, &propositions);
             let (evidence, premises_id) =
-                candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                crate::kernel::SelectedFacts::for_search(&candidate, SearchPermission::new())
+                    .proves_atomic_for_derivation_with_id(proposition, extended_rules);
             evidence.map(|evidence| (candidate, premises_id, evidence))
         };
         let try_each = |candidates: &[Proposition]| {
             for selected in candidates {
-                if simp_reasoning_interrupted() {
+                if solve_reasoning_interrupted() {
                     return Err(());
                 }
                 if let Some(found) = trial(std::slice::from_ref(selected)) {
@@ -838,7 +855,7 @@ impl PropositionSearch for PureFactContext {
             // the shared ambient oracle only to reject an unprovable goal;
             // a positive answer still needs selected premises and a fresh
             // restricted kernel query before it can become evidence.
-            if for_simp
+            if extended_rules
                 && matches!(
                     proposition,
                     Proposition::ConditionIs(
@@ -854,8 +871,8 @@ impl PropositionSearch for PureFactContext {
                         _
                     )
                 )
-                && self
-                    .proves_atomic_for_derivation_with_id(proposition, for_simp)
+                && crate::kernel::SelectedFacts::for_search(self, SearchPermission::new())
+                    .proves_atomic_for_derivation_with_id(proposition, extended_rules)
                     .0
                     .is_none()
             {
@@ -906,7 +923,8 @@ impl PropositionSearch for PureFactContext {
                 }
                 let candidate = atomic_context_from_facts(self, conditions, propositions);
                 let (evidence, premises_id) =
-                    candidate.proves_atomic_for_derivation_with_id(proposition, for_simp);
+                    crate::kernel::SelectedFacts::for_search(&candidate, SearchPermission::new())
+                        .proves_atomic_for_derivation_with_id(proposition, extended_rules);
                 if let Some(evidence) = evidence {
                     return Some((candidate, premises_id, evidence));
                 }
@@ -925,10 +943,10 @@ impl PropositionSearch for PureFactContext {
     fn derive_proposition_using(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<Box<PropositionDerivation>> {
         let _id_scope = PureFactContextIdScope::enter(self);
-        if simp_reasoning_interrupted() {
+        if solve_reasoning_interrupted() {
             return None;
         }
         if solve_builtin_prop(proposition) {
@@ -937,17 +955,18 @@ impl PropositionSearch for PureFactContext {
                 PropositionDerivationRule::ContextFree,
             )));
         }
-        if let Some(rule) = self.derive_by_algebraic_constructor_rules(proposition, for_simp) {
+        if let Some(rule) = self.derive_by_algebraic_constructor_rules(proposition, extended_rules)
+        {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
-        let direct = self.derive_structural_rule(proposition, for_simp);
+        let direct = self.derive_structural_rule(proposition, extended_rules);
         if let Some(rule) = direct {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
-        if let Some(rule) = self.derive_by_singleton_substitution(proposition, for_simp) {
+        if let Some(rule) = self.derive_by_singleton_substitution(proposition, extended_rules) {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
-        if let Some(rule) = self.derive_by_disjunction_cases(proposition, for_simp) {
+        if let Some(rule) = self.derive_by_disjunction_cases(proposition, extended_rules) {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
         // A selected equality or case proof needs no global contradiction
@@ -967,18 +986,20 @@ impl PropositionSearch for PureFactContext {
     fn derive_structural_rule(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         match proposition {
-            Proposition::And(left, right) => self.derive_and_rule(left, right, for_simp),
-            Proposition::Or(left, right) => self.derive_or_rule(left, right, for_simp),
+            Proposition::And(left, right) => self.derive_and_rule(left, right, extended_rules),
+            Proposition::Or(left, right) => self.derive_or_rule(left, right, extended_rules),
             Proposition::Not(body) => match body.as_ref() {
-                Proposition::Not(inner) => self.derive_double_negation_rule(inner, for_simp),
-                _ => self.derive_atomic_rule(proposition, for_simp),
+                Proposition::Not(inner) => self.derive_double_negation_rule(inner, extended_rules),
+                _ => self.derive_atomic_rule(proposition, extended_rules),
             },
-            Proposition::Implies(left, right) => self.derive_implies_rule(left, right, for_simp),
+            Proposition::Implies(left, right) => {
+                self.derive_implies_rule(left, right, extended_rules)
+            }
             Proposition::ForAll { var, body, .. } => {
-                self.derive_forall_rule(proposition, *var, body, for_simp)
+                self.derive_forall_rule(proposition, *var, body, extended_rules)
             }
             Proposition::Exists {
                 var, sort, body, ..
@@ -986,7 +1007,7 @@ impl PropositionSearch for PureFactContext {
                 .derive_exists_from_witness(*var, sort, body)
                 .or_else(|| self.derive_exists_from_fact(*var, sort, body))
                 .or_else(|| self.derive_exists_loadable_range(*var, sort, body)),
-            _ => self.derive_atomic_rule(proposition, for_simp),
+            _ => self.derive_atomic_rule(proposition, extended_rules),
         }
     }
 
@@ -995,10 +1016,10 @@ impl PropositionSearch for PureFactContext {
         &self,
         left: &Proposition,
         right: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
-        self.derive_proposition_using(left, for_simp)
-            .zip(self.derive_proposition_using(right, for_simp))
+        self.derive_proposition_using(left, extended_rules)
+            .zip(self.derive_proposition_using(right, extended_rules))
             .map(|(left, right)| PropositionDerivationRule::And { left, right })
     }
 
@@ -1007,7 +1028,7 @@ impl PropositionSearch for PureFactContext {
         &self,
         left: &Proposition,
         right: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         // Unsigned arithmetic guards often lower to `false or bound`. Try
         // the bound before spending the context on contradiction search for
@@ -1018,17 +1039,17 @@ impl PropositionSearch for PureFactContext {
                 if actual != expected
         ) {
             return self
-                .derive_proposition_using(right, for_simp)
+                .derive_proposition_using(right, extended_rules)
                 .map(PropositionDerivationRule::OrRight)
                 .or_else(|| {
-                    self.derive_proposition_using(left, for_simp)
+                    self.derive_proposition_using(left, extended_rules)
                         .map(PropositionDerivationRule::OrLeft)
                 });
         }
-        self.derive_proposition_using(left, for_simp)
+        self.derive_proposition_using(left, extended_rules)
             .map(PropositionDerivationRule::OrLeft)
             .or_else(|| {
-                self.derive_proposition_using(right, for_simp)
+                self.derive_proposition_using(right, extended_rules)
                     .map(PropositionDerivationRule::OrRight)
             })
     }
@@ -1037,9 +1058,9 @@ impl PropositionSearch for PureFactContext {
     fn derive_double_negation_rule(
         &self,
         inner: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
-        self.derive_proposition_using(inner, for_simp)
+        self.derive_proposition_using(inner, extended_rules)
             .map(PropositionDerivationRule::DoubleNegation)
     }
 
@@ -1048,23 +1069,23 @@ impl PropositionSearch for PureFactContext {
         &self,
         left: &Proposition,
         right: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         let antecedent = left.clone();
         let negated_antecedent = Proposition::Not(Box::new(antecedent.clone()));
         if self.proves_exact(&negated_antecedent) {
-            self.derive_proposition_using(&negated_antecedent, for_simp)
+            self.derive_proposition_using(&negated_antecedent, extended_rules)
                 .map(PropositionDerivationRule::ImpliesFalseAntecedent)
         } else {
             self.clone()
                 .assume_proposition(antecedent.clone())
-                .derive_proposition_using(right, for_simp)
+                .derive_proposition_using(right, extended_rules)
                 .map(|body| PropositionDerivationRule::Implies {
                     antecedent: Box::new(antecedent),
                     body,
                 })
                 .or_else(|| {
-                    self.derive_proposition_using(&negated_antecedent, for_simp)
+                    self.derive_proposition_using(&negated_antecedent, extended_rules)
                         .map(PropositionDerivationRule::ImpliesFalseAntecedent)
                 })
         }
@@ -1076,11 +1097,11 @@ impl PropositionSearch for PureFactContext {
         proposition: &Proposition,
         var: Variable,
         body: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         let body_uses_binder = crate::kernel::proposition_has_free_bitvector_variable(body, var);
         let body_derivation = self
-            .derive_proposition_using(body, for_simp)
+            .derive_proposition_using(body, extended_rules)
             .filter(|proof| {
                 !body_uses_binder
                     || proof.context_premises().iter().all(|premise| {
@@ -1090,23 +1111,25 @@ impl PropositionSearch for PureFactContext {
             .map(PropositionDerivationRule::ForAllBody);
         body_derivation
             .or_else(|| self.derive_forall_loadable_range(proposition))
-            .or_else(|| self.derive_finite_forall(proposition, for_simp))
-            .or_else(|| self.derive_atomic_rule(proposition, for_simp))
+            .or_else(|| self.derive_finite_forall(proposition, extended_rules))
+            .or_else(|| self.derive_atomic_rule(proposition, extended_rules))
     }
 
     #[inline(never)]
     fn derive_atomic_rule(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
-        self.atomic_derivation_premises(proposition, for_simp, false)
-            .and_then(|selected| reduce_simp_atomic_premises(proposition, for_simp, selected))
+        self.atomic_derivation_premises(proposition, extended_rules, false)
+            .and_then(|selected| {
+                reduce_solve_atomic_premises(proposition, extended_rules, selected)
+            })
             .map(
                 |(premises, premises_id, evidence)| PropositionDerivationRule::ContextualAtomic {
                     premises: RetainedPremises::from_context(&premises),
                     premises_id,
-                    for_simp,
+                    extended_rules,
                     evidence,
                 },
             )
@@ -1115,7 +1138,7 @@ impl PropositionSearch for PureFactContext {
     fn derive_by_algebraic_constructor_rules(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         if let Some(fields) = algebraic_constructor_field_equalities(proposition)
             && !fields.is_empty()
@@ -1123,7 +1146,7 @@ impl PropositionSearch for PureFactContext {
             let fields = fields
                 .iter()
                 .map(|field| {
-                    self.derive_proposition_using(field, for_simp)
+                    self.derive_proposition_using(field, extended_rules)
                         .map(|proof| *proof)
                 })
                 .collect::<Option<Vec<_>>>()?;
@@ -1142,13 +1165,13 @@ impl PropositionSearch for PureFactContext {
     fn derive_finite_forall(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         let mut instances = self.finite_forall_instantiations(proposition).peekable();
         instances.peek()?;
         instances
             .map(|instance| {
-                self.derive_proposition_using(&instance, for_simp)
+                self.derive_proposition_using(&instance, extended_rules)
                     .map(|proof| *proof)
             })
             .collect::<Option<Vec<_>>>()
@@ -1166,7 +1189,7 @@ impl PropositionSearch for PureFactContext {
         body: &Proposition,
     ) -> Option<PropositionDerivationRule> {
         let candidates = self
-            .proposition_facts()
+            .proposition_facts(SearchPermission::new())
             .filter_map(|source| {
                 let Proposition::Exists {
                     var: source_var,
@@ -1217,13 +1240,17 @@ impl PropositionSearch for PureFactContext {
             return None;
         }
         let mut variables = BTreeSet::new();
-        for fact in self.memory_loadable_fact_propositions() {
-            {
-                collect_proposition_bitvector_variables(fact, &mut variables);
+        for fact in self.memory_loadable_fact_propositions(SearchPermission::new()) {
+            if reasoning_interrupted() {
+                return None;
             }
+            collect_proposition_bitvector_variables(fact, &mut variables);
         }
         variables.remove(&var);
         for variable in variables {
+            if reasoning_interrupted() {
+                return None;
+            }
             let witness = Bitvector32Term::Variable(variable);
             let instantiated = substitute_bitvector_variable_in_proposition(body, var, &witness);
             let derivation = self.derive_proposition_using(&instantiated, false);
@@ -1253,7 +1280,8 @@ impl PropositionSearch for PureFactContext {
         if bytes.as_const() != Some(1) {
             return None;
         }
-        for source in self.memory_loadable_candidates_for_base(base) {
+        for source in self.search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
+        {
             let mut candidate = PureFactContext::new().assume_proposition(source.clone());
             for premise in &premises {
                 candidate = candidate.assume_proposition(premise.clone());
@@ -1282,10 +1310,13 @@ impl PropositionSearch for PureFactContext {
         if !matches!(instantiated, Proposition::CMemoryLoadable { .. }) {
             return None;
         }
-        for source in self.memory_loadable_candidates_for_base(match &instantiated {
-            Proposition::CMemoryLoadable { base, .. } => base,
-            _ => unreachable!(),
-        }) {
+        for source in self.search_memory_loadable_candidates_for_base(
+            SearchPermission::new(),
+            match &instantiated {
+                Proposition::CMemoryLoadable { base, .. } => base,
+                _ => unreachable!(),
+            },
+        ) {
             let candidate = self.with_only_proposition_facts(std::slice::from_ref(source));
             if crate::kernel::api::loadable_covered_by_fact(&candidate, &instantiated) {
                 return Some(PropositionDerivationRule::ExistsLoadableRange {
@@ -1300,7 +1331,7 @@ impl PropositionSearch for PureFactContext {
     fn derive_by_singleton_substitution(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         let mut variables = BTreeSet::new();
         collect_proposition_connection_variables(proposition, &mut variables);
@@ -1316,7 +1347,7 @@ impl PropositionSearch for PureFactContext {
         if instantiated == *proposition {
             return None;
         }
-        let body = self.derive_proposition_using(&instantiated, for_simp)?;
+        let body = self.derive_proposition_using(&instantiated, extended_rules)?;
         Some(PropositionDerivationRule::SingletonSubstitution {
             variable,
             value,
@@ -1328,7 +1359,7 @@ impl PropositionSearch for PureFactContext {
     fn derive_by_disjunction_cases(
         &self,
         proposition: &Proposition,
-        for_simp: bool,
+        extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         // Each case re-enters the whole derivation, which splits again on
         // every remaining disjunction: with a dozen call outcomes in scope
@@ -1342,7 +1373,7 @@ impl PropositionSearch for PureFactContext {
         let mut goal_variables = BTreeSet::new();
         collect_proposition_bitvector_variables(proposition, &mut goal_variables);
         let goal_all_variables = crate::kernel::proposition_variables(proposition);
-        for disjunction in self.disjunction_fact_propositions() {
+        for disjunction in self.disjunction_fact_propositions(SearchPermission::new()) {
             let mut disjunction_variables = BTreeSet::new();
             collect_proposition_bitvector_variables(disjunction, &mut disjunction_variables);
             // A disjunction or goal over no machine variable (an algebraic
@@ -1389,14 +1420,15 @@ impl PropositionSearch for PureFactContext {
                     let key = (
                         crate::kernel::assumptions::unsalted_assumptions_memo_id(&context),
                         proposition.clone(),
-                        for_simp,
+                        extended_rules,
                     );
                     let known =
                         SPLIT_CASE_DERIVATIONS.with(|cases| cases.borrow().get(&key).cloned());
                     let derived = match known {
                         Some(known) => known,
                         None => {
-                            let derived = context.derive_proposition_using(proposition, for_simp);
+                            let derived =
+                                context.derive_proposition_using(proposition, extended_rules);
                             SPLIT_CASE_DERIVATIONS
                                 .with(|cases| cases.borrow_mut().insert(key, derived.clone()));
                             derived
@@ -1593,14 +1625,14 @@ fn connected_condition_premises(
     let mut frontier = reached.iter().copied().collect::<Vec<_>>();
     let mut selected = BTreeMap::new();
     while let Some(variable) = frontier.pop() {
-        if simp_reasoning_interrupted() {
+        if solve_reasoning_interrupted() {
             return None;
         }
         // The cooperative checkpoint charges this variable visit.
         for (condition, value) in context.condition_facts_mentioning_variable(variable)? {
             #[cfg(test)]
             CONDITION_SELECTION_VISITS.with(|visits| visits.set(visits.get() + 1));
-            if simp_reasoning_interrupted() {
+            if solve_reasoning_interrupted() {
                 return None;
             }
             // The checkpoint likewise charges each adjacency visit.
@@ -1684,13 +1716,13 @@ mod condition_premise_tests {
         let exact_constant_only = PureFactContext::new().assume_proposition(left.clone());
         assert!(
             exact_constant_only
-                .derive_simp_proposition_without_exact_goal(&left)
+                .derive_solve_proposition_without_exact_goal(&left)
                 .is_none()
         );
         let exact_only = PureFactContext::new().assume_proposition(goal.clone());
         assert!(
             exact_only
-                .derive_simp_proposition_without_exact_goal(&goal)
+                .derive_solve_proposition_without_exact_goal(&goal)
                 .is_none()
         );
     }
@@ -1752,7 +1784,7 @@ mod condition_premise_tests {
         let mut visits = 0;
         loop {
             let mut changed = false;
-            for (condition, value) in context.condition_fact_pairs() {
+            for (condition, value) in context.condition_fact_pairs(SearchPermission::new()) {
                 visits += 1;
                 if selected.contains_key(condition) {
                     continue;
@@ -1838,7 +1870,7 @@ mod condition_premise_tests {
     }
 
     #[test]
-    fn condition_selection_tracks_restriction_replacement_and_exclusion() {
+    fn condition_selection_tracks_restriction_contradiction_and_exclusion() {
         let (context, goal) = chain(8, 20);
         let selected = connected_condition_premises(&context, &goal, false).unwrap();
         let restricted = context.restricted_to_facts(&selected, &[]);
@@ -1848,10 +1880,11 @@ mod condition_premise_tests {
         );
         let condition = chain_fact(1);
         let replaced = context.clone().assume_condition(condition.clone(), false);
+        assert!(replaced.is_inconsistent());
         assert!(
             connected_condition_premises(&replaced, &goal, false)
                 .unwrap()
-                .contains(&(condition, false))
+                .contains(&(condition, true))
         );
         let stated = context.assume_proposition(goal.clone());
         assert_eq!(
@@ -1963,7 +1996,7 @@ pub(crate) fn connected_equalities(
 /// A wider smart fallback follows recent havoc bounds and general facts;
 /// its result still has to pass the restricted kernel query.
 /// The condition facts connected to `goal` through shared atoms, the same
-/// component `simp` selects. `simp`'s selected-premise arithmetic reads its premises
+/// component `solve` selects. `solve`'s selected-premise arithmetic reads its premises
 /// from this component; it never scans facts unconnected to the goal.
 pub(crate) fn arithmetic_connected_premises(
     context: &PureFactContext,
@@ -2001,8 +2034,8 @@ fn connected_atomic_premises(
         select(source);
     }
     if widened {
-        for fact in context.atomic_general_facts() {
-            if simp_reasoning_interrupted() {
+        for fact in context.atomic_general_facts(SearchPermission::new()) {
+            if solve_reasoning_interrupted() {
                 return None;
             }
             if (!exclude_exact_goal || fact != goal)
@@ -2024,7 +2057,7 @@ fn connected_atomic_premises(
     let mut joint_adds = false;
     let mut pending = reached.iter().cloned().collect::<Vec<_>>();
     while let Some(key) = pending.pop() {
-        if simp_reasoning_interrupted() {
+        if solve_reasoning_interrupted() {
             return None;
         }
         let (facts, has_propositions) =
@@ -2035,7 +2068,7 @@ fn connected_atomic_premises(
             if fact.is_condition() {
                 CONDITION_SELECTION_VISITS.with(|visits| visits.set(visits.get() + 1));
             }
-            if simp_reasoning_interrupted() {
+            if solve_reasoning_interrupted() {
                 return None;
             }
             if !visited.insert(fact.identity())
@@ -2076,8 +2109,8 @@ fn atomic_widening_adds_dependencies(
     selected: &PureFactContext,
     reached: &BTreeSet<AtomicConnectionKey>,
 ) -> bool {
-    for fact in context.atomic_general_facts() {
-        if simp_reasoning_interrupted() || !selected.contains_assumed_exact(fact) {
+    for fact in context.atomic_general_facts(SearchPermission::new()) {
+        if solve_reasoning_interrupted() || !selected.contains_assumed_exact(fact) {
             return true;
         }
     }
@@ -2141,7 +2174,9 @@ fn native_view_prefix_premises(
     if context.proves_exact(&coverage) {
         premises.push(coverage);
     } else {
-        let (evidence, _) = context.proves_atomic_for_derivation_with_id(&coverage, true);
+        let (evidence, _) =
+            crate::kernel::SelectedFacts::for_search(context, SearchPermission::new())
+                .proves_atomic_for_derivation_with_id(&coverage, true);
         let Some(AtomicPropositionDerivationEvidence::WideOrderPath {
             format: crate::kernel::MachineIntegerType::UInt64,
             path,
@@ -2167,7 +2202,7 @@ mod disjunction_work_tests {
 }
 
 /// A compatibility atomic decision can retain a connected component rather
-/// than the facts it consumed. Before simp spells historical source forms,
+/// than the facts it consumed. Before solve spells historical source forms,
 /// discard chunks that the same kernel query proves unnecessary. Each trial
 /// holds only the remaining selected facts; no ambient fact participates.
 /// Typed evidence already records its dependencies and needs no such search.
@@ -2175,18 +2210,18 @@ mod disjunction_work_tests {
 /// This is bounded smart planning, not certificate validation: at most 128
 /// facts and 255 restricted queries. A missed reduction keeps the checked
 /// selection, and the final evidence is rebuilt against the retained context.
-fn reduce_simp_atomic_premises(
+fn reduce_solve_atomic_premises(
     proposition: &Proposition,
-    for_simp: bool,
+    extended_rules: bool,
     selected: (PureFactContext, u64, AtomicPropositionDerivationEvidence),
 ) -> Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)> {
     let (mut context, mut context_id, mut evidence) = selected;
-    if for_simp
+    if extended_rules
         && let Some((retained, retained_id)) = context.retained_atomic_equality_context(&evidence)
     {
         return Some((retained, retained_id, evidence));
     }
-    if !for_simp || !matches!(evidence, AtomicPropositionDerivationEvidence::Legacy) {
+    if !extended_rules || !matches!(evidence, AtomicPropositionDerivationEvidence::Legacy) {
         return Some((context, context_id, evidence));
     }
     let query = match proposition {
@@ -2239,7 +2274,7 @@ fn reduce_simp_atomic_premises(
     };
     let cache_key = query.map(|query| (context_id, atomic_derivation_modes(), query));
     if let Some(key) = cache_key
-        && let Some(reduced) = SIMP_ATOMIC_REDUCTIONS.with(|cache| {
+        && let Some(reduced) = SOLVE_ATOMIC_REDUCTIONS.with(|cache| {
             crate::instrumentation::record_deterministic_work(1);
             cache
                 .borrow()
@@ -2256,14 +2291,14 @@ fn reduce_simp_atomic_premises(
     }
     let _timing = crate::instrumentation::OperationTiming::new(
         "surface",
-        "simp closure",
-        "simp selected premise reduction",
+        "solve closure",
+        "solve selected premise reduction",
     );
     let mut retained = vec![true; premises.len()];
     let mut pending = vec![(0, premises.len())];
     while let Some((start, end)) = pending.pop() {
         crate::instrumentation::record_deterministic_work(premises.len() + 1);
-        if simp_reasoning_interrupted() {
+        if solve_reasoning_interrupted() {
             return None;
         }
         let mut conditions = Vec::new();
@@ -2281,7 +2316,8 @@ fn reduce_simp_atomic_premises(
         }
         let trial = context.restricted_to_facts(&conditions, &propositions);
         let (trial_evidence, trial_id) =
-            trial.proves_atomic_for_derivation_with_id(proposition, for_simp);
+            crate::kernel::SelectedFacts::for_search(&trial, SearchPermission::new())
+                .proves_atomic_for_derivation_with_id(proposition, extended_rules);
         if let Some(trial_evidence) = trial_evidence {
             retained[start..end].fill(false);
             context = trial;
@@ -2297,9 +2333,9 @@ fn reduce_simp_atomic_premises(
             pending.push((middle, end));
         }
     }
-    let reduced = (!simp_reasoning_interrupted()).then_some((context, context_id, evidence))?;
+    let reduced = (!solve_reasoning_interrupted()).then_some((context, context_id, evidence))?;
     if let Some(key) = cache_key {
-        SIMP_ATOMIC_REDUCTIONS.with(|cache| {
+        SOLVE_ATOMIC_REDUCTIONS.with(|cache| {
             if let Some(cache) = cache.borrow_mut().as_mut() {
                 crate::instrumentation::record_deterministic_work(1);
                 cache.insert(key, reduced.clone());
@@ -2389,7 +2425,9 @@ mod atomic_reduction_tests {
                 arguments: vec![Term::Bitvector32(left.clone())],
             });
         }
-        let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, true);
+        let (evidence, id) =
+            crate::kernel::SelectedFacts::for_search(&context, SearchPermission::new())
+                .proves_atomic_for_derivation_with_id(&goal, true);
         assert!(evidence.is_some());
         (context, goal, id)
     }
@@ -2397,7 +2435,7 @@ mod atomic_reduction_tests {
     fn reduce(context: &PureFactContext, goal: &Proposition, id: u64) -> ReducedAtomicPremises {
         // Exercise the compatibility producer's selection: it has established
         // the equality but retained the connected context without a typed path.
-        reduce_simp_atomic_premises(
+        reduce_solve_atomic_premises(
             goal,
             true,
             (
@@ -2415,12 +2453,12 @@ mod atomic_reduction_tests {
         let (second, same_goal, second_id) = selection(8, Variable(785_004));
         assert_eq!(goal, same_goal);
         assert_ne!(first_id, second_id);
-        with_simp_atomic_reduction_cache(|| {
+        with_solve_atomic_reduction_cache(|| {
             let a = reduce(&first, &goal, first_id);
             let b = reduce(&second, &goal, second_id);
             for (selected, original) in [(&a.0, &first), (&b.0, &second)] {
                 assert!(
-                    selected
+                    crate::kernel::SelectedFacts::for_search(selected, SearchPermission::new())
                         .proves_atomic_for_derivation_with_id(&goal, true)
                         .0
                         .is_some()
@@ -2446,4 +2484,10 @@ mod atomic_reduction_tests {
             "../../scaling_tests/surface/planning/proposition_search/atomic_reduction_tests.rs"
         );
     }
+}
+
+#[cfg(test)]
+mod loadability_view_scaling_tests {
+    use super::*;
+    include!("../../scaling_tests/surface/planning/proposition_search/loadability_view_tests.rs");
 }

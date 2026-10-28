@@ -22,11 +22,11 @@ fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
                 true,
             );
         }
-        // `simp` is slow part, and its condition match reads each fact a
+        // `solve` is slow part, and its condition match reads each fact a
         // bounded number of times; rebuilding the connected order facts per
         // fact would be quadratic.
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_simp_proposition(&goal)
+            context.derive_solve_proposition(&goal)
         });
         assert!(derivation.is_none());
         let bound = 512 + 4 * size as usize;
@@ -64,7 +64,12 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
                 PureFactContext::new().assume_condition(condition, true)
             })
         });
-        assert_eq!(context.condition_fact_pairs().count(), 1);
+        assert_eq!(
+            context
+                .condition_fact_pairs(crate::surface::planning::SearchPermission::new())
+                .count(),
+            1
+        );
         let index_work = events
             .into_iter()
             .filter_map(|event| {
@@ -292,13 +297,13 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
             wide: false,
         };
         let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_simp_atomic_proposition(&goal).unwrap()
+            context.derive_solve_atomic_proposition(&goal).unwrap()
         });
         assert_eq!(proof.context_premises(), vec![source]);
         samples.push(work);
     }
     assert!(
-        samples[2] - samples[1] <= 5 * (samples[1] - samples[0]) + 64,
+        samples[2].saturating_sub(samples[1]) <= 5 * samples[1].saturating_sub(samples[0]) + 64,
         "covering loadability must scale linearly: {samples:?}"
     );
     eprintln!("covering loadability work: {samples:?}");

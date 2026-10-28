@@ -6,7 +6,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
-fn speculative_simp_premise_spelling_declines_large_components_without_rendering() {
+fn speculative_solve_premise_spelling_declines_large_components_without_rendering() {
     let function = syntax::parse_function("int32 noop() { return 0; }").unwrap();
     let state = CState::new();
     let snapshots = RecordedSnapshots::new();
@@ -52,7 +52,7 @@ fn speculative_simp_premise_spelling_declines_large_components_without_rendering
             })
             .collect::<Vec<_>>();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            proof.resolve_simp_premises(&premises, &[])
+            proof.resolve_solve_premises(&premises, &[])
         });
         assert!(
             result.is_none(),
@@ -123,7 +123,7 @@ fn reflexive_pointer_metadata_does_not_search_snapshot_history() {
             assert!(
                 !events.iter().any(|event| matches!(event,
                 crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                    if name.starts_with("simp premise surface"))),
+                    if name.starts_with("solve premise surface"))),
                 "metadata must not walk history"
             );
             assert!(

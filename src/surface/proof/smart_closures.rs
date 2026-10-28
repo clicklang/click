@@ -1,4 +1,5 @@
 //! Smart closure search and linear script interpretation.
+use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 
 use super::selected_arithmetic::RewriteClosers;
 use super::*;
@@ -25,7 +26,7 @@ use num_traits::{One, Signed, ToPrimitive, Zero};
 use proof_object::{collect_surface_conjunct_leaves, frontier_premise_anchor};
 
 const MAX_DIRECT_CALLER_BINDING_NAMES: usize = 4096;
-const MAX_SIMP_SOURCE_PREMISES: usize = 64;
+const MAX_SOLVE_SOURCE_PREMISES: usize = 64;
 
 /// Constant bounds on the goal's own variables, without relational bounds
 /// such as earlier postconditions that also mention those variables.
@@ -135,6 +136,7 @@ fn collect_signed_surface_terms<'a>(
             | ContractExpression::CFragment(_)
             | ContractExpression::CBinding(_)
             | ContractExpression::RegionResult(_)
+            | ContractExpression::RegionAllocation(_)
             | ContractExpression::ResourceCount(_)
             | ContractExpression::ResourceWildcard
             | ContractExpression::IntegerLiteral(_) => {}
@@ -2480,7 +2482,7 @@ impl<'a> Proof<'a> {
             conclusion = consequent;
         }
         let Some(quantified) = self
-            .resolve_simp_premises(std::slice::from_ref(&source), &[])
+            .resolve_solve_premises(std::slice::from_ref(&source), &[])
             .and_then(|pairs| pairs.into_iter().next())
             .map(|(_, surface)| surface)
         else {
@@ -2551,8 +2553,8 @@ impl<'a> Proof<'a> {
         }
         crate::instrumentation::measure_operation(
             "surface",
-            "simp closure",
-            "simp closure: direct structural",
+            "solve closure",
+            "solve closure: direct structural",
             || self.try_direct_structural_closure(),
         )
     }
@@ -2719,7 +2721,7 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// Searches the currently migrated `simp` vocabulary against this proof.
+    /// Searches the currently migrated `solve` vocabulary against this proof.
     ///
     /// Direct logical closers remain the cheap first choice. For a pure or
     /// fixed-state signed-order/equality derivation, the kernel-selected edge path
@@ -2727,12 +2729,12 @@ impl<'a> Proof<'a> {
     /// applications, rewrites, and nested `have` scopes. The candidate
     /// advances this same `Proof`; no semantic result is produced before
     /// those proof steps have been accepted.
-    pub(in crate::surface::proof) fn try_simp_closure(&self) -> Result<Option<Self>, ClickError> {
-        // simp reaches the same failing frame question through several of
+    pub(in crate::surface::proof) fn try_solve_closure(&self) -> Result<Option<Self>, ClickError> {
+        // solve reaches the same failing frame question through several of
         // its strategies and candidates; one closure attempt answers each
         // exact failed question once (`with_closure_failure_memo`).
-        crate::surface::planning::proposition_search::with_simp_atomic_reduction_cache(|| {
-            crate::kernel::with_closure_failure_memo(|| self.try_simp_closure_strategies())
+        crate::surface::planning::proposition_search::with_solve_atomic_reduction_cache(|| {
+            crate::kernel::with_closure_failure_memo(|| self.try_solve_closure_strategies())
         })
         .map_err(|error| self.attach_step_diagnostic(error))
     }
@@ -2741,7 +2743,7 @@ impl<'a> Proof<'a> {
     /// `auto`: refute the goal's negation from the facts connected to it and
     /// apply the resulting certificate as one ordinary checked step. Any
     /// miss leaves the proof unchanged.
-    /// `simp` on an arithmetic goal: `arithmetic` from premises it selects
+    /// `solve` on an arithmetic goal: `arithmetic` from premises it selects
     /// itself, the facts connected to the goal and the type ranges of the
     /// machine values they observe, then the same with a machine order or
     /// equality carried to `Integer`, an equality proved from its two
@@ -2749,7 +2751,7 @@ impl<'a> Proof<'a> {
     /// result. Each returns at once on a goal it does not apply to.
     /// A subgoal of the arithmetic below, such as one bound of an equality
     /// or the definedness of an operand: a direct logical closure, else
-    /// the same arithmetic, else the rest of `simp` with no arithmetic of
+    /// the same arithmetic, else the rest of `solve` with no arithmetic of
     /// its own, so a subgoal does not open subgoals again.
     pub(in crate::surface::proof) fn try_arithmetic_fact_closure(
         &self,
@@ -2760,17 +2762,17 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_arithmetic_with_selected_premises()? {
             return Ok(Some(closed));
         }
-        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::ArithmeticSubgoal) else {
+        let Some(_scope) = SolveFallbackScope::enter(SolveFallback::ArithmeticSubgoal) else {
             return Ok(None);
         };
-        self.try_simp_closure()
+        self.try_solve_closure()
     }
 
-    /// A `simp` nested inside the connected-fact search, closing a goal it
+    /// A `solve` nested inside the connected-fact search, closing a goal it
     /// rewrote, skips them too: that search runs once arithmetic has missed.
     fn try_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
-        if SimpFallbackScope::active(SimpFallback::ConnectedFacts)
-            || SimpFallbackScope::active(SimpFallback::ArithmeticSubgoal)
+        if SolveFallbackScope::active(SolveFallback::ConnectedFacts)
+            || SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal)
         {
             return Ok(None);
         }
@@ -2792,13 +2794,13 @@ impl<'a> Proof<'a> {
         self.try_definedness_by_bounds()
     }
 
-    /// The arithmetic `simp` tries last, once every other strategy has
+    /// The arithmetic `solve` tries last, once every other strategy has
     /// missed: a 64-bit equality through its `Integer` reading, whose type
     /// is known only after the reading is proved, and a native comparison
     /// through its `Integer` reading.
     fn try_late_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
-        if SimpFallbackScope::active(SimpFallback::ConnectedFacts)
-            || SimpFallbackScope::active(SimpFallback::ArithmeticSubgoal)
+        if SolveFallbackScope::active(SolveFallback::ConnectedFacts)
+            || SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal)
         {
             return Ok(None);
         }
@@ -3059,8 +3061,8 @@ impl<'a> Proof<'a> {
         let plan = |premises: &[Proposition], ranges: &[crate::kernel::IntegerTerm]| {
             crate::instrumentation::measure_operation(
                 "surface",
-                "simp arithmetic",
-                "simp arithmetic: integer refutation",
+                "solve arithmetic",
+                "solve arithmetic: integer refutation",
                 || refute_integer_goal(goal, premises, ranges),
             )
         };
@@ -3205,7 +3207,7 @@ impl<'a> Proof<'a> {
                 return known.clone();
             }
             let resolved = self
-                .resolve_simp_premises(std::slice::from_ref(fact), &[])
+                .resolve_solve_premises(std::slice::from_ref(fact), &[])
                 .and_then(|mut spelled| spelled.pop());
             spellings
                 .borrow_mut()
@@ -3367,8 +3369,8 @@ impl<'a> Proof<'a> {
             let IntegerRefutation::Proved { premises, .. } =
                 crate::instrumentation::measure_operation(
                     "surface",
-                    "simp arithmetic",
-                    "simp arithmetic: integer refutation with operation identities",
+                    "solve arithmetic",
+                    "solve arithmetic: integer refutation with operation identities",
                     || refute_integer_goal(goal, &assumed, &ranges),
                 )
             else {
@@ -3395,7 +3397,7 @@ impl<'a> Proof<'a> {
                 // of its own; the goal and the other facts spell the
                 // identities.
                 if let Some((_, surface)) = self
-                    .resolve_simp_premises(std::slice::from_ref(premise), &[])
+                    .resolve_solve_premises(std::slice::from_ref(premise), &[])
                     .and_then(|mut spelled| spelled.pop())
                 {
                     surfaces.push(surface);
@@ -3419,7 +3421,7 @@ impl<'a> Proof<'a> {
             if !used.iter().all(|identity| spells(&written, identity)) {
                 for premise in written_facts.iter().take(MAX_SOLVER_SPELLING_FACTS) {
                     if let Some((_, surface)) = self
-                        .resolve_simp_premises(std::slice::from_ref(premise), &[])
+                        .resolve_solve_premises(std::slice::from_ref(premise), &[])
                         .and_then(|mut spelled| spelled.pop())
                     {
                         surfaces.push(surface);
@@ -3885,7 +3887,7 @@ impl<'a> Proof<'a> {
         Some(bounds)
     }
 
-    fn try_flat_simp_conjunction(
+    fn try_flat_solve_conjunction(
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
@@ -3895,7 +3897,7 @@ impl<'a> Proof<'a> {
         let mut proof = self.clone();
         for surface in surfaces {
             let scope = proof.begin_have(surface)?;
-            let Some(closed) = scope.try_simp_closure_with_surfaces(introduced_surfaces)? else {
+            let Some(closed) = scope.try_solve_closure_with_surfaces(introduced_surfaces)? else {
                 return Ok(None);
             };
             proof = closed.join()?;
@@ -3903,9 +3905,9 @@ impl<'a> Proof<'a> {
         attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
     }
 
-    fn try_simp_closure_strategies(&self) -> Result<Option<Self>, ClickError> {
-        let mut scope = attempt::search_scope("simp closure");
-        if let Some(proof) = self.try_flat_simp_conjunction(&[])? {
+    fn try_solve_closure_strategies(&self) -> Result<Option<Self>, ClickError> {
+        let mut scope = attempt::search_scope("solve closure");
+        if let Some(proof) = self.try_flat_solve_conjunction(&[])? {
             scope.succeed();
             return Ok(Some(proof));
         }
@@ -3953,7 +3955,7 @@ impl<'a> Proof<'a> {
             scope.succeed();
             return Ok(Some(proof));
         }
-        let result = match self.try_simp_closure_after_direct(false)? {
+        let result = match self.try_solve_closure_after_direct(false)? {
             Some(proof) => Some(proof),
             None => match self.try_restated_constant_upper_bound()? {
                 Some(proof) => Some(proof),
@@ -3980,11 +3982,11 @@ impl<'a> Proof<'a> {
 
     /// A goal that reads stored cells, proved over the values stored there:
     /// `have` the goal's read-over-write form (`kernel::comparison_form`)
-    /// by `simp`, then close the goal by `assumption`, which matches a read
+    /// by `solve`, then close the goal by `assumption`, which matches a read
     /// through the value its cell holds. The stored-value form is the goal
-    /// `simp` would have seen had the reads been folded, so this recovers
+    /// `solve` would have seen had the reads been folded, so this recovers
     /// what its rules prove about the stored values. One level: the inner
-    /// `simp` does not take this route again.
+    /// `solve` does not take this route again.
     fn try_stored_value_goal(&self) -> Result<Option<Self>, ClickError> {
         let Some(goal) = self.goal() else {
             return Ok(None);
@@ -3992,7 +3994,7 @@ impl<'a> Proof<'a> {
         let Some(resolved) = crate::kernel::comparison_form(goal) else {
             return Ok(None);
         };
-        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::StoredValue) else {
+        let Some(_scope) = SolveFallbackScope::enter(SolveFallback::StoredValue) else {
             return Ok(None);
         };
         let Some(surface) = self.spelled_goal_for_search(&resolved) else {
@@ -4001,7 +4003,7 @@ impl<'a> Proof<'a> {
         let Some(scope) = attempt::candidate_outcome(self.begin_have(surface))? else {
             return Ok(None);
         };
-        let Some(closed) = scope.try_simp_closure()? else {
+        let Some(closed) = scope.try_solve_closure()? else {
             return Ok(None);
         };
         let Some(proof) = attempt::candidate_outcome(closed.join())? else {
@@ -4010,14 +4012,14 @@ impl<'a> Proof<'a> {
         attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
     }
 
-    /// `simp`'s strategy over the facts connected to the goal: read
+    /// `solve`'s strategy over the facts connected to the goal: read
     /// the goal out of a function fact's definition; rewrite the goal by a
     /// connected equality once and then `assumption`, then as a bounded
-    /// chain whose rewritten goals the cheap closers and a nested `simp`
+    /// chain whose rewritten goals the cheap closers and a nested `solve`
     /// try; and join two constructor equations of one value. A nested
-    /// `simp` inside these does not start them again.
+    /// `solve` inside these does not start them again.
     fn try_connected_fact_closure(&self) -> Result<Option<Self>, ClickError> {
-        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::ConnectedFacts) else {
+        let Some(_scope) = SolveFallbackScope::enter(SolveFallback::ConnectedFacts) else {
             return Ok(None);
         };
         // First: it costs little when it does not apply.
@@ -4096,7 +4098,7 @@ impl<'a> Proof<'a> {
         let Ok(scope) = self.begin_have(strict.clone()) else {
             return Ok(None);
         };
-        let Some(proved) = scope.try_simp_closure()? else {
+        let Some(proved) = scope.try_solve_closure()? else {
             return Ok(None);
         };
         let Ok(joined) = proved.join() else {
@@ -4113,23 +4115,23 @@ impl<'a> Proof<'a> {
     /// `exclude_exact_goal` is true, the atomic derivation query may not cite
     /// the goal's own ambient fact; every selected theorem step is still
     /// checked against this unchanged Proof.
-    pub(super) fn try_simp_closure_after_direct(
+    pub(super) fn try_solve_closure_after_direct(
         &self,
         exclude_exact_goal: bool,
     ) -> Result<Option<Self>, ClickError> {
-        let mut scope = attempt::search_scope("simp closure after direct candidates");
-        let result = self.try_simp_closure_after_direct_with_surfaces(exclude_exact_goal, &[])?;
+        let mut scope = attempt::search_scope("solve closure after direct candidates");
+        let result = self.try_solve_closure_after_direct_with_surfaces(exclude_exact_goal, &[])?;
         if result.is_some() {
             scope.succeed();
         }
         Ok(result)
     }
 
-    pub(super) fn try_simp_closure_with_surfaces(
+    pub(super) fn try_solve_closure_with_surfaces(
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
-        let mut scope = attempt::search_scope("simp closure with surfaces");
+        let mut scope = attempt::search_scope("solve closure with surfaces");
         if let Some(proof) = self.try_direct_logical_closure()? {
             scope.succeed();
             return Ok(Some(proof));
@@ -4139,26 +4141,26 @@ impl<'a> Proof<'a> {
             return Ok(Some(proof));
         }
         let result =
-            self.try_simp_closure_after_direct_with_surfaces(false, introduced_surfaces)?;
+            self.try_solve_closure_after_direct_with_surfaces(false, introduced_surfaces)?;
         if result.is_some() {
             scope.succeed();
         }
         Ok(result)
     }
 
-    fn try_simp_closure_after_direct_with_surfaces(
+    fn try_solve_closure_after_direct_with_surfaces(
         &self,
         exclude_exact_goal: bool,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
-        self.try_simp_closure_after_direct_with_surfaces_and_function_unfold(
+        self.try_solve_closure_after_direct_with_surfaces_and_function_unfold(
             exclude_exact_goal,
             introduced_surfaces,
             true,
         )
     }
 
-    fn try_simp_closure_after_direct_with_surfaces_and_function_unfold(
+    fn try_solve_closure_after_direct_with_surfaces_and_function_unfold(
         &self,
         exclude_exact_goal: bool,
         introduced_surfaces: &[ClickProposition],
@@ -4250,8 +4252,8 @@ impl<'a> Proof<'a> {
         if indexed_arithmetic_tried
             && let Some(proof) = crate::instrumentation::measure_operation(
                 "surface",
-                "simp closure",
-                "simp closure: indexed bounds",
+                "solve closure",
+                "solve closure: indexed bounds",
                 || self.try_execution_signed_arithmetic(),
             )
         {
@@ -4302,7 +4304,7 @@ impl<'a> Proof<'a> {
         // leaves, which is quadratic in the chain. Each conjunct still gets
         // the complete closure, including these strategies, and the
         // whole-goal strategies still run, unchanged, when the split misses.
-        if let Some(flat) = self.try_flat_simp_conjunction(introduced_surfaces)? {
+        if let Some(flat) = self.try_flat_solve_conjunction(introduced_surfaces)? {
             return Ok(Some(flat));
         }
         let structural_conjunction_tried = if let Some(surface_goal) = self.surface_goal()
@@ -4311,10 +4313,10 @@ impl<'a> Proof<'a> {
         {
             if let Some(structural) = crate::instrumentation::measure_operation(
                 "surface",
-                "simp closure",
-                "simp closure: structural",
+                "solve closure",
+                "solve closure: structural",
                 || {
-                    self.try_structural_simp_closure_with_surfaces(
+                    self.try_structural_solve_closure_with_surfaces(
                         surface_goal,
                         introduced_surfaces,
                     )
@@ -4337,19 +4339,19 @@ impl<'a> Proof<'a> {
         // discovery here would perform the same search a second time.
         let mut anchored_pairs = Vec::new();
         let atomic = (|| {
-            let (goal, derivation) = self.selected_simp_derivation_plan(exclude_exact_goal)?;
+            let (goal, derivation) = self.selected_solve_derivation_plan(exclude_exact_goal)?;
             // A derivation that records the exact path it used names its
             // own premises. Spell only those first: the selection it ran in
             // holds every fact connected to the goal's variables, and
             // spelling them all costs work in the path's length for a
             // closer that cites one or two.
             let cited_pairs = derivation.recorded_path_premises().and_then(|cited| {
-                self.resolve_simp_premises(&cited, introduced_surfaces)
+                self.resolve_solve_premises(&cited, introduced_surfaces)
                     .filter(|pairs| pairs.len() == cited.len())
             });
             if let Some(pairs) = &cited_pairs
                 && let Some(closed) =
-                    self.check_typed_atomic_simp_candidate(&goal, &derivation, pairs)
+                    self.check_typed_atomic_solve_candidate(&goal, &derivation, pairs)
             {
                 return Some(closed);
             }
@@ -4360,7 +4362,7 @@ impl<'a> Proof<'a> {
                 return None;
             }
             anchored_pairs =
-                self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
+                self.resolve_solve_premises(&derivation.context_premises(), introduced_surfaces)?;
             let premise_pairs = &anchored_pairs;
             // This rule constructs its checked nonnegative scope directly.
             // Avoid a speculative generic candidate for this same predecessor
@@ -4376,10 +4378,10 @@ impl<'a> Proof<'a> {
                 Ok(Some(extracted)) if extracted.is_complete() => Some(extracted),
                 _ if cited_pairs.is_some() => None,
                 Ok(Some(extracted)) => {
-                    extracted.check_typed_atomic_simp_candidate(&goal, &derivation, premise_pairs)
+                    extracted.check_typed_atomic_solve_candidate(&goal, &derivation, premise_pairs)
                 }
                 Ok(None) | Err(()) => {
-                    self.check_typed_atomic_simp_candidate(&goal, &derivation, premise_pairs)
+                    self.check_typed_atomic_solve_candidate(&goal, &derivation, premise_pairs)
                 }
             };
             typed_atomic
@@ -4449,8 +4451,8 @@ impl<'a> Proof<'a> {
         }
         if let Some(rewritten) = crate::instrumentation::measure_operation(
             "surface",
-            "simp closure",
-            "simp closure: goal equality rewrite",
+            "solve closure",
+            "solve closure: goal equality rewrite",
             || {
                 self.try_goal_equality_rewrite_closure_excluding(
                     exclude_exact_goal,
@@ -4508,7 +4510,7 @@ impl<'a> Proof<'a> {
         // than continuing into structural search with it exceeded.
         check_verification_deadline()?;
         if self.surface_goal().is_none() && matches!(self.goal(), Some(Proposition::And(_, _))) {
-            return self.try_structural_and_simp_closure(introduced_surfaces);
+            return self.try_structural_and_solve_closure(introduced_surfaces);
         }
         let Some(surface_goal) = self.surface_goal().cloned() else {
             return Ok(None);
@@ -4541,10 +4543,10 @@ impl<'a> Proof<'a> {
         if !structural_conjunction_tried
             && let Some(structural) = crate::instrumentation::measure_operation(
                 "surface",
-                "simp closure",
-                "simp closure: structural",
+                "solve closure",
+                "solve closure: structural",
                 || {
-                    self.try_structural_simp_closure_with_surfaces(
+                    self.try_structural_solve_closure_with_surfaces(
                         &surface_goal,
                         introduced_surfaces,
                     )
@@ -4554,12 +4556,12 @@ impl<'a> Proof<'a> {
             return Ok(Some(structural));
         }
         if allow_function_unfold
-            && let Some(unfolded) = self.try_function_unfold_simp_closure(introduced_surfaces)?
+            && let Some(unfolded) = self.try_function_unfold_solve_closure(introduced_surfaces)?
         {
             return Ok(Some(unfolded));
         }
         // A Special fact such as `aligned(p + i, 8)` is not generally a
-        // simp-derivation: the kernel's pointer rule consumes a matching
+        // solve-derivation: the kernel's pointer rule consumes a matching
         // alignment/relation fact directly. Use the selected pairs when
         // `solve() using` supplied them; otherwise recover only typed Special
         // candidates from the recorded Surface map for generic `solve()`.
@@ -4666,8 +4668,8 @@ impl<'a> Proof<'a> {
         if !indexed_arithmetic_tried
             && let Some(arithmetic) = crate::instrumentation::measure_operation(
                 "surface",
-                "simp closure",
-                "simp closure: indexed bounds",
+                "solve closure",
+                "solve closure: indexed bounds",
                 || self.try_execution_signed_arithmetic(),
             )
         {
@@ -4690,7 +4692,7 @@ impl<'a> Proof<'a> {
     }
 
     /// The same indexed bound selection on an execution proof: at function
-    /// exit, at a statement frontier, or inside a loop phase, so simp reads a
+    /// exit, at a statement frontier, or inside a loop phase, so solve reads a
     /// variable's bounds the same way wherever it runs. A bound can also be
     /// the negation of a branch condition. A goal that is itself an available
     /// fact is left to `assumption`. Pre-return signed orders and population
@@ -5045,9 +5047,9 @@ impl<'a> Proof<'a> {
         // bounds support it. Searching this compact context avoids spelling
         // the entire ambient atomic component merely to recover that rule.
         if !is_pure
-            && let Some(SimpEvidence::Derivation(derivation)) =
-                plan_simp_certificate(goal, &assumptions_from_propositions(&kernels))
-            && let Some(closed) = self.check_typed_atomic_simp_candidate(goal, &derivation, &pairs)
+            && let Some(SolveEvidence::Derivation(derivation)) =
+                plan_solve_certificate(goal, &assumptions_from_propositions(&kernels))
+            && let Some(closed) = self.check_typed_atomic_solve_candidate(goal, &derivation, &pairs)
         {
             return Some(closed);
         }
@@ -5087,12 +5089,12 @@ impl<'a> Proof<'a> {
             .iter()
             .map(|(fact, _)| fact.clone())
             .collect::<Vec<_>>();
-        let Some(SimpEvidence::Derivation(derivation)) =
-            plan_simp_certificate(goal, &assumptions_from_propositions(&kernels))
+        let Some(SolveEvidence::Derivation(derivation)) =
+            plan_solve_certificate(goal, &assumptions_from_propositions(&kernels))
         else {
             return None;
         };
-        self.check_typed_atomic_simp_candidate(goal, &derivation, &pairs)
+        self.check_typed_atomic_solve_candidate(goal, &derivation, &pairs)
     }
 
     /// Select only guards actually occurring in the goal, through indexed
@@ -5222,7 +5224,7 @@ impl<'a> Proof<'a> {
                     return Ok(Some(closed));
                 }
                 if let Some(closed) =
-                    rewritten.try_function_unfold_simp_closure(introduced_surfaces)?
+                    rewritten.try_function_unfold_solve_closure(introduced_surfaces)?
                 {
                     return Ok(Some(closed));
                 }
@@ -5236,7 +5238,7 @@ impl<'a> Proof<'a> {
     /// `unfold` step. The recursive simplification attempt disables further
     /// function unfolding, so recursive definitions cannot turn this smart
     /// tactic into unbounded evaluation.
-    pub(super) fn try_function_unfold_simp_closure(
+    pub(super) fn try_function_unfold_solve_closure(
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
@@ -5249,7 +5251,7 @@ impl<'a> Proof<'a> {
         ) {
             return Ok(None);
         }
-        let Some(_scope) = SimpFallbackScope::enter(SimpFallback::FunctionUnfold) else {
+        let Some(_scope) = SolveFallbackScope::enter(SolveFallback::FunctionUnfold) else {
             return Ok(None);
         };
         let Some(surface_goal) = self.surface_goal() else {
@@ -5284,7 +5286,7 @@ impl<'a> Proof<'a> {
                 return Ok(Some(closed));
             }
             if let Some(closed) = proof
-                .try_simp_closure_after_direct_with_surfaces_and_function_unfold(
+                .try_solve_closure_after_direct_with_surfaces_and_function_unfold(
                     false,
                     introduced_surfaces,
                     false,
@@ -5365,7 +5367,7 @@ impl<'a> Proof<'a> {
                 {
                     for equality in equalities.iter().take(CONSTRUCTOR_EVALUATION_FACTS) {
                         if let Some((_, surface)) = proof
-                            .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                            .resolve_solve_premises(std::slice::from_ref(equality), &[])
                             .and_then(|mut spelled| spelled.pop())
                             && is_constructor_equation(&surface)
                             && !constructor_equations.contains(&surface)
@@ -5627,13 +5629,13 @@ impl<'a> Proof<'a> {
                 .expect("an upper-bound split condition is a strict comparison");
             let disequality_scope = then_branch.begin_have(disequality.clone())?;
             let disequality_done =
-                disequality_scope.try_simp_closure_with_surfaces(&then_surfaces)?;
+                disequality_scope.try_solve_closure_with_surfaces(&then_surfaces)?;
             let Some(disequality_done) = disequality_done else {
                 continue;
             };
             let then_branch = disequality_done.join()?;
             then_surfaces.push(disequality);
-            let Some(then_done) = then_branch.try_simp_closure_with_surfaces(&then_surfaces)?
+            let Some(then_done) = then_branch.try_solve_closure_with_surfaces(&then_surfaces)?
             else {
                 continue;
             };
@@ -5648,7 +5650,7 @@ impl<'a> Proof<'a> {
             let equality_scope = else_branch.begin_have(equality.clone())?;
             let nonstrict_scope = equality_scope.begin_have(nonstrict.clone())?;
             let nonstrict_done = nonstrict_scope
-                .try_simp_closure_with_surfaces(&else_surfaces)?
+                .try_solve_closure_with_surfaces(&else_surfaces)?
                 .or_else(|| {
                     // `x < pivot + 1` gives `x <= pivot` by arithmetic once
                     // `pivot + 1` is known not to wrap; a direct bound of
@@ -5674,7 +5676,7 @@ impl<'a> Proof<'a> {
             let equality_scope = equality_scope.join_nested(nonstrict_done)?;
             else_surfaces.push(nonstrict);
             let Some(equality_done) =
-                equality_scope.try_simp_closure_with_surfaces(&else_surfaces)?
+                equality_scope.try_solve_closure_with_surfaces(&else_surfaces)?
             else {
                 continue;
             };
@@ -5724,7 +5726,7 @@ impl<'a> Proof<'a> {
                     if transported.is_some() {
                         transported
                     } else {
-                        rewritten.try_simp_closure_with_surfaces(&else_surfaces)?
+                        rewritten.try_solve_closure_with_surfaces(&else_surfaces)?
                     }
                 }
                 Err(_) => None,
@@ -5734,7 +5736,7 @@ impl<'a> Proof<'a> {
             } else if rewritten_else.is_some() {
                 rewritten_else
             } else {
-                else_branch.try_simp_closure_with_surfaces(&else_surfaces)?
+                else_branch.try_solve_closure_with_surfaces(&else_surfaces)?
             };
             let Some(else_done) = else_done else {
                 continue;
@@ -5922,8 +5924,8 @@ impl<'a> Proof<'a> {
         // failures for this closure (`with_closure_failure_memo`).
         crate::instrumentation::measure_operation(
             "surface",
-            "simp closure",
-            "simp closure: snapshot transport",
+            "solve closure",
+            "solve closure: snapshot transport",
             || {
                 crate::kernel::with_closure_failure_memo(|| {
                     self.try_snapshot_transport_closure_candidates(surface_goal)
@@ -6063,7 +6065,7 @@ impl<'a> Proof<'a> {
         };
         let full = full.clone();
         let Some(full_surface) = self
-            .resolve_simp_premises(std::slice::from_ref(&full), &[])
+            .resolve_solve_premises(std::slice::from_ref(&full), &[])
             .and_then(|pairs| pairs.into_iter().next())
             .map(|(_, surface)| surface)
         else {
@@ -6168,7 +6170,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Close an implication whose algebraic guard is refuted by a checked
-    /// rewrite and direct normalization. A miss does not run general simp on
+    /// rewrite and direct normalization. A miss does not run general solve on
     /// the guard or select the implication's connected fact component.
     fn try_constructor_guard_refutation(&self) -> Result<Option<Self>, ClickError> {
         let Some(Proposition::Implies(guard, _)) = self.goal() else {
@@ -6209,7 +6211,7 @@ impl<'a> Proof<'a> {
     // frame for each. Each guard keeps its checked introduction, contradiction
     // probes, and named-premise extraction before the body is simplified.
     #[inline(never)]
-    fn try_implication_simp_closure(
+    fn try_implication_solve_closure(
         &self,
         surface_antecedent: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
@@ -6237,7 +6239,7 @@ impl<'a> Proof<'a> {
             let negated_antecedent = negate_click_proposition(&antecedent);
             if let Some(scope) =
                 attempt::candidate_outcome(base.begin_have(negated_antecedent.clone()))?
-                && let Some(proved) = scope.try_simp_closure()?
+                && let Some(proved) = scope.try_solve_closure()?
                 && let Some(with_opposite) = attempt::candidate_outcome(proved.join())?
                 && let Some(with_antecedent) =
                     attempt::candidate_outcome(with_opposite.apply_step(ProofStep::Intro))?
@@ -6317,7 +6319,7 @@ impl<'a> Proof<'a> {
                 antecedent = next;
                 continue;
             }
-            return introduced.try_simp_closure_with_surfaces(&available_surfaces);
+            return introduced.try_solve_closure_with_surfaces(&available_surfaces);
         }
     }
 
@@ -6326,7 +6328,7 @@ impl<'a> Proof<'a> {
     /// syntax is the view paired with the kernel goal in `PropositionObligation`.
     /// Keep branch-local proof/syntax temporaries out of this recursive frame.
     #[inline(never)]
-    fn try_structural_simp_closure_with_surfaces(
+    fn try_structural_solve_closure_with_surfaces(
         &self,
         surface_goal: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
@@ -6355,13 +6357,13 @@ impl<'a> Proof<'a> {
                     return Ok(None);
                 }
             }
-            return self.try_structural_and_simp_closure(introduced_surfaces);
+            return self.try_structural_and_solve_closure(introduced_surfaces);
         }
         if matches!(goal, Proposition::Or(_, _))
             && let Some((surface_left, surface_right)) =
                 surface_logical_children(surface_goal, false)
         {
-            return self.try_structural_or_simp_closure(
+            return self.try_structural_or_solve_closure(
                 &surface_left,
                 &surface_right,
                 introduced_surfaces,
@@ -6370,16 +6372,16 @@ impl<'a> Proof<'a> {
         if matches!(goal, Proposition::Implies(_, _))
             && let Some(surface_antecedent) = surface_implication_antecedent(surface_goal)
         {
-            return self.try_implication_simp_closure(&surface_antecedent, introduced_surfaces);
+            return self.try_implication_solve_closure(&surface_antecedent, introduced_surfaces);
         }
         match (surface_goal, goal) {
             (ClickProposition::Exists { name, .. }, goal @ Proposition::Exists { .. })
                 if quantified_external_range_goal(goal) =>
             {
-                self.try_structural_exists_simp_closure(name, introduced_surfaces)
+                self.try_structural_exists_solve_closure(name, introduced_surfaces)
             }
             (ClickProposition::ForAll { .. }, Proposition::ForAll { .. }) => {
-                self.try_structural_forall_simp_closure(surface_goal, introduced_surfaces)
+                self.try_structural_forall_solve_closure(surface_goal, introduced_surfaces)
             }
             // A predicate-call goal unfolds to its body, which the
             // structural arms and logical closers then work over. Repeat
@@ -6388,7 +6390,7 @@ impl<'a> Proof<'a> {
             (ClickProposition::PredicateCall { name, .. }, _)
                 if !self.focused_branch_unfolds().contains(name) =>
             {
-                self.try_structural_predicate_simp_closure(name, introduced_surfaces)
+                self.try_structural_predicate_solve_closure(name, introduced_surfaces)
             }
             _ => Ok(None),
         }
@@ -6397,7 +6399,7 @@ impl<'a> Proof<'a> {
     // These helpers preserve the dispatcher's search order and checked steps;
     // their stack storage is needed only for the selected connective.
     #[inline(never)]
-    fn try_structural_exists_simp_closure(
+    fn try_structural_exists_solve_closure(
         &self,
         name: &str,
         introduced_surfaces: &[ClickProposition],
@@ -6427,7 +6429,7 @@ impl<'a> Proof<'a> {
             else {
                 continue;
             };
-            if let Some(closed) = introduced.try_simp_closure_with_surfaces(introduced_surfaces)? {
+            if let Some(closed) = introduced.try_solve_closure_with_surfaces(introduced_surfaces)? {
                 return Ok(Some(closed));
             }
         }
@@ -6435,7 +6437,7 @@ impl<'a> Proof<'a> {
     }
 
     #[inline(never)]
-    fn try_structural_forall_simp_closure(
+    fn try_structural_forall_solve_closure(
         &self,
         surface_goal: &ClickProposition,
         introduced_surfaces: &[ClickProposition],
@@ -6444,13 +6446,13 @@ impl<'a> Proof<'a> {
             return Ok(Some(enumerated));
         }
         match attempt::candidate_outcome(self.apply_step(ProofStep::Intro))? {
-            Some(introduced) => introduced.try_simp_closure_with_surfaces(introduced_surfaces),
+            Some(introduced) => introduced.try_solve_closure_with_surfaces(introduced_surfaces),
             None => Ok(None),
         }
     }
 
     #[inline(never)]
-    fn try_structural_and_simp_closure(
+    fn try_structural_and_solve_closure(
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
@@ -6458,13 +6460,13 @@ impl<'a> Proof<'a> {
         let marker = split_proof.checkpoint();
         let Some(left) = split_proof
             .focus_branch(ids[0])?
-            .try_simp_closure_with_surfaces(introduced_surfaces)?
+            .try_solve_closure_with_surfaces(introduced_surfaces)?
         else {
             return Ok(None);
         };
         let Some(right) = left
             .focus_branch(ids[1])?
-            .try_simp_closure_with_surfaces(introduced_surfaces)?
+            .try_solve_closure_with_surfaces(introduced_surfaces)?
         else {
             return Ok(None);
         };
@@ -6472,7 +6474,7 @@ impl<'a> Proof<'a> {
     }
 
     #[inline(never)]
-    fn try_structural_predicate_simp_closure(
+    fn try_structural_predicate_solve_closure(
         &self,
         name: &str,
         introduced_surfaces: &[ClickProposition],
@@ -6480,13 +6482,13 @@ impl<'a> Proof<'a> {
         match attempt::candidate_outcome(
             self.apply_step(ProofStep::UnfoldPredicate(name.to_string())),
         )? {
-            Some(unfolded) => unfolded.try_simp_closure_with_surfaces(introduced_surfaces),
+            Some(unfolded) => unfolded.try_solve_closure_with_surfaces(introduced_surfaces),
             None => Ok(None),
         }
     }
 
     #[inline(never)]
-    fn try_structural_or_simp_closure(
+    fn try_structural_or_solve_closure(
         &self,
         surface_left: &ClickProposition,
         surface_right: &ClickProposition,
@@ -6498,7 +6500,8 @@ impl<'a> Proof<'a> {
                 else {
                     return Ok(None);
                 };
-                let Some(scope) = scope.try_simp_closure_with_surfaces(introduced_surfaces)? else {
+                let Some(scope) = scope.try_solve_closure_with_surfaces(introduced_surfaces)?
+                else {
                     return Ok(None);
                 };
                 let Some(joined) = attempt::candidate_outcome(scope.join())? else {
@@ -6563,7 +6566,10 @@ impl<'a> Proof<'a> {
             if values.len() != binder_names.len() {
                 return Ok(None);
             }
-            if matches!(normalize_proposition(&instance), SimpProposition::True) {
+            if matches!(
+                normalize_proposition(&instance),
+                NormalizedProposition::True
+            ) {
                 continue;
             }
             let Some(value_expressions) = values
@@ -6591,7 +6597,7 @@ impl<'a> Proof<'a> {
             // `enumerate()` reads the table through the same normalization.
             let surface_instance = match (&instance, &surface_instance) {
                 (Proposition::Implies(guard, _), ClickProposition::Implies(_, conclusion))
-                    if matches!(normalize_proposition(guard), SimpProposition::True) =>
+                    if matches!(normalize_proposition(guard), NormalizedProposition::True) =>
                 {
                     conclusion.as_ref().clone()
                 }
@@ -6601,7 +6607,7 @@ impl<'a> Proof<'a> {
             else {
                 return Ok(None);
             };
-            let Some(scope) = scope.try_simp_closure()? else {
+            let Some(scope) = scope.try_solve_closure()? else {
                 return Ok(None);
             };
             let Some(joined) = attempt::candidate_outcome(scope.join())? else {
@@ -6671,7 +6677,7 @@ impl<'a> Proof<'a> {
     /// requires its own exact premises from this subset; unrelated transitive
     /// search context need not be Surface-synthesizable. This is a read-only smart
     /// query: only the later `apply_step` calls may advance the proof.
-    pub(super) fn selected_simp_derivation(
+    pub(super) fn selected_solve_derivation(
         &self,
         exclude_exact_goal: bool,
     ) -> Option<(
@@ -6679,10 +6685,10 @@ impl<'a> Proof<'a> {
         PropositionDerivation,
         Vec<(Proposition, ClickProposition)>,
     )> {
-        self.selected_simp_derivation_with_surfaces(exclude_exact_goal, &[])
+        self.selected_solve_derivation_with_surfaces(exclude_exact_goal, &[])
     }
 
-    fn selected_simp_derivation_with_surfaces(
+    fn selected_solve_derivation_with_surfaces(
         &self,
         exclude_exact_goal: bool,
         introduced_surfaces: &[ClickProposition],
@@ -6691,15 +6697,15 @@ impl<'a> Proof<'a> {
         PropositionDerivation,
         Vec<(Proposition, ClickProposition)>,
     )> {
-        let (goal, derivation) = self.selected_simp_derivation_plan(exclude_exact_goal)?;
+        let (goal, derivation) = self.selected_solve_derivation_plan(exclude_exact_goal)?;
         let premise_pairs =
-            self.resolve_simp_premises(&derivation.context_premises(), introduced_surfaces)?;
+            self.resolve_solve_premises(&derivation.context_premises(), introduced_surfaces)?;
         Some((goal, derivation, premise_pairs))
     }
 
-    /// The derivation simp selected for the focused goal, before any of its
+    /// The derivation solve selected for the focused goal, before any of its
     /// premises is spelled.
-    fn selected_simp_derivation_plan(
+    fn selected_solve_derivation_plan(
         &self,
         exclude_exact_goal: bool,
     ) -> Option<(Proposition, PropositionDerivation)> {
@@ -6713,17 +6719,17 @@ impl<'a> Proof<'a> {
         let derivation = if exclude_exact_goal {
             self.facts()
                 .assumptions()
-                .derive_simp_proposition_without_exact_goal(&goal)
+                .derive_solve_proposition_without_exact_goal(&goal)
         } else {
-            match plan_simp_certificate(&goal, self.facts().assumptions()) {
-                Some(SimpEvidence::Derivation(derivation)) => Some(derivation),
+            match plan_solve_certificate(&goal, self.facts().assumptions()) {
+                Some(SolveEvidence::Derivation(derivation)) => Some(derivation),
                 _ => self.facts().assumptions().derive_atomic_proposition(&goal),
             }
         };
         let Some(derivation) = derivation else {
             if matches!(goal, Proposition::CMemoryLoadable { .. }) {
                 attempt::record_search_note(
-                    "simp view derivation selection",
+                    "solve view derivation selection",
                     "no retained-premise derivation was produced for the requested view",
                 );
             }
@@ -6734,7 +6740,7 @@ impl<'a> Proof<'a> {
 
     /// Spells each of `premises` in this context's recorded source forms,
     /// leaving out one that has none.
-    pub(in crate::surface::proof) fn resolve_simp_premises(
+    pub(in crate::surface::proof) fn resolve_solve_premises(
         &self,
         premises: &[Proposition],
         introduced_surfaces: &[ClickProposition],
@@ -6744,12 +6750,12 @@ impl<'a> Proof<'a> {
         // render an unbounded component speculatively. The recorded-path
         // candidate is tried first, and explicit `using` lists have their
         // own presentation/checking path.
-        if premises.len() > MAX_SIMP_SOURCE_PREMISES {
+        if premises.len() > MAX_SOLVE_SOURCE_PREMISES {
             if matches!(self.goal(), Some(Proposition::CMemoryLoadable { .. })) {
                 attempt::record_search_note(
-                    "simp view premise spelling",
+                    "solve view premise spelling",
                     format!(
-                        "budget exhausted: the selected view derivation contains {} premises; source spelling permits at most {MAX_SIMP_SOURCE_PREMISES}",
+                        "budget exhausted: the selected view derivation contains {} premises; source spelling permits at most {MAX_SOLVE_SOURCE_PREMISES}",
                         premises.len()
                     ),
                 );
@@ -6758,9 +6764,9 @@ impl<'a> Proof<'a> {
         }
         crate::instrumentation::measure_operation(
             "surface",
-            "simp closure",
-            "simp closure: premise spelling",
-            || self.resolve_simp_premises_unmeasured(premises, introduced_surfaces),
+            "solve closure",
+            "solve closure: premise spelling",
+            || self.resolve_solve_premises_unmeasured(premises, introduced_surfaces),
         )
     }
 
@@ -6778,7 +6784,7 @@ impl<'a> Proof<'a> {
         }
     }
 
-    fn resolve_simp_premises_unmeasured(
+    fn resolve_solve_premises_unmeasured(
         &self,
         premises: &[Proposition],
         introduced_surfaces: &[ClickProposition],
@@ -6837,7 +6843,7 @@ impl<'a> Proof<'a> {
                 return None;
             }
             if let Some(surface) = introduced_surfaces.iter().find(|surface| {
-                self.lower_surface_proposition(surface, "introduced simp premise")
+                self.lower_surface_proposition(surface, "introduced solve premise")
                     .is_ok_and(|lowered| {
                         lowered == *premise || condition_polarity_equivalent(&lowered, premise)
                     })
@@ -6919,9 +6925,9 @@ impl<'a> Proof<'a> {
             .collect::<Vec<_>>();
         if !crate::instrumentation::deadline_exceeded() && !unspelled.is_empty() {
             let strategy = if matches!(self.goal(), Some(Proposition::CMemoryLoadable { .. })) {
-                "simp view premise spelling"
+                "solve view premise spelling"
             } else {
-                "simp premise spelling"
+                "solve premise spelling"
             };
             attempt::record_search_premise_note(
                 strategy,
@@ -7132,7 +7138,7 @@ impl<'a> Proof<'a> {
                 return None;
             }
             let lower = |candidate: &ClickProposition| {
-                self.lower_surface_proposition_direct(candidate, "typed simp premise form")
+                self.lower_surface_proposition_direct(candidate, "typed solve premise form")
                     .ok()
             };
             if allow_recorded_pair
@@ -7344,8 +7350,8 @@ impl<'a> Proof<'a> {
             }
             && let Some(anchored) = crate::instrumentation::measure_operation(
                 "surface",
-                "simp premise",
-                "simp premise surface at recorded snapshots",
+                "solve premise",
+                "solve premise surface at recorded snapshots",
                 || {
                     synthesize_surface_at_recorded_snapshots(
                         kernel,
@@ -7367,8 +7373,8 @@ impl<'a> Proof<'a> {
             && let Some(view) = self.premise_fixed_state_view()
             && let Some(mixed) = crate::instrumentation::measure_operation(
                 "surface",
-                "simp premise",
-                "simp premise surface across recorded snapshots",
+                "solve premise",
+                "solve premise surface across recorded snapshots",
                 || {
                     synthesize_surface_with_recorded_snapshot(
                         kernel,
@@ -7430,7 +7436,7 @@ impl<'a> Proof<'a> {
                     let lowered = self
                         .lower_surface_proposition_direct(
                             surface,
-                            "typed quantified simp premise form",
+                            "typed quantified solve premise form",
                         )
                         .ok()?;
                     if quantified_equivalent_available_fact(kernel, std::slice::from_ref(&lowered))
@@ -7544,7 +7550,7 @@ impl<'a> Proof<'a> {
         match self.try_indexed_direct_equality_rewrite(exclude_goal_fact) {
             std::ops::ControlFlow::Break(closed) => Ok(closed),
             std::ops::ControlFlow::Continue(()) => {
-                let Some(_scope) = SimpFallbackScope::enter(SimpFallback::ConnectedFacts) else {
+                let Some(_scope) = SolveFallbackScope::enter(SolveFallback::ConnectedFacts) else {
                     return Ok(None);
                 };
                 self.try_connected_equality_chain_closure(RewriteClosers::GoalLocal {
@@ -7555,7 +7561,7 @@ impl<'a> Proof<'a> {
     }
 
     /// One indexed rewrite followed by direct closure of an algebraic
-    /// comparison, without general simp or connected-premise discovery.
+    /// comparison, without general solve or connected-premise discovery.
     pub(super) fn try_direct_model_equality_rewrite_closure(&self) -> Option<Self> {
         let goal = match self.goal()? {
             Proposition::Not(body) => body.as_ref(),
@@ -7898,7 +7904,7 @@ impl<'a> Proof<'a> {
         }
     }
 
-    pub(super) fn try_typed_atomic_simp_from_selected_premises(
+    pub(super) fn try_typed_atomic_solve_from_selected_premises(
         &self,
         premise_pairs: &[(Proposition, ClickProposition)],
     ) -> Option<Self> {
@@ -7916,13 +7922,13 @@ impl<'a> Proof<'a> {
             .iter()
             .map(|(kernel, _)| kernel.clone())
             .collect::<Vec<_>>();
-        match plan_simp_certificate(&goal, &assumptions_from_propositions(&restricted))? {
-            SimpEvidence::Normalize => self
+        match plan_solve_certificate(&goal, &assumptions_from_propositions(&restricted))? {
+            SolveEvidence::Normalize => self
                 .apply_step(ProofStep::Normalize)
                 .ok()
                 .filter(Proof::is_complete),
-            SimpEvidence::Derivation(derivation) => {
-                self.check_typed_atomic_simp_candidate(&goal, &derivation, premise_pairs)
+            SolveEvidence::Derivation(derivation) => {
+                self.check_typed_atomic_solve_candidate(&goal, &derivation, premise_pairs)
             }
         }
     }
@@ -8097,7 +8103,7 @@ impl<'a> Proof<'a> {
     /// this visits only selected equalities connected to that value and one
     /// exact upper-bound premise; it never tries every partially synthesizable
     /// context fact as a candidate step.
-    /// The surface spelling of an exact fact, looked up as `simp` resolves
+    /// The surface spelling of an exact fact, looked up as `solve` resolves
     /// the premises of a derivation it selected.
     fn unsigned_surface_fact(&self, kernel: &Proposition) -> Option<ClickProposition> {
         // A reconstructible spelling is not evidence that the fact is held.
@@ -8559,8 +8565,7 @@ impl<'a> Proof<'a> {
             };
             assumptions.states_required_goal(&negated)
         };
-        let candidates = assumptions
-            .disjunction_fact_propositions()
+        let candidates = crate::surface::planning::disjunction_candidates(assumptions)
             .filter(|disjunction| {
                 let disjuncts = flattened_disjuncts(disjunction);
                 disjuncts.iter().any(|disjunct| **disjunct == goal)
@@ -8659,7 +8664,7 @@ impl<'a> Proof<'a> {
                 let selected = focused_branch
                     .apply_step(ProofStep::Contradiction(assumed_surface.clone()))
                     .ok()
-                    .or_else(|| focused_branch.try_simp_closure().ok().flatten())
+                    .or_else(|| focused_branch.try_solve_closure().ok().flatten())
                     .or_else(|| {
                         let (goal_left, goal_right) =
                             surface_logical_children(focused_branch.surface_goal()?, false)?;
@@ -8748,7 +8753,7 @@ impl<'a> Proof<'a> {
                         .assumptions()
                         .clone()
                         .assume_proposition(conclusion.clone())
-                        .derive_simp_atomic_proposition(goal)
+                        .derive_solve_atomic_proposition(goal)
                         .is_some()
                 },
             )
@@ -9048,7 +9053,10 @@ impl<'a> Proof<'a> {
                         let mut conjuncts = Vec::new();
                         atomic_conjuncts(guard, &mut conjuncts);
                         for conjunct in conjuncts {
-                            if matches!(normalize_proposition(conjunct), SimpProposition::True) {
+                            if matches!(
+                                normalize_proposition(conjunct),
+                                NormalizedProposition::True
+                            ) {
                                 continue;
                             }
                             let exact = std::iter::once(conjunct.clone())
@@ -9057,7 +9065,7 @@ impl<'a> Proof<'a> {
                             let selected = exact.map(|fact| vec![fact]).or_else(|| {
                                 self.facts()
                                     .assumptions()
-                                    .derive_simp_atomic_proposition(conjunct)
+                                    .derive_solve_atomic_proposition(conjunct)
                                     .map(|derivation| derivation.context_premises())
                             });
                             let Some(selected) = selected else {
@@ -9116,7 +9124,7 @@ impl<'a> Proof<'a> {
                         .clone()
                         .assume_proposition(conclusion.clone());
                     let Some(transport_derivation) =
-                        transport_assumptions.derive_simp_atomic_proposition(goal)
+                        transport_assumptions.derive_solve_atomic_proposition(goal)
                     else {
                         continue;
                     };
@@ -9332,8 +9340,8 @@ impl<'a> Proof<'a> {
         transported.try_direct_logical_closure().ok().flatten()
     }
 
-    pub(super) fn try_typed_atomic_simp_closure(&self) -> Option<Self> {
-        let (goal, derivation, premise_pairs) = self.selected_simp_derivation(false)?;
+    pub(super) fn try_typed_atomic_solve_closure(&self) -> Option<Self> {
+        let (goal, derivation, premise_pairs) = self.selected_solve_derivation(false)?;
         // Resource unfolding records the body conjunction as one checked
         // fact.  Special derivations cite the exact relation leaf, so expose
         // that leaf through the ordinary checked `extract` transition before
@@ -9343,10 +9351,10 @@ impl<'a> Proof<'a> {
         match self.extract_special_conjunct_premises(&derivation, &premise_pairs) {
             Ok(Some(extracted)) if extracted.is_complete() => Some(extracted),
             Ok(Some(extracted)) => {
-                extracted.check_typed_atomic_simp_candidate(&goal, &derivation, &premise_pairs)
+                extracted.check_typed_atomic_solve_candidate(&goal, &derivation, &premise_pairs)
             }
-            Ok(None) => self.check_typed_atomic_simp_candidate(&goal, &derivation, &premise_pairs),
-            Err(()) => self.check_typed_atomic_simp_candidate(&goal, &derivation, &premise_pairs),
+            Ok(None) => self.check_typed_atomic_solve_candidate(&goal, &derivation, &premise_pairs),
+            Err(()) => self.check_typed_atomic_solve_candidate(&goal, &derivation, &premise_pairs),
         }
     }
 
@@ -9428,11 +9436,11 @@ impl<'a> Proof<'a> {
     /// This query cannot add facts or close the goal: it returns only the
     /// descendant obtained by checking the typed atomic decision through the
     /// ordinary Proof transitions.
-    pub(in crate::surface::proof) fn try_restricted_simp_closure(
+    pub(in crate::surface::proof) fn try_restricted_solve_closure(
         &self,
         surfaces: &[ClickProposition],
     ) -> Option<Self> {
-        if let Some(closed) = self.try_restricted_simp_closure_before_arithmetic(surfaces) {
+        if let Some(closed) = self.try_restricted_solve_closure_before_arithmetic(surfaces) {
             return Some(closed);
         }
         // What the closers above miss goes to the arithmetic engine, as
@@ -9489,7 +9497,7 @@ impl<'a> Proof<'a> {
             .filter(|closed| closed.is_complete() || closed.focused_discharged()))
     }
 
-    fn try_restricted_simp_closure_before_arithmetic(
+    fn try_restricted_solve_closure_before_arithmetic(
         &self,
         surfaces: &[ClickProposition],
     ) -> Option<Self> {
@@ -9521,7 +9529,7 @@ impl<'a> Proof<'a> {
             let mut proof = self.clone();
             for conjunct in [left, right] {
                 let scope = proof.begin_have(conjunct.as_ref().clone()).ok()?;
-                proof = scope.try_restricted_simp_closure(surfaces)?.join().ok()?;
+                proof = scope.try_restricted_solve_closure(surfaces)?.join().ok()?;
             }
             return proof
                 .apply_step(ProofStep::Assumption)
@@ -9538,7 +9546,7 @@ impl<'a> Proof<'a> {
         let mut proof = self.clone();
         for surface in surfaces {
             let kernel = proof
-                .lower_surface_proposition(surface, "restricted simp premise")
+                .lower_surface_proposition(surface, "restricted solve premise")
                 .ok()?;
             proof = proof.materialize_selected_resource_separation(&kernel)?;
             if !proof.facts().contains_top_level(&kernel)
@@ -9556,7 +9564,7 @@ impl<'a> Proof<'a> {
             .iter()
             .map(|surface| {
                 let kernel = proof
-                    .lower_surface_proposition(surface, "restricted simp premise")
+                    .lower_surface_proposition(surface, "restricted solve premise")
                     .ok()?;
                 // A listed premise that lowers to a context-free truth needs
                 // no ambient fact authority. Retaining it lets the restricted
@@ -9608,12 +9616,12 @@ impl<'a> Proof<'a> {
             .or_else(|| signed_strict_parts(goal))
             .is_some();
         let try_typed_derivation = || {
-            let SimpEvidence::Derivation(derivation) =
-                plan_simp_certificate(goal, &assumptions_from_propositions(&restricted))?
+            let SolveEvidence::Derivation(derivation) =
+                plan_solve_certificate(goal, &assumptions_from_propositions(&restricted))?
             else {
                 return None;
             };
-            proof.check_typed_atomic_simp_candidate(goal, &derivation, &premise_pairs)
+            proof.check_typed_atomic_solve_candidate(goal, &derivation, &premise_pairs)
         };
         let typed_first = signed_order || signed_definedness_operands(goal).is_some();
         if typed_first && let Some(closed) = try_typed_derivation() {
@@ -9714,7 +9722,7 @@ impl<'a> Proof<'a> {
             // An exact selected premise or context-free normalization may
             // close directly. An arbitrary ambient `assumption` must remain
             // invisible through this explicitly restricted boundary.
-            .or_else(|| proof.try_typed_atomic_simp_from_selected_premises(&premise_pairs))
+            .or_else(|| proof.try_typed_atomic_solve_from_selected_premises(&premise_pairs))
             // An `int32` or `int64` definedness goal: the listed premises that
             // bound an operand by a constant, checked by the `int32_defined` /
             // `int64_defined` rule. It runs after the operand-specific `int32`
@@ -9781,7 +9789,7 @@ impl<'a> Proof<'a> {
         None
     }
 
-    pub(super) fn check_typed_atomic_simp_candidate(
+    pub(super) fn check_typed_atomic_solve_candidate(
         &self,
         goal: &Proposition,
         derivation: &PropositionDerivation,
@@ -10091,7 +10099,7 @@ impl<'a> Proof<'a> {
         let Some(mut tactics) = tactics else {
             if matches!(goal, Proposition::CMemoryLoadable { .. }) {
                 attempt::record_search_note(
-                    "simp view certificate planning",
+                    "solve view certificate planning",
                     "no source certificate plan was produced from the resolved derivation premises",
                 );
             }
@@ -10114,7 +10122,7 @@ impl<'a> Proof<'a> {
         if matches!(goal, Proposition::CMemoryLoadable { .. })
             && let Err(error) = &checked
         {
-            attempt::record_search_note("simp view certificate checking", error.raw_summary());
+            attempt::record_search_note("solve view certificate checking", error.raw_summary());
         }
         let proof = attempt::candidate_outcome(checked)
             .ok()
@@ -10123,7 +10131,7 @@ impl<'a> Proof<'a> {
         proof.focused_discharged().then_some(proof)
     }
 
-    pub(super) fn simp_failure(&self) -> ClickError {
+    pub(super) fn solve_failure(&self) -> ClickError {
         // A range-loadability goal has a reason a reader can act on, in the
         // spelling they wrote it with. The lowered rendering below would show
         // them a byte extent over an internal pointer name instead.
@@ -10183,7 +10191,7 @@ impl<'a> Proof<'a> {
         let Proposition::ConditionIs(condition, expected) = self.goal()? else {
             return None;
         };
-        (crate::surface::checking::simp_condition_without_assumptions(condition)
+        (crate::surface::checking::normalize_condition_without_assumptions(condition)
             == Some(!*expected))
         .then(|| {
             "it is false at this point: the values its reads resolve to here refute it, so no \
@@ -10193,7 +10201,7 @@ impl<'a> Proof<'a> {
     }
 
     /// The one explanation for "the goal and an available fact spell alike
-    /// and read different versions", which is what a `simp` over a term that
+    /// and read different versions", which is what a `solve` over a term that
     /// reads memory most often fails on.
     pub(super) fn describe_goal_version_mismatch(&self) -> Option<String> {
         let goal = self.goal()?;
@@ -10253,7 +10261,7 @@ impl<'a> Proof<'a> {
             let lowered = self.lower_cited_surface_proposition(premise, "induction premise")?;
             // The explicit form discharges a premise that evaluates to true,
             // such as `0 <= n - 1u64`, without evidence; cite none for it.
-            if matches!(normalize_proposition(&lowered), SimpProposition::True) {
+            if matches!(normalize_proposition(&lowered), NormalizedProposition::True) {
                 continue;
             }
             // A native premise at the argument's arithmetic, `0 <= n - 1`, is
@@ -10550,7 +10558,7 @@ impl<'a> Proof<'a> {
                 if matches!(
                     tactic,
                     ProofTactic::Assumption
-                        | ProofTactic::Simp
+                        | ProofTactic::Solve
                         | ProofTactic::Normalize
                         | ProofTactic::NormalizeUsing(_)
                 ) {
@@ -10570,7 +10578,7 @@ impl<'a> Proof<'a> {
                 // `solve() using` is refused here where a bare `solve()`
                 // is not, so it is named by its whole spelling.
                 let name = match tactic {
-                    ProofTactic::SimpUsing(_) => "solve() using",
+                    ProofTactic::SolveUsing(_) => "solve() using",
                     tactic => tactic_name(tactic),
                 };
                 return Err(proof.step_error(format!(
@@ -10593,13 +10601,13 @@ impl<'a> Proof<'a> {
                     | ProofTactic::LetSatisfy(_)
             ) && tactics
                 .get(index + 1)
-                .is_some_and(|next| !matches!(next, ProofTactic::Assumption | ProofTactic::Simp));
+                .is_some_and(|next| !matches!(next, ProofTactic::Assumption | ProofTactic::Solve));
             let retain_application = retain_application
                 || (matches!(
                     tactic,
                     ProofTactic::Extract(_) | ProofTactic::ApplyTheorem(_)
                 ) && tactics.get(index + 1).is_some_and(|next| {
-                    !matches!(next, ProofTactic::Assumption | ProofTactic::Simp)
+                    !matches!(next, ProofTactic::Assumption | ProofTactic::Solve)
                 }));
             let before_application = retain_application.then(|| proof.clone());
             match tactic {
@@ -10612,11 +10620,11 @@ impl<'a> Proof<'a> {
                 ProofTactic::ApplyTheorem(application) => {
                     proof = proof.apply_theorem_application(application)?;
                 }
-                ProofTactic::Simp => {
-                    let mut search = attempt::search_scope("written simp");
+                ProofTactic::Solve => {
+                    let mut search = attempt::search_scope("written solve");
                     let (selected, checks) =
                         crate::surface::proof_diagnostics::capture_check_observations(|| {
-                            proof.try_simp_closure()
+                            proof.try_solve_closure()
                         });
                     let selected = match selected {
                         Ok(selected) => selected,
@@ -10635,17 +10643,17 @@ impl<'a> Proof<'a> {
                             ).with_search_failures(search.finish()));
                         }
                         return Err(proof
-                            .simp_failure()
+                            .solve_failure()
                             .with_check_observations(checks)
                             .with_search_failures(search.finish()));
                     };
                     search.succeed();
                     proof = closed;
                 }
-                ProofTactic::SimpUsing(simp) => {
+                ProofTactic::SolveUsing(solve) => {
                     let (selected, checks) =
                         crate::surface::proof_diagnostics::capture_check_observations(|| {
-                            proof.try_restricted_simp_closure(&simp.premises)
+                            proof.try_restricted_solve_closure(&solve.premises)
                         });
                     check_verification_deadline()?;
                     let Some(closed) = selected else {
@@ -10661,7 +10669,7 @@ impl<'a> Proof<'a> {
                         // premises fall short, as `arithmetic() using`
                         // reported it.
                         let arithmetic = match proof
-                            .apply_step(ProofStep::ArithmeticUsing(simp.premises.clone()))
+                            .apply_step(ProofStep::ArithmeticUsing(solve.premises.clone()))
                         {
                             Err(error) => {
                                 // The reason without its location prefix,
@@ -10704,8 +10712,8 @@ impl<'a> Proof<'a> {
                             };
                             Some(selected)
                         }
-                        SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
-                            scope.try_simp_closure()?
+                        SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
+                            scope.try_solve_closure()?
                         }
                         SourceProof::Script(body) => scope.try_authoritative_linear_script(body)?,
                     };
@@ -11461,7 +11469,7 @@ impl<'a> Proof<'a> {
         if proof.focused_discharged() {
             return Ok(Some(proof));
         }
-        if let Some(closed) = proof.try_simp_closure_with_surfaces(&source_leaves)? {
+        if let Some(closed) = proof.try_solve_closure_with_surfaces(&source_leaves)? {
             return Ok(Some(closed));
         }
         // The leaves hold at function entry. A conjunct this frontier does
@@ -11501,7 +11509,7 @@ impl<'a> Proof<'a> {
         if !carried_any {
             return Ok(None);
         }
-        proof.try_simp_closure_with_surfaces(&source_leaves)
+        proof.try_solve_closure_with_surfaces(&source_leaves)
     }
 
     /// Proves `conjunct` at this frontier from its function-entry form: a
@@ -11621,16 +11629,16 @@ impl<'a> Proof<'a> {
 /// and each opening must hold one of them.
 const MAX_AUTO_OPENINGS_PER_STATEMENT: usize = 4;
 
-/// How many variables simp's bound selection visits from a goal's own
+/// How many variables solve's bound selection visits from a goal's own
 /// variables before it stops following bounds to further variables.
 const MAX_BOUND_VARIABLES: usize = 8;
 
 thread_local! {
-    static ACTIVE_SIMP_FALLBACKS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
+    static ACTIVE_SOLVE_FALLBACKS: std::cell::Cell<u8> = const { std::cell::Cell::new(0) };
 }
 
 #[derive(Clone, Copy)]
-enum SimpFallback {
+enum SolveFallback {
     FunctionUnfold = 2,
     ConnectedFacts = 4,
     ArithmeticSubgoal = 8,
@@ -11640,15 +11648,15 @@ enum SimpFallback {
 /// A candidate can try the other fallback and descend through logical
 /// structure, but cannot restart a fallback already evaluating that candidate.
 /// The outer rewrite search still owns its equality chain and closing probes.
-struct SimpFallbackScope(SimpFallback);
+struct SolveFallbackScope(SolveFallback);
 
-impl SimpFallbackScope {
-    fn active(fallback: SimpFallback) -> bool {
-        ACTIVE_SIMP_FALLBACKS.with(|active| active.get() & fallback as u8 != 0)
+impl SolveFallbackScope {
+    fn active(fallback: SolveFallback) -> bool {
+        ACTIVE_SOLVE_FALLBACKS.with(|active| active.get() & fallback as u8 != 0)
     }
 
-    fn enter(fallback: SimpFallback) -> Option<Self> {
-        ACTIVE_SIMP_FALLBACKS.with(|active| {
+    fn enter(fallback: SolveFallback) -> Option<Self> {
+        ACTIVE_SOLVE_FALLBACKS.with(|active| {
             let bit = fallback as u8;
             if active.get() & bit != 0 {
                 return None;
@@ -11659,9 +11667,9 @@ impl SimpFallbackScope {
     }
 }
 
-impl Drop for SimpFallbackScope {
+impl Drop for SolveFallbackScope {
     fn drop(&mut self) {
-        ACTIVE_SIMP_FALLBACKS.with(|active| active.set(active.get() & !(self.0 as u8)));
+        ACTIVE_SOLVE_FALLBACKS.with(|active| active.set(active.get() & !(self.0 as u8)));
     }
 }
 
@@ -11698,7 +11706,7 @@ impl Drop for UpperBoundSplitScope {
     }
 }
 
-/// How many recently recorded program points simp offers, beside function
+/// How many recently recorded program points solve offers, beside function
 /// entry, as the source of a transport of its goal.
 const MAX_TRANSPORT_SOURCE_POINTS: usize = 8;
 
@@ -11847,7 +11855,7 @@ fn quantified_external_range_goal(goal: &Proposition) -> bool {
 /// Collect conjunction leaves for a retained Have without allowing a deeply
 /// nested source proposition to evade the verifier's work bound.  The full
 /// proposition remains the first closure surface; each leaf is then offered
-/// to the existing checked simp closure.
+/// to the existing checked solve closure.
 pub(in crate::surface::proof) fn collect_bounded_surface_conjunct_leaves(
     proposition: &ClickProposition,
 ) -> Result<Vec<ClickProposition>, ClickError> {
@@ -12780,7 +12788,7 @@ fn unsigned_order_parts(
 }
 
 /// Closes a `have` of a step requirement the way smart execution does: the
-/// bounded simp closure over the requirement and its conjunct leaves, and for
+/// bounded solve closure over the requirement and its conjunct leaves, and for
 /// an `int32` existential a witness of 0 first. This is the implicit `auto`
 /// a step runs for an obligation nothing written proves.
 pub(in crate::surface::proof) fn close_requirement_have_by_auto<'a>(
@@ -12789,7 +12797,7 @@ pub(in crate::surface::proof) fn close_requirement_have_by_auto<'a>(
 ) -> Result<Option<ProofScope<'a>>, ClickError> {
     let mut surfaces = vec![surface.clone()];
     surfaces.extend(collect_bounded_surface_conjunct_leaves(surface)?);
-    let closed = have.try_simp_closure_with_surfaces(&surfaces)?;
+    let closed = have.try_solve_closure_with_surfaces(&surfaces)?;
     if closed.is_some() {
         return Ok(closed);
     }
@@ -12810,7 +12818,7 @@ pub(in crate::surface::proof) fn close_requirement_have_by_auto<'a>(
             ))),
         ))))?;
     match witnessed {
-        Some(witnessed) => witnessed.try_simp_closure_with_surfaces(&surfaces),
+        Some(witnessed) => witnessed.try_solve_closure_with_surfaces(&surfaces),
         None => Ok(None),
     }
 }

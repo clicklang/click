@@ -549,7 +549,7 @@ finite instantiation, the case split over disjunction facts, the singleton
 substitution — is Surface Click planning in
 `src/surface/planning/proposition_search.rs`. It advances state only through
 checked kernel operations (`assume_proposition`, `restricted_to_facts`,
-`with_only_proposition_facts`, `without_exact_fact`) and public exact
+`with_only_proposition_facts`) and public exact
 queries. The checker, `PropositionDerivation::check`, stays in the kernel:
 it is local, deterministic, and bounded by the derivation it was handed.
 

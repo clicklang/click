@@ -223,3 +223,65 @@ fn integer_division_synthesis_refuses_shared_dag_expansion_within_its_budget() {
         });
     }
 }
+
+#[test]
+fn allocation_result_names_use_one_index_as_recorded_history_grows() {
+    let mut samples = Vec::new();
+    let mut insertion_samples = Vec::new();
+    for count in [4usize, 16, 64, 128] {
+        let source = format!(
+            "void f() {{ int32* p; {} }}",
+            "p = malloc(4);".repeat(count)
+        );
+        let function = crate::languages::c::syntax::parse_function(&source).unwrap();
+        let layout =
+            crate::surface::lowering::SourceExecutionLayout::for_function(&function).unwrap();
+        let mut snapshots = RecordedSnapshots::new().with_source_layout(layout.clone());
+        let mut last = Pointer::null();
+        let mut last_region = 0;
+        let mut insertion_work = 0;
+        for n in 0..count {
+            last = Pointer {
+                block: PointerBlock::Heap(990_000 + n as u64),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            last_region = layout
+                .source_path_region(&[SourcePathStep::Statement(n + 1)], ProgramPointKind::Exit)
+                .unwrap();
+            let (_, work) = crate::persistent::measure_persistent_work(|| {
+                snapshots.insert(
+                    ProgramPointRef {
+                        region: CodeRegionRef::Region(last_region),
+                        kind: ProgramPointKind::Exit,
+                    },
+                    CState::new().with_local(
+                        "p",
+                        CValue::typed_pointer(last.clone(), CType::Int32Pointer),
+                    ),
+                )
+            });
+            insertion_work += work;
+        }
+        insertion_samples.push((count, insertion_work));
+        let ((answer, work), indexed) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                snapshots.allocation_result(&last)
+            })
+        });
+        assert_eq!(answer, Some(CodeRegionRef::Region(last_region)));
+        assert_eq!(work, 1);
+        samples.push(indexed);
+    }
+    let (base_count, base_work) = insertion_samples[0];
+    assert!(base_work > 0);
+    assert!(
+        insertion_samples
+            .iter()
+            .all(|(count, work)| { *work <= base_work * count / base_count * 4 }),
+        "{insertion_samples:?}"
+    );
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] * 4 + 8),
+        "{samples:?}"
+    );
+}

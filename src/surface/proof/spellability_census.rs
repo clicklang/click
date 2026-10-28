@@ -278,7 +278,7 @@ void pack(struct node* p, struct node* id) {
     #[test]
     fn a_rewritten_goal_with_no_written_template_is_spelled() {
         // `unfold(Adds)` opens a contract's obligation, which no written
-        // proposition spells; the goals the rewrites inside `simp` leave are
+        // proposition spells; the goals the rewrites inside `solve` leave are
         // spelled from the kernel goal instead.
         let c = "int32 add3(int32 x) { return x + 3; }";
         let click = r#"verifying "f.c";

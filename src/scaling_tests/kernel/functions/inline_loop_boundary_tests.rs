@@ -6,9 +6,9 @@ use super::*;
 
 #[test]
 fn symbolic_inline_loop_refusal_work_is_independent_of_unroll_allowance() {
-    let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();
     for limit in [4usize, 64, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
         let mut budget = ExecutionBudget::new();
         budget.loop_unrolls = limit;
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {

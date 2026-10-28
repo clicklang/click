@@ -330,6 +330,7 @@ enum Node {
     PointerRead((u32, u32), u64, crate::kernel::LoadKind),
     Footprint(u64, u64),
     Int32(MachineAtom),
+    Int32Read((u32, u32), u64),
     Int32Add(u64, u64),
     Int32Binary(Int32Binary, u64, u64),
     Int32Unary(Int32Unary, u64),
@@ -1457,6 +1458,7 @@ impl TermClasses {
             Node::PointerRead(snapshot, address, kind) => {
                 Some(Application::PointerRead(*snapshot, *address, *kind))
             }
+            Node::Int32Read(snapshot, address) => Some(Application::Int32Load(*snapshot, *address)),
             Node::Footprint(start, end) => Some(Application::Footprint(*start, *end)),
             Node::Add(left, right) => Some(Application::Add(*left, *right)),
             Node::Int32Add(left, right) => Some(Application::Int32Add(*left, *right)),
@@ -1515,9 +1517,9 @@ impl TermClasses {
         let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
             return;
         };
-        // This is the registered defining snapshot, not the mutable live
-        // origin. Canonicalization already justified any projection; this
-        // graph neither walks history nor equates distinct snapshot IDs.
+        // Start at the registered defining snapshot, not the mutable live
+        // origin. Registration below also retains the exact source equation
+        // already recorded by a canonical projection's producer.
         self.registered_int32_loads = self.registered_int32_loads.with_value(id);
         let origin = load_origin(variable, &memory);
         self.pending_loads.push((id, memory, pointer, origin));
@@ -1567,6 +1569,17 @@ impl TermClasses {
                 .0;
             let address = self.read_address(address);
             self.register_application(id, Application::Int32Load(memory.read_identity(), address));
+            // Canonicalization recorded this exact cell projection when it
+            // constructed the read. Retain both applications: the named read
+            // and its source at the same address. This is one indexed edge,
+            // not the mutable observation origin or a walk through history.
+            if let Some(source) =
+                crate::kernel::prelude::canonical_load_projection_source(&memory, &pointer)
+            {
+                let source_read =
+                    self.intern_node(Node::Int32Read(source.read_identity(), address));
+                self.close_with_affine_definition(vec![(id, source_read)], true);
+            }
             self.pending_cell_reads.push(PendingCellRead {
                 read: id,
                 memory,
@@ -3056,7 +3069,8 @@ mod tests {
         assert!(!restricted.equality_graph.are_offsets_equal(&a, &c));
         assert!(restricted.equality_graph.are_offsets_equal(&a, &b));
         let reversed = context.clone().assume_condition(bc, false);
-        assert!(!reversed.equality_graph.are_offsets_equal(&a, &c));
+        assert!(reversed.is_inconsistent());
+        assert!(reversed.equality_graph.are_offsets_equal(&a, &c));
         assert!(context.equality_graph.are_offsets_equal(&a, &c));
     }
 

@@ -510,30 +510,6 @@ impl PureFactContext {
                 if order_holds_at_int32_extreme(&left, &right, false) {
                     return Some(true);
                 }
-                if let Some(base) = left.add_const_base(1)
-                    && self.condition_facts_with_side(&base).into_iter().any(
-                        |(condition, value)| {
-                            let (
-                                ConditionTerm::Compare {
-                                    format: MachineIntegerType::Int32,
-                                    relation: CompareRelation::LessThan,
-                                    left: fact_left,
-                                    right: fact_right,
-                                },
-                                true,
-                            ) = (condition, value)
-                            else {
-                                return false;
-                            };
-                            fact_left.as_ref() == &base
-                                && bitvector_terms_proven_equal_for_memory_resolution(
-                                    fact_right, &right, self,
-                                )
-                        },
-                    )
-                {
-                    return Some(true);
-                }
                 if self.difference_graph_proves_order(&left, &right, false)
                     || left.add_const_base(1).is_some_and(|base| {
                         self.has_condition_fact(
@@ -766,14 +742,7 @@ impl PureFactContext {
     /// `term < INT_MAX`, which is what discharges `term + 1` overflow
     /// is checked from exact facts alone.
     pub(in crate::kernel) fn has_exact_strict_upper_bound(&self, term: &Bitvector32Term) -> bool {
-        // An order fact with `term` as its lower side has `term` as a side,
-        // so the facts filed under it are every candidate.
-        self.condition_facts_with_side(term)
-            .into_iter()
-            .any(|(condition, value)| {
-                condition_as_order_fact(condition, *value)
-                    .is_some_and(|(lower, _, strict)| strict && &lower == term)
-            })
+        self.checked_order_bounds.strict_upper(term).is_some()
     }
 
     /// Whether the difference graph of these facts proves `left < right`
@@ -916,7 +885,7 @@ impl PureFactContext {
     /// chain `left` up to `right`. Each step keeps the proposition the context holds, as
     /// [`Self::exact_signed_order_path_evidence`] does for `int32`. The chain
     /// meets `right` at the same canonical term; a constant connection is
-    /// left to other rules, since `simp` writes no lemma for it.
+    /// left to other rules, since `solve` writes no lemma for it.
     pub(in crate::kernel) fn exact_wide_order_path_evidence(
         &self,
         left: &Bitvector32Term,
@@ -2647,7 +2616,10 @@ mod slice_index_tests {
             Bitvector32Term::Constant(0),
             Bitvector32Term::uint32_from_64(value),
         );
-        assert_eq!(context.decide_condition_for_simp(&goal), Some(true));
+        assert_eq!(
+            context.selected_for_test().decide_selected_condition(&goal),
+            Some(true)
+        );
     }
 
     #[cfg(test)]
@@ -2720,7 +2692,7 @@ mod exact_order_path_tests {
         right: &Bitvector32Term,
         require_strict: bool,
     ) -> bool {
-        let order_facts = context.condition_order_facts();
+        let order_facts = context.selected_for_test().condition_order_facts();
         let mut stack = vec![(left.clone(), false)];
         let mut seen = BTreeSet::new();
         while let Some((current, strict_so_far)) = stack.pop() {

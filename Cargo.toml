@@ -96,3 +96,11 @@ x86_64-apple-darwin = ["click"]
 x86_64-unknown-linux-gnu = ["click"]
 x86_64-unknown-linux-musl = ["click"]
 x86_64-pc-windows-msvc = ["click"]
+
+[build-dependencies]
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = "1"
+
+[dev-dependencies]
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = "1"

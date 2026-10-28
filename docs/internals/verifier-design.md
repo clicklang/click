@@ -41,7 +41,7 @@ removed, so it has to stay small.
 | Simple tactics | Apply one checked step to a persistent proof state | fast | `src/kernel/proof/object.rs`, `src/surface/proof/proof_object/`, `src/surface/proof/checked_drivers/` |
 | Certificates | Check explicit arithmetic certificates and contract claims | fast | `src/kernel/proof/{integer_arithmetic,signed_arithmetic,arithmetic_special}.rs`, `src/surface/proof_certificate.rs` |
 | Termination | Plan recursion heights over the call graph, then check them | fast | `src/kernel/termination.rs` |
-| Smart tactics | `solve`, `step_until`, the implicit tail and its closer | slow | `src/surface/checking/{arithmetic_engine,simp,simplex}.rs`, `src/surface/proof/{smart_closures,smart_execution,selected_arithmetic}.rs` |
+| Smart tactics | `solve`, `step_until`, the implicit tail and its closer | slow | `src/surface/checking/{arithmetic_engine,simplex}.rs`, `src/surface/proof/{smart_closures,smart_execution,selected_arithmetic}.rs` |
 | Search helpers | Fill an elided premise, fact, resource instance, or guard | slow | `src/surface/planning/proposition_search.rs`, `src/surface/proof/fixed_state_proofs/` |
 | Expansion and printing | Write a slow-part result as fast-part tactics, and print source | tools | `src/surface/expansion.rs`, `src/surface/printing.rs` |
 | Tools and budgets | `profile`, `audit`, traces, work accounting, and budgets | tools | `src/bin/`, `src/instrumentation.rs` |
@@ -90,6 +90,127 @@ so a scan shows up in scaling tests and tactic budgets wherever it is written.
 Operations in the fast part that scan today are listed, with the options for
 each, in
 the "Fast-part scans" section of [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
+
+## Enforced search access
+
+`SearchPermission` is an opaque capability constructed only inside
+`surface::planning`. Ambient `scan_for_search` and the planner's atomic,
+condition, proposition and disjunction views require it. Checking can use
+indexed queries and explicit inputs without that capability. The smart
+closer's disjunction adapter keeps capability construction inside planning.
+The dedicated diagnostic API returns a bounded sample (at most 32 facts)
+and a total count; it exposes no ambient iterator. Viewability witness enumeration
+requires planner permission and charges every visited fact. Viewability
+diagnostics use the block-keyed candidate index.
+
+Every Cargo build runs `build_support/search_boundary.rs`. It follows Rust
+module declarations, skips test-only modules, and rejects kernel dependencies
+on Surface code. It also pins the functions and reference counts allowed to
+use the diagnostic sampler. `SelectedFacts` separates atomic reasoning from the
+ambient fact store: checking constructs it from an explicit proposition list;
+planning may reuse a persistent context through `for_search`, which requires
+`SearchPermission`. The type has no mutable dereference or unchecked context
+constructor. Retained certificate leaves construct it from their named premises.
+Normalization lives in `surface/checking/normalization.rs`.
+Branches retain their parent fact context and extend a cheap persistent clone.
+An opposite exact condition assumption records `false`; it never replaces the
+original condition or deletes its index entries. On a context holding this exact false
+premise, scalar specification addition, subtraction, multiplication, division and
+remainder construct their terms without ambient facts: falsehood discharges their
+arithmetic guards. Consistent contexts retain their usual definedness guards and
+provenance, and executed C keeps its undefined-behavior checks.
+Exact fact withdrawal is test-only, for negative controls that remove a premise;
+it is not a production backtracking operation. The build boundary also rejects
+production references to the withdrawal entry points. Tests may pay for index
+rebuilds after removing a premise; those helpers have no fast-checking guarantee.
+`tests/search_boundary.rs` checks rejected dependencies, aliases, method
+references, macro tokens, extra diagnostic scans, and capability privacy.
+
+Direct order queries read persistent constant-bound extrema and strict-upper
+witnesses keyed by the written or canonical endpoint. Admission updates only the
+new fact's endpoints; queries do not filter an endpoint's condition bucket.
+The build boundary rejects condition-side enumeration in order/overflow helpers.
+General interval reconstruction and anchored equality still have separate audit
+targets in the roadmap.
+
+Prepared memory-access checking receives `SelectedMemoryAccess`: one indexed
+supplier and its retained graph checkpoint, with no candidate iterator. Read,
+write, storage, pointer-position and kept-frame checks validate that supplier's
+quantity, provenance and coverage; a refusal does not try another supplier.
+Whole-scalar consumption also requires uniqueness, established by inspecting at
+most two indexed entries. Explicit footprint composition retains its separate
+output-sensitive interface. The resource checker cannot import or call the raw
+access-candidate API. Object-provenance queries use the object-identity index's
+nonempty witness or singleton symbolic supplier. Designation/opaque-extent
+fallback comparisons use a singleton direct alias after indexed equality fails.
+Framed pointer-value recovery requires one address alias and one full-pointer
+source in that address bucket; multiple snapshots do not authorize a hidden
+source search. Complete-read, snapshot, designation and extent checks still
+apply to the selected source. The direct order, supplier, and provenance-source
+lookup stages have their own `CheckingWorkScope`, charged to one explicit query
+key. These scopes do not excuse scans or cover general memory-history traversal.
+
+Selected-context construction starts from an empty fact store, retaining only
+reasoning policy, variable allocation bounds and typing metadata queried by the
+selected load variables. It never clears the inherited graph's pointer sources.
+Step-refusal pure-fact listings use the capped sampler and identify truncation;
+conversion-condition refusals use indexed atomic checks and structural
+reflexive guards (including under native int32 universal binders), never general proof search. The build boundary checks these diagnostic entry points.
+
+Viewability checking looks up an exactly stated view directly. A candidate
+address-shape bucket supplies implicit evidence only when it contains one fact;
+an ambiguous bucket is refused without iteration. The planner's
+`search_memory_loadable_candidates_for_base` requires `SearchPermission` and
+charges each visited candidate. Search can choose a covering view and expansion
+writes `transport(source, target) using { ... }`; explicit selection checks in
+a restricted context. The build boundary rejects kernel calls to that search
+entry point and rejects the test-only whole-block census. The atomic coverage
+fallback uses the same checked candidate lookup. Checked view lookup uses
+structural offsets, the maintained affine class coordinate and its unique
+concrete storage anchor; it never enumerates the alias class. A singleton
+selected source may have another block spelling: checking aligns the two
+supplied addresses through the graph and retains bounds, lifetime and
+structural-distinctness checks. Preserve existing same-block endpoint expressions
+unless the addresses are already equal; coordinate projection must not obscure
+their stated bounds. Other spellings require search permission.
+The build boundary rejects alias enumeration in these migrated view queries.
+
+Condition-fact queries use the maintained truth index and singleton canonical
+shape/variable buckets. Atomic memory-order queries use indexed truth for both
+orientations, retaining the comparison carrier; compound memory queries still
+require their canonical key or an explicit spelling. No query enumerates scalar
+classes to select a premise. Other condition-side bucket helpers remain audit
+targets.
+
+Read-validity evidence uses exact typed/snapshot membership and singleton
+address buckets under structural, affine and concrete storage keys. A selected
+source retains type, address, no-write and lifetime checks. Alternate-source
+enumeration requires planner permission. Kept-frame lookup uses the prepared
+address index; its raw fallback accepts singleton structural/coordinate buckets
+or a unique directly stated alias, never the rest of the block. Opaque reads
+do not trigger history resolution just to discover a supplier. The build boundary
+pins these query paths; remaining resource-index audits are in the roadmap.
+
+`instrumentation::CheckingWorkScope` gives a checked operation its own allowance
+inside or outside a tactic. Atomic memory-condition matching measures one
+comparison of two scalar atoms; its allowance is independent of enclosing
+search. Compound terms and offsets need a separate explicit-size measure before
+receiving the same coverage. Selected-context construction installs it with the
+number of selected entries; ambient fact count cannot enlarge the allowance.
+A scope exhaustion names the checked operation and enclosing tactic/source site
+and reports an engine performance defect. Every unit still charges the enclosing
+tactic and whole-run budgets once, so many cheap checked alternatives can exhaust
+search without a checker defect. Nested scope allowances do not add duplicate
+units to profiling. This is initially installed on selected-context construction;
+it does not yet classify every checker reached by a smart tactic. Further sites
+must name their explicit input/output measure and retain scaling regressions.
+
+This is an incremental boundary, not a proof of complexity or a complete Rust
+dependency resolver. Upkeep APIs and ordinary collections still need auditing.
+Do not evade the boundary by relabelling a scan as upkeep, adding a re-export,
+or widening an allowance. Review any boundary change with the same design
+check as the reasoning it permits. Scaling tests remain necessary for indexed
+buckets and repeated work.
 
 ## The slow-part rule
 
@@ -176,3 +297,23 @@ common mechanism names belong to.
 - [Testing](testing.md): how to write a scaling test and measure deterministic
   work.
 - [Architecture](architecture.md) and [Kernel](kernel.md): the code layout.
+
+### Direct intervals and equality evidence
+
+Fast signed-interval checking reads maintained endpoint extrema and scalar-class
+summaries, then recurses only over the written expression. It does not walk a
+symbolic order component: derive and state an intermediate bound explicitly
+when a goal needs a chain. Contiguous written disequalities are maintained as
+excluded-value runs, so trimming interval endpoints takes indexed lookups.
+
+Constant-equality evidence selects numeric extrema and at most one unambiguous
+symbolic source per direction. Anchored memory equality checks exact membership
+or one singleton source per written endpoint, with the same memory-resolution
+and snapshot checks. Ambiguity declines; it does not enumerate the endpoint
+bucket. For a transported read's constant value, prove the current read equals
+the saved read first, then normalize using that equality and the saved value.
+This explicitly supplies the connection that an ambiguous constant endpoint
+bucket cannot choose. Build-time boundary checks reject the removed enumeration routes, and
+`condition_buckets` scaling regressions grow both related and unrelated state.
+These guarantees do not yet cover all arithmetic premise collectors; remaining
+audits are tracked in `roadmap/smart-tactics.md`.

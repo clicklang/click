@@ -101,8 +101,8 @@ some of those run to over 1,000 characters.
 | Technique | Dafny | Verus | Viper / VeriFast | Lean / Coq / Isabelle | Click |
 |---|---|---|---|---|---|
 | One verification condition covers every path; no per-step script | yes | yes | yes | no | no; each arm is scripted |
-| Congruence and linear arithmetic per step | SMT | SMT | SMT | `simp`, `omega` | `auto` ([smt-auto-stage1.md](smt-auto-stage1.md)) |
-| Recursive spec functions unfold automatically | fuel, default 1–2 levels | fuel | heuristics | `simp [f]` equation lemmas | explicit `unfold` |
+| Congruence and linear arithmetic per step | SMT | SMT | SMT | `solve`, `omega` | `auto` ([smt-auto-stage1.md](smt-auto-stage1.md)) |
+| Recursive spec functions unfold automatically | fuel, default 1–2 levels | fuel | heuristics | `solve [f]` equation lemmas | explicit `unfold` |
 | Heap facts carry across steps (framing) | `modifies`/`reads` | ownership types | permissions | n/a | partly; facts restated |
 | Data-structure predicates open and close themselves | n/a, no separation logic | ownership types | Viper explicit; VeriFast auto-open/close | n/a | explicit `fold`/`unfold` |
 | One script closes several goals | no | no | no | `<;>`, `all_goals`, Ltac, Lean macros | no; user tactics run no C |
@@ -267,7 +267,7 @@ Other friction:
 
 ### R3. Automatic unfolding of recursive specification functions
 
-`simp` unfolds a recursive pure function when its argument is a known
+`solve` unfolds a recursive pure function when its argument is a known
 constructor, to a fixed fuel, as Dafny does. The unfolded equation is a
 checked rewrite in the expansion. This removes most of the 70 explicit unfolds
 per arm, and most model-term restating, because the solver can see through
@@ -279,7 +279,7 @@ This item is different: it covers pure functions over constructors, which are
 bounded and decidable at fixed fuel. It can be added as a stage of that issue
 or done separately.
 
-Status (2026-10-16): `simp` unfolds one application over a known constructor
+Status (2026-10-16): `solve` unfolds one application over a known constructor
 (the smt-auto step-3 work) and now evaluates on to a fuel of eight checked
 unfold or rewrite steps, through constructor equations among the facts. The
 rewrite of `rbtree_erase_color_flips_red_all.click` that would measure the

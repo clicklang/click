@@ -5,7 +5,7 @@ verifies.
 
 A contract's spec-level `match` on an enum may compute in its arms. An arm
 with machine signed arithmetic, `0i32 - x` or `-1i64 * x`, makes the claim
-unloweable: `simp` reports `could not lower the claim goal ... the kernel
+unloweable: `solve` reports `could not lower the claim goal ... the kernel
 lowering stopped at no single evaluation path`, even with the arm's operand
 bounded by a `requires`. The same arms without arithmetic (`x`, `x as i32`,
 `0i32`) lower and verify. Unsigned arithmetic in an arm was not checked.
@@ -48,8 +48,8 @@ the kernel lowering stopped at no single evaluation path
 ```
 
 Before `execute()` was removed, an explicit proof `match amount {
-Amount::Credit(x) => { execute(); simp(); }, Amount::Debit(x) => { execute();
-simp(); } }` failed the same way in the `Credit` arm, where the `Debit` arm's
+Amount::Credit(x) => { execute(); solve(); }, Amount::Debit(x) => { execute();
+solve(); } }` failed the same way in the `Credit` arm, where the `Debit` arm's
 arithmetic is not even taken.
 
 ## Acceptance criteria

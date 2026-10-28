@@ -32,7 +32,7 @@ fn refuted_constructor_guards_do_not_spell_connected_heap_history() {
             verified.unwrap_or_else(|error| panic!("{size} clauses: {}", error.message()));
         let spelling = sample
             .named_work
-            .get("operation `simp closure: premise spelling`")
+            .get("operation `solve closure: premise spelling`")
             .copied()
             .unwrap_or(0);
         assert!(
@@ -3608,7 +3608,7 @@ fn roundtrip_sample_on_this_thread(unrelated: usize, extra_copies: usize) -> Sca
 /// the expanded proof meets (see the next test). The remaining growth, about
 /// 17 units per unrelated allocation, is mostly the
 /// implicit tail's condition-premise search over its listed pure
-/// facts and that search's simp checkpoints (about 12 per allocation); the
+/// facts and that search's solve checkpoints (about 12 per allocation); the
 /// rest is re-derived snapshot comparison relative to a base and more
 /// composition separation-candidate projections. The kernel call path is
 /// flat here: `ensured resource composition` and `verified call return
@@ -4180,17 +4180,17 @@ fn many_clause_bundle_grows_at_most_quadratically() {
     }
 }
 
-/// `simp` closes a chain of equal opaque applications. Function arity stays
+/// `solve` closes a chain of equal opaque applications. Function arity stays
 /// fixed so the unrelated-query axis measures ambient facts independently
 /// of the cost of lowering a contract with more parameters.
 #[test]
 #[ignore = "nightly: 1.0s in the parallel gate"]
-fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
-    let simp_work = |sample: &ScalingSample| {
+fn solve_equality_chain_is_linear_and_unrelated_queries_are_flat() {
+    let solve_work = |sample: &ScalingSample| {
         sample
             .named_work
             .iter()
-            .filter(|(name, _)| name.ends_with("tactic `simp`"))
+            .filter(|(name, _)| name.ends_with("tactic `solve`"))
             .map(|(_, work)| *work)
             .sum::<usize>()
     };
@@ -4225,7 +4225,7 @@ fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
                 verify_c0_sources(&click_source, &[("chain.c", c_source.as_str())])
             });
             verified.unwrap_or_else(|error| panic!("`{goal}` closes: {}", error.message()));
-            samples.push(simp_work(&sample));
+            samples.push(solve_work(&sample));
         }
     }
     assert!(chain[0] > 0 && unrelated[0] > 0, "{chain:?} {unrelated:?}");
@@ -4249,7 +4249,7 @@ fn simp_equality_chain_is_linear_and_unrelated_queries_are_flat() {
 /// derivation failed. The split skips a disjunction sharing no variable with
 /// the goal, so the failing derivation's work stays flat as they grow.
 #[test]
-fn failing_simp_derivation_ignores_unrelated_disjunctions() {
+fn failing_solve_derivation_ignores_unrelated_disjunctions() {
     use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, PureFactContext, Variable};
     use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -4285,7 +4285,7 @@ fn failing_simp_derivation_ignores_unrelated_disjunctions() {
                 true,
             );
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context.derive_simp_proposition(&goal)
+                context.derive_solve_proposition(&goal)
             });
             assert!(derivation.is_none(), "nothing bounds the goal's variable");
             (size, work)
@@ -4303,7 +4303,7 @@ fn failing_simp_derivation_ignores_unrelated_disjunctions() {
 /// model's constructor cases (`c == Color::Red or c == Color::Black`): one
 /// whose variables the goal does not name is not split under it either.
 #[test]
-fn failing_simp_derivation_ignores_unrelated_algebraic_disjunctions() {
+fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
     use crate::kernel::{
         AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValueType,
         AlgebraicVariantType, Bitvector32Term, ConditionTerm, Proposition, PureFactContext, Term,
@@ -4368,7 +4368,7 @@ fn failing_simp_derivation_ignores_unrelated_algebraic_disjunctions() {
                 true,
             );
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context.derive_simp_proposition(&goal)
+                context.derive_solve_proposition(&goal)
             });
             assert!(derivation.is_none(), "nothing bounds the goal's variable");
             (size, work)
@@ -4809,7 +4809,7 @@ fn call_separation_requirements_ignore_unrelated_owned_objects() {
     );
 }
 
-/// A copy loop whose preservation `simp` reaches a fact transport the
+/// A copy loop whose preservation `solve` reaches a fact transport the
 /// explicit-premise planner cannot view: the element just stored is named
 /// `dst[k]` under `k == i - 1`, so `old(src[k]) == old(src[k])` does not
 /// transport to it until `k` is rewritten. Each unrelated `requires` joins
@@ -4882,7 +4882,7 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
                                dst[i] = src[i];\n        i = i + 1;\n    }\n    return i;\n}\n";
     let mut samples = Vec::new();
     let mut plan_checks = Vec::new();
-    let mut simp_work = Vec::new();
+    let mut solve_work = Vec::new();
     const SIZES: [usize; 4] = [3, 6, 12, 24];
     for size in SIZES {
         let click_source = copy_loop_with_unrelated_requirements(size);
@@ -4899,7 +4899,7 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
         });
         let mut named_work = BTreeMap::<String, usize>::new();
         let mut checks = 0;
-        let mut simp = 0;
+        let mut solve = 0;
         for event in events {
             match event {
                 crate::instrumentation::VerificationEvent::OperationFinished {
@@ -4914,7 +4914,7 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
                     tactic, work, ..
                 } => {
                     if tactic.tactic_name == "solve" {
-                        simp += work;
+                        solve += work;
                     }
                     *named_work
                         .entry(format!("{} tactic `{}`", tactic.class, tactic.tactic_name))
@@ -4924,7 +4924,7 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
             }
         }
         plan_checks.push(checks);
-        simp_work.push(simp);
+        solve_work.push(solve);
         samples.push(ScalingSample {
             size,
             work,
@@ -4933,7 +4933,7 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
     }
     assert!(
         plan_checks[0] > 0,
-        "the preservation simp never planned a fact transport: {plan_checks:?}"
+        "the preservation solve never planned a fact transport: {plan_checks:?}"
     );
     assert!(
         plan_checks.iter().all(|checks| *checks == plan_checks[0]),
@@ -4944,10 +4944,10 @@ fn failing_fact_transport_plan_ignores_unrelated_candidates() {
     // Each unrelated requirement is still read, lowered, and offered as a
     // candidate, which is linear; a check per candidate cost an order of
     // magnitude more per fact.
-    let per_fact = (simp_work[3] - simp_work[0]) / (SIZES[3] - SIZES[0]);
+    let per_fact = (solve_work[3] - solve_work[0]) / (SIZES[3] - SIZES[0]);
     assert!(
         per_fact <= 4_000,
-        "simp work grew by {per_fact} units per unrelated requirement: {simp_work:?}"
+        "solve work grew by {per_fact} units per unrelated requirement: {solve_work:?}"
     );
     assert_near_linear_scaling("fact-transport plan unrelated candidates", &samples);
 }
@@ -7204,7 +7204,7 @@ fn atomic_retained_evidence_expands_without_unrelated_conditions() {
     }
 }
 
-/// A failing `simp` over a chain `x0 <= x1 <= ... <= xN` does about the same
+/// A failing `solve` over a chain `x0 <= x1 <= ... <= xN` does about the same
 /// work however long the chain is. Its bound selection visits a fixed
 /// number of variables and plans the certificate before spelling a premise,
 /// and its upper-bound split nests a fixed number of times, reads its
@@ -7218,12 +7218,12 @@ fn atomic_retained_evidence_expands_without_unrelated_conditions() {
 /// 71264 units (2026-10-06).
 #[test]
 #[ignore = "nightly: 1.0s in the parallel gate"]
-fn failing_simp_work_is_flat_along_a_variable_chain() {
-    let simp_work = |sample: &ScalingSample| {
+fn failing_solve_work_is_flat_along_a_variable_chain() {
+    let solve_work = |sample: &ScalingSample| {
         sample
             .named_work
             .iter()
-            .filter(|(name, _)| name.ends_with("tactic `simp`"))
+            .filter(|(name, _)| name.ends_with("tactic `solve`"))
             .map(|(_, work)| *work)
             .sum::<usize>()
     };
@@ -7257,12 +7257,12 @@ fn failing_simp_work_is_flat_along_a_variable_chain() {
             verified.is_err(),
             "`x0 + 1 <= 50` does not follow at size {size}"
         );
-        work.push(simp_work(&sample));
+        work.push(solve_work(&sample));
     }
     assert!(work[0] > 0, "{work:?}");
     assert!(
         *work.last().unwrap() <= work[1].saturating_add(work[1] / 4),
-        "a failing simp's work grew with the chain past the bounded sizes: {work:?}"
+        "a failing solve's work grew with the chain past the bounded sizes: {work:?}"
     );
 }
 
@@ -7424,15 +7424,17 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
                 size: returns,
                 work: *sample
                     .named_work
-                    .get("operation `simp closure: snapshot transport`")
-                    .unwrap_or_else(|| panic!("simp did not try a snapshot transport: {sample:?}")),
+                    .get("operation `solve closure: snapshot transport`")
+                    .unwrap_or_else(|| {
+                        panic!("solve did not try a snapshot transport: {sample:?}")
+                    }),
                 named_work: BTreeMap::new(),
             });
             spelling.push(ScalingSample {
                 size: returns,
                 work: *sample
                     .named_work
-                    .get("operation `simp closure: premise spelling`")
+                    .get("operation `solve closure: premise spelling`")
                     .unwrap_or(&0),
                 named_work: BTreeMap::new(),
             });
@@ -7579,9 +7581,9 @@ fn check_completed_early_return_context_reuse(explicit: bool) {
         eprintln!("fan-out execute work: {execute:?}");
         assert_near_linear_scaling("executing a fan-out's paths", &execute);
         eprintln!("fan-out snapshot transport work: {transport:?}");
-        assert_near_linear_scaling("simp's snapshot transport search", &transport);
+        assert_near_linear_scaling("solve's snapshot transport search", &transport);
         eprintln!("fan-out premise spelling work: {spelling:?}");
-        assert_near_linear_scaling("simp's premise spelling", &spelling);
+        assert_near_linear_scaling("solve's premise spelling", &spelling);
         eprintln!("indexed fan-out: {samples:?}; selection: {selection:?}");
         assert!(
             selection.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 8),
@@ -7740,9 +7742,9 @@ fn rb_next_false_list_postconditions_fail_below_the_smart_budget() {
 
 #[test]
 #[ignore = "nightly: 0.7s in the parallel gate"]
-fn list_position_simp_search_stays_bounded_beside_unrelated_facts() {
+fn list_position_solve_search_stays_bounded_beside_unrelated_facts() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/simp_false_list_position_is_prompt.md");
+        .join("mdtests/solve_false_list_position_is_prompt.md");
     let fixture = crate::cli::read_mdtest(&path).unwrap();
     let original = fixture.click_source.as_deref().unwrap();
     let mut counts = Vec::new();
@@ -7774,7 +7776,7 @@ fn list_position_simp_search_stays_bounded_beside_unrelated_facts() {
         assert!(!error.message().contains("budget"), "{}", error.message());
         counts.push(events.iter().filter(|event| matches!(event,
             crate::instrumentation::VerificationEvent::OperationFinished { name, work, .. }
-                if name == "simp closure: indexed goal equality rewrite" && *work > 0
+                if name == "solve closure: indexed goal equality rewrite" && *work > 0
         )).count());
         // A declined candidate must restore the search scope: a subsequent
         // invocation still closes the known position through an unfold.
@@ -9363,7 +9365,7 @@ fn native_read_equality_refusal_does_not_restart_snapshot_search_as_integer() {
             .filter(|event| {
                 matches!(event,
                     crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                        if *name == "simp closure: snapshot transport"
+                        if *name == "solve closure: snapshot transport"
                 )
             })
             .count();
@@ -9396,7 +9398,7 @@ fn composite_native_read_equality_refusal_keeps_one_snapshot_search() {
             .filter(|event| {
                 matches!(event,
                     crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
-                        if *name == "simp closure: snapshot transport"
+                        if *name == "solve closure: snapshot transport"
                 )
             })
             .count();
@@ -9723,4 +9725,37 @@ fn early_return_finishing_shares_path_prefixes() {
 #[ignore = "nightly: expands and re-verifies up to 64 early returns in a debug build"]
 fn early_return_finishing_shares_path_prefixes_through_64_returns() {
     assert_early_return_finishing_shares_prefixes(&[8, 16, 32, 64]);
+}
+
+#[test]
+#[ignore = "nightly: four post-return unfold sizes take 0.94s in the parallel gate"]
+fn post_return_function_equations_scale_with_explicit_unfolds() {
+    let fixture = crate::cli::parse_mdtest(
+        std::path::Path::new("return_fold_retains_post_return_function_unfold.md"),
+        include_str!("../../../../mdtests/return_fold_retains_post_return_function_unfold.md"),
+    )
+    .unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let samples = [4, 8, 16, 32].map(|size| {
+        let unfolds = (0..size)
+            .map(|index| format!("unfold(first(Shape::Pair(x, {index})));"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = source.replace("unfold(first(Shape::Pair(x, 3)));", &unfolds);
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            verify_c0_sources(&source, &sources)
+        });
+        result.unwrap();
+        work
+    });
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "retained unfold equations rescanned the growing return proof: {samples:?}"
+    );
 }

@@ -230,9 +230,76 @@ unit/API/import/scaling tests and all four fixture aggregates (13m41s,
 report-only ten-minute budget warning). The loaded-pointer fixture passed
 in 0.27 seconds there; the stall is reproduced on the broader migration.
 
-Do not resume migration feature work until the loaded-pointer rewrite stall
-has been reduced and fixed. No nightly suite was run; no new census or
-fact-stability acceptance result is claimed by this checkpoint.
+The loaded-pointer stall was reduced to a same-thread equality-graph deadlock:
+read-definition registration called `last_same_named_cell`, which re-ran the
+stop's effect check and attempted to lock that same graph. Retaining the stop
+reason alongside the existing `(snapshot, address, width)` version memo fixes
+the stall without changing the endpoint or the checked proof. The original
+fixture passed in 0.68 seconds; all 56 focused tracker/fixture tests passed.
+The new regressions check that later graph growth does not reclassify the
+retained decision, and measure 8/16/32/64 new steps plus 0/16/64/256 unrelated
+names. A focused before/after fact-stability audit of the stored-pointer
+fixture passed with zero differences. The isolated full `scripts/check.sh` passed all 6,622 unit/API/import/scaling
+tests and all four fixture aggregates in 15m53s (report-only budget warning;
+a separate migration diagnostic build ran concurrently).
+No nightly suite was run; the full migration acceptance audits remain open.
+
+A further recursive-drop proof reduction exposed an independent return-proof
+bookkeeping defect on master: standalone pure-function `unfold` added its
+equation to the branch, but a subsequent `have` and resource fold lost that
+evidence at final return certification. The operation now retains its
+constructed proposition under the pre-unfold facts on the selected return
+path. It adds no equality reasoning or lowering changes. The small C
+regression is `return_fold_retains_post_return_function_unfold.md`; companion
+tests cover expansion, false-equation rejection, and 4/8/16/32 explicit
+unfolds. This repairs that reduced defect, not the remaining migration Rust
+proofs as a whole.
+
+The next generic-container reduction found a separate evidence-retention
+bug: a certified full-pointer read equation can normalize to address equality
+when its designation and bounds already match. The temporary-read retention
+helper recognized only the unsimplified full-value equation and dropped the
+address equation. It now retains either exact producer conclusion, without
+adding object authority or a consumer-specific fallback. The kernel
+regression checks uncertified evidence, branch isolation, and distinct
+object designations; scaling covers 8/16/32/64 equations and up to 256
+unrelated facts. The container proof still has a separate mismatch between
+its logical read and its fold-computed child argument; this increment does
+not claim to finish that proof or the migration.
+
+The next isolated increment connects direct pointer reads to the existing
+width-specific observation registry and refreshes a selected read when its
+recorded sources change. A reverse observation-to-name index retains older
+observations after a name is reused. These are structural definition edges,
+including pointer designation and extent; no facts are folded into lowered
+terms. The regression registers both endpoints before the later definition
+arrives, then checks existing and fresh graphs, with a partial-write negative
+control. Scaling covers 8/16/32/64 observations and 0/16/64/256 unrelated names.
+
+In the WIP, the explicit child-pointer rewrite now gets past the container's
+child-tail argument check, but a generic payload read still fails across two
+projected snapshots. The ordinary scaling selection also finds a separate
+pre-existing migration failure in
+`checked_child_read_definitions_scale_with_exchanges_not_ambient_facts`;
+the saved pre-fix and candidate binaries have identical failing work counts.
+The migration is not green, and its remaining fixture and acceptance audits
+have not been rerun for this increment.
+
+The child-resource scaling defect is now reduced to empty memory-index setup:
+a temporary opening context discarded the caller checkpoint. Once the index
+held two memory cells, the following fold replayed unrelated caller equality
+history from the root. The reduced test grows from 1,248 to 13,536 work units
+with 256 unrelated equalities before the fix. Resource opening now captures
+the caller's closed graph when its memory input is empty, and the index keeps
+that one selected checkpoint through later empty setup. Its empty payload is
+refreshed without retaining arbitrary old views or scanning resource history.
+
+The migration's complete ordinary scaling selection plus the new context
+isolation regression passes (973 tests). The isolation control checks that a
+weaker caller cannot consume memory using an alias held only in the opening
+context. Lowering and the free/frame rules are unchanged. This repairs the
+scaling blocker; it does not complete the generic-payload frame proof or the
+migration's remaining fixture and spellability acceptance work.
 
 ### Decision: the free decides its frame from proven separation
 
@@ -317,3 +384,65 @@ be resolved before the pointer-read migration is green.
   checked step adds.
 - No stepping scaling regression: the frame work above keeps stepping
   linear in the number of statements.
+
+
+### Copied root extents and example checkpoint
+
+The arena refusal after address-class discovery was in the shared typed range
+matcher: a read has an opaque extent, while a held heap-root range has a known
+extent with no opaque name. A full pointer-value equality now connects that
+read extent to the graph's root-extent tag. Numeric address equality alone does
+not; a bounded subobject remains distinct. Lookup uses the selected extent
+class, with deterministic tests for growing alias chains and unrelated facts.
+
+`a_copied_heap_pointer_retains_its_root_extent.md` reproduces the refusal on the
+pointer migration before this fix and verifies afterward. On the migration,
+`arena` and `owned-vector` now pass. Explicit proof links also make the other
+six previously failing examples pass individually, without C or contract edits;
+those proof changes remain on the migration branch. This is not a full migration
+acceptance verdict. The full census and fact-stability audit remain in progress.
+
+The isolated extent fix passed `scripts/check.sh`: 6,672 unit/API/import/scaling
+tests and all four fixture aggregates, in 14m20s while a separate audit ran
+concurrently (report-only budget warning). No nightly suite ran.
+
+### Complete pointer frames at their producers (2026-10-28)
+
+The stored-read definition and comparison prerequisites have merged (#2098,
+#2099), followed by cold pointer-domain query registration (#2100). The last
+fix passed 6,693 tests and all four fixture aggregates; fresh domain queries
+no longer depend on a preceding address query.
+
+The free now publishes complete before/after pointer-value equalities for
+cells its own retention pass kept using checked residual ownership. The pass
+collects these cells while making the existing retention decision. Their
+names remain structural; the graph learns the frame only from the step's
+facts, and restricting those facts withdraws its authority.
+
+A typed C read using a scalar cache also needs to preserve the complete
+pointer's domain. On the rebased migration, the unchanged generic-stack and
+recursive-drop `pop` proofs failed to fold the remaining node even though a
+redundant `have self.head == old(self.head.next)` repaired them. The numeric
+address was already equal; an eight-byte read's domain was missing its frame
+across an earlier store. The read now selects its already-computed structural
+boundary, checks that one edge with indexed complete-byte separation, and
+emits the full pointer-value equality. It does not walk history or add a
+resource-check fallback. Four-byte ownership does not justify this frame.
+
+These producer changes close the three Rust failures exposed by rebasing the
+migration onto #2099 without further edits to its Rust proofs. The two
+generic-container controls also pass. Reduced tests cover a partial overwrite,
+missing or partial ownership, and harmless later stores hiding the relevant
+boundary. Deterministic tests cover consecutive frees including fact insertion,
+read-frame chains, and unrelated owners. The logical-lowering switch and the
+full spelling/fact-stability acceptance audit remain separate work.
+
+
+The first frame gate passed all 6,700 unit/API/import/scaling tests, then
+`arena` exposed an existing resource-index counter underflow. The reduced repair
+is PR #2101 (auto-merge requested): retain an immutable graph checkpoint matching
+the payload, and register changed suppliers' definitions before applying merge
+deltas, including removed suppliers. Its full gate passed 6,696 tests and all
+four fixture aggregates in 9m26s. Two small regressions distinguish query-time
+registration from removal-time registration; deterministic scaling covers both.
+The repaired frame branch verifies `arena`; its full gate is being rerun.

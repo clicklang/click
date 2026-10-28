@@ -104,7 +104,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         fixed_measure_state(left).or_else(|| fixed_measure_state(right))
     };
     match expression {
-        ContractExpression::RegionResult(_) => None,
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
         ContractExpression::Old(_) => Some(FixedMeasureState::Old),
         ContractExpression::At { selector, .. } => Some(FixedMeasureState::At(selector.clone())),
         ContractExpression::IntegerLiteral(_)
@@ -6278,6 +6278,12 @@ impl AnnotationLowerer<'_> {
             ContractExpression::ResourceWildcard => {
                 Err("`_` is only valid inside a `count(...)` resource pattern".to_string())
             }
+            ContractExpression::RegionAllocation(region) => {
+                let snapshots = self
+                    .snapshots
+                    .ok_or("`.allocation` requires a function execution")?;
+                Ok(SpecExpression::Value(snapshots.region_allocation(region)?))
+            }
             ContractExpression::RegionResult(region) => {
                 let snapshots = self
                     .snapshots
@@ -7718,6 +7724,7 @@ impl AnnotationLowerer<'_> {
         name: &str,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        crate::instrumentation::record_deterministic_work(1);
         match environment.values.get(name) {
             Some(value) => Ok(value.clone()),
             None if environment
@@ -7738,17 +7745,18 @@ impl AnnotationLowerer<'_> {
                     CType::UInt8Pointer,
                 )))
             }
-            // In another state's memory (`old(shared.field)`), a file-scope
-            // or static aggregate names the same place it names now: its
-            // storage block is fixed for the whole call. Resolve that place
-            // from the entry state, as a recorded snapshot does above. An
-            // automatic aggregate has no entry-state place and stays unknown.
+            // An entry read names the aggregate place recorded at entry,
+            // including a by-value parameter's private copy. Later automatic
+            // locals have no entry binding. Static storage also keeps its
+            // place in other fixed-memory contexts.
             None if matches!(environment.current_memory, SpecMemory::Fixed(_))
                 && self
                     .entry_state
                     .locals()
                     .aggregate_object_pointer(name)
-                    .is_some_and(|pointer| pointer.block.is_static_storage_block()) =>
+                    .is_some_and(|pointer| {
+                        environment.at_function_entry || pointer.block.is_static_storage_block()
+                    }) =>
             {
                 let pointer = self
                     .entry_state
@@ -8947,3 +8955,6 @@ mod local_pointer_type_index_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod old_aggregate_tests;

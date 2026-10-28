@@ -270,7 +270,7 @@ impl<'a> Proof<'a> {
             }
             return Ok(result);
         }
-        let result = self.close_bundle_member_by_simp(goal)?;
+        let result = self.close_bundle_member_by_solve(goal)?;
         if result.is_none() {
             // Keep one bounded, lazy diagnostic for the actual kernel leaf.
             // It is recorded only after `solve()` has declined; it does not
@@ -293,10 +293,10 @@ impl<'a> Proof<'a> {
     /// `at(<iteration entry>, 0 <= i - 1)`, proved by `solve()`, and the
     /// member closed by `assumption`. Both are fixed presentations of the
     /// same goal, not a search over premises.
-    fn close_bundle_member_by_simp(&self, goal: &Proposition) -> Result<Option<Self>, ClickError> {
+    fn close_bundle_member_by_solve(&self, goal: &Proposition) -> Result<Option<Self>, ClickError> {
         if let Some(closed) = self
             .with_synthesized_bundle_member_surface()
-            .try_simp_closure()?
+            .try_solve_closure()?
         {
             return Ok(Some(closed));
         }
@@ -306,7 +306,7 @@ impl<'a> Proof<'a> {
         let Some(have) = attempt::candidate_outcome(self.begin_have(surface))? else {
             return Ok(None);
         };
-        let Some(proved) = have.try_simp_closure()? else {
+        let Some(proved) = have.try_solve_closure()? else {
             return Ok(None);
         };
         let Some(joined) = attempt::candidate_outcome(proved.join())? else {
@@ -1866,7 +1866,7 @@ impl<'a> Proof<'a> {
         // Catch every error here; `?` must not skip the obligation
         // diagnostic below.
         let attempted = {
-            if body == [ProofTactic::Simp] {
+            if body == [ProofTactic::Solve] {
                 crate::instrumentation::measure_operation(
                     "surface",
                     "close invariants",
@@ -2136,7 +2136,7 @@ impl<'a> Proof<'a> {
         let proof = if execution.core.checked_invariant_lowerings.is_some() {
             self.clone()
         } else {
-            self.apply_close_invariants_body(&[ProofTactic::Simp])?
+            self.apply_close_invariants_body(&[ProofTactic::Solve])?
         };
         proof.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
         Ok(Some(proof))
@@ -2556,12 +2556,12 @@ impl<'a> Proof<'a> {
         Ok(proof.with_kernel_state(state))
     }
 
-    /// Records a region-level `simp` for the loop-invariant bundle. The
+    /// Records a region-level `solve` for the loop-invariant bundle. The
     /// tactic's semantic content is the bundle closer certified at the
     /// typed boundary, so only its identity is recorded here — cursor
     /// metadata for expansion capture and timing attribution, never a
     /// semantic transition.
-    pub(in crate::surface::proof) fn defer_region_simp(
+    pub(in crate::surface::proof) fn defer_region_solve(
         &self,
         tactic_index: usize,
         source_index: usize,
@@ -2576,7 +2576,7 @@ impl<'a> Proof<'a> {
             );
         }
         let (proof, ()) = self.clone().edit_execution_presentation(|presentation| {
-            presentation.region_simp = Some((tactic_index, source_index));
+            presentation.region_solve = Some((tactic_index, source_index));
         })?;
         let state = proof.state.with_fact_deltas(Vec::new(), Vec::new());
         Ok(proof.with_kernel_state(state))

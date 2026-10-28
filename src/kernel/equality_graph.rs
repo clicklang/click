@@ -94,7 +94,7 @@ mod separation;
 #[cfg(test)]
 mod separation_tests;
 mod terms;
-pub(in crate::kernel) use terms::constants::{fold_arithmetic, load_key};
+pub(in crate::kernel) use terms::constants::fold_arithmetic;
 
 /// A retained, interned machine atom. Equality and ordering use the stable
 /// ID; the original term is retained for exact premise support and spelling
@@ -387,6 +387,7 @@ pub(in crate::kernel) struct EqualityGraph {
     // They contain no hypotheses, read authority, or snapshot transport. Like term interning, discovery is shared by evaluation
     // forks; each fork still closes these definitions against its own facts.
     logical_reads: std::sync::Arc<std::sync::Mutex<LogicalPointerReads>>,
+    resolve_stored_values: bool,
 }
 
 #[derive(Clone, Default)]
@@ -397,6 +398,12 @@ struct LogicalPointerReads {
 
 static NEXT_LOGICAL_READ_GENERATION: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(1);
+
+/// Shared clock for checked read equations and structural read definitions.
+/// A later definition can invalidate a previously memoized equality miss.
+pub(in crate::kernel) fn next_read_definition_generation() -> u64 {
+    NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
 
 thread_local! {
     // Session-local term definitions, like the kernel's load-variable
@@ -477,12 +484,25 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Te
     ))
 }
 
+impl EqualityGraph {
+    /// Naming consumes producer definitions, but cannot ask for stored-value
+    /// equations: establishing those equations itself calls the naming walk.
+    /// Checking graphs add them after naming has established their authority.
+    pub(in crate::kernel) fn for_naming() -> Self {
+        Self {
+            resolve_stored_values: false,
+            ..Self::default()
+        }
+    }
+}
+
 impl Default for EqualityGraph {
     fn default() -> Self {
         Self {
             state: Default::default(),
             admitted: Default::default(),
             logical_reads: LOGICAL_POINTER_READS.with(|reads| reads.borrow().clone()),
+            resolve_stored_values: true,
         }
     }
 }
@@ -491,6 +511,7 @@ impl Clone for EqualityGraph {
     fn clone(&self) -> Self {
         Self {
             logical_reads: self.logical_reads.clone(),
+            resolve_stored_values: self.resolve_stored_values,
             admitted: self.admitted.clone(),
             state: std::sync::Mutex::new(self.state.lock().expect("equality graph").clone()),
         }
@@ -545,6 +566,10 @@ struct EqualityGraphState {
     terms: terms::TermClasses,
     input_history: Option<std::sync::Arc<inputs::History>>,
     logical_values: crate::persistent::PersistentSet<Pointer>,
+    /// Definitions consumed for this selected read. New observations may
+    /// name an existing version; seeing the value once does not freeze them.
+    logical_pointer_sources:
+        crate::persistent::PersistentMap<Pointer, [Option<crate::kernel::SharedCMemory>; 3]>,
     /// Compound query dependencies already registered at this metadata
     /// generation. Later producer definitions invalidate a miss lazily.
     logical_query_dependencies: crate::persistent::PersistentMap<Pointer, u64>,
@@ -644,7 +669,9 @@ impl EqualityGraph {
             .lock()
             .expect("equality graph")
             .checked_read_generation;
-        definitions.max(checked)
+        definitions
+            .max(checked)
+            .max(crate::kernel::prelude::load_definition_generation())
     }
 
     /// Admit an equality checked by a read producer into this branch's graph.
@@ -659,8 +686,10 @@ impl EqualityGraph {
         let address_changed = state
             .terms
             .add_address_equality(left_address, right_address);
+        // Keep the selected producer terms even when definitions already
+        // imply the union: checkpoint replay must register these dependencies.
+        state.remember_input(inputs::Input::CheckedRead(left.clone(), right.clone()));
         if state.close(vec![(left.clone(), right.clone())]) || address_changed {
-            state.remember_input(inputs::Input::CheckedRead(left.clone(), right.clone()));
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -675,8 +704,8 @@ impl EqualityGraph {
     ) {
         self.add_checked_read_equality(left.pointer(), right.pointer());
         let mut state = self.state.lock().expect("equality graph");
+        state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone()));
         if state.terms.add_pointer_value_equality(left, right) {
-            state.remember_input(inputs::Input::PointerValue(left.clone(), right.clone()));
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -692,16 +721,23 @@ impl EqualityGraph {
     ) {
         self.add_checked_read_equality(left, right);
         let mut state = self.state.lock().expect("equality graph");
+        state.remember_input(inputs::Input::PointerReadValue(left.clone(), right.clone()));
         if state.terms.merge_pointer_read_domains(left, right) {
-            state.remember_input(inputs::Input::PointerReadValue(left.clone(), right.clone()));
             state.checked_read_generation =
                 NEXT_LOGICAL_READ_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         state.close(Vec::new());
     }
 
+    pub(in crate::kernel) fn opaque_extent_is_root(&self, origin: &Pointer) -> bool {
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_logical_read_values(&mut state, [origin]);
+        state.terms.opaque_extent_is_root(origin)
+    }
+
     pub(in crate::kernel) fn opaque_extents_equal(&self, left: &Pointer, right: &Pointer) -> bool {
         let mut state = self.state.lock().expect("equality graph");
+        self.register_logical_read_values(&mut state, [left, right]);
         state.terms.opaque_extents_equal(left, right)
     }
 
@@ -710,32 +746,86 @@ impl EqualityGraph {
         state: &mut EqualityGraphState,
         values: impl IntoIterator<Item = &'a Pointer>,
     ) {
-        let reads = self.logical_reads.lock().expect("logical pointer reads");
+        let mut reads = self.logical_reads.lock().expect("logical pointer reads");
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
         let mut definitions = Vec::new();
+        let mut stored_values = Vec::new();
+        let mut read_domains = Vec::new();
         while let Some(value) = pending.pop() {
-            if state.logical_values.contains(&value) {
+            let direct_read = value.as_loaded_value();
+            let sources = direct_read.as_ref().map(|load| {
+                [
+                    crate::kernel::prelude::canonical_load_projection_source(
+                        &load.defining_memory,
+                        &load.defining_address,
+                    ),
+                    crate::kernel::prelude::value_load_origin(
+                        &load.defining_memory,
+                        &load.defining_address,
+                        crate::kernel::C_POINTER_BYTE_WIDTH,
+                    ),
+                    crate::kernel::prelude::value_load_name(
+                        &load.defining_memory,
+                        &load.defining_address,
+                        crate::kernel::C_POINTER_BYTE_WIDTH,
+                    ),
+                ]
+            });
+            if state.logical_values.contains(&value)
+                && sources.as_ref().is_none_or(|sources| {
+                    state.logical_pointer_sources.get(&value) == Some(sources)
+                })
+            {
                 continue;
+            }
+            // A pointer read equals the pointer its snapshot stores at the
+            // read's address (the read-over-write authority): memory records
+            // it, so it is term metadata like a definition, never a fact.
+            if self.resolve_stored_values
+                && let PointerBlock::LoadedPointer(_) = &value.block
+            {
+                let read = Pointer {
+                    block: value.block.clone(),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                if !state.logical_values.contains(&read) {
+                    state.logical_values = state.logical_values.with_value(read.clone());
+                    // The authority uses the producer-only naming context,
+                    // which reads this thread's read table itself.
+                    drop(reads);
+                    let stored = crate::kernel::eval::pointer_read_over_write_c_value(&read);
+                    reads = self.logical_reads.lock().expect("logical pointer reads");
+                    if let Some(stored) = stored {
+                        pending.push(stored.pointer().clone());
+                        definitions.push((read.clone(), stored.pointer().clone()));
+                        stored_values.push((read, stored));
+                    }
+                }
             }
             // Direct pointer-read names carry their own definition instead
             // of a scalar-load entry. Their projection edge is the same
             // unconditional producer metadata used below for scalar names.
-            if let Some(load) = value.as_loaded_value() {
+            if let Some(load) = direct_read {
                 state.logical_values = state.logical_values.with_value(value.clone());
                 pending.push(load.defining_address.clone());
-                if let Some(source) = crate::kernel::prelude::canonical_load_projection_source(
-                    &load.defining_memory,
-                    &load.defining_address,
-                ) {
+                let sources = sources.expect("a direct read has source metadata");
+                state.logical_pointer_sources = state
+                    .logical_pointer_sources
+                    .with_inserted(value.clone(), sources.clone());
+                for source in sources.into_iter().flatten() {
                     let source_read = Pointer::loaded_value(&source, &load.defining_address);
                     let application = Pointer {
                         block: source_read.block,
-                        offset: load.displacement,
+                        offset: load.displacement.clone(),
                     };
                     pending.push(application.clone());
+                    read_domains.push((value.clone(), application.clone()));
                     definitions.push((value.clone(), application));
                 }
                 crate::instrumentation::record_deterministic_work(1);
+            }
+            if reads.definitions.is_empty() {
+                continue;
             }
             let Some((application, address)) = reads.definitions.get(&value) else {
                 if matches!(value.offset, PointerOffsetTerm::Add(..)) {
@@ -791,6 +881,19 @@ impl EqualityGraph {
             let value = state.register_pointer_address(value);
             let application = state.register_pointer_address(application);
             state.terms.add_address_equality(value, application);
+        }
+        // Projection and selected-width naming preserve the complete pointer
+        // read, including its object and extent, not only its address.
+        for (read, source) in read_domains {
+            state.terms.merge_pointer_read_domains(&read, &source);
+        }
+        // A complete stored pointer supplies the read's object and bounds,
+        // not merely its numeric address. Keep this producer definition in
+        // the graph so lowering can retain the read's structural identity.
+        for (read, stored) in stored_values {
+            state
+                .terms
+                .add_pointer_value_equality(&CPointerValue::new(read, stored.c_type()), &stored);
         }
         state.close(definitions);
     }
@@ -1373,6 +1476,7 @@ impl EqualityGraph {
             return true;
         }
         let mut state = self.state.lock().expect("equality graph");
+        self.register_logical_read_values(&mut state, [left, right]);
         state.register_blocks([left.block.clone(), right.block.clone()]);
         let equal = state.terms.designations_equal(left, right);
         state.close(Vec::new());
@@ -2628,42 +2732,12 @@ impl EqualityGraph {
         }
     }
 
-    pub(in crate::kernel) fn scalar_constant_of_class(
-        &self,
-        id: u64,
-    ) -> crate::kernel::assumptions::SignedConstantResolution {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .scalar_constant_of_class(id)
-    }
     pub(in crate::kernel) fn scalar_conditional_members(&self, id: u64) -> Vec<Bitvector32Term> {
         self.state
             .lock()
             .expect("equality graph")
             .terms
             .scalar_conditional_members(id)
-    }
-    pub(in crate::kernel) fn scalar_bridgeable_loads(
-        &self,
-        id: u64,
-    ) -> Vec<(Bitvector32Term, Bitvector32Term, u64)> {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .scalar_bridgeable_loads(id)
-    }
-    pub(in crate::kernel) fn scalar_settled_loads_at(
-        &self,
-        key: u64,
-    ) -> Vec<(Bitvector32Term, u64)> {
-        self.state
-            .lock()
-            .expect("equality graph")
-            .terms
-            .scalar_settled_loads_at(key)
     }
 }
 
@@ -2882,7 +2956,7 @@ mod tests {
     }
 
     #[test]
-    fn affine_offset_equality_reaches_same_block_simp() {
+    fn affine_offset_equality_reaches_same_block_solve() {
         let base = symbolic(11_080);
         let x = PointerOffsetTerm::Variable(Variable(11_081));
         let nested = PointerOffsetTerm::Add(
@@ -2909,18 +2983,22 @@ mod tests {
                 .are_offsets_equal(&reordered, &nested)
         );
         assert_eq!(
-            context.decide_condition_for_simp(&ConditionTerm::pointer_equal(
-                at_offset(base.clone(), nested.clone()),
-                at_offset(base.clone(), reordered.clone()),
-            )),
+            context
+                .selected_for_test()
+                .decide_selected_condition(&ConditionTerm::pointer_equal(
+                    at_offset(base.clone(), nested.clone()),
+                    at_offset(base.clone(), reordered.clone()),
+                )),
             Some(true)
         );
         assert!(!context.equality_graph.are_offsets_equal(&nested, &wrong));
         assert_ne!(
-            context.decide_condition_for_simp(&ConditionTerm::pointer_equal(
-                at_offset(base.clone(), nested),
-                at_offset(base, wrong),
-            )),
+            context
+                .selected_for_test()
+                .decide_selected_condition(&ConditionTerm::pointer_equal(
+                    at_offset(base.clone(), nested),
+                    at_offset(base, wrong),
+                )),
             Some(true)
         );
     }

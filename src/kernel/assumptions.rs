@@ -24,6 +24,8 @@ pub(in crate::kernel) fn count_condition_fact_visit() {
 }
 use std::cell::{Cell, RefCell};
 
+pub(in crate::kernel) mod checked_order_bounds;
+pub(in crate::kernel) mod checked_scalar_facts;
 mod condition_reasoning;
 pub(super) mod contradictions;
 pub(in crate::kernel) mod variable_chains;
@@ -39,6 +41,7 @@ pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
 pub(in crate::kernel) use condition_reasoning::held_order_at;
 pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
 
+#[cfg(test)]
 #[derive(Clone, Debug)]
 pub(super) struct PointerValueUndo {
     source: std::sync::Arc<ConditionTerm>,
@@ -621,7 +624,7 @@ pub(in crate::kernel) fn equality_graph_term_key(term: &Bitvector32Term) -> Bitv
 }
 
 thread_local! {
-    static SIMP_FACT_CONDITIONS_IN_PROGRESS: RefCell<BTreeSet<(ConditionTerm, bool)>> =
+    static SOLVE_FACT_CONDITIONS_IN_PROGRESS: RefCell<BTreeSet<(ConditionTerm, bool)>> =
         const { RefCell::new(BTreeSet::new()) };
     static CONDITION_DECISIONS_IN_PROGRESS: RefCell<BTreeSet<ConditionTerm>> =
         const { RefCell::new(BTreeSet::new()) };
@@ -947,7 +950,7 @@ thread_local! {
         std::collections::HashMap<(u64, Bitvector32Term), (i64, i64)>,
     > = RefCell::new(std::collections::HashMap::new());
     /// Keyed by `atomic_derivation_memo_key`: the premises, whether the
-    /// query is for `simp`, and the DAG modes the derivation reads.
+    /// query is for `solve`, and the DAG modes the derivation reads.
     static ATOMIC_DERIVATION_MEMO: RefCell<
         std::collections::HashMap<
             (u64, bool, bool, bool),
@@ -1228,29 +1231,29 @@ pub(crate) fn reasoning_interrupted() -> bool {
 }
 
 /// Whether the verification deadline has passed, noted as a truncation so
-/// the memo layers do not cache an answer the deadline cut short. A simp
+/// the memo layers do not cache an answer the deadline cut short. A solve
 /// derivation has no step budget of its own: its decisions are memoized
 /// per condition and cycle-cut, its recursion follows the proposition, and
 /// its premise selection is bounded by the candidate facts, so its work is
 /// bounded by the goal and the facts the goal names.
-pub(crate) fn simp_reasoning_interrupted() -> bool {
+pub(crate) fn solve_reasoning_interrupted() -> bool {
     reasoning_interrupted()
 }
 
-/// Marks a condition whose fact-based simp proof is in progress. Proving a
+/// Marks a condition whose fact-based solve proof is in progress. Proving a
 /// condition from the proposition facts can decide other conditions, which
 /// consult the facts again; a condition met again while its own proof is
 /// in progress is a cycle through the facts and proves nothing on that
 /// path. Distinct conditions nest freely, bounded by the conditions the
 /// facts connect to the query.
-struct SimpFactReasoningGuard {
+struct SelectedFactReasoningGuard {
     key: (ConditionTerm, bool),
 }
 
-impl SimpFactReasoningGuard {
+impl SelectedFactReasoningGuard {
     fn enter(condition: &ConditionTerm, value: bool) -> Option<Self> {
         let key = (condition.clone(), value);
-        let entered = SIMP_FACT_CONDITIONS_IN_PROGRESS
+        let entered = SOLVE_FACT_CONDITIONS_IN_PROGRESS
             .with(|conditions| conditions.borrow_mut().insert(key.clone()));
         if !entered {
             // Refusing the repeated query makes any enclosing negative
@@ -1262,9 +1265,9 @@ impl SimpFactReasoningGuard {
     }
 }
 
-impl Drop for SimpFactReasoningGuard {
+impl Drop for SelectedFactReasoningGuard {
     fn drop(&mut self) {
-        SIMP_FACT_CONDITIONS_IN_PROGRESS.with(|conditions| {
+        SOLVE_FACT_CONDITIONS_IN_PROGRESS.with(|conditions| {
             conditions.borrow_mut().remove(&self.key);
         });
     }
@@ -1275,7 +1278,7 @@ impl Drop for SimpFactReasoningGuard {
 /// conditions nest.
 #[cfg(test)]
 #[test]
-fn simp_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
+fn solve_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
     let first = ConditionTerm::equal(
         Bitvector32Term::Variable(Variable(7_400_000)),
         Bitvector32Term::Constant(1),
@@ -1285,9 +1288,9 @@ fn simp_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
         Bitvector32Term::Constant(2),
     );
     let epoch_before = incomplete_reasoning_epoch();
-    let outer = SimpFactReasoningGuard::enter(&first, true).expect("the first proof registers");
+    let outer = SelectedFactReasoningGuard::enter(&first, true).expect("the first proof registers");
     assert!(
-        SimpFactReasoningGuard::enter(&first, true).is_none(),
+        SelectedFactReasoningGuard::enter(&first, true).is_none(),
         "re-entering the condition is a cycle"
     );
     assert_eq!(
@@ -1295,15 +1298,15 @@ fn simp_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
         epoch_before + 1,
         "the cycle makes an enclosing negative answer unsafe to memoize"
     );
-    let nested = SimpFactReasoningGuard::enter(&second, true);
+    let nested = SelectedFactReasoningGuard::enter(&second, true);
     assert!(nested.is_some(), "a distinct condition nests");
     assert!(
-        SimpFactReasoningGuard::enter(&first, false).is_some(),
+        SelectedFactReasoningGuard::enter(&first, false).is_some(),
         "the other polarity is a distinct proof"
     );
     drop(nested);
     assert!(
-        SimpFactReasoningGuard::enter(&first, true).is_none(),
+        SelectedFactReasoningGuard::enter(&first, true).is_none(),
         "the refused re-entry left the outer proof registered"
     );
     assert_eq!(
@@ -1312,7 +1315,7 @@ fn simp_fact_reasoning_guard_refuses_reentry_and_keeps_the_outer_proof() {
         "each refused query advances the incompleteness epoch"
     );
     drop(outer);
-    assert!(SimpFactReasoningGuard::enter(&first, true).is_some());
+    assert!(SelectedFactReasoningGuard::enter(&first, true).is_some());
 }
 
 struct ConditionDecisionGuard {
@@ -2823,6 +2826,7 @@ impl PureFactContext {
     }
 
     fn adjust_signed_order_bound(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+        self.checked_order_bounds.adjust(condition, value, insert);
         self.order_facts_by_lower.adjust(condition, value, insert);
         self.signed_variable_chains.adjust(condition, value, insert);
         if let Some((left, right, strict)) = condition_as_order_fact(condition, value) {
@@ -3148,6 +3152,7 @@ impl PureFactContext {
     /// cannot forget one equality, so a withdrawal refiles the equalities
     /// that remain: work in the equalities held, not in unrelated facts.
     fn rebuild_equality_graph(&mut self) {
+        #[cfg(test)]
         if let Some(graph) = &self.restoring_pointer_graph {
             self.equality_graph = graph.as_ref().clone();
             return;
@@ -3186,8 +3191,8 @@ impl PureFactContext {
                 .equality_graph
                 .admitted
                 .designation_graph
-                .direct_aliases(right)
-                .any(|alias| {
+                .unique_direct_alias(right)
+                .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
                     crate::kernel::memory_provenance::pointer_read_designations_equal(
                         left, alias, self,
@@ -3197,8 +3202,8 @@ impl PureFactContext {
                 .equality_graph
                 .admitted
                 .designation_graph
-                .direct_aliases(left)
-                .any(|alias| {
+                .unique_direct_alias(left)
+                .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
                     crate::kernel::memory_provenance::pointer_read_designations_equal(
                         alias, right, self,
@@ -3214,8 +3219,8 @@ impl PureFactContext {
                 .equality_graph
                 .admitted
                 .extent_graph
-                .direct_aliases(b)
-                .any(|alias| {
+                .unique_direct_alias(b)
+                .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
                     crate::kernel::memory_provenance::pointer_read_extents_equal(a, alias, self)
                 })
@@ -3223,8 +3228,8 @@ impl PureFactContext {
                 .equality_graph
                 .admitted
                 .extent_graph
-                .direct_aliases(a)
-                .any(|alias| {
+                .unique_direct_alias(a)
+                .is_some_and(|alias| {
                     crate::instrumentation::record_deterministic_work(1);
                     crate::kernel::memory_provenance::pointer_read_extents_equal(alias, b, self)
                 })
@@ -3236,12 +3241,15 @@ impl PureFactContext {
         available: &CMemoryRange,
     ) -> bool {
         self.designations_equal(required.0, &available.designation)
-            && required.1.is_none_or(|extent| {
-                available
-                    .opaque_extent
-                    .as_deref()
-                    .is_some_and(|source| self.opaque_extents_equal(extent, source))
-            })
+            && required
+                .1
+                .is_none_or(|extent| match available.opaque_extent.as_deref() {
+                    Some(source) => self.opaque_extents_equal(extent, source),
+                    None => {
+                        available.carrier_extent_known
+                            && self.equality_graph.opaque_extent_is_root(extent)
+                    }
+                })
     }
 
     pub(in crate::kernel) fn pointer_designations_match(
@@ -3366,9 +3374,15 @@ impl PureFactContext {
     /// Address aliases select existing full-value premises; only the selected
     /// read's complete eight-byte source can authorize their pointer metadata.
     fn known_value_of_framed_pointer_read(&self, value: &CPointerValue) -> Option<CPointerValue> {
-        for alias in self.exact_pointer_aliases(value.pointer()) {
+        let source = {
+            let _checking =
+                crate::instrumentation::CheckingWorkScope::new("select framed pointer source", 1);
+            crate::instrumentation::record_deterministic_work(1);
+            let alias = self
+                .equality_graph
+                .unique_exact_pointer_alias(value.pointer())?;
             let address = ConditionTerm::pointer_equal(value.pointer().clone(), alias.clone());
-            let Some(sources) = self
+            let sources = self
                 .equality_graph
                 .admitted
                 .pointer_address_sources
@@ -3378,49 +3392,48 @@ impl PureFactContext {
                         .admitted
                         .pointer_address_sources
                         .get(&address.flipped())
-                })
-            else {
+                })?;
+            // A source bucket can grow with snapshots of this same address. Its
+            // cached cardinality decides whether implicit selection is unambiguous.
+            if sources.len() != 1 {
+                return None;
+            }
+            sources.iter().next()?
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        let ConditionTerm::PointerValueEqual(left, right) = source else {
+            return None;
+        };
+        for read in [left.as_ref(), right.as_ref()] {
+            if read.pointer() != value.pointer()
+                || read.extent_is_known()
+                || read.extent().is_some()
+                || read.opaque_extent() != Some(read.designation())
+            {
                 continue;
-            };
-            for source in sources.iter() {
-                crate::instrumentation::record_deterministic_work(1);
-                let ConditionTerm::PointerValueEqual(left, right) = source else {
-                    continue;
-                };
-                for read in [left.as_ref(), right.as_ref()] {
-                    if read.pointer() != value.pointer()
-                        || read.extent_is_known()
-                        || read.extent().is_some()
-                        || read.opaque_extent() != Some(read.designation())
-                    {
-                        continue;
-                    }
-                    let representative = self
-                        .equality_graph
-                        .admitted
-                        .pointer_value_classes
-                        .representative(read);
-                    let representative = super::pointer_designations::prefer_pointer(
-                        &representative,
-                        &self.equality_graph.pointer_value_representative(read),
-                    );
-                    // An opaque candidate supplies no known extent. Reject it
-                    // before walking a frame that cannot make it usable.
-                    if !representative.extent_is_known() {
-                        continue;
-                    }
-                    if crate::kernel::memory_provenance::pointer_read_designations_equal(
-                        value.designation(),
-                        read.designation(),
-                        self,
-                    ) && crate::kernel::memory_provenance::pointer_read_extents_equal(
-                        value.designation(),
-                        read.designation(),
-                        self,
-                    ) {
-                        return Some(representative);
-                    }
-                }
+            }
+            let representative = self
+                .equality_graph
+                .admitted
+                .pointer_value_classes
+                .representative(read);
+            let representative = super::pointer_designations::prefer_pointer(
+                &representative,
+                &self.equality_graph.pointer_value_representative(read),
+            );
+            if !representative.extent_is_known() {
+                continue;
+            }
+            if crate::kernel::memory_provenance::pointer_read_designations_equal(
+                value.designation(),
+                read.designation(),
+                self,
+            ) && crate::kernel::memory_provenance::pointer_read_extents_equal(
+                value.designation(),
+                read.designation(),
+                self,
+            ) {
+                return Some(representative);
             }
         }
         None
@@ -3847,15 +3860,26 @@ impl PureFactContext {
     /// This rule relates load applications only. An execution value's bridge
     /// remains scoped to its certified binding, including restricted contexts.
     fn register_pointer_read_source(&self, memory: &SharedCMemory, address: &Pointer) {
+        if let Some(source) = self.pointer_read_source(memory, address) {
+            self.equality_graph.add_checked_pointer_read_equality(
+                &Pointer::loaded_value(memory, address),
+                &Pointer::loaded_value(&source, address),
+            );
+        }
+    }
+
+    pub(in crate::kernel) fn pointer_read_source(
+        &self,
+        memory: &SharedCMemory,
+        address: &Pointer,
+    ) -> Option<SharedCMemory> {
         // This producer names an LP64 pointer read, whose width is known
         // even when no scalar load was recorded at the same address.
         let bytes = crate::kernel::C_POINTER_BYTE_WIDTH;
         let start = crate::kernel::prelude::canonical_load_projection_source(memory, address)
             .unwrap_or_else(|| memory.clone());
-        let Some(derivation) = start.derivation() else {
-            return;
-        };
-        let source = match derivation.as_ref() {
+        let derivation = start.derivation()?;
+        match derivation.as_ref() {
             CMemoryDerivation::CellsSeeded { run, .. } => run.read_source(address, bytes),
             CMemoryDerivation::Store {
                 base,
@@ -3864,30 +3888,33 @@ impl PureFactContext {
             } => {
                 // Select over exactly one store. Align to its explicitly
                 // named block using established graph equality, then check
-                // complete byte separation. No search of older snapshots,
-                // ownership frames, or spellings is allowed here.
+                // complete byte separation, or use the selected ownership
+                // composition's two disjoint complete cells. This checks one
+                // store edge; it never searches older snapshots.
                 let read = if write.blocks_proven_distinct(address) {
                     Some(address.clone())
                 } else {
                     self.equality_graph.pointer_in_block(address, &write.block)
                 };
-                read.filter(|read| {
+                let separate = read.is_some_and(|read| {
                     crate::kernel::reasoning::exact_access_byte_overlap(
                         write,
                         value.byte_width(),
-                        read,
+                        &read,
                         bytes,
                     ) == Some(crate::kernel::reasoning::AccessByteOverlap::Separate)
                 })
-                .map(|_| base.clone())
+                    || crate::kernel::memory_provenance::indexed_store_byte_separation_evidence(
+                        write,
+                        value.byte_width(),
+                        address,
+                        bytes,
+                        self,
+                    )
+                    .is_some();
+                separate.then(|| base.clone())
             }
             _ => None,
-        };
-        if let Some(source) = source {
-            self.equality_graph.add_checked_pointer_read_equality(
-                &Pointer::loaded_value(memory, address),
-                &Pointer::loaded_value(&source, address),
-            );
         }
     }
 
@@ -3930,6 +3957,7 @@ impl PureFactContext {
         Self::fingerprint(4, &(variable, key, value))
     }
 
+    #[cfg(test)]
     fn withdraw_typed_pointer_read_definition(&mut self, condition: &ConditionTerm, value: bool) {
         if !value {
             return;
@@ -4326,6 +4354,7 @@ impl PureFactContext {
     }
 
     pub(super) fn rebuild_signed_order_bounds(&mut self) {
+        self.checked_order_bounds = Default::default();
         self.order_facts_by_lower = OrderFactsByLower::default();
         self.signed_order_bounds = crate::persistent::PersistentMap::default();
         self.int64_signed_order_bounds = crate::persistent::PersistentMap::default();
@@ -4391,10 +4420,10 @@ impl PureFactContext {
             .admitted
             .typed_pointer_read_definitions
             .clone();
+        self.checked_scalar_facts = Default::default();
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
         self.bool_equation_partners = crate::persistent::PersistentMap::default();
         self.pointer_offset_equalities_by_shape = crate::persistent::PersistentMap::default();
-        self.condition_match_keys_by_side = crate::persistent::PersistentMap::default();
         self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
@@ -4610,6 +4639,7 @@ impl PureFactContext {
         } else {
             self.difference_graph.withdraw(condition);
         }
+        self.checked_scalar_facts.adjust(condition, value, insert);
         self.contradictions.adjust(condition, value, insert);
         if let (ConditionTerm::PointerOffsetEqual(left, right), true) = (condition, value) {
             for shape in [offset_snapshot_shape(left), offset_snapshot_shape(right)] {
@@ -4666,15 +4696,11 @@ impl PureFactContext {
                 .get(&key)
                 .cloned()
                 .unwrap_or_default();
-            let was_filed = !facts.is_empty();
             let facts = if insert {
                 facts.with_inserted(condition.clone(), value)
             } else {
                 facts.without_key(condition)
             };
-            if was_filed == facts.is_empty() {
-                self.adjust_condition_match_key_sides(&key, !facts.is_empty());
-            }
             self.condition_facts_by_sides = if facts.is_empty() {
                 self.condition_facts_by_sides.without_key(&key)
             } else {
@@ -4697,40 +4723,6 @@ impl PureFactContext {
                     self.open_condition_facts.with_inserted(family, facts)
                 };
             }
-        }
-    }
-
-    /// Files `key` under each of its sides in `condition_match_keys_by_side`
-    /// when it gains its first fact, and withdraws it when it loses its last.
-    fn adjust_condition_match_key_sides(
-        &mut self,
-        key: &crate::kernel::primitives::ConditionMatchKey,
-        insert: bool,
-    ) {
-        let Some((left, right)) = key.bitvector_sides() else {
-            return;
-        };
-        let sides = if left == right {
-            vec![left.clone()]
-        } else {
-            vec![left.clone(), right.clone()]
-        };
-        for side in sides {
-            let keys = self
-                .condition_match_keys_by_side
-                .get(&side)
-                .cloned()
-                .unwrap_or_default();
-            let keys = if insert {
-                keys.with_inserted(key.clone(), ())
-            } else {
-                keys.without_key(key)
-            };
-            self.condition_match_keys_by_side = if keys.is_empty() {
-                self.condition_match_keys_by_side.without_key(&side)
-            } else {
-                self.condition_match_keys_by_side.with_inserted(side, keys)
-            };
         }
     }
 
@@ -5677,8 +5669,9 @@ impl PureFactContext {
             .is_some()
     }
 
-    /// The loadable facts whose base is in `block`, charged one unit each.
-    pub(in crate::kernel) fn memory_loadable_candidates(
+    /// Test census of the loadable facts whose base is in `block`.
+    #[cfg(test)]
+    pub(crate) fn memory_loadable_candidates(
         &self,
         block: &PointerBlock,
     ) -> impl Iterator<Item = &Proposition> {
@@ -5689,48 +5682,181 @@ impl PureFactContext {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
+    /// Return at most one fact per structural or indexed address shape.
+    /// Ambiguous buckets and other alias spellings require premise search.
+    /// A singleton selected source may be checked across block spellings.
     pub(crate) fn memory_loadable_candidates_for_base(
         &self,
         base: &Pointer,
     ) -> impl Iterator<Item = &Proposition> {
-        self.memory_loadable_candidates_for_base_with_aliases(base, true)
+        self.memory_loadable_candidates_for_base_with_aliases(base, true, None)
     }
 
     pub(crate) fn memory_loadable_exact_candidates_for_base(
         &self,
         base: &Pointer,
     ) -> impl Iterator<Item = &Proposition> {
-        self.memory_loadable_candidates_for_base_with_aliases(base, false)
+        self.memory_loadable_candidates_for_base_with_aliases(base, false, None)
+    }
+
+    /// Enumerating an ambiguous address bucket is premise search. The checker
+    /// can instead receive one explicitly selected source view.
+    pub(crate) fn search_memory_loadable_candidates_for_base(
+        &self,
+        permission: crate::SearchPermission,
+        base: &Pointer,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.memory_loadable_candidates_for_base_with_aliases(base, true, Some(permission))
     }
 
     fn memory_loadable_candidates_for_base_with_aliases(
         &self,
         base: &Pointer,
         include_other_spellings: bool,
+        permission: Option<crate::SearchPermission>,
     ) -> impl Iterator<Item = &Proposition> {
-        let exact_fingerprint = memory_blind_pointer_fingerprint(base);
-        let block_shapes = self.memory_loadable_shape_facts.get(&base.block);
-        let exact = block_shapes
-            .and_then(|shapes| shapes.get(&exact_fingerprint))
+        crate::instrumentation::record_deterministic_work(1);
+        let search = permission.is_some();
+        let exact = self
+            .memory_loadable_shape_facts
+            .get(&base.block)
+            .and_then(|shapes| shapes.get(&memory_blind_pointer_fingerprint(base)))
+            .filter(|facts| search || facts.len() == 1)
             .into_iter()
             .flat_map(|facts| facts.iter());
-        let fallback = block_shapes
+        // Do not even prepare an alias class when the exact address answers.
+        let related =
+            std::iter::once_with(move || self.memory_loadable_related_candidates(base, permission))
+                .take(usize::from(
+                    include_other_spellings && !self.memory_loadable_facts.is_empty(),
+                ))
+                .flatten();
+        exact
+            .chain(related)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+            .filter(move |fact| match fact {
+                Proposition::CMemoryLoadable { base: source, .. } => {
+                    !base.blocks_proven_distinct(source)
+                }
+                _ => false,
+            })
+    }
+
+    /// Class enumeration is premise selection, not part of checked lookup.
+    fn memory_loadable_aliases_for_search(
+        &self,
+        _permission: crate::SearchPermission,
+        base: &Pointer,
+    ) -> impl Iterator<Item = Pointer> {
+        self.exact_pointer_aliases(base)
+            .cloned()
+            .chain(self.equality_graph.pointer_spellings(base))
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
+    fn memory_loadable_related_candidates(
+        &self,
+        base: &Pointer,
+        permission: Option<crate::SearchPermission>,
+    ) -> impl Iterator<Item = &Proposition> {
+        let search = permission.is_some();
+        // Structural and maintained class coordinates select keys, never all
+        // class members or ranges sharing a block. The exact key was already
+        // visited by the caller. Only a planner can append other spellings.
+        let mut anchors = vec![Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        }];
+        let mut offsets = vec![&base.offset];
+        while let Some(offset) = offsets.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let PointerOffsetTerm::Add(left, right) = offset {
+                for part in [left.as_ref(), right.as_ref()] {
+                    anchors.push(Pointer {
+                        block: base.block.clone(),
+                        offset: part.clone(),
+                    });
+                    offsets.push(part);
+                }
+            }
+        }
+        // Two indexed coordinates, independent of the number of spellings:
+        // the maintained affine representative and a unique concrete anchor.
+        if let Some(coordinate) = self.equality_graph.canonical_pointer(base)
+            && let Some(offset) = coordinate.offset.to_offset_term()
+        {
+            anchors.push(Pointer {
+                block: coordinate.representative.clone(),
+                offset: PointerOffsetTerm::Constant(0),
+            });
+            anchors.push(Pointer {
+                block: coordinate.representative,
+                offset,
+            });
+        }
+        let storage = self.equality_graph.storage_address(base);
+        anchors.push(Pointer {
+            block: storage.block.clone(),
+            offset: PointerOffsetTerm::Constant(0),
+        });
+        anchors.push(storage);
+        if let Some(permission) = permission {
+            anchors.extend(self.memory_loadable_aliases_for_search(permission, base));
+        }
+        let mut keys =
+            BTreeSet::from([(base.block.clone(), memory_blind_pointer_fingerprint(base))]);
+        let anchors = anchors
             .into_iter()
-            .flat_map(|shapes| shapes.iter())
-            .filter(move |(fingerprint, _)| **fingerprint != exact_fingerprint)
-            .flat_map(|(_, facts)| facts.iter());
-        exact.chain(fallback.take(if include_other_spellings {
-            usize::MAX
-        } else {
-            0
-        }))
+            .filter_map(|anchor| {
+                crate::instrumentation::record_deterministic_work(1);
+                let key = (
+                    anchor.block.clone(),
+                    memory_blind_pointer_fingerprint(&anchor),
+                );
+                keys.insert(key.clone()).then_some(key)
+            })
+            .collect::<Vec<_>>();
+        // A selected singleton can cover an address whose structural anchor
+        // normalization erased. Cached length avoids an ambient walk.
+        let singleton =
+            self.memory_loadable_facts
+                .get(&base.block)
+                .filter(|facts| facts.len() == 1)
+                .or_else(|| {
+                    // An explicitly selected view may use another block's
+                    // spelling. Cached lengths select it without an alias
+                    // walk; coverage still checks the two supplied addresses.
+                    (self.memory_loadable_facts.len() == 1)
+                        .then(|| self.memory_loadable_facts.values().next())
+                        .flatten()
+                        .filter(|facts| facts.len() == 1)
+                })
+                .and_then(|facts| facts.iter().next())
+                .filter(|fact| match fact {
+                    Proposition::CMemoryLoadable { base, .. } => !keys
+                        .contains(&(base.block.clone(), memory_blind_pointer_fingerprint(base))),
+                    _ => false,
+                });
+        anchors
+            .into_iter()
+            .flat_map(move |(block, fingerprint)| {
+                crate::instrumentation::record_deterministic_work(1);
+                self.memory_loadable_shape_facts
+                    .get(&block)
+                    .and_then(|shapes| shapes.get(&fingerprint))
+                    .filter(|facts| search || facts.len() == 1)
+                    .into_iter()
+                    .flat_map(|facts| facts.iter())
+            })
+            .chain(singleton)
     }
 
     /// The read-defined facts stated at `pointer` for `value_type`, at one
     /// of its exact aliases, or at another spelling in its equality class:
     /// the keys [`Self::has_memory_read_defined_evidence`] looks up.
-    pub(crate) fn memory_read_defined_candidates(
+    pub(crate) fn search_memory_read_defined_candidates(
         &self,
+        _permission: crate::SearchPermission,
         pointer: &Pointer,
         value_type: CType,
     ) -> Vec<&Proposition> {
@@ -5746,6 +5872,7 @@ impl PureFactContext {
                 ))
             })
             .flat_map(crate::persistent::PersistentSet::iter)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
             .collect()
     }
 
@@ -6342,6 +6469,7 @@ impl PureFactContext {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn remove_proposition_fact(&mut self, proposition: &Proposition) {
         if self.prop_facts.remove(proposition).is_some() {
             self.adjust_pointer_class_fact(proposition, false);
@@ -6852,6 +6980,7 @@ impl PureFactContext {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
                 self.condition_facts.get(condition) == Some(value)
+                    || self.prop_facts.contains(proposition)
             }
             Proposition::And(left, right) => {
                 self.contains_assumed_exact(left) && self.contains_assumed_exact(right)
@@ -6983,15 +7112,35 @@ impl PureFactContext {
         next
     }
 
+    /// A repeated assumption is either redundant or immediately contradictory.
+    /// Keep the first condition entry and all its indexes. Record contradiction
+    /// as an ordinary false proposition, so retained premises and reconstruction
+    /// preserve it without needing a hidden flag or an index rebuild. The
+    /// proposition set is distinct from the condition map: even a prior
+    /// `false == false` fact must not be replaced to record falsehood.
+    fn restates_condition(&mut self, condition: &ConditionTerm, value: bool) -> bool {
+        let Some(known) = self.condition_facts.get(condition).copied() else {
+            return false;
+        };
+        if known != value {
+            self.insert_proposition_fact(Proposition::ConditionIs(
+                ConditionTerm::Constant(false),
+                true,
+            ));
+        }
+        true
+    }
+
     fn assume_condition_once(mut self, condition: ConditionTerm, value: bool) -> Self {
         // Proof branches frequently restate a path fact (for example while
         // lowering the consequent of an implication). Preserve the shared
         // persistent view on that idempotent insertion: `Arc::make_mut`
         // would otherwise clone the complete fact map and every derived
         // index before discovering that nothing changed.
-        if self.condition_facts.get(&condition) == Some(&value) {
+        if self.restates_condition(&condition, value) {
             return self;
         }
+        #[cfg(test)]
         let pointer_predecessor =
             (value && matches!(condition, ConditionTerm::PointerValueEqual(..))).then(|| {
                 (
@@ -7173,15 +7322,13 @@ impl PureFactContext {
         {
             self = self.assume_condition_uncharged(overflow, false);
         }
-        let old = self.condition_facts.get(&condition).copied();
+        // Filing derived facts above can itself establish this condition.
+        // Apply the same monotone rule before committing the original entry.
+        if self.restates_condition(&condition, value) {
+            return self;
+        }
         self.execution_variable_ceiling.file_condition(&condition);
         self.condition_facts = self.condition_facts.with_inserted(condition.clone(), value);
-        if let Some(source) = self
-            .execution_fact_projection
-            .get(&ContextFactKey::Condition(condition.clone()))
-        {
-            self.equality_graph.adjust_pointer_fact(source, false);
-        }
         self.execution_fact_projection.insert(
             ContextFactKey::Condition(condition.clone()),
             std::sync::Arc::new(ExecutionPureFact::new(Proposition::ConditionIs(
@@ -7190,44 +7337,7 @@ impl PureFactContext {
             ))),
         );
         self.adjust_pointer_class_fact(&Proposition::ConditionIs(condition.clone(), value), true);
-        if old.is_none() {
-            self.adjust_memory_load_condition_index(&condition, true);
-        }
-        if let Some(old) = old {
-            if self
-                .equality_graph
-                .admitted
-                .congruence_conditions
-                .contains_key(&condition)
-            {
-                self.equality_graph
-                    .admitted
-                    .congruence_conditions
-                    .remove(&condition);
-                self.rebuild_equality_graph();
-            }
-            self.adjust_stated_proposition_index(
-                &Proposition::ConditionIs(condition.clone(), old),
-                false,
-            );
-            self.adjust_scalar_evidence_input(&condition, old, false);
-            self.adjust_bitvector64_equality(&condition, old, false);
-            self.adjust_exact_constant_equality(&condition, old, false);
-
-            self.adjust_condition_match_indexes(&condition, old, false);
-            self.adjust_signed_order_bound(&condition, old, false);
-            self.adjust_null_pointer_offset(&condition, old, false);
-            self.adjust_pointer_block_alias(&condition, old, false);
-            self.adjust_pointer_offset_alias(&condition, old, false);
-            self.adjust_int32_graph_equality(&condition, old, false);
-            self.adjust_uint64_graph_equality(&condition, old, false);
-            self.adjust_algebraic_graph_equality(
-                &Proposition::ConditionIs(condition.clone(), old),
-                false,
-            );
-            self.withdraw_typed_pointer_read_definition(&condition, old);
-            self.content_fingerprint ^= Self::fingerprint(1, &(condition.clone(), old));
-        }
+        self.adjust_memory_load_condition_index(&condition, true);
         self.adjust_stated_proposition_index(
             &Proposition::ConditionIs(condition.clone(), value),
             true,
@@ -7268,6 +7378,7 @@ impl PureFactContext {
             self.admit_bool_binder_truths(&condition);
         }
         self.content_fingerprint ^= Self::fingerprint(1, &(condition, value));
+        #[cfg(test)]
         if let Some((source, graph)) = pointer_predecessor {
             self.pointer_value_undo = Some(std::sync::Arc::new(PointerValueUndo {
                 source,
@@ -7716,10 +7827,13 @@ impl PureFactContext {
 
     /// The atomic ground and universal facts, for the planner's premise
     /// search.
-    pub(crate) fn atomic_general_facts(&self) -> impl Iterator<Item = &Proposition> {
+    pub(crate) fn atomic_general_facts(
+        &self,
+        permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = &Proposition> {
         self.atomic_ground_facts
-            .scan_for_search()
-            .chain(self.atomic_quantified_facts.scan_for_search())
+            .scan_for_search(&permission)
+            .chain(self.atomic_quantified_facts.scan_for_search(&permission))
             .map(SharedIndexFact::as_ref)
     }
 
@@ -7727,9 +7841,13 @@ impl PureFactContext {
     ///
     /// This is a read-only view for a planner outside the kernel: it names
     /// what is available without exposing the index that stores it.
-    pub fn condition_fact_pairs(&self) -> impl Iterator<Item = (&ConditionTerm, bool)> {
+    #[cfg(test)]
+    pub(crate) fn condition_fact_pairs(
+        &self,
+        permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = (&ConditionTerm, bool)> {
         self.condition_facts
-            .scan_for_upkeep()
+            .scan_for_search(&permission)
             .map(|(condition, value)| (condition, *value))
     }
 
@@ -7795,8 +7913,41 @@ impl PureFactContext {
     }
 
     /// The proposition facts of this context, in the index's own order.
-    pub fn proposition_facts(&self) -> impl Iterator<Item = &Proposition> {
-        self.prop_facts.scan_for_upkeep()
+    pub(crate) fn proposition_facts(
+        &self,
+        permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.prop_facts.scan_for_search(&permission)
+    }
+
+    /// A bounded sample and the total cardinality, in condition-then-proposition
+    /// index order. At most 32 facts are visited or cloned, regardless of the
+    /// requested sizes. Entries shared by the prefix and suffix appear once.
+    pub(crate) fn diagnostic_fact_sample(
+        &self,
+        first: usize,
+        last: usize,
+    ) -> (Vec<Proposition>, usize) {
+        let first = first.min(crate::kernel::fact_collections::DIAGNOSTIC_FACT_LIMIT);
+        let last = last.min(crate::kernel::fact_collections::DIAGNOSTIC_FACT_LIMIT - first);
+        let (conditions, propositions) = self.fact_counts();
+        let first_conditions = first.min(conditions);
+        let first_propositions = (first - first_conditions).min(propositions);
+        let last_propositions = last.min(propositions - first_propositions);
+        let last_conditions = (last - last_propositions).min(conditions - first_conditions);
+        let facts = self
+            .condition_facts
+            .diagnostic_sample(first_conditions, last_conditions)
+            .into_iter()
+            .map(|(condition, value)| Proposition::ConditionIs(condition.clone(), *value))
+            .chain(
+                self.prop_facts
+                    .diagnostic_sample(first_propositions, last_propositions)
+                    .into_iter()
+                    .cloned(),
+            )
+            .collect();
+        (facts, conditions + propositions)
     }
 
     /// Answers whether a requirement is already stated in this context.
@@ -7855,7 +8006,24 @@ impl PureFactContext {
         conditions: &[(ConditionTerm, bool)],
         propositions: &[Proposition],
     ) -> Self {
-        let mut restricted = self.clone();
+        let _checking = crate::instrumentation::CheckingWorkScope::new(
+            "restrict to selected facts",
+            conditions.len().saturating_add(propositions.len()),
+        );
+        // Start from selected input, never withdraw inherited pointer sources.
+        // Only retained typing metadata is consulted by selected load-variable key.
+        let mut restricted = Self::new();
+        restricted.reasoning_policy = self.reasoning_policy;
+        restricted.execution_variable_ceiling = self.execution_variable_ceiling.clone();
+        restricted.variable_widths = self.variable_widths.clone();
+        restricted
+            .equality_graph
+            .admitted
+            .typed_pointer_read_definitions = self
+            .equality_graph
+            .admitted
+            .typed_pointer_read_definitions
+            .clone();
         for (condition, _) in conditions {
             restricted
                 .execution_variable_ceiling
@@ -7893,17 +8061,25 @@ impl PureFactContext {
         restricted
     }
 
-    /// The loadability facts of this context, in the index's own order.
-    pub fn memory_loadable_fact_propositions(&self) -> impl Iterator<Item = &Proposition> {
+    /// Ambient loadability facts for planner witness selection, charged per visit.
+    /// Diagnostics use the block-keyed candidate view instead.
+    pub(crate) fn memory_loadable_fact_propositions(
+        &self,
+        _permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = &Proposition> {
         self.memory_loadable_facts
             .values()
             .flat_map(|facts| facts.iter())
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
     /// The disjunction facts of this context, in the index's own order, for
     /// a planner's case search.
-    pub fn disjunction_fact_propositions(&self) -> impl Iterator<Item = &Proposition> {
-        self.disjunction_facts.scan_for_search()
+    pub(crate) fn disjunction_fact_propositions(
+        &self,
+        permission: crate::SearchPermission,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.disjunction_facts.scan_for_search(&permission)
     }
 
     /// Whether this context holds a disjunction fact.
@@ -7916,20 +8092,18 @@ impl PureFactContext {
         self.prop_facts.contains(proposition)
     }
 
-    /// One checked weakening: this context without the single exact entry
-    /// that `proposition` names, with the indexes keyed by that entry
-    /// adjusted.
-    ///
-    /// Removing one exact entry touches only the persistent indexes keyed by
-    /// it; it never rebuilds or scans the fact set. A `proposition` that is
-    /// not an exact fact here leaves the context unchanged.
-    pub fn without_exact_fact(&self, proposition: &Proposition) -> Self {
+    /// Test-only negative control: remove one premise and repair its indexes.
+    /// This may rebuild derived indexes or defer rebuilding until a later query.
+    /// Production branches retain the parent context and extend a cheap clone.
+    #[cfg(test)]
+    pub(crate) fn without_exact_fact(&self, proposition: &Proposition) -> Self {
         let mut weakened = self.clone();
         match proposition {
             Proposition::ConditionIs(condition, value) => {
                 if weakened.condition_facts.get(condition) == Some(value) {
                     weakened.forget_condition_fact(condition, *value);
                 }
+                weakened.remove_proposition_fact(proposition);
             }
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value)
@@ -7944,6 +8118,7 @@ impl PureFactContext {
         weakened
     }
 
+    #[cfg(test)]
     fn forget_condition_fact(&mut self, condition: &ConditionTerm, assumed: bool) {
         crate::instrumentation::record_deterministic_work(1);
         let predecessor = self.pointer_value_undo.take().filter(|undo| {
@@ -8014,7 +8189,9 @@ impl PureFactContext {
         required
             .condition_facts
             .scan_explicit_input()
-            .all(|(condition, value)| self.condition_facts.get(condition) == Some(value))
+            .all(|(condition, value)| {
+                self.contains_assumed_exact(&Proposition::ConditionIs(condition.clone(), *value))
+            })
             && required
                 .equality_graph
                 .admitted
@@ -8034,7 +8211,7 @@ impl PureFactContext {
             && required
                 .prop_facts
                 .scan_explicit_input()
-                .all(|proposition| self.prop_facts.contains(proposition))
+                .all(|proposition| self.contains_assumed_exact(proposition))
             && required
                 .resource_compositions
                 .scan_explicit_input()
@@ -8063,14 +8240,14 @@ impl PropositionDerivation {
             PropositionDerivationRule::ContextualAtomic {
                 premises,
                 premises_id,
-                for_simp,
+                extended_rules,
                 evidence,
             } => {
                 let premises = premises.context();
                 (id_scope.id == *premises_id || available.includes(&premises))
                     && premises.checks_atomic_derivation(
                         &self.conclusion,
-                        *for_simp,
+                        *extended_rules,
                         *premises_id,
                         evidence,
                     )
@@ -9848,14 +10025,25 @@ impl ExecutionPureFact {
         if !self.is_certified() {
             return;
         }
-        if self.is_logical_read_equation()
-            && let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) =
-                self.proposition()
-        {
-            context
-                .equality_graph
-                .add_checked_pointer_value_equality(left, right);
-            return;
+        if self.is_logical_read_equation() {
+            match self.proposition() {
+                Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
+                    context
+                        .equality_graph
+                        .add_checked_pointer_value_equality(left, right);
+                    return;
+                }
+                // A complete value equation simplifies to address equality
+                // when its designation and bounds already match. Retain that
+                // exact producer conclusion without adding object authority.
+                Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), true) => {
+                    context
+                        .equality_graph
+                        .add_checked_read_equality(left, right);
+                    return;
+                }
+                _ => {}
+            }
         }
         let Some(
             binding @ GeneratedLoadBinding::Exact {
@@ -9948,13 +10136,18 @@ impl ExecutionPureFact {
     }
 
     pub(in crate::kernel) fn logical_read_equation(value: CPointerValue, read: Pointer) -> Self {
+        let read = CPointerValue::new(read, value.c_type());
+        Self::logical_pointer_value_equation(value, read)
+    }
+
+    pub(in crate::kernel) fn logical_pointer_value_equation(
+        left: CPointerValue,
+        right: CPointerValue,
+    ) -> Self {
         Self {
             logical_read_equation: true,
             ..Self::certified(Proposition::ConditionIs(
-                ConditionTerm::pointer_value_equal(
-                    value.clone(),
-                    CPointerValue::new(read, value.c_type()),
-                ),
+                ConditionTerm::pointer_value_equal(left, right),
                 true,
             ))
         }
@@ -11762,4 +11955,101 @@ fn with_adjusted_member<K: Ord + Clone, V: Ord + Clone>(
     } else {
         map.with_inserted(key.clone(), bucket)
     }
+}
+
+mod selected_facts;
+pub(crate) use selected_facts::SelectedFacts;
+
+#[cfg(test)]
+mod diagnostic_sample_tests {
+    use super::*;
+
+    #[test]
+    fn diagnostic_samples_preserve_order_counts_and_overlap_without_unbounded_limits() {
+        for (conditions, propositions) in
+            [(0, 0), (0, 40), (40, 0), (5, 40), (40, 5), (5, 5), (20, 20)]
+        {
+            let mut context = PureFactContext::new();
+            for index in 0..conditions {
+                context = context.assume_condition(
+                    ConditionTerm::signed_less_than(
+                        Bitvector32Term::Variable(Variable(660_000 + index)),
+                        Bitvector32Term::Constant(1000),
+                    ),
+                    true,
+                );
+            }
+            for index in 0..propositions {
+                context = context.assume_proposition(Proposition::Predicate {
+                    name: format!("sample_{index:03}"),
+                    arguments: Vec::new(),
+                });
+            }
+            let all = context.pure_facts();
+            for (first, last) in [
+                (0, 0),
+                (12, 0),
+                (8, 24),
+                (0, 32),
+                (usize::MAX, usize::MAX),
+                (4, usize::MAX),
+            ] {
+                let prefix = first.min(32);
+                let suffix = last.min(32 - prefix);
+                let end = prefix.min(all.len());
+                let start = all.len().saturating_sub(suffix).max(end);
+                let expected: Vec<_> = all[..end]
+                    .iter()
+                    .chain(all[start..].iter())
+                    .cloned()
+                    .collect();
+                let ((sample, count), work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        context.diagnostic_fact_sample(first, last)
+                    });
+                assert_eq!(
+                    sample, expected,
+                    "{conditions}/{propositions}, {first}/{last}"
+                );
+                assert_eq!(count, all.len());
+                assert!(
+                    work <= 32,
+                    "unbounded diagnostic request visited {work} facts"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod contradictory_branch_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/assumptions/contradictory_branches.rs");
+}
+
+#[cfg(test)]
+mod context_restriction_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/assumptions/context_restriction.rs");
+}
+
+#[cfg(test)]
+mod root_extent_tests;
+
+#[cfg(test)]
+mod view_alias_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/assumptions/view_aliases.rs");
+}
+
+#[cfg(test)]
+mod resource_alias_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/assumptions/resource_aliases.rs");
+}
+
+#[cfg(test)]
+mod condition_bucket_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/assumptions/condition_buckets.rs");
 }

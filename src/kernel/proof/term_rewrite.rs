@@ -2908,8 +2908,33 @@ impl<'a> TermRewrite<'a> {
             AlgebraicTermNode::MemoryLoad { memory, pointer } => {
                 let carrier = AlgebraicTermNode::memory_load_carrier_value(memory, pointer);
                 match self.field(&carrier) {
-                    AlgebraicValue::C(value) => AlgebraicTermNode::memory_load_from_carrier(&value)
-                        .unwrap_or_else(|| term.node.clone()),
+                    AlgebraicValue::C(value) => {
+                        let rewritten = AlgebraicTermNode::memory_load_from_carrier(&value)
+                            .unwrap_or_else(|| term.node.clone());
+                        match rewritten {
+                            AlgebraicTermNode::MemoryLoad {
+                                memory: moved_memory,
+                                pointer: moved_pointer,
+                            } if moved_memory == *memory && moved_pointer != *pointer => {
+                                // A projection names the original selected cell.
+                                // Moving the read names the substituted cell at
+                                // its recorded observation, as lowering does.
+                                let origin = crate::kernel::prelude::value_load_origin(
+                                    memory,
+                                    pointer,
+                                    crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                )
+                                .unwrap_or_else(|| memory.clone());
+                                AlgebraicTermNode::MemoryLoad {
+                                    memory: crate::kernel::memory_provenance::canonical_value_load_memory(
+                                        &origin, &moved_pointer, crate::kernel::ABSTRACT_VALUE_WIDTH,
+                                    ),
+                                    pointer: moved_pointer,
+                                }
+                            }
+                            other => other,
+                        }
+                    }
                     _ => term.node.clone(),
                 }
             }
@@ -4450,11 +4475,10 @@ impl<'a> TermRewrite<'a> {
                 offset: PointerOffsetTerm::add(to.offset.clone(), displacement),
             };
         }
-        // A read's origin depends on its storage address, rather than on
-        // the numeric address held in that cell. A full pointer substitution
-        // can therefore re-express a selected read at the substituted cell.
-        // Keep this separate from numeric rewrites of the read's result.
-        if self.pointer_value_exact.is_some()
+        // A read depends on its selected address. Substitute full pointers
+        // or numeric indices through that address, retaining the read's
+        // defining snapshot and memoizing shared read definitions.
+        if (self.pointer_value_exact.is_some() || self.bitvector.is_some())
             && !self.source_disabled
             && let Some(read) = p.as_loaded_value()
         {
@@ -4476,7 +4500,9 @@ impl<'a> TermRewrite<'a> {
             let address = self.pointer(&read.defining_address);
             let block = if address != read.defining_address {
                 self.changed = true;
-                Pointer::canonical_loaded_value(&read.defining_memory, &address).block
+                // Rewriting changes the selected address, not the read into
+                // its stored value. Keep the immutable defining snapshot.
+                Pointer::version_read(&read.defining_memory, &address).block
             } else {
                 p.block.clone()
             };
@@ -7333,6 +7359,120 @@ mod tests {
 #[cfg(test)]
 mod pointer_integer_rewrite_tests {
     use super::*;
+
+    #[test]
+    fn a_generic_read_rewrite_keeps_the_substituted_cells_version_name() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = CPointerValue::new(
+            Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CType::Int32Pointer,
+        );
+        let to = CPointerValue::new(Pointer::symbolic(Variable(996_021)), CType::Int32Pointer);
+        let parameter = TypeParameterName::intern("RewriteReadT");
+        let stored = CValue::Parameter(Box::new(AlgebraicTerm {
+            algebraic_type: parameter.algebraic_type(),
+            node: AlgebraicTermNode::Variable(Variable(996_022)),
+        }));
+        let memory = crate::kernel::intern_c_memory(CMemory::new().store(
+            Pointer {
+                block: PointerBlock::Heap(996_023),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            stored.clone(),
+        ));
+        let read =
+            AlgebraicTermNode::parameter_load(memory.clone(), from.pointer().clone(), parameter);
+        // A separate four-byte observation must not replace the generic
+        // read's eight-byte origin when the same version name is reused.
+        let partial = crate::kernel::intern_c_memory(memory.memory().clone().store(
+            Pointer {
+                block: PointerBlock::Heap(996_023),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CValue::UInt32(7u32.into()),
+        ));
+        let _ = crate::kernel::memory_provenance::canonical_value_load_memory(
+            &partial,
+            from.pointer(),
+            4,
+        );
+        let expected = AlgebraicTermNode::parameter_load(memory, to.pointer().clone(), parameter);
+        assert_ne!(expected, stored, "a rewritten logical read stays a read");
+        let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
+        assert_eq!(rewritten, expected);
+    }
+
+    #[test]
+    fn full_pointer_rewrite_keeps_the_read_version_and_snapshot() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = CPointerValue::new(
+            Pointer::symbolic(Variable(996_010)),
+            CType::Int32PointerPointer,
+        );
+        let to = CPointerValue::new(
+            Pointer::symbolic(Variable(996_011)),
+            CType::Int32PointerPointer,
+        );
+        let stored = CValue::pointer(Pointer::symbolic(Variable(996_012)));
+        let memory = CMemory::new().store(to.pointer().clone(), stored.clone());
+        let read = memory.symbolic_pointer_version_load(from.pointer(), CType::Int32Pointer);
+        let expected = memory.symbolic_pointer_version_load(to.pointer(), CType::Int32Pointer);
+        assert_ne!(expected, stored, "a rewritten logical read stays a read");
+        let rewrite = || TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
+        assert_eq!(rewrite(), expected);
+        let later = memory.store(
+            to.pointer().clone(),
+            CValue::pointer(Pointer::symbolic(Variable(996_013))),
+        );
+        let later_read = later.symbolic_pointer_version_load(to.pointer(), CType::Int32Pointer);
+        assert_ne!(later_read, expected);
+        assert_eq!(
+            rewrite(),
+            expected,
+            "later stores do not move the selected read"
+        );
+    }
+
+    #[test]
+    fn numeric_index_rewrite_keeps_nested_pointer_read_versions_and_snapshots() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let from = Bitvector32Term::Variable(Variable(996_020));
+        let to = Bitvector32Term::Variable(Variable(996_021));
+        let address = |index| Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(index, 8),
+        };
+        let destination = address(to.clone());
+        let stored = CValue::pointer(Pointer::symbolic(Variable(996_022)));
+        let memory = CMemory::new().store(destination.clone(), stored.clone());
+        let shared = crate::kernel::intern_c_memory(memory.clone());
+        let mut input = address(from.clone());
+        let mut expected = destination.clone();
+        for depth in 1..=32 {
+            input = Pointer::version_read(&shared, &input);
+            expected = Pointer::version_read(&shared, &expected);
+            assert_eq!(
+                TermRewrite::for_bits(&from, &to).pointer(&input),
+                expected,
+                "nested read depth {depth}",
+            );
+        }
+        let later = memory.store(
+            destination,
+            CValue::pointer(Pointer::symbolic(Variable(996_023))),
+        );
+        let _ = later.symbolic_pointer_version_load(&address(to.clone()), CType::Int32Pointer);
+        assert_eq!(TermRewrite::for_bits(&from, &to).pointer(&input), expected);
+        let value = CValue::pointer(input);
+        assert_eq!(
+            TermRewrite::for_bits(&from, &to).value(&value),
+            CValue::pointer(expected),
+            "all projections of the same read retain its version",
+        );
+    }
 
     #[test]
     fn numeric_rewriting_retains_the_existing_record_without_creating_one() {

@@ -29,7 +29,7 @@ theorem guard_is_decided(x: Integer) {
     }
 }
 
-theorem simp_decides_the_condition(x: int32, n: Integer) {
+theorem solve_decides_the_condition(x: int32, n: Integer) {
     requires x > 3;
     ensures (if x > 3 { n } else { n - 1 }) == n by solve();
 }

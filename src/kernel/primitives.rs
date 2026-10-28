@@ -2336,6 +2336,20 @@ impl PointerBlock {
         if loaded_before(self, other) || loaded_before(other, self) {
             return true;
         }
+        // A pointer read holds the pointer its snapshot stores at the read's
+        // address (the read-over-write authority), so it lies in that
+        // pointer's block. This reads memory, never facts.
+        let stored_block = |block: &Self| match block {
+            Self::LoadedPointer(identity) => {
+                crate::kernel::eval::loaded_pointer_stored_block(*identity)
+            }
+            _ => None,
+        };
+        if stored_block(self).is_some_and(|stored| stored.proven_distinct(other))
+            || stored_block(other).is_some_and(|stored| self.proven_distinct(&stored))
+        {
+            return true;
+        }
         // A symbolic block is a logic variable that later facts may constrain
         // to any address, including a heap block named below (a contract
         // postcondition such as `result == destination` does exactly that).
@@ -9318,17 +9332,6 @@ impl ConditionMatchKey {
             Self::OverflowAdd(_, _) => 3,
         }
     }
-
-    /// The two `Bitvector32Term` sides, for the kinds that have them.
-    pub(super) fn bitvector_sides(&self) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
-        match self {
-            Self::Equal(left, right)
-            | Self::Order(_, left, right)
-            | Self::UnsignedOrder(_, left, right)
-            | Self::OverflowAdd(left, right) => Some((left, right)),
-            Self::OffsetEqual(_, _) => None,
-        }
-    }
 }
 
 /// The block and first symbolic atom (canonical) of a memory base; see
@@ -12255,12 +12258,8 @@ impl RetainedPremises {
     }
 
     /// A context holding exactly the cited propositions and nothing else.
-    pub(crate) fn context(&self) -> PureFactContext {
-        self.propositions
-            .iter()
-            .fold(PureFactContext::new(), |context, premise| {
-                context.assume_proposition(premise.clone())
-            })
+    pub(crate) fn context(&self) -> crate::kernel::SelectedFacts<'static> {
+        crate::kernel::SelectedFacts::from_propositions(&self.propositions)
     }
 }
 
@@ -12270,7 +12269,7 @@ pub(crate) enum PropositionDerivationRule {
     ContextualAtomic {
         premises: RetainedPremises,
         premises_id: u64,
-        for_simp: bool,
+        extended_rules: bool,
         evidence: AtomicPropositionDerivationEvidence,
     },
     Explosion {
@@ -12662,14 +12661,6 @@ pub struct PureFactContext {
         ConditionTerm,
         crate::persistent::PersistentMap<ConditionTerm, bool>,
     >,
-    /// The keys of `condition_facts_by_sides`, filed under each of their
-    /// `Bitvector32Term` sides. A query reads the keys filed under one
-    /// side's spellings and keeps those whose other side spells the query's
-    /// other side, so it never forms every pair of the two sides' spellings.
-    pub(super) condition_match_keys_by_side: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<ConditionMatchKey, ()>,
-    >,
     /// The facts of `condition_facts_by_sides` with a side that is not an
     /// atom (a constant, or a variable that no load names): a load, a sum,
     /// a conditional. `condition_matches` can prove such a side equal to a
@@ -12714,7 +12705,9 @@ pub struct PureFactContext {
     pub(super) equality_graph: super::equality_graph::EqualityGraph,
     /// Producer-retained predecessor for withdrawing the latest full-pointer
     /// premise. Exact persistent roots identify the unchanged fact frontier.
+    #[cfg(test)]
     pub(super) pointer_value_undo: Option<Arc<super::assumptions::PointerValueUndo>>,
+    #[cfg(test)]
     pub(super) restoring_pointer_graph: Option<Arc<super::equality_graph::EqualityGraph>>,
     /// Addresses of the first elements of two separated memory ranges of
     /// one block, keyed by the unordered pair and carrying the separation
@@ -12752,6 +12745,8 @@ pub struct PureFactContext {
     /// `has_pointer_offset_snapshot_fact` checks.
     pub(super) pointer_offset_equalities_by_shape:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
+    pub(super) checked_scalar_facts: super::assumptions::checked_scalar_facts::CheckedScalarFacts,
+    pub(super) checked_order_bounds: super::assumptions::checked_order_bounds::CheckedOrderBounds,
     pub(super) signed_order_bounds: crate::persistent::PersistentMap<
         Bitvector32Term,
         crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,

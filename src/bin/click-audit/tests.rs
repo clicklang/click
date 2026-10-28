@@ -4,6 +4,68 @@ use click::surface::{
     verify_c0_sources_at,
 };
 
+/// Runtime inventory names execution-theorem proofs `T.contract`; every
+/// expansion route must resolve that label to the theorem's postcondition.
+#[test]
+#[ignore = "nightly: execution-theorem label expansion and full claim audits"]
+fn execution_theorem_contract_labels_expand_and_audit() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    for (fixture, theorem) in [
+        (
+            "named_contract_value_parameter_execution_theorem",
+            "add3_adds_three",
+        ),
+        (
+            "named_contract_value_parameter_execution_theorem",
+            "adds_three_shifts_three",
+        ),
+        ("execution_theorem_imported_tactic", "zero_contract"),
+    ] {
+        let path = root.join(format!("{fixture}.md"));
+        let source = load_audit_source(&path).unwrap();
+        let claim = format!("{theorem}.contract");
+        let legacy = format!("{theorem}.ensures_0");
+        let expanded = expand_claim_with_source(&path, &source, &claim)
+            .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        assert_ne!(expanded, source.container_source);
+        assert_eq!(
+            expanded,
+            expand_claim_with_source(&path, &source, &legacy).unwrap()
+        );
+        let rewritten = rewritten_click_source(&source, &expanded).unwrap();
+        click::surface::without_implicit_auto(|| {
+            verify_rewritten_with_inputs(&source, &claim, &rewritten)
+        })
+        .unwrap_or_else(|error| panic!("{claim}: {error}"));
+        if fixture == "named_contract_value_parameter_execution_theorem" {
+            let CInput::Bundle(sources) = &source.inputs else {
+                panic!("the fixture has ordinary C sources");
+            };
+            assert_eq!(
+                expand_c0_claim_source_by_label(
+                    &source.click_source,
+                    &source_refs(sources),
+                    &claim
+                )
+                .unwrap(),
+                rewritten
+            );
+        }
+        let arguments =
+            parse_arguments(["--claim".to_string(), claim, path.display().to_string()]).unwrap();
+        run_audit(arguments).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+    assert!(
+        expand_c0_claim_source_by_label(
+            "theorem ordinary() { ensures 1 == 1; }",
+            &[],
+            "ordinary.contract",
+        )
+        .is_err(),
+        "ordinary theorem postconditions do not acquire a grouped contract alias"
+    );
+}
+
 #[test]
 #[ignore = "nightly: C++ generic method expansion and retained/cold rechecks"]
 fn generic_cpp_clause_proofs_stay_on_the_generic_method() {
@@ -128,6 +190,34 @@ fn parses_arguments_and_duration_units() {
     assert_eq!(arguments.changed_since.as_deref(), Some("HEAD~1"));
     assert_eq!(arguments.max_sites, Some(3));
     assert_eq!(arguments.path, PathBuf::from("examples"));
+}
+
+/// The internal translation-unit suffix is not legal Click syntax. Calls
+/// in snapshot paths use the source spelling, with each occurrence retained.
+#[test]
+#[ignore = "nightly: static-call snapshot expansion and full claim audit"]
+fn static_call_snapshot_paths_expand_and_audit() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/c_static_function.md");
+    let source = load_audit_source(&path).unwrap();
+    let claim = "run.contract";
+    let expanded = expand_claim_with_source(&path, &source, claim)
+        .expect("static calls have a source spelling in expanded snapshots");
+    let rewritten = rewritten_click_source(&source, &expanded).unwrap();
+    assert!(rewritten.contains("call(add_one, 0)"), "{rewritten}");
+    assert!(rewritten.contains("call(add_one, 1)"), "{rewritten}");
+    assert!(!rewritten.contains("#inline:"), "{rewritten}");
+    assert!(!rewritten.contains("#file-static:"), "{rewritten}");
+    click::surface::without_implicit_auto(|| {
+        verify_rewritten_with_inputs(&source, claim, &rewritten)
+    })
+    .expect("the printed call occurrences resolve to their original regions");
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        claim.to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).expect("the original static-call proof audits completely");
 }
 
 #[test]
@@ -653,7 +743,7 @@ int32 example() {
         c0_tactic_source_position(click_source, &sources, "example.contract", 1).unwrap();
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
-            .expect("redundant trailing simp should expand away");
+            .expect("redundant trailing solve should expand away");
     assert!(!expanded.contains("solve();"));
 
     let source = AuditSource {
@@ -851,7 +941,7 @@ int32 write_selected(int32 p[2], int32 flag) {
 fn infeasible_branch_arm_site_audits_instead_of_reporting_a_missing_tactic() {
     // Reduced from `tree_contains` in `examples/modeled-binary-tree`, whose
     // first `branch` guards a C path the contract rules out. Checked
-    // execution drops that arm, so its `simp` never runs; audit used to fail
+    // execution drops that arm, so its `solve` never runs; audit used to fail
     // the site with `has no source tactic 2` while `click verify` passed the
     // same sidecar. The site must audit: it expands by removal, the rewrite
     // verifies, and re-expansion is a fixed point.
@@ -887,7 +977,7 @@ int32 flag(int32 x) {
     let site = sites
         .iter()
         .find(|site| site.position.line == 6)
-        .expect("the dropped arm's simp should be an auditable site");
+        .expect("the dropped arm's solve should be an auditable site");
     let expanded = expand_location(&format_location(&site_location(site)))
         .expect("a smart tactic on a dropped C path should expand");
     assert!(!expanded.contains("step(); solve();"), "{expanded}");
@@ -920,7 +1010,7 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
     .unwrap();
     fs::write(
         &path,
-        "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; }\n",
+        "verifying \"unit.c\";\nint32 identity(int32 x) { ensures result == x; } by { step_until(function.exit); solve(); }\n",
     )
     .unwrap();
     fs::write(
@@ -937,7 +1027,11 @@ fn prepared_audit_reuses_validated_inputs_across_sites() {
         .and_then(|project| project.lock())
         .unwrap();
     let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
-    assert!(sites.len() >= 2);
+    assert_eq!(
+        sites.len(),
+        2,
+        "the fixture must exercise two written smart sites"
+    );
     let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
     // An active audit has already selected an immutable input. Any attempt to
     // reread the importer per tactic would now fail. A new audit must fail.
@@ -1786,9 +1880,9 @@ fn result_parameter_postconditions_audit_every_site() {
 
 #[test]
 fn a_claims_rewrites_combine_into_one_source() {
-    let original = "step;\nsimp;\nstep;\nauto;\nstep;\n";
+    let original = "step;\nsolve;\nstep;\nauto;\nstep;\n";
     let first = "step;\nrewrite(a);\nassumption();\nstep;\nauto;\nstep;\n";
-    let second = "step;\nsimp;\nstep;\nstep;\n";
+    let second = "step;\nsolve;\nstep;\nstep;\n";
     assert_eq!(
         combine_rewrites(original, &[second, first]).as_deref(),
         Some("step;\nrewrite(a);\nassumption();\nstep;\nstep;\n"),
@@ -1798,7 +1892,7 @@ fn a_claims_rewrites_combine_into_one_source() {
 
 #[test]
 fn rewrites_of_the_same_text_do_not_combine() {
-    let original = "step;\nsimp;\nstep;\n";
+    let original = "step;\nsolve;\nstep;\n";
     let first = "step;\nrewrite(a);\nstep;\n";
     let second = "step;\nrewrite(b);\nstep;\n";
     assert_eq!(combine_rewrites(original, &[first, second]), None);
@@ -2011,7 +2105,7 @@ mod scaling_tests {
     include!("../../scaling_tests/bin/click-audit/tests.rs");
 }
 
-/// A selected `simp` leaves the earlier steps' implicit automation intact.
+/// A selected `solve` leaves the earlier steps' implicit automation intact.
 /// A whole-claim candidate that omits that automation must be refused instead.
 #[test]
 #[ignore = "nightly: partial and whole claim cold-verification policy"]
@@ -2047,39 +2141,44 @@ int32 compare(uint8 bytes[]) {
     let incomplete =
         click_source.replace("solve();", "have 1 == 1 by { normalize(); } assumption();");
     verify_c0_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
-    let source = load_audit_source(&path).unwrap();
-    let expected_error = click::surface::without_implicit_auto(|| {
-        verify_rewritten_with_inputs(&source, &sites[0].claim, &incomplete)
-    })
-    .expect_err("the incomplete expansion needs implicit auto");
-    let (requests, receiver) = mpsc::channel::<SessionRequest>();
-    let (responses, response_receiver) = mpsc::channel();
-    let thread = thread::spawn(move || {
-        for request in receiver {
-            responses
-                .send(Ok(SessionResponse {
-                    cost: PhaseCost {
-                        work: 0,
-                        elapsed: Duration::ZERO,
-                    },
-                    expansion: request.expansion_claim.map(|_| incomplete.clone()),
-                }))
-                .unwrap();
-        }
-    });
-    let mut worker = AuditSessionWorker {
-        source,
-        requests: Some(requests),
-        responses: response_receiver,
-        thread: Some(thread),
-        initialization: PhaseCost {
-            work: 0,
-            elapsed: Duration::ZERO,
-        },
-    };
-    let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
-        .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
-    assert_eq!(error, expected_error);
+    // Even an unchanged candidate must fail if a bare step still relies on
+    // implicit automation. Exercise both changed and byte-identical replies.
+    for original in [click_source, incomplete.as_str()] {
+        let source = load_audit_source_from_text(&path, original.to_string()).unwrap();
+        let expected_error = click::surface::without_implicit_auto(|| {
+            verify_rewritten_with_inputs(&source, &sites[0].claim, &incomplete)
+        })
+        .expect_err("the incomplete expansion needs implicit auto");
+        let (requests, receiver) = mpsc::channel::<SessionRequest>();
+        let (responses, response_receiver) = mpsc::channel();
+        let expansion = incomplete.clone();
+        let thread = thread::spawn(move || {
+            for request in receiver {
+                responses
+                    .send(Ok(SessionResponse {
+                        cost: PhaseCost {
+                            work: 0,
+                            elapsed: Duration::ZERO,
+                        },
+                        expansion: request.expansion_claim.map(|_| expansion.clone()),
+                    }))
+                    .unwrap();
+            }
+        });
+        let mut worker = AuditSessionWorker {
+            source,
+            requests: Some(requests),
+            responses: response_receiver,
+            thread: Some(thread),
+            initialization: PhaseCost {
+                work: 0,
+                elapsed: Duration::ZERO,
+            },
+        };
+        let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
+            .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
+        assert_eq!(error, expected_error);
+    }
 }
 
 /// A negative mdtest is a boundary of the entire audit, including runtime
@@ -2210,4 +2309,29 @@ fn keep_going_audits_other_claims_after_implicit_discovery_cannot_locate_a_proof
             .expect("the deadline must still stop discovery")
             .contains(RUN_LIMIT_EXHAUSTED)
     );
+}
+
+/// A written script may already close every obligation before its implicit
+/// tail is observed. A byte-identical expansion must still satisfy the full
+/// audit, including cold verification with implicit automation disabled.
+#[test]
+fn a_fully_explicit_script_has_an_auditable_fixed_point() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/simple_statement_step.md");
+    let source = load_audit_source(&path).unwrap();
+    let claim = "identity.contract";
+    click::surface::without_implicit_auto(|| {
+        verify_rewritten_with_inputs(&source, claim, &source.click_source)
+    })
+    .expect("the original script is already explicit");
+    assert_eq!(
+        expand_claim_with_source(&path, &source, claim).unwrap(),
+        source.container_source
+    );
+    let arguments = parse_arguments([
+        "--claim".to_string(),
+        claim.to_string(),
+        path.display().to_string(),
+    ])
+    .unwrap();
+    run_audit(arguments).expect("an already explicit proof is a valid fixed point");
 }

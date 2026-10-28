@@ -42,3 +42,6 @@ pub mod surface;
 extern crate self as click;
 #[cfg(all(test, feature = "fast-gate"))]
 mod gate_tests;
+
+// The opaque type is available to checking without importing a planner.
+pub(crate) use surface::planning::SearchPermission;

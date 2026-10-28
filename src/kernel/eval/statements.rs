@@ -1969,7 +1969,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
             let Some(resources) = state
                 .resources
                 .clone()
-                .without_fact(&allocation, &effective_assumptions)
+                .without_fact_incrementally(&allocation, &effective_assumptions)
             else {
                 paths.push(CStatementExecutionPath::new(
                     CStatementOutcome::RuntimeError(CRuntimeError::MissingResource {
@@ -1986,7 +1986,8 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 old_count.clone(),
                 old_range_width,
             ));
-            let Some(resources) = resources.without_fact(&complete_access, &effective_assumptions)
+            let Some(resources) =
+                resources.without_fact_incrementally(&complete_access, &effective_assumptions)
             else {
                 // A live mutex consumed ownership of its storage; name it
                 // rather than the bytes it took.
@@ -2261,6 +2262,29 @@ fn execute_c_heap_free_paths(
             continue;
         }
 
+        // Resolve the allocation's owned base through the same argument
+        // equality used to consume its token. A proven alias names that
+        // allocation; it must not create a second lifetime under the alias.
+        let allocation_query = CResourceFact::own_designated_allocation(pointer.clone(), 0);
+        let declared_allocation = state
+            .resources
+            .direct_match_candidates_for(&allocation_query, &effective_assumptions)
+            .into_iter()
+            .filter_map(CResourceFact::allocation_value)
+            .find(|(base, _)| {
+                crate::kernel::resource_arguments_proven_equal(
+                    &CValue::Pointer((*base).clone().with_type(CType::Int32Pointer)).into(),
+                    &CValue::Pointer(pointer.clone().with_type(CType::Int32Pointer)).into(),
+                    &effective_assumptions,
+                )
+            });
+        let (pointer, declared_allocation) = match declared_allocation {
+            Some((base, bytes)) => (
+                base.clone().with_type(pointer.c_type()),
+                Some(bytes.clone()),
+            ),
+            None => (pointer, None),
+        };
         if state
             .memory
             .heap
@@ -2276,16 +2300,6 @@ fn execute_c_heap_free_paths(
             continue;
         }
 
-        // Discovery uses the token shape and pointer-root index. The exact
-        // allocation-base check below remains the authority boundary.
-        let allocation_query = CResourceFact::own_designated_allocation(pointer.clone(), 0);
-        let declared_allocation = state
-            .resources
-            .direct_match_candidates_for(&allocation_query, &effective_assumptions)
-            .into_iter()
-            .filter_map(CResourceFact::allocation)
-            .find(|(base, _)| **base == *pointer.pointer())
-            .map(|(_, bytes)| bytes.clone());
         let element_width = pointer
             .c_type()
             .pointee_type()
@@ -2449,9 +2463,30 @@ fn execute_c_heap_free_paths(
                 }
             }
         }
-        let memory = working_memory
-            .free_heap_block_with_owned_frame(pointer.pointer(), &effective_assumptions, &resources)
+        let (memory, pointer_frames) = working_memory
+            .free_heap_block_and_owned_pointer_frames(
+                pointer.pointer(),
+                &effective_assumptions,
+                &resources,
+            )
             .expect("validated live heap base should free");
+        for (address, value_type) in pointer_frames {
+            let CValue::Pointer(before) =
+                before_free.symbolic_pointer_version_load(&address, value_type)
+            else {
+                unreachable!("a pointer version read has pointer type");
+            };
+            let CValue::Pointer(after) = memory.symbolic_pointer_version_load(&address, value_type)
+            else {
+                unreachable!("a pointer version read has pointer type");
+            };
+            if before != after {
+                facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
+                    ConditionTerm::pointer_value_equal(before, after),
+                    true,
+                )));
+            }
+        }
         facts.push(ExecutionPureFact::internal(
             Proposition::CHeapAllocationFreed {
                 before: before_free,
@@ -5361,7 +5396,7 @@ pub(in crate::kernel) fn sync_stack_local(state: &mut CState, name: &str, value:
 
 /// A pointer value moved from a pending allocation's base to its resolved
 /// block. Its subobject extent, which names the same block, moves with it.
-fn rebase_resolved_allocation(
+pub(in crate::kernel) fn rebase_resolved_allocation(
     value: &CPointerValue,
     base: &Pointer,
     resolved: &Pointer,

@@ -59,7 +59,7 @@ Each site lists the widths its rule supports:
 | in-range operation identity (`integer_operation_identity.rs`) | `+ -` at 8 to 64 bits | `*`, 128 |
 | operation bounds (`integer_arithmetic.rs`) | unsigned `/ >> %` at 32 and 64 | signed, narrow |
 | `Carrier` (`surface/proof/wide_arithmetic.rs`) | int64, uint64 | 32 and below |
-| `signed_arithmetic_planner.rs`, `simp.rs` observations | int32 | all others |
+| `signed_arithmetic_planner.rs`, `solve.rs` observations | int32 | all others |
 
 After Stage 1 (2026-10-24) the rules live in `kernel/machine_integer/`,
 and the matrix there checks this coverage:
@@ -73,7 +73,7 @@ and the matrix there checks this coverage:
 | definedness as Integer bounds | every format's `+ - *` since Stage 2; filed at int32 and int64 | none |
 | modular equality | stated at 32 and 64 bits, filed at 32 | narrow moduli (not sound on 32-bit words), 128 (Stage 3) |
 | conversion identity | every pair of formats | none |
-| `Carrier`, `signed_arithmetic_planner.rs`, `simp.rs` | unchanged | planner heuristics, after Stages 2 and 3 |
+| `Carrier`, `signed_arithmetic_planner.rs`, `solve.rs` | unchanged | planner heuristics, after Stages 2 and 3 |
 
 **Library.** `library/integer.click` and `library/machine_integer.click`
 hold 138 theorems, most of them one fact restated per width. Coverage is
@@ -381,7 +381,7 @@ Done 2026-10-24, for every gap that needs no new node. What changed:
   stated at every width but filed at 32 bits only, as before.
 - Width dispatch outside the rules remains: front-end promotion matrices
   (Stage 4), value-tag matches, and planner heuristics that name one width
-  (`signed_arithmetic_planner.rs`, `simp.rs`, `Carrier`), which follow the
+  (`signed_arithmetic_planner.rs`, `solve.rs`, `Carrier`), which follow the
   term and condition families.
 
 ### Stage 2. One condition family

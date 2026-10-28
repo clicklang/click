@@ -187,12 +187,11 @@ fn wide_read_and_packed_word_congruence_compose_early_and_late() {
             assert!(!proved(&context.without_exact_fact(&missing), &goal));
         }
         assert!(!proved(&context.restricted_to_facts(&[], &[]), &goal));
-        assert!(!proved(
-            &context
-                .clone()
-                .assume_condition(ConditionTerm::pointer_equal(q.clone(), sid.clone()), false),
-            &goal
-        ));
+        let impossible = context
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(q.clone(), sid.clone()), false);
+        assert!(impossible.is_inconsistent());
+        assert!(proved(&impossible, &goal));
         // Cached closure results must not survive a weakened sibling context.
         assert!(proved(&context, &goal));
     }

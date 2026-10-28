@@ -1836,7 +1836,7 @@ fn verify_theorem_ensure(
     }
 
     let (proof_kind, certificate, checked_completion) = match ensure_clause.proof() {
-        SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Simp) => {
+        SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Solve) => {
             let (certificate, completion) = check_direct_pure_goal_with_proof(
                 !matches!(ensure_clause.proof(), SourceProof::Default),
                 matches!(
@@ -1853,9 +1853,9 @@ fn verify_theorem_ensure(
             )?;
             let kind = if matches!(
                 ensure_clause.proof(),
-                SourceProof::Tactic(SmartTactic::Simp)
+                SourceProof::Tactic(SmartTactic::Solve)
             ) {
-                ProofKind::Simp
+                ProofKind::Solve
             } else {
                 ProofKind::Pure
             };
@@ -2380,7 +2380,7 @@ fn claim_script_sites(
 #[allow(clippy::too_many_arguments)]
 fn check_direct_pure_goal_with_proof(
     has_written_tactic: bool,
-    // `by auto();` is `simp`.
+    // `by auto();` is `solve`.
     auto: bool,
     claim_label: &str,
     context: &PureTheoremContext,
@@ -2400,19 +2400,19 @@ fn check_direct_pure_goal_with_proof(
         theorem_environment,
     )
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
-    let mut search = super::attempt::search_scope("pure theorem simp");
+    let mut search = super::attempt::search_scope("pure theorem solve");
     // Default proof search has a budget and timing, but no written tactic
     // occurrence. Its failure belongs to the declaration, not a fabricated
-    // `simp` site at the ensures clause.
+    // `solve` site at the ensures clause.
     let (root, _timing) = if has_written_tactic {
         (
             root.at_source_tactic(0),
-            TacticTiming::pure_source(claim_label, vec![0], &ProofTactic::Simp),
+            TacticTiming::pure_source(claim_label, vec![0], &ProofTactic::Solve),
         )
     } else {
         (
             root,
-            TacticTiming::new(claim_label, 0, 0, &ProofTactic::Simp, 0),
+            TacticTiming::new(claim_label, 0, 0, &ProofTactic::Solve, 0),
         )
     };
     let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some(if auto {
@@ -2424,7 +2424,7 @@ fn check_direct_pure_goal_with_proof(
         if auto {
             root.try_auto_proof_closure()
         } else {
-            root.try_simp_closure()
+            root.try_solve_closure()
         }
     });
     let result = match result {
@@ -2437,7 +2437,7 @@ fn check_direct_pure_goal_with_proof(
     };
     let Some(proof) = result else {
         return Err(root
-            .simp_failure()
+            .solve_failure()
             .with_check_observations(checks)
             .with_search_failures(search.finish()));
     };
@@ -3043,7 +3043,7 @@ pub(super) fn click_function_applications(
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
-            ContractExpression::RegionResult(_) => {}
+            ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner) => expression(inner, known_facts, applications),

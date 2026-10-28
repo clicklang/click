@@ -497,8 +497,16 @@ context-free form), joined by the context's equalities; a merge moves the
 smaller class's edges. `is_inconsistent` reads whether any key is in
 conflict, so it costs nothing per fact
 (`one_added_fact_and_the_query_cost_the_same_beside_any_number_of_facts`).
-Withdrawing an equality clears the index, which the next query rebuilds, as
-withdrawing a fact does for the difference graph. Nothing else is compared:
+Assuming the opposite truth value of an exact held condition preserves the
+condition and its indexes and directly records `false` in the proposition fact
+set. `is_inconsistent` reads that exact fact before consulting derived indexes.
+The false fact has ordinary proof syntax and survives premise reconstruction;
+explicitly restricting away that fact removes its authority. The regression
+`contradictory_branch_creation_does_not_rebuild_ambient_indexes` measures repeated
+contradictory branches beside 32, 128 and 512 unrelated facts. Test-only premise
+withdrawal can still invalidate these indexes; production branches retain their
+parent context instead.
+Nothing else is compared:
 two endpoints that only memory resolution, the add rule, or another theory
 rule could equate are not related, and neither is an alias guard to a
 separation or a pointer disequality to the congruence closure. Those
@@ -538,8 +546,14 @@ compound terms that use one of its members; a constant only rises, so each
 term is re-folded a bounded number of times along a path. Signed byte reads
 of byte loads are kept per class and inverted into the byte's class on a rise
 ([byte representation](byte-representation.md#character-reads-of-one-byte-cells)).
-Only a class without a settled constant does query-time work
-(`counter_call_chain_ensure_lowering_stays_flat_per_call`).
+Only a class without a settled constant resolves its conditional members at
+query time; unregistered arithmetic folds from its operands. Constant lookup
+never pairs loads from different snapshots or searches memory history for a
+constant. Missing relations must already be established in the equality
+context. `constant_queries_ignore_other_snapshot_candidates` covers misses,
+explicit-equality hits and repeated queries as related and unrelated snapshot
+reads grow; `counter_call_chain_ensure_lowering_stays_flat_per_call` covers
+repeated calls.
 
 The condition-premise oracle follows a persistent variable-to-fact adjacency
 index; each reachable variable and fact is expanded once
@@ -700,16 +714,21 @@ walk it replaces.
 ## Atomic source selection
 
 Atomic memory and resource source selection uses the kernel's candidate
-indexes. Viewability and store goals read their block's viewability bucket;
-read-defined goals first read the address's typed evidence, exact aliases and
-equality spellings; memory separation reads the unordered block-pair bucket.
-Candidates are still checked by the kernel, and viewability pairs come from
-the concatenation lookup rather than pair trials
-(`loadable_candidate_selection_ignores_facts_about_other_objects`). When no
-indexed source succeeds, read-defined, resource, and non-memory separation
-goals fall back to visiting the remaining family once, and the cold
-viewability shape index is rebuilt over all loadable facts; both are known
-violations of the fast-part rule.
+indexes. Viewability queries select address shapes from structural anchors and
+known aliases; a singleton selected view can cover a displaced address. They do
+not enumerate all other ranges in the block. Adjacent-view checks select a
+suffix at the prefix's endpoint, including an exactly addressed materialized
+cell or dense run span ending at its next hole, instead of pairing ambient
+ranges or enumerating memory cells and runs.
+Candidate snapshots, extents and pointer equality still pass the kernel checks.
+Read-defined goals use typed evidence, exact aliases and equality spellings;
+memory separation uses the unordered block-pair bucket. Large buckets at the
+same address and long alias components still need separate growth audits.
+
+Atom memory-condition matching uses exact/canonical condition keys and keys
+from equality spellings. A miss does not consult the family's entire open-fact
+bucket. A condition requiring a different spelling can be established explicitly
+before the checked operation. Compound-query and carrier/snapshot controls remain.
 
 Atomic certificate planning keeps persistent syntax adjacency for condition
 and proposition facts, keyed by value variables and explicit pointer blocks;

@@ -558,7 +558,7 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
 }
 
 #[test]
-fn int32_withdrawal_restriction_and_replacement_keep_only_supported_edges() {
+fn int32_withdrawal_restriction_and_contradiction_preserve_support() {
     let (a, b, c) = (var(10), var(11), var(12));
     let ab = eq(&a, &b);
     let bc = eq(&b, &c);
@@ -594,7 +594,8 @@ fn int32_withdrawal_restriction_and_replacement_keep_only_supported_edges() {
     assert!(restricted.equality_graph.are_int32_equal(&a, &b));
     assert!(!restricted.equality_graph.are_int32_equal(&a, &c));
     let replaced = context.clone().assume_condition(bc, false);
-    assert!(!replaced.equality_graph.are_int32_equal(&a, &c));
+    assert!(replaced.is_inconsistent());
+    assert!(replaced.equality_graph.are_int32_equal(&a, &c));
     assert!(context.equality_graph.are_int32_equal(&a, &c));
     let reversed = context.clone().assume_condition(eq(&b, &a), true);
     let once = reversed.without_exact_fact(&Proposition::ConditionIs(eq(&a, &b), true));

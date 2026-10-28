@@ -4,8 +4,19 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+#[path = "build_support/search_boundary.rs"]
+mod search_boundary;
+
 fn main() {
     let manifest = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR");
+    for module in ["src/kernel/mod.rs", "src/surface.rs"] {
+        search_boundary::check_tree(Path::new(&manifest), module).unwrap_or_else(|errors| {
+            panic!(
+                "checking/search boundary violations:\n{}",
+                errors.join("\n")
+            )
+        });
+    }
     let docs = Path::new(&manifest).join("docs");
     let summary_path = docs.join("SUMMARY.md");
     println!("cargo:rerun-if-changed={}", summary_path.display());

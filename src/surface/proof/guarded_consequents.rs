@@ -7,7 +7,7 @@
 //! its own; the checked `extract` rule does once the guard is an available
 //! fact. This closer selects the guarded comparisons whose consequent shares
 //! an operand with the goal, proves each guard with an ordinary nested
-//! `simp` (the bounded overflow-interval reasoning decides it from the
+//! `solve` (the bounded overflow-interval reasoning decides it from the
 //! operands' bounds), extracts the consequent, and continues the closure.
 //! Expansion therefore renders the discharge as `have defined(..) by { .. }`
 //! followed by `extract(..)`. An implication under an ordinary condition is
@@ -116,11 +116,11 @@ impl<'a> Proof<'a> {
                 if rewritten.focused_discharged() {
                     return Ok(Some(rewritten));
                 }
-                if let Some(closed) = rewritten.try_simp_closure()? {
+                if let Some(closed) = rewritten.try_solve_closure()? {
                     return Ok(Some(closed));
                 }
             }
-            if let Some(closed) = extracted.try_simp_closure()? {
+            if let Some(closed) = extracted.try_solve_closure()? {
                 return Ok(Some(closed));
             }
         }
@@ -157,13 +157,13 @@ impl<'a> Proof<'a> {
                 .collect::<Vec<_>>();
             let scope = self.begin_have(surface_guard.as_ref().clone()).ok()?;
             // The guard is a side condition of the listed fact: prefer the
-            // other listed premises, and otherwise decide it as `simp` would.
+            // other listed premises, and otherwise decide it as `solve` would.
             let proved = if others.is_empty() {
                 None
             } else {
-                scope.try_restricted_simp_closure(&others)
+                scope.try_restricted_solve_closure(&others)
             }
-            .or_else(|| scope.try_simp_closure().ok().flatten());
+            .or_else(|| scope.try_solve_closure().ok().flatten());
             let Some(proved) = proved else {
                 continue;
             };
@@ -178,7 +178,7 @@ impl<'a> Proof<'a> {
             }
             let mut remaining = others;
             remaining.push(surface_consequent);
-            return extracted.try_restricted_simp_closure(&remaining);
+            return extracted.try_restricted_solve_closure(&remaining);
         }
         None
     }
@@ -216,7 +216,7 @@ impl<'a> Proof<'a> {
         else {
             return Ok(None);
         };
-        let Some(proved) = scope.try_simp_closure()? else {
+        let Some(proved) = scope.try_solve_closure()? else {
             return Ok(None);
         };
         attempt::candidate_outcome(proved.join())
@@ -242,7 +242,7 @@ impl<'a> Proof<'a> {
     }
 
     /// Spell one order or equality comparison from the current state's
-    /// names, accepted only when the spelling lowers back to `kernel`. Simp
+    /// names, accepted only when the spelling lowers back to `kernel`. Solve
     /// uses it for a selected bound that has no recorded spelling of its
     /// own: a leaf conjunct of a written fact, whose recorded spelling is the
     /// whole conjunction, or a branch condition's negation.
@@ -255,7 +255,7 @@ impl<'a> Proof<'a> {
     }
 
     fn surface_lowers_to(&self, surface: &ClickProposition, kernel: &Proposition) -> bool {
-        self.lower_surface_proposition(surface, "guarded simp premise")
+        self.lower_surface_proposition(surface, "guarded solve premise")
             .is_ok_and(|lowered| {
                 lowered == *kernel || condition_polarity_equivalent(&lowered, kernel)
             })

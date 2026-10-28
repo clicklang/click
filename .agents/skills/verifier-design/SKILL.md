@@ -76,3 +76,67 @@ If the change touches code listed under "Fast-part scans" in
 `roadmap/smart-tactics.md`, don't add another scan beside it. Either fix that
 scan (index it, or move it to the slow part with an explicit form) or leave
 it as it is and say so.
+
+## 6. Keep the enforced boundary narrow
+
+Ambient search views require `SearchPermission`, constructed only in
+`surface::planning`. The Cargo build checks kernel dependencies and pins
+diagnostic sampler callers in `build_support/search_boundary.rs`.
+Do not fix a boundary failure by widening its allowance or relabelling a query
+as upkeep. Failure messages use the capped diagnostic sampler, never an
+ambient scan to compute an omitted count or select the ends. Move the search into planning or use `SelectedFacts::from_propositions` for
+explicitly selected premises;
+if a legacy API needs migration, describe that migration and test its boundary.
+An indexed bucket is not explicit input. Loadability checking permits one
+implicit fact per address shape and uses exact membership for stated goals;
+do not recover a missed proof by enumerating an ambiguous bucket. Select its
+source in planning, retain the explicit transport in expansion, and test both
+exact hits and misses as the bucket grows.
+Checked view queries also must not enumerate pointer spellings or exact alias
+lists. Use indexed class/storage coordinates and align a selected source with
+the query; other spellings belong behind `SearchPermission`. Grow both affine
+classes and same-block alias stars in tests, including misses and displaced
+accesses beside unrelated views.
+Condition queries use indexed truth or singleton shape/variable buckets, never
+scalar-class enumeration. Read-validity sources retain their type and snapshot
+checks; alternate-source search requires planner permission. Kept-frame raw
+fallbacks use singleton base buckets, not whole-block scans or alias walks.
+Grow source snapshot buckets and unrelated retained ranges as well as aliases;
+keep exact hits, stale-memory refusals and expansion-without-search coverage.
+Order/overflow helpers use maintained direct extrema and strict-bound witnesses;
+do not restore condition-side scans or symbolic order-component walks in
+interval checking. Require explicit intermediate bounds for longer chains.
+Constant equality evidence selects extrema or singleton symbolic sources;
+anchored memory equality selects singleton endpoint sources, retaining the
+existing snapshot checks. Contiguous exclusion runs are maintained at admission,
+not traversed at query time. Grow equality stars, symbolic order chains and
+branches, and excluded-value runs, including hits, misses and branch isolation. Prepared access returns one
+`SelectedMemoryAccess`, never a supplier iterator to resource checking. Failure
+of its provenance, quantity or coverage check is final. Keep explicit footprint
+composition separate, and grow overlapping supplier buckets on refusal as well
+as success. Object-provenance lookup selects an indexed witness; it does not
+filter its object bucket. Designation/extent fallbacks use singleton direct
+aliases; framed pointer recovery requires a singleton full-pointer source.
+Grow same-address snapshot buckets and direct-alias stars, keeping exact class
+hits and stale-read/extent refusals.
+Run the boundary regressions with `test(gate_tests::search_boundary::)` in the
+fast-gate binary. This enforcement does not replace deterministic scaling tests.
+
+## 7. Preserve branch contexts
+
+Branching retains the parent `PureFactContext` and extends a cheap persistent
+clone. Do not add a premise and then withdraw it to backtrack. Exact withdrawal
+helpers exist only under `cfg(test)` for missing-premise controls; they may
+rebuild indexes and must not become production APIs. Opposite truth-value assumptions record
+falsehood while retaining the original
+condition and its indexes. Treat explicit context restriction separately from
+branch undo.
+
+## 8. Keep checking failures distinct from search exhaustion
+
+Use `CheckingWorkScope` for migrated checked operations, with an allowance
+measure derived from explicit input or produced state, never ambient fact count.
+Add deterministic tests for one expensive check inside search and many cheap
+checks exhausting search. Preserve the original tactic and whole-run charges;
+nested scope measurements must not be added again to profile totals. A scope is
+a containment guard, not permission to scan or a substitute for growth tests.

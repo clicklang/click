@@ -204,7 +204,7 @@ checked once and subsequent persistent deltas checked incrementally. Kernel
 regressions reject sibling facts and different memory snapshots and check
 scaling; mdtests cover interleaved proofs and folds. Exact fact lookup now
 recognizes retained resource-composition facts. Explicit resource closers use
-the same checked ownership receipts as `simp`, fixing the successor's final
+the same checked ownership receipts as `solve`, fixing the successor's final
 expansion without changing C.
 
 `rbtree_erase_black_successor.click` covers the immediate black-leaf successor
@@ -499,7 +499,7 @@ grandparent frame; the uncle's arms split. The `expect` line is the
 frontier report at statement 23 (`tmp = parent->rb_right`, red uncle
 skipped): "still ahead on this path: the body's end and 1 `break`. Already
 complete: 2 at a `break`". Remaining: the two recolour `continue`s, the two
-rotation `break`s, the body's end, the post-loop `simp()`, and
+rotation `break`s, the body's end, the post-loop `solve()`, and
 `rb_insert_color`. The focused imported-frontier regression currently reaches
 the expected diagnostic in about 1.3s on a warm debug build; that timing is
 supporting evidence, not a new gate, and E1 still owns the per-frame proof
@@ -826,7 +826,7 @@ commit that closed it. Reproductions live in the named fixtures.
 | 64 | `old(t.model)` after a pre-loop unfold hit `Paths` | 3893e6b5 |
 | 65, 66 | Smart `have`s and helpers inside `initialize by { }` did not expand | 54d0f136 |
 | 67 | Load through a proof-arm binding with a pure call: arm bindings were untyped in proof arms | 9a49463d |
-| 68 | `simp() using` premise in a `have` body could not name an arm binding | 99a07d5c |
+| 68 | `solve() using` premise in a `have` body could not name an arm binding | 99a07d5c |
 | 69 | Consumed instance's arm equation cited by a spelling that no longer lowered | 44acfb0c |
 | 70 | `static inline` locals had no layouts (map keyed by the `#inline:` name) | ca8b75f8 |
 | 71 | `contradiction` in a `preserve` arm only as its sole tactic | ccf9a340 |
@@ -855,7 +855,7 @@ blocks C3; each is a candidate package when it starts to.
   regression and its required set-bit premise.
 - **Pure-proof limits:** `normalize()` and `normalize() using` do not
   close pointer-equality transitivity or symmetry inside a pure theorem
-  (`simp()` does; `rewrite(a == b); normalize();` substitutes a pointer
+  (`solve()` does; `rewrite(a == b); normalize();` substitutes a pointer
   equality into a constructor argument while `normalize() using` does
   not); a raw `if parent == p` as a pure function's outermost test unfolds
   to one opaque bitvector operation, so predicate tests are written `if
@@ -863,7 +863,7 @@ blocks C3; each is a candidate package when it starts to.
   unsupported (gap 52).
 - **Loop exits:** algebraic model values are not renamed at the exit
   join, so an exit whose binder model is the head's symbolic model leaves
-  an unspellable name in its disjunct; `simp` cannot eliminate an exported
+  an unspellable name in its disjunct; `solve` cannot eliminate an exported
   exit disjunction or substitute an exported loop equation (`cases(...)`
   works); two ascent loops in one function fail the second loop's
   `close_invariants` with plain guards; `click expand` of a `loop` whose
@@ -1054,7 +1054,7 @@ consistency, through `ctx_insert_root_exit` and
 `ctx_insert_black_parent_exit` (the root `break` refutes a framed context by
 unfolding it for `identity != 0`). All 99 exits state them identically, so
 they survive the exit join as ordinary facts, and the post-loop proof folds
-the loop's two binders into the result and closes with `step(); simp();`.
+the loop's two binders into the result and closes with `step(); solve();`.
 No kernel change was needed for the proof.
 
 The contract changed. It produced `ctx_at(root->rb_node, root)` and
@@ -1107,8 +1107,8 @@ it; `mdtests/rb_next_rejects_a_dropped_context.md` is the negative. One
 translation remains: the parameter is declared without `const`, because Click
 keeps `const` across the explicit cast in `return (struct rb_node *)node;`
 (`mdtests/rb_next_const_signature.md`). Restoring it waits on the importer's
-const-dropping cast rule. A predecessor claim is refused only by `simp`
-exhausting its budget (`bugs/simp-exhausts-its-budget-on-a-false-list-postcondition.md`),
+const-dropping cast rule. A predecessor claim is refused only by `solve`
+exhausting its budget (`bugs/solve-exhausts-its-budget-on-a-false-list-postcondition.md`),
 so there is no wrong-position negative.
 
 **Chunk 9. `rb_prev`.** The mirror of chunk 8. Certified (2026-10-02):

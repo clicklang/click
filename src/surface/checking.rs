@@ -6,21 +6,21 @@ mod arithmetic_engine;
 mod contract_evaluation;
 mod integer_affine_planner;
 mod integer_refutation_planner;
+mod normalization;
 mod predicates;
 mod segments;
 mod signed_arithmetic_planner;
-mod simp;
 mod simplex;
 mod special_arithmetic_planner;
 use crate::kernel::memory_effect_write_pointers;
 pub(super) use arithmetic_engine::*;
 pub(super) use contract_evaluation::*;
 pub(super) use integer_refutation_planner::*;
+pub(super) use normalization::*;
 pub(super) use predicates::*;
 pub(super) use segments::*;
 #[allow(unused_imports)]
 pub(super) use signed_arithmetic_planner::*;
-pub(super) use simp::*;
 pub(super) use special_arithmetic_planner::*;
 
 /// Exact resource production evidence for one claim in one checked execution.

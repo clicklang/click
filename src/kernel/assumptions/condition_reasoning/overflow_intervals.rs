@@ -6,13 +6,6 @@ thread_local! {
     static SIGNED_INTERVAL_FALLBACK_FACT_VISITS: Cell<usize> = const { Cell::new(0) };
 }
 
-#[derive(Clone)]
-struct SignedOrderBound {
-    other: Bitvector32Term,
-    strict: bool,
-    upper: bool,
-}
-
 impl PureFactContext {
     #[cfg(test)]
     fn reset_signed_interval_fallback_fact_visits() {
@@ -24,84 +17,26 @@ impl PureFactContext {
         SIGNED_INTERVAL_FALLBACK_FACT_VISITS.with(Cell::get)
     }
 
-    fn exact_signed_order_bounds(&self, term: &Bitvector32Term) -> Option<Vec<SignedOrderBound>> {
-        // The index keys endpoints by canonical form; canonicalize the query
-        // so any term equal to the bounded value finds its bounds.
-        let term = crate::kernel::eval::canonical_term(term);
-        self.exact_signed_order_bounds_for_key(&term)
-    }
-
-    fn exact_signed_order_bounds_for_key(
-        &self,
-        term: &Bitvector32Term,
-    ) -> Option<Vec<SignedOrderBound>> {
-        self.signed_order_bounds.get(term).map(|bounds| {
-            bounds
-                .keys()
-                .map(|(_, other, strict, upper)| SignedOrderBound {
-                    other: other.clone(),
-                    strict: *strict,
-                    upper: *upper,
-                })
-                .collect()
-        })
-    }
-
     /// The range of `term` that its own recorded constant order bounds give,
-    /// read from `signed_order_bounds` at the term's canonical form: one
-    /// keyed lookup, no chain, no scan of the fact set. `None` when no
+    /// read from the maintained extrema at the term's canonical form: one
+    /// keyed lookup, no chain, no scan of its bound bucket. `None` when no
     /// constant bound is filed there. For a caller that runs per cell and
-    /// may not search; [`Self::signed_interval`] is the complete answer.
+    /// may not search; [`Self::signed_interval`] performs general reconstruction.
     pub(in crate::kernel) fn indexed_constant_interval(
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
-        let mut lower = i64::from(i32::MIN);
-        let mut upper = i64::from(i32::MAX);
-        let mut bounded = false;
-        for bound in self.exact_signed_order_bounds(term)? {
-            crate::instrumentation::record_deterministic_work(1);
-            let Some(value) = signed_bitvector_constant(&bound.other) else {
-                continue;
-            };
-            bounded = true;
-            match (bound.upper, bound.strict) {
-                (true, true) => upper = upper.min(value - 1),
-                (true, false) => upper = upper.min(value),
-                (false, true) => lower = lower.max(value + 1),
-                (false, false) => lower = lower.max(value),
-            }
-        }
-        bounded.then_some((lower, upper))
+        let term = crate::kernel::eval::canonical_term(term);
+        self.checked_order_bounds.interval(&term, false)
     }
 
-    /// The `uint32` counterpart of [`Self::indexed_constant_interval`]: the
-    /// unsigned range of `term` its own recorded constant `uint32` order
-    /// bounds give, read from `uint32_order_bounds` at the term's canonical
-    /// form. `None` when no constant bound is filed there.
+    /// Direct unsigned constant extrema, maintained separately from signed facts.
     pub(in crate::kernel) fn indexed_unsigned32_constant_interval(
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
         let term = crate::kernel::eval::canonical_term(term);
-        let bounds = self.uint32_order_bounds.get(&term)?;
-        let mut lower = 0;
-        let mut upper = i64::from(u32::MAX);
-        let mut bounded = false;
-        for (_, other, strict, is_upper) in bounds.keys() {
-            crate::instrumentation::record_deterministic_work(1);
-            let Some(value) = other.as_const().map(i64::from) else {
-                continue;
-            };
-            bounded = true;
-            match (is_upper, strict) {
-                (true, true) => upper = upper.min(value - 1),
-                (true, false) => upper = upper.min(value),
-                (false, true) => lower = lower.max(value + 1),
-                (false, false) => lower = lower.max(value),
-            }
-        }
-        bounded.then_some((lower, upper))
+        self.checked_order_bounds.interval(&term, true)
     }
 
     /// The exact `uint32` order facts that bound `term` by a constant,
@@ -165,64 +100,6 @@ impl PureFactContext {
         facts
     }
 
-    /// The tightest constant bound on `term` that a chain of recorded int32
-    /// order facts reaches: an upper bound (`upper`) from `term <= a < b <= c`
-    /// ending at a constant, or a lower bound from a chain ending below
-    /// `term`. A strict link anywhere on the chain tightens the constant by
-    /// one, which is exact over the integers the int32 values denote.
-    ///
-    /// Every step is a keyed lookup in `signed_order_bounds` at the current
-    /// node's canonical form, which files each fact under both endpoints, so
-    /// the walk reads only the facts on chains out of `term` in the one
-    /// direction asked, never an unrelated fact. Each `(node, strict)` state
-    /// is expanded once, so the work is linear in the order facts of that
-    /// component. A chain reaching a constant stops there: a constant's own
-    /// bounds cannot tighten what it already bounds.
-    fn chained_signed_constant_bound(&self, term: &Bitvector32Term, upper: bool) -> Option<i64> {
-        let start = crate::kernel::eval::canonical_term(term);
-        let mut best: Option<i64> = None;
-        let mut stack = vec![(start, false)];
-        let mut seen = BTreeSet::new();
-        while let Some((node, strict_so_far)) = stack.pop() {
-            if !seen.insert((node.clone(), strict_so_far)) {
-                continue;
-            }
-            // A strict state reaches everything the non-strict state reaches
-            // with bounds at least as tight, so the non-strict one adds
-            // nothing once the strict one has been expanded.
-            if !strict_so_far && seen.contains(&(node.clone(), true)) {
-                continue;
-            }
-            let Some(bounds) = self.signed_order_bounds.get(&node) else {
-                continue;
-            };
-            for (_, other, strict, own_is_lower) in bounds.keys() {
-                crate::instrumentation::record_deterministic_work(1);
-                if *own_is_lower != upper {
-                    continue;
-                }
-                let strict = strict_so_far || *strict;
-                if let Some(value) = signed_bitvector_constant(other) {
-                    let candidate = match (upper, strict) {
-                        (true, true) => value.checked_sub(1),
-                        (false, true) => value.checked_add(1),
-                        (_, false) => Some(value),
-                    };
-                    if let Some(candidate) = candidate {
-                        best = Some(match (best, upper) {
-                            (Some(best), true) => best.min(candidate),
-                            (Some(best), false) => best.max(candidate),
-                            (None, _) => candidate,
-                        });
-                    }
-                    continue;
-                }
-                stack.push((crate::kernel::eval::canonical_term(other), strict));
-            }
-        }
-        best
-    }
-
     pub(in crate::kernel) fn decide_from_overflow_facts(
         &self,
         condition: &ConditionTerm,
@@ -261,27 +138,14 @@ impl PureFactContext {
                 }
                 if right == Bitvector32Term::Constant(1) {
                     let int_min = Bitvector32Term::Constant(i32::MIN as u32);
-                    let strict_lower_bound = self.condition_facts_with_side(&left).into_iter().find_map(
-                        |(condition, value)| {
-                            (matches!(
-                                (condition, value),
-                                (ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: lower, right: fact_left }, true)
-                                    if lower.as_ref() == &int_min
-                                        && fact_left.as_ref() == &left
-                            ) || matches!(
-                                (condition, value),
-                                (ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterThan, left: fact_left, right: lower }, true)
-                                    if lower.as_ref() == &int_min
-                                        && fact_left.as_ref() == &left
-                            ))
-                            .then(|| Proposition::ConditionIs(condition.clone(), *value))
-                        },
-                    );
-                    if let Some(provenance) = &strict_lower_bound {
-                        record_implicit_reasoning_provenance(self, provenance);
+                    if self.has_condition_fact(
+                        ConditionTerm::signed_less_than(int_min, left.clone()),
+                        true,
+                    ) {
                         return Some(false);
                     }
                 }
+
                 // The operands' intervals subtracted over the integers: the
                 // subtraction is defined exactly when that fits. Not the
                 // `signed_interval` of the difference, which reads the bounds
@@ -330,45 +194,9 @@ impl PureFactContext {
                     // interval reconstruction. Loop execution commonly has
                     // an exact strict bound on a materialized local even when
                     // that bound is awkward to transport into a full range.
-                    let strict_upper_bound = self
-                        .condition_facts_with_side(&left)
-                        .into_iter()
-                        .find_map(|(condition, value)| match (condition, value) {
-                            (
-                                ConditionTerm::Compare {
-                                    format: MachineIntegerType::Int32,
-                                    relation: CompareRelation::LessThan,
-                                    left: fact_left,
-                                    right: _,
-                                },
-                                true,
-                            ) => (fact_left.as_ref() == &left)
-                                .then(|| Proposition::ConditionIs(condition.clone(), *value)),
-                            (
-                                ConditionTerm::Compare {
-                                    format: MachineIntegerType::Int32,
-                                    relation: CompareRelation::GreaterThan,
-                                    left: _,
-                                    right: fact_left,
-                                },
-                                true,
-                            ) => (fact_left.as_ref() == &left)
-                                .then(|| Proposition::ConditionIs(condition.clone(), *value)),
-                            _ => None,
-                        });
-                    let direct_nonoverflowing_upper_bound = self
-                        .condition_facts_with_side(&left)
-                        .into_iter()
-                        .find_map(|(condition, value)| {
-                            matches!(
-                                (condition, value),
-                                (ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessEqual, left: fact_left, right: upper }, true)
-                                    if fact_left.as_ref() == &left
-                                        && signed_bitvector_constant(upper)
-                                            .is_some_and(|upper| upper < i64::from(i32::MAX))
-                            )
-                            .then(|| Proposition::ConditionIs(condition.clone(), *value))
-                        });
+                    let strict_upper_bound = self.checked_order_bounds.strict_upper(&left);
+                    let direct_nonoverflowing_upper_bound =
+                        self.checked_order_bounds.upper_below_max(&left);
                     if let Some(provenance) = strict_upper_bound
                         .as_ref()
                         .or(direct_nonoverflowing_upper_bound.as_ref())
@@ -1174,13 +1002,18 @@ impl PureFactContext {
 
     /// [`Self::signed_interval`] with each endpoint moved past the values an
     /// exact fact says `term` is not: `0 <= x <= 3` with `x != 1`, `x != 2`
-    /// and `x != 3` is `[0, 0]`. Each step is one indexed lookup that matches
-    /// a distinct disequality, so the walk is bounded by those facts.
+    /// and `x != 3` is `[0, 0]`. Maintained contiguous runs skip any number
+    /// of written exclusions in one lookup; inferred endpoint exclusions get
+    /// one fixed inference per end, without following another chain.
     pub(in crate::kernel) fn signed_interval_past_exclusions(
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
-        let (mut lower, mut upper) = self.signed_interval(term)?;
+        let (lower, upper) = self.signed_interval(term)?;
+        let canonical = crate::kernel::eval::canonical_term(term);
+        let (mut lower, mut upper) = self
+            .checked_scalar_facts
+            .past_exclusions(&canonical, lower, upper);
         let excluded = |value: i64| {
             crate::instrumentation::record_deterministic_work(1);
             self.has_condition_fact(
@@ -1188,10 +1021,10 @@ impl PureFactContext {
                 false,
             )
         };
-        while lower < upper && excluded(lower) {
+        if lower < upper && excluded(lower) {
             lower += 1;
         }
-        while lower < upper && excluded(upper) {
+        if lower < upper && excluded(upper) {
             upper -= 1;
         }
         Some((lower, upper))
@@ -1200,8 +1033,7 @@ impl PureFactContext {
     /// The interval is reconstructed over the term's structure, so the walk
     /// is finite with no depth cut: each arithmetic node ranges its operands.
     fn signed_interval_uncached(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
-        if let Some(value) = self.bitvector_constant_from_direct_equalities(term) {
-            let value = i64::from(value as i32);
+        if let Some(value) = self.signed_constant_known_equal(term) {
             return Some((value, value));
         }
         let (mut lower, mut upper) = self
@@ -1211,89 +1043,15 @@ impl PureFactContext {
         if lower != i64::from(i32::MIN) && upper != i64::from(i32::MAX) {
             return Some((lower, upper));
         }
-        // Compound terms are common in pointer and loop arithmetic. Their
-        // direct fact key is enough for a recorded bound, while deep
-        // canonicalization of every unresolved term would turn this interval
-        // fallback into a hot-path tree walk. Non-compound atoms still use the
-        // canonical alias lookup above.
-        let exact_bounds = if matches!(
-            term,
-            Bitvector32Term::Add(_, _)
-                | Bitvector32Term::Subtract(_, _)
-                | Bitvector32Term::Multiply(_, _)
-        ) {
-            self.exact_signed_order_bounds_for_key(term)
-        } else {
-            self.exact_signed_order_bounds(term)
-        };
-        // Whether some recorded bound on a side links `term` to another term
-        // rather than a constant: only then can an order chain add anything.
-        let mut linked_upper = false;
-        let mut linked_lower = false;
-        if let Some(bounds) = exact_bounds {
-            for bound in bounds {
-                if signed_bitvector_constant(&bound.other).is_none() {
-                    if bound.upper {
-                        linked_upper = true;
-                    } else {
-                        linked_lower = true;
-                    }
-                }
-                let Some(value) = signed_bitvector_constant(&bound.other) else {
-                    continue;
-                };
-                if bound.upper {
-                    let Some(value) = (if bound.strict {
-                        value.checked_sub(1)
-                    } else {
-                        Some(value)
-                    }) else {
-                        continue;
-                    };
-                    upper = upper.min(value);
-                } else {
-                    let Some(value) = (if bound.strict {
-                        value.checked_add(1)
-                    } else {
-                        Some(value)
-                    }) else {
-                        continue;
-                    };
-                    lower = lower.max(value);
-                }
-            }
-            if lower != i64::from(i32::MIN) && upper != i64::from(i32::MAX) {
-                return (lower <= upper).then_some((lower, upper));
-            }
-        }
-        // An atom bounded only through another term (`i <= j` with
-        // `j < 1000`) takes the constant its order chain reaches. Compound
-        // terms are ranged from their operands below, so only atoms walk, and
-        // only on a side a recorded bound links to another term.
-        if (linked_upper || linked_lower)
-            && !matches!(
-                term,
-                Bitvector32Term::Add(_, _)
-                    | Bitvector32Term::Subtract(_, _)
-                    | Bitvector32Term::Multiply(_, _)
-                    | Bitvector32Term::If { .. }
-            )
+        let canonical = crate::kernel::eval::canonical_term(term);
+        if let Some((direct_lower, direct_upper)) =
+            self.checked_order_bounds.interval_with_strict(&canonical)
         {
-            if linked_upper
-                && upper == i64::from(i32::MAX)
-                && let Some(bound) = self.chained_signed_constant_bound(term, true)
-            {
-                upper = upper.min(bound);
-            }
-            if linked_lower
-                && lower == i64::from(i32::MIN)
-                && let Some(bound) = self.chained_signed_constant_bound(term, false)
-            {
-                lower = lower.max(bound);
-            }
-            if lower != i64::from(i32::MIN) && upper != i64::from(i32::MAX) {
-                return (lower <= upper).then_some((lower, upper));
-            }
+            lower = lower.max(direct_lower);
+            upper = upper.min(direct_upper);
+        }
+        if lower != i64::from(i32::MIN) && upper != i64::from(i32::MAX) {
+            return (lower <= upper).then_some((lower, upper));
         }
         match term {
             Bitvector32Term::Add(_, _)
@@ -1361,47 +1119,15 @@ impl PureFactContext {
             _ => {}
         }
 
-        // The bounds recorded on `term`, under its spelling, its canonical
-        // form, and the value its load resolves to: the endpoint index files
-        // every signed order fact under both sides, so this reads only the
-        // facts about `term`.
-        let mut keys = vec![term.clone()];
+        // A resolved load adds one explicit endpoint, never its order component.
         if let Some(resolved) = self.resolve_memory_load_term(term)
             && resolved != *term
+            && let Some((resolved_lower, resolved_upper)) = self
+                .checked_order_bounds
+                .interval_with_strict(&crate::kernel::eval::canonical_term(&resolved))
         {
-            keys.push(resolved);
-        }
-        for key in &keys {
-            #[cfg(test)]
-            SIGNED_INTERVAL_FALLBACK_FACT_VISITS.with(|visits| visits.set(visits.get() + 1));
-            for (bound, strict) in self.upper_bounds_for_search(key) {
-                if let Some(bound) = signed_bitvector_constant(&bound) {
-                    if let Some(bound) = if strict {
-                        bound.checked_sub(1)
-                    } else {
-                        Some(bound)
-                    } {
-                        upper = upper.min(bound);
-                    }
-                } else if strict {
-                    // Every signed int32 right endpoint is at most INT_MAX.
-                    upper = upper.min(i64::from(i32::MAX) - 1);
-                }
-            }
-            for (bound, strict) in self.lower_bounds_for_search(key) {
-                if let Some(bound) = signed_bitvector_constant(&bound) {
-                    if let Some(bound) = if strict {
-                        bound.checked_add(1)
-                    } else {
-                        Some(bound)
-                    } {
-                        lower = lower.max(bound);
-                    }
-                } else if strict {
-                    // Every signed int32 left endpoint is at least INT_MIN.
-                    lower = lower.max(i64::from(i32::MIN) + 1);
-                }
-            }
+            lower = lower.max(resolved_lower);
+            upper = upper.min(resolved_upper);
         }
         (lower <= upper).then_some((lower, upper))
     }
@@ -1651,15 +1377,14 @@ mod tests {
         assert_eq!(branch.signed_interval(&y), Some((0, 10)));
         assert_eq!(parent.signed_interval(&x), Some((0, i64::from(i32::MAX))));
         assert_eq!(parent.signed_interval(&y), Some((i64::from(i32::MIN), 10)));
-        let withdrawn = branch.assume_condition(ConditionTerm::equal(x.clone(), y.clone()), false);
-        assert_eq!(
-            withdrawn.signed_interval(&x),
-            Some((0, i64::from(i32::MAX)))
-        );
-        assert_eq!(
-            withdrawn.signed_interval(&y),
-            Some((i64::from(i32::MIN), 10))
-        );
+        let impossible = branch.assume_condition(ConditionTerm::equal(x.clone(), y.clone()), false);
+        assert!(impossible.is_inconsistent());
+        assert_eq!(impossible.signed_interval(&x), Some((0, 10)));
+        assert_eq!(impossible.signed_interval(&y), Some((0, 10)));
+        let sibling = parent.assume_condition(ConditionTerm::equal(x.clone(), y.clone()), false);
+        assert!(!sibling.is_inconsistent());
+        assert_eq!(sibling.signed_interval(&x), Some((0, i64::from(i32::MAX))));
+        assert_eq!(sibling.signed_interval(&y), Some((i64::from(i32::MIN), 10)));
     }
 
     #[test]
@@ -1752,10 +1477,10 @@ mod tests {
         assert_eq!(PureFactContext::signed_interval_fallback_fact_visits(), 0);
     }
 
-    /// `0 <= i`, `i <= j`, `j < 1000` bounds `i` to `[0, 999]`, so neither
-    /// `i + 1` nor `i - 1` overflows; without `j < 1000`, `i + 1` may.
+    /// Interval checking requires the intermediate endpoint bound explicitly;
+    /// it does not reconstruct a bound by walking symbolic order facts.
     #[test]
-    fn an_order_chain_to_a_constant_bounds_an_increment() {
+    fn an_order_chain_requires_an_explicit_increment_bound() {
         let i = Bitvector32Term::Variable(Variable(96_001));
         let j = Bitvector32Term::Variable(Variable(96_002));
         let lower_and_link = PureFactContext::new()
@@ -1770,6 +1495,11 @@ mod tests {
         );
         let increment =
             ConditionTerm::signed_add_overflows(i.clone(), Bitvector32Term::Constant(1));
+        assert_eq!(bounded.signed_interval(&i), Some((0, i64::from(i32::MAX))));
+        let bounded = bounded.assume_condition(
+            ConditionTerm::signed_less_than(i.clone(), Bitvector32Term::Constant(1000)),
+            true,
+        );
         assert_eq!(bounded.decide(&increment), Some(false));
         assert_eq!(bounded.signed_interval(&i), Some((0, 999)));
         assert_eq!(
@@ -1802,6 +1532,11 @@ mod tests {
                 ConditionTerm::signed_less_equal(i.clone(), Bitvector32Term::Constant(10)),
                 true,
             );
+        assert_eq!(below.signed_interval(&k), Some((-4, i64::from(i32::MAX))));
+        let below = below.assume_condition(
+            ConditionTerm::signed_less_equal(k.clone(), Bitvector32Term::Constant(10)),
+            true,
+        );
         assert_eq!(below.signed_interval(&k), Some((-4, 10)));
         // A lower chain needs a constant below: `m <= k` alone leaves `m`
         // at INT32_MIN possible.

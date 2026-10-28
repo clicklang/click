@@ -326,7 +326,6 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "same_object",
     "scatter",
     "separate",
-    "simp",
     "sizeof",
     "solve",
     "sorry",
@@ -367,6 +366,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "any",
     "at",
     "at-expression",
+    "region-allocation",
     "auto",
     "bool",
     "by",
@@ -2590,7 +2590,7 @@ pub(crate) fn collect_current_contract_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
-        ContractExpression::RegionResult(_) => {}
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
             names.insert(name.clone());
@@ -2842,6 +2842,8 @@ pub enum ContractExpression {
     /// this one value; it is the result its region assigned, read at the
     /// region's exit.
     RegionResult(CodeRegionRef),
+    /// The fresh heap identity of an allocation region, distinct from its nullable result.
+    RegionAllocation(CodeRegionRef),
     Old(Box<ContractExpression>),
     At {
         selector: SnapshotSelector,
@@ -3001,6 +3003,9 @@ struct RecordedSnapshots {
     /// Filled and checked as `value_points` is.
     pointer_points:
         crate::persistent::PersistentMap<(crate::kernel::PointerBlock, String), SnapshotSelector>,
+    /// Allocation results keep the region that introduced them, independently
+    /// of later pointer reads or assignments to the result local.
+    allocation_results: crate::persistent::PersistentMap<crate::kernel::Pointer, CodeRegionRef>,
     /// The recorded point at which each scalar model-field value was first
     /// held by its resource instance, keyed by the value's variable: a field
     /// value no nearer state's instance holds is spelled at that point.
@@ -3051,6 +3056,7 @@ impl Default for RecordedSnapshots {
             memory_points: imbl::OrdMap::new(),
             value_points: crate::persistent::PersistentMap::default(),
             pointer_points: crate::persistent::PersistentMap::default(),
+            allocation_results: crate::persistent::PersistentMap::default(),
             field_points: crate::persistent::PersistentMap::default(),
             last_locals: None,
             last_resources: None,
@@ -3266,6 +3272,32 @@ impl RecordedSnapshots {
         ))
     }
 
+    fn region_allocation(&self, region: &CodeRegionRef) -> Result<CValue, String> {
+        let (point, local) = self.region_result(region)?;
+        let CodeRegionRef::Region(index) = &point.region else {
+            unreachable!("resolved region")
+        };
+        let layout = self
+            .source_layout
+            .clone()
+            .or_else(diagnostics::spelling_layout)
+            .ok_or("`.allocation` names an allocation region being executed")?;
+        if layout.allocation_result_local(*index).is_none() {
+            return Err("`.allocation` requires a fresh allocation region".to_string());
+        }
+        let state = self
+            .get(&SnapshotSelector::ProgramPoint(point))
+            .ok_or("`.allocation` names an allocation this proof has not executed yet")?;
+        let Some(CValue::Pointer(result)) = state.locals().get(&local) else {
+            return Err("allocation result was not recorded at its exit".to_string());
+        };
+        state
+            .memory()
+            .fresh_allocation_identity(result)
+            .map(CValue::Pointer)
+            .ok_or_else(|| "region has no fresh allocation identity".to_string())
+    }
+
     /// The program point `selector` names, spelled as it is recorded: a
     /// statement path as its `region(N)`, and a loop under its first label
     /// when the loop has one.
@@ -3476,6 +3508,53 @@ impl RecordedSnapshots {
         self.last_memory = Some(state.memory().clone());
     }
 
+    fn update_allocation_result(
+        &mut self,
+        selector: &SnapshotSelector,
+        prior: Option<&CState>,
+        next: Option<&CState>,
+    ) {
+        let SnapshotSelector::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(index),
+            kind: ProgramPointKind::Exit,
+        }) = selector
+        else {
+            return;
+        };
+        let Some(local) = self
+            .source_layout
+            .as_ref()
+            .and_then(|layout| layout.allocation_result_local(*index))
+        else {
+            return;
+        };
+        let result = |state: &CState| {
+            let CValue::Pointer(value) = state.locals().get(local)? else {
+                return None;
+            };
+            state
+                .memory()
+                .fresh_allocation_identity(value)
+                .map(|value| value.pointer().clone())
+        };
+        let region = CodeRegionRef::Region(*index);
+        if let Some(old) = prior.and_then(result)
+            && self.allocation_results.get(&old) == Some(&region)
+        {
+            self.allocation_results.remove(&old);
+        }
+        if let Some(new) = next.and_then(result)
+            && self.allocation_results.get(&new).is_none()
+        {
+            self.allocation_results.insert(new, region);
+        }
+    }
+
+    fn allocation_result(&self, pointer: &crate::kernel::Pointer) -> Option<CodeRegionRef> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.allocation_results.get(pointer).cloned()
+    }
+
     /// The recorded points whose memories are nearest `memory` in the order
     /// memories were made, with their states: those at or after it, nearest
     /// first, where a read made in `memory` between recorded points (inside
@@ -3584,6 +3663,7 @@ impl RecordedSnapshots {
     fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
         let selector = self.recorded_spelling(selector.into());
         let prior = self.get(&selector).cloned();
+        self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
             self.memory_points
                 .insert(memory.read_identity(), selector.clone());
@@ -3634,6 +3714,7 @@ impl RecordedSnapshots {
     fn remove<K: RecordedSnapshotKey + ?Sized>(&mut self, key: &K) -> Option<CState> {
         let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
+        self.update_allocation_result(&selector, prior.as_ref(), None);
         if let Some(memory) = prior
             .as_ref()
             .and_then(|state| crate::kernel::interned_storage_of(state.memory()))
@@ -4517,13 +4598,13 @@ pub enum ProofTactic {
         argument: ContractExpression,
         premises: Option<Vec<ClickProposition>>,
     },
-    Simp,
+    Solve,
     /// The closer `auto` ends a proof with: each pending claim is tried by
-    /// `simp`, then by the rest of `auto`'s search. It has no source
+    /// `solve`, then by the rest of `auto`'s search. It has no source
     /// spelling; `by auto();`, an omitted proof, and a script that ends with
     /// claims still open use it.
     AutoClose,
-    SimpUsing(ProofSimpUsing),
+    SolveUsing(ProofSolveUsing),
     ArithmeticCertificate(ArithmeticCertificate),
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
     /// anything. Parses only while `verification::with_allow_sorry` is active
@@ -5160,7 +5241,7 @@ impl ProofTactic {
             Self::SmartExecute | Self::ExecuteUntil(_) => {
                 TacticClass::smart(SmartTacticKind::Execute)
             }
-            Self::Simp | Self::SimpUsing(_) => TacticClass::smart(SmartTacticKind::Solve),
+            Self::Solve | Self::SolveUsing(_) => TacticClass::smart(SmartTacticKind::Solve),
             Self::AutoClose => TacticClass::Smart(SmartSite::Implicit),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
             Self::Open(_) => TacticClass::Control(ControlTactic::Open),
@@ -5182,7 +5263,7 @@ impl SmartTactic {
     pub fn site(self) -> SmartSite {
         match self {
             Self::Auto => SmartSite::Implicit,
-            Self::Simp => SmartSite::Engine(SmartTacticKind::Solve),
+            Self::Solve => SmartSite::Engine(SmartTacticKind::Solve),
         }
     }
 }
@@ -5227,13 +5308,13 @@ pub struct ProofHave {
 }
 
 impl ProofHave {
-    /// Check the short forms as the same single simp step as the block form,
+    /// Check the short forms as the same single solve step as the block form,
     /// so a failed step retains its diagnostic. Keep the written source proof
     /// unchanged for inventory, capture, and source locations.
     fn checking_proof(&self) -> std::borrow::Cow<'_, SourceProof> {
         match &self.proof {
-            SourceProof::Default | SourceProof::Tactic(SmartTactic::Simp) => {
-                std::borrow::Cow::Owned(SourceProof::Script(vec![ProofTactic::Simp]))
+            SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
+                std::borrow::Cow::Owned(SourceProof::Script(vec![ProofTactic::Solve]))
             }
             _ => std::borrow::Cow::Borrowed(&self.proof),
         }
@@ -5529,7 +5610,7 @@ pub struct ProofCallOutcomes {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProofSimpUsing {
+pub struct ProofSolveUsing {
     premises: Vec<ClickProposition>,
 }
 
@@ -6184,7 +6265,7 @@ pub enum ProofFactSource {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SmartTactic {
     Auto,
-    Simp,
+    Solve,
 }
 
 /// The fixed state a proposition is evaluated in: the entry state, the
@@ -6533,7 +6614,7 @@ fn contract_expression_reads_memory(
     callees: &mut Vec<String>,
 ) -> bool {
     match expression {
-        ContractExpression::RegionResult(_) => false,
+        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -6972,7 +7053,7 @@ pub enum VerifiedClaim {
 pub enum ProofKind {
     Axiom,
     Pure,
-    Simp,
+    Solve,
     TacticScript,
     LoopVerification,
 }
@@ -7575,8 +7656,12 @@ impl TheoremDefinition {
 
     /// The ensure `label` names, by [`Self::ensure_claim_label`]. A
     /// flattened aggregate clause's members share a label; this is the
-    /// first of them.
+    /// first of them. An execution theorem's whole-contract label names
+    /// its single postcondition too.
     pub fn ensure_index_by_label(&self, label: &str) -> Option<usize> {
+        if self.executes.is_some() && label == claim_labels::contract_claim_label(&self.name) {
+            return (!self.ensures.is_empty()).then_some(0);
+        }
         label.strip_prefix(self.name.as_str())?.strip_prefix('.')?;
         (0..self.ensures.len()).find(|index| self.ensure_claim_label(*index) == label)
     }
@@ -9171,7 +9256,7 @@ impl ClickError {
         if let Some(failures) = &self.search_failures {
             for failure in failures
                 .iter()
-                .filter(|failure| failure.strategy.starts_with("simp view "))
+                .filter(|failure| failure.strategy.starts_with("solve view "))
                 .take(8)
             {
                 context.push(format!(

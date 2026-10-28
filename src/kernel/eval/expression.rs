@@ -1477,7 +1477,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
             add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);
             vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(match value {
-                    CValue::Pointer(pointer) => {
+                    CValue::Pointer(pointer) if !SpecificationReadScope::is_active() => {
                         CValue::Pointer(assumptions.pointer_value_at_entry(pointer))
                     }
                     _ => value.clone(),
@@ -3127,7 +3127,9 @@ fn read_c_lvalue_paths_without_ranges(
                 let outcome = match state.locals.get(name) {
                     Some(value) if lvalue.value_type.accepts(value) => CExpressionOutcome::Value(
                         match value {
-                            CValue::Pointer(pointer) => {
+                            // A specification names the local's stored value;
+                            // facts justify equalities, not a different domain.
+                            CValue::Pointer(pointer) if !SpecificationReadScope::is_active() => {
                                 CValue::Pointer(local_assumptions.pointer_value_at_entry(pointer))
                             }
                             _ => value.clone(),

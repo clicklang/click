@@ -84,6 +84,24 @@ impl<I: DoubleEndedIterator> DoubleEndedIterator for ChargedIter<I> {
 
 impl<I: ExactSizeIterator> ExactSizeIterator for ChargedIter<I> {}
 
+/// Diagnostic collection access cannot expose an unbounded iterator, even if
+/// a caller accidentally supplies a context-sized limit.
+pub(crate) const DIAGNOSTIC_FACT_LIMIT: usize = 32;
+
+fn diagnostic_sample<I: DoubleEndedIterator>(
+    mut entries: I,
+    first: usize,
+    last: usize,
+) -> Vec<I::Item> {
+    let first = first.min(DIAGNOSTIC_FACT_LIMIT);
+    let last = last.min(DIAGNOSTIC_FACT_LIMIT - first);
+    let mut sample: Vec<_> = entries.by_ref().take(first).collect();
+    let mut tail: Vec<_> = entries.rev().take(last).collect();
+    tail.reverse();
+    sample.extend(tail);
+    sample
+}
+
 /// A persistent map of facts whose iteration is charged per element.
 #[derive(Clone)]
 pub(crate) struct FactMap<K, V>(PersistentMap<K, V>);
@@ -142,9 +160,15 @@ impl<K: Ord, V> FactMap<K, V> {
         ChargedIter::new(self.0.iter())
     }
 
+    /// At most 32 entries from the two ends, in index order, charged per visit.
+    #[track_caller]
+    pub(crate) fn diagnostic_sample(&self, first: usize, last: usize) -> Vec<(&K, &V)> {
+        diagnostic_sample(self.scan(), first, last)
+    }
+
     /// Every entry, for maintaining this context itself: rebuilding an
     /// index, recomputing an identity, a debug consistency check, copying
-    /// the context whole, or rendering a diagnostic after a step failed.
+    /// the context whole. Diagnostics use bounded samples instead.
     /// Not for answering a query.
     #[track_caller]
     pub(crate) fn scan_for_upkeep(
@@ -159,6 +183,7 @@ impl<K: Ord, V> FactMap<K, V> {
     #[track_caller]
     pub(crate) fn scan_for_search(
         &self,
+        _permission: &crate::SearchPermission,
     ) -> ChargedIter<crate::persistent::PersistentMapIter<'_, K, V>> {
         self.scan()
     }
@@ -221,6 +246,7 @@ impl<T: Clone + Ord> FactSet<T> {
         self.0.insert(value)
     }
 
+    #[cfg(test)]
     pub(crate) fn remove(&mut self, value: &T) -> Option<T> {
         self.0.remove(value)
     }
@@ -233,6 +259,12 @@ impl<T: Clone + Ord> FactSet<T> {
     #[track_caller]
     fn scan(&self) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
         ChargedIter::new(self.0.iter())
+    }
+
+    /// At most 32 entries from the two ends, in index order, charged per visit.
+    #[track_caller]
+    pub(crate) fn diagnostic_sample(&self, first: usize, last: usize) -> Vec<&T> {
+        diagnostic_sample(self.scan(), first, last)
     }
 
     /// Every fact, for maintaining this context itself; see
@@ -249,6 +281,7 @@ impl<T: Clone + Ord> FactSet<T> {
     #[track_caller]
     pub(crate) fn scan_for_search(
         &self,
+        _permission: &crate::SearchPermission,
     ) -> ChargedIter<imbl::ordset::Iter<'_, T, imbl::shared_ptr::DefaultSharedPtr>> {
         self.scan()
     }
@@ -376,9 +409,10 @@ impl<T: Ord> ScanSet<T> {
     /// Every element, for a search that expansion removes; see
     /// [`FactMap::scan_for_search`].
     #[track_caller]
-    pub(crate) fn scan_for_search(
-        &self,
-    ) -> ChargedIter<impl DoubleEndedIterator<Item = &T> + ExactSizeIterator> {
+    pub(crate) fn scan_for_search<'a>(
+        &'a self,
+        _permission: &crate::SearchPermission,
+    ) -> ChargedIter<impl DoubleEndedIterator<Item = &'a T> + ExactSizeIterator + use<'a, T>> {
         self.scan()
     }
 }

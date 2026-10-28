@@ -536,7 +536,7 @@ mod certificate_tests {
             SurfacePropositionMap::default(),
             PersistentSequence::default(),
         );
-        execution.defer_post_execution(9, 2, PostExecutionTactic::Simp, None);
+        execution.defer_post_execution(9, 2, PostExecutionTactic::Solve, None);
 
         let mut deferred_entries = execution.post_execution_tactics.iter();
         let deferred = deferred_entries
@@ -545,7 +545,7 @@ mod certificate_tests {
         assert!(deferred_entries.next().is_none());
         assert_eq!(deferred.tactic_index, 9);
         assert_eq!(deferred.source_index, 2);
-        assert!(matches!(deferred.tactic, PostExecutionTactic::Simp));
+        assert!(matches!(deferred.tactic, PostExecutionTactic::Solve));
     }
 
     #[test]
@@ -571,7 +571,7 @@ mod certificate_tests {
         };
         let smart = ProofTactic::Have(ProofHave {
             proposition: proposition.clone(),
-            proof: SourceProof::Tactic(SmartTactic::Simp),
+            proof: SourceProof::Tactic(SmartTactic::Solve),
         });
         let structural = ProofTactic::Have(ProofHave {
             proposition,
@@ -662,7 +662,7 @@ mod certificate_tests {
     }
 
     #[test]
-    fn direct_pure_auto_and_simp_retain_checked_simple_proofs() {
+    fn direct_pure_auto_and_solve_retain_checked_simple_proofs() {
         let file = parse(
             r#"
                 theorem required(x: int32) {
@@ -681,7 +681,7 @@ mod certificate_tests {
                     }
                 }
 
-                theorem applied_then_simp(x: int32) {
+                theorem applied_then_solve(x: int32) {
                     requires x >= 0;
                     ensures (x >= 0) and (x >= 0) by {
                         apply(required(x));
@@ -2986,7 +2986,7 @@ pub(super) fn prove_claim_by_auto(
     Ok(theorems.theorems)
 }
 
-pub(super) fn prove_claim_by_simp(
+pub(super) fn prove_claim_by_solve(
     expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
@@ -3005,7 +3005,7 @@ pub(super) fn prove_claim_by_simp(
         )));
     }
 
-    let tactics = [ProofTactic::Simp];
+    let tactics = [ProofTactic::Solve];
     let mut theorems = prove_claim_by_tactics(
         expansion_capture,
         source_path,
@@ -3022,7 +3022,7 @@ pub(super) fn prove_claim_by_simp(
         ProofTacticSource::GeneratedBy { source_index: 0 },
     )?;
     for theorem in &mut theorems.theorems {
-        theorem.proof_kind = ProofKind::Simp;
+        theorem.proof_kind = ProofKind::Solve;
     }
     Ok(theorems.theorems)
 }

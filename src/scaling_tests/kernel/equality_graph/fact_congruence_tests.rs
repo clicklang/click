@@ -242,3 +242,203 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
         assert!(pair[1] <= pair[0] * 5 + 64, "{costs:?}");
     }
 }
+
+fn simplified_pointer_read_retention_work(count: u64, unrelated: u64) -> usize {
+    let _session = VerificationSession::enter();
+    let memory = intern_c_memory(CMemory::new());
+    let mut context = PureFactContext::new();
+    for index in 0..unrelated {
+        context = context.assume_proposition(eq(var(90000 + index), var(91000 + index)));
+    }
+    let facts = (0..count)
+        .map(|index| {
+            let address = Pointer::symbolic(Variable(92000 + index));
+            let read = Pointer::loaded_value(&memory, &address);
+            let named = Pointer::symbolic(Variable(93000 + index));
+            let value =
+                CPointerValue::new(read.clone(), CType::Int32Pointer).with_address(named.clone());
+            let fact = crate::kernel::ExecutionPureFact::logical_read_equation(value, read.clone());
+            (fact, named, read)
+        })
+        .collect::<Vec<_>>();
+    let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+        for (fact, named, read) in &facts {
+            fact.retain_pointer_read_definition(&context);
+            assert!(context.pointers_known_equal(named, read));
+        }
+    });
+    work
+}
+
+#[test]
+fn simplified_pointer_read_retention_scales_with_selected_equations() {
+    let samples = [8, 16, 32, 64].map(|count| simplified_pointer_read_retention_work(count, 64));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 16),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn simplified_pointer_read_retention_ignores_unrelated_facts() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| simplified_pointer_read_retention_work(8, unrelated));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+fn later_pointer_read_definition_work(count: u32, unrelated: u64) -> usize {
+    let _session = VerificationSession::enter();
+    let cell = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let other = Pointer {
+        block: PointerBlock::Heap(986_001),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let mut memory =
+        intern_c_memory(CMemory::new().store(other.clone(), CValue::UInt32(0u32.into())));
+    let name = |memory: &SharedCMemory, cell: &Pointer| {
+        Pointer::loaded_value(
+            &crate::kernel::memory_provenance::canonical_value_load_memory(memory, cell, 8),
+            cell,
+        )
+    };
+    let named = name(&memory, &cell);
+    let context = PureFactContext::new();
+    assert!(context.pointers_known_equal(&named, &Pointer::loaded_value(&memory, &cell)));
+    for index in 0..unrelated {
+        let address = Pointer::symbolic(Variable(986_100 + index));
+        let _ = name(&memory, &address);
+    }
+    let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+        for index in 1..=count {
+            memory = intern_c_memory(
+                memory
+                    .memory()
+                    .clone()
+                    .store(other.clone(), CValue::UInt32(index.into())),
+            );
+            assert_eq!(named, name(&memory, &cell));
+            assert!(context.pointers_known_equal(&named, &Pointer::loaded_value(&memory, &cell)));
+        }
+    });
+    work
+}
+
+#[test]
+fn later_pointer_read_definitions_scale_with_observations() {
+    let samples = [8, 16, 32, 64].map(|count| later_pointer_read_definition_work(count, 0));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn later_pointer_read_definitions_ignore_unrelated_names() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| later_pointer_read_definition_work(8, unrelated));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn complete_pointer_read_registration_scales_with_new_definitions() {
+    fn work(steps: u64, unrelated: u64) -> usize {
+        let _session = VerificationSession::enter();
+        let mut facts = PureFactContext::new();
+        for i in 0..unrelated {
+            facts = facts.assume_condition(
+                ConditionTerm::signed_less_than(
+                    Bitvector32Term::Variable(Variable(988_100 + i)),
+                    1000u32.into(),
+                ),
+                true,
+            );
+        }
+        let slot = Pointer::symbolic(Variable(988_001));
+        let mut value =
+            CPointerValue::new(Pointer::symbolic(Variable(988_002)), CType::Int32Pointer);
+        let mut memory = CMemory::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..steps {
+                memory = memory
+                    .clone()
+                    .store(slot.clone(), CValue::Pointer(value.clone()));
+                let next = CPointerValue::new(
+                    Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot),
+                    CType::Int32Pointer,
+                );
+                assert!(facts.equality_graph.knows_condition(
+                    &ConditionTerm::PointerValueEqual(Box::new(next.clone()), Box::new(value)),
+                    true
+                ));
+                value = next;
+            }
+        });
+        work
+    }
+    let ambient = [0, 8, 16, 64].map(|n| work(4, n));
+    assert!(ambient.iter().all(|w| *w <= ambient[0] + 32), "{ambient:?}");
+    let chain = [2, 4, 8, 16].map(|n| work(n, 8));
+    assert!(chain[0] > 0);
+    assert!(chain.windows(2).all(|p| p[1] <= 3 * p[0]), "{chain:?}");
+}
+
+#[test]
+fn pointer_domain_queries_scale_with_selected_read_definitions() {
+    fn work(steps: u64, unrelated: u64) -> usize {
+        let _session = VerificationSession::enter();
+        let mut graph = EqualityGraph::default();
+        for i in 0..unrelated {
+            graph.add_equality(
+                &Pointer::symbolic(Variable(991_000 + 2 * i)),
+                &Pointer::symbolic(Variable(991_001 + 2 * i)),
+            );
+        }
+        let slot = Pointer::symbolic(Variable(989_110));
+        let target = Pointer {
+            block: PointerBlock::Heap(989_111),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut previous = target.clone();
+        let mut memory = CMemory::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..steps {
+                memory = memory.clone().store(
+                    slot.clone(),
+                    CValue::typed_pointer(previous.clone(), CType::Int32Pointer),
+                );
+                let read = Pointer::loaded_value(&intern_c_memory_ref(&memory), &slot);
+                assert!(graph.designations_equal(&read, &target));
+                assert!(graph.opaque_extent_is_root(&read));
+                if previous != target {
+                    assert!(graph.opaque_extents_equal(&read, &previous));
+                }
+                previous = read;
+            }
+        });
+        work
+    }
+    let ambient = [0, 16, 64, 256].map(|n| work(4, n));
+    assert!(
+        ambient.iter().all(|work| *work <= ambient[0] + 32),
+        "{ambient:?}"
+    );
+    let chain = [4, 8, 16, 32].map(|n| work(n, 16));
+    assert!(chain[0] > 0);
+    assert!(
+        chain.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+        "{chain:?}"
+    );
+}

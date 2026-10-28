@@ -141,7 +141,7 @@ impl Default for TacticWorkLimits {
     ///   (a slow simple tactic is a Click engine bug), so it stays an order
     ///   of magnitude above the corpus and no higher.
     /// - smart: 12,200 tactics, p95 = 3,162, p99 = 21,899, second-largest =
-    ///   957,192, max = 1,069,444 (the `simp` of
+    ///   957,192, max = 1,069,444 (the `solve` of
     ///   an_unfolded_constant_composite_range_is_one_run_negative.md:29, and
     ///   the arena `have` at arena_cells.click:3846). 2,000,000 gives the
     ///   maximum 1.87x, down from 3.0x at the 2026-09-25 calibration (max
@@ -712,6 +712,75 @@ pub(crate) fn without_debug_checks<R>(operation: impl FnOnce() -> R) -> R {
     operation()
 }
 
+/// A checked operation's own allowance, independent of any enclosing search.
+/// `input_units` counts the explicitly selected entries the operation processes;
+/// callers must not derive it from ambient context size. Nested scopes share
+/// charges for containment, while tactic/profile work is still recorded once.
+pub(crate) struct CheckingWorkScope;
+struct CheckingWorkFrame {
+    name: &'static str,
+    used: usize,
+    limit: usize,
+}
+thread_local! {
+    static CHECKING_WORK: RefCell<Vec<CheckingWorkFrame>> = const { RefCell::new(Vec::new()) };
+}
+impl CheckingWorkScope {
+    pub(crate) fn new(name: &'static str, input_units: usize) -> Self {
+        let limit = TACTIC_WORK_LIMITS.with(|limits| {
+            limits.borrow().last().map_or(usize::MAX, |limits| {
+                limits.simple.saturating_mul(input_units.max(1))
+            })
+        });
+        CHECKING_WORK.with(|frames| {
+            frames.borrow_mut().push(CheckingWorkFrame {
+                name,
+                used: 0,
+                limit,
+            })
+        });
+        Self
+    }
+}
+impl Drop for CheckingWorkScope {
+    fn drop(&mut self) {
+        CHECKING_WORK.with(|frames| {
+            frames.borrow_mut().pop().expect("checking scope");
+        });
+    }
+}
+fn charge_checking_work(units: usize) -> bool {
+    let exhausted = CHECKING_WORK.with(|frames| {
+        let mut frames = frames.borrow_mut();
+        for frame in frames.iter_mut() {
+            frame.used = frame.used.saturating_add(units);
+        }
+        frames
+            .iter()
+            .rev()
+            .find(|frame| frame.used > frame.limit)
+            .map(|frame| (frame.name, frame.used, frame.limit))
+    });
+    let Some((name, used, limit)) = exhausted else {
+        return true;
+    };
+    PENDING_LIMIT.with(|pending| {
+        let mut pending = pending.borrow_mut();
+        if pending.is_none() {
+            let site = ACTIVE_TACTICS.with(|active| active.borrow().last().map(|current| {
+                let tactic = &current.event;
+                format!(" inside tactic `{}` in `{}` (statement {}, source tactic {})",
+                    tactic.tactic_name, tactic.claim, tactic.statement_index, tactic.source_index)
+            })).unwrap_or_else(|| " outside a written tactic".into());
+            *pending = Some(PendingLimit {
+                kind: PendingLimitKind::Work,
+                message: format!("checking operation `{name}` exhausted its deterministic work allowance after {used} units ({limit} limit){site}; expensive checking is a Click engine performance defect"),
+            });
+        }
+    });
+    false
+}
+
 /// Charges `units` to every scaling counter, to the innermost active
 /// tactic's budget, and to every whole-run budget. Returns `false` when a
 /// budget is exhausted.
@@ -722,9 +791,10 @@ fn charge_deterministic_work(units: usize) -> bool {
             *counter = counter.saturating_add(units);
         }
     });
+    let checking = charge_checking_work(units);
     let tactic = charge_tactic_work(units);
     let run = charge_run_work(units);
-    tactic && run
+    checking && tactic && run
 }
 
 /// Charges `units` to the innermost active tactic's budget. Returns `false`
@@ -2284,5 +2354,86 @@ mod hidden_prerequisite_census_tests {
         let rose = hidden_prerequisite_census_mismatch(&census, &[(key, 2)], true)
             .expect("a shard above the whole-corpus pin is a rise");
         assert!(rose.contains("rose from 2 to 3"), "{rose}");
+    }
+}
+
+#[cfg(test)]
+mod checking_budget_tests {
+    use super::*;
+    fn search() -> TacticEvent {
+        TacticEvent {
+            source_tactic_path: None,
+            claim: "budget_probe".into(),
+            tactic_index: 0,
+            tactic_name: "solve".into(),
+            class: "smart".into(),
+            statement_index: 3,
+            source_index: 4,
+        }
+    }
+    fn limits() -> TacticWorkLimits {
+        TacticWorkLimits {
+            simple: 10,
+            smart: 100,
+            control: 100,
+        }
+    }
+    #[test]
+    fn one_expensive_check_inside_search_reports_engine_defect() {
+        with_tactic_work_limits(limits(), || {
+            let (_, events) = collect(|| {
+                let tactic = search();
+                emit(VerificationEvent::TacticStarted(tactic.clone()));
+                let (_, measured) = measure_deterministic_work(|| {
+                    let _outer = CheckingWorkScope::new("outer", 2);
+                    let _inner = CheckingWorkScope::new("selected lookup", 1);
+                    record_deterministic_work(11);
+                });
+                assert_eq!(measured, 11);
+                let message = deadline_context();
+                assert!(message.contains("selected lookup"), "{message}");
+                assert!(message.contains("engine performance defect"), "{message}");
+                assert!(
+                    message.contains("solve") && message.contains("source tactic 4"),
+                    "{message}"
+                );
+                emit(VerificationEvent::TacticFinished {
+                    tactic,
+                    elapsed: Duration::ZERO,
+                    work: 0,
+                });
+            });
+            assert!(
+                events.iter().any(|event| matches!(
+                    event,
+                    VerificationEvent::TacticFinished { work: 11, .. }
+                ))
+            );
+        });
+    }
+    #[test]
+    fn many_cheap_checks_exhaust_search_instead() {
+        with_tactic_work_limits(limits(), || {
+            let tactic = search();
+            emit(VerificationEvent::TacticStarted(tactic.clone()));
+            for _ in 0..21 {
+                let _scope = CheckingWorkScope::new("cheap check", 1);
+                record_deterministic_work(5);
+            }
+            let message = deadline_context();
+            assert!(message.contains("smart search is heuristic"), "{message}");
+            assert!(!message.contains("engine performance defect"), "{message}");
+            emit(VerificationEvent::TacticFailed(tactic));
+        });
+    }
+    #[test]
+    fn checking_allowance_scales_with_selected_input_outside_tactics() {
+        with_tactic_work_limits(limits(), || {
+            let _scope = CheckingWorkScope::new("selected input", 4);
+            record_deterministic_work(35);
+            assert!(PENDING_LIMIT.with(|pending| pending.borrow().is_none()));
+            record_deterministic_work(6);
+            assert!(deadline_context().contains("outside a written tactic"));
+        });
     }
 }

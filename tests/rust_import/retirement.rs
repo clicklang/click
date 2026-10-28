@@ -17,7 +17,7 @@ fn rust_default_is_native_charon() {
 }
 
 #[test]
-fn rust_default_conditional_simp_expansion_reverifies() {
+fn rust_default_conditional_solve_expansion_reverifies() {
     let p = gate_fixtures::project("basic", SOURCE);
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared).unwrap();

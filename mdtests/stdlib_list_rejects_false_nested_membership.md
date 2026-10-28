@@ -13,5 +13,5 @@ theorem false_member() {
 ```
 
 ```expect
-fail: simp
+fail: solve
 ```

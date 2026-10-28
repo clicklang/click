@@ -814,7 +814,7 @@ fn sole_symbolic_write_owner_preserves_bounds_authority_and_forks() {
         1,
     ));
     let ambiguous = resources.clone().unchecked_with_fact(second.clone());
-    assert!(ambiguous.write_access_entries(&query, 1, &facts).is_none());
+    assert!(ambiguous.write_access(&query, 1, &facts).is_none());
     let restored = ambiguous.without_exact_representation(&second).unwrap();
     assert_eq!(restored.memory_write_range(&query, 1, &facts), Some(&range));
     assert_eq!(
@@ -1098,4 +1098,176 @@ fn symbolic_owned_suffix_start_checks_bounds_and_retained_authority() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/primitives/memory_equality_index/cell_tests.rs");
+}
+
+#[test]
+fn captured_empty_caller_does_not_inherit_opening_equalities() {
+    let base = Pointer::symbolic(Variable(987_800));
+    let alias = Pointer::symbolic(Variable(987_801));
+    let caller = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(
+            Pointer::symbolic(Variable(987_802)),
+            Pointer::symbolic(Variable(987_803)),
+        ),
+        true,
+    );
+    let opening = caller.clone().assume_condition(
+        ConditionTerm::pointer_equal(base.clone(), alias.clone()),
+        true,
+    );
+    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        base.clone(),
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        alias.clone(),
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    let resources = ResourceContext::new();
+    resources.capture_empty_memory_input(&caller);
+    resources.synchronize_memory_equalities(&opening);
+    let resources = resources
+        .try_compose_into_valid_context_delaying_normalization(
+            [
+                owner,
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    base.offset_by_bytes(8),
+                    0u32.into(),
+                    4u32.into(),
+                    1,
+                )),
+            ],
+            &opening,
+        )
+        .unwrap();
+    assert!(
+        resources
+            .clone()
+            .without_fact_incrementally(&required, &caller)
+            .is_none()
+    );
+    assert!(!caller.pointers_known_equal(&base, &alias));
+    assert!(
+        resources
+            .without_fact_incrementally(&required, &opening)
+            .is_some()
+    );
+}
+
+#[test]
+fn removing_a_supplier_after_a_query_registers_a_late_read_definition() {
+    remove_suppliers_with_late_read_definition(true);
+}
+
+#[test]
+fn removing_a_supplier_registers_its_late_read_definition() {
+    remove_suppliers_with_late_read_definition(false);
+}
+
+fn remove_suppliers_with_late_read_definition(register_query: bool) {
+    let _session = crate::kernel::VerificationSession::enter();
+    let name = |memory: &SharedCMemory, address: &Pointer| {
+        crate::kernel::memory_provenance::canonical_value_load_memory(memory, address, 8);
+        Pointer::canonical_loaded_value(memory, address)
+    };
+    let cell = Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let unrelated = Pointer {
+        block: PointerBlock::Heap(989_800),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let first = crate::kernel::intern_c_memory(
+        CMemory::new().store(unrelated.clone(), CValue::UInt32(1u32.into())),
+    );
+    let named = name(&first, &cell);
+    let later = crate::kernel::intern_c_memory(
+        first
+            .memory()
+            .clone()
+            .store(unrelated, CValue::UInt32(2u32.into())),
+    );
+    let later_read = Pointer::loaded_value(&later, &cell);
+    let owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        later_read.clone(),
+        0u32.into(),
+        1u32.into(),
+        8,
+    ));
+    let facts = PureFactContext::new();
+    let other_owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        named.clone(),
+        1u32.into(),
+        2u32.into(),
+        8,
+    ));
+    let unrelated_view = view(
+        &Pointer {
+            block: PointerBlock::Heap(989_801),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        0,
+        8,
+    );
+    let extra_owner = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        later_read.clone(),
+        2u32.into(),
+        3u32.into(),
+        8,
+    ));
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(extra_owner.clone())
+        .unchecked_with_fact(owner.clone())
+        .unchecked_with_fact(other_owner.clone())
+        .unchecked_with_fact(unrelated_view);
+    resources.synchronize_memory_equalities(&facts);
+    let paired = resources.pair_memory_equalities(&facts, false, None);
+    assert_ne!(
+        paired
+            .graph
+            .canonical_pointer(&named)
+            .unwrap()
+            .representative,
+        paired
+            .graph
+            .canonical_pointer(&later_read)
+            .unwrap()
+            .representative
+    );
+    assert_eq!(named, name(&later, &cell));
+    if register_query {
+        assert!(paired.graph.are_equal(&named, &later_read));
+    }
+    let after = resources
+        .without_exact_representation(&owner)
+        .expect("remove the held supplier");
+    let after = after.without_exact_representation(&extra_owner).unwrap();
+    let after = after
+        .without_exact_representation(&other_owner)
+        .expect("remove the second supplier");
+    assert!(!after.permits_memory_read(&later_read, 8, &facts));
+}
+
+#[test]
+fn a_different_owned_field_does_not_hide_the_selected_read_view() {
+    let facts = PureFactContext::new();
+    let base = Pointer::symbolic(Variable(965_000));
+    let resources = ResourceContext::new()
+        .unchecked_with_fact(view(&base, 0, 8))
+        .unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(base.clone(), 8u32.into(), 24u32.into(), 1),
+        ));
+    resources.synchronize_memory_equalities(&facts);
+    assert!(resources.permits_memory_read(&base, 4, &facts));
+    assert!(resources.memory_write_range(&base, 4, &facts).is_none());
+    assert!(
+        resources
+            .memory_write_range(&base.offset_by_bytes(8), 4, &facts)
+            .is_some()
+    );
 }

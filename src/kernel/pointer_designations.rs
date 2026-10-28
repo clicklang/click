@@ -52,6 +52,18 @@ impl<K: Ord + Clone> ValueClasses<K> {
             .unwrap_or(value)
             .clone()
     }
+    /// One stated source for a checked read comparison. An ambiguous neighbor
+    /// bucket requires an explicit premise, not a spelling search.
+    pub(super) fn unique_direct_alias(&self, value: &K) -> Option<&K> {
+        let _checking =
+            crate::instrumentation::CheckingWorkScope::new("select provenance alias", 1);
+        let neighbors = self.ordered_edges.get(value)?;
+        if neighbors.len() != 1 {
+            return None;
+        }
+        neighbors.values().next()
+    }
+    #[cfg(test)]
     pub(super) fn direct_aliases(&self, value: &K) -> impl Iterator<Item = &K> {
         self.ordered_edges
             .get(value)

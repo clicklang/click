@@ -16,7 +16,6 @@
 use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
-use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::proof_diagnostics::render;
 
 #[cfg(test)]
@@ -447,21 +446,17 @@ fn consulted_premises(
     site: &StatedSite<'_>,
     labels: &mut render::SnapshotLabels,
 ) -> (Vec<String>, usize) {
-    let mut total = 0;
-    let mut shown = Vec::new();
-    let conditions = assumptions
-        .condition_fact_pairs()
-        .map(|(condition, value)| Proposition::ConditionIs(condition.clone(), value));
-    for premise in conditions.chain(assumptions.proposition_facts().cloned()) {
-        total += 1;
-        if shown.len() < PREMISE_LIMIT {
+    let (premises, total) = assumptions.diagnostic_fact_sample(PREMISE_LIMIT, 0);
+    let shown = premises
+        .into_iter()
+        .map(|premise| {
             let spelled = site.spell_proposition(&premise).map_or_else(
                 || render::render_proposition_labeled(&premise, labels),
                 |surface| crate::surface::diagnostics::describe_click_proposition(&surface),
             );
-            shown.push(format!("`{spelled}`"));
-        }
-    }
+            format!("`{spelled}`")
+        })
+        .collect();
     (shown, total)
 }
 
@@ -484,7 +479,8 @@ fn loadability_explanation(
     // the reader believes covers the cell, and the one the kernel wants index
     // bounds for.
     let covering = assumptions
-        .memory_loadable_fact_propositions()
+        .memory_loadable_candidates_for_base(base)
+        .take(PREMISE_LIMIT)
         .find(|fact| match fact {
             Proposition::CMemoryLoadable {
                 base: range_base,
@@ -503,7 +499,7 @@ fn loadability_explanation(
     // difference between a usable refusal and "not true".
     let missing_extent = crate::kernel::stated_loadable_extent_guards(covering)
         .into_iter()
-        .find(|guard| !assumptions.proves(guard));
+        .find(|guard| !established_condition(assumptions, guard));
     if let Some(guard) = missing_extent {
         let guard = site.spell_proposition(&guard).map_or_else(
             || render::render_proposition_labeled(&guard, labels),
@@ -536,7 +532,8 @@ pub(in crate::surface::proof) fn refuse_unproved_conversion_bounds(
     site: &StatedSite<'_>,
 ) -> Result<(), String> {
     for obligation in obligations {
-        if obligation.is_assumable() || assumptions.proves(obligation.proposition()) {
+        if obligation.is_assumable() || established_condition(assumptions, obligation.proposition())
+        {
             continue;
         }
         return Err(describe_refusal(
@@ -546,6 +543,47 @@ pub(in crate::surface::proof) fn refuse_unproved_conversion_bounds(
         ));
     }
     Ok(())
+}
+
+// Lowering can guard a universal's partial operation with its own domain:
+// forall k. defined(f(k)) implies defined(f(k)). This is syntax, not search,
+// and must not consult ambient facts about a variable bound by the guard.
+// Preserve the native int32 guarded-domain route only. Integer and other
+// binders have different domain obligations; logical reflexivity alone must
+// not discharge those (including a partial free expression under Integer).
+fn reflexive_guard(goal: &Proposition) -> bool {
+    let mut pending = vec![goal];
+    while let Some(goal) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match goal {
+            Proposition::ForAll {
+                sort: crate::kernel::Sort::CInt32,
+                body,
+                ..
+            } => pending.push(body),
+            Proposition::And(left, right) => {
+                pending.push(left);
+                pending.push(right);
+            }
+            Proposition::Implies(left, right) if left == right => {}
+            _ => return false,
+        }
+    }
+    true
+}
+
+// Interpret only the written logical structure and the kernel's indexed
+// atomic checks. Failure reporting must never run the general proof search.
+fn established_condition(assumptions: &PureFactContext, goal: &Proposition) -> bool {
+    if assumptions.states_required_goal(goal) || reflexive_guard(goal) {
+        return true;
+    }
+    match goal {
+        Proposition::And(left, right) => {
+            established_condition(assumptions, left) && established_condition(assumptions, right)
+        }
+        _ => assumptions.proves_atomic_without_search(goal),
+    }
 }
 
 fn describe_refusal(
@@ -567,12 +605,12 @@ fn describe_refusal(
     }
     let unproved = conjuncts
         .iter()
-        .find(|conjunct| !assumptions.proves(conjunct))
+        .find(|conjunct| !established_condition(assumptions, conjunct))
         .copied()
         .unwrap_or(obligation);
     let established = conjuncts
         .iter()
-        .filter(|conjunct| assumptions.proves(conjunct))
+        .filter(|conjunct| established_condition(assumptions, conjunct))
         .copied()
         .collect::<Vec<_>>();
     let missing = spell_condition(unproved, site, &mut labels);
@@ -843,6 +881,7 @@ pub(in crate::surface) fn walk_written_expressions(
         | ContractExpression::CFragment(_)
         | ContractExpression::CBinding(_)
         | ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
         | ContractExpression::ResourceWildcard
         | ContractExpression::ResourceCount(_) => {}
         ContractExpression::CUnary { operand: inner, .. }

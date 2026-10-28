@@ -11,8 +11,8 @@ difference of the two ranges stays inside `int64`. Each listed premise must be
 a constant `int64` order or equality fact on one operand; the checker reads
 only those premises.
 
-`sum` and `difference` write the step out. `sum_by_simp` and
-`sum_by_listed_simp` leave it to `solve` and `solve() using`, which cite the
+`sum` and `difference` write the step out. `sum_by_solve` and
+`sum_by_listed_solve` leave it to `solve` and `solve() using`, which cite the
 constant bounds on each operand: the facts indexed under that operand, or the
 listed ones. `mixed` adds an `int64` to a value widened from `unsigned int`:
 only the `int64` operand needs a bound, and the postcondition states the exact
@@ -28,11 +28,11 @@ long difference(long a, long b) {
     return a - b;
 }
 
-long sum_by_simp(long a, long b) {
+long sum_by_solve(long a, long b) {
     return a + b;
 }
 
-long sum_by_listed_simp(long a, long b) {
+long sum_by_listed_solve(long a, long b) {
     return a + b;
 }
 
@@ -76,7 +76,7 @@ int64 difference(int64 a, int64 b) {
     }
 }
 
-int64 sum_by_simp(int64 a, int64 b) {
+int64 sum_by_solve(int64 a, int64 b) {
     requires a < 100;
     requires b == 1;
     ensures to_integer(result) == to_integer(a + b);
@@ -86,7 +86,7 @@ int64 sum_by_simp(int64 a, int64 b) {
     }
 }
 
-int64 sum_by_listed_simp(int64 a, int64 b) {
+int64 sum_by_listed_solve(int64 a, int64 b) {
     requires a < 100;
     requires b == 1;
     ensures to_integer(result) == to_integer(a + b);

@@ -9,8 +9,8 @@ mod statements;
 mod undefined_site;
 pub(in crate::kernel) use statements::{
     end_scope_automatic_lifetimes, missing_aggregate_copy_read_resource,
-    refresh_scalar_local_after_memory_store, refresh_scalar_local_from_memory,
-    retire_automatic_storage_owner, return_authority_refusal,
+    rebase_resolved_allocation, refresh_scalar_local_after_memory_store,
+    refresh_scalar_local_from_memory, retire_automatic_storage_owner, return_authority_refusal,
 };
 pub(crate) use undefined_site::{
     CUndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
@@ -78,7 +78,6 @@ pub(crate) use memory_loads::load_registry_entry_count;
 pub(crate) use memory_loads::load_term_access_width;
 #[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell;
-#[cfg(test)]
 pub(crate) use memory_loads::load_variable_for_cell_with_origin;
 pub(crate) use memory_loads::load_variable_for_exact_cell;
 pub(crate) use memory_loads::load_variable_for_term;
@@ -139,3 +138,7 @@ pub(super) use statements::{
     StatementJudgment, execute_c_statement_paths, execute_statement_paths,
     execute_statement_paths_with_prefix, paths_after_scope_exit, scope_declared_names,
 };
+
+pub(crate) use memory_loads::pointer_read_over_write_c_value;
+
+pub(crate) use memory_loads::loaded_pointer_stored_block;

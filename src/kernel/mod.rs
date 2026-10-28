@@ -123,9 +123,10 @@ pub use api::*;
 pub(crate) use assumptions::current_memory_loads_in_term;
 pub(crate) use assumptions::proposition_has_free_bitvector_variable;
 pub(crate) use assumptions::{
-    PureFactContextIdScope, arm_frame_composite_definitions, capture_implicit_reasoning_provenance,
-    collect_reasoning_provenance, finite_forall_goal_instances,
-    record_implicit_reasoning_provenance, with_search_attempt_rollback,
+    PureFactContextIdScope, SelectedFacts, arm_frame_composite_definitions,
+    capture_implicit_reasoning_provenance, collect_reasoning_provenance,
+    finite_forall_goal_instances, record_implicit_reasoning_provenance,
+    with_search_attempt_rollback,
 };
 pub(crate) use equality_graph::{
     ReadEqualityCheckpoint, ReadEqualityDelta, logical_pointer_read_term,
@@ -146,7 +147,6 @@ pub(crate) use eval::is_store_fact;
 pub(crate) use eval::load_access_width_at_address_or_widest;
 pub(crate) use eval::load_access_width_or_widest;
 pub(crate) use eval::load_term_access_width;
-#[cfg(test)]
 pub(crate) use eval::load_variable_for_cell_with_origin;
 pub(crate) use eval::load_variable_for_term;
 pub(crate) use eval::offsets_have_same_canonical_form;
@@ -274,7 +274,7 @@ pub(crate) mod planning_api {
     pub(crate) use super::assumptions::proposition_reasoning::forall_loadable_range_parts;
     pub(crate) use super::assumptions::{
         algebraic_constructor_field_equalities, collect_proposition_conjuncts,
-        proposition_derivation, reasoning_interrupted, simp_reasoning_interrupted,
+        proposition_derivation, reasoning_interrupted, solve_reasoning_interrupted,
     };
     pub(crate) use super::reasoning::order_reasoning::{
         FiniteForAllRange, collect_forall_chain, collect_or_cases, finite_forall_ranges,

@@ -1097,3 +1097,239 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     );
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
 }
+
+fn generic_read_alias_rewrite_work(count: u64, unrelated: u64, warm: bool) -> usize {
+    let _session = crate::kernel::VerificationSession::enter();
+    let parameter = TypeParameterName::intern("GenericRewriteScalingT");
+    let stored = CValue::Parameter(Box::new(AlgebraicTerm {
+        algebraic_type: parameter.algebraic_type(),
+        node: AlgebraicTermNode::Variable(Variable(996_030)),
+    }));
+    let mut memory = CMemory::new();
+    for index in 0..=unrelated {
+        memory = memory.store(
+            Pointer {
+                block: PointerBlock::Heap(996_100 + index),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            stored.clone(),
+        );
+    }
+    let memory = crate::kernel::intern_c_memory(memory);
+    let from = CPointerValue::new(
+        Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        CType::Int32Pointer,
+    );
+    let read = AlgebraicTermNode::parameter_load(memory.clone(), from.pointer().clone(), parameter);
+    // Catch up the input's pointer-reachable index once for the warm-query
+    // axis. Every measured alias is still fresh. The cold axis below charges
+    // this initial delta as well and grows cells and queries together.
+    if warm {
+        let _ = AlgebraicTermNode::parameter_load(
+            memory.clone(),
+            Pointer::symbolic(Variable(998_000)),
+            parameter,
+        );
+    }
+    let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+        for index in 0..count {
+            let to = CPointerValue::new(
+                Pointer::symbolic(Variable(997_000 + index)),
+                CType::Int32Pointer,
+            );
+            let rewritten = TermRewrite::for_pointer_value_exact(&from, &to).value(&read);
+            let expected =
+                AlgebraicTermNode::parameter_load(memory.clone(), to.pointer().clone(), parameter);
+            assert_eq!(rewritten, expected);
+            assert_ne!(rewritten, stored);
+        }
+    });
+    work
+}
+
+#[test]
+fn generic_read_alias_rewrites_scale_with_selected_reads() {
+    let samples = [8, 16, 32, 64].map(|count| generic_read_alias_rewrite_work(count, 16, false));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn generic_read_alias_rewrites_ignore_caught_up_unrelated_cells() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| generic_read_alias_rewrite_work(8, unrelated, true));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn generic_read_alias_rewrites_keep_cold_total_work_linear() {
+    let samples = [8, 16, 32, 64].map(|size| generic_read_alias_rewrite_work(size, size, false));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "{samples:?}"
+    );
+}
+
+fn full_pointer_read_version_rewrite_work(count: u64, unrelated: u64) -> usize {
+    let _session = crate::kernel::VerificationSession::enter();
+    let to = CPointerValue::new(
+        Pointer::symbolic(Variable(997_500)),
+        CType::Int32PointerPointer,
+    );
+    let stored = CValue::pointer(Pointer::symbolic(Variable(997_501)));
+    let mut memory = CMemory::new();
+    for index in 0..unrelated {
+        memory = memory.store(
+            Pointer::symbolic(Variable(998_500 + index)),
+            CValue::Int32(7u32.into()),
+        );
+    }
+    let memory = memory.store(to.pointer().clone(), stored.clone());
+    let inputs = (0..count)
+        .map(|index| {
+            let from = CPointerValue::new(
+                Pointer::symbolic(Variable(999_500 + index)),
+                CType::Int32PointerPointer,
+            );
+            let read = memory.symbolic_pointer_version_load(from.pointer(), CType::Int32Pointer);
+            (from, read)
+        })
+        .collect::<Vec<_>>();
+    let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+        inputs
+            .iter()
+            .map(|(from, read)| TermRewrite::for_pointer_value_exact(from, &to).value(read))
+            .collect::<Vec<_>>()
+    });
+    let expected = memory.symbolic_pointer_version_load(to.pointer(), CType::Int32Pointer);
+    assert_ne!(expected, stored);
+    assert!(rewritten.iter().all(|value| *value == expected));
+    work
+}
+
+#[test]
+fn full_pointer_read_version_rewrites_scale_with_selected_reads() {
+    let samples = [8, 16, 32, 64].map(|count| full_pointer_read_version_rewrite_work(count, 16));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn full_pointer_read_version_rewrites_ignore_unrelated_cells() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| full_pointer_read_version_rewrite_work(8, unrelated));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}
+
+fn numeric_pointer_read_rewrite_work(
+    depth: usize,
+    repeats: usize,
+    unrelated: u64,
+    separate: bool,
+) -> usize {
+    let _session = crate::kernel::VerificationSession::enter();
+    let from = Bitvector32Term::Variable(Variable(997_020));
+    let to = Bitvector32Term::Variable(Variable(997_021));
+    let address = |index| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(index, 8),
+    };
+    let mut memory = CMemory::new();
+    for index in 0..unrelated {
+        memory = memory.store(
+            Pointer {
+                block: if separate {
+                    PointerBlock::Temporary(998_020 + index)
+                } else {
+                    PointerBlock::Symbolic(Variable(998_020 + index))
+                },
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CValue::Int32(7u32.into()),
+        );
+    }
+    let memory = memory.store(address(to.clone()), CValue::pointer(Pointer::null()));
+    let memory = crate::kernel::intern_c_memory(memory);
+    let mut input = address(from.clone());
+    for _ in 0..depth {
+        input = Pointer::version_read(&memory, &input);
+    }
+    let input = CValue::pointer(input);
+    let (outputs, work) = crate::instrumentation::measure_deterministic_work(|| {
+        let mut rewrite = TermRewrite::for_bits(&from, &to);
+        (0..repeats)
+            .map(|_| rewrite.value(&input))
+            .collect::<Vec<_>>()
+    });
+    let mut expected = address(to);
+    for _ in 0..depth {
+        expected = Pointer::version_read(&memory, &expected);
+    }
+    let expected = CValue::pointer(expected);
+    assert_ne!(expected, input);
+    assert!(outputs.iter().all(|output| *output == expected));
+    work
+}
+
+#[test]
+fn numeric_pointer_read_rewrites_scale_with_nested_definitions() {
+    let samples =
+        [8, 16, 32, 64].map(|depth| numeric_pointer_read_rewrite_work(depth, 1, 16, false));
+    assert!(samples[0] > 0);
+    assert!(
+        samples
+            .windows(3)
+            .all(|points| points[2] - points[1] <= 2 * (points[1] - points[0]) + 8),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn numeric_pointer_read_rewrites_reuse_shared_definitions() {
+    let samples =
+        [1, 4, 16, 64].map(|repeats| numeric_pointer_read_rewrite_work(64, repeats, 16, false));
+    assert!(samples[0] > 0);
+    for (repeats, work) in [1, 4, 16, 64].into_iter().zip(samples) {
+        assert!(work <= samples[0] + 16 * repeats, "{samples:?}");
+    }
+}
+
+#[test]
+fn numeric_pointer_read_rewrites_ignore_other_potential_alias_cells() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| numeric_pointer_read_rewrite_work(8, 1, unrelated, false));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn numeric_pointer_read_rewrites_ignore_separate_storage() {
+    let samples =
+        [0, 16, 64, 256].map(|unrelated| numeric_pointer_read_rewrite_work(8, 1, unrelated, true));
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}

@@ -660,7 +660,7 @@ fn charon_adler2_helpers_mul_audit_step_until_certificate() {
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: whole-fixture proof-tool agreement and expansion coverage"]
-fn charon_adler2_helpers_mul_audit_simp_certificate() {
+fn charon_adler2_helpers_mul_audit_solve_certificate() {
     audit_mul_site("solve()");
 }
 #[cfg(not(feature = "fast-gate"))]

@@ -107,7 +107,7 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
             }
         }
     }
-    if !volatile {
+    if !volatile && !SpecificationReadScope::is_active() {
         for path in &mut paths {
             if let CExpressionOutcome::Value(CValue::Pointer(value)) = &mut path.outcome {
                 *value = assumptions.pointer_value_at_entry(value);
@@ -1624,11 +1624,11 @@ fn canonicalized_pointer_value_from_int_cell(
     let copied_prefix = matches!(
         &defining_load,
         Some(Bitvector32Term::MemoryLoad(_, address, _))
-            if !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                address,
-                pointer,
-                assumptions,
-            )
+            if address.as_ref() != pointer
+                && (purpose != LoadPurpose::Program || SpecificationReadScope::is_active()
+                    || !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                        address, pointer, assumptions,
+                    ))
     );
     // A volatile read may observe a value memory does not record, so it is
     // never named as the snapshot's read of the cell.
@@ -1654,14 +1654,36 @@ fn canonicalized_pointer_value_from_int_cell(
         &crate::kernel::intern_c_memory_ref(memory),
         pointer,
     );
+    if purpose == LoadPurpose::Program
+        && let Some(boundary) = result.designation().as_loaded_value()
+        && let Some(previous) =
+            assumptions.pointer_read_source(&boundary.defining_memory, &boundary.defining_address)
+    {
+        // The complete read already names the memoized fact-free stopping
+        // point. Check that one edge's frame; a scalar prefix alone cannot
+        // establish equality of complete pointer domains.
+        let CValue::Pointer(before) =
+            previous.symbolic_pointer_version_load(&boundary.defining_address, value_type)
+        else {
+            unreachable!("pointer version load")
+        };
+        facts.push(ExecutionPureFact::logical_pointer_value_equation(
+            before,
+            result.clone(),
+        ));
+    }
     // A scalar cache can name the numeric prefix of a pointer whose complete
     // value is still present in the recorded memory. Select that whole value
     // inside the typed read producer; never infer its bounds from the prefix
     // or publish the known pointer as an unconditional name for one cell.
-    if let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
-        result.designation(),
-        assumptions,
-    ) {
+    // Recovery may cross a store using separation facts. Specification
+    // lowering must retain the read term; its equalities belong in the graph.
+    if !SpecificationReadScope::is_active()
+        && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
+            result.designation(),
+            assumptions,
+        )
+    {
         return Some(CValue::Pointer(stored.with_type(value_type)));
     }
     if let Some(load) = defining_load {
@@ -1988,7 +2010,10 @@ fn canonicalized_symbolic_load_value_with_identity(
         &crate::kernel::intern_c_memory_ref(memory),
         &address,
     );
-    if !assumptions.should_force_symbolic_external_loads()
+    // As in the cached-prefix route, fact-supported recovery cannot choose
+    // the value of a specification expression.
+    if !SpecificationReadScope::is_active()
+        && !assumptions.should_force_symbolic_external_loads()
         && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
             complete_read.designation(),
             assumptions,
@@ -2232,6 +2257,8 @@ pub(crate) fn load_substitution_term_visits() -> usize {
 }
 
 pub(crate) fn clear_load_canonicalization_caches() {
+    STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
+    MEMORY_SHOWN_CELLS.with(|cache| cache.borrow_mut().clear());
     LOAD_VARIABLE_CACHE.with(|cache| cache.borrow_mut().clear());
     TERM_CACHE.with(|cache| cache.borrow_mut().clear());
 }
@@ -2277,6 +2304,7 @@ pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
 }
 
 pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
+    STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
     POINTER_READ_OBSERVATIONS
         .with(|registry| *registry.borrow_mut() = state.pointer_observations.clone());
     WIDE_LOAD_OBSERVATIONS
@@ -2293,6 +2321,8 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
 }
 
 pub(crate) fn clear_load_variable_registry() {
+    STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
+    MEMORY_SHOWN_CELLS.with(|cache| cache.borrow_mut().clear());
     POINTER_READ_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     crate::kernel::equality_graph::clear_logical_pointer_reads();
@@ -2336,10 +2366,31 @@ pub(crate) fn read_over_write_value(term: &Bitvector32Term) -> Option<Bitvector3
     else {
         return None;
     };
-    let stored = memory.known_value(&pointer)?;
+    let stored = memory
+        .known_value(&pointer)
+        .or_else(|| memory.known_value(&stored_pointer_address(&pointer)?))?;
     let read = kind.read_cell(&stored)?;
     let value = crate::kernel::spec::c_value_bitvector_term(&read)?;
     (value != *term).then_some(value)
+}
+
+/// `address` with its base read through the pointer read-over-write
+/// authority: an address offset from a pointer read whose snapshot stores a
+/// pointer at the read's address is that pointer, offset alike. Both steps
+/// read memory, never facts.
+fn stored_pointer_address(address: &Pointer) -> Option<Pointer> {
+    let PointerBlock::LoadedPointer(_) = &address.block else {
+        return None;
+    };
+    let read = Pointer {
+        block: address.block.clone(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let stored = pointer_read_over_write_value(&read)?;
+    Some(Pointer {
+        block: stored.block,
+        offset: PointerOffsetTerm::add(stored.offset, address.offset.clone()),
+    })
 }
 
 /// The comparison form of `proposition`: each read of a stored cell
@@ -2387,7 +2438,180 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
             &resolved, variable, &value,
         );
     }
+    if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value) = &resolved {
+        let left_value = pointer_read_over_write_value(left);
+        let right_value = pointer_read_over_write_value(right);
+        if left_value.is_some() || right_value.is_some() {
+            let left = left_value.unwrap_or_else(|| left.as_ref().clone());
+            let right = right_value.unwrap_or_else(|| right.as_ref().clone());
+            // Two reads of one stored pointer compare equal; the comparison
+            // form is a lookup aid, so it states that outright.
+            let condition = if left == right {
+                ConditionTerm::Constant(true)
+            } else {
+                ConditionTerm::pointer_equal(left, right)
+            };
+            resolved = Proposition::ConditionIs(condition, *value);
+        }
+    }
+    // A pointer value carries a designation and an extent beside its address,
+    // so each read side resolves to the whole stored value, and the
+    // comparison is rebuilt from the two values: equal addresses alone never
+    // make two pointer values equal.
+    if let Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), value) =
+        &resolved
+    {
+        let resolve = |side: &CPointerValue| {
+            // The whole stored value defines the unmodified read. An
+            // explicitly selected subobject or changed domain is a different
+            // value even when it carries that same numeric read address.
+            if side != &CPointerValue::new(side.pointer().clone(), side.c_type()) {
+                return None;
+            }
+            pointer_read_over_write_c_value(side.pointer())
+                .map(|stored| stored.with_type(side.c_type()))
+        };
+        let (left_value, right_value) = (resolve(left), resolve(right));
+        if left_value.is_some() || right_value.is_some() {
+            let left = left_value.unwrap_or_else(|| left.as_ref().clone());
+            let right = right_value.unwrap_or_else(|| right.as_ref().clone());
+            let condition = match ConditionTerm::pointer_value_equal(left, right) {
+                ConditionTerm::PointerEqual(left, right) if left == right => {
+                    ConditionTerm::Constant(true)
+                }
+                condition => condition,
+            };
+            resolved = Proposition::ConditionIs(condition, *value);
+        }
+    }
     (&resolved != proposition).then_some(resolved)
+}
+
+/// The read-over-write authority for a pointer read: the pointer stored at
+/// the read's address in the snapshot it reads, as a cell or as the pointer
+/// view of a union cell, when that snapshot records one. A cell holding the
+/// read itself resolves to nothing.
+pub(crate) fn pointer_read_over_write_value(pointer: &Pointer) -> Option<Pointer> {
+    pointer_read_over_write_c_value(pointer).map(|stored| stored.pointer().clone())
+}
+
+/// The complete pointer stored at this read's address, when the snapshot's
+/// fact-free version walk establishes it. Retained caches alone are not evidence.
+pub(crate) fn pointer_read_over_write_c_value(pointer: &Pointer) -> Option<CPointerValue> {
+    let read = pointer.as_loaded_value()?;
+    if read.displacement != PointerOffsetTerm::Constant(0) {
+        return None;
+    }
+    // Only a cached pointer can be the stored pointer; anything else needs no
+    // walk of the cell's history, nor a run's element built to look at.
+    if !holds_pointer_cell(read.defining_memory.memory(), &read.defining_address) {
+        return None;
+    }
+    let CValue::Pointer(stored) = memory_shown_cell_value(
+        &read.defining_memory,
+        &read.defining_address,
+        crate::kernel::C_POINTER_BYTE_WIDTH,
+    )?
+    else {
+        return None;
+    };
+    (stored.pointer() != pointer).then_some(stored)
+}
+
+thread_local! {
+    // [`memory_shown_cell_value`] is a function of the interned snapshot, the
+    // address and the width, so it is memoized per session; a query met again
+    // while its own walk runs (the walk asks block distinctness, which asks
+    // this) answers nothing rather than recursing.
+    static MEMORY_SHOWN_CELLS: std::cell::RefCell<
+        std::collections::HashMap<(SharedCMemory, Pointer, u32), Option<CValue>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+    static MEMORY_SHOWN_IN_PROGRESS: std::cell::RefCell<
+        std::collections::HashSet<(SharedCMemory, Pointer, u32)>,
+    > = std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// Whether `memory` caches a whole pointer at exactly `address`, as a cell or
+/// as a union cell's pointer view.
+fn holds_pointer_cell(memory: &CMemory, address: &Pointer) -> bool {
+    matches!(
+        memory.cells.concrete().get(address),
+        Some(CValue::Pointer(_))
+    ) || memory.known_union_pointer(address).is_some()
+}
+
+/// The value `memory` holds at exactly `address`, as a cell or as the pointer
+/// view of a union cell, when memory alone shows it: the assumption-free
+/// version walk (`resource_tracker::last_same`) stops at a step that wrote
+/// the cell. A cell a havoc kept because a fact showed it separate holds its
+/// value only where that fact holds, so it gives nothing here; the
+/// read-over-write authority never stands in for a frame fact.
+fn memory_shown_cell_value(
+    memory: &SharedCMemory,
+    address: &Pointer,
+    bytes: u32,
+) -> Option<CValue> {
+    let key = (memory.clone(), address.clone(), bytes);
+    if let Some(hit) = MEMORY_SHOWN_CELLS.with(|cache| cache.borrow().get(&key).cloned()) {
+        return hit;
+    }
+    if !MEMORY_SHOWN_IN_PROGRESS.with(|running| running.borrow_mut().insert(key.clone())) {
+        return None;
+    }
+    let shown = memory_shown_cell_value_uncached(memory, address, bytes);
+    MEMORY_SHOWN_IN_PROGRESS.with(|running| running.borrow_mut().remove(&key));
+    MEMORY_SHOWN_CELLS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= 100_000 {
+            cache.clear();
+        }
+        cache.insert(key, shown.clone());
+    });
+    shown
+}
+
+fn memory_shown_cell_value_uncached(
+    memory: &SharedCMemory,
+    address: &Pointer,
+    bytes: u32,
+) -> Option<CValue> {
+    // The read's own snapshot must hold the cell: a projection interned from
+    // several sources names its oldest, which need not be this read's.
+    let held = memory
+        .known_value(address)
+        .or_else(|| memory.known_union_pointer(address))?;
+    let source = crate::kernel::prelude::canonical_load_projection_source(memory, address)
+        .unwrap_or_else(|| memory.clone());
+    let last = crate::kernel::resource_tracker::last_same_named_cell(
+        address,
+        bytes,
+        &crate::kernel::resource_tracker::ProgramPoint::at(&source),
+    )?;
+    // The step the walk stopped at must have left the cached cell standing
+    // for the cell's bytes by memory alone. A store elsewhere that overlaps
+    // the cell changed some of them, whatever a cached cell still says; a
+    // havoc keeps a cell only where a frame fact showed it separate, and that
+    // fact, not the cache, is the authority for it.
+    match last.point.snapshot().derivation().as_deref() {
+        Some(CMemoryDerivation::Store { pointer, value, .. })
+            if last.stopped_by.reason == crate::kernel::resource_tracker::StopReason::Affected
+                && (pointer != address || value.byte_width() < bytes) =>
+        {
+            None
+        }
+        Some(CMemoryDerivation::CallHavoc { .. } | CMemoryDerivation::LoopHavoc { .. }) => None,
+        // A step the walk could not show separate from the cell (a store or a
+        // release through an unrelated address) left the cache standing only
+        // where a fact shows it separate.
+        _ if matches!(
+            last.stopped_by.reason,
+            crate::kernel::resource_tracker::StopReason::NotShownSeparate(_)
+        ) =>
+        {
+            None
+        }
+        _ => Some(held),
+    }
 }
 
 /// Whether `proposition` holds by the read-over-write authority alone: its
@@ -2488,6 +2712,65 @@ pub(crate) fn pointer_load_identity(memory: &SharedCMemory, address: &Pointer) -
             }
         }
     })
+}
+
+/// The block a pointer read's value lies in by the read-over-write authority:
+/// the block of the pointer memory alone shows stored at the read's address
+/// (`memory_shown_cell_value`). `None` when memory shows no pointer there.
+pub(crate) fn loaded_pointer_stored_block(identity: PointerLoadId) -> Option<PointerBlock> {
+    let mut current = identity;
+    let mut path = Vec::new();
+    let (terminal, complete) = loop {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(cached) =
+            STORED_POINTER_BLOCKS.with(|cache| cache.borrow().get(&current).cloned())
+        {
+            break (
+                Some(cached.unwrap_or(PointerBlock::LoadedPointer(current))),
+                true,
+            );
+        }
+        if !STORED_POINTER_BLOCKS_RUNNING.with(|running| running.borrow_mut().insert(current)) {
+            // A memory naming walk can ask about the read it is resolving.
+            // That recursive question supplies no definition and is not memoized.
+            break (None, false);
+        }
+        path.push(current);
+        match immediate_stored_pointer_block(current) {
+            Some(PointerBlock::LoadedPointer(next)) => current = next,
+            Some(block) => break (Some(block), true),
+            None => break (Some(PointerBlock::LoadedPointer(current)), true),
+        }
+    };
+    for read in path {
+        STORED_POINTER_BLOCKS_RUNNING.with(|running| running.borrow_mut().remove(&read));
+        if complete {
+            let value = terminal
+                .clone()
+                .filter(|block| *block != PointerBlock::LoadedPointer(read));
+            STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().insert(read, value));
+        }
+    }
+    terminal.filter(|block| *block != PointerBlock::LoadedPointer(identity))
+}
+
+thread_local! {
+    static STORED_POINTER_BLOCKS: std::cell::RefCell<std::collections::HashMap<PointerLoadId, Option<PointerBlock>>> = std::cell::RefCell::new(std::collections::HashMap::new());
+    static STORED_POINTER_BLOCKS_RUNNING: std::cell::RefCell<std::collections::HashSet<PointerLoadId>> = std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+fn immediate_stored_pointer_block(identity: PointerLoadId) -> Option<PointerBlock> {
+    let (memory, address) = registered_pointer_load(identity)?;
+    if !holds_pointer_cell(memory.memory(), &address) {
+        return None;
+    }
+    let CValue::Pointer(stored) =
+        memory_shown_cell_value(&memory, &address, crate::kernel::C_POINTER_BYTE_WIDTH)?
+    else {
+        return None;
+    };
+    (stored.pointer().block != PointerBlock::LoadedPointer(identity))
+        .then(|| stored.pointer().block.clone())
 }
 
 /// Decode a pointer-load name without consulting scalar-load metadata.
@@ -6294,6 +6577,152 @@ mod tests {
     }
 
     #[test]
+    fn specification_pointer_reads_do_not_adopt_fact_supplied_bounds() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let address = Pointer::symbolic(Variable(989_920));
+        let evaluate = |context: &PureFactContext| {
+            let paths = evaluate_c_memory_load_paths(
+                &memory,
+                address.clone(),
+                CType::Int32Pointer,
+                ExecutionFacts::new(),
+                Vec::new(),
+                context,
+                true,
+                false,
+                None,
+                None,
+            );
+            let CExpressionOutcome::Value(CValue::Pointer(value)) = &paths[0].outcome else {
+                panic!("pointer read");
+            };
+            value.clone()
+        };
+        let empty = PureFactContext::new();
+        let value = evaluate(&empty);
+        let bounded = value.clone().with_extent(Some(SubobjectExtent {
+            start: value.pointer().clone(),
+            width: 4u32.into(),
+        }));
+        let facts = empty.clone().assume_condition(
+            ConditionTerm::PointerValueEqual(Box::new(value.clone()), Box::new(bounded)),
+            true,
+        );
+        let _scope = SpecificationReadScope::enter();
+        assert_eq!(evaluate(&facts), evaluate(&empty));
+    }
+
+    #[test]
+    fn specification_cached_pointer_value_does_not_follow_fact_supported_frames() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(989_930));
+        let write = Pointer::symbolic(Variable(989_931));
+        let target = Pointer::symbolic(Variable(989_932));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer)
+            .with_extent(Some(SubobjectExtent::constant(target, 4)));
+        let memory = CMemory::new()
+            .store(slot.clone(), CValue::Pointer(stored.clone()))
+            .without_possible_aliasing_cells(&write, 4, &PureFactContext::new())
+            .store(write.clone(), CValue::Int32(7u32.into()));
+        assert!(memory.known_value(&slot).is_none());
+        let variable =
+            load_variable_for_exact_cell(&intern_c_memory_ref(&memory), &slot, LoadKind::Int32, 8);
+        let cached = CValue::Int32(Bitvector32Term::Variable(variable));
+        let own = |pointer| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                pointer,
+                0u32.into(),
+                1u32.into(),
+                8,
+            ))
+        };
+        let empty = PureFactContext::new();
+        let context = empty
+            .clone()
+            .assume_proposition(Proposition::CResourceComposition(
+                ResourceContext::new()
+                    .unchecked_with_fact(own(slot.clone()))
+                    .unchecked_with_fact(own(write)),
+            ));
+        let _scope = SpecificationReadScope::enter();
+        for purpose in [
+            LoadPurpose::Logical,
+            LoadPurpose::Validity,
+            LoadPurpose::Program,
+        ] {
+            let read = |facts: &PureFactContext| {
+                canonicalized_pointer_value_from_int_cell(
+                    &memory,
+                    &slot,
+                    &cached,
+                    CType::Int32Pointer,
+                    &mut ExecutionFacts::new(),
+                    facts,
+                    None,
+                    purpose,
+                )
+                .expect("typed cached read")
+            };
+            assert_eq!(read(&context), read(&empty));
+            let uncached_read = |facts: &PureFactContext| {
+                canonicalized_symbolic_load_value_with_identity(
+                    &memory,
+                    &slot,
+                    CType::Int32Pointer,
+                    &mut ExecutionFacts::new(),
+                    facts,
+                    None,
+                    purpose,
+                )
+                .expect("typed uncached read")
+            };
+            assert_eq!(uncached_read(&context), uncached_read(&empty));
+        }
+    }
+
+    #[test]
+    fn specification_cached_pointer_prefix_identity_is_fact_stable() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let source = Pointer::symbolic(Variable(989_910));
+        let destination = Pointer::symbolic(Variable(989_911));
+        let read = Bitvector32Term::MemoryLoad(
+            intern_c_memory_ref(&memory),
+            Box::new(source.clone()),
+            LoadKind::Int32,
+        );
+        let variable = load_variable_for_term(&read).unwrap().0;
+        let value = CValue::Int32(Bitvector32Term::Variable(variable));
+        let empty = PureFactContext::new();
+        let facts = empty.clone().assume_condition(
+            ConditionTerm::pointer_equal(source, destination.clone()),
+            true,
+        );
+        let _scope = SpecificationReadScope::enter();
+        for (label, purpose) in [
+            ("logical", LoadPurpose::Logical),
+            ("validity", LoadPurpose::Validity),
+            ("program in specification", LoadPurpose::Program),
+        ] {
+            let evaluate = |context: &PureFactContext| {
+                canonicalized_pointer_value_from_int_cell(
+                    &memory,
+                    &destination,
+                    &value,
+                    CType::Int32Pointer,
+                    &mut ExecutionFacts::new(),
+                    context,
+                    None,
+                    purpose,
+                )
+                .unwrap()
+            };
+            assert_eq!(evaluate(&facts), evaluate(&empty), "{label}");
+        }
+    }
+
+    #[test]
     fn specification_c_pointer_reads_retain_their_logical_names() {
         let _session = crate::kernel::VerificationSession::enter();
         let memory = CMemory::new();
@@ -6462,6 +6891,94 @@ mod tests {
         assert!(context.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
         assert!(!context.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(16)));
         assert!(!before.pointers_known_equal(&x.offset_by_bytes(8), &y.offset_by_bytes(8)));
+    }
+
+    #[test]
+    fn cached_typed_pointer_read_emits_only_complete_owned_store_frames() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(92_330));
+        let write = Pointer::symbolic(Variable(92_331));
+        let before = intern_c_memory(CMemory::new());
+        let load =
+            Bitvector32Term::MemoryLoad(before.clone(), Box::new(slot.clone()), LoadKind::Int32);
+        let (variable, _) = load_variable_for_term(&load).unwrap();
+        for (owned_bytes, overlap, later_stores, expected) in [
+            (0, false, 0, false),
+            (4, false, 0, false),
+            (8, false, 0, true),
+            (8, false, 4, true),
+            (8, true, 0, false),
+        ] {
+            let written = if overlap {
+                slot.offset_by_bytes(4)
+            } else {
+                write.clone()
+            };
+            let mut memory = before
+                .memory()
+                .clone()
+                .store(written, CValue::UInt64(Bitvector32Term::UInt64Constant(0)));
+            // These stores are structurally separate. The frame producer must
+            // use the complete read's named boundary, not the newest edge.
+            for n in 0..later_stores {
+                memory = memory.store(
+                    slot.offset_by_bytes(16 + 8 * n),
+                    CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+                );
+            }
+            let old_read = Pointer::loaded_value(&before, &slot);
+            let mut context = PureFactContext::new();
+            if owned_bytes != 0 {
+                let resources = ResourceContext::new()
+                    .unchecked_with_fact(CResourceFact::own_memory(
+                        CMemoryRange::new_with_element_width(
+                            slot.clone(),
+                            0u32.into(),
+                            1u32.into(),
+                            owned_bytes,
+                        ),
+                    ))
+                    .unchecked_with_fact(CResourceFact::own_memory(
+                        CMemoryRange::new_with_element_width(
+                            write.clone(),
+                            0u32.into(),
+                            1u32.into(),
+                            8,
+                        ),
+                    ));
+                context = context.assume_proposition(Proposition::CResourceComposition(resources));
+            }
+            let mut facts = ExecutionFacts::new();
+            let CValue::Pointer(result) = canonicalized_pointer_value_from_int_cell(
+                &memory,
+                &slot,
+                &CValue::Int32(Bitvector32Term::Variable(variable)),
+                CType::Int64Pointer,
+                &mut facts,
+                &context,
+                None,
+                LoadPurpose::Program,
+            )
+            .expect("typed cached read") else {
+                panic!("pointer read")
+            };
+            let new_read = result.designation();
+            let retained = facts.iter().fold(PureFactContext::new(), |context, fact| {
+                context.assume_execution_pure_fact(fact)
+            });
+            assert_eq!(
+                retained
+                    .equality_graph
+                    .designations_equal(&old_read, new_read),
+                expected,
+                "owned bytes={owned_bytes}, overlap={overlap}"
+            );
+            assert!(
+                !PureFactContext::new()
+                    .equality_graph
+                    .designations_equal(&old_read, new_read)
+            );
+        }
     }
 
     #[test]
@@ -7052,5 +7569,214 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/eval/memory_loads/tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod pointer_comparison_tests {
+    use super::*;
+    use crate::kernel::VerificationSession;
+
+    #[test]
+    fn pointer_read_comparison_preserves_the_complete_stored_extent() {
+        let _session = VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(989_001));
+        let target = Pointer::symbolic(Variable(989_002));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target.clone(),
+                width: 4u32.into(),
+            },
+        ));
+        let memory =
+            intern_c_memory(CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())));
+        let read = CPointerValue::new(Pointer::loaded_value(&memory, &slot), CType::Int32Pointer);
+        let equal = Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(read.clone()), Box::new(stored)),
+            true,
+        );
+        assert!(holds_by_read_over_write(&equal));
+        let larger = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target,
+                width: 8u32.into(),
+            },
+        ));
+        let unequal = Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(read), Box::new(larger)),
+            true,
+        );
+        assert!(!holds_by_read_over_write(&unequal));
+    }
+
+    #[test]
+    fn pointer_read_comparison_keeps_explicit_bounds_on_the_read() {
+        let _session = VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(989_020));
+        let target = Pointer::symbolic(Variable(989_021));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target.clone(),
+                width: 4u32.into(),
+            },
+        ));
+        let memory =
+            intern_c_memory(CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())));
+        let read = CPointerValue::new(Pointer::loaded_value(&memory, &slot), CType::Int32Pointer)
+            .with_extent(Some(SubobjectExtent {
+                start: target,
+                width: 8u32.into(),
+            }));
+        let unequal = Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(read), Box::new(stored)),
+            true,
+        );
+        assert!(!holds_by_read_over_write(&unequal));
+    }
+
+    #[test]
+    fn integer_read_over_write_follows_a_stored_pointer_address() {
+        let _session = VerificationSession::enter();
+        let slot = Pointer {
+            block: PointerBlock::Heap(989_003),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let target = Pointer {
+            block: PointerBlock::Heap(989_004),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = intern_c_memory(
+            CMemory::new()
+                .store(
+                    slot.clone(),
+                    CValue::typed_pointer(target.clone(), CType::Int32Pointer),
+                )
+                .store(target.offset_by_bytes(4), CValue::Int32(37u32.into())),
+        );
+        let address = Pointer::loaded_value(&memory, &slot).offset_by_bytes(4);
+        let raw = Bitvector32Term::MemoryLoad(memory, Box::new(address), LoadKind::Int32);
+        let (name, _) = load_variable_for_term(&raw).expect("the integer read has a version name");
+        assert_eq!(
+            read_over_write_value(&Bitvector32Term::Variable(name)),
+            Some(37u32.into())
+        );
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/eval/memory_loads/pointer_comparison_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod pointer_read_value_definition_tests {
+    use super::*;
+
+    #[test]
+    fn named_pointer_read_definitions_follow_later_observations() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let unrelated = Pointer {
+            block: PointerBlock::Heap(985_003),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let first = crate::kernel::intern_c_memory(
+            CMemory::new().store(unrelated.clone(), CValue::UInt32(1u32.into())),
+        );
+        let named = Pointer::version_read(&first, &cell);
+        let context = PureFactContext::new();
+        assert!(context.pointers_known_equal(&named, &Pointer::loaded_value(&first, &cell)));
+        let later = crate::kernel::intern_c_memory(
+            first
+                .memory()
+                .clone()
+                .store(unrelated, CValue::UInt32(2u32.into())),
+        );
+        let later_read = Pointer::loaded_value(&later, &cell);
+        assert_eq!(named, Pointer::version_read(&later, &cell));
+        assert!(PureFactContext::new().pointers_known_equal(&named, &later_read));
+        assert!(
+            crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
+                &named,
+                &later_read,
+                &context
+            )
+        );
+        assert!(context.pointers_known_equal(&named, &later_read));
+        assert!(
+            PureFactContext::new()
+                .pointers_known_equal(&named, &Pointer::loaded_value(&first, &cell))
+        );
+    }
+
+    #[test]
+    fn named_pointer_reads_retain_the_original_snapshot_definition() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let source = crate::kernel::intern_c_memory(CMemory::new().store(
+            Pointer {
+                block: PointerBlock::Heap(985_001),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CValue::UInt32(1u32.into()),
+        ));
+        let named = CPointerValue::new(Pointer::version_read(&source, &cell), CType::Int32Pointer);
+        let original =
+            CPointerValue::new(Pointer::loaded_value(&source, &cell), CType::Int32Pointer);
+        assert_ne!(named.pointer(), original.pointer());
+        let context = PureFactContext::new();
+        assert!(context.equality_graph.knows_condition(
+            &ConditionTerm::PointerValueEqual(Box::new(named.clone()), Box::new(original)),
+            true,
+        ));
+        let changed = crate::kernel::intern_c_memory(
+            source
+                .memory()
+                .clone()
+                .store(cell.offset_by_bytes(4), CValue::UInt32(9u32.into())),
+        );
+        let changed =
+            CPointerValue::new(Pointer::loaded_value(&changed, &cell), CType::Int32Pointer);
+        assert!(!context.equality_graph.knows_condition(
+            &ConditionTerm::PointerValueEqual(Box::new(named), Box::new(changed)),
+            true,
+        ));
+    }
+
+    #[test]
+    fn named_pointer_reads_retain_complete_stored_values_in_the_graph() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(981_301));
+        let target = Pointer::symbolic(Variable(981_302));
+        let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target.clone(),
+                width: 4u32.into(),
+            },
+        ));
+        let memory = crate::kernel::intern_c_memory(
+            CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())),
+        );
+        let named = CPointerValue::new(Pointer::version_read(&memory, &slot), CType::Int32Pointer);
+        assert_ne!(named.pointer(), stored.pointer());
+        assert_ne!(named.designation(), stored.designation());
+        let context = PureFactContext::new();
+        assert!(context.equality_graph.knows_condition(
+            &ConditionTerm::PointerValueEqual(Box::new(named.clone()), Box::new(stored.clone())),
+            true,
+        ));
+        let other_extent = stored.clone().with_extent(Some(SubobjectExtent {
+            start: target,
+            width: 8u32.into(),
+        }));
+        assert!(!context.equality_graph.knows_condition(
+            &ConditionTerm::PointerValueEqual(Box::new(named), Box::new(other_extent)),
+            true,
+        ));
     }
 }

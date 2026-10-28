@@ -37,7 +37,7 @@ The verdict is the exit status; a failure's label (`budget`, `timeout`,
 - `auto/baseline.json` records, for each site, both verdicts. A
   site is keyed by its file, its written proposition and which occurrence of
   that proposition it is, so edits elsewhere in a file do not move it.
-- A change to `auto`, `simp` or what they rely on runs the eval and quotes
+- A change to `auto`, `solve` or what they rely on runs the eval and quotes
   the summary: sites gained and lost under each measure, and why each lost
   site is acceptable.
   When the change is accepted, `--write-baseline` updates the baseline in

@@ -200,5 +200,5 @@ pending prerequisites cannot supply that evidence. The retained proposition
 keeps the pre-call read snapshots and model values, so it cannot describe a
 cell's new value after a write. This also retains definedness of a checked
 resource-count sum; see
-`mdtests/simp_defined_count_after_a_zero_summand.md` and the rejected stale-read
+`mdtests/solve_defined_count_after_a_zero_summand.md` and the rejected stale-read
 case `mdtests/call_checked_input_facts_keep_prestate.md`.

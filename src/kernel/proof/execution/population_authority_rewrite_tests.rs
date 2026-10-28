@@ -381,6 +381,23 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
         )
         .is_err()
     );
+    // The checked introduction packaged the extent evidence in the owned
+    // member. Its elimination needs custody, not the original ambient fact.
+    let no_facts = PureFactContext::new();
+    let (returned, _) = one
+        .checked_population_member_exchange(&member, false, &definition, &no_facts)
+        .expect("owned membership carries its checked private body");
+    assert!(returned.resources().satisfies_fact(
+        &CResourceFact::own_memory(CMemoryRange::new(external.clone(), 0.into(), 1.into())),
+        &no_facts,
+    ));
+    for absent in [&empty, &returned] {
+        assert!(
+            absent
+                .checked_population_member_exchange(&member, false, &definition, &no_facts)
+                .is_err()
+        );
+    }
 }
 
 #[test]

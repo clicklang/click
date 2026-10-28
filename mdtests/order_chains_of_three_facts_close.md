@@ -6,14 +6,14 @@ names a transitivity lemma per edge, `int32_*` or `uint32_*` by the
 operands' type; `solve() using` adds the premises it lists.
 
 ```click
-theorem signed_by_simp(x: int32, a: int32, b: int32) {
+theorem signed_by_solve(x: int32, a: int32, b: int32) {
     requires x < a;
     requires a <= b;
     requires b <= 4;
     ensures x < 4 by solve();
 }
 
-theorem unsigned_by_simp(x: uint32, a: uint32, b: uint32) {
+theorem unsigned_by_solve(x: uint32, a: uint32, b: uint32) {
     requires x < a;
     requires a <= b;
     requires b <= 4u32;

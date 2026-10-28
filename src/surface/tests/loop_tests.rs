@@ -1190,9 +1190,9 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
 }
 
 #[test]
-fn loop_initialization_simp_retains_checked_fixed_state_proof() {
+fn loop_initialization_solve_retains_checked_fixed_state_proof() {
     let c_source = r#"
-            int32 initialize_by_simp(int32 x) {
+            int32 initialize_by_solve(int32 x) {
                 while (x < 1) {
                     x = 0;
                 }
@@ -1200,9 +1200,9 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
             }
         "#;
     let click_source = r#"
-            verifying "initialize_by_simp.c";
+            verifying "initialize_by_solve.c";
 
-            int32 initialize_by_simp(int32 x) diverges {
+            int32 initialize_by_solve(int32 x) diverges {
                 requires x >= 0;
                 ensures result >= 0;
             } by {
@@ -1219,12 +1219,12 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
             }
         "#;
 
-    let verified = verify_c0_sources(click_source, &[("initialize_by_simp.c", c_source)]);
-    verified.expect("loop initialization simp should verify through Proof");
+    let verified = verify_c0_sources(click_source, &[("initialize_by_solve.c", c_source)]);
+    verified.expect("loop initialization solve should verify through Proof");
 
     let offset = click_source
         .find("initialize by solve()")
-        .expect("initialization proof should contain its smart simp")
+        .expect("initialization proof should contain its smart solve")
         + "initialize by ".len();
     let line = click_source[..offset]
         .bytes()
@@ -1239,14 +1239,14 @@ fn loop_initialization_simp_retains_checked_fixed_state_proof() {
         + 1;
     let expanded = expand_c0_tactic_source_at(
         click_source,
-        &[("initialize_by_simp.c", c_source)],
+        &[("initialize_by_solve.c", c_source)],
         line,
         column,
     )
     .expect("the retained initialization closer should expand");
     assert!(!expanded.contains("initialize by solve()"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
-    verify_c0_sources(&expanded, &[("initialize_by_simp.c", c_source)])
+    verify_c0_sources(&expanded, &[("initialize_by_solve.c", c_source)])
         .expect("expanded initialization closer should independently verify");
 }
 
@@ -1800,7 +1800,7 @@ fn frontier_local_loop_keyword_expands_omitted_phases() {
 }
 
 #[test]
-fn loop_exit_simp_expands_invariant_conjuncts_explicitly() {
+fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
     let c_source = r#"
             int32 count_to_n(int32 n) {
                 int32 i;
@@ -1828,16 +1828,16 @@ fn loop_exit_simp_expands_invariant_conjuncts_explicitly() {
                 solve();
             }
         "#;
-    let simp_offset = click_source
+    let solve_offset = click_source
         .rfind("solve();")
-        .expect("proof should contain its final simp");
-    let line = click_source[..simp_offset]
+        .expect("proof should contain its final solve");
+    let line = click_source[..solve_offset]
         .bytes()
         .filter(|byte| *byte == b'\n')
         .count()
         + 1;
-    let column = simp_offset
-        - click_source[..simp_offset]
+    let column = solve_offset
+        - click_source[..solve_offset]
             .rfind('\n')
             .map(|offset| offset + 1)
             .unwrap_or(0)
@@ -1845,7 +1845,7 @@ fn loop_exit_simp_expands_invariant_conjuncts_explicitly() {
 
     let expanded =
         expand_c0_tactic_source_at(click_source, &[("count_to_n.c", c_source)], line, column)
-            .expect("loop-exit simp should expand through explicit invariant conjuncts");
+            .expect("loop-exit solve should expand through explicit invariant conjuncts");
 
     assert!(
         expanded.contains("extract(at(loop(0).exit, i) <= at(loop(0).exit, n));"),
@@ -1961,17 +1961,17 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
                 solve();
             }
         "#;
-    let initialize_simp = click_source
+    let initialize_solve = click_source
         .find("initialize by solve()")
         .expect("proof should contain explicit initialization")
         + "initialize by ".len();
-    let line = click_source[..initialize_simp]
+    let line = click_source[..initialize_solve]
         .bytes()
         .filter(|byte| *byte == b'\n')
         .count()
         + 1;
-    let column = initialize_simp
-        - click_source[..initialize_simp]
+    let column = initialize_solve
+        - click_source[..initialize_solve]
             .rfind('\n')
             .map(|offset| offset + 1)
             .unwrap_or(0)
@@ -2274,7 +2274,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
 #[test]
 fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
     // The negated loop guard leaves `i >= 3` at the loop's exit. The checked
-    // outcome `simp` must retain a checkable proof of the *looser* bounds
+    // outcome `solve` must retain a checkable proof of the *looser* bounds
     // `result >= 1` and `result <= 5` (constant-bound weakening, expanded as
     // explicit `arithmetic() using` certificates), not only the exact
     // `result == 3`.
@@ -2312,8 +2312,9 @@ fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
             }
         "#;
 
-    verify_c0_sources(click_source, &[("count_to_three.c", c_source)])
-        .expect("the checked outcome simp should weaken the loop-exit bound to the looser ensures");
+    verify_c0_sources(click_source, &[("count_to_three.c", c_source)]).expect(
+        "the checked outcome solve should weaken the loop-exit bound to the looser ensures",
+    );
 }
 
 #[test]

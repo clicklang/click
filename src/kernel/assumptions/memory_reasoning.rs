@@ -205,56 +205,78 @@ impl PureFactContext {
         pointer: &Pointer,
         value_type: CType,
     ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        if self.memory_read_defined_facts.is_empty() {
+            return false;
+        }
         let evidence_at = |candidate: &Pointer| {
             let key = (
                 crate::kernel::api::canonicalize_pointer_loads(candidate),
                 value_type,
             );
             crate::instrumentation::record_deterministic_work(1);
-            self.memory_read_defined_facts
-                .get(&key)
-                .is_some_and(|facts| {
-                    facts.iter().any(|fact| {
-                        crate::instrumentation::record_deterministic_work(1);
-                        let Proposition::CMemoryReadDefined {
-                            memory: before,
-                            pointer: source,
-                            ..
-                        } = fact
-                        else {
-                            unreachable!()
-                        };
-                        if source != pointer
-                        && !crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                            source, pointer, self,
-                        )
-                    {
-                        return false;
-                    }
-                        // Carry initialization along the evidence's own address:
-                        // a symbolic spelling need not share the physical block's
-                        // lifetime identity. Only after this no-write check may
-                        // the checked pointer equality transport the typed read.
-                        before == memory
-                        || before.read_region_identity(source)
-                            == memory.read_region_identity(source)
-                            && crate::kernel::memory_provenance::typed_read_has_same_memory_source(
-                                before,
-                                memory,
-                                source,
-                                value_type.byte_width(),
-                                self,
-                            )
-                    })
-                })
+            let Some(facts) = self.memory_read_defined_facts.get(&key) else {
+                return false;
+            };
+            let exact = Proposition::CMemoryReadDefined {
+                memory: memory.clone(),
+                pointer: pointer.clone(),
+                value_type,
+            };
+            if facts.contains(&exact) {
+                return true;
+            }
+            // A snapshot bucket is not a premise list. A selected source must
+            // retain its type, address, lifetime, and value-preserving edge.
+            if facts.len() != 1 {
+                return false;
+            }
+            let Some(Proposition::CMemoryReadDefined {
+                memory: before,
+                pointer: source,
+                ..
+            }) = facts.iter().next()
+            else {
+                return false;
+            };
+            if source.blocks_proven_distinct(pointer) || !self.pointers_known_equal(source, pointer)
+            {
+                return false;
+            }
+            before == memory
+                || before.read_region_identity(source) == memory.read_region_identity(source)
+                    && crate::kernel::memory_provenance::typed_read_has_same_memory_source(
+                        before,
+                        memory,
+                        source,
+                        value_type.byte_width(),
+                        self,
+                    )
         };
-        evidence_at(pointer)
-            || self.exact_pointer_aliases(pointer).any(evidence_at)
-            // The class restates field addresses under equal base pointers,
-            // including displaced aliases absent from the exact-fact index.
-            // Visit only this equality component; each candidate still needs
-            // the checked address equality above.
-            || self.equality_graph.pointer_spellings(pointer).iter().any(evidence_at)
+        if evidence_at(pointer) {
+            return true;
+        }
+        let storage = self.equality_graph.storage_address(pointer);
+        if storage != *pointer && evidence_at(&storage) {
+            return true;
+        }
+        if let Some(coordinate) = self.equality_graph.canonical_pointer(pointer)
+            && let Some(offset) = coordinate.offset.to_offset_term()
+            && evidence_at(&Pointer {
+                block: coordinate.representative,
+                offset,
+            })
+        {
+            return true;
+        }
+        // Explicit source selection may use a nonrepresentative spelling.
+        // Cached lengths identify that one source without walking its class.
+        self.memory_read_defined_facts.len() == 1
+            && self
+                .memory_read_defined_facts
+                .keys()
+                .next()
+                .is_some_and(|(source, kind)| *kind == value_type && evidence_at(source))
     }
 
     /// A successful typed specification evaluation proves validity. Value
@@ -343,6 +365,18 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &Bitvector32Term,
     ) -> bool {
+        // Exact evidence is an indexed lookup even when its address holds
+        // many other views. Choosing a different premise belongs to search.
+        crate::instrumentation::record_deterministic_work(1);
+        if self.contains_assumed_exact(&Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: bytes.clone(),
+            wide: true,
+        }) {
+            return true;
+        }
+
         if bytes.uint64_as_const() == Some(0) {
             return true;
         }
@@ -461,7 +495,13 @@ impl PureFactContext {
         else {
             return false;
         };
-        let Some(delta) = self.wide_element_index_of_access(base, source, 1) else {
+        if base.blocks_proven_distinct(source) {
+            return false;
+        }
+        // The source is selected already. Align these two addresses through
+        // the maintained graph instead of trying every spelling of the query.
+        let aligned = self.loadable_query_at_source(base, source);
+        let Some(delta) = self.wide_element_index_of_access(&aligned, source, 1) else {
             return false;
         };
         // The signed pointer displacement must represent this exact
@@ -491,7 +531,7 @@ impl PureFactContext {
         // The loadable prover is the one consumer of the extended DAG
         // bridging: a loadability fact carrying one memory snapshot must
         // discharge a load carrying another. Scoping the power here
-        // keeps execution pruning and simp planning byte-identical to the
+        // keeps execution pruning and solve planning byte-identical to the
         // pre-arc path (see api.rs).
         let proved = crate::kernel::api::with_extended_dag_bridging(|| {
             self.proves_memory_loadable_inner(memory, base, bytes)
@@ -516,6 +556,18 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &Bitvector32Term,
     ) -> bool {
+        // Exact evidence is an indexed lookup even when its address holds
+        // many other views. Choosing a different premise belongs to search.
+        crate::instrumentation::record_deterministic_work(1);
+        if self.contains_assumed_exact(&Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: bytes.clone(),
+            wide: false,
+        }) {
+            return true;
+        }
+
         let _id_scope = PureFactContextIdScope::enter(self);
         // A loadability claim quantifies over the bytes in the range.  An
         // empty range has no accesses to justify, irrespective of whether
@@ -534,44 +586,8 @@ impl PureFactContext {
         {
             return true;
         }
-        // A modular pointer result can name the same storage as a viewed
-        // range under a different symbolic block. Transport its liveness
-        // only through checked pointer equality, keeping the availability
-        // check at the evidence's own address. Visit this equality component,
-        // rather than searching unrelated loadability facts.
-        let spellings = self.equality_graph.pointer_spellings(base);
-        if self
-            .exact_pointer_aliases(base)
-            .chain(spellings.iter())
-            .any(|alias| {
-                crate::instrumentation::record_deterministic_work(1);
-                alias != base
-                    && crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
-                        base, alias, self,
-                    )
-                    && self.memory_loadable_candidates_for_base(alias).any(|fact| {
-                        let Proposition::CMemoryLoadable {
-                            memory: before,
-                            base: evidence_base,
-                            bytes: extent,
-                            wide: false,
-                        } = fact
-                        else {
-                            return false;
-                        };
-                        crate::instrumentation::record_deterministic_work(1);
-                        memory_range_still_available(before, memory, evidence_base, self)
-                            && self.proves_loadable_region_from_structural_range(
-                                evidence_base,
-                                extent,
-                                alias,
-                                bytes,
-                            )
-                    })
-            })
-        {
-            return true;
-        }
+        // Candidate lookup uses structural and canonical address keys. It
+        // never restates the query at every alias to discover a source view.
         if self
             .memory_loadable_candidates_for_base(base)
             .any(|proposition| {
@@ -741,74 +757,25 @@ impl PureFactContext {
                 })
             })
             .collect::<Vec<_>>();
-        // A materialized cell is loadable without a separate proposition.
-        // Including it as a premise-free region lets a store extend an
-        // already-loadable prefix in the same kernel rule.
-        regions.extend(
+        // A materialized cell is selected at the requested address, never
+        // by enumerating the memory's unrelated cells, runs or union fields.
+        let cell_region = |pointer: &Pointer| {
             memory
                 .cells
-                .concrete()
-                .iter()
-                .filter_map(|(pointer, value)| {
-                    let byte_width = value.byte_width();
-                    (byte_width > 0 && memory.is_loadable_concretely(pointer, byte_width)).then(
-                        || {
-                            (
-                                None,
-                                crate::kernel::api::canonicalize_pointer_loads(pointer),
-                                Bitvector32Term::Constant(byte_width),
-                                true,
-                            )
-                        },
+                .contiguous_bytes_at(pointer)
+                .filter(|width| *width > 0)
+                .map(|width| {
+                    (
+                        None,
+                        pointer.clone(),
+                        Bitvector32Term::Constant(width),
+                        true,
                     )
-                }),
-        );
-        // A seeded run is a compact sequence of materialized cells. Keep
-        // each live contiguous interval as one byte region instead of naming
-        // every cell just to consider adjacency. Holes never grant liveness.
-        for run in memory.cells.runs() {
-            crate::instrumentation::record_deterministic_work(1);
-            let width = run.value_width();
-            if width > 0 && width == run.element_width() {
-                for (low, high) in run.live_intervals().intervals() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    if let Some(bytes) = (high - low).checked_mul(width) {
-                        regions.push((
-                            None,
-                            crate::kernel::api::canonicalize_pointer_loads(&run.slot_pointer(low)),
-                            Bitvector32Term::Constant(bytes),
-                            true,
-                        ));
-                    }
-                }
-            } else if width > 0 && run.live_slot_index(base).is_some() {
-                // A strided run does not cover its gaps. Its actual cell at
-                // the requested address can still join an adjacent region.
-                regions.push((None, base.clone(), Bitvector32Term::Constant(width), true));
-            }
-        }
-        regions.extend(
-            memory
-                .union_cells
-                .iter()
-                .filter_map(|((pointer, _), value)| {
-                    let byte_width = value.byte_width();
-                    (byte_width > 0 && memory.is_loadable_concretely(pointer, byte_width)).then(
-                        || {
-                            (
-                                None,
-                                crate::kernel::api::canonicalize_pointer_loads(pointer),
-                                Bitvector32Term::Constant(byte_width),
-                                true,
-                            )
-                        },
-                    )
-                }),
-        );
+                })
+        };
+        regions.extend(cell_region(base));
         let base = crate::kernel::api::canonicalize_pointer_loads(base);
-        for (prefix_index, (prefix_fact, prefix_base, prefix_bytes, prefix_current)) in
-            regions.iter().enumerate()
-        {
+        for (prefix_fact, prefix_base, prefix_bytes, prefix_current) in &regions {
             let prefix_starts_at_goal = prefix_base == &base
                 || crate::kernel::reasoning::pointers_proven_equal_for_memory_resolution(
                     prefix_base,
@@ -820,10 +787,44 @@ impl PureFactContext {
             if !prefix_starts_at_goal {
                 continue;
             }
-            for (suffix_index, (suffix_fact, suffix_base, suffix_bytes, suffix_current)) in
-                regions.iter().enumerate()
-            {
-                if prefix_index == suffix_index {
+            // The prefix names its endpoint, so read suffix evidence at
+            // that key instead of pairing it with every range in the block.
+            let endpoint = prefix_bytes
+                .as_const()
+                .map(|width| base.offset_by_bytes(width))
+                .or_else(|| {
+                    int32_element_count_from_bytes(prefix_bytes)
+                        .map(|count| base.offset_by_int32_elements(count))
+                });
+            let Some(endpoint) = endpoint else {
+                continue;
+            };
+            let mut suffixes = self
+                .memory_loadable_candidates_for_base(&endpoint)
+                .filter_map(|fact| {
+                    let Proposition::CMemoryLoadable {
+                        memory: before,
+                        base: address,
+                        bytes: extent,
+                        wide: false,
+                    } = fact
+                    else {
+                        return None;
+                    };
+                    compatible(before, address).then(|| {
+                        (
+                            Some(fact),
+                            crate::kernel::api::canonicalize_pointer_loads(address),
+                            extent.clone(),
+                            before == memory
+                                || crate::kernel::api::c_memories_canonically_equal(before, memory),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            suffixes.extend(cell_region(&endpoint));
+            for (suffix_fact, suffix_base, suffix_bytes, suffix_current) in &suffixes {
+                if prefix_fact.is_some() && prefix_fact == suffix_fact {
                     continue;
                 }
                 // Historical proposition facts cannot be concatenated with
@@ -897,6 +898,18 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &Bitvector32Term,
     ) -> bool {
+        // Exact evidence is an indexed lookup even when its address holds
+        // many other views. Choosing a different premise belongs to search.
+        crate::instrumentation::record_deterministic_work(1);
+        if self.contains_assumed_exact(&Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: bytes.clone(),
+            wide: false,
+        }) {
+            return true;
+        }
+
         if bytes
             .as_const()
             .is_some_and(|bytes| memory.access_in_bounds(base, bytes))
@@ -967,6 +980,22 @@ impl PureFactContext {
         .then_some(sum)
     }
 
+    /// Preserve same-block range expressions: their written endpoint guards
+    /// refer to those terms, not to a reassociated affine difference. Equality
+    /// can replace an exact selected address; otherwise only a different block
+    /// needs the indexed coordinate projection.
+    fn loadable_query_at_source(&self, query: &Pointer, source: &Pointer) -> Pointer {
+        if self.pointers_known_equal(query, source) {
+            source.clone()
+        } else if query.block == source.block {
+            query.clone()
+        } else {
+            self.equality_graph
+                .pointer_at_base(query, source)
+                .unwrap_or_else(|| query.clone())
+        }
+    }
+
     /// Callers establish that the source range is available in the relevant
     /// snapshot before comparing its base and 32-bit byte extent.
     fn same_base_and_loadable_extent_match(
@@ -994,6 +1023,12 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &Bitvector32Term,
     ) -> bool {
+        if base.blocks_proven_distinct(range_base) {
+            return false;
+        }
+        let aligned = self.loadable_query_at_source(base, range_base);
+        let base = &aligned;
+
         if self.same_base_and_loadable_extent_match(range_base, range_bytes, base, bytes) {
             return true;
         }
@@ -1922,15 +1957,10 @@ impl PureFactContext {
     /// The range of `ranges` -- memory a caller kept owning across a call --
     /// that holds every byte of an access of `bytes` at `pointer`.
     ///
-    /// Candidates are found without placing anything: the ranges based at one
-    /// of the access's additive base spellings or an exact alias of one, through
-    /// the base index, and the ranges of the access's block whose base this context proves equal
-    /// to one of those spellings (a pointer field reloaded after a call and
-    /// proven equal to its value before). Only when there is a candidate is
-    /// the placement context built, by `placement`, which may add premises
-    /// (the kept instance bodies' own facts) to this context; the endpoints
-    /// are then proved under it. Work is the access's spellings and the kept
-    /// ranges of its block, never the caller's context.
+    /// The prepared address index selects a member first. Raw contexts use
+    /// singleton base buckets under the access's structural and indexed
+    /// coordinates. Only a selected candidate builds the placement context;
+    /// unrelated aliases and block members never trigger placement.
     pub(in crate::kernel) fn kept_range_holding_access<'a>(
         &self,
         ranges: &'a ResourceContext,
@@ -1981,65 +2011,43 @@ impl PureFactContext {
         {
             return Some(range);
         }
-        let spellings = additive_base_spellings(pointer);
-        let mut spelled = Vec::new();
-        let mut seen = BTreeSet::new();
-        for base in &spellings {
-            for alias in std::iter::once(base).chain(self.exact_pointer_aliases(base)) {
-                for (entry, range) in ranges.memory_members_with_base(alias, include_views) {
-                    if seen.insert(entry) {
-                        spelled.push(range);
-                    }
+        let mut candidates = Vec::new();
+        for base in additive_base_spellings(pointer) {
+            crate::instrumentation::record_deterministic_work(1);
+            let mut anchors = vec![base.clone()];
+            // An opaque read is not an invitation to resolve memory history
+            // just to look for a supplier. Its explicit keys still work.
+            let opaque = matches!(&base.block, PointerBlock::LoadedPointer(_))
+                || matches!(&base.block, PointerBlock::Symbolic(variable)
+                    if crate::kernel::is_load_variable(variable));
+            if !opaque {
+                anchors.push(self.equality_graph.storage_address(&base));
+                if let Some(coordinate) = self.equality_graph.canonical_pointer(&base)
+                    && let Some(offset) = coordinate.offset.to_offset_term()
+                {
+                    anchors.push(Pointer {
+                        block: coordinate.representative,
+                        offset,
+                    });
+                }
+            }
+            if let Some(alias) = self.equality_graph.unique_exact_pointer_alias(&base) {
+                anchors.push(alias.clone());
+            }
+            for anchor in anchors {
+                if let Some(range) = ranges.unique_memory_member_with_base(&anchor, include_views) {
+                    candidates.push(range);
                 }
             }
         }
-        // Try the access's own spellings and exact aliases first. Alias
-        // candidates still require checked coverage of every accessed byte.
-        // Only when none holds the access are the block's other kept ranges asked
-        // for a proved base equality, each question once per fact set
-        // (`kept_range_bases_proven_equal`).
-        let mut placement = Some(placement);
-        let mut placed: Option<PureFactContext> = None;
-        let mut placement_built = false;
-        let mut holding = |candidates: Vec<&'a CMemoryRange>| -> Option<&'a CMemoryRange> {
-            if candidates.is_empty() {
-                return None;
-            }
-            if !placement_built {
-                placed = placement.take().and_then(|placement| placement());
-                placement_built = true;
-            }
-            let context = placed.as_ref().unwrap_or(self);
-            candidates
-                .into_iter()
-                .find(|range| context.kept_range_holds_access(range, pointer, bytes))
-        };
-        if let Some(range) = holding(spelled.clone()) {
-            return Some(range);
+        if candidates.is_empty() {
+            return None;
         }
-        let mut aliased = Vec::new();
-        for range in ranges.owned_memory_members_in_block(&pointer.block) {
-            if spelled.contains(&range) || spellings.contains(range.base()) {
-                continue;
-            }
-            // A fixed interior offset is a candidate for this parent's
-            // footprint. A symbolic difference between unrelated argument
-            // bases is not: admitting it would query every kept range.
-            if pointer
-                .element_index_from_base_with_width(range.base(), range.element_width())
-                .is_some_and(|index| index.as_const().is_some())
-                || spellings.iter().any(|base| {
-                    crate::kernel::reasoning::kept_range_bases_proven_equal(
-                        base,
-                        range.base(),
-                        self,
-                    )
-                })
-            {
-                aliased.push(range);
-            }
-        }
-        holding(aliased)
+        let placed = placement();
+        let context = placed.as_ref().unwrap_or(self);
+        candidates
+            .into_iter()
+            .find(|range| context.kept_range_holds_access(range, pointer, bytes))
     }
 
     /// Whether every byte of an access of `bytes` at `pointer` lies in the

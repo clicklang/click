@@ -1059,6 +1059,13 @@ pub(in crate::surface::proof) struct FixedStateLowering {
     pub(in crate::surface::proof) current_values: BTreeMap<String, CValue>,
 }
 
+fn has_live_aggregate_binding(state: &CState, name: &str) -> bool {
+    state
+        .locals()
+        .aggregate_object_pointer(name)
+        .is_some_and(|slot| state.memory().has_block(&slot.block))
+}
+
 impl FixedStateLowering {
     // Capture only names referenced by the expression or proposition. State
     // handles retain complete memory/resources, while indexed local queries avoid
@@ -1111,9 +1118,10 @@ impl FixedStateLowering {
             proposition,
             &mut names,
         );
-        // The full proposition path installs supplied argument values even
-        // over array/aggregate places. Integer capture preserves those places;
-        // sharing the name selection must not change either binding policy.
+        // A running proof reads the callee's live aggregate copy. Once a
+        // result is in scope, contract clauses read the immutable argument
+        // image, as contract certification does, even if the proof retains
+        // the private block for historical observations.
         Self::for_names(names, contract_environment, pre_state, state, result, false)
     }
 
@@ -1134,11 +1142,13 @@ impl FixedStateLowering {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(value) = contract_environment.values.get(&name) {
                 if entry_state.locals().get(&name).is_none()
+                    && (result.is_some() || !has_live_aggregate_binding(&entry_state, &name))
                     && (!preserve_place_bindings || !entry_state.locals().contains_name(&name))
                 {
                     entry_state = entry_state.with_local(name.clone(), value.clone());
                 }
                 if lowering_state.locals().get(&name).is_none()
+                    && (result.is_some() || !has_live_aggregate_binding(&lowering_state, &name))
                     && (!preserve_place_bindings || !lowering_state.locals().contains_name(&name))
                 {
                     lowering_state = lowering_state.with_local(name.clone(), value.clone());
@@ -1185,7 +1195,9 @@ impl FixedStateLowering {
         let bound = |state: &CState| {
             let mut bound = state.clone();
             for (name, value) in contract_environment.values {
-                if bound.locals().get(name).is_none() {
+                if bound.locals().get(name).is_none()
+                    && (result.is_some() || !has_live_aggregate_binding(&bound, name))
+                {
                     bound = bound.with_local(name.clone(), value.clone());
                 }
             }
@@ -1542,3 +1554,6 @@ mod integer_capture_scaling_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod aggregate_binding_tests;

@@ -1682,7 +1682,7 @@ pub(in crate::surface) fn requirement_definedness_propositions(
     for surface in requirement_definedness_surfaces(requires) {
         let kernel =
             requirement_proposition_prop(parameter_binding, state, &surface, spec_definitions)?;
-        if matches!(normalize_proposition(&kernel), SimpProposition::True)
+        if matches!(normalize_proposition(&kernel), NormalizedProposition::True)
             || result
                 .iter()
                 .any(|(_, fact): &(ClickProposition, Proposition)| fact == &kernel)
@@ -2867,6 +2867,7 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
         | ContractExpression::ResourceCount(_)
         | ContractExpression::ResourceWildcard
         | ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
         | ContractExpression::At { .. }
         | ContractExpression::If { .. }
         | ContractExpression::RangeFold { .. }

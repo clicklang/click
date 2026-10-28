@@ -161,6 +161,12 @@ thread_local! {
     static VALUE_LOAD_ORIGINS: std::cell::RefCell<
         std::collections::HashMap<(super::SharedCMemory, Pointer, u32), super::SharedCMemory>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+    /// Reverse definitions select a name from the exact observation. Keeping
+    /// this direction preserves earlier observations when a name is reused.
+    static VALUE_LOAD_NAMES: std::cell::RefCell<
+        std::collections::HashMap<(super::SharedCMemory, Pointer, u32), super::SharedCMemory>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+    static LOAD_DEFINITION_GENERATION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     /// Every exact producer-known projection triple. Evidence checks this
     /// durable set rather than requiring its selected source to remain the
     /// preferred source if an older equivalent producer is registered later.
@@ -172,91 +178,6 @@ thread_local! {
 pub(crate) fn clear_memory_resolution_memos() {
     RESOLUTION_QUERY_POSITIVE_MEMO.with(|memo| memo.borrow_mut().clear());
     RESOLUTION_QUERY_NEGATIVE_MEMO.with(|memo| memo.borrow_mut().clear());
-    KEPT_RANGE_BASE_EQUALITIES.with(|memo| memo.borrow_mut().clear());
-}
-
-/// One kept-range base-equality question: the unsalted content id of the
-/// fact set, the cell lookups in progress, the memory-DAG generation, the DAG
-/// scope modes, and the two bases. `lookups` is `None` for a negative answer
-/// that no in-progress lookup cut, which holds under any lookups.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-struct KeptRangeBaseEqualityKey {
-    assumptions: u64,
-    lookups: Option<u64>,
-    generation: u64,
-    bridging: bool,
-    explicit: bool,
-    access_base: Pointer,
-    range_base: Pointer,
-}
-
-thread_local! {
-    static KEPT_RANGE_BASE_EQUALITIES: std::cell::RefCell<
-        std::collections::HashMap<KeptRangeBaseEqualityKey, bool>,
-    > = std::cell::RefCell::new(std::collections::HashMap::new());
-}
-
-/// Whether one of an access's base spellings is proven equal to a kept
-/// range's base: [`pointers_proven_equal_for_memory_resolution`], asked once
-/// per fact set, memory-DAG generation, scope mode and set of cell lookups in
-/// progress.
-///
-/// A call havoc's kept ranges are asked about by every walk that crosses its
-/// edge, for every cell the walk names; the ambient resolution memo does not
-/// serve those walks (they run inside a cell lookup), so the same failing
-/// equality between a cell's base and a kept descriptor's base was proved
-/// afresh on each crossing. The key includes everything the answer depends
-/// on, and a negative answer that met a cycle cut or a limit is not kept, so
-/// the memo returns exactly what recomputing would.
-pub(in crate::kernel) fn kept_range_bases_proven_equal(
-    access_base: &Pointer,
-    range_base: &Pointer,
-    assumptions: &PureFactContext,
-) -> bool {
-    let key = KeptRangeBaseEqualityKey {
-        assumptions: crate::kernel::assumptions::unsalted_assumptions_memo_id(assumptions),
-        lookups: None,
-        generation: crate::kernel::primitives::c_memory_derivation_generation(),
-        bridging: crate::kernel::api::extended_dag_bridging_active(),
-        explicit: crate::kernel::api::explicit_dag_check_active(),
-        access_base: access_base.clone(),
-        range_base: range_base.clone(),
-    };
-    // A lookup in progress changes an answer only by refusing a nested
-    // lookup of itself, and a refusal can only take an answer away. So a
-    // negative answer computed with no refusal is the answer under any
-    // lookups in progress, and is kept under the key without them: each walk
-    // runs inside lookups of its own, and keying every answer by them asked
-    // the same failing question afresh at every walk.
-    let mut key = key;
-    if KEPT_RANGE_BASE_EQUALITIES.with(|memo| memo.borrow().get(&key).copied()) == Some(false) {
-        return false;
-    }
-    key.lookups =
-        Some(crate::kernel::resource_tracker::cell_source::memory_dag_cell_lookups_fingerprint());
-    if let Some(known) = KEPT_RANGE_BASE_EQUALITIES.with(|memo| memo.borrow().get(&key).copied()) {
-        return known;
-    }
-    let epoch_before = crate::kernel::assumptions::incomplete_reasoning_epoch();
-    let refusals_before =
-        crate::kernel::resource_tracker::cell_source::memory_dag_cell_lookup_refusals();
-    let equal = pointers_proven_equal_for_memory_resolution(access_base, range_base, assumptions);
-    if equal || crate::kernel::assumptions::incomplete_reasoning_epoch() == epoch_before {
-        if !equal
-            && crate::kernel::resource_tracker::cell_source::memory_dag_cell_lookup_refusals()
-                == refusals_before
-        {
-            key.lookups = None;
-        }
-        KEPT_RANGE_BASE_EQUALITIES.with(|memo| {
-            let mut memo = memo.borrow_mut();
-            if memo.len() >= RESOLUTION_QUERY_MEMO_LIMIT {
-                memo.clear();
-            }
-            memo.insert(key, equal);
-        });
-    }
-    equal
 }
 
 pub(crate) fn clear_canonical_memory_cache() {
@@ -265,6 +186,18 @@ pub(crate) fn clear_canonical_memory_cache() {
     CANONICAL_LOAD_PROJECTION_SOURCES.with(|sources| sources.borrow_mut().clear());
     CANONICAL_LOAD_PROJECTIONS.with(|projections| projections.borrow_mut().clear());
     VALUE_LOAD_ORIGINS.with(|origins| origins.borrow_mut().clear());
+    VALUE_LOAD_NAMES.with(|names| names.borrow_mut().clear());
+    advance_load_definition_generation();
+}
+
+fn advance_load_definition_generation() {
+    LOAD_DEFINITION_GENERATION.with(|generation| {
+        generation.set(crate::kernel::equality_graph::next_read_definition_generation());
+    });
+}
+
+pub(in crate::kernel) fn load_definition_generation() -> u64 {
+    LOAD_DEFINITION_GENERATION.with(std::cell::Cell::get)
 }
 
 /// Records the exact source used when load canonicalization constructs a
@@ -286,15 +219,22 @@ pub(in crate::kernel) fn record_canonical_load_projection(
             .borrow_mut()
             .insert((source.clone(), projected.clone(), pointer.clone()));
     });
-    CANONICAL_LOAD_PROJECTION_SOURCES.with(|sources| {
+    let changed = CANONICAL_LOAD_PROJECTION_SOURCES.with(|sources| {
         let mut sources = sources.borrow_mut();
-        let preferred = sources
-            .entry((projected.clone(), pointer.clone()))
-            .or_insert_with(|| source.clone());
-        if source.arena_id() < preferred.arena_id() {
-            *preferred = source.clone();
+        let key = (projected.clone(), pointer.clone());
+        if sources
+            .get(&key)
+            .is_none_or(|preferred| source.arena_id() < preferred.arena_id())
+        {
+            sources.insert(key, source.clone());
+            true
+        } else {
+            false
         }
     });
+    if changed {
+        advance_load_definition_generation();
+    }
 }
 
 /// Retain the selected-width equation already established by structural
@@ -307,11 +247,23 @@ pub(in crate::kernel) fn record_value_load_origin(
     bytes: u32,
 ) {
     if origin != named {
-        VALUE_LOAD_ORIGINS.with(|origins| {
+        let changed_origin = VALUE_LOAD_ORIGINS.with(|origins| {
             origins
                 .borrow_mut()
-                .insert((named.clone(), pointer.clone(), bytes), origin.clone());
+                .insert((named.clone(), pointer.clone(), bytes), origin.clone())
+                .as_ref()
+                != Some(origin)
         });
+        let changed_name = VALUE_LOAD_NAMES.with(|names| {
+            names
+                .borrow_mut()
+                .insert((origin.clone(), pointer.clone(), bytes), named.clone())
+                .as_ref()
+                != Some(named)
+        });
+        if changed_origin || changed_name {
+            advance_load_definition_generation();
+        }
     }
 }
 
@@ -324,6 +276,20 @@ pub(in crate::kernel) fn value_load_origin(
         origins
             .borrow()
             .get(&(named.clone(), pointer.clone(), bytes))
+            .cloned()
+    })
+}
+
+/// The structurally chosen name for this exact observation and width.
+pub(in crate::kernel) fn value_load_name(
+    origin: &super::SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> Option<super::SharedCMemory> {
+    VALUE_LOAD_NAMES.with(|names| {
+        names
+            .borrow()
+            .get(&(origin.clone(), pointer.clone(), bytes))
             .cloned()
     })
 }
@@ -512,7 +478,7 @@ thread_local! {
 /// every snapshot that holds the goal's cells unchanged lowers it to the same
 /// source, so the same failing questions -- the goal's frame across the step
 /// the proof could not see past -- ran once per such snapshot, and again for
-/// each of simp's strategies that reaches the closure. The key is the
+/// each of solve's strategies that reaches the closure. The key is the
 /// question's whole input: its propositions (source, target, and any listed
 /// facts, in order), the memory it lands in, the content id of its fact set,
 /// its transition facts, the memory-DAG generation, the DAG scope modes, and
@@ -3536,12 +3502,24 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
     let candidates = AliasCandidates::of_block(&pointer.block);
     let unresolved = matches!(
         pointer.block,
-        PointerBlock::Symbolic(_) | PointerBlock::LoadedPointer(_)
+        PointerBlock::Symbolic(_)
+            | PointerBlock::LoadedPointer(_)
+            | PointerBlock::ExternalArgument
+            | PointerBlock::ExternalObject(_)
     );
     // A load through an unresolved pointer observes only pointer-reachable
     // cells; reading them from the store's maintained reachable map skips
     // the slots no pointer value can reach without visiting each one.
-    let reachable = unresolved.then(|| memory.cells.caught_up_pointer_reachable());
+    let reachable = unresolved.then(|| {
+        if matches!(
+            pointer.block,
+            PointerBlock::ExternalArgument | PointerBlock::ExternalObject(_)
+        ) {
+            memory.cells.caught_up_external_reachable()
+        } else {
+            memory.cells.caught_up_pointer_reachable()
+        }
+    });
     let mut visited = 0usize;
     // Lazily: the collection below stops at the first cell that is not a
     // cached load, so an ordinary store costs one visit, not every cell.
@@ -4958,6 +4936,54 @@ fn mixed_index_offsets_require_exact_observations_and_matching_strides() {
             &truncated
         ),
         Some(false)
+    );
+}
+
+#[test]
+fn external_load_projection_retains_aliases_across_cell_updates() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointers = [
+        PointerBlock::Symbolic(Variable(998_900)),
+        PointerBlock::ExternalArgument,
+        PointerBlock::ExternalObject(Variable(998_901)),
+        PointerBlock::Concrete("global:projection".into()),
+        PointerBlock::Concrete("local:projection".into()),
+        PointerBlock::Heap(998_902),
+        PointerBlock::Temporary(998_903),
+    ]
+    .map(|block| Pointer {
+        block,
+        offset: PointerOffsetTerm::Constant(0),
+    });
+    let mut memory = CMemory::new();
+    for pointer in &pointers {
+        memory = memory.store(pointer.clone(), CValue::Int32(7u32.into()));
+    }
+    for load in [&pointers[1], &pointers[2]] {
+        let projected = canonical_memory_for_pointer_load(&memory, load);
+        for pointer in &pointers {
+            assert_eq!(
+                projected.has_known_cell_at(pointer),
+                pointer.block.observable_by_load(&load.block),
+                "{pointer:?} through {load:?}"
+            );
+        }
+    }
+    let updated = memory
+        .clone()
+        .store(pointers[0].clone(), CValue::Int32(9u32.into()));
+    let projected = canonical_memory_for_pointer_load(&updated, &pointers[1]);
+    assert_eq!(
+        projected.known_value(&pointers[0]),
+        Some(CValue::Int32(9u32.into()))
+    );
+    let removed = updated.without_cell(&pointers[0]);
+    let projected = canonical_memory_for_pointer_load(&removed, &pointers[1]);
+    assert!(!projected.has_known_cell_at(&pointers[0]));
+    let original = canonical_memory_for_pointer_load(&memory, &pointers[1]);
+    assert_eq!(
+        original.known_value(&pointers[0]),
+        Some(CValue::Int32(7u32.into()))
     );
 }
 

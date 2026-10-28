@@ -471,7 +471,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
             assumptions,
         )
     };
-    let direct = read(field, &facts);
+    let direct = read(field.clone(), &facts);
     let returned = read(alias.clone(), &facts);
     assert!(matches!(
         direct[0].outcome,
@@ -483,6 +483,16 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
     let CExpressionOutcome::Value(CValue::Int32(right)) = &returned[0].outcome else {
         panic!("scalar read expected");
     };
+    assert!(
+        facts.equality_graph.are_int32_equal(left, right),
+        "the shared graph must retain the producer's projection equation"
+    );
+    assert!(
+        !PureFactContext::new()
+            .equality_graph
+            .are_int32_equal(left, right),
+        "projection identity does not supply an address alias"
+    );
     let capture = crate::kernel::memory_provenance::CheckedLoadEqualityCapture::start();
     assert!(facts.memory_loads_proven_equal(left, right));
     let evidence = capture.finish();
@@ -518,6 +528,32 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
         work[3] <= work[0] * 4 + 64,
         "ambient alias-equality scan: {work:?}"
     );
+    let retained = facts
+        .clone()
+        .assume_condition(ConditionTerm::equal(right.clone(), 42u32.into()), true);
+    for value in [CValue::Int32(7u32.into()), CValue::UInt8(7u32.into())] {
+        let changed = memory.clone().store(field.clone(), value);
+        let paths = evaluate_logical_memory_load_paths(
+            &changed,
+            field.clone(),
+            CType::Int32,
+            ExecutionFacts::new(),
+            vec![],
+            &retained,
+        );
+        let CExpressionOutcome::Value(CValue::Int32(after)) = &paths[0].outcome else {
+            panic!("scalar after overwrite");
+        };
+        assert!(
+            !retained.equality_graph.are_int32_equal(right, after),
+            "a whole or partial overwrite cannot share the old observation"
+        );
+        assert!(
+            retained
+                .equality_graph
+                .are_int32_equal(right, &42u32.into())
+        );
+    }
     let unrelated = read(alias, &PureFactContext::new());
     assert_ne!(
         direct[0].outcome, unrelated[0].outcome,
@@ -1625,5 +1661,150 @@ fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
     assert!(
         samples.iter().all(|units| *units == samples[0]),
         "naming an unsigned read grew with unrelated cells: {samples:?}"
+    );
+}
+
+#[test]
+fn typed_pointer_read_store_frames_use_the_selected_edge_and_owners() {
+    fn work(count: u32, unrelated: u64) -> usize {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(981_100));
+        let write = Pointer::symbolic(Variable(981_101));
+        let own = |pointer| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                pointer,
+                0u32.into(),
+                1u32.into(),
+                8,
+            ))
+        };
+        let mut resources = ResourceContext::new()
+            .unchecked_with_fact(own(slot.clone()))
+            .unchecked_with_fact(own(write.clone()));
+        for n in 0..unrelated {
+            resources =
+                resources.unchecked_with_fact(own(Pointer::symbolic(Variable(982_000 + n))));
+        }
+        let mut context =
+            PureFactContext::new().assume_proposition(Proposition::CResourceComposition(resources));
+        let mut memory = CMemory::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for n in 0..count {
+                let before = intern_c_memory_ref(&memory);
+                memory = memory.clone().store(
+                    write.clone(),
+                    CValue::UInt64(Bitvector32Term::UInt64Constant(n.into())),
+                );
+                let after = intern_c_memory_ref(&memory);
+                let source = context
+                    .pointer_read_source(&after, &slot)
+                    .expect("complete owned frame");
+                assert_eq!(source.read_identity(), before.read_identity());
+                let CValue::Pointer(before_value) =
+                    source.symbolic_pointer_version_load(&slot, CType::Int64Pointer)
+                else {
+                    unreachable!()
+                };
+                let CValue::Pointer(after_value) =
+                    memory.symbolic_pointer_version_load(&slot, CType::Int64Pointer)
+                else {
+                    unreachable!()
+                };
+                let fact =
+                    ExecutionPureFact::logical_pointer_value_equation(before_value, after_value);
+                context = context.clone().assume_execution_pure_fact(&fact);
+            }
+        });
+        work
+    }
+    let chain = [4, 8, 16, 32].map(|n| work(n, 0));
+    assert!(chain[0] > 0);
+    assert!(
+        chain.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{chain:?}"
+    );
+    let ambient = [0, 16, 64, 256].map(|n| work(4, n));
+    assert!(
+        ambient.iter().all(|work| *work <= ambient[0] + 32),
+        "{ambient:?}"
+    );
+}
+
+#[test]
+fn scalar_projection_congruence_scales_with_selected_versions() {
+    fn work(selected: u64, unrelated: u64) -> usize {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: "local:projection-scale".into(),
+            offset: PointerOffsetTerm::Constant(8),
+        };
+        let alias = Pointer::symbolic(Variable(946_010));
+        let mut facts = PureFactContext::new().assume_condition(
+            ConditionTerm::pointer_equal(field.clone(), alias.clone()),
+            true,
+        );
+        for i in 0..unrelated {
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(947_000 + i)),
+                    (i as u32).into(),
+                ),
+                true,
+            );
+        }
+        let range =
+            CMemoryRange::new_with_element_width(field.clone(), 0u32.into(), 1u32.into(), 4);
+        let mut memory = CMemory::new().with_block(field.block.clone(), 16);
+        let mut reads = Vec::new();
+        for i in 0..selected {
+            memory = memory.with_call_memory_havoc(
+                Variable(948_000 + i),
+                std::slice::from_ref(&range),
+                &facts,
+                None,
+            );
+            let read = |address| {
+                let paths = evaluate_logical_memory_load_paths(
+                    &memory,
+                    address,
+                    CType::Int32,
+                    ExecutionFacts::new(),
+                    vec![],
+                    &facts,
+                );
+                let CExpressionOutcome::Value(CValue::Int32(value)) = &paths[0].outcome else {
+                    panic!("scalar read");
+                };
+                value.clone()
+            };
+            let pair = (read(field.clone()), read(alias.clone()));
+            if let Some((previous, _)) = reads.last() {
+                assert_ne!(
+                    previous, &pair.0,
+                    "each selected call must create a new version"
+                );
+            }
+            reads.push(pair);
+        }
+        let mut graph = facts.equality_graph.clone();
+        crate::instrumentation::measure_deterministic_work(|| {
+            for (left, right) in reads {
+                graph.add_int32_equality(&right, &42u32.into());
+                assert!(graph.are_int32_equal(&left, &42u32.into()));
+            }
+        })
+        .1
+    }
+    let selected: Vec<_> = [2, 8, 32, 128].into_iter().map(|n| work(n, 0)).collect();
+    for pair in selected.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 5 + 128,
+            "selected versions: {selected:?}"
+        );
+    }
+    let unrelated: Vec<_> = [0, 16, 64, 256].into_iter().map(|n| work(4, n)).collect();
+    assert!(
+        unrelated.iter().all(|n| *n <= unrelated[0] + 64),
+        "unrelated facts: {unrelated:?}"
     );
 }

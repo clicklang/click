@@ -22,7 +22,7 @@ impl PureFactContext {
             return None;
         };
         let pinned = |term: &Bitvector32Term| {
-            if simp_reasoning_interrupted() {
+            if solve_reasoning_interrupted() {
                 return None;
             }
             if let Some(value) = signed_bitvector_constant(term) {
@@ -148,14 +148,10 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, Box<Proposition>)> {
-        self.equality_graph
-            .exact_literal_sources(term)?
-            .keys()
-            .find_map(|condition| {
-                let source = Proposition::ConditionIs(condition.clone(), true);
-                let value = SignedConstantEvidence::exact_equality_value(term, &source)?;
-                Some((value, Box::new(source)))
-            })
+        let condition = self.checked_scalar_facts.literal_equality(term)?;
+        let source = Proposition::ConditionIs(condition.clone(), true);
+        let value = SignedConstantEvidence::exact_equality_value(term, &source)?;
+        Some((value, Box::new(source)))
     }
 
     fn signed_constant_evidence(
@@ -171,8 +167,23 @@ impl PureFactContext {
         let variable = bitvector_variable(term)?;
         let mut lower: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
         let mut upper: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
-        for (endpoint, other, strict, forward) in self.signed_order_bound_entries(term) {
-            let source = self.exact_order_bound_source(&endpoint, &other, strict, forward)?;
+        for source in self
+            .checked_order_bounds
+            .constant_evidence_sources(term)
+            .into_iter()
+            .flatten()
+        {
+            let Proposition::ConditionIs(ref condition, value) = source else {
+                continue;
+            };
+            let (left, right, strict) = condition_as_order_fact(condition, value)?;
+            let (endpoint, other, forward) = if left == *term {
+                (left, right, true)
+            } else if right == *term {
+                (right, left, false)
+            } else {
+                continue;
+            };
             let pinned = self.indexed_exact_int32_constant(&other);
             let other_value = signed_bitvector_constant(&other)
                 .or_else(|| pinned.as_ref().map(|(value, _)| *value));
@@ -218,60 +229,6 @@ impl PureFactContext {
         ))
     }
 
-    /// Exact source for one normalized order-index entry. Four condition
-    /// spellings can encode the same signed relation; indexed lookups select
-    /// among those constant-many possibilities without scanning the context.
-    fn exact_order_bound_source(
-        &self,
-        endpoint: &Bitvector32Term,
-        other: &Bitvector32Term,
-        strict: bool,
-        forward: bool,
-    ) -> Option<Proposition> {
-        let (left, right) = if forward {
-            (endpoint.clone(), other.clone())
-        } else {
-            (other.clone(), endpoint.clone())
-        };
-        let candidates = if strict {
-            [
-                (
-                    ConditionTerm::signed_less_than(left.clone(), right.clone()),
-                    true,
-                ),
-                (
-                    ConditionTerm::signed_less_equal(right.clone(), left.clone()),
-                    false,
-                ),
-                (
-                    ConditionTerm::signed_greater_than(right.clone(), left.clone()),
-                    true,
-                ),
-                (ConditionTerm::signed_greater_equal(left, right), false),
-            ]
-        } else {
-            [
-                (
-                    ConditionTerm::signed_less_than(right.clone(), left.clone()),
-                    false,
-                ),
-                (
-                    ConditionTerm::signed_less_equal(left.clone(), right.clone()),
-                    true,
-                ),
-                (
-                    ConditionTerm::signed_greater_than(left.clone(), right.clone()),
-                    false,
-                ),
-                (ConditionTerm::signed_greater_equal(right, left), true),
-            ]
-        };
-        candidates.into_iter().find_map(|(condition, value)| {
-            (self.condition_facts.get(&condition) == Some(&value))
-                .then_some(Proposition::ConditionIs(condition, value))
-        })
-    }
-
     pub(crate) fn singleton_constant_equality_evidence(
         &self,
         variable: Variable,
@@ -314,7 +271,7 @@ impl PureFactContext {
     }
 
     fn decide_unrecorded(&self, condition: &ConditionTerm) -> Option<bool> {
-        if simp_reasoning_interrupted() {
+        if solve_reasoning_interrupted() {
             return None;
         }
         // The difference graph is read first: what it decides follows from
@@ -1378,29 +1335,7 @@ impl PureFactContext {
     /// The exact fact of `equivalent`, an order equivalent to the one asked,
     /// directly or through an indexed spelling of its sides.
     fn decide_by_equivalent_order(&self, equivalent: &ConditionTerm) -> Option<bool> {
-        let equivalent = equivalent.clone();
-        if let Some(value) = self.exact_condition_value(&equivalent) {
-            return Some(value);
-        }
-        // An explicitly recorded equality can name the same frozen term
-        // through a load variable. Visit its indexed spellings only; an
-        // unrelated open order fact is never a candidate for this rule.
-        for key in self.condition_match_candidate_keys(&equivalent) {
-            let Some(facts) = self.condition_facts_by_sides.get(&key) else {
-                continue;
-            };
-            for (fact, value) in facts {
-                crate::instrumentation::record_deterministic_work(1);
-                if self.condition_matches(fact, &equivalent) {
-                    record_implicit_reasoning_provenance(
-                        self,
-                        &Proposition::ConditionIs(fact.clone(), *value),
-                    );
-                    return Some(*value);
-                }
-            }
-        }
-        None
+        self.known_condition_value(equivalent)
     }
 
     pub(in crate::kernel) fn has_condition_fact(
@@ -1408,173 +1343,45 @@ impl PureFactContext {
         condition: ConditionTerm,
         value: bool,
     ) -> bool {
-        // The fact itself, by key; then the facts filed under the keys this
-        // query's sides spell, directly or through their recorded-equality
-        // classes, each confirmed by `condition_matches`.
-        let matched = if self.condition_facts.get(&condition) == Some(&value) {
-            Some(Proposition::ConditionIs(condition.clone(), value))
-        } else {
-            self.condition_match_candidate_keys(&condition)
-                .into_iter()
-                .find_map(|key| {
-                    self.condition_facts_by_sides
-                        .get(&key)?
-                        .iter()
-                        .find(|(fact, fact_value)| {
-                            crate::instrumentation::record_deterministic_work(1);
-                            crate::kernel::assumptions::count_condition_fact_visit();
-                            **fact_value == value && self.condition_matches(fact, &condition)
-                        })
-                        .map(|(fact, fact_value)| {
-                            Proposition::ConditionIs(fact.clone(), *fact_value)
-                        })
+        if let Some(known) = self.exact_condition_value(&condition) {
+            return known == value;
+        }
+        if self.equality_graph.knows_condition(&condition, value) {
+            record_implicit_reasoning_provenance(self, &Proposition::ConditionIs(condition, value));
+            return true;
+        }
+        // Exact canonical shape, then at most one source per explicitly
+        // mentioned variable. Neither equality classes nor crowded buckets
+        // are implicit premise lists.
+        let matched = crate::kernel::assumptions::condition_match_key(&condition)
+            .and_then(|key| self.condition_facts_by_sides.get(&key))
+            .filter(|facts| facts.len() == 1)
+            .and_then(|facts| facts.iter().next())
+            .filter(|(fact, fact_value)| {
+                crate::instrumentation::record_deterministic_work(1);
+                **fact_value == value && self.condition_matches(fact, &condition)
+            })
+            .map(|(fact, fact_value)| Proposition::ConditionIs(fact.clone(), *fact_value))
+            .or_else(|| {
+                let mut variables = BTreeSet::new();
+                let _ = crate::kernel::reasoning::variable_collection::collect_condition_index_variables(
+                    &condition, &mut variables,
+                );
+                variables.iter().find_map(|variable| {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let facts = self.condition_facts_by_variable.get(variable)?;
+                    if facts.len() != 1 { return None; }
+                    let (fact, fact_value) = facts.iter().next()?;
+                    (*fact_value == value && self.condition_matches(fact.as_ref(), &condition))
+                        .then(|| Proposition::ConditionIs(fact.as_ref().clone(), *fact_value))
                 })
-                .or_else(|| {
-                    let mut variables = BTreeSet::new();
-                    let _ = crate::kernel::reasoning::variable_collection::collect_condition_index_variables(
-                        &condition,
-                        &mut variables,
-                    );
-                    let mut spelled = BTreeSet::new();
-                    for variable in &variables {
-                        spelled.insert(*variable);
-                        for member in self
-                            .equality_graph
-                            .scalar_evidence_class(&Bitvector32Term::Variable(*variable))
-                        {
-                            if let Bitvector32Term::Variable(member) = member {
-                                spelled.insert(member);
-                            }
-                        }
-                    }
-                    spelled.iter().find_map(|variable| {
-                        self.condition_facts_by_variable.get(variable)?.iter().find_map(
-                            |(fact, fact_value)| {
-                                crate::instrumentation::record_deterministic_work(1);
-                                crate::kernel::assumptions::count_condition_fact_visit();
-                                (*fact_value == value
-                                    && self.condition_matches(fact.as_ref(), &condition))
-                                .then(|| Proposition::ConditionIs(fact.as_ref().clone(), *fact_value))
-                            },
-                        )
-                    })
-                })
-        };
+            });
         if let Some(proposition) = matched {
             record_implicit_reasoning_provenance(self, &proposition);
             true
         } else {
             false
         }
-    }
-
-    /// The condition facts filed under a `condition_facts_by_sides` key with
-    /// `side` as one of its sides, in `condition_facts` order: every equality,
-    /// 32-bit order, or addition-overflow fact one of whose sides is `side`,
-    /// so a scan of `condition_facts` that keeps only facts with `side` as a
-    /// side can read these instead, with the same result in the same order.
-    pub(in crate::kernel) fn condition_facts_with_side(
-        &self,
-        side: &Bitvector32Term,
-    ) -> Vec<(&ConditionTerm, &bool)> {
-        let side = crate::kernel::eval::canonical_term(side);
-        let Some(keys) = self.condition_match_keys_by_side.get(&side) else {
-            return Vec::new();
-        };
-        let mut facts = Vec::new();
-        for (key, ()) in keys {
-            if let Some(filed) = self.condition_facts_by_sides.get(key) {
-                for fact in filed {
-                    crate::instrumentation::spend_decision_fuel(1);
-                    crate::kernel::assumptions::count_condition_fact_visit();
-                    facts.push(fact);
-                }
-            }
-        }
-        facts.sort_unstable_by(|left, right| left.0.cmp(right.0));
-        facts
-    }
-
-    /// The `condition_facts_by_sides` keys a fact matching `condition`
-    /// can be filed under: the query's own key, and the filed keys its
-    /// sides' recorded-equality classes spell. The classes are what
-    /// `condition_matches` relates through equality facts; each side's class
-    /// is read once from the indexed equality graph.
-    ///
-    /// The keys come from `condition_match_keys_by_side` under the spellings
-    /// of the side with the smaller class, kept when their other side spells
-    /// the query's other side. That reads one class and the keys filed under
-    /// it, never every pair of the two classes' spellings, and yields exactly
-    /// the filed keys among those pairs, in key order.
-    fn condition_match_candidate_keys(
-        &self,
-        condition: &ConditionTerm,
-    ) -> Vec<crate::kernel::primitives::ConditionMatchKey> {
-        let Some(key) = crate::kernel::assumptions::condition_match_key(condition) else {
-            return Vec::new();
-        };
-        let Some((left, right)) = key.bitvector_sides() else {
-            return vec![key];
-        };
-        let spellings = |term: &Bitvector32Term| {
-            let mut terms = BTreeSet::from([term.clone()]);
-            terms.extend(self.bitvector_equality_class(term));
-            terms
-        };
-        let (left_spellings, right_spellings) = (spellings(left), spellings(right));
-        self.condition_match_keys_for_spellings(&key, &left_spellings, &right_spellings, || {
-            crate::instrumentation::spend_decision_fuel(1)
-        })
-    }
-
-    /// Select filed keys under one side's spellings, filtering by the other
-    /// side. Memory matching supplies additional byte-offset aliases; ordinary
-    /// condition matching supplies only its recorded scalar equality classes.
-    /// Each caller retains its own accounting for the indexed candidates.
-    pub(super) fn condition_match_keys_for_spellings(
-        &self,
-        key: &crate::kernel::primitives::ConditionMatchKey,
-        left_spellings: &BTreeSet<Bitvector32Term>,
-        right_spellings: &BTreeSet<Bitvector32Term>,
-        mut visit: impl FnMut(),
-    ) -> Vec<crate::kernel::primitives::ConditionMatchKey> {
-        use crate::kernel::primitives::ConditionMatchKey;
-        let spells = |candidate: &ConditionMatchKey| match (key, candidate) {
-            (
-                ConditionMatchKey::Order(strict, ..),
-                ConditionMatchKey::Order(other, lower, upper),
-            )
-            | (
-                ConditionMatchKey::UnsignedOrder(strict, ..),
-                ConditionMatchKey::UnsignedOrder(other, lower, upper),
-            ) => {
-                strict == other && left_spellings.contains(lower) && right_spellings.contains(upper)
-            }
-            (ConditionMatchKey::Equal(..), ConditionMatchKey::Equal(a, b))
-            | (ConditionMatchKey::OverflowAdd(..), ConditionMatchKey::OverflowAdd(a, b)) => {
-                left_spellings.contains(a) && right_spellings.contains(b)
-                    || left_spellings.contains(b) && right_spellings.contains(a)
-            }
-            _ => false,
-        };
-        let enumerated = if left_spellings.len() <= right_spellings.len() {
-            left_spellings
-        } else {
-            right_spellings
-        };
-        let mut keys = BTreeSet::from([key.clone()]);
-        for spelling in enumerated {
-            let Some(filed) = self.condition_match_keys_by_side.get(spelling) else {
-                continue;
-            };
-            for (candidate, ()) in filed {
-                visit();
-                if spells(candidate) {
-                    keys.insert(candidate.clone());
-                }
-            }
-        }
-        keys.into_iter().collect()
     }
 
     /// The same scoped fact through the shared condition application index.
@@ -2285,66 +2092,13 @@ impl PureFactContext {
             return false;
         };
 
-        let mut range = IntegerRangeFacts::default();
-        // Every fact this reads has the variable itself as a side.
-        for (condition, value) in
-            self.condition_facts_with_side(&Bitvector32Term::Variable(variable))
-        {
-            if let (
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                false,
-            ) = (condition, *value)
-                && let Some((fact_variable, excluded)) =
-                    bitvector_variable_and_constant(fact_left, fact_right)
-                && fact_variable == variable
-            {
-                range.excluded.insert(excluded);
-                continue;
-            }
-            let Some((fact_left, fact_right, strict)) = condition_as_order_fact(condition, *value)
-            else {
-                continue;
-            };
-            match (
-                bitvector_variable(&fact_left),
-                signed_bitvector_constant(&fact_right),
-            ) {
-                (Some(fact_variable), Some(bound)) if fact_variable == variable => {
-                    let upper = if strict { bound - 1 } else { bound };
-                    range.upper = Some(range.upper.map_or(upper, |current| current.min(upper)));
-                }
-                _ => {}
-            }
-            match (
-                signed_bitvector_constant(&fact_left),
-                bitvector_variable(&fact_right),
-            ) {
-                (Some(bound), Some(fact_variable)) if fact_variable == variable => {
-                    let lower = if strict { bound + 1 } else { bound };
-                    range.lower = Some(range.lower.map_or(lower, |current| current.max(lower)));
-                }
-                _ => {}
-            }
-        }
-
-        // A bound the variable is known not to equal moves past that value:
-        // `0 <= x < 4` with `x != 0`, `x != 1` and `x != 2` leaves `x == 3`.
-        // Each step consumes one excluded value, so the walk is bounded by
-        // the facts.
-        let (Some(mut lower), Some(mut upper)) = (range.lower, range.upper) else {
+        let term = Bitvector32Term::Variable(variable);
+        let Some((lower, upper)) = self.indexed_constant_interval(&term) else {
             return false;
         };
-        while lower < upper && range.excluded.remove(&lower) {
-            lower += 1;
-        }
-        while lower < upper && range.excluded.remove(&upper) {
-            upper -= 1;
-        }
+        let (lower, upper) = self
+            .checked_scalar_facts
+            .past_exclusions(&term, lower, upper);
         lower == upper && lower == constant
     }
 
@@ -2355,40 +2109,13 @@ impl PureFactContext {
         if let Some(value) = signed_bitvector_constant(term) {
             return Some(value);
         }
-
-        // The equality graph files each true equality, so the constant an
-        // atom's class is known to equal is one lookup; the facts filed under
-        // the term as a side answer a written `term == c` about a compound
-        // term. Neither reads facts about other terms.
         if let Some(value) = self.equality_graph.known_atom_constant(term) {
             return Some(value);
         }
-        for (condition, value) in self.condition_facts_with_side(term) {
-            let (
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left,
-                    right,
-                },
-                true,
-            ) = (condition, value)
-            else {
-                continue;
-            };
-            let other = if crate::kernel::eval::canonical_term(left)
-                == crate::kernel::eval::canonical_term(term)
-            {
-                right
-            } else {
-                left
-            };
-            if let Some(value) = signed_bitvector_constant(other) {
-                return Some(value);
-            }
+        match self.equality_graph.scalar_constant_class(term)?.1 {
+            SignedConstantResolution::Known(value) => Some(value),
+            _ => None,
         }
-
-        None
     }
 
     pub(in crate::kernel) fn signed_constant_after_equality_normalization(
@@ -2427,13 +2154,10 @@ impl PureFactContext {
         }
     }
 
-    /// A term's constant after equality normalization, read from the
-    /// shared equality service. A settled class answers by
-    /// lookup. An `Unknown` class additionally decides its conditional
-    /// members under this context and compares its loads with the loads of
-    /// settled classes at the same address, the equalities memory reasoning
-    /// proves without a fact. A term no fact mentions folds from its
-    /// operands, and a load among them is compared in the same way.
+    /// Read a settled constant from the equality class, or resolve its
+    /// conditional members. Unregistered arithmetic folds from its operands.
+    /// Do not search other snapshots for equal loads here: a missing relation
+    /// must be established before this fast checking query.
     fn constant_class_resolution(
         &self,
         term: &Bitvector32Term,
@@ -2452,31 +2176,15 @@ impl PureFactContext {
             for conditional in classes.scalar_conditional_members(id) {
                 result = result.merge(self.conditional_constant_resolution(&conditional, visiting));
             }
-            for (member, candidate, candidate_class) in classes.scalar_bridgeable_loads(id) {
-                if self.loads_bridge(&member, &candidate) {
-                    result = result.merge(classes.scalar_constant_of_class(candidate_class));
-                }
-            }
             visiting.remove(&id);
             return result;
         }
-        let mut result = match term {
+        match term {
             Bitvector32Term::If { .. } => self.conditional_constant_resolution(term, visiting),
             _ => crate::kernel::equality_graph::fold_arithmetic(term, |operand| {
                 self.constant_class_resolution(operand, visiting)
             }),
-        };
-        if result == SignedConstantResolution::Unknown
-            && let Some((key, _)) = crate::kernel::equality_graph::load_key(term)
-        {
-            for (candidate, candidate_class) in classes.scalar_settled_loads_at(key) {
-                crate::instrumentation::record_deterministic_work(1);
-                if self.loads_bridge(term, &candidate) {
-                    result = result.merge(classes.scalar_constant_of_class(candidate_class));
-                }
-            }
         }
-        result
     }
 
     fn conditional_constant_resolution(
@@ -2497,27 +2205,6 @@ impl PureFactContext {
                 .constant_class_resolution(if condition { then_term } else { else_term }, visiting),
             None => SignedConstantResolution::Unknown,
         }
-    }
-
-    /// Whether two loads of one memory-blind address are proved equal: the
-    /// same pointer structurally, and the snapshots proved to agree there.
-    fn loads_bridge(&self, left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
-        let (Some(left_view), Some(right_view)) = (
-            crate::kernel::eval::viewed_as_memory_load(left),
-            crate::kernel::eval::viewed_as_memory_load(right),
-        ) else {
-            return false;
-        };
-        let (
-            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
-            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
-        ) = (&left_view, &right_view)
-        else {
-            return false;
-        };
-        left_kind == right_kind
-            && pointers_equal_ignoring_memories(left_pointer, right_pointer)
-            && self.bitvector_terms_proven_equal(left, right)
     }
 
     pub(in crate::kernel) fn decide_signed_comparison_from_equal_constants(

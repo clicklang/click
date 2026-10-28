@@ -819,12 +819,12 @@ the arena proofs' heaviest `have` grew from 450,033 to 957,192 units. The
 budget is not raised to regain headroom; that growth is a finding to reduce,
 and surfacing it is the budget's job. It was reduced: the growth came from
 `5815f41f8`, whose rewrite chain gave every remaining equality the whole
-typed simp closure as a closing probe, and much of that closure's cost was
+typed solve closure as a closing probe, and much of that closure's cost was
 uncharged premise surface synthesis. The probe now asks the direct logical
 closer, and the synthesis is lazy and charged, so the heaviest arena `have`
 (`click profile`, after this calibration) is 488,691 units with every unit
 counted, and the heaviest smart tactic is the failing mdtest `solve`
-(1,040,194, then spelled `simp`). The smart tactics near it are named
+(1,040,194, then spelled `solve`). The smart tactics near it are named
 in `TacticWorkLimits::default` (an mdtest `solve` and the arena proofs' heavy
 `have`s); they are slow steps to reduce, not headroom. The same run's `run`
 rows calibrate the whole-run budget: the largest whole verification is
@@ -1646,8 +1646,8 @@ Checked verification advances a persistent `Proof`; its execution snapshot
 `nested_conjunction_body_parsing_uses_small_frames_and_linear_work` parses
 nested proof bodies on an explicit 1.75 MiB thread stack, below libtest's
 2 MiB default, and
-`nested_simp_derivations_keep_rule_temporaries_off_the_recursive_stack` checks
-nested simp derivations on the same budget. Recalibrate on the CI platform
+`nested_solve_derivations_keep_rule_temporaries_off_the_recursive_stack` checks
+nested solve derivations on the same budget. Recalibrate on the CI platform
 before tightening it. The outlined proof-rule and driver adapters
 keep rule-local enum and proposition payloads out of their dispatchers'
 frames; they are stable stack budget boundaries. Changes to those boundaries

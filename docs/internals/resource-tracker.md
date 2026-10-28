@@ -1680,7 +1680,7 @@ the final answer there is open.
   changed and never what changed them. Until that exists, two-point
   `same_at_states` is the whole resource-side interface, and the step comes from
   the mint.
-- **Chunk 3, also unrouted** — the proposition-level refusals (`simp_failure`,
+- **Chunk 3, also unrouted** — the proposition-level refusals (`solve_failure`,
   and an unclosed `have` whose goal matches an available fact up to a model-field
   version) print the field's source spelling now but do not yet reach
   `describe_resource_version_mismatch`: their callers hold two propositions and

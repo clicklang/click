@@ -351,7 +351,7 @@ proves that an in-range machine `+` or `-` is the Integer operation
 (`integer_operation_identity`, narrow types included), using native
 comparisons as Integer facts and machine type ranges, so
 `ensures result == x - 1;` verifies from `requires 1 <= x;` with no bridge
-lemma. Count comparisons widen, `simp` selects Integer equalities as
+lemma. Count comparisons widen, `solve` selects Integer equalities as
 rewrites, and an Integer equality over 32-bit observations files its wrapped
 word equality for built-in checks. `auto` reads native bounds and signed
 definedness facts as Integer facts, proves a machine comparison through its
@@ -374,7 +374,7 @@ Still open from the flip:
   proves an operation identity, and each identity's two range bounds are
   full solver calls. The profile budget test is retuned to that cost.
 - `bugs/a-rust-u8-sum-and-its-written-spelling-lower-to-different-terms.md`:
-  a proof restating the Rust `u8` sum as written does not close by `simp`.
+  a proof restating the Rust `u8` sum as written does not close by `solve`.
 - Most of the width lemmas below are now bridges nothing needs.
 - The library's respelled lemmas still state C results
   (`to_integer(value + 1)`); restating the surviving families over Integer

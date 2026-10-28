@@ -48,7 +48,7 @@ impl Drop for MachineEqualityBridgeScope {
     }
 }
 
-/// How many rewrites `simp`'s connected-equality chain takes before closing.
+/// How many rewrites `solve`'s connected-equality chain takes before closing.
 const REWRITE_DEPTH: usize = 3;
 
 /// How many connected equalities the search offers, and how many checked
@@ -57,11 +57,11 @@ const REWRITE_DEPTH: usize = 3;
 const REWRITE_EQUALITIES: usize = 64;
 const REWRITE_ATTEMPTS: usize = 256;
 
-/// How many rewritten goals the search offers to `simp`, after the cheap
-/// closers miss: `simp` unfolds and computes what a rewrite exposes.
-const REWRITE_SIMP_CLOSURES: usize = 8;
+/// How many rewritten goals the search offers to `solve`, after the cheap
+/// closers miss: `solve` unfolds and computes what a rewrite exposes.
+const REWRITE_SOLVE_CLOSURES: usize = 8;
 
-/// How many rewrites `simp`'s single-rewrite strategy tries, each followed
+/// How many rewrites `solve`'s single-rewrite strategy tries, each followed
 /// by `assumption`: a goal that restates a fact through one equation.
 const SINGLE_REWRITES: usize = 16;
 
@@ -402,23 +402,23 @@ fn range_items(
     .collect()
 }
 
-/// What `simp`'s connected-equality chain may still spend.
+/// What `solve`'s connected-equality chain may still spend.
 struct RewriteBudget {
     attempts: usize,
-    simp_closures: usize,
+    solve_closures: usize,
 }
 
 /// How the rewrite search closes each goal it reaches.
 #[derive(Clone, Copy)]
 pub(in crate::surface::proof) enum RewriteClosers<'p> {
     /// `assumption`, `normalize`, the direct logical closer, then a
-    /// bounded nested `simp`: the context's facts.
+    /// bounded nested `solve`: the context's facts.
     Ambient,
     /// The early goal-local route: direct/typed closure and optional
-    /// function unfolding, without restarting all of `simp` before arithmetic.
+    /// function unfolding, without restarting all of `solve` before arithmetic.
     GoalLocal { allow_function_unfold: bool },
-    /// The direct logical closer, `simp`'s typed atomic closer and
-    /// `normalize`, for `simp`'s own premises: no nested `simp`, which
+    /// The direct logical closer, `solve`'s typed atomic closer and
+    /// `normalize`, for `solve`'s own premises: no nested `solve`, which
     /// would select the same premises and search them again.
     Selected,
     /// `normalize` and an atomic plan over these premises alone, for
@@ -863,8 +863,8 @@ impl<'a> Proof<'a> {
             let IntegerRefutation::Proved { premises: used, .. } =
                 crate::instrumentation::measure_operation(
                     "surface",
-                    "simp arithmetic",
-                    "simp arithmetic: bridged integer refutation",
+                    "solve arithmetic",
+                    "solve arithmetic: bridged integer refutation",
                     || refute_integer_goal(goal, &premises, &[]),
                 )
             else {
@@ -911,7 +911,7 @@ impl<'a> Proof<'a> {
                         }) {
                             Some((_, (_, item))) => Some(item.surface.clone()),
                             None => proof
-                                .resolve_simp_premises(std::slice::from_ref(premise), &[])
+                                .resolve_solve_premises(std::slice::from_ref(premise), &[])
                                 .and_then(|mut spelled| spelled.pop())
                                 .map(|(_, surface)| surface),
                         }
@@ -926,9 +926,9 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// The equality-by-bounds closure as `simp` tries it early. A plain
+    /// The equality-by-bounds closure as `solve` tries it early. A plain
     /// 64-bit equality, with no sum or difference on either side, waits for
-    /// `simp`'s other strategies and the wide-equality route after them:
+    /// `solve`'s other strategies and the wide-equality route after them:
     /// proving it by bounds here would run a nested `auto` for each bound
     /// ahead of them.
     pub(in crate::surface::proof) fn try_equality_by_bounds_early(
@@ -1073,16 +1073,16 @@ impl<'a> Proof<'a> {
         attempt::candidate_outcome(proof.apply_step(ProofStep::ArithmeticUsing(vec![lower, upper])))
     }
 
-    /// `auto` on a proposition goal with no C to run: `simp`.
+    /// `auto` on a proposition goal with no C to run: `solve`.
     pub(in crate::surface::proof) fn try_auto_proof_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        self.try_simp_closure()
+        self.try_solve_closure()
     }
 
     /// A goal that restates an available fact through one connected
     /// equality, such as `f(Node(..)) == 1` beside `f(t) == 1` and
-    /// `t == Node(..)`: one `rewrite` and `assumption`. `simp` tries it
+    /// `t == Node(..)`: one `rewrite` and `assumption`. `solve` tries it
     /// before the connected-equality chain, which would prove it too, at
     /// greater cost. At most `SINGLE_REWRITES` rewrites.
     pub(in crate::surface::proof) fn try_single_rewrite_closure(
@@ -1144,7 +1144,7 @@ impl<'a> Proof<'a> {
 
     /// Rewrite the goal by the equality facts connected to it until
     /// `assumption`, `normalize` or another direct closer finishes it: the
-    /// congruence step `simp` takes only once its decider has selected the
+    /// congruence step `solve` takes only once its decider has selected the
     /// premises, here offered every connected equality, algebraic `==` facts
     /// included. Each rewrite is an ordinary checked step.
     pub(in crate::surface::proof) fn try_connected_equality_chain_closure(
@@ -1220,7 +1220,7 @@ impl<'a> Proof<'a> {
         let mut seen = std::collections::BTreeMap::from([(goal.clone(), REWRITE_DEPTH)]);
         let mut budget = RewriteBudget {
             attempts: REWRITE_ATTEMPTS,
-            simp_closures: REWRITE_SIMP_CLOSURES,
+            solve_closures: REWRITE_SOLVE_CLOSURES,
         };
         self.rewrite_search(
             &candidates,
@@ -1233,7 +1233,7 @@ impl<'a> Proof<'a> {
     }
 
     /// The same search over equalities a step selected or listed instead
-    /// of the goal's connected facts: `simp`'s premises from its
+    /// of the goal's connected facts: `solve`'s premises from its
     /// derivation, or a `solve() using` list. Each equality is used at most
     /// once, so the chain is as long as the list allows, and `closers`
     /// says what may close a rewritten goal.
@@ -1257,7 +1257,7 @@ impl<'a> Proof<'a> {
         let mut seen = std::collections::BTreeMap::from([(goal.clone(), candidates.len())]);
         let mut budget = RewriteBudget {
             attempts: REWRITE_ATTEMPTS,
-            simp_closures: REWRITE_SIMP_CLOSURES,
+            solve_closures: REWRITE_SOLVE_CLOSURES,
         };
         self.rewrite_search(
             &candidates,
@@ -1272,7 +1272,7 @@ impl<'a> Proof<'a> {
     /// `auto` on a goal about the fields of a value that two connected facts
     /// equate to constructor applications, `t == Node(c, r)` and
     /// `t == Node(Black, Empty)`: it states `Node(c, r) == Node(Black, Empty)`,
-    /// proved by rewriting each application to `t`, and `simp` then reads the
+    /// proved by rewriting each application to `t`, and `solve` then reads the
     /// fields' equalities (or the constructors' mismatch) from it. At most
     /// `CONSTRUCTOR_EQUATIONS` connected equations are paired.
     pub(in crate::surface::proof) fn try_constructor_join_closure(
@@ -1307,7 +1307,7 @@ impl<'a> Proof<'a> {
                 continue;
             }
             let Some((_, surface)) = self
-                .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                .resolve_solve_premises(std::slice::from_ref(equality), &[])
                 .and_then(|mut spelled| spelled.pop())
             else {
                 continue;
@@ -1356,7 +1356,7 @@ impl<'a> Proof<'a> {
                 if next.is_complete() {
                     return Ok(Some(next));
                 }
-                if let Some(closed) = next.try_simp_closure()? {
+                if let Some(closed) = next.try_solve_closure()? {
                     return Ok(Some(closed));
                 }
             }
@@ -1394,7 +1394,7 @@ impl<'a> Proof<'a> {
         for equality in &equalities {
             check_verification_deadline()?;
             let Some((kernel, fact)) = self
-                .resolve_simp_premises(std::slice::from_ref(equality), &[])
+                .resolve_solve_premises(std::slice::from_ref(equality), &[])
                 .and_then(|mut spelled| spelled.pop())
             else {
                 continue;
@@ -1925,7 +1925,7 @@ impl<'a> Proof<'a> {
                 return Ok(Some(closed));
             }
             return Ok(self
-                .try_typed_atomic_simp_from_selected_premises(premise_pairs)
+                .try_typed_atomic_solve_from_selected_premises(premise_pairs)
                 .filter(closes));
         }
         if let RewriteClosers::GoalLocal {
@@ -1934,21 +1934,21 @@ impl<'a> Proof<'a> {
         {
             if let Some(closed) = self
                 .try_direct_logical_closure()?
-                .or_else(|| self.try_typed_atomic_simp_closure())
+                .or_else(|| self.try_typed_atomic_solve_closure())
                 .or_else(|| self.apply_step(ProofStep::Normalize).ok().filter(closes))
             {
                 return Ok(Some(closed));
             }
-            if !allow_function_unfold || budget.simp_closures == 0 {
+            if !allow_function_unfold || budget.solve_closures == 0 {
                 return Ok(None);
             }
-            budget.simp_closures -= 1;
-            return self.try_function_unfold_simp_closure(&[]);
+            budget.solve_closures -= 1;
+            return self.try_function_unfold_solve_closure(&[]);
         }
         if let RewriteClosers::Selected = closers {
             let closed = self
                 .try_direct_logical_closure()?
-                .or_else(|| self.try_typed_atomic_simp_closure())
+                .or_else(|| self.try_typed_atomic_solve_closure())
                 .or_else(|| self.apply_step(ProofStep::Normalize).ok().filter(closes));
             return Ok(closed.filter(closes));
         }
@@ -1965,11 +1965,11 @@ impl<'a> Proof<'a> {
         if let Some(closed) = self.try_direct_logical_closure().ok().flatten() {
             return Ok(Some(closed));
         }
-        if budget.simp_closures == 0 {
+        if budget.solve_closures == 0 {
             return Ok(None);
         }
-        budget.simp_closures -= 1;
-        Ok(self.try_simp_closure()?.filter(closes))
+        budget.solve_closures -= 1;
+        Ok(self.try_solve_closure()?.filter(closes))
     }
 
     /// Prove the arithmetic subgoal `fact` where the proof stands, by
@@ -2060,7 +2060,7 @@ impl<'a> Proof<'a> {
     /// `try_machine_goal_through_integer` for a 64-bit equality goal. Its
     /// `Integer` reading is proved before the type is known, so it costs
     /// more than the other machine goals; `auto` tries it last, after
-    /// `simp` and its rewrite search.
+    /// `solve` and its rewrite search.
     pub(in crate::surface::proof) fn try_wide_equality_through_integer(
         &self,
     ) -> Result<Option<Self>, ClickError> {
@@ -2119,7 +2119,7 @@ impl<'a> Proof<'a> {
                 }
             }
         }
-        // Without a stated definedness fact this is the selected-premise arithmetic `simp`
+        // Without a stated definedness fact this is the selected-premise arithmetic `solve`
         // already ran on the goal. Plain 32-bit equality, with no sum or
         // difference to observe, already has the indexed native-reading
         // arithmetic route; re-entering it by bounds repeats equality-by-bounds
@@ -2165,7 +2165,7 @@ impl<'a> Proof<'a> {
             }
             crate::instrumentation::record_deterministic_work(1);
             if let Some((_, ClickProposition::Defined { expression })) = self
-                .resolve_simp_premises(std::slice::from_ref(candidate), &[])
+                .resolve_solve_premises(std::slice::from_ref(candidate), &[])
                 .and_then(|mut spelled| spelled.pop())
                 && matches!(
                     expression,
@@ -2193,7 +2193,7 @@ impl<'a> Proof<'a> {
                 continue;
             };
             crate::instrumentation::record_deterministic_work(1);
-            let Some(spelled) = self.resolve_simp_premises(std::slice::from_ref(candidate), &[])
+            let Some(spelled) = self.resolve_solve_premises(std::slice::from_ref(candidate), &[])
             else {
                 continue;
             };
@@ -2421,7 +2421,7 @@ theorem successor_identity(x: int32) {
     /// `solve` reaches its simplification before splitting a plain 64-bit
     /// equality into its two bounds, each of which would run a nested search.
     #[test]
-    fn auto_leaves_a_plain_64_bit_equality_to_simp() {
+    fn auto_leaves_a_plain_64_bit_equality_to_solve() {
         let source = r#"spec enum Color { Red, Black, }
 function color_bit(color: Color) -> int32 {
     match color { Color::Red => 0, Color::Black => 1, }
@@ -2470,10 +2470,10 @@ theorem black_color_is_black(color: Color) {
         .unwrap();
     }
 
-    /// The connected-equality rewrite search is `simp`'s, so `solve()` alone
+    /// The connected-equality rewrite search is `solve`'s, so `solve()` alone
     /// proves what used to need `auto()`.
     #[test]
-    fn simp_runs_the_connected_equality_rewrite_search() {
+    fn solve_runs_the_connected_equality_rewrite_search() {
         crate::surface::verify_click_theorems(
             r#"spec enum Color { Red, Black, }
 function color_black(color: Color) -> int32 {
