@@ -2833,14 +2833,19 @@ int32 arena_pipeline(
     have second->arena->data == at(w2, second->arena->data);
     have at(w2, second->arena->data) == at(w2, first->arena->data);
     have first->arena->data == at(w2, first->arena->data);
-    have first->arena->data[first->start + 0] == 11 by {
+    have first->arena->data[first->start + 0] == at(w2, first->arena->data[first->start + 0]) by {
         transport(
-            at(w2, first->arena->data[first->start + 0]) == 11,
-            first->arena->data[first->start + 0] == 11
-            ) using {
-            at(w2, first->arena->data[first->start + 0]) == 11;
+            at(w2, first->arena->data[first->start + 0]) == at(w2, first->arena->data[first->start + 0]),
+            first->arena->data[first->start + 0] == at(w2, first->arena->data[first->start + 0])
+        ) using {
             first->arena->data == at(w2, first->arena->data);
             first->start == at(w2, first->start);
+        };
+    }
+    have first->arena->data[first->start + 0] == 11 by {
+        normalize() using {
+            first->arena->data[first->start + 0] == at(w2, first->arena->data[first->start + 0]);
+            at(w2, first->arena->data[first->start + 0]) == 11;
         };
     }
     have second->arena->data[second->start + 0] == 22;
@@ -2953,14 +2958,19 @@ int32 arena_pipeline(
     have second->arena->data == first->arena->data;
     have at(m3, first->arena->data) == at(m3, second->arena->data);
     have second->arena->data == at(m3, second->arena->data);
-    have second->arena->data[second->start + 0] == 22 by {
+    have second->arena->data[second->start + 0] == at(m3, second->arena->data[second->start + 0]) by {
         transport(
-            at(m3, second->arena->data[second->start + 0]) == 22,
-            second->arena->data[second->start + 0] == 22
-            ) using {
-            at(m3, second->arena->data[second->start + 0]) == 22;
+            at(m3, second->arena->data[second->start + 0]) == at(m3, second->arena->data[second->start + 0]),
+            second->arena->data[second->start + 0] == at(m3, second->arena->data[second->start + 0])
+        ) using {
             second->arena->data == at(m3, second->arena->data);
             second->start == at(m3, second->start);
+        };
+    }
+    have second->arena->data[second->start + 0] == 22 by {
+        normalize() using {
+            second->arena->data[second->start + 0] == at(m3, second->arena->data[second->start + 0]);
+            at(m3, second->arena->data[second->start + 0]) == 22;
         };
     }
     have r2.end <= s0.capacity;

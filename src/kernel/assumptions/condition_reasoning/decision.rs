@@ -148,14 +148,10 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, Box<Proposition>)> {
-        self.equality_graph
-            .exact_literal_sources(term)?
-            .keys()
-            .find_map(|condition| {
-                let source = Proposition::ConditionIs(condition.clone(), true);
-                let value = SignedConstantEvidence::exact_equality_value(term, &source)?;
-                Some((value, Box::new(source)))
-            })
+        let condition = self.checked_scalar_facts.literal_equality(term)?;
+        let source = Proposition::ConditionIs(condition.clone(), true);
+        let value = SignedConstantEvidence::exact_equality_value(term, &source)?;
+        Some((value, Box::new(source)))
     }
 
     fn signed_constant_evidence(
@@ -171,8 +167,23 @@ impl PureFactContext {
         let variable = bitvector_variable(term)?;
         let mut lower: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
         let mut upper: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
-        for (endpoint, other, strict, forward) in self.signed_order_bound_entries(term) {
-            let source = self.exact_order_bound_source(&endpoint, &other, strict, forward)?;
+        for source in self
+            .checked_order_bounds
+            .constant_evidence_sources(term)
+            .into_iter()
+            .flatten()
+        {
+            let Proposition::ConditionIs(ref condition, value) = source else {
+                continue;
+            };
+            let (left, right, strict) = condition_as_order_fact(condition, value)?;
+            let (endpoint, other, forward) = if left == *term {
+                (left, right, true)
+            } else if right == *term {
+                (right, left, false)
+            } else {
+                continue;
+            };
             let pinned = self.indexed_exact_int32_constant(&other);
             let other_value = signed_bitvector_constant(&other)
                 .or_else(|| pinned.as_ref().map(|(value, _)| *value));
@@ -216,60 +227,6 @@ impl PureFactContext {
                 upper,
             },
         ))
-    }
-
-    /// Exact source for one normalized order-index entry. Four condition
-    /// spellings can encode the same signed relation; indexed lookups select
-    /// among those constant-many possibilities without scanning the context.
-    fn exact_order_bound_source(
-        &self,
-        endpoint: &Bitvector32Term,
-        other: &Bitvector32Term,
-        strict: bool,
-        forward: bool,
-    ) -> Option<Proposition> {
-        let (left, right) = if forward {
-            (endpoint.clone(), other.clone())
-        } else {
-            (other.clone(), endpoint.clone())
-        };
-        let candidates = if strict {
-            [
-                (
-                    ConditionTerm::signed_less_than(left.clone(), right.clone()),
-                    true,
-                ),
-                (
-                    ConditionTerm::signed_less_equal(right.clone(), left.clone()),
-                    false,
-                ),
-                (
-                    ConditionTerm::signed_greater_than(right.clone(), left.clone()),
-                    true,
-                ),
-                (ConditionTerm::signed_greater_equal(left, right), false),
-            ]
-        } else {
-            [
-                (
-                    ConditionTerm::signed_less_than(right.clone(), left.clone()),
-                    false,
-                ),
-                (
-                    ConditionTerm::signed_less_equal(left.clone(), right.clone()),
-                    true,
-                ),
-                (
-                    ConditionTerm::signed_greater_than(left.clone(), right.clone()),
-                    false,
-                ),
-                (ConditionTerm::signed_greater_equal(right, left), true),
-            ]
-        };
-        candidates.into_iter().find_map(|(condition, value)| {
-            (self.condition_facts.get(&condition) == Some(&value))
-                .then_some(Proposition::ConditionIs(condition, value))
-        })
     }
 
     pub(crate) fn singleton_constant_equality_evidence(
@@ -1427,33 +1384,6 @@ impl PureFactContext {
         }
     }
 
-    /// The condition facts filed under a `condition_facts_by_sides` key with
-    /// `side` as one of its sides, in `condition_facts` order: every equality,
-    /// 32-bit order, or addition-overflow fact one of whose sides is `side`,
-    /// so a scan of `condition_facts` that keeps only facts with `side` as a
-    /// side can read these instead, with the same result in the same order.
-    pub(in crate::kernel) fn condition_facts_with_side(
-        &self,
-        side: &Bitvector32Term,
-    ) -> Vec<(&ConditionTerm, &bool)> {
-        let side = crate::kernel::eval::canonical_term(side);
-        let Some(keys) = self.condition_match_keys_by_side.get(&side) else {
-            return Vec::new();
-        };
-        let mut facts = Vec::new();
-        for (key, ()) in keys {
-            if let Some(filed) = self.condition_facts_by_sides.get(key) {
-                for fact in filed {
-                    crate::instrumentation::record_deterministic_work(1);
-                    crate::kernel::assumptions::count_condition_fact_visit();
-                    facts.push(fact);
-                }
-            }
-        }
-        facts.sort_unstable_by(|left, right| left.0.cmp(right.0));
-        facts
-    }
-
     /// The same scoped fact through the shared condition application index.
     /// Address-origin annotations do not alter a numeric condition's truth.
     pub(in crate::kernel) fn known_condition_value(
@@ -2162,66 +2092,13 @@ impl PureFactContext {
             return false;
         };
 
-        let mut range = IntegerRangeFacts::default();
-        // Every fact this reads has the variable itself as a side.
-        for (condition, value) in
-            self.condition_facts_with_side(&Bitvector32Term::Variable(variable))
-        {
-            if let (
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                false,
-            ) = (condition, *value)
-                && let Some((fact_variable, excluded)) =
-                    bitvector_variable_and_constant(fact_left, fact_right)
-                && fact_variable == variable
-            {
-                range.excluded.insert(excluded);
-                continue;
-            }
-            let Some((fact_left, fact_right, strict)) = condition_as_order_fact(condition, *value)
-            else {
-                continue;
-            };
-            match (
-                bitvector_variable(&fact_left),
-                signed_bitvector_constant(&fact_right),
-            ) {
-                (Some(fact_variable), Some(bound)) if fact_variable == variable => {
-                    let upper = if strict { bound - 1 } else { bound };
-                    range.upper = Some(range.upper.map_or(upper, |current| current.min(upper)));
-                }
-                _ => {}
-            }
-            match (
-                signed_bitvector_constant(&fact_left),
-                bitvector_variable(&fact_right),
-            ) {
-                (Some(bound), Some(fact_variable)) if fact_variable == variable => {
-                    let lower = if strict { bound + 1 } else { bound };
-                    range.lower = Some(range.lower.map_or(lower, |current| current.max(lower)));
-                }
-                _ => {}
-            }
-        }
-
-        // A bound the variable is known not to equal moves past that value:
-        // `0 <= x < 4` with `x != 0`, `x != 1` and `x != 2` leaves `x == 3`.
-        // Each step consumes one excluded value, so the walk is bounded by
-        // the facts.
-        let (Some(mut lower), Some(mut upper)) = (range.lower, range.upper) else {
+        let term = Bitvector32Term::Variable(variable);
+        let Some((lower, upper)) = self.indexed_constant_interval(&term) else {
             return false;
         };
-        while lower < upper && range.excluded.remove(&lower) {
-            lower += 1;
-        }
-        while lower < upper && range.excluded.remove(&upper) {
-            upper -= 1;
-        }
+        let (lower, upper) = self
+            .checked_scalar_facts
+            .past_exclusions(&term, lower, upper);
         lower == upper && lower == constant
     }
 
@@ -2232,40 +2109,13 @@ impl PureFactContext {
         if let Some(value) = signed_bitvector_constant(term) {
             return Some(value);
         }
-
-        // The equality graph files each true equality, so the constant an
-        // atom's class is known to equal is one lookup; the facts filed under
-        // the term as a side answer a written `term == c` about a compound
-        // term. Neither reads facts about other terms.
         if let Some(value) = self.equality_graph.known_atom_constant(term) {
             return Some(value);
         }
-        for (condition, value) in self.condition_facts_with_side(term) {
-            let (
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left,
-                    right,
-                },
-                true,
-            ) = (condition, value)
-            else {
-                continue;
-            };
-            let other = if crate::kernel::eval::canonical_term(left)
-                == crate::kernel::eval::canonical_term(term)
-            {
-                right
-            } else {
-                left
-            };
-            if let Some(value) = signed_bitvector_constant(other) {
-                return Some(value);
-            }
+        match self.equality_graph.scalar_constant_class(term)?.1 {
+            SignedConstantResolution::Known(value) => Some(value),
+            _ => None,
         }
-
-        None
     }
 
     pub(in crate::kernel) fn signed_constant_after_equality_normalization(

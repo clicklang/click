@@ -110,14 +110,32 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: {}: checked provenance requires indexed equality or a singleton source ({name})", self.path, self.function));
         }
-        if name == "condition_facts_with_side"
+        if self.path.starts_with("src/kernel/") && name == "condition_facts_with_side" {
+            self.errors.push(format!("{}: {}: checked equality/order queries require indexed summaries or selected witnesses ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/assumptions/condition_reasoning/overflow_intervals.rs"
             && matches!(
-                self.path,
-                "src/kernel/assumptions/condition_reasoning/order_paths.rs"
-                    | "src/kernel/assumptions/condition_reasoning/overflow_intervals.rs"
+                name,
+                "upper_bounds_for_search"
+                    | "lower_bounds_for_search"
+                    | "chained_signed_constant_bound"
+                    | "exact_signed_order_bounds"
+                    | "exact_signed_order_bounds_for_key"
             )
         {
-            self.errors.push(format!("{}: {}: checked order and overflow queries require indexed extrema or selected witnesses ({name})", self.path, self.function));
+            self.errors.push(format!(
+                "{}: {}: checked intervals cannot enumerate symbolic order components ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/assumptions/condition_reasoning/decision.rs"
+            && matches!(
+                self.function.as_str(),
+                "signed_constant_evidence" | "indexed_exact_int32_constant"
+            )
+            && matches!(name, "signed_order_bound_entries" | "exact_literal_sources")
+        {
+            self.errors.push(format!("{}: {}: constant equality evidence requires selected extrema or a singleton source ({name})", self.path, self.function));
         }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && matches!(

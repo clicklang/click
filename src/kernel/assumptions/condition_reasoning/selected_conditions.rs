@@ -143,33 +143,14 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        // An anchored fact has `left` or `right` itself as a side.
-        let mut candidates = self.condition_facts_with_side(left);
-        candidates.extend(self.condition_facts_with_side(right));
-        candidates.sort_unstable_by(|first, second| first.0.cmp(second.0));
-        candidates.dedup_by(|first, second| first.0 == second.0);
-        candidates.into_iter().any(|(fact, value)| {
-            let (
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left: fact_left,
-                    right: fact_right,
-                },
-                true,
-            ) = (fact, value)
-            else {
-                return false;
-            };
-            let anchored = fact_left.as_ref() == left
-                || fact_left.as_ref() == right
-                || fact_right.as_ref() == left
-                || fact_right.as_ref() == right;
-            anchored
-                && self.condition_matches_after_memory_resolution(
-                    fact,
-                    &ConditionTerm::equal(left.clone(), right.clone()),
-                )
+        let target = ConditionTerm::equal(left.clone(), right.clone());
+        if self.exact_condition_value(&target) == Some(true) {
+            return true;
+        }
+        [left, right].into_iter().any(|endpoint| {
+            self.checked_scalar_facts
+                .singleton_equality(endpoint)
+                .is_some_and(|fact| self.condition_matches_after_memory_resolution(fact, &target))
         })
     }
 
