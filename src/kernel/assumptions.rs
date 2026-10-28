@@ -12009,3 +12009,9 @@ mod context_restriction_scaling_tests {
 
 #[cfg(test)]
 mod root_extent_tests;
+
+#[cfg(test)]
+mod view_alias_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/assumptions/view_aliases.rs");
+}
