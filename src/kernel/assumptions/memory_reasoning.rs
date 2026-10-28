@@ -343,6 +343,18 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &Bitvector32Term,
     ) -> bool {
+        // Exact evidence is an indexed lookup even when its address holds
+        // many other views. Choosing a different premise belongs to search.
+        crate::instrumentation::record_deterministic_work(1);
+        if self.contains_assumed_exact(&Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: bytes.clone(),
+            wide: true,
+        }) {
+            return true;
+        }
+
         if bytes.uint64_as_const() == Some(0) {
             return true;
         }
@@ -516,6 +528,18 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &Bitvector32Term,
     ) -> bool {
+        // Exact evidence is an indexed lookup even when its address holds
+        // many other views. Choosing a different premise belongs to search.
+        crate::instrumentation::record_deterministic_work(1);
+        if self.contains_assumed_exact(&Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: bytes.clone(),
+            wide: false,
+        }) {
+            return true;
+        }
+
         let _id_scope = PureFactContextIdScope::enter(self);
         // A loadability claim quantifies over the bytes in the range.  An
         // empty range has no accesses to justify, irrespective of whether
@@ -882,6 +906,18 @@ impl PureFactContext {
         base: &Pointer,
         bytes: &Bitvector32Term,
     ) -> bool {
+        // Exact evidence is an indexed lookup even when its address holds
+        // many other views. Choosing a different premise belongs to search.
+        crate::instrumentation::record_deterministic_work(1);
+        if self.contains_assumed_exact(&Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: base.clone(),
+            bytes: bytes.clone(),
+            wide: false,
+        }) {
+            return true;
+        }
+
         if bytes
             .as_const()
             .is_some_and(|bytes| memory.access_in_bounds(base, bytes))

@@ -5697,7 +5697,8 @@ impl PureFactContext {
             .is_some()
     }
 
-    /// The loadable facts whose base is in `block`, charged one unit each.
+    /// Test census of the loadable facts whose base is in `block`.
+    #[cfg(test)]
     pub(crate) fn memory_loadable_candidates(
         &self,
         block: &PointerBlock,
@@ -5709,36 +5710,53 @@ impl PureFactContext {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
+    /// Return at most one fact per address shape. An ambiguous bucket is not
+    /// an implicit premise list: search must select a source first. Structural
+    /// anchor and alias traversal is separate from this bucket bound.
     pub(crate) fn memory_loadable_candidates_for_base(
         &self,
         base: &Pointer,
     ) -> impl Iterator<Item = &Proposition> {
-        self.memory_loadable_candidates_for_base_with_aliases(base, true)
+        self.memory_loadable_candidates_for_base_with_aliases(base, true, None)
     }
 
     pub(crate) fn memory_loadable_exact_candidates_for_base(
         &self,
         base: &Pointer,
     ) -> impl Iterator<Item = &Proposition> {
-        self.memory_loadable_candidates_for_base_with_aliases(base, false)
+        self.memory_loadable_candidates_for_base_with_aliases(base, false, None)
+    }
+
+    /// Enumerating an ambiguous address bucket is premise search. The checker
+    /// can instead receive one explicitly selected source view.
+    pub(crate) fn search_memory_loadable_candidates_for_base(
+        &self,
+        permission: crate::SearchPermission,
+        base: &Pointer,
+    ) -> impl Iterator<Item = &Proposition> {
+        self.memory_loadable_candidates_for_base_with_aliases(base, true, Some(permission))
     }
 
     fn memory_loadable_candidates_for_base_with_aliases(
         &self,
         base: &Pointer,
         include_other_spellings: bool,
+        permission: Option<crate::SearchPermission>,
     ) -> impl Iterator<Item = &Proposition> {
         crate::instrumentation::record_deterministic_work(1);
+        let search = permission.is_some();
         let exact = self
             .memory_loadable_shape_facts
             .get(&base.block)
             .and_then(|shapes| shapes.get(&memory_blind_pointer_fingerprint(base)))
+            .filter(|facts| search || facts.len() == 1)
             .into_iter()
             .flat_map(|facts| facts.iter());
         // Do not even prepare an alias class when the exact address answers.
-        let related = std::iter::once_with(move || self.memory_loadable_related_candidates(base))
-            .take(usize::from(include_other_spellings))
-            .flatten();
+        let related =
+            std::iter::once_with(move || self.memory_loadable_related_candidates(base, permission))
+                .take(usize::from(include_other_spellings))
+                .flatten();
         exact
             .chain(related)
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
@@ -5747,7 +5765,9 @@ impl PureFactContext {
     fn memory_loadable_related_candidates(
         &self,
         base: &Pointer,
+        permission: Option<crate::SearchPermission>,
     ) -> impl Iterator<Item = &Proposition> {
+        let search = permission.is_some();
         // Structural anchors and known aliases select keys, never all ranges
         // sharing a block. The exact key was already visited by the caller.
         let mut anchors = vec![Pointer {
@@ -5801,6 +5821,7 @@ impl PureFactContext {
                 self.memory_loadable_shape_facts
                     .get(&block)
                     .and_then(|shapes| shapes.get(&fingerprint))
+                    .filter(|facts| search || facts.len() == 1)
                     .into_iter()
                     .flat_map(|facts| facts.iter())
             })

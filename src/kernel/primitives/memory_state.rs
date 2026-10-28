@@ -8730,7 +8730,12 @@ impl CState {
                 .and_then(|bytes| u32::try_from(bytes).ok())
                 .ok_or("member private memory needs a positive bounded range")?;
             let base = range.start_pointer();
-            if !imported_member_exchange
+            // Birth checks the supplied body's storage. On death the owned
+            // member is the evidence: consuming it below returns that same
+            // body. Do not rediscover its introduction premises from the
+            // current ambient loadability facts.
+            if produce
+                && !imported_member_exchange
                 && !self.memory.access_in_bounds(&base, bytes)
                 && !assumptions.proves_memory_loadable_for_memory_resolution(
                     &self.memory,

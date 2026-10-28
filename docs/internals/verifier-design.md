@@ -133,6 +133,18 @@ Step-refusal pure-fact listings use the capped sampler and identify truncation;
 conversion-condition refusals use indexed atomic checks and structural
 reflexive guards (including under native int32 universal binders), never general proof search. The build boundary checks these diagnostic entry points.
 
+Viewability checking looks up an exactly stated view directly. A candidate
+address-shape bucket supplies implicit evidence only when it contains one fact;
+an ambiguous bucket is refused without iteration. The planner's
+`search_memory_loadable_candidates_for_base` requires `SearchPermission` and
+charges each visited candidate. Search can choose a covering view and expansion
+writes `transport(source, target) using { ... }`; explicit selection checks in
+a restricted context. The build boundary rejects kernel calls to that search
+entry point and rejects the test-only whole-block census. The atomic coverage
+fallback uses the same checked candidate lookup. This bounds bucket enumeration,
+not the separate alias and
+structural-anchor walks still listed in the roadmap.
+
 `instrumentation::CheckingWorkScope` gives a checked operation its own allowance
 inside or outside a tactic. Selected-context construction installs it with the
 number of selected entries; ambient fact count cannot enlarge the allowance.
