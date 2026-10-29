@@ -6792,21 +6792,8 @@ impl CMemory {
                     &normalized_pointer,
                     assumptions,
                 )
-                // The remaining range rungs. A field cell survives a store into
-                // an array it is separated from: separation facts plus range
-                // membership decide the cross-base pairs offset reasoning
-                // cannot, and `access_byte_overlap` has no counterpart for
-                // them — it answers `Unknown` for every pair with no common
-                // additive base, which is exactly the pairs these exist to
-                // decide. They place an access by its *first element*, so
-                // they carry the same confusion one level up; that is
-                // reported rather than fixed here, because the membership
-                // evidence takes no access width and the retained
-                // certificate has no field for one.
-                || assumptions.pointers_proven_disjoint_by_explicit_range_for_memory_resolution(
-                    &normalized_cell_pointer,
-                    &normalized_pointer,
-                )
+                // The direct-range fallback remains for now. General explicit-range
+                // candidate search belongs outside store cache preservation.
                 || assumptions
                     .pointers_directly_disjoint_by_range(&normalized_cell_pointer, &normalized_pointer);
             if kept {

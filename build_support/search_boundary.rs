@@ -77,9 +77,10 @@ impl Boundary<'_> {
                 name,
                 "owned_composition_store_separated_evidence"
                     | "owned_composition_store_separated_evidence_impl"
+                    | "pointers_proven_disjoint_by_explicit_range_for_memory_resolution"
             )
         {
-            self.errors.push(format!("{}: {}: store preservation must not retry general composition search ({name}); supply separation and transport explicitly", self.path, self.function));
+            self.errors.push(format!("{}: {}: store preservation must not retry general composition or explicit-range search ({name}); supply separation and transport explicitly", self.path, self.function));
         }
         if matches!(name, "exact_pointer_aliases" | "pointer_spellings")
             && matches!(
