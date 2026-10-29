@@ -333,8 +333,8 @@ impl Bitvector32Term {
             | Self::UInt32From64(_)
             | Self::UInt64FromInt32(_)
             | Self::UInt64FromInt64(_)
-            | crate::kernel::binary_wide_term!(_, _)
-            | crate::kernel::unary_wide_term!(_)
+            | crate::kernel::binary_wide_term!(..)
+            | crate::kernel::unary_wide_term!(..)
             | Self::Float32Negate(_)
             | Self::Float32Binary { .. }
             | Self::Float64Negate(_)

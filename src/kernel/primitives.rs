@@ -1328,6 +1328,19 @@ pub(crate) use binary_uint64_term;
 /// there (see [`Bitvector32Term::Binary`]); the others are listed so that this and
 /// [`binary_bitvector32_term`] together match every `Binary` node.
 macro_rules! binary_wide_term {
+    (..) => {
+        $crate::kernel::Bitvector32Term::Binary {
+            format: $crate::kernel::MachineIntegerType::Int64
+                | $crate::kernel::MachineIntegerType::UInt64
+                | $crate::kernel::MachineIntegerType::Int8
+                | $crate::kernel::MachineIntegerType::Int16
+                | $crate::kernel::MachineIntegerType::UInt8
+                | $crate::kernel::MachineIntegerType::UInt16
+                | $crate::kernel::MachineIntegerType::Int128
+                | $crate::kernel::MachineIntegerType::UInt128,
+            ..
+        }
+    };
     ($left:pat, $right:pat) => {
         $crate::kernel::Bitvector32Term::Binary {
             format: $crate::kernel::MachineIntegerType::Int64
@@ -1350,6 +1363,20 @@ pub(crate) use binary_wide_term;
 /// `int32`, binding its operand to `$operand`. Only the 64-bit complements are built there; with
 /// `unary_term!(Int32, BitwiseNot, ..)` it matches every `Unary` node.
 macro_rules! unary_wide_term {
+    (..) => {
+        $crate::kernel::Bitvector32Term::Unary {
+            format: $crate::kernel::MachineIntegerType::UInt32
+                | $crate::kernel::MachineIntegerType::Int64
+                | $crate::kernel::MachineIntegerType::UInt64
+                | $crate::kernel::MachineIntegerType::Int8
+                | $crate::kernel::MachineIntegerType::Int16
+                | $crate::kernel::MachineIntegerType::UInt8
+                | $crate::kernel::MachineIntegerType::UInt16
+                | $crate::kernel::MachineIntegerType::Int128
+                | $crate::kernel::MachineIntegerType::UInt128,
+            ..
+        }
+    };
     ($operand:pat) => {
         $crate::kernel::Bitvector32Term::Unary {
             format: $crate::kernel::MachineIntegerType::Int64
@@ -1371,6 +1398,9 @@ pub(crate) use unary_wide_term;
 /// Matches every two-operand [`Bitvector32Term`] operation of any width, binding the operands to
 /// `$left` and `$right`.
 macro_rules! binary_machine_term {
+    (..) => {
+        $crate::kernel::Bitvector32Term::Binary { .. }
+    };
     ($left:pat, $right:pat) => {
         $crate::kernel::Bitvector32Term::Binary {
             left: $left,

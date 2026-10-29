@@ -494,8 +494,8 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
         | Bitvector32Term::Int64FromUInt32(_)
         | Bitvector32Term::UInt64FromInt32(_)
         | Bitvector32Term::UInt64FromInt64(_)
-        | crate::kernel::binary_wide_term!(_, _)
-        | crate::kernel::unary_wide_term!(_)
+        | crate::kernel::binary_wide_term!(..)
+        | crate::kernel::unary_wide_term!(..)
         | Bitvector32Term::Float32Negate(_)
         | Bitvector32Term::Float32Binary { .. }
         | Bitvector32Term::Float64Negate(_)

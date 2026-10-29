@@ -8752,8 +8752,8 @@ fn rewrite_int32_term_by_exact_equality(
         | Bitvector32Term::UInt32From64(_)
         | Bitvector32Term::UInt64FromInt32(_)
         | Bitvector32Term::UInt64FromInt64(_)
-        | crate::kernel::binary_wide_term!(_, _)
-        | crate::kernel::unary_wide_term!(_)
+        | crate::kernel::binary_wide_term!(..)
+        | crate::kernel::unary_wide_term!(..)
         | Bitvector32Term::RangeFold { .. }
         | Bitvector32Term::BoolCast { .. }
         | Bitvector32Term::IntegerToMachine { .. } => term.clone(),

@@ -147,7 +147,7 @@ impl Bitvector32Term {
             | Self::MemoryLoad(..)
             | Self::PointerAddress(_, _)
             | Self::IntegerToMachine { .. }
-            | crate::kernel::binary_machine_term!(_, _)
+            | crate::kernel::binary_machine_term!(..)
             | Self::Float32Binary { .. }
             | Self::Float64Binary { .. }
             | Self::BoolCast { .. } => None,

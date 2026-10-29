@@ -2143,7 +2143,7 @@ fn collect_bitvector_memory_loads_with_width(
         | Bitvector32Term::Float64Binary { left, right, .. } => {
             let child_width = if matches!(
                 term,
-                crate::kernel::binary_wide_term!(_, _) | Bitvector32Term::Float64Binary { .. }
+                crate::kernel::binary_wide_term!(..) | Bitvector32Term::Float64Binary { .. }
             ) {
                 Some(8)
             } else {
