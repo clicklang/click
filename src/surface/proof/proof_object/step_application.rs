@@ -3415,6 +3415,7 @@ impl<'a> Proof<'a> {
             .map(|name| self.universal_goal_renamed_for_intro(name))
             .transpose()?;
         let mut integer_binding = None;
+        let mut machine_binding = None;
         let mut algebraic_binding = None;
         let mut antecedent_spelling = None;
         let written_negation = matches!(self.surface_goal(), Some(ClickProposition::Not(_)));
@@ -3465,6 +3466,15 @@ impl<'a> Proof<'a> {
                     _ => None,
                 };
                 if let Some(name) = introduced_name {
+                    if let PropositionIntroduction::Universal { variable, .. } = &introduction
+                        && let Some(Proposition::ForAll { sort, .. }) = self.goal()
+                        && let Some(ty) = sort.machine_integer_type()
+                    {
+                        let value = ty.symbolic_value(*variable);
+                        if crate::kernel::c_narrow_integer_range(&value).is_some() {
+                            machine_binding = Some((name.clone(), *variable, value));
+                        }
+                    }
                     let previous = current.surface_bindings.get(name).cloned().or_else(|| {
                         let value = match self.context.as_ref() {
                             ProofContext::Pure(context) => {
@@ -3711,7 +3721,10 @@ impl<'a> Proof<'a> {
                 ),
                 _ => unreachable!("kernel returned an unrelated intro error"),
             })?;
-        if algebraic_binding.is_none() && integer_binding.is_none() && antecedent_spelling.is_none()
+        if algebraic_binding.is_none()
+            && integer_binding.is_none()
+            && antecedent_spelling.is_none()
+            && machine_binding.is_none()
         {
             return Ok(state);
         }
@@ -3731,6 +3744,24 @@ impl<'a> Proof<'a> {
                     variable,
                 )),
             );
+        }
+        // The kernel's type bounds are born with the introduced name. Record
+        // their spellings with this bounded delta, without searching ambient
+        // facts or asking individual premise consumers to recover the name.
+        if let Some((name, variable, value)) = machine_binding {
+            let names = BTreeMap::from([(variable, name.clone())]);
+            let source_state = CState::new().with_local(name, value);
+            for fact in state.state().added_facts() {
+                let surface = super::super::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
+                    fact, ParameterBinding::default(), &source_state, &names,
+                ).ok_or_else(|| self.step_error("an introduced type bound has no Surface spelling"))?;
+                locals
+                    .surface_facts
+                    .record_lowering(&surface, fact)
+                    .map_err(|error| {
+                        self.step_error(format!("could not record introduced type bound: {error}"))
+                    })?;
+            }
         }
         // The introduced antecedent is spelled for premise lookups, as a
         // pure `have` is; see `ProofLocals::surface_facts`. A spelling is an

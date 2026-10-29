@@ -20,6 +20,7 @@ use std::sync::Arc;
 
 mod congruence;
 pub(super) mod constants;
+mod machine_relations;
 pub(super) use congruence::has_machine_operands;
 
 /// The sort of a read that may meet a stored cell under an aliased address.
@@ -530,6 +531,28 @@ pub(super) struct TermClasses {
     // Unions a truth asked for while a merge was running, made once it ends.
     pending_cast_unions: Vec<(u64, u64)>,
     closing: bool,
+    // The cross-format relations R0, R-dist and R-comp (`machine_relations`):
+    // the head each machine operator or conversion node names; per class,
+    // its sign-free operators by format and operator, the conversions
+    // applied to it by kind, and the conversions it holds by kind; and the
+    // pairs already fired. Each per-class map holds one entry per kind, so a
+    // union moves and fires a bounded number of entries.
+    machine_heads: PersistentMap<u64, machine_relations::MachineHead>,
+    class_operators: PersistentMap<
+        u64,
+        PersistentMap<
+            (
+                machine_relations::OperatorFormat,
+                machine_relations::SignFree,
+            ),
+            u64,
+        >,
+    >,
+    casts_of_class: PersistentMap<u64, PersistentMap<machine_relations::CastKey, u64>>,
+    class_casts: PersistentMap<u64, PersistentMap<machine_relations::CastKey, u64>>,
+    fired_machine_relations: PersistentSet<(u64, u64)>,
+    pending_machine_relations: Vec<(machine_relations::Relation, u64, u64)>,
+    relating_machine_terms: bool,
     // Constant signed int32 bounds belong to a value class, not a spelling.
     // A class union intersects two intervals in constant local work.
     signed_int32_intervals: PersistentMap<u64, (i64, i64)>,
@@ -1492,6 +1515,7 @@ impl TermClasses {
             _ => None,
         };
         self.enqueue_int32_load(id, &node);
+        self.retain_machine_head(id, &node);
         self.nodes.insert(node, id);
         self.markers.insert(id, Arc::new(()));
         if let Some(application) = application {
@@ -2502,6 +2526,7 @@ impl TermClasses {
             self.signatures.insert(signature, id);
         }
         self.application_signatures.insert(id, signature);
+        self.relate_machine_application(id);
     }
 
     fn close(&mut self, pending: Vec<(u64, u64)>) -> bool {
@@ -2535,6 +2560,10 @@ impl TermClasses {
                     .map(|(left, right)| (left, right, false)),
             );
             let Some((left, right, definitional)) = pending.0.pop() else {
+                if !self.pending_machine_relations.is_empty() && !self.relating_machine_terms {
+                    self.fire_machine_relation(&mut pending);
+                    continue;
+                }
                 break;
             };
             crate::instrumentation::record_deterministic_work(1);
@@ -2736,6 +2765,7 @@ impl TermClasses {
                     }
                 }
             }
+            self.merge_machine_relations(moved, kept);
             for id in moved_uses.iter() {
                 crate::instrumentation::record_deterministic_work(1);
                 kept_uses = kept_uses.with_value(*id);

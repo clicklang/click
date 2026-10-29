@@ -588,9 +588,19 @@ Progress:
      a `uint32` operator through the signed fragment: its 61 blocks name
      unsigned values only as σ atoms (`x as uint32 as int32`) or in
      `interval_compare … ule`, which reads σ explicitly.
-  2. The relations, unused by terms yet: R0, R-dist, R-comp and K7′ in the
-     e-graph, σ reading links in the difference graph, with scaling
-     regressions.
+  2. The relations: R0, R-dist and R-comp in the e-graph
+     (`equality_graph/terms/machine_relations.rs`), with scaling
+     regressions. Done (2026-10-29). While K1 and K8 peel σ and narrow
+     widenings at 32 bits they act on the 64-bit conversions (the
+     reinterpretation, the low word, the extensions) and on conversions
+     into 8 and 16 bits; R0 applies from 32 bits up, where it has no node
+     to act on yet, because a narrow operand's word need not be canonical
+     and a conversion reads only its low bits. The difference graph's σ
+     reading links and K7′ have no node to act on until then either, so
+     they land with steps 4 and 6. Every `click verify` output and `click
+     audit --verbose` verdict over the integer mdtests and the examples is
+     unchanged; work units rose by 0.13% in total, at most 7,953 units in
+     one session's preparation and 1,762 in one claim.
   3. Pattern classification: each sign-free `int32` pattern either accepts
      both 32-bit formats or stays signed-only.
   4. `uint32` has its own nodes: constructors stop peeling, K6 goes.

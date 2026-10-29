@@ -19564,3 +19564,28 @@ fn signed_byte_swap_selected_frame_expands_without_search() {
     let expanded = expand_c0_claim_source_by_label(source, &sources, "swap.contract").unwrap();
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
+
+#[test]
+fn theorem_entry_requirements_expand_to_explicit_haves() {
+    let source = r#"
+        theorem entry_conversion() {
+            ensures forall (k: uint8) {
+                to_uint8(to_integer(k)) == to_uint8(to_integer(k))
+            } by { intro(); normalize(); }
+        }
+    "#;
+    without_implicit_auto(|| verify_click_theorems(source))
+        .expect_err("the entry requirement needs an explicit proof without implicit search");
+    verify_click_theorems(source).expect("entry requirements use ordinary proof checking");
+    let expanded = expand_c0_claim_source_by_label(source, &[], "entry_conversion.ensures_0")
+        .expect("entry requirement certificates are retained");
+    assert!(expanded.contains("have "), "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
+    without_implicit_auto(|| verify_click_theorems(&expanded))
+        .expect("expanded entry requirements check without search");
+    let unsafe_source = source.replace("k: uint8", "k: int32");
+    assert!(
+        verify_click_theorems(&unsafe_source).is_err(),
+        "an entry debt cannot be assumed"
+    );
+}

@@ -1596,6 +1596,45 @@ impl<'a> Proof<'a> {
         Ok((close(&proved)?, Some(Box::new(body))))
     }
 
+    /// Discharge a theorem's retained entry requirements before its main
+    /// proof. Explicit leading haves are already in the indexed fact store;
+    /// otherwise the ordinary implicit solver produces those same haves.
+    pub(in crate::surface::proof) fn discharge_entry_requirements(
+        &self,
+        surface_goal: &ClickProposition,
+        requirements: &super::super::execution_planning::OpenObligationProbe,
+    ) -> Result<Self, ClickError> {
+        let pending = requirements
+            .recorded
+            .iter()
+            .enumerate()
+            .filter(|(_, requirement)| {
+                !self
+                    .facts()
+                    .assumptions()
+                    .states_required_goal(&requirement.proposition)
+            })
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            return Ok(self.clone());
+        }
+        if implicit_auto_disabled() {
+            return Err(requirements.refusals[pending[0].0].clone());
+        }
+        let step = ProofStep::Have {
+            proposition: surface_goal.clone(),
+            proof: Box::new(ProofCertificate::from_proof_tactics(&[]).expect("empty certificate")),
+        };
+        let references = pending
+            .iter()
+            .map(|(_, requirement)| *requirement)
+            .collect::<Vec<_>>();
+        match self.prove_obligations_by_auto_or_name_the_first_missed(&step, &references)? {
+            Ok((proved, _)) => Ok(proved),
+            Err(missed) => Err(requirements.refusals[pending[missed].0].clone()),
+        }
+    }
+
     /// Lowering requirements of a proof operation are proved at its input
     /// state. Keep the resulting `have` certificates before the operation,
     /// so expansion uses existing explicit proof syntax without searching.
@@ -2788,16 +2827,17 @@ thread_local! {
 
 pub(in crate::surface::proof) fn implicit_auto_disabled() -> bool {
     IMPLICIT_AUTO_DISABLED.with(std::cell::Cell::get)
+        || super::super::implicit_auto_scope::selected_claim_is_strict()
 }
 
 /// Runs `operation` with the implicit `auto` off: a step gets only its fast
 /// path and its written obligation proofs, with no search, so an obligation
-/// nothing written proves is refused with its structured requirement. This
+/// nothing written proves is refused with its structured requirement.
 /// The implicit tail is off with it: a script that leaves C to run, or a
-/// goal open, at its end is refused instead of finished by search. This
-/// is how an expanded proof is checked cold:
-/// `click expand --claim` and `click audit`'s whole-claim expansion check their
-/// output this way.
+/// goal open, at its end is refused instead of finished by search. This is
+/// unconditional across all proof units. Audit uses
+/// [`crate::surface::without_implicit_auto_for_claim`] when untouched proof
+/// units are also visited during targeted verification.
 pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
     struct Restore(bool);
     impl Drop for Restore {

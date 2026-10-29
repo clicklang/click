@@ -1118,7 +1118,17 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             }
             None => super::PropositionObligation::new(proposition, presentation),
         };
-        let added_facts = introduced.into_iter().collect::<Vec<_>>();
+        let mut added_facts = introduced.into_iter().collect::<Vec<_>>();
+        if let (Some(variable), Proposition::ForAll { sort, .. }) = (witness, goal.proposition()) {
+            // A universally introduced machine value has its declared type.
+            // Its intrinsic bounds are facts about the fresh value, not
+            // antecedents inserted into the proposition's spelling.
+            if let Some(bounds) = sort.machine_integer_type().and_then(|ty| {
+                crate::kernel::c_narrow_integer_range_facts(&ty.symbolic_value(variable))
+            }) {
+                added_facts.extend(bounds);
+            }
+        }
         let mut facts = facts.clone().with_reserved_variables(witness);
         for fact in &added_facts {
             facts = facts.with_fact(fact.clone());

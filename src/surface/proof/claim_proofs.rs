@@ -395,6 +395,7 @@ fn prove_claims_by_checked_tactics(
     tactics: &[ProofTactic],
     tactic_source: ProofTacticSource,
 ) -> Result<ClaimProofResult, ClickError> {
+    let _automation_scope = super::implicit_auto_scope::ClaimScope::enter(proof_label);
     let _local_layouts =
         super::surface_synthesis::LocalStructLayoutScope::enter(parsed_function, function_block);
     let program = build_internal_proof_with_source(tactics, proof_label, tactic_source)?;

@@ -1038,7 +1038,9 @@ When `intro` must freshen a universal binder, it uses the reserved logical-witne
 range. Existential choices use that same range, separate from C execution,
 load and binder identities. Issued witnesses remain reserved even when their
 instantiated body does not mention them, so later introductions and choices
-cannot reuse a live proof binding.
+cannot reuse a live proof binding. Narrow machine binders also supply their
+intrinsic bounds at introduction; these type facts need no extra `intro()`.
+A written range quantifier still has its explicit range-membership guard.
 
 `both { ... } and { ... }` proves an `A and B` goal by opening the exact `A`
 and `B` child goals. Both arms inherit the parent assumptions; neither inherits

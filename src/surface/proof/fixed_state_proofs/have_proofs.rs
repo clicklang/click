@@ -346,6 +346,48 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
     String,
 > {
     let no_integer_values = crate::persistent::PersistentMap::default();
+    let integer_values = options.integer_values.unwrap_or(&no_integer_values);
+    let obligation_assumptions = options.obligation_assumptions.unwrap_or(assumptions);
+    let (lowered, introductions, facts, obligations) =
+        lower_fixed_state_proposition_retaining_requirements(
+            proposition,
+            assumptions,
+            contract_environment,
+            fixed_state,
+            spec_definitions,
+            options,
+        )?;
+    refuse_unproved_conversion_bounds(
+        &obligations,
+        obligation_assumptions,
+        &StatedSite::new(
+            StatedForm::Proposition(proposition),
+            fixed_state.state,
+            contract_environment.values,
+        )
+        .with_integer_values(integer_values),
+    )?;
+    Ok((lowered, introductions, facts))
+}
+
+/// Retain mandatory requirements for a proof boundary that will discharge them.
+pub(in crate::surface) fn lower_fixed_state_proposition_retaining_requirements(
+    proposition: &ClickProposition,
+    assumptions: &PureFactContext,
+    contract_environment: ContractEnvironment<'_>,
+    fixed_state: FixedStateFrame<'_>,
+    spec_definitions: SpecDefinitions<'_>,
+    options: FixedStateLoweringOptions<'_>,
+) -> Result<
+    (
+        Proposition,
+        crate::kernel::LoweringIntroductions,
+        Vec<Proposition>,
+        Vec<crate::kernel::ProofObligation>,
+    ),
+    String,
+> {
+    let no_integer_values = crate::persistent::PersistentMap::default();
     let FixedStateLoweringOptions {
         algebraic_values,
         integer_values,
@@ -431,17 +473,7 @@ pub(in crate::surface) fn lower_fixed_state_proposition_through_kernel_with_fact
             .collect::<Vec<_>>(),
         obligation_assumptions,
     )?;
-    refuse_unproved_conversion_bounds(
-        &obligations,
-        obligation_assumptions,
-        &StatedSite::new(
-            StatedForm::Proposition(proposition),
-            fixed_state.state,
-            contract_environment.values,
-        )
-        .with_integer_values(integer_values),
-    )?;
-    Ok((lowered, introductions, facts))
+    Ok((lowered, introductions, facts, obligations))
 }
 
 /// The one evaluation of a proof-side expression: elaborated into the
