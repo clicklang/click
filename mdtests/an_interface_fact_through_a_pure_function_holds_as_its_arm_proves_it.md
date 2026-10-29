@@ -1,11 +1,9 @@
 # An interface fact through a pure function holds as its arm proves it
 
-`tmp[tl(j)] == 0u8` reads through a pure function application. In each case,
-`tl(j)` equals a constant, so the arm's `have` reads the cell that constant
-names and the fact holds outright. The join checks each arm's interface fact
-with the same lowering, under the same facts, so it holds there too; it used
-to be lowered with condition reasoning deferred and its read left symbolic,
-which no fact in the arm matched.
+`tmp[tl(j)] == 0u8` reads through a pure function application. Each arm
+proves which constant `tl(j)` equals, then rewrites that equality to check
+the stored cell. The interface fact retains its symbolic read when lowered
+both in the arm and at the join; equality reasoning belongs in the proof.
 
 ```c filename=an_interface_fact_through_a_pure_function_holds_as_its_arm_proves_it.c
 int n(int j)
@@ -37,11 +35,11 @@ int32 n(int32 j) {
         fact tmp[tl(j)] == 0u8;
     } then {
         have tl(j) == 2u64 by { unfold(tl(j)); solve(); }
-        have tmp[tl(j)] == 0u8 by { normalize(); }
+        have tmp[tl(j)] == 0u8 by { rewrite(tl(j) == 2u64); normalize(); }
     } else {
         have j == 2 by { solve() using { 1 <= j; j <= 2; j != 1; }; }
         have tl(j) == 3u64 by { unfold(tl(j)); solve(); }
-        have tmp[tl(j)] == 0u8 by { normalize(); }
+        have tmp[tl(j)] == 0u8 by { rewrite(tl(j) == 3u64); normalize(); }
     }
 }
 ```
