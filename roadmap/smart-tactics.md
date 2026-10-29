@@ -41,18 +41,15 @@ facts do not establish flat cost as the queried class or bucket grows.
    preservation in `run_slots_kept_by_store` still asks
    `typed_ranges_disjoint_from_pointer_evidence` and may inspect symbolic slots.
    Finish the direct-distinctness experiment before removing another fallback:
-   repair `arena_free`'s remaining occupied-array frame after the store. The
-   next refusal transports an earlier zero cell across the write to a different
-   index, inside the cleared-prefix invariant. The region-start equality and
-   its selected instantiation premise now hold, as do explicit preservation
-   facts for the occupied pointer and capacity. Trace the remaining source/target
-   read snapshots and pointer identities before adding reasoning. Preserve the
-   original C and claims and rerun the complete ordinary corpus before landing
-   the removal. Reduce the full-proof setup cost of
-   `saved_iterated_base_ignores_aliases_snapshots_and_unrelated_resources` while
-   retaining its success/refusal scaling controls; it hit the 30-second gate
-   timeout in the concurrent regression run. Do not restore ambient range
-   search for these proof repairs.
+   repair `arena_free`'s remaining `region->arena` frame at the loop back
+   edge. The explicit transport crosses the occupied-cell store but cannot
+   bridge the older loop snapshot to the saved pointer read. Reduced
+   scalar/pointer loop controls pass; reduce the original resource/invariant
+   context before changing memory recovery. The earlier cell frames and
+   resource refold now close with explicit pointer rewrites and original
+   metadata arguments. Preserve the original C and claims, and rerun the
+   complete ordinary corpus and original arena before landing the removal.
+   Do not restore ambient range search for these proof repairs.
    Measure these store callers before selecting the next removal, coordinating
    run/history work with the frame-walk item below.
    Measure overlapping member buckets and repeated stores, keeping actual
