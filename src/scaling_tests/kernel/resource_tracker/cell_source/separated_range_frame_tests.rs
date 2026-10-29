@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 
 #[test]
 fn model_start_membership_ignores_unrelated_order_bounds() {
@@ -29,7 +30,9 @@ fn model_start_membership_ignores_unrelated_order_bounds() {
                     true,
                 );
         }
-        let index = Bitvector32Term::Add(
+        let index = binary_node!(
+            Int32,
+            Add,
             Box::new(Bitvector32Term::Variable(Variable(9_941_002))),
             Box::new(Bitvector32Term::Variable(Variable(9_941_004))),
         );

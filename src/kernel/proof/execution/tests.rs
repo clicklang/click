@@ -62,6 +62,7 @@ fn balanced_unit_sum_domain_requires_all_three_original_domains() {
 }
 
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 // The proposition search is Surface planning now; see
 // `src/surface/planning/proposition_search.rs`. Only these tests reach
@@ -2334,7 +2335,9 @@ fn ground_comparison_premises_check_signed_literals_and_both_polarities() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Add(
+            left: Box::new(binary_node!(
+                Int32,
+                Add,
                 Box::new(Bitvector32Term::Variable(crate::kernel::Variable(990))),
                 Box::new(Bitvector32Term::Constant(1)),
             )),

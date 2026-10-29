@@ -18,6 +18,8 @@
 use super::surface_synthesis::synthesize_surface_machine_expression;
 use super::*;
 use crate::kernel::SignedDefinedWidth;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::proof::arithmetic_special::{
     signed_constant_bound_on, signed_definedness_operands, signed_width_constant,
 };
@@ -466,7 +468,7 @@ fn substitute_constant_summands(
         signed_width_constant(width, summand).is_none() && constant(summand) == Some(0)
     };
     match term {
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             if zero(left) {
                 return Some(
                     substitute_constant_summands(width, right, constant)
@@ -482,13 +484,15 @@ fn substitute_constant_summands(
             let new_left = substitute_constant_summands(width, left, constant);
             let new_right = substitute_constant_summands(width, right, constant);
             (new_left.is_some() || new_right.is_some()).then(|| {
-                Bitvector32Term::Add(
+                binary_node!(
+                    Int32,
+                    Add,
                     Box::new(new_left.unwrap_or_else(|| left.as_ref().clone())),
                     Box::new(new_right.unwrap_or_else(|| right.as_ref().clone())),
                 )
             })
         }
-        Bitvector32Term::Subtract(left, right) => {
+        binary_term!(Int32, Subtract, left, right) => {
             if zero(right) {
                 return Some(
                     substitute_constant_summands(width, left, constant)
@@ -496,7 +500,12 @@ fn substitute_constant_summands(
                 );
             }
             let new_left = substitute_constant_summands(width, left, constant)?;
-            Some(Bitvector32Term::Subtract(Box::new(new_left), right.clone()))
+            Some(binary_node!(
+                Int32,
+                Subtract,
+                Box::new(new_left),
+                right.clone()
+            ))
         }
         _ => None,
     }
@@ -533,9 +542,9 @@ fn outermost_overflow_conjuncts(
     let operation = |left: &Bitvector32Term, right: &Bitvector32Term, subtract: bool| {
         let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
         if subtract {
-            Bitvector32Term::Subtract(left, right)
+            binary_node!(Int32, Subtract, left, right)
         } else {
-            Bitvector32Term::Add(left, right)
+            binary_node!(Int32, Add, left, right)
         }
     };
     conjuncts

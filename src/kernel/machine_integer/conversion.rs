@@ -22,6 +22,7 @@
 //! term.
 
 use super::representation;
+use crate::kernel::binary_term;
 use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType, Proposition};
 
 /// What a language conversion asks of its operand.
@@ -455,7 +456,7 @@ pub(crate) fn cast(
     let narrow_unsigned =
         |ty: MachineIntegerType| ty.format().bits() < 32 && !ty.format().is_signed();
     let masked_unsigned_source = match (operand.ty(), operand.value()) {
-        (ty, Bitvector32Term::BitwiseAnd(left, right)) if narrow_unsigned(ty) => {
+        (ty, binary_term!(Int32, BitwiseAnd, left, right)) if narrow_unsigned(ty) => {
             let mask = (1u32 << operand.ty().format().bits()) - 1;
             matches!(left.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
                 || matches!(right.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
@@ -485,7 +486,7 @@ pub(crate) fn cast(
     // u32 word, with the source bounds still required below.
     if operand.ty() == MachineIntegerType::UInt32
         && narrow_unsigned(machine.ty())
-        && let Bitvector32Term::BitwiseAnd(left, right) = machine.value()
+        && let binary_term!(Int32, BitwiseAnd, left, right) = machine.value()
     {
         let mask = (1u32 << machine.ty().format().bits()) - 1;
         let matches = |value: &Bitvector32Term, bits: &Bitvector32Term| {

@@ -1,6 +1,8 @@
 use super::*;
 use crate::kernel::MachineBinaryOp;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{binary_term, unary_term};
 
 #[cfg(test)]
 mod tests;
@@ -1437,7 +1439,7 @@ fn synthesize_zero_based_loadable_segment(
             return None;
         }
         CExpression::Value(int32(byte_count / 4))
-    } else if let Bitvector32Term::Multiply(left, right) = bytes {
+    } else if let binary_term!(Int32, Multiply, left, right) = bytes {
         let elements = if right.as_const() == Some(4) {
             left.as_ref()
         } else if left.as_const() == Some(4) {
@@ -1449,7 +1451,7 @@ fn synthesize_zero_based_loadable_segment(
         // Its nonzero start must remain in the surface spelling; treating the
         // difference as a zero-based element count would lose that endpoint
         // and can accidentally attribute it to an unrelated index.
-        if let Bitvector32Term::Subtract(_, start) = elements
+        if let binary_term!(Int32, Subtract, _, start) = elements
             && start.as_const() != Some(0)
         {
             return None;
@@ -1460,7 +1462,7 @@ fn synthesize_zero_based_loadable_segment(
             state,
             bound_variables,
         )?)?
-    } else if !matches!(bytes, Bitvector32Term::Subtract(_, _)) {
+    } else if !matches!(bytes, binary_term!(Int32, Subtract, _, _)) {
         // A range of one-byte elements keeps its extent unscaled: `a[0..n]`
         // over `uint8` is `n` bytes. The spelling is a candidate only; every
         // caller re-lowers it and keeps it only when it names this fact, so
@@ -1658,14 +1660,14 @@ fn synthesize_named_range_loadable_segment(
     // The byte count as the segment lowering builds it: the element span,
     // scaled by the element width when that is not one byte.
     let (span, scale) = match bytes {
-        Bitvector32Term::Multiply(left, right) => match (left.as_const(), right.as_const()) {
+        binary_term!(Int32, Multiply, left, right) => match (left.as_const(), right.as_const()) {
             (_, Some(scale)) => (left.as_ref(), scale),
             (Some(scale), _) => (right.as_ref(), scale),
             _ => return None,
         },
         span => (span, 1),
     };
-    let Bitvector32Term::Subtract(end, start) = span else {
+    let binary_term!(Int32, Subtract, end, start) = span else {
         return None;
     };
     // The named pointer this range starts from, and the element index the
@@ -1764,7 +1766,9 @@ fn synthesize_external_symbolic_element_range(
                 }
                 _ => return None,
             };
-            let one_element = Bitvector32Term::Subtract(
+            let one_element = binary_node!(
+                Int32,
+                Subtract,
                 Box::new(Bitvector32Term::add(
                     index.clone(),
                     Bitvector32Term::Constant(1),
@@ -1842,7 +1846,7 @@ fn synthesize_external_symbolic_element_range(
 }
 
 fn is_reduced_one_element_byte_count(bytes: &Bitvector32Term) -> bool {
-    let Bitvector32Term::Subtract(end, start) = bytes else {
+    let binary_term!(Int32, Subtract, end, start) = bytes else {
         return false;
     };
     *end.as_ref() == Bitvector32Term::add(start.as_ref().clone(), Bitvector32Term::Constant(1))
@@ -2261,7 +2265,7 @@ fn synthesize_surface_atomic_proposition(
     {
         return Some(ClickProposition::Defined {
             expression: synthesize_surface_bitvector(
-                &Bitvector32Term::Add(left.clone(), right.clone()),
+                &binary_node!(Int32, Add, left.clone(), right.clone()),
                 parameter_binding,
                 state,
                 bound_variables,
@@ -3106,12 +3110,12 @@ fn bitvector_spells_uint32(
             || bitvector_spells_uint32(right, parameter_binding, state, bound_variables)
     };
     match term {
-        Bitvector32Term::Add(left, right)
-        | Bitvector32Term::Subtract(left, right)
-        | Bitvector32Term::Multiply(left, right)
-        | Bitvector32Term::Divide(left, right)
-        | Bitvector32Term::Remainder(left, right) => either(left, right),
-        Bitvector32Term::UnsignedDivide(..) | Bitvector32Term::UnsignedRemainder(..) => true,
+        binary_term!(Int32, Add, left, right)
+        | binary_term!(Int32, Subtract, left, right)
+        | binary_term!(Int32, Multiply, left, right)
+        | binary_term!(Int32, Divide, left, right)
+        | binary_term!(Int32, Remainder, left, right) => either(left, right),
+        binary_term!(UInt32, Divide, ..) | binary_term!(UInt32, Remainder, ..) => true,
         _ => false,
     }
 }
@@ -3292,65 +3296,65 @@ fn synthesize_surface_bitvector(
         Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
             unreachable!("constants returned above")
         }
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Add(left, right))
         }
-        Bitvector32Term::Subtract(left, right) => {
+        binary_term!(Int32, Subtract, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Subtract(left, right))
         }
-        Bitvector32Term::Multiply(left, right) => {
+        binary_term!(Int32, Multiply, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Multiply(left, right))
         }
-        Bitvector32Term::Divide(left, right) => {
+        binary_term!(Int32, Divide, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Divide(left, right))
         }
-        Bitvector32Term::UnsignedDivide(left, right) => {
+        binary_term!(UInt32, Divide, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Divide(
                 left,
                 Box::new(synthesize_uint32_operand(*right)?),
             ))
         }
-        Bitvector32Term::Remainder(left, right) => {
+        binary_term!(Int32, Remainder, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Remainder(left, right))
         }
-        Bitvector32Term::UnsignedRemainder(left, right) => {
+        binary_term!(UInt32, Remainder, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Remainder(
                 left,
                 Box::new(synthesize_uint32_operand(*right)?),
             ))
         }
-        Bitvector32Term::ShiftLeft(left, right) => {
+        binary_term!(Int32, ShiftLeft, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::ShiftLeft(left, right))
         }
-        Bitvector32Term::ArithmeticShiftRight(left, right) => {
+        binary_term!(Int32, ShiftRight, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::ShiftRight(left, right))
         }
-        Bitvector32Term::LogicalShiftRight(left, right) => {
+        binary_term!(UInt32, ShiftRight, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::ShiftRight(left, right))
         }
-        Bitvector32Term::BitwiseAnd(left, right) => {
+        binary_term!(Int32, BitwiseAnd, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::BitwiseAnd(left, right))
         }
-        Bitvector32Term::BitwiseOr(left, right) => {
+        binary_term!(Int32, BitwiseOr, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::BitwiseOr(left, right))
         }
-        Bitvector32Term::BitwiseXor(left, right) => {
+        binary_term!(Int32, BitwiseXor, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::BitwiseXor(left, right))
         }
-        Bitvector32Term::BitwiseNot(value) => Some(ContractExpression::BitwiseNot(Box::new(
+        unary_term!(Int32, BitwiseNot, value) => Some(ContractExpression::BitwiseNot(Box::new(
             synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
         ))),
         // Floating-point operation terms are not integer surface fragments;

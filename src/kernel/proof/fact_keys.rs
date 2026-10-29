@@ -8,6 +8,7 @@
 use crate::kernel::CompareRelation;
 use crate::kernel::LoadKind;
 use crate::kernel::MachineUnaryOp;
+use crate::kernel::unary_term;
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, CPointerValue, CType, CValue,
     IntegerComparisonOperator, IntegerTerm, MachineIntegerType, PureFunctionArgument,
@@ -2188,7 +2189,7 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 }
             }
         }
-        Bitvector32Term::BitwiseNot(body) => AlphaBitvectorKey::BitwiseNot(Box::new(
+        unary_term!(Int32, BitwiseNot, body) => AlphaBitvectorKey::BitwiseNot(Box::new(
             alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(body, bindings, next_binder)?,
         )),
         Bitvector32Term::Unary {

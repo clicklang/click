@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{binary_term, unary_term};
 use crate::surface::proof_diagnostics::render::{
     render_resource_diagnostic, render_resource_fact_diagnostic, render_resource_facts_diagnostic,
 };
@@ -2391,11 +2392,13 @@ fn constant_addend(term: &Bitvector32Term) -> Option<i64> {
         Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             Some(i64::from(*value as i32))
         }
-        Bitvector32Term::Add(left, right) => Some(constant_addend(left)? + constant_addend(right)?),
-        Bitvector32Term::Subtract(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
+            Some(constant_addend(left)? + constant_addend(right)?)
+        }
+        binary_term!(Int32, Subtract, left, right) => {
             Some(constant_addend(left)? - constant_addend(right)?)
         }
-        Bitvector32Term::Multiply(left, right) => match (left.as_const(), right.as_const()) {
+        binary_term!(Int32, Multiply, left, right) => match (left.as_const(), right.as_const()) {
             (_, Some(factor)) => Some(constant_addend(left)? * i64::from(factor as i32)),
             (Some(factor), _) => Some(i64::from(factor as i32) * constant_addend(right)?),
             _ => Some(0),
@@ -2414,7 +2417,7 @@ fn subtract_constant(term: &Bitvector32Term, amount: u32) -> Option<Bitvector32T
         Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             Some(Bitvector32Term::Constant(value.wrapping_sub(amount)))
         }
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             if let Some(left) = left.as_const() {
                 return Some(bitvector32_add(
                     Bitvector32Term::Constant(left.wrapping_sub(amount)),
@@ -2446,7 +2449,7 @@ fn exact_quotient(term: &Bitvector32Term, width: u32) -> Option<Bitvector32Term>
             (value % width as i32 == 0)
                 .then(|| Bitvector32Term::Constant((value / width as i32) as u32))
         }
-        Bitvector32Term::Multiply(left, right) => {
+        binary_term!(Int32, Multiply, left, right) => {
             let (factor, constant) = match (left.as_const(), right.as_const()) {
                 (_, Some(constant)) => (left.as_ref(), constant),
                 (Some(constant), _) => (right.as_ref(), constant),
@@ -2463,7 +2466,7 @@ fn exact_quotient(term: &Bitvector32Term, width: u32) -> Option<Bitvector32Term>
                 ),
             })
         }
-        Bitvector32Term::Add(left, right) => Some(bitvector32_add(
+        binary_term!(Int32, Add, left, right) => Some(bitvector32_add(
             exact_quotient(left, width)?,
             exact_quotient(right, width)?,
         )),
@@ -2710,7 +2713,7 @@ fn range_end_is_next_element(start: &Bitvector32Term, end: &Bitvector32Term) -> 
     let one =
         |term: &Bitvector32Term| term.as_const() == Some(1) || term.uint64_as_const() == Some(1);
     match end {
-        Bitvector32Term::Add(left, right)
+        binary_term!(Int32, Add, left, right)
         | Bitvector32Term::Binary {
             format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
             op: MachineBinaryOp::Add,
@@ -7219,7 +7222,7 @@ pub(super) fn describe_bitvector_with_context(
                 .expect("checked registered above")
         }
         Bitvector32Term::Variable(variable) => lowering_only_variable("v", variable.0),
-        Bitvector32Term::BitwiseNot(value) => {
+        unary_term!(Int32, BitwiseNot, value) => {
             format!(
                 "~{}",
                 describe_bitvector_with_context(value, parameter_binding)

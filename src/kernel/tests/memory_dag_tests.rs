@@ -2,6 +2,8 @@
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
 // calls it, so the tests import the planner explicitly.
 use super::*;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
@@ -2091,7 +2093,12 @@ fn canonical_form_resolves_loads_at_any_depth() {
     for depth in [64, 128, 256, 512] {
         let mut term = load.clone();
         for _ in 0..depth {
-            term = Bitvector32Term::Add(Box::new(term), Box::new(Bitvector32Term::Constant(1)));
+            term = binary_node!(
+                Int32,
+                Add,
+                Box::new(term),
+                Box::new(Bitvector32Term::Constant(1))
+            );
         }
         crate::kernel::memory_provenance::clear_canonical_form_caches();
         crate::kernel::memory_provenance::reset_atomic_canonicalization_term_visits();
@@ -2102,7 +2109,7 @@ fn canonical_form_resolves_loads_at_any_depth() {
             "canonicalization should visit each explicit term node once: depth={depth}, visits={visits}",
         );
         let mut leaf = &canonical;
-        while let Bitvector32Term::Add(left, _) = leaf {
+        while let binary_term!(Int32, Add, left, _) = leaf {
             leaf = left;
         }
         assert_eq!(

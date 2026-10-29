@@ -1,3 +1,4 @@
+use crate::kernel::binary_node;
 use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 // The proposition search these tests exercise is Surface planning now; see
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
@@ -6129,7 +6130,9 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
     let goal_surface = ClickProposition::Comparison {
         left: expression(Bitvector32Term::Constant(0)),
         operator: ComparisonOperator::LessEqual,
-        right: expression(Bitvector32Term::Subtract(
+        right: expression(binary_node!(
+            Int32,
+            Subtract,
             Box::new(value),
             Box::new(Bitvector32Term::Constant(2)),
         )),
@@ -6222,7 +6225,9 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Subtract(
+            left: Box::new(binary_node!(
+                Int32,
+                Subtract,
                 Box::new(selected_term.clone()),
                 Box::new(Bitvector32Term::Constant(1)),
             )),
@@ -6341,7 +6346,9 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Add(
+            left: Box::new(binary_node!(
+                Int32,
+                Add,
                 Box::new(left.clone()),
                 Box::new(right.clone()),
             )),
@@ -6477,7 +6484,9 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
         right: expression(value.clone()),
     };
     let goal_surface = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Subtract(
+        left: expression(binary_node!(
+            Int32,
+            Subtract,
             Box::new(value),
             Box::new(Bitvector32Term::Constant(1)),
         )),
@@ -6692,7 +6701,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Add(Box::new(left), Box::new(right))),
+            left: Box::new(binary_node!(Int32, Add, Box::new(left), Box::new(right))),
             right: Box::new(Bitvector32Term::Constant(2)),
         },
         true,

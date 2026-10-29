@@ -506,13 +506,20 @@ In `src/kernel/`:
 
 - `Bitvector32Term`: the one term arena for every C integer and float value,
   including arithmetic, `If`, `RangeFold`, and memory loads. Despite its
-  name it holds every width. A 64-bit operator is a format-carrying
-  `Binary { format, op, .. }` or `Unary { format, op, .. }` node
+  name it holds every width. A machine operator is a format-carrying
+  `Binary { op, format, .. }` or `Unary { format, op, .. }` node
   (`MachineBinaryOp`, `MachineUnaryOp`; signed and unsigned division,
-  remainder and right shift are told apart by the format), and only `int64`
-  and `uint64` have such nodes so far; the width check refuses one at any
-  other format. Elsewhere the width is implied: by the operator family
-  (`Add` is 32-bit), the constant's shape (`Constant`, `Int64Constant`,
+  remainder and right shift are told apart by the format) at a 32- or
+  64-bit format. A 32-bit operator reads words (rule K1), so the sign-free
+  ones (`+ - * << & | ^ ~`) are filed at `int32` and only division,
+  remainder and right shift at `uint32`; the width check refuses any other
+  format. Code that compares nodes by variant also compares
+  `machine_operator()`, since one variant spells every operator. This word
+  identity is being removed (`design/machine-integers.md`, "Every format
+  its own nodes"); a debug build with `CLICK_FORMAT_AUDIT=<path>` records
+  each remaining use of it by kind and site (`scripts/format-audit.sh`,
+  `machine_integer/format_audit.rs`). Elsewhere
+  the width is implied: by the constant's shape (`Constant`, `Int64Constant`,
   `UInt64Constant`, a 128-bit `MachineIntegerConstant`), a load's kind, or a
   cast's destination. Values of
   8 and 16 bits, and a `Bool`'s cast `b as F` to a narrow `F`, ride in the 32-bit carrier, and floats in the

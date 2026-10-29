@@ -155,7 +155,14 @@ reasoning policy, variable allocation bounds and typing metadata queried by the
 selected load variables. It never clears the inherited graph's pointer sources.
 Step-refusal pure-fact listings use the capped sampler and identify truncation;
 conversion-condition refusals use indexed atomic checks and structural
-reflexive guards (including under native int32 universal binders), never general proof search. The build boundary checks these diagnostic entry points.
+reflexive guards (including under native int32 universal binders), never general
+proof search. At a `have` scope opening or an unfold, an unmet mandatory
+condition is exposed to the ordinary obligation probe. The implicit solver
+proves it at the operation's input state and retains its explicit `have`
+certificate before the operation; expanded proofs check without implicit
+solving. The fast checker itself still refuses an unmet condition. Probing a
+`have` stops at scope opening, so requirements from its body cannot escape
+nested binders. The build boundary checks these diagnostic entry points.
 
 Viewability checking looks up an exactly stated view directly. A candidate
 address-shape bucket supplies implicit evidence only when it contains one fact;

@@ -6,6 +6,9 @@
 //! the useful part of a diagnostic.
 
 use crate::kernel::CResourceFact;
+#[cfg(test)]
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{
     AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, Bitvector32Term,
     CExpressionOutcome, CMemory, CResource, CState, ConditionTerm, IntegerRangeFoldIndex,
@@ -2087,9 +2090,9 @@ impl Renderer<'_> {
                 let name = self.variable_name(*v, "value");
                 self.push(&name);
             }
-            Bitvector32Term::Add(a, b) => self.binary_bv("+", a, b),
-            Bitvector32Term::Subtract(a, b) => self.binary_bv("-", a, b),
-            Bitvector32Term::Multiply(a, b) => self.binary_bv("*", a, b),
+            binary_term!(Int32, Add, a, b) => self.binary_bv("+", a, b),
+            binary_term!(Int32, Subtract, a, b) => self.binary_bv("-", a, b),
+            binary_term!(Int32, Multiply, a, b) => self.binary_bv("*", a, b),
             _ if self.machine_operation(v) => {}
             Bitvector32Term::RangeFold {
                 start,
@@ -2581,7 +2584,9 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(Variable(988002))),
-                right: Box::new(Bitvector32Term::Add(
+                right: Box::new(binary_node!(
+                    Int32,
+                    Add,
                     Box::new(Bitvector32Term::Variable(Variable(988001))),
                     Box::new(Bitvector32Term::Constant(1)),
                 )),
@@ -2859,7 +2864,12 @@ mod tests {
     fn deep_bitvector_tree_is_bounded() {
         let mut value = Bitvector32Term::Constant(1);
         for _ in 0..128 {
-            value = Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
+            value = binary_node!(
+                Int32,
+                Add,
+                Box::new(value),
+                Box::new(Bitvector32Term::Constant(1))
+            );
         }
         let rendered = render_proposition(&Proposition::Equal(
             Term::Bitvector32(value),

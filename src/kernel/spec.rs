@@ -26,6 +26,7 @@ fn with_integer_comparisons_preserved<T>(preserve: bool, operation: impl FnOnce(
     operation()
 }
 
+mod existential;
 pub(in crate::kernel) mod predicate_dependencies;
 pub(in crate::kernel) mod walk;
 
@@ -1753,33 +1754,15 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 budget,
             )?;
 
-            // Evaluation guards and verification conditions belong to the
-            // witness selected by this existential. Keeping them in the
-            // surrounding path would either leave the bound variable free or
-            // let different obligations choose different witnesses. Build
-            // one conjunction for each evaluation path and put all paths
-            // under one Exists, so every condition uses the same witness.
-            let branches = body_paths
-                .iter()
-                .map(existential_body_branch)
-                .collect::<Vec<_>>();
-            let existential_body = proposition_or_all(branches);
-            Ok(vec![SpecPropositionPath {
-                // An existential is consumed by witness/choose. Any
-                // introduction recorded inside the body is hidden below the
-                // binder and must be rediscovered after the witness refines
-                // the goal. Nothing below an existential is reachable from
-                // the head before that witness, even on a pure single path.
-                introductions: LoweringIntroductions::new(),
-                proposition: Proposition::Exists {
-                    name: name.clone(),
-                    var: *variable,
-                    sort: Sort::Integer,
-                    body: Box::new(existential_body),
-                },
-                facts: Vec::new().into(),
-                obligations: Vec::new(),
-            }])
+            Ok(vec![
+                existential::ScopedExistential::new(
+                    name.clone(),
+                    *variable,
+                    Sort::Integer,
+                    body_paths,
+                )
+                .into_checked_path(),
+            ])
         }
         SpecProposition::ExistsAlgebraic {
             name,
@@ -1793,22 +1776,15 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 assumptions,
                 budget,
             )?;
-            let branches = body_paths
-                .iter()
-                .map(existential_body_branch)
-                .collect::<Vec<_>>();
-            let existential_body = proposition_or_all(branches);
-            Ok(vec![SpecPropositionPath {
-                introductions: LoweringIntroductions::new(),
-                proposition: Proposition::Exists {
-                    name: name.clone(),
-                    var: *variable,
-                    sort: Sort::Algebraic(algebraic_type.clone()),
-                    body: Box::new(existential_body),
-                },
-                facts: Vec::new().into(),
-                obligations: Vec::new(),
-            }])
+            Ok(vec![
+                existential::ScopedExistential::new(
+                    name.clone(),
+                    *variable,
+                    Sort::Algebraic(algebraic_type.clone()),
+                    body_paths,
+                )
+                .into_checked_path(),
+            ])
         }
         SpecProposition::ExistsMachineInteger {
             name,
@@ -1832,50 +1808,26 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 quantified_assumptions =
                     quantified_assumptions.assume_proposition(fact.proposition().clone());
             }
-            Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
                 scope,
                 body,
                 &quantified_assumptions,
                 budget,
-            )?
-            .into_iter()
-            .map(|mut path| {
+            )?;
+            for path in &mut paths {
                 let mut facts = range_facts.clone();
                 facts.append(&mut path.facts);
                 path.facts = facts;
-                SpecPropositionPath {
-                    // The head chain records the nodes an introduction reaches
-                    // before any other step. Nothing under this binder is one
-                    // of them until a `witness` names the bound value, so the
-                    // chain stops at the existential; the guards below belong
-                    // to the body, not to this head.
-                    introductions: Vec::new(),
-                    proposition: Proposition::Exists {
-                        name: name.clone(),
-                        var: *variable,
-                        sort: Sort::machine_integer(integer_type),
-                        body: Box::new(guard_quantified_witness(path.proposition, &path.facts)),
-                    },
-                    // Path facts may mention the bound variable, so they are
-                    // guards on the quantified body, exactly as under a
-                    // universal. Publishing them here would leave the binder's
-                    // variable free in the surrounding context.
-                    facts: Vec::new().into(),
-                    obligations: path
-                        .obligations
-                        .into_iter()
-                        .map(|obligation| {
-                            obligation.map_proposition(|proposition| Proposition::Exists {
-                                name: name.clone(),
-                                var: *variable,
-                                sort: Sort::machine_integer(integer_type),
-                                body: Box::new(guard_quantified_witness(proposition, &path.facts)),
-                            })
-                        })
-                        .collect(),
-                }
-            })
-            .collect())
+            }
+            Ok(vec![
+                existential::ScopedExistential::new(
+                    name.clone(),
+                    *variable,
+                    Sort::machine_integer(integer_type),
+                    paths,
+                )
+                .into_checked_path(),
+            ])
         }
         SpecProposition::ExistsPointer {
             name,
@@ -1883,38 +1835,21 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             c_type,
             body,
         } => {
-            Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            let paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
                 scope,
                 body,
                 assumptions,
                 budget,
-            )?
-            .into_iter()
-            .map(|path| SpecPropositionPath {
-                // See `ExistsInt32` above: the chain stops at the binder and
-                // the body's guards stay under it.
-                introductions: Vec::new(),
-                proposition: Proposition::Exists {
-                    name: name.clone(),
-                    var: *variable,
-                    sort: Sort::CPointer(*c_type),
-                    body: Box::new(guard_quantified_witness(path.proposition, &path.facts)),
-                },
-                facts: Vec::new().into(),
-                obligations: path
-                    .obligations
-                    .into_iter()
-                    .map(|obligation| {
-                        obligation.map_proposition(|proposition| Proposition::Exists {
-                            name: name.clone(),
-                            var: *variable,
-                            sort: Sort::CPointer(*c_type),
-                            body: Box::new(guard_quantified_witness(proposition, &path.facts)),
-                        })
-                    })
-                    .collect(),
-            })
-            .collect())
+            )?;
+            Ok(vec![
+                existential::ScopedExistential::new(
+                    name.clone(),
+                    *variable,
+                    Sort::CPointer(*c_type),
+                    paths,
+                )
+                .into_checked_path(),
+            ])
         }
         SpecProposition::Predicate {
             name,
@@ -2483,30 +2418,13 @@ fn verified_load_obligation_without_definition(
     Some(obligation.clone().map_proposition(|_| proposition))
 }
 
-/// Build one Integer-existential branch while removing only exact registered
+/// Build one existential branch while removing only exact registered
 /// load definitions. The path facts and obligations can both contain the
 /// same certified equation; loadability, range guards, and all user written
 /// conditions remain in the conjunction.
-fn existential_body_branch(path: &SpecPropositionPath) -> Proposition {
-    let facts = path
-        .facts
-        .iter()
-        .filter_map(|fact| {
-            drop_verified_load_definition_conjuncts(fact.proposition().clone())
-                .map(|proposition| fact.clone().with_proposition(proposition))
-        })
-        .map(|fact| fact.proposition().clone());
-    let obligations = path
-        .obligations
-        .iter()
-        .filter_map(verified_load_obligation_without_definition)
-        .map(|obligation| obligation.proposition().clone());
-    proposition_and_all(
-        facts
-            .chain(obligations)
-            .chain(std::iter::once(path.proposition.clone()))
-            .collect(),
-    )
+#[cfg(test)]
+pub(super) fn existential_body_branch(path: &SpecPropositionPath) -> Proposition {
+    existential::ScopedExistentialBranch::from_path(path.clone()).into_checked_body()
 }
 
 /// Turn one non-branching body requirement into a requirement for every

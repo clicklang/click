@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_term;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// Checks that a returning path wrote no caller-visible memory.
@@ -360,7 +361,7 @@ fn bitvector_index_relative_to_base(
     if pointer_index == base_index {
         return Bitvector32Term::Constant(0);
     }
-    if let Bitvector32Term::Add(left, right) = &pointer_index {
+    if let binary_term!(Int32, Add, left, right) = &pointer_index {
         if left.as_ref() == &base_index {
             return right.as_ref().clone();
         }

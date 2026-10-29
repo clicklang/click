@@ -1,4 +1,7 @@
 use super::*;
+#[cfg(test)]
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 mod observable;
 
@@ -3527,35 +3530,21 @@ impl ResourceContext {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
             let candidate = self.fact(entry);
-            let Some(available) = candidate.memory_own_range() else {
-                return None;
-            };
+            let available = candidate.memory_own_range()?;
             // Symbolic 64-bit suppliers retain their native direct-coverage
             // route; byte regrouping here handles constant 32-bit bounds.
-            if available.int32_bounds().is_none() {
-                return None;
-            }
-            let Some(base) = entries.address() else {
-                return None;
-            };
+            available.int32_bounds()?;
+            let base = entries.address()?;
             let point =
                 CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
             let byte_available = byte_normalized_memory_range(available);
-            let Some(at) = exact_constant_base_delta(&byte_available, &point, Some(assumptions))
-            else {
-                return None;
-            };
-            let Some(available_end) = byte_available.signed_constant_end() else {
-                return None;
-            };
-            let Some(bytes) = available_end
+            let at = exact_constant_base_delta(&byte_available, &point, Some(assumptions))?;
+            let available_end = byte_available.signed_constant_end()?;
+            let bytes = available_end
                 .checked_sub(at)
                 .map(|bytes| bytes.min(end - cursor))
                 .filter(|bytes| *bytes > 0)
-                .and_then(|bytes| u32::try_from(bytes).ok())
-            else {
-                return None;
-            };
+                .and_then(|bytes| u32::try_from(bytes).ok())?;
             let piece = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
                 base,
                 0u32.into(),
@@ -6495,12 +6484,8 @@ impl ResourceContext {
         if !self.fact(entry).has_proven_positive_quantity(assumptions) {
             return None;
         }
-        let Some(address) = entries.address() else {
-            return None;
-        };
-        let Some(range) = self.fact(entry).memory_range() else {
-            return None;
-        };
+        let address = entries.address()?;
+        let range = self.fact(entry).memory_range()?;
         if designation.is_some_and(|d| !assumptions.access_designations_match(d, range)) {
             return None;
         }
@@ -6526,9 +6511,7 @@ impl ResourceContext {
         let entry = entries.entry();
         crate::instrumentation::record_deterministic_work(1);
         let fact = self.fact(entry);
-        let Some(range) = fact.memory_own_range() else {
-            return None;
-        };
+        let range = fact.memory_own_range()?;
         if self.storage.supported_by.contains_key(&entry)
             || range.start_pointer() != *pointer
             || range
@@ -6564,17 +6547,13 @@ impl ResourceContext {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
             let resource = self.fact(entry);
-            let Some(range) = resource.memory_own_range() else {
-                return None;
-            };
+            let range = resource.memory_own_range()?;
             if designation
                 .is_some_and(|origin| !assumptions.access_designations_match(origin, range))
             {
                 return None;
             }
-            let Some(address) = entries.address() else {
-                return None;
-            };
+            let address = entries.address()?;
             if memory_resource_fact_permits_write(resource, &address, byte_width, assumptions) {
                 return Some(range);
             }
@@ -6597,12 +6576,8 @@ impl ResourceContext {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
             let resource = self.fact(entry);
-            let Some(range) = resource.memory_own_range() else {
-                return None;
-            };
-            let Some(address) = entries.address() else {
-                return None;
-            };
+            let range = resource.memory_own_range()?;
+            let address = entries.address()?;
             // Permission lookup uses the historical logical pointer-cell
             // unit when selecting candidates. Separation needs all physical
             // bytes, just as the existing held-range/frame judgment does.
@@ -8491,12 +8466,12 @@ pub(in crate::kernel) fn population_quantity_sum(
     // Recombining a framed remainder is what a contract refinement does
     // (`mdtests/c_named_contract_refines_symbolic_resource_quantity.md`), and
     // the term it lands on is the one it started from.
-    if let Bitvector32Term::Subtract(total, taken) = right
+    if let binary_term!(Int32, Subtract, total, taken) = right
         && taken.as_ref() == left
     {
         return Some(total.as_ref().clone());
     }
-    if let Bitvector32Term::Subtract(total, taken) = left
+    if let binary_term!(Int32, Subtract, total, taken) = left
         && taken.as_ref() == right
     {
         return Some(total.as_ref().clone());
@@ -9587,14 +9562,14 @@ fn range_endpoint_terms_equal(
     // Structural descent covers the common affine endpoint forms
     // (base + load, load - base, load * scale).
     let structurally_bridged = match (left, right) {
-        (Bitvector32Term::Add(left_a, left_b), Bitvector32Term::Add(right_a, right_b))
+        (binary_term!(Int32, Add, left_a, left_b), binary_term!(Int32, Add, right_a, right_b))
         | (
-            Bitvector32Term::Subtract(left_a, left_b),
-            Bitvector32Term::Subtract(right_a, right_b),
+            binary_term!(Int32, Subtract, left_a, left_b),
+            binary_term!(Int32, Subtract, right_a, right_b),
         )
         | (
-            Bitvector32Term::Multiply(left_a, left_b),
-            Bitvector32Term::Multiply(right_a, right_b),
+            binary_term!(Int32, Multiply, left_a, left_b),
+            binary_term!(Int32, Multiply, right_a, right_b),
         ) => {
             range_endpoint_terms_equal(left_a, right_a, assumptions)
                 && range_endpoint_terms_equal(left_b, right_b, assumptions)
@@ -9960,7 +9935,7 @@ pub(in crate::kernel) fn checked_native_range_endpoint(
         }
         Bitvector32Term::Variable(_) => term.clone(),
         Bitvector32Term::UInt32From64(value) => value.as_ref().clone(),
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             let (value, constant) = match (left.as_ref(), right.as_ref()) {
                 (
                     value,
@@ -11730,7 +11705,12 @@ mod support_removal_tests {
         );
         let mut nested = load;
         for _ in 0..(MAX_MEMORY_LOAD_FOOTPRINT_DEPTH + 8) {
-            nested = Bitvector32Term::Add(Box::new(nested), Box::new(Bitvector32Term::Constant(0)));
+            nested = binary_node!(
+                Int32,
+                Add,
+                Box::new(nested),
+                Box::new(Bitvector32Term::Constant(0))
+            );
         }
         let fact = CResourceFact::view_memory(CMemoryRange::new(
             Pointer {

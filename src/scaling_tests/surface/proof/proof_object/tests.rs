@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_node;
 
 #[test]
 fn a_missing_premise_spelling_walks_recorded_history_only_once() {
@@ -108,7 +109,9 @@ fn same_block_offset_rewrite_work(
         offset: PointerOffsetTerm::Add(
             Box::new(base.offset.clone()),
             Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Subtract(
+                value: Box::new(binary_node!(
+                    Int32,
+                    Subtract,
                     Box::new(Bitvector32Term::Constant(4)),
                     Box::new(k.clone()),
                 )),
@@ -134,7 +137,9 @@ fn same_block_offset_rewrite_work(
                             offset: PointerOffsetTerm::Add(
                                 Box::new(base.offset.clone()),
                                 Box::new(PointerOffsetTerm::Int32Scaled {
-                                    value: Box::new(Bitvector32Term::Subtract(
+                                    value: Box::new(binary_node!(
+                                        Int32,
+                                        Subtract,
                                         Box::new(Bitvector32Term::Constant(4)),
                                         Box::new(old.clone()),
                                     )),
@@ -1683,7 +1688,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
             .iter()
             .cloned()
             .fold(Bitvector32Term::Constant(0), |sum, read| {
-                Bitvector32Term::Add(Box::new(sum), Box::new(read))
+                binary_node!(Int32, Add, Box::new(sum), Box::new(read))
             });
         let goal = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -1983,7 +1988,9 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 block: "rewrite_reads".into(),
                 offset: PointerOffsetTerm::Constant(index as i64 * 4),
             };
-            let stored = Bitvector32Term::UnsignedRemainder(
+            let stored = binary_node!(
+                UInt32,
+                Remainder,
                 Box::new(Bitvector32Term::Variable(Variable(
                     8_179_600 + index as u64,
                 ))),
@@ -2041,7 +2048,9 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: left.clone(),
-                right: Box::new(Bitvector32Term::Add(
+                right: Box::new(binary_node!(
+                    Int32,
+                    Add,
                     right.clone(),
                     Box::new(Bitvector32Term::Constant(1))
                 ))
@@ -2088,7 +2097,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             .iter()
             .cloned()
             .fold(Bitvector32Term::Constant(0), |sum, read| {
-                Bitvector32Term::Add(Box::new(sum), Box::new(read))
+                binary_node!(Int32, Add, Box::new(sum), Box::new(read))
             });
         let goal = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -2303,7 +2312,9 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(words[0].clone()),
-                    right: Box::new(Bitvector32Term::Add(
+                    right: Box::new(binary_node!(
+                        Int32,
+                        Add,
                         Box::new(words[base].clone()),
                         Box::new(Bitvector32Term::Constant(1)),
                     )),

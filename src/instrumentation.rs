@@ -654,6 +654,35 @@ pub(crate) fn fact_stability_sink() -> Option<&'static std::sync::Mutex<std::fs:
     .as_ref()
 }
 
+/// The file `CLICK_FORMAT_AUDIT` names, which the kernel's signedness audit
+/// (`kernel::machine_integer::format_audit`) appends to. The variable is read
+/// here, outside the kernel; the audit is uncharged and never decides.
+pub(crate) fn format_audit_sink() -> Option<&'static std::sync::Mutex<std::fs::File>> {
+    static SINK: std::sync::OnceLock<Option<std::sync::Mutex<std::fs::File>>> =
+        std::sync::OnceLock::new();
+    SINK.get_or_init(|| {
+        let path = std::env::var_os("CLICK_FORMAT_AUDIT")?;
+        std::fs::File::options()
+            .create(true)
+            .append(true)
+            .open(path)
+            .ok()
+            .map(std::sync::Mutex::new)
+    })
+    .as_ref()
+}
+
+/// The claim and tactic the running thread is checking, for a census line:
+/// the innermost active tactic's, or two empty strings outside any tactic.
+pub(crate) fn active_claim_and_tactic() -> (String, String) {
+    ACTIVE_TACTICS.with(|active| {
+        active.borrow().last().map_or_else(
+            || (String::new(), String::new()),
+            |tactic| (tactic.event.claim.clone(), tactic.event.tactic_name.clone()),
+        )
+    })
+}
+
 /// Opt-in debug-build cross-check: `CLICK_DEBUG_CHECK_LAZY_RESERVATIONS=1`
 /// collects every lazy reservation a kernel execution bound answered and
 /// checks the bound's answer against it, for corpus validation. The flag is

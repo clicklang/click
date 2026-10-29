@@ -6,6 +6,7 @@
 //! explicit, separate policy for languages that specify them.
 
 use super::{Bitvector32Term, CValue, MachineIntegerType};
+use crate::kernel::machine_integer::format_audit::{self, WordIdentity};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -526,13 +527,17 @@ impl Bitvector32Term {
     /// root: no scan, no clone. Nodes that read a 32-bit word (the 32-bit
     /// operators, comparisons and extensions, Integer observations, the
     /// e-graph and the difference graph) read their operands through it.
+    #[track_caller]
     pub(crate) fn word32(&self) -> &Self {
         match self {
             Self::MachineIntegerCast {
                 value,
                 source,
                 destination,
-            } if is_word_cast32(*source, *destination) => value,
+            } if is_word_cast32(*source, *destination) => {
+                record_word_cast_peel(*source, std::panic::Location::caller());
+                value
+            }
             term => term,
         }
     }
@@ -574,9 +579,16 @@ impl Bitvector32Term {
     /// A `uint32` constant as its word's `Constant` (rule K1); every other
     /// term unchanged. The raw 32-bit operator builders apply it to their
     /// operands, so an operator never holds a formatted constant.
+    #[track_caller]
     pub(crate) fn constant_word32(self) -> Self {
         match self {
-            Self::UInt32Constant(value) => Self::Constant(value),
+            Self::UInt32Constant(value) => {
+                format_audit::record(
+                    WordIdentity::UInt32ConstantPeeled,
+                    std::panic::Location::caller(),
+                );
+                Self::Constant(value)
+            }
             term => term,
         }
     }
@@ -595,15 +607,25 @@ impl Bitvector32Term {
     }
 
     /// [`Self::word32`] of an owned term.
+    #[track_caller]
     pub(crate) fn into_word32(self) -> Self {
         match self {
             Self::MachineIntegerCast {
                 value,
                 source,
                 destination,
-            } if is_word_cast32(source, destination) => *value,
+            } if is_word_cast32(source, destination) => {
+                record_word_cast_peel(source, std::panic::Location::caller());
+                *value
+            }
             // A `uint32` constant's word is the `Constant` of its bits (K1).
-            Self::UInt32Constant(value) => Self::Constant(value),
+            Self::UInt32Constant(value) => {
+                format_audit::record(
+                    WordIdentity::UInt32ConstantPeeled,
+                    std::panic::Location::caller(),
+                );
+                Self::Constant(value)
+            }
             term => term,
         }
     }
@@ -679,6 +701,19 @@ impl Bitvector32Term {
 pub(crate) fn is_word_cast32(source: MachineIntegerType, destination: MachineIntegerType) -> bool {
     is_sign_cast32(source, destination)
         || (source.format().bits() < 32 && destination.format().bits() == 32)
+}
+
+/// Records a peeled word cast for the signedness audit: σ, or a narrow
+/// widening when the source is narrower than 32 bits.
+fn record_word_cast_peel(source: MachineIntegerType, site: &'static std::panic::Location<'static>) {
+    format_audit::record(
+        if source.format().bits() < 32 {
+            WordIdentity::WideningPeeled
+        } else {
+            WordIdentity::SignCastPeeled
+        },
+        site,
+    );
 }
 
 /// Whether a conversion from `source` to `destination` is the 32-bit sign

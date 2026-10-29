@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{binary_term, unary_term};
 
 mod contract_claims;
 pub use contract_claims::*;
@@ -242,7 +243,7 @@ fn pointer_offset_byte_delta(
 /// Splits `term + c` into its base term and additive constant (0 when none).
 fn split_additive_constant(term: &Bitvector32Term) -> (Bitvector32Term, u32) {
     match term {
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) =
                 right.as_ref()
             {
@@ -590,8 +591,8 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             | Bitvector32Term::UInt32From64(_)
             | Bitvector32Term::UInt64FromInt32(_)
             | Bitvector32Term::UInt64FromInt64(_)
-            | Bitvector32Term::Binary { .. }
-            | Bitvector32Term::Unary { .. } => {}
+            | crate::kernel::binary_wide_term!(..)
+            | crate::kernel::unary_wide_term!(..) => {}
             Bitvector32Term::Variable(variable) => {
                 variables.insert(*variable);
             }
@@ -604,7 +605,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                 collect_shallow_term_variables(left, variables);
                 collect_shallow_term_variables(right, variables);
             }
-            Bitvector32Term::BitwiseNot(inner)
+            unary_term!(Int32, BitwiseNot, inner)
             | Bitvector32Term::Float32Negate(inner)
             | Bitvector32Term::Float64Negate(inner) => {
                 collect_shallow_term_variables(inner, variables);
@@ -2990,7 +2991,7 @@ fn match_quantified_int32_term(
             Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
         ) => left == right,
         (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => left == right,
-        (Bitvector32Term::BitwiseNot(pattern), Bitvector32Term::BitwiseNot(target)) => {
+        (unary_term!(Int32, BitwiseNot, pattern), unary_term!(Int32, BitwiseNot, target)) => {
             match_quantified_int32_term(pattern, target, binders, substitutions)
         }
         _ => pattern == target,

@@ -12,7 +12,18 @@ fn ordinary_expression_queries_ignore_unrelated_classes() {
         graph.add_int32_equality(&word(940_061), &word(940_062));
         let build = |x| {
             U::UInt64From32.build_raw(
-                B::BitwiseAnd.build_raw(B::Multiply.build_raw(x, word(940_063)), word(940_064)),
+                B::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::BitwiseAnd,
+                )
+                .build_raw(
+                    B::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::Multiply,
+                    )
+                    .build_raw(x, word(940_063)),
+                    word(940_064),
+                ),
             )
         };
         let a = build(word(940_061));
@@ -33,7 +44,11 @@ fn nested_ordinary_expression_registration_and_late_merges_scale_linearly() {
     for size in [16, 64, 256, 1024] {
         let build = |mut x| {
             for _ in 0..size {
-                x = B::BitwiseAnd.build_raw(x, word(940_073));
+                x = B::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::BitwiseAnd,
+                )
+                .build_raw(x, word(940_073));
             }
             x
         };

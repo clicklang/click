@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[cfg(test)]
@@ -98,14 +99,14 @@ use crate::kernel::scaled_extent_element_width;
 /// facts, no recursion budget.
 fn endpoint_base_and_shift(term: &Bitvector32Term) -> (&Bitvector32Term, i64) {
     match term {
-        Bitvector32Term::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+        binary_term!(Int32, Add, left, right) => match (left.as_ref(), right.as_ref()) {
             (base, Bitvector32Term::Constant(shift) | Bitvector32Term::UInt32Constant(shift)) => {
                 (base, i64::from(*shift as i32))
             }
             (Bitvector32Term::Constant(shift), base) => (base, i64::from(*shift as i32)),
             _ => (term, 0),
         },
-        Bitvector32Term::Subtract(left, right) => match right.as_ref() {
+        binary_term!(Int32, Subtract, left, right) => match right.as_ref() {
             Bitvector32Term::Constant(shift) | Bitvector32Term::UInt32Constant(shift) => {
                 (left.as_ref(), -i64::from(*shift as i32))
             }
@@ -136,7 +137,7 @@ fn element_count_endpoints(
 ) -> (&Bitvector32Term, &Bitvector32Term) {
     const ZERO: &Bitvector32Term = &Bitvector32Term::Constant(0);
     match element_count {
-        Bitvector32Term::Subtract(end, start) => (start.as_ref(), end.as_ref()),
+        binary_term!(Int32, Subtract, end, start) => (start.as_ref(), end.as_ref()),
         _ => (ZERO, element_count),
     }
 }
@@ -154,7 +155,7 @@ fn constant_element_count(element_count: &Bitvector32Term) -> Option<i64> {
     if let Some(value) = signed_bitvector_constant(element_count) {
         return Some(value);
     }
-    let Bitvector32Term::Subtract(end, start) = element_count else {
+    let binary_term!(Int32, Subtract, end, start) = element_count else {
         return None;
     };
     let (end_base, end_shift) = endpoint_base_and_shift(end);
@@ -169,7 +170,7 @@ fn constant_element_count(element_count: &Bitvector32Term) -> Option<i64> {
 fn structural_constant_byte_extent(bytes: &Bitvector32Term) -> Option<u32> {
     crate::instrumentation::record_deterministic_work(1);
     match bytes {
-        Bitvector32Term::Multiply(left, right) => match (left.as_ref(), right.as_ref()) {
+        binary_term!(Int32, Multiply, left, right) => match (left.as_ref(), right.as_ref()) {
             (count, Bitvector32Term::Constant(width) | Bitvector32Term::UInt32Constant(width))
             | (Bitvector32Term::Constant(width), count) => {
                 constant_element_count(count).map(|count| (count as u32).wrapping_mul(*width))
@@ -1069,8 +1070,8 @@ impl PureFactContext {
                 }
             }
             if let (
-                Bitvector32Term::Subtract(target_index, range_start),
-                Bitvector32Term::Subtract(range_end, count_start),
+                binary_term!(Int32, Subtract, target_index, range_start),
+                binary_term!(Int32, Subtract, range_end, count_start),
             ) = (&index, &element_count)
                 && range_start == count_start
                 && self.has_exact_order_path(range_start, target_index, false)
@@ -1309,7 +1310,7 @@ impl PureFactContext {
         // When the count still names both endpoints, ask about those: the
         // guards a contract states for `p[a..b]` are written over `a` and `b`,
         // and asking in the same spelling finds them.
-        if let Bitvector32Term::Subtract(end, start) = element_count
+        if let binary_term!(Int32, Subtract, end, start) = element_count
             && self.assumed_range_is_a_valid_byte_extent(start, end, element_width)
         {
             return true;
@@ -1399,7 +1400,7 @@ impl PureFactContext {
         // shape a range carved one element short leaves — `p[0..n - 1]`, whose
         // own extent guard is `0 <= n - 1` while what the contract states is
         // `1 <= n` — and without it such a range has no established count.
-        let Bitvector32Term::Subtract(base, decrement) = upper else {
+        let binary_term!(Int32, Subtract, base, decrement) = upper else {
             return false;
         };
         let (Some(lower), Some(decrement)) = (
@@ -2920,7 +2921,7 @@ impl PureFactContext {
         ) {
             return false;
         }
-        let Bitvector32Term::Add(term, one) = sum.as_ref() else {
+        let binary_term!(Int32, Add, term, one) = sum.as_ref() else {
             return false;
         };
         if !matches!(
@@ -3819,14 +3820,17 @@ impl PureFactContext {
         }
 
         match (left, right) {
-            (Bitvector32Term::Add(left_a, left_b), Bitvector32Term::Add(right_a, right_b))
-            | (
-                Bitvector32Term::Subtract(left_a, left_b),
-                Bitvector32Term::Subtract(right_a, right_b),
+            (
+                binary_term!(Int32, Add, left_a, left_b),
+                binary_term!(Int32, Add, right_a, right_b),
             )
             | (
-                Bitvector32Term::Multiply(left_a, left_b),
-                Bitvector32Term::Multiply(right_a, right_b),
+                binary_term!(Int32, Subtract, left_a, left_b),
+                binary_term!(Int32, Subtract, right_a, right_b),
+            )
+            | (
+                binary_term!(Int32, Multiply, left_a, left_b),
+                binary_term!(Int32, Multiply, right_a, right_b),
             ) => {
                 self.bitvector_terms_equal_for_fact_transport(left_a, right_a)
                     && self.bitvector_terms_equal_for_fact_transport(left_b, right_b)

@@ -1,4 +1,6 @@
 use super::*;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::planning::solve::plan_explicit_equality_rewrites_from;
@@ -941,11 +943,11 @@ pub(super) fn spell_signed_goal(
             return Some(surface.clone());
         }
         match term {
-            Bitvector32Term::Add(left, right) => Some(ContractExpression::Add(
+            binary_term!(Int32, Add, left, right) => Some(ContractExpression::Add(
                 Box::new(spell(left, operands)?),
                 Box::new(spell(right, operands)?),
             )),
-            Bitvector32Term::Subtract(left, right) => Some(ContractExpression::Subtract(
+            binary_term!(Int32, Subtract, left, right) => Some(ContractExpression::Subtract(
                 Box::new(spell(left, operands)?),
                 Box::new(spell(right, operands)?),
             )),
@@ -1603,7 +1605,7 @@ fn goal_exact_less_equal_parts(goal: &Proposition) -> Option<(&Bitvector32Term, 
 }
 
 fn increment_base(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
-    let Bitvector32Term::Add(left, right) = term else {
+    let binary_term!(Int32, Add, left, right) = term else {
         return None;
     };
     if right.as_ref() == &Bitvector32Term::Constant(1) {
@@ -2537,7 +2539,7 @@ pub(super) fn plan_explicit_one_plus_strictly_increases(
     else {
         return None;
     };
-    let Bitvector32Term::Add(one, added_value) = sum.as_ref() else {
+    let binary_term!(Int32, Add, one, added_value) = sum.as_ref() else {
         return None;
     };
     if one.as_ref() != &Bitvector32Term::Constant(1) || added_value.as_ref() != value.as_ref() {
@@ -2573,7 +2575,9 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
         return None;
     };
     let zero = Bitvector32Term::Constant(0);
-    let headroom = Bitvector32Term::Subtract(
+    let headroom = binary_node!(
+        Int32,
+        Subtract,
         Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
         Box::new(amount.as_ref().clone()),
     );
@@ -2716,7 +2720,7 @@ pub(super) fn plan_explicit_positive_predecessor_is_nonnegative(
     if goal_lower != &Bitvector32Term::Constant(0) {
         return None;
     }
-    let Bitvector32Term::Subtract(value, amount) = predecessor else {
+    let binary_term!(Int32, Subtract, value, amount) = predecessor else {
         return None;
     };
     if amount.as_ref() != &Bitvector32Term::Constant(1) {
@@ -2749,7 +2753,7 @@ pub(super) fn plan_explicit_predecessor_upper_bound(
     synthesize_missing_leg: bool,
 ) -> Option<Vec<ProofTactic>> {
     let (predecessor, goal_upper) = goal_exact_less_equal_parts(goal)?;
-    let Bitvector32Term::Subtract(value, amount) = predecessor else {
+    let binary_term!(Int32, Subtract, value, amount) = predecessor else {
         return None;
     };
     if amount.as_ref() != &Bitvector32Term::Constant(1) {
@@ -2832,7 +2836,7 @@ pub(super) fn plan_explicit_one_le_predecessor(
         if goal_lower != &Bitvector32Term::Constant(0) {
             return None;
         }
-        let Bitvector32Term::Subtract(value, amount) = predecessor else {
+        let binary_term!(Int32, Subtract, value, amount) = predecessor else {
             return None;
         };
         if amount.as_ref() != &Bitvector32Term::Constant(1) {
@@ -2841,7 +2845,7 @@ pub(super) fn plan_explicit_one_le_predecessor(
         value.as_ref()
     } else {
         let (predecessor, value) = goal_exact_less_than_parts(goal)?;
-        let Bitvector32Term::Subtract(predecessor_value, amount) = predecessor else {
+        let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
             return None;
         };
         if predecessor_value.as_ref() != value || amount.as_ref() != &Bitvector32Term::Constant(1) {
@@ -2867,13 +2871,13 @@ fn one_le_predecessor_value(goal: &Proposition) -> Option<Bitvector32Term> {
         if goal_lower != &Bitvector32Term::Constant(0) {
             return None;
         }
-        let Bitvector32Term::Subtract(value, amount) = predecessor else {
+        let binary_term!(Int32, Subtract, value, amount) = predecessor else {
             return None;
         };
         (amount.as_ref() == &Bitvector32Term::Constant(1)).then(|| value.as_ref().clone())
     } else {
         let (predecessor, value) = goal_exact_less_than_parts(goal)?;
-        let Bitvector32Term::Subtract(predecessor_value, amount) = predecessor else {
+        let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
             return None;
         };
         (predecessor_value.as_ref() == value && amount.as_ref() == &Bitvector32Term::Constant(1))
@@ -2908,7 +2912,7 @@ pub(super) fn plan_explicit_positive_predecessor_strictly_decreases(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (predecessor, value) = goal_exact_less_than_parts(goal)?;
-    let Bitvector32Term::Subtract(predecessor_value, amount) = predecessor else {
+    let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
         return None;
     };
     if predecessor_value.as_ref() != value || amount.as_ref() != &Bitvector32Term::Constant(1) {

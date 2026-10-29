@@ -1,6 +1,7 @@
 //! Predicate and resource unfold/fold/observation steps.
 
 use super::*;
+use crate::kernel::binary_term;
 use crate::kernel::{IntegerTerm, SharedIntegerTerm};
 use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 
@@ -3032,9 +3033,9 @@ fn observes_machine_arithmetic(reading: &Proposition) -> bool {
             side.as_ref(),
             IntegerTerm::Machine(machine) if matches!(
                 machine.value(),
-                Bitvector32Term::Add(..)
-                    | Bitvector32Term::Subtract(..)
-                    | Bitvector32Term::Multiply(..)
+                binary_term!(Int32, Add, ..)
+                    | binary_term!(Int32, Subtract, ..)
+                    | binary_term!(Int32, Multiply, ..)
                     | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Add, .. }
                     | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Subtract, .. }
                     | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Multiply, .. }

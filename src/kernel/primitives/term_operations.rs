@@ -1,5 +1,8 @@
 use super::*;
+use crate::kernel::machine_integer::format_audit as audit;
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
+use crate::kernel::{binary_node, unary_node};
+use crate::kernel::{binary_term, unary_term};
 
 // Operands here have already undergone the language's scalar promotions.
 // Keep both constant-folding entry points on the shared format semantics.
@@ -219,7 +222,7 @@ impl Bitvector32Term {
     fn unsigned32_upper_bound(&self) -> u32 {
         match self {
             Self::Constant(value) => *value,
-            Self::BitwiseAnd(left, right) => match (left.as_ref(), right.as_ref()) {
+            binary_term!(Int32, BitwiseAnd, left, right) => match (left.as_ref(), right.as_ref()) {
                 (Self::Constant(mask), _) | (_, Self::Constant(mask)) => *mask,
                 _ => u32::MAX,
             },
@@ -331,28 +334,34 @@ impl Bitvector32Term {
             | Self::UInt32From64(_)
             | Self::UInt64FromInt32(_)
             | Self::UInt64FromInt64(_)
-            | Self::Binary { .. }
-            | Self::Unary { .. }
+            | crate::kernel::binary_wide_term!(..)
+            | crate::kernel::unary_wide_term!(..)
             | Self::Float32Negate(_)
             | Self::Float32Binary { .. }
             | Self::Float64Negate(_)
             | Self::Float64Binary { .. } => None,
-            Self::Add(left, right) => Some(left.as_const()?.wrapping_add(right.as_const()?)),
-            Self::Subtract(left, right) => Some(left.as_const()?.wrapping_sub(right.as_const()?)),
-            Self::Multiply(left, right) => Some(left.as_const()?.wrapping_mul(right.as_const()?)),
-            Self::Divide(left, right) => {
+            binary_term!(Int32, Add, left, right) => {
+                Some(left.as_const()?.wrapping_add(right.as_const()?))
+            }
+            binary_term!(Int32, Subtract, left, right) => {
+                Some(left.as_const()?.wrapping_sub(right.as_const()?))
+            }
+            binary_term!(Int32, Multiply, left, right) => {
+                Some(left.as_const()?.wrapping_mul(right.as_const()?))
+            }
+            binary_term!(Int32, Divide, left, right) => {
                 checked_signed_divide_const(left.as_const()?, right.as_const()?)
             }
-            Self::UnsignedDivide(left, right) => {
+            binary_term!(UInt32, Divide, left, right) => {
                 checked_unsigned_divide_const(left.as_const()?, right.as_const()?)
             }
-            Self::Remainder(left, right) => {
+            binary_term!(Int32, Remainder, left, right) => {
                 checked_signed_remainder_const(left.as_const()?, right.as_const()?)
             }
-            Self::UnsignedRemainder(left, right) => {
+            binary_term!(UInt32, Remainder, left, right) => {
                 checked_unsigned_remainder_const(left.as_const()?, right.as_const()?)
             }
-            Self::ShiftLeft(left, right) => {
+            binary_term!(Int32, ShiftLeft, left, right) => {
                 // This untyped term denotes the shifted 32-bit pattern.
                 // Signed C overflow is a separate expression obligation.
                 Some(
@@ -360,16 +369,24 @@ impl Bitvector32Term {
                         .wrapping_shl(checked_shift_count_const(right.as_const()?)?),
                 )
             }
-            Self::ArithmeticShiftRight(left, right) => {
+            binary_term!(Int32, ShiftRight, left, right) => {
                 checked_arithmetic_shift_right_const(left.as_const()?, right.as_const()?)
             }
-            Self::LogicalShiftRight(left, right) => {
+            binary_term!(UInt32, ShiftRight, left, right) => {
                 checked_logical_shift_right_const(left.as_const()?, right.as_const()?)
             }
-            Self::BitwiseAnd(left, right) => Some(left.as_const()? & right.as_const()?),
-            Self::BitwiseOr(left, right) => Some(left.as_const()? | right.as_const()?),
-            Self::BitwiseXor(left, right) => Some(left.as_const()? ^ right.as_const()?),
-            Self::BitwiseNot(value) => Some(!value.as_const()?),
+            binary_term!(Int32, BitwiseAnd, left, right) => {
+                Some(left.as_const()? & right.as_const()?)
+            }
+            binary_term!(Int32, BitwiseOr, left, right) => {
+                Some(left.as_const()? | right.as_const()?)
+            }
+            binary_term!(Int32, BitwiseXor, left, right) => {
+                Some(left.as_const()? ^ right.as_const()?)
+            }
+            unary_term!(Int32, BitwiseNot, value) => Some(!value.as_const()?),
+            // A 32-bit sign-free operator is built at `int32` only.
+            Self::Binary { .. } => None,
             Self::If {
                 condition,
                 then_term,
@@ -385,7 +402,7 @@ impl Bitvector32Term {
 
     pub(in crate::kernel) fn subtract_one_base(&self) -> Option<Self> {
         match self {
-            Self::Subtract(left, right) if right.as_ref() == &Self::Constant(1) => {
+            binary_term!(Int32, Subtract, left, right) if right.as_ref() == &Self::Constant(1) => {
                 Some(left.as_ref().clone())
             }
             _ => None,
@@ -398,10 +415,10 @@ impl Bitvector32Term {
 
     pub(in crate::kernel) fn add_const_base(&self, value: u32) -> Option<Self> {
         match self {
-            Self::Add(left, right) if right.as_ref() == &Self::Constant(value) => {
+            binary_term!(Int32, Add, left, right) if right.as_ref() == &Self::Constant(value) => {
                 Some(left.as_ref().clone())
             }
-            Self::Add(left, right) if left.as_ref() == &Self::Constant(value) => {
+            binary_term!(Int32, Add, left, right) if left.as_ref() == &Self::Constant(value) => {
                 Some(right.as_ref().clone())
             }
             _ => None,
@@ -410,7 +427,7 @@ impl Bitvector32Term {
 
     pub(in crate::kernel) fn add_const_parts(&self) -> Option<(Self, u32)> {
         match self {
-            Self::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+            binary_term!(Int32, Add, left, right) => match (left.as_ref(), right.as_ref()) {
                 (base, Self::Constant(value)) => Some((base.clone(), *value)),
                 (Self::Constant(value), base) => Some((base.clone(), *value)),
                 _ => None,
@@ -421,7 +438,7 @@ impl Bitvector32Term {
 
     pub(in crate::kernel) fn subtract_const_parts(&self) -> Option<(Self, u32)> {
         match self {
-            Self::Subtract(left, right) => match right.as_ref() {
+            binary_term!(Int32, Subtract, left, right) => match right.as_ref() {
                 Self::Constant(value) => Some((left.as_ref().clone(), *value)),
                 _ => None,
             },
@@ -435,35 +452,43 @@ impl Bitvector32Term {
             (Self::Constant(left), Self::Constant(right)) => {
                 Self::Constant(left.wrapping_add(*right))
             }
-            (_, Self::Subtract(base, subtrahend)) if subtrahend.as_ref() == &left => {
+            (_, binary_term!(Int32, Subtract, base, subtrahend))
+                if subtrahend.as_ref() == &left =>
+            {
                 base.as_ref().clone()
             }
-            (Self::Subtract(base, subtrahend), _) if subtrahend.as_ref() == &right => {
+            (binary_term!(Int32, Subtract, base, subtrahend), _)
+                if subtrahend.as_ref() == &right =>
+            {
                 base.as_ref().clone()
             }
-            (Self::Subtract(zero, subtrahend), Self::Add(base, addend))
-                if zero.as_ref() == &Self::Constant(0) && subtrahend == base =>
-            {
+            (
+                binary_term!(Int32, Subtract, zero, subtrahend),
+                binary_term!(Int32, Add, base, addend),
+            ) if zero.as_ref() == &Self::Constant(0) && subtrahend == base => {
                 addend.as_ref().clone()
             }
-            (Self::Subtract(zero, subtrahend), Self::Add(addend, base))
-                if zero.as_ref() == &Self::Constant(0) && subtrahend == base =>
-            {
+            (
+                binary_term!(Int32, Subtract, zero, subtrahend),
+                binary_term!(Int32, Add, addend, base),
+            ) if zero.as_ref() == &Self::Constant(0) && subtrahend == base => {
                 addend.as_ref().clone()
             }
-            (Self::Add(base, addend), Self::Subtract(zero, subtrahend))
-                if zero.as_ref() == &Self::Constant(0) && base == subtrahend =>
-            {
+            (
+                binary_term!(Int32, Add, base, addend),
+                binary_term!(Int32, Subtract, zero, subtrahend),
+            ) if zero.as_ref() == &Self::Constant(0) && base == subtrahend => {
                 addend.as_ref().clone()
             }
-            (Self::Add(addend, base), Self::Subtract(zero, subtrahend))
-                if zero.as_ref() == &Self::Constant(0) && base == subtrahend =>
-            {
+            (
+                binary_term!(Int32, Add, addend, base),
+                binary_term!(Int32, Subtract, zero, subtrahend),
+            ) if zero.as_ref() == &Self::Constant(0) && base == subtrahend => {
                 addend.as_ref().clone()
             }
             (_, Self::Constant(0)) => left,
             (Self::Constant(0), _) => right,
-            _ => Self::Add(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, Add, Box::new(left), Box::new(right)),
         }
     }
 
@@ -475,39 +500,51 @@ impl Bitvector32Term {
             }
             (_, Self::Constant(0)) => left,
             _ if left == right => Self::Constant(0),
-            (Self::Add(left_base, left_addend), Self::Add(right_base, right_addend))
-                if left_base == right_base =>
-            {
+            (
+                binary_term!(Int32, Add, left_base, left_addend),
+                binary_term!(Int32, Add, right_base, right_addend),
+            ) if left_base == right_base => {
                 Self::subtract(left_addend.as_ref().clone(), right_addend.as_ref().clone())
             }
-            (Self::Add(left_base, left_addend), Self::Add(right_base, right_addend))
-                if left_base == right_addend =>
-            {
+            (
+                binary_term!(Int32, Add, left_base, left_addend),
+                binary_term!(Int32, Add, right_base, right_addend),
+            ) if left_base == right_addend => {
                 Self::subtract(left_addend.as_ref().clone(), right_base.as_ref().clone())
             }
-            (Self::Add(left_base, left_addend), Self::Add(right_base, right_addend))
-                if left_addend == right_base =>
-            {
+            (
+                binary_term!(Int32, Add, left_base, left_addend),
+                binary_term!(Int32, Add, right_base, right_addend),
+            ) if left_addend == right_base => {
                 Self::subtract(left_base.as_ref().clone(), right_addend.as_ref().clone())
             }
-            (Self::Add(left_base, left_addend), Self::Add(right_base, right_addend))
-                if left_addend == right_addend =>
-            {
+            (
+                binary_term!(Int32, Add, left_base, left_addend),
+                binary_term!(Int32, Add, right_base, right_addend),
+            ) if left_addend == right_addend => {
                 Self::subtract(left_base.as_ref().clone(), right_base.as_ref().clone())
             }
-            (Self::Add(left_base, left_addend), _) if left_base.as_ref() == &right => {
+            (binary_term!(Int32, Add, left_base, left_addend), _)
+                if left_base.as_ref() == &right =>
+            {
                 left_addend.as_ref().clone()
             }
-            (Self::Add(left_base, left_addend), _) if left_addend.as_ref() == &right => {
+            (binary_term!(Int32, Add, left_base, left_addend), _)
+                if left_addend.as_ref() == &right =>
+            {
                 left_base.as_ref().clone()
             }
-            (_, Self::Add(right_base, right_addend)) if &left == right_base.as_ref() => {
+            (_, binary_term!(Int32, Add, right_base, right_addend))
+                if &left == right_base.as_ref() =>
+            {
                 Self::subtract(Self::Constant(0), right_addend.as_ref().clone())
             }
-            (_, Self::Add(right_base, right_addend)) if &left == right_addend.as_ref() => {
+            (_, binary_term!(Int32, Add, right_base, right_addend))
+                if &left == right_addend.as_ref() =>
+            {
                 Self::subtract(Self::Constant(0), right_base.as_ref().clone())
             }
-            _ => Self::Subtract(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, Subtract, Box::new(left), Box::new(right)),
         }
     }
 
@@ -520,7 +557,7 @@ impl Bitvector32Term {
             (_, Self::Constant(1)) => left,
             (Self::Constant(1), _) => right,
             (_, Self::Constant(0)) | (Self::Constant(0), _) => Self::Constant(0),
-            _ => Self::Multiply(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, Multiply, Box::new(left), Box::new(right)),
         }
     }
 
@@ -530,14 +567,16 @@ impl Bitvector32Term {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_signed_divide_const(*left, *right) {
                     Some(value) => Self::Constant(value),
-                    None => Self::Divide(
+                    None => binary_node!(
+                        Int32,
+                        Divide,
                         Box::new(Self::Constant(*left)),
                         Box::new(Self::Constant(*right)),
                     ),
                 }
             }
             (_, Self::Constant(1)) => left,
-            _ => Self::Divide(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, Divide, Box::new(left), Box::new(right)),
         }
     }
 
@@ -547,14 +586,16 @@ impl Bitvector32Term {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_unsigned_divide_const(*left, *right) {
                     Some(value) => Self::Constant(value),
-                    None => Self::UnsignedDivide(
+                    None => binary_node!(
+                        UInt32,
+                        Divide,
                         Box::new(Self::Constant(*left)),
                         Box::new(Self::Constant(*right)),
                     ),
                 }
             }
             (_, Self::Constant(1)) => left,
-            _ => Self::UnsignedDivide(Box::new(left), Box::new(right)),
+            _ => binary_node!(UInt32, Divide, Box::new(left), Box::new(right)),
         }
     }
 
@@ -564,13 +605,15 @@ impl Bitvector32Term {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_signed_remainder_const(*left, *right) {
                     Some(value) => Self::Constant(value),
-                    None => Self::Remainder(
+                    None => binary_node!(
+                        Int32,
+                        Remainder,
                         Box::new(Self::Constant(*left)),
                         Box::new(Self::Constant(*right)),
                     ),
                 }
             }
-            _ => Self::Remainder(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, Remainder, Box::new(left), Box::new(right)),
         }
     }
 
@@ -580,13 +623,15 @@ impl Bitvector32Term {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_unsigned_remainder_const(*left, *right) {
                     Some(value) => Self::Constant(value),
-                    None => Self::UnsignedRemainder(
+                    None => binary_node!(
+                        UInt32,
+                        Remainder,
                         Box::new(Self::Constant(*left)),
                         Box::new(Self::Constant(*right)),
                     ),
                 }
             }
-            _ => Self::UnsignedRemainder(Box::new(left), Box::new(right)),
+            _ => binary_node!(UInt32, Remainder, Box::new(left), Box::new(right)),
         }
     }
 
@@ -596,13 +641,15 @@ impl Bitvector32Term {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_signed_shift_left_const(*left, *right) {
                     Some(value) => Self::Constant(value),
-                    None => Self::ShiftLeft(
+                    None => binary_node!(
+                        Int32,
+                        ShiftLeft,
                         Box::new(Self::Constant(*left)),
                         Box::new(Self::Constant(*right)),
                     ),
                 }
             }
-            _ => Self::ShiftLeft(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, ShiftLeft, Box::new(left), Box::new(right)),
         }
     }
 
@@ -612,14 +659,16 @@ impl Bitvector32Term {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_shift_count_const(*right) {
                     Some(count) => Self::Constant(left.wrapping_shl(count)),
-                    None => Self::ShiftLeft(
+                    None => binary_node!(
+                        Int32,
+                        ShiftLeft,
                         Box::new(Self::Constant(*left)),
                         Box::new(Self::Constant(*right)),
                     ),
                 }
             }
             (_, Self::Constant(0)) => left,
-            _ => Self::ShiftLeft(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, ShiftLeft, Box::new(left), Box::new(right)),
         }
     }
 
@@ -629,14 +678,16 @@ impl Bitvector32Term {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_arithmetic_shift_right_const(*left, *right) {
                     Some(value) => Self::Constant(value),
-                    None => Self::ArithmeticShiftRight(
+                    None => binary_node!(
+                        Int32,
+                        ShiftRight,
                         Box::new(Self::Constant(*left)),
                         Box::new(Self::Constant(*right)),
                     ),
                 }
             }
             (_, Self::Constant(0)) => left,
-            _ => Self::ArithmeticShiftRight(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, ShiftRight, Box::new(left), Box::new(right)),
         }
     }
 
@@ -646,14 +697,16 @@ impl Bitvector32Term {
             (Self::Constant(left), Self::Constant(right)) => {
                 match checked_logical_shift_right_const(*left, *right) {
                     Some(value) => Self::Constant(value),
-                    None => Self::LogicalShiftRight(
+                    None => binary_node!(
+                        UInt32,
+                        ShiftRight,
                         Box::new(Self::Constant(*left)),
                         Box::new(Self::Constant(*right)),
                     ),
                 }
             }
             (_, Self::Constant(0)) => left,
-            _ => Self::LogicalShiftRight(Box::new(left), Box::new(right)),
+            _ => binary_node!(UInt32, ShiftRight, Box::new(left), Box::new(right)),
         }
     }
 
@@ -665,7 +718,7 @@ impl Bitvector32Term {
             (Self::Constant(u32::MAX), _) => right,
             (_, Self::Constant(0)) | (Self::Constant(0), _) => Self::Constant(0),
             _ if left == right => left,
-            _ => Self::BitwiseAnd(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, BitwiseAnd, Box::new(left), Box::new(right)),
         }
     }
 
@@ -679,7 +732,7 @@ impl Bitvector32Term {
                 Self::Constant(u32::MAX)
             }
             _ if left == right => left,
-            _ => Self::BitwiseOr(Box::new(left), Box::new(right)),
+            _ => binary_node!(Int32, BitwiseOr, Box::new(left), Box::new(right)),
         }
     }
 
@@ -690,7 +743,7 @@ impl Bitvector32Term {
                 Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
                     *constant ^= value
                 }
-                Bitvector32Term::BitwiseXor(left, right) => {
+                binary_term!(Int32, BitwiseXor, left, right) => {
                     flatten(*left, constant, terms);
                     flatten(*right, constant, terms);
                 }
@@ -723,15 +776,15 @@ impl Bitvector32Term {
 
         normalized
             .into_iter()
-            .reduce(|left, right| Self::BitwiseXor(Box::new(left), Box::new(right)))
+            .reduce(|left, right| binary_node!(Int32, BitwiseXor, Box::new(left), Box::new(right)))
             .unwrap_or(Self::Constant(0))
     }
 
     pub(in crate::kernel) fn bitwise_not(value: Self) -> Self {
         match value.into_word32() {
             Self::Constant(value) => Self::Constant(!value),
-            Self::BitwiseNot(inner) => *inner,
-            value => Self::BitwiseNot(Box::new(value)),
+            unary_term!(Int32, BitwiseNot, inner) => *inner,
+            value => unary_node!(Int32, BitwiseNot, Box::new(value)),
         }
     }
 
@@ -1648,10 +1701,12 @@ impl Bitvector32Term {
         }
     }
 
-    /// `left op right` at a 64-bit `format`, through the operator's smart
-    /// constructor. Signed division, remainder and right shift are signed at
-    /// `int64` and unsigned at `uint64`. No other format has
-    /// [`Self::Binary`] nodes yet.
+    /// `left op right` at a 32- or 64-bit `format`, through the operator's
+    /// smart constructor. Division, remainder and right shift are signed at
+    /// a signed format and unsigned at an unsigned one; the other 32-bit
+    /// operators are word operators, built at `int32` whichever 32-bit
+    /// format is asked. No other format has [`Self::Binary`] nodes.
+    #[track_caller]
     pub(crate) fn machine_binary(
         format: MachineIntegerType,
         op: MachineBinaryOp,
@@ -1660,7 +1715,28 @@ impl Bitvector32Term {
     ) -> Self {
         use MachineBinaryOp as Op;
         use MachineIntegerType as Ty;
+        if format == Ty::UInt32 && !matches!(op, Op::Divide | Op::Remainder | Op::ShiftRight) {
+            audit::record(
+                audit::WordIdentity::UInt32OperatorAtInt32,
+                std::panic::Location::caller(),
+            );
+        }
         match (format, op) {
+            // A 32-bit operator reads words (rule K1): only division,
+            // remainder and the right shift depend on the format.
+            (Ty::Int32 | Ty::UInt32, Op::Add) => Self::add(left, right),
+            (Ty::Int32 | Ty::UInt32, Op::Subtract) => Self::subtract(left, right),
+            (Ty::Int32 | Ty::UInt32, Op::Multiply) => Self::multiply(left, right),
+            (Ty::Int32, Op::Divide) => Self::divide(left, right),
+            (Ty::UInt32, Op::Divide) => Self::unsigned_divide(left, right),
+            (Ty::Int32, Op::Remainder) => Self::remainder(left, right),
+            (Ty::UInt32, Op::Remainder) => Self::unsigned_remainder(left, right),
+            (Ty::Int32 | Ty::UInt32, Op::ShiftLeft) => Self::shift_left(left, right),
+            (Ty::Int32, Op::ShiftRight) => Self::arithmetic_shift_right(left, right),
+            (Ty::UInt32, Op::ShiftRight) => Self::logical_shift_right(left, right),
+            (Ty::Int32 | Ty::UInt32, Op::BitwiseAnd) => Self::bitwise_and(left, right),
+            (Ty::Int32 | Ty::UInt32, Op::BitwiseOr) => Self::bitwise_or(left, right),
+            (Ty::Int32 | Ty::UInt32, Op::BitwiseXor) => Self::bitwise_xor(left, right),
             (Ty::Int64, Op::Add) => Self::int64_add(left, right),
             (Ty::Int64, Op::Subtract) => Self::int64_subtract(left, right),
             (Ty::Int64, Op::Multiply) => Self::int64_multiply(left, right),
@@ -1685,14 +1761,25 @@ impl Bitvector32Term {
         }
     }
 
-    /// `op operand` at a 64-bit `format`, through the operator's smart
-    /// constructor.
+    /// `op operand` at a 32- or 64-bit `format`, through the operator's
+    /// smart constructor.
+    #[track_caller]
     pub(crate) fn machine_unary(
         format: MachineIntegerType,
         op: MachineUnaryOp,
         operand: Self,
     ) -> Self {
+        if format == MachineIntegerType::UInt32 {
+            audit::record(
+                audit::WordIdentity::UInt32OperatorAtInt32,
+                std::panic::Location::caller(),
+            );
+        }
         match (format, op) {
+            (
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                MachineUnaryOp::BitwiseNot,
+            ) => Self::bitwise_not(operand),
             (MachineIntegerType::Int64, MachineUnaryOp::BitwiseNot) => {
                 Self::int64_bitwise_not(operand)
             }
@@ -2573,7 +2660,7 @@ impl ConditionTerm {
                 {
                     Some(Bitvector32Term::UInt64Constant(u64::from(*value)))
                 }
-                Bitvector32Term::Add(left, right) if right.as_const().is_some() => {
+                binary_term!(Int32, Add, left, right) if right.as_const().is_some() => {
                     let Bitvector32Term::UInt32From64(value) = left.as_ref() else {
                         return None;
                     };
@@ -3417,7 +3504,12 @@ impl ConditionTerm {
     /// The equality of two `uint32` words: [`Self::equal`] filed at
     /// `uint32`, which is the same fact as at `int32` (rule K6;
     /// [`ConditionTerm::fact_format`]) and prints its operands as `uint32`.
+    #[track_caller]
     pub(crate) fn uint32_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
+        audit::record(
+            audit::WordIdentity::UInt32EqualityAtInt32,
+            std::panic::Location::caller(),
+        );
         match Self::equal(left, right) {
             Self::Compare {
                 format: _,

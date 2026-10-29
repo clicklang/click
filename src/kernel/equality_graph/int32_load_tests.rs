@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_node;
 fn var(id: u64) -> Bitvector32Term {
     Bitvector32Term::Variable(Variable(id))
 }
@@ -25,7 +26,7 @@ fn int32_load_congruence_handles_early_and_late_offsets_and_scalar_parents() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let (left, right) = (load(&memory, &address(1), 4), load(&memory, &address(2), 4));
-    let add = |v| Bitvector32Term::Add(Box::new(v), Box::new(var(3)));
+    let add = |v| binary_node!(Int32, Add, Box::new(v), Box::new(var(3)));
     for early in [false, true] {
         let mut graph = EqualityGraph::default();
         if early {

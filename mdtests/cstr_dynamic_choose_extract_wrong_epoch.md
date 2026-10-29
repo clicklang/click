@@ -32,18 +32,22 @@ uint64 read_terminator(uint8 bytes[]) {
                     forall (k: uint64) { to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k]) })
             }
             witness { len: found_len };
-            both {
+            both { solve(); } and {
                 both {
                     both {
                         both {
-                            solve();
+                            both {
+                                solve();
+                            } and {
+                                transport(
+                                    at(function.entry, viewable(bytes[0..found_len + 1u64])),
+                                    viewable(bytes[0..found_len + 1u64])
+                                ) using {
+                                    at(region(1).entry, viewable(bytes[0..found_len + 1u64]));
+                                };
+                            }
                         } and {
-                            transport(
-                                at(function.entry, viewable(bytes[0..found_len + 1u64])),
-                                viewable(bytes[0..found_len + 1u64])
-                            ) using {
-                                at(region(1).entry, viewable(bytes[0..found_len + 1u64]));
-                            };
+                            solve();
                         }
                     } and {
                         solve();
@@ -51,8 +55,6 @@ uint64 read_terminator(uint8 bytes[]) {
                 } and {
                     solve();
                 }
-            } and {
-                solve();
             }
         }
     }

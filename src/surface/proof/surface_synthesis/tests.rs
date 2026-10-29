@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -554,8 +555,12 @@ fn external_byte_range_requirement(binder: Variable, length: &Bitvector32Term) -
                         }),
                     ),
                 },
-                bytes: Bitvector32Term::Subtract(
-                    Box::new(Bitvector32Term::Add(
+                bytes: binary_node!(
+                    Int32,
+                    Subtract,
+                    Box::new(binary_node!(
+                        Int32,
+                        Add,
                         Box::new(index.clone()),
                         Box::new(Bitvector32Term::Constant(1)),
                     )),
@@ -617,8 +622,12 @@ fn external_symbolic_element_requirement_term(
                 }),
             ),
         },
-        bytes: Bitvector32Term::Subtract(
-            Box::new(Bitvector32Term::Add(
+        bytes: binary_node!(
+            Int32,
+            Subtract,
+            Box::new(binary_node!(
+                Int32,
+                Add,
                 Box::new(index.clone()),
                 Box::new(Bitvector32Term::Constant(1)),
             )),
@@ -899,8 +908,12 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
                 }),
             ),
         },
-        bytes: Bitvector32Term::Subtract(
-            Box::new(Bitvector32Term::Add(
+        bytes: binary_node!(
+            Int32,
+            Subtract,
+            Box::new(binary_node!(
+                Int32,
+                Add,
                 Box::new(Bitvector32Term::Variable(Variable(100_001))),
                 Box::new(Bitvector32Term::Constant(1)),
             )),
@@ -1069,8 +1082,12 @@ fn non_external_named_range_still_uses_general_synthesis() {
                 byte_width: 1,
             },
         },
-        bytes: Bitvector32Term::Subtract(
-            Box::new(Bitvector32Term::Add(
+        bytes: binary_node!(
+            Int32,
+            Subtract,
+            Box::new(binary_node!(
+                Int32,
+                Add,
                 Box::new(Bitvector32Term::Variable(Variable(100_001))),
                 Box::new(Bitvector32Term::Constant(1)),
             )),
@@ -1210,8 +1227,15 @@ fn external_element_range_requirement(
                 }),
             ),
         },
-        bytes: Bitvector32Term::Multiply(
-            Box::new(Bitvector32Term::Subtract(Box::new(end), Box::new(start))),
+        bytes: binary_node!(
+            Int32,
+            Multiply,
+            Box::new(binary_node!(
+                Int32,
+                Subtract,
+                Box::new(end),
+                Box::new(start)
+            )),
             Box::new(Bitvector32Term::Constant(width)),
         ),
         wide: false,
@@ -2086,7 +2110,9 @@ fn owned_string_actual_len_load_equation_round_trips() {
 #[test]
 fn strlen_existential_guard_round_trips_without_duplicate_guard() {
     let variable = Variable(1);
-    let increment = Bitvector32Term::Add(
+    let increment = binary_node!(
+        Int32,
+        Add,
         Box::new(Bitvector32Term::Variable(variable)),
         Box::new(Bitvector32Term::Constant(1)),
     );
@@ -2197,7 +2223,9 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(Bitvector32Term::Constant(0)),
-                right: Box::new(Bitvector32Term::Add(
+                right: Box::new(binary_node!(
+                    Int32,
+                    Add,
                     Box::new(Bitvector32Term::Variable(variable)),
                     Box::new(Bitvector32Term::Constant(1)),
                 )),
@@ -2439,11 +2467,13 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
         .with_local("x", CValue::Int32(x.clone()))
         .with_local("divisor", CValue::Int32(divisor.clone()))
         .with_local("result", CValue::Int32(result.clone()));
-    let quotient = Bitvector32Term::UnsignedDivide(
+    let quotient = binary_node!(
+        UInt32,
+        Divide,
         Box::new(Bitvector32Term::Constant(u32::MAX)),
         Box::new(divisor.clone()),
     );
-    let remainder = Bitvector32Term::UnsignedRemainder(Box::new(x.clone()), Box::new(divisor));
+    let remainder = binary_node!(UInt32, Remainder, Box::new(x.clone()), Box::new(divisor));
     for condition in [
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,

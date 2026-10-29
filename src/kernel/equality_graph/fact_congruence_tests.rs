@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::VerificationSession;
+use crate::kernel::binary_node;
 
 fn var(id: u64) -> Bitvector32Term {
     Bitvector32Term::Variable(Variable(id))
@@ -437,7 +438,9 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
     };
     let first = prefix(remaining);
     let count = prefix(after.clone());
-    let sum = Bitvector32Term::Add(
+    let sum = binary_node!(
+        Int32,
+        Add,
         Box::new(first.clone()),
         Box::new(Bitvector32Term::Constant(5552)),
     );

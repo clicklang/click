@@ -12,6 +12,8 @@ use super::super::{
     ConditionTerm, Pointer, PointerBlock, PointerOffsetTerm, Proposition, SignedDefinedWidth,
 };
 use crate::kernel::MachineIntegerType;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use std::collections::hash_map::DefaultHasher;
@@ -101,9 +103,9 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
                 left,
                 right,
             }
-            | Bitvector32Term::BitwiseXor(left, right)
-            | Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
+            | binary_term!(Int32, BitwiseXor, left, right)
+            | binary_term!(Int32, Add, left, right)
+            | binary_term!(Int32, Subtract, left, right)
             | Bitvector32Term::Float32Binary { left, right, .. }
             | Bitvector32Term::Float64Binary { left, right, .. }
             | Bitvector32Term::Binary {
@@ -119,8 +121,8 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
                 left,
                 right,
             }
-            | Bitvector32Term::BitwiseAnd(left, right)
-            | Bitvector32Term::BitwiseOr(left, right) => {
+            | binary_term!(Int32, BitwiseAnd, left, right)
+            | binary_term!(Int32, BitwiseOr, left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
@@ -388,12 +390,22 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
                 };
                 let compared = matches!(
                     operator,
-                    Op::Add
-                        | Op::Subtract
-                        | Op::BitwiseAnd
-                        | Op::BitwiseOr
-                        | Op::BitwiseXor
-                        | Op::Machine(MachineIntegerType::Int64, MachineBinaryOp::Add)
+                    Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::Add
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::Subtract
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::BitwiseAnd
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::BitwiseOr
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::BitwiseXor
+                    ) | Op::Machine(MachineIntegerType::Int64, MachineBinaryOp::Add)
                         | Op::Machine(
                             MachineIntegerType::UInt64,
                             MachineBinaryOp::Add
@@ -1361,9 +1373,9 @@ fn signed_defined_operation<'r>(
     )| {
         let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
         if subtract {
-            Bitvector32Term::Subtract(left, right)
+            binary_node!(Int32, Subtract, left, right)
         } else {
-            Bitvector32Term::Add(left, right)
+            binary_node!(Int32, Add, left, right)
         }
     };
     let mut outermost = operations
@@ -1941,7 +1953,7 @@ fn pointer_translation(
                     constant = next;
                     continue;
                 }
-                OffsetPart::Scaled(Bitvector32Term::Add(left, right), width)
+                OffsetPart::Scaled(binary_term!(Int32, Add, left, right), width)
                     if sum_is_defined(left, right) =>
                 {
                     pending.push(OffsetPart::Scaled(left, width));
@@ -2130,7 +2142,7 @@ fn drop_aligned_scaled_addends(
     }
     fn constant_factor(term: &Bitvector32Term) -> Option<i64> {
         match term {
-            Bitvector32Term::Multiply(left, right) => left
+            binary_term!(Int32, Multiply, left, right) => left
                 .as_const()
                 .map(|constant| i64::from(constant as i32))
                 .or_else(|| right.as_const().map(|constant| i64::from(constant as i32))),
@@ -2565,8 +2577,8 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
                 Bitvector32Term::PointerAddress(pointer, _) => {
                     pointer_identity_hash(pointer)?.hash(&mut hasher)
                 }
-                Bitvector32Term::Add(left, right)
-                | Bitvector32Term::Subtract(left, right)
+                binary_term!(Int32, Add, left, right)
+                | binary_term!(Int32, Subtract, left, right)
                 | Bitvector32Term::Binary {
                     format: MachineIntegerType::UInt64,
                     op:
@@ -2577,8 +2589,8 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
                     left,
                     right,
                 }
-                | Bitvector32Term::BitwiseAnd(left, right)
-                | Bitvector32Term::BitwiseOr(left, right) => {
+                | binary_term!(Int32, BitwiseAnd, left, right)
+                | binary_term!(Int32, BitwiseOr, left, right) => {
                     hashes
                         .get(&(left.as_ref() as *const _ as usize))?
                         .hash(&mut hasher);
@@ -2592,8 +2604,8 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
         } else {
             pending.push((term, true));
             match term {
-                Bitvector32Term::Add(left, right)
-                | Bitvector32Term::Subtract(left, right)
+                binary_term!(Int32, Add, left, right)
+                | binary_term!(Int32, Subtract, left, right)
                 | Bitvector32Term::Binary {
                     format: MachineIntegerType::UInt64,
                     op:
@@ -2604,8 +2616,8 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
                     left,
                     right,
                 }
-                | Bitvector32Term::BitwiseAnd(left, right)
-                | Bitvector32Term::BitwiseOr(left, right) => {
+                | binary_term!(Int32, BitwiseAnd, left, right)
+                | binary_term!(Int32, BitwiseOr, left, right) => {
                     pending.push((right, false));
                     pending.push((left, false));
                 }
@@ -3707,7 +3719,7 @@ mod tests {
     fn int32_defined_accepts_an_operands_own_definedness_only_from_a_cited_premise() {
         let (a, b) = (int64_var(1), int64_var(2));
         let c = |value: i32| Bitvector32Term::Constant(value as u32);
-        let sum = Bitvector32Term::Add(Box::new(a.clone()), Box::new(b.clone()));
+        let sum = binary_node!(Int32, Add, Box::new(a.clone()), Box::new(b.clone()));
         // `defined((a + b) - 1)` lowers with the inner sum's own definedness.
         let inner = int32_defined_goal(a.clone(), b.clone(), false);
         let goal = Proposition::And(
@@ -3851,7 +3863,9 @@ mod tests {
             add(p, PointerOffsetTerm::Constant(4)),
             add(
                 arr,
-                scaled(Bitvector32Term::Add(
+                scaled(binary_node!(
+                    Int32,
+                    Add,
                     Box::new(i),
                     Box::new(Bitvector32Term::Constant(1)),
                 )),
@@ -4909,7 +4923,12 @@ mod tests {
     fn float_payload_is_bounded_before_structural_identity() {
         let mut value = Bitvector32Term::Variable(crate::kernel::Variable(90));
         for _ in 0..=MAX_TERM_PAYLOAD {
-            value = Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
+            value = binary_node!(
+                Int32,
+                Add,
+                Box::new(value),
+                Box::new(Bitvector32Term::Constant(1))
+            );
         }
         let finite = Proposition::ConditionIs(
             ConditionTerm::float32_classification(value.clone(), CFloatClassification::Finite),

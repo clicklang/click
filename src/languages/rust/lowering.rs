@@ -2071,6 +2071,14 @@ impl Context<'_> {
                 // checks signed/nonnegative and full-width upper bounds before
                 // forming its word-sized shift term. Narrowing here would lose
                 // the exact relation to Rust's already checked count.
+                if matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16) {
+                    // Rust narrow arithmetic is a 32-bit operation and a
+                    // cast back (`design/machine-integers.md`, Stage 4).
+                    crate::kernel::machine_integer::format_audit::record(
+                        crate::kernel::machine_integer::format_audit::WordIdentity::PromotedNarrowArithmetic,
+                        std::panic::Location::caller(),
+                    );
+                }
                 if matches!(left_type, Type::U8 | Type::U16) {
                     // Rust narrow unsigned operations use unsigned words;
                     // the checked result is coerced to its original width.

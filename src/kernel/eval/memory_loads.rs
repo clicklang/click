@@ -4452,6 +4452,10 @@ pub(crate) fn load_variable_for_term(
     // One word, one name: an unsigned 32-bit read is named, and defined, by
     // its word's `Int32` read (rule K5; [`mint_load_variable_identity`]).
     if *kind == LoadKind::UInt32 {
+        crate::kernel::machine_integer::format_audit::record(
+            crate::kernel::machine_integer::format_audit::WordIdentity::UInt32ReadNamedByInt32,
+            std::panic::Location::caller(),
+        );
         let Bitvector32Term::MemoryLoad(memory, pointer, _) = bits else {
             unreachable!("matched a memory load above");
         };
@@ -5074,7 +5078,13 @@ mod tests {
         assert!(!facts.has_path_conditions());
         let goal = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         assert_eq!(wrap_path_context(goal.clone(), &facts, &[]), goal);
-        assert_eq!(guard_quantified_witness(goal.clone(), &facts), goal);
+        let path = crate::kernel::spec::SpecPropositionPath {
+            proposition: goal.clone(),
+            facts: facts.clone(),
+            obligations: Vec::new(),
+            introductions: Vec::new(),
+        };
+        assert_eq!(crate::kernel::spec::existential_body_branch(&path), goal);
         let ordinary: ExecutionFacts =
             vec![ExecutionPureFact::new(fact.proposition().clone())].into();
         assert!(ordinary.has_path_conditions());

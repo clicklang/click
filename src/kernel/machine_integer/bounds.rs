@@ -18,6 +18,8 @@
 //! the one signed overflow, `MIN / -1`.
 
 use super::representation::{self, Division};
+#[cfg(test)]
+use crate::kernel::binary_node;
 use crate::kernel::{
     Bitvector32Term, ConditionTerm, IntegerTerm, Proposition, SharedMachineIntegerTerm,
 };
@@ -157,7 +159,9 @@ mod tests {
             let remainder = machine(
                 ty,
                 match ty {
-                    MachineIntegerType::Int32 => Bitvector32Term::Remainder(
+                    MachineIntegerType::Int32 => binary_node!(
+                        Int32,
+                        Remainder,
                         Box::new(word.clone()),
                         Box::new(divisor.clone()),
                     ),
@@ -182,7 +186,9 @@ mod tests {
             let shifted = machine(
                 ty,
                 match ty {
-                    MachineIntegerType::Int32 => Bitvector32Term::ArithmeticShiftRight(
+                    MachineIntegerType::Int32 => binary_node!(
+                        Int32,
+                        ShiftRight,
                         Box::new(word.clone()),
                         Box::new(Bitvector32Term::Constant(3)),
                     ),
@@ -211,7 +217,9 @@ mod tests {
         divisor: Bitvector32Term,
     ) -> Bitvector32Term {
         match ty {
-            MachineIntegerType::Int32 => Bitvector32Term::Divide(Box::new(word), Box::new(divisor)),
+            MachineIntegerType::Int32 => {
+                binary_node!(Int32, Divide, Box::new(word), Box::new(divisor))
+            }
             _ => Bitvector32Term::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Divide,
@@ -231,8 +239,8 @@ mod tests {
             Bitvector32Term::Constant(0),
         ] {
             for word in [
-                Bitvector32Term::Divide(x.clone(), Box::new(divisor.clone())),
-                Bitvector32Term::Remainder(x.clone(), Box::new(divisor.clone())),
+                binary_node!(Int32, Divide, x.clone(), Box::new(divisor.clone())),
+                binary_node!(Int32, Remainder, x.clone(), Box::new(divisor.clone())),
             ] {
                 let value = machine(MachineIntegerType::Int32, word);
                 assert_eq!(operation_bound(&value, false), None);
@@ -243,7 +251,9 @@ mod tests {
         for amount in [32u32, -1i32 as u32] {
             let value = machine(
                 MachineIntegerType::Int32,
-                Bitvector32Term::ArithmeticShiftRight(
+                binary_node!(
+                    Int32,
+                    ShiftRight,
                     x.clone(),
                     Box::new(Bitvector32Term::Constant(amount)),
                 ),

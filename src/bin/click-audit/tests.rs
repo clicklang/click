@@ -2271,7 +2271,8 @@ fn keep_going_audits_other_files_after_an_inventory_failure() {
 }
 
 #[test]
-fn keep_going_audits_other_claims_after_implicit_discovery_cannot_locate_a_proof() {
+#[ignore = "nightly: body-safety alias expansion and retained/cold audits"]
+fn body_safety_proofs_have_one_auditable_source_site() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("mixed.md");
     fs::write(
@@ -2281,28 +2282,78 @@ fn keep_going_audits_other_claims_after_implicit_discovery_cannot_locate_a_proof
     .unwrap();
     let arguments =
         || parse_arguments(["--keep-going".to_string(), path.display().to_string()]).unwrap();
-    let inventory = prepare_audit(&arguments(), Instant::now() + Duration::from_secs(30))
-        .expect("a missing implicit proof location must not abort discovery");
-    assert_eq!(
-        inventory.discovery_failures.len(),
-        2,
+    let inventory = prepare_audit(&arguments(), Instant::now() + Duration::from_secs(30)).unwrap();
+    assert!(
+        inventory.discovery_failures.is_empty(),
         "{:?}",
         inventory.discovery_failures
     );
-    assert!(inventory.discovery_failures[0].contains("read_byte.body_safety"));
-    assert!(inventory.discovery_failures[0].contains("mixed.md"));
-    assert!(inventory.discovery_failures[1].contains("read_byte.ensures_0"));
-    assert_eq!(inventory.scoped_sites.len(), 1);
-    assert_eq!(inventory.scoped_sites[0].claim, "healthy.ensures_0");
     assert_eq!(
-        run_audit(arguments()).unwrap_err(),
-        "2 expansion audit check(s) failed"
+        inventory.scoped_sites.len(),
+        2,
+        "the synthetic ensure label must not duplicate the body-safety site"
     );
-    let error = run_audit(parse_arguments([path.display().to_string()]).unwrap()).unwrap_err();
     assert!(
-        error.contains("could not locate source proof `read_byte.body_safety`"),
-        "{error}"
+        inventory
+            .scoped_sites
+            .iter()
+            .any(|site| site.claim == "read_byte.contract")
     );
+    assert!(
+        inventory
+            .scoped_sites
+            .iter()
+            .any(|site| site.claim == "healthy.ensures_0")
+    );
+    let source = load_audit_source(&path).unwrap();
+    let CInput::Bundle(inputs) = &source.inputs else {
+        panic!("the fixture has ordinary C sources");
+    };
+    let position =
+        claim_source_position_for_source(&source, &source.click_source, "read_byte.body_safety")
+            .unwrap();
+    assert_eq!(
+        verify_c0_sources_at(
+            &source.click_source,
+            &source_refs(inputs),
+            position.line,
+            position.column
+        )
+        .unwrap()
+        .len(),
+        1
+    );
+    assert!(
+        verify_c0_sources(&source.click_source, &source_refs(inputs))
+            .unwrap()
+            .is_empty(),
+        "whole-source verification keeps its existing implicit body-safety result behavior"
+    );
+    let written = source.click_source.replace(
+        "views p[0..1]; }",
+        "views p[0..1]; } by { step_until(function.exit); solve(); }",
+    );
+    let written_sites = c0_smart_tactic_source_sites(&written, &source_refs(inputs)).unwrap();
+    assert_eq!(
+        written_sites
+            .iter()
+            .filter(|site| site.claim_label == "read_byte.contract")
+            .count(),
+        2,
+        "written grouped proofs keep their existing contract label"
+    );
+    let expanded = expand_claim_with_source(&path, &source, "read_byte.body_safety").unwrap();
+    assert_ne!(expanded, source.container_source);
+    assert_eq!(
+        expanded,
+        expand_claim_with_source(&path, &source, "read_byte.ensures_0").unwrap()
+    );
+    assert_eq!(
+        expanded,
+        expand_claim_with_source(&path, &source, "read_byte.contract").unwrap()
+    );
+    run_audit(arguments()).expect("body safety and the neighboring theorem must both audit");
+    run_audit(parse_arguments([path.display().to_string()]).unwrap()).unwrap();
     assert!(
         prepare_audit(&arguments(), Instant::now())
             .err()

@@ -2834,7 +2834,9 @@ fn verify_c0_sources_in_context(
                     )?,
                 };
                 function_verified.extend(theorems.iter().cloned());
-                if has_explicit_claims {
+                // A targeted body-safety proof must remain available to source
+                // expansion even though it has no written postcondition.
+                if has_explicit_claims || verification_target.is_some() {
                     verified.extend(theorems);
                 }
             }

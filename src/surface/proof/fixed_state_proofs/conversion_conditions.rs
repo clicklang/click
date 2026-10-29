@@ -15,6 +15,7 @@
 
 use super::*;
 use crate::kernel::MachineBinaryOp;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::proof_diagnostics::render;
 
@@ -363,19 +364,19 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
             op: OverflowOperation::Add,
             left,
             right,
-        } => Some(Bitvector32Term::Add(left.clone(), right.clone())),
+        } => Some(binary_node!(Int32, Add, left.clone(), right.clone())),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left,
             right,
-        } => Some(Bitvector32Term::Subtract(left.clone(), right.clone())),
+        } => Some(binary_node!(Int32, Subtract, left.clone(), right.clone())),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             left,
             right,
-        } => Some(Bitvector32Term::Multiply(left.clone(), right.clone())),
+        } => Some(binary_node!(Int32, Multiply, left.clone(), right.clone())),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
@@ -536,11 +537,11 @@ pub(in crate::surface::proof) fn refuse_unproved_conversion_bounds(
         {
             continue;
         }
-        return Err(describe_refusal(
-            obligation.proposition(),
-            assumptions,
-            site,
-        ));
+        let message = describe_refusal(obligation.proposition(), assumptions, site);
+        crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+            ClickError::new(message.clone()).with_unresolved_requirement(obligation),
+        )
+        .map_err(|_| message)?;
     }
     Ok(())
 }
@@ -582,6 +583,10 @@ fn established_condition(assumptions: &PureFactContext, goal: &Proposition) -> b
         Proposition::And(left, right) => {
             established_condition(assumptions, left) && established_condition(assumptions, right)
         }
+        // Scoped requirements belong to the ordinary proof operation. The
+        // atomic helper's universal route enumerates same-shape premises;
+        // exact/alpha-equivalent membership was already checked above.
+        Proposition::ForAll { .. } | Proposition::Exists { .. } => false,
         _ => assumptions.proves_atomic_without_search(goal),
     }
 }

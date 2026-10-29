@@ -1,9 +1,10 @@
 use super::*;
+use crate::kernel::binary_node;
 fn var(id: u64) -> Bitvector32Term {
     Bitvector32Term::Variable(Variable(id))
 }
 fn add(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
-    Bitvector32Term::Add(Box::new(left), Box::new(right))
+    binary_node!(Int32, Add, Box::new(left), Box::new(right))
 }
 fn eq(left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
     ConditionTerm::equal(left, right)

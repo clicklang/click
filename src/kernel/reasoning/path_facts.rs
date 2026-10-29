@@ -1,5 +1,7 @@
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 
 /// Whether a memory fact about `base` established in `range_memory` still
 /// describes an available region in `current_memory`: the block must be
@@ -125,35 +127,6 @@ pub(in crate::kernel) fn wrap_path_context(
     obligations: &[ProofObligation],
 ) -> Proposition {
     wrap_path_context_with_introductions(proposition, facts, obligations).0
-}
-
-/// Guards an existentially quantified body with the path facts the lowering
-/// of that body established.
-///
-/// A path fact may mention the quantified variable, so it belongs under the
-/// binder that binds it, exactly as [`wrap_path_context`] puts it under a
-/// universal. The polarity is the other one: a guard restricts a universal's
-/// domain, so it is the antecedent of an implication, and it restricts an
-/// existential's witness, so it is a conjunct. Guarding an existential by
-/// implication instead would make the claim vacuously true of any witness the
-/// guard excludes.
-///
-/// Work is one traversal of `facts` under the same filter `wrap_path_context`
-/// uses, so the two cannot disagree about which facts are retained.
-pub(in crate::kernel) fn guard_quantified_witness(
-    proposition: Proposition,
-    facts: &(impl ExecutionFactSource + ?Sized),
-) -> Proposition {
-    facts
-        .fact_iter()
-        .filter(|fact| {
-            !fact.is_logical_read_equation()
-                && !crate::kernel::eval::is_load_variable_defining_fact(fact.proposition())
-        })
-        .rev()
-        .fold(proposition, |body, fact| {
-            Proposition::And(Box::new(fact.proposition().clone()), Box::new(body))
-        })
 }
 
 /// [`wrap_path_context`], also reporting the guard nodes it inserted, in the
@@ -835,7 +808,9 @@ pub(in crate::kernel) fn byte_offset_from_pointer_offset(
             match width {
                 0 => Some(Bitvector32Term::Constant(0)),
                 1 => Some(value.as_ref().clone()),
-                _ => Some(Bitvector32Term::Multiply(
+                _ => Some(binary_node!(
+                    Int32,
+                    Multiply,
                     Box::new(value.as_ref().clone()),
                     Box::new(Bitvector32Term::Constant(width)),
                 )),
@@ -860,10 +835,10 @@ pub(in crate::kernel) fn element_count_from_bytes(
     }
     let element_width = Bitvector32Term::Constant(element_width);
     match bytes {
-        Bitvector32Term::Multiply(left, right) if right.as_ref() == &element_width => {
+        binary_term!(Int32, Multiply, left, right) if right.as_ref() == &element_width => {
             Some(left.as_ref().clone())
         }
-        Bitvector32Term::Multiply(left, right) if left.as_ref() == &element_width => {
+        binary_term!(Int32, Multiply, left, right) if left.as_ref() == &element_width => {
             Some(right.as_ref().clone())
         }
         Bitvector32Term::Constant(bytes) | Bitvector32Term::UInt32Constant(bytes)
