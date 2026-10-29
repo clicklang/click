@@ -674,6 +674,48 @@ Progress:
   rewrites) are gone. Generics at `Bool` need no new form, since the cast
   is an ordinary `CValue`. Fifteen claims were rewritten (`b as int32`, or
   `true`/`false` arms); no C, C++ or Rust source changed.
+- Conversions in every language (2026-10-27). C and C++ `_Bool`/`bool`
+  values, parameters, returns, locals and call results are `Bool`, carried
+  as their C1 cast `BoolCast { to: UInt8, value }`; a parameter, call result
+  or enum field is a named `Bool` binder, and a join makes a fresh one.
+  Integer to `Bool` is `x != 0` (`nonzero_test`, built as `bool_not` of an
+  equality); `Bool` to integer is C1's cast, with C1c (a cast unequal to 0
+  is 1). The `BoolRange` entry fact is replaced by C1b's range facts
+  (`c_bool_cast_range_facts`), filed at C entry and at C lvalue reads. C++
+  casts to `bool` are the test, and Rust `b as u8` is C1. C `a == b` over
+  two `bool`s is logical equality.
+- Memory (2026-10-27). The byte rule: a store writes C1's byte, and a read
+  of a `bool` cell is `byte != 0` over the ordinary byte load
+  (`ConditionTerm::BoolLoad` stays unbuilt, since the byte load already
+  names the read by its version). A write into a `bool` cell at another
+  kind, or a byte view of one, is refused
+  (`mdtests/a_bool_cell_is_not_written_through_another_type.md`,
+  `mdtests/a_bool_cell_is_not_copied_into_as_bytes.md`).
+- Rust values (2026-10-28). Rust comparisons and connectives are `Bool`
+  values with no path split (D5: `CIntegerCastMode::BoolValue`,
+  `c_bool_value`, `ConditionValueScope`); enum fields, `Option<bool>` and
+  `bool` slice elements are covered, and the six cross-language fixture
+  cases re-locked the C++ and Rust imports. The extra Rust split in
+  `below_i32`/`below_u32` is gone. A signedness conversion's sign test is
+  read as its half-range test, `(intN)u < 0` exactly when
+  `u > 2^(N-1) - 1`, at 8, 16, 32 and 64 bits
+  (`src/kernel/assumptions/condition_reasoning/sign_bit.rs`).
+- The records (2026-10-28): the kernel's rules table, the mathematical
+  integers note, the C, C++ import and language references, and the
+  Decisions entry below.
+
+Open follow-ups:
+
+- **`&bool` and `&[bool]` are unsupported** in Rust, as are C pointers to
+  `bool` and `bool` field places. Suggested design: one bool-cell pointer
+  type shared by C `bool *`, C++ `bool*` and Rust `&bool`/`&[bool]`, under
+  the byte rule. C proves the 0-or-1 requirement on each read through it;
+  Rust gets it from its type's validity invariant.
+- **The stored-bool spelling gap** (`step_below` in
+  `design/charon-trial/integer-widths/widths.click`). A branch fact on a
+  stored `bool` has no source spelling, so selected-premise arithmetic
+  drops its Integer reading as an `UnspelledReading`. The proof is written
+  out as a split, with a comment, until the fact can be spelled.
 
 ## Risks
 
@@ -701,7 +743,8 @@ Maintainer direction, 2026-10-21:
   copies.
 - **`bool` is logical; C's `_Bool` is an integer.** Superseded on
   2026-10-26 (Stage 5): C's `_Bool` and C++'s `bool` denote the logical
-  `Bool`, and there is no {0, 1} integer format; see that entry below.
+  `Bool`, and there is no {0, 1} integer format; see that entry below,
+  and the 2026-10-28 entry that records the model as built.
   - Click's `bool` becomes its own logical sort. Its values are `true` and
     `false`. It has no arithmetic and no integer reading. Today the
     reference defines it as "the C `bool` values, exactly `0` and `1`" with
@@ -896,3 +939,19 @@ entry "`bool` is logical; C's `_Bool` is an integer":
 - **Rust** comparisons and connectives are `Bool` values with no path
   split. Generic instantiation at `Bool` is supported only if the census
   needs it. Teaching `solve` that `b or not b` is a separate proposal.
+
+Maintainer direction, 2026-10-28 (Stage 5 complete), superseding the
+2026-10-21 entry "`bool` is logical; C's `_Bool` is an integer" as built,
+and refining the 2026-10-26 entry:
+
+- **Every `bool` is `Bool`.** C `_Bool`/`bool`, C++ `bool` and Rust `bool`
+  values are the kernel's logical sort, carried as C1's cast to `uint8`.
+  There is no {0, 1} integer format; `Bool` to integer is the cast
+  `b as F` (C1), and integer to `Bool` is `x != 0`.
+- **The byte rule is the read `byte != 0`** over the ordinary byte load,
+  with no separate load form. Every producer of a `bool` byte writes C1's
+  byte, and every other writer is refused, so the byte is 0 or 1.
+- **Rust needs no path split** for comparisons and connectives (D5).
+- **`&bool`, `&[bool]` and C `bool *` stay unsupported** until the shared
+  bool-cell pointer type in the Stage 5 follow-ups is designed and
+  approved.

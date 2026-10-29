@@ -515,7 +515,7 @@ In `src/kernel/`:
   (`Add` is 32-bit), the constant's shape (`Constant`, `Int64Constant`,
   `UInt64Constant`, a 128-bit `MachineIntegerConstant`), a load's kind, or a
   cast's destination. Values of
-  8 and 16 bits and `_Bool` ride in the 32-bit carrier, and floats in the
+  8 and 16 bits, and a `Bool`'s cast `b as F` to a narrow `F`, ride in the 32-bit carrier, and floats in the
   carrier of their bit width. `term_width.rs` infers that carrier width.
   Debug builds refuse a condition assumed into a fact context, a value an
   expression evaluates to, or a value stored to memory whose widths disagree:
@@ -655,9 +655,10 @@ beside them for an unsigned type) has one definition,
 `c_narrow_integer_range_facts`, and is stated where the value is introduced,
 never where it is used:
 
-- a narrow parameter's range is an entry fact of the function, as a `_Bool`
-  parameter's `flag == 0 or flag == 1` is, so a claim may name the parameter
-  without any C use of it;
+- a narrow parameter's range is an entry fact of the function, so a claim
+  may name the parameter without any C use of it (a `bool` parameter is a
+  `Bool` binder, and its cast's C1b range facts are filed the same way by
+  `c_bool_cast_range_facts`);
 - every other narrow value a program expression holds (a loaded cell, a local
   a loop or a call gave a fresh value) enters it through the lvalue read
   (`read_c_lvalue_paths`) or as a value the kernel substituted into the
