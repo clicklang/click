@@ -1001,7 +1001,7 @@ fn region(
             } else {
                 flow::negate_condition(condition)
             };
-            let condition = cx.expr(&condition)?;
+            let condition = cx.condition(&condition)?;
             let mut header = nodes[block].as_ref().ok_or("missing loop header")?.clone();
             for part in loop_.headers.iter().skip(1) {
                 if std::mem::replace(&mut emitted[*part], true) {
@@ -1086,13 +1086,13 @@ fn region(
                         c_seq(
                             scope.operation(false),
                             c_if(
-                                cx.expr(condition)?,
+                                cx.condition(condition)?,
                                 c_seq(yes, scope.operation(true)),
                                 c_seq(no, scope.operation(true)),
                             ),
                         )
                     } else {
-                        c_if(cx.expr(condition)?, yes, no)
+                        c_if(cx.condition(condition)?, yes, no)
                     };
                 result = c_seq(result, branch);
                 block = join;

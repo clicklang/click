@@ -1,0 +1,10 @@
+{
+  "units": {
+    "bools": {
+      "language": "rust",
+      "sources": {
+        "bools.rs": {}
+      }
+    }
+  }
+}

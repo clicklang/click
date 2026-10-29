@@ -186,3 +186,33 @@ bool sign_bit_set(uint32 u) {
     ensures result implies u > 2147483647u32;
     ensures u > 2147483647u32 implies result;
 }
+
+bool not_bool(bool b) {
+    ensures result implies not b;
+    ensures not b implies result;
+}
+
+bool and_bool(bool a, bool b) {
+    ensures result implies a and b;
+    ensures a and b implies result;
+}
+
+bool int_to_bool(int32 x) {
+    ensures result implies x != 0;
+    ensures x != 0 implies result;
+}
+
+uint8 bool_to_u8(bool b) {
+    ensures b implies result == 1u8;
+    ensures not b implies result == 0u8;
+}
+
+int32 bool_sum(bool a, bool b) {
+    ensures 0 <= result and result <= 2;
+    ensures (a and b) implies result == 2;
+}
+
+int32 select_i32(bool b, int32 x, int32 y) {
+    ensures b implies result == x;
+    ensures not b implies result == y;
+}
