@@ -1066,6 +1066,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             have i < arena->capacity;
             mark opened;
             step();
+            transport(at(opened, arena->occupied) == old(arena->occupied),
+                      arena->occupied == old(arena->occupied)) using {
+                at(opened, arena->occupied) == old(arena->occupied);
+                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
             have forall (k: int32) {
                 at(opened, i) + 1 <= k and k < end implies
                     arena->occupied[k] == 0
@@ -1094,6 +1101,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     at(opened, arena->occupied[k]) == 0,
                     arena->occupied[k] == 0
                 ) using {
+                    at(opened, arena->occupied) == old(arena->occupied);
+                    arena->occupied == old(arena->occupied);
+                    at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                    at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
                     at(opened, arena->occupied[k]) == 0;
                     at(opened, i) < k;
                     0 <= at(opened, i);

@@ -40,6 +40,14 @@ facts do not establish flat cost as the queried class or bucket grows.
    through `one_element_gap_separates_bytes` on wide-access misses. Compact-run
    preservation in `run_slots_kept_by_store` still asks
    `typed_ranges_disjoint_from_pointer_evidence` and may inspect symbolic slots.
+   Finish the direct-distinctness experiment before removing another fallback:
+   `arena_alloc` in `examples/arena/arena_cells.click` still refuses the explicit
+   element transport after the occupied-cell store in `mark_free_run`. The
+   descriptor-pointer transport succeeds, but the nested pointer read and the
+   element read are not carried together. Reduce this refusal and establish an
+   explicit proof route before landing the removal; do not restore ambient
+   range search to hide it. Aggregate contract-field observations must retain
+   observation history rather than synthetic store edges for explicit frames.
    Measure these store callers before selecting the next removal, coordinating
    run/history work with the frame-walk item below.
    Measure overlapping member buckets and repeated stores, keeping actual
