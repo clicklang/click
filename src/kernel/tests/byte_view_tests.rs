@@ -2,6 +2,7 @@
 //! inside a wider integer cell, and every case that must stay refused.
 
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::eval::{ContainingIntegerCell, containing_integer_cell, integer_cell_byte};
 
 fn word(offset: i64) -> Pointer {
@@ -219,8 +220,12 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
     let memory = CMemory::new().store(word(0), CValue::UInt32(value.clone()));
     assert_eq!(
         load_byte(&memory, 2, CType::UInt8, Some(ByteOrder::Little)),
-        CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::BitwiseAnd(
-            Box::new(Bitvector32Term::LogicalShiftRight(
+        CExpressionOutcome::Value(CValue::UInt8(binary_node!(
+            Int32,
+            BitwiseAnd,
+            Box::new(binary_node!(
+                UInt32,
+                ShiftRight,
                 Box::new(value.clone()),
                 Box::new(Bitvector32Term::Constant(16)),
             )),
@@ -339,8 +344,12 @@ fn byte_stores_into_a_symbolic_uint32_cell_keep_the_other_bytes() {
     let after = store_byte(memory, 1, CValue::UInt8(0x5A.into()), ByteOrder::Little);
     assert_eq!(
         after.known_value(&word(0)),
-        Some(CValue::UInt32(Bitvector32Term::BitwiseOr(
-            Box::new(Bitvector32Term::BitwiseAnd(
+        Some(CValue::UInt32(binary_node!(
+            Int32,
+            BitwiseOr,
+            Box::new(binary_node!(
+                Int32,
+                BitwiseAnd,
                 Box::new(value),
                 Box::new(Bitvector32Term::Constant(0xFFFF_00FF)),
             )),

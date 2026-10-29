@@ -4,6 +4,7 @@
 //! not inspect the collector's private summaries directly.
 
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{
     CMemory, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, Pointer, PointerBlock,
     PointerOffsetTerm, SharedCMemory, SharedIntegerRangeEndpoint, SharedIntegerTerm,
@@ -85,7 +86,9 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
     );
     let fold = integer_fold(accumulator, free_integer, machine_variable(source));
     let source_term = Bitvector32Term::Variable(source);
-    let replacement_term = Bitvector32Term::Add(
+    let replacement_term = binary_node!(
+        Int32,
+        Add,
         Box::new(Bitvector32Term::Variable(load)),
         Box::new(Bitvector32Term::Constant(1)),
     );

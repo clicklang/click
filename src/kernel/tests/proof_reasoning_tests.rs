@@ -2,6 +2,8 @@
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
 // calls it, so the tests import the planner explicitly.
 use super::*;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::proof::fact_reasoning::{
     ForallInstantiationError, InstanceArgument, check_forall_instantiation, instantiate_universal,
 };
@@ -822,8 +824,8 @@ fn known_scalar_equality_uses_congruence_without_building_a_fact_index() {
     let a = Bitvector32Term::Variable(Variable(990_001));
     let b = Bitvector32Term::Variable(Variable(990_002));
     let c = Bitvector32Term::Variable(Variable(990_003));
-    let left = Bitvector32Term::Add(Box::new(a.clone()), Box::new(c.clone()));
-    let right = Bitvector32Term::Add(Box::new(b.clone()), Box::new(c));
+    let left = binary_node!(Int32, Add, Box::new(a.clone()), Box::new(c.clone()));
+    let right = binary_node!(Int32, Add, Box::new(b.clone()), Box::new(c));
     let before = PureFactContext::new();
     assert!(!before.int32_values_known_equal(&left, &right));
     let sibling = before.clone();
@@ -958,7 +960,12 @@ fn int32_positive_predecessor_is_nonnegative_axiom_has_the_exact_implication() {
     let conclusion = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(
             Bitvector32Term::Constant(0),
-            Bitvector32Term::Subtract(Box::new(value), Box::new(Bitvector32Term::Constant(1))),
+            binary_node!(
+                Int32,
+                Subtract,
+                Box::new(value),
+                Box::new(Bitvector32Term::Constant(1))
+            ),
         ),
         true,
     );
@@ -984,7 +991,12 @@ fn int32_nonnegative_predecessor_upper_bound_axiom_has_the_exact_implications() 
     );
     let conclusion = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(
-            Bitvector32Term::Subtract(Box::new(value), Box::new(Bitvector32Term::Constant(1))),
+            binary_node!(
+                Int32,
+                Subtract,
+                Box::new(value),
+                Box::new(Bitvector32Term::Constant(1))
+            ),
             bound,
         ),
         true,
@@ -1052,13 +1064,23 @@ fn pure_rewrite_scenario() -> PureRewriteScenario {
     let left = Bitvector32Term::Variable(left_var);
     let amount = Bitvector32Term::Variable(amount_var);
     let total = Bitvector32Term::Variable(total_var);
-    let product = Bitvector32Term::Multiply(Box::new(left.clone()), Box::new(amount.clone()));
+    let product = binary_node!(
+        Int32,
+        Multiply,
+        Box::new(left.clone()),
+        Box::new(amount.clone())
+    );
     let value_equality =
         Proposition::ConditionIs(ConditionTerm::equal(value.clone(), product.clone()), true);
     let product_equality = Proposition::ConditionIs(ConditionTerm::equal(product, total), true);
     let conclusion = Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Multiply(Box::new(value.clone()), Box::new(amount.clone())),
+            binary_node!(
+                Int32,
+                Multiply,
+                Box::new(value.clone()),
+                Box::new(amount.clone())
+            ),
             left.clone(),
         ),
         true,
@@ -1279,7 +1301,9 @@ fn int32_nonnegative_add_within_max_is_defined_axiom_has_the_exact_implication()
     let within_headroom = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(
             value.clone(),
-            Bitvector32Term::Subtract(
+            binary_node!(
+                Int32,
+                Subtract,
                 Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
                 Box::new(amount.clone()),
             ),
@@ -1311,7 +1335,9 @@ fn int32_positive_predecessor_strictly_decreases_axiom_has_the_exact_implication
     );
     let conclusion = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(
-            Bitvector32Term::Subtract(
+            binary_node!(
+                Int32,
+                Subtract,
                 Box::new(value.clone()),
                 Box::new(Bitvector32Term::Constant(1)),
             ),
@@ -1809,7 +1835,9 @@ fn one_plus_rules_retain_their_exact_max_bound_and_operand_order() {
         ConditionTerm::signed_greater_than(int_max.clone(), value.clone()),
         true,
     );
-    let one_plus = Bitvector32Term::Add(
+    let one_plus = binary_node!(
+        Int32,
+        Add,
         Box::new(Bitvector32Term::Constant(1)),
         Box::new(value.clone()),
     );
@@ -1857,7 +1885,9 @@ fn one_plus_rules_retain_their_exact_max_bound_and_operand_order() {
 fn symbolic_add_definedness_retains_both_exact_named_theorem_bounds() {
     let value = Bitvector32Term::Variable(Variable(211_100));
     let amount = Bitvector32Term::Variable(Variable(211_101));
-    let headroom = Bitvector32Term::Subtract(
+    let headroom = binary_node!(
+        Int32,
+        Subtract,
         Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
         Box::new(amount.clone()),
     );
@@ -2089,7 +2119,9 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
     let value = Bitvector32Term::Variable(Variable(221));
     let bound = Bitvector32Term::Variable(Variable(222));
     let zero = Bitvector32Term::Constant(0);
-    let predecessor = Bitvector32Term::Subtract(
+    let predecessor = binary_node!(
+        Int32,
+        Subtract,
         Box::new(value.clone()),
         Box::new(Bitvector32Term::Constant(1)),
     );
@@ -2186,7 +2218,12 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
 fn predecessor_derivation_retains_equal_one_path_instead_of_a_derived_bound() {
     let value = Bitvector32Term::Variable(Variable(223));
     let one = Bitvector32Term::Constant(1);
-    let predecessor = Bitvector32Term::Subtract(Box::new(value.clone()), Box::new(one.clone()));
+    let predecessor = binary_node!(
+        Int32,
+        Subtract,
+        Box::new(value.clone()),
+        Box::new(one.clone())
+    );
     let equal_one =
         Proposition::ConditionIs(ConditionTerm::equal(one.clone(), value.clone()), true);
     let assumptions = PureFactContext::new().assume_proposition(equal_one.clone());
@@ -2230,7 +2267,12 @@ fn predecessor_zero_derivation_retains_its_equal_one_path() {
     let value = Bitvector32Term::Variable(Variable(224));
     let one = Bitvector32Term::Constant(1);
     let zero = Bitvector32Term::Constant(0);
-    let predecessor = Bitvector32Term::Subtract(Box::new(value.clone()), Box::new(one.clone()));
+    let predecessor = binary_node!(
+        Int32,
+        Subtract,
+        Box::new(value.clone()),
+        Box::new(one.clone())
+    );
     let equal_one =
         Proposition::ConditionIs(ConditionTerm::equal(one.clone(), value.clone()), true);
     let assumptions = PureFactContext::new().assume_proposition(equal_one.clone());
@@ -2300,7 +2342,7 @@ fn scalar_graph_literal_evaluation_supplies_checkable_solve_equality() {
         Proposition::ConditionIs(ConditionTerm::equal(one.clone(), right.clone()), true);
     let goal = Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Add(Box::new(left.clone()), Box::new(right.clone())),
+            binary_node!(Int32, Add, Box::new(left.clone()), Box::new(right.clone())),
             Bitvector32Term::Constant(2),
         ),
         true,
@@ -2313,7 +2355,7 @@ fn scalar_graph_literal_evaluation_supplies_checkable_solve_equality() {
     // representative search or arithmetic normalization is required.
     PureFactContext::reset_bitvector_equality_index_fact_visits();
     assert!(assumptions.int32_values_known_equal(
-        &Bitvector32Term::Add(Box::new(left.clone()), Box::new(right.clone())),
+        &binary_node!(Int32, Add, Box::new(left.clone()), Box::new(right.clone())),
         &Bitvector32Term::Constant(2),
     ));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
@@ -2326,7 +2368,7 @@ fn scalar_graph_literal_evaluation_supplies_checkable_solve_equality() {
             .is_none()
     );
     assert!(!assumptions.int32_values_known_equal(
-        &Bitvector32Term::Add(Box::new(left), Box::new(right)),
+        &binary_node!(Int32, Add, Box::new(left), Box::new(right)),
         &Bitvector32Term::Constant(3),
     ));
 }
@@ -4089,7 +4131,12 @@ fn unsigned_order_chain_bounds_its_low_end_in_signed_order() {
         .assume_condition(
             ConditionTerm::unsigned_less_than(
                 x.clone(),
-                Bitvector32Term::Subtract(Box::new(n), Box::new(Bitvector32Term::Constant(1))),
+                binary_node!(
+                    Int32,
+                    Subtract,
+                    Box::new(n),
+                    Box::new(Bitvector32Term::Constant(1))
+                ),
             ),
             true,
         );
@@ -4879,7 +4926,7 @@ fn range_fold_substitution_renames_a_captured_binder() {
 
     let substituted =
         substitute_bitvector_variable(&term, source, &Bitvector32Term::Variable(item));
-    let Bitvector32Term::Add(left, fold) = &substituted else {
+    let binary_term!(Int32, Add, left, fold) = &substituted else {
         panic!("substitution should preserve the outer addition");
     };
     let Bitvector32Term::RangeFold {
@@ -5273,8 +5320,13 @@ fn assumptions_use_finite_forall_fact_to_prove_condition() {
     );
     let consequent = Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Add(Box::new(base_left.clone()), Box::new(k_bits.clone())),
-            Bitvector32Term::Add(Box::new(base_right.clone()), Box::new(k_bits)),
+            binary_node!(
+                Int32,
+                Add,
+                Box::new(base_left.clone()),
+                Box::new(k_bits.clone())
+            ),
+            binary_node!(Int32, Add, Box::new(base_right.clone()), Box::new(k_bits)),
         ),
         true,
     );
@@ -5285,8 +5337,18 @@ fn assumptions_use_finite_forall_fact_to_prove_condition() {
 
     assert!(assumptions.proves(&Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Add(Box::new(base_left), Box::new(Bitvector32Term::Constant(1))),
-            Bitvector32Term::Add(Box::new(base_right), Box::new(Bitvector32Term::Constant(1))),
+            binary_node!(
+                Int32,
+                Add,
+                Box::new(base_left),
+                Box::new(Bitvector32Term::Constant(1))
+            ),
+            binary_node!(
+                Int32,
+                Add,
+                Box::new(base_right),
+                Box::new(Bitvector32Term::Constant(1))
+            ),
         ),
         true,
     )));
@@ -5928,7 +5990,7 @@ fn signed_intervals_range_sums_of_any_depth() {
     for depth in [8, 32, 64, 128] {
         let mut sum = x.clone();
         for _ in 0..depth {
-            sum = Bitvector32Term::Add(Box::new(sum), Box::new(x.clone()));
+            sum = binary_node!(Int32, Add, Box::new(sum), Box::new(x.clone()));
         }
         assert_eq!(
             assumptions.decide_from_overflow_facts(&ConditionTerm::Overflows {
@@ -6095,8 +6157,10 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
             Bitvector32Term::Variable(variable) if *variable == Variable(910) => a as u32,
             Bitvector32Term::Variable(variable) if *variable == Variable(911) => b as u32,
             Bitvector32Term::Constant(value) => *value,
-            Bitvector32Term::Add(left, right) => bits(left, a, b).wrapping_add(bits(right, a, b)),
-            Bitvector32Term::Subtract(left, right) => {
+            binary_term!(Int32, Add, left, right) => {
+                bits(left, a, b).wrapping_add(bits(right, a, b))
+            }
+            binary_term!(Int32, Subtract, left, right) => {
                 bits(left, a, b).wrapping_sub(bits(right, a, b))
             }
             _ => panic!("unexpected machine term: {term:?}"),
@@ -7046,7 +7110,12 @@ fn signed_order_provers_agree_on_successor_terms() {
     let x = Bitvector32Term::Variable(Variable(89_300));
     let y = Bitvector32Term::Variable(Variable(89_301));
     let plus = |t: &Bitvector32Term, c: u32| {
-        Bitvector32Term::Add(Box::new(t.clone()), Box::new(Bitvector32Term::Constant(c)))
+        binary_node!(
+            Int32,
+            Add,
+            Box::new(t.clone()),
+            Box::new(Bitvector32Term::Constant(c))
+        )
     };
     let constant = |value: i32| Bitvector32Term::Constant(value as u32);
     let facts = PureFactContext::new()
@@ -7609,7 +7678,7 @@ fn uint32_add_bridge_agrees_with_boundary_model() {
             Bitvector32Term::Variable(variable) if *variable == Variable(910) => u64::from(a),
             Bitvector32Term::Variable(variable) if *variable == Variable(911) => u64::from(b),
             Bitvector32Term::Constant(value) => u64::from(*value),
-            Bitvector32Term::Add(left, right) => {
+            binary_term!(Int32, Add, left, right) => {
                 u64::from((machine(left, a, b) as u32).wrapping_add(machine(right, a, b) as u32))
             }
             _ => panic!("unexpected term {term:?}"),
@@ -7670,10 +7739,12 @@ fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
             Bitvector32Term::Variable(v) if *v == Variable(910) => a,
             Bitvector32Term::Variable(v) if *v == Variable(911) => b,
             Bitvector32Term::Constant(value) => *value,
-            Bitvector32Term::Subtract(left, right) => {
+            binary_term!(Int32, Subtract, left, right) => {
                 machine(left, a, b).wrapping_sub(machine(right, a, b))
             }
-            Bitvector32Term::BitwiseXor(left, right) => machine(left, a, b) ^ machine(right, a, b),
+            binary_term!(Int32, BitwiseXor, left, right) => {
+                machine(left, a, b) ^ machine(right, a, b)
+            }
             _ => panic!("unexpected subtraction term {term:?}"),
         }
     }
@@ -7784,7 +7855,9 @@ fn int32_remainder_bridge_matches_independent_signed_boundary_models() {
         conclusion.as_ref(),
         &Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(
-                observe(Bitvector32Term::Remainder(
+                observe(binary_node!(
+                    Int32,
+                    Remainder,
                     left.clone().into(),
                     right.clone().into()
                 ))
@@ -7830,13 +7903,13 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
             Bitvector32Term::Variable(v) if *v == Variable(910) => a,
             Bitvector32Term::Variable(v) if *v == Variable(911) => b,
             Bitvector32Term::Constant(v) => *v,
-            Bitvector32Term::Multiply(left, right) => {
+            binary_term!(Int32, Multiply, left, right) => {
                 machine(left, a, b).wrapping_mul(machine(right, a, b))
             }
-            Bitvector32Term::UnsignedDivide(left, right) => {
-                machine(left, a, b) / machine(right, a, b)
+            binary_term!(UInt32, Divide, left, right) => machine(left, a, b) / machine(right, a, b),
+            binary_term!(Int32, BitwiseXor, left, right) => {
+                machine(left, a, b) ^ machine(right, a, b)
             }
-            Bitvector32Term::BitwiseXor(left, right) => machine(left, a, b) ^ machine(right, a, b),
             _ => panic!("unexpected unsigned multiplication term {term:?}"),
         }
     }
@@ -7946,7 +8019,9 @@ fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
             Bitvector32Term::Variable(v) if *v == Variable(910) => a,
             Bitvector32Term::Variable(v) if *v == Variable(911) => b,
             Bitvector32Term::Constant(v) => *v,
-            Bitvector32Term::BitwiseXor(left, right) => machine(left, a, b) ^ machine(right, a, b),
+            binary_term!(Int32, BitwiseXor, left, right) => {
+                machine(left, a, b) ^ machine(right, a, b)
+            }
             _ => panic!("unexpected unsigned-order encoding {term:?}"),
         }
     }
@@ -8070,10 +8145,10 @@ fn uint32_remainder_bound_agrees_with_full_width_models() {
             Bitvector32Term::Variable(v) if *v == Variable(920) => value,
             Bitvector32Term::Variable(v) if *v == Variable(921) => divisor,
             Bitvector32Term::Constant(v) => *v,
-            Bitvector32Term::BitwiseXor(a, b) => {
+            binary_term!(Int32, BitwiseXor, a, b) => {
                 machine(a, value, divisor) ^ machine(b, value, divisor)
             }
-            Bitvector32Term::UnsignedRemainder(a, b) => {
+            binary_term!(UInt32, Remainder, a, b) => {
                 machine(a, value, divisor) % machine(b, value, divisor)
             }
             _ => panic!("unexpected unsigned remainder term {term:?}"),
@@ -9050,14 +9125,14 @@ fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
             Bitvector32Term::Constant(value) => u64::from(*value),
             Bitvector32Term::UInt64Constant(value) => *value,
             Bitvector32Term::Int64Constant(value) => *value as u64,
-            Bitvector32Term::BitwiseOr(a, b)
+            binary_term!(Int32, BitwiseOr, a, b)
             | Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::BitwiseOr,
                 left: a,
                 right: b,
             } => word(a) | word(b),
-            Bitvector32Term::ShiftLeft(a, b) => {
+            binary_term!(Int32, ShiftLeft, a, b) => {
                 u64::from((word(a) as u32).wrapping_shl(word(b) as u32))
             }
             Bitvector32Term::Binary {
@@ -9209,10 +9284,12 @@ fn uint32_unpacking_rules_retain_bounds_and_recover_all_word_bits() {
     fn evaluate(term: &Bitvector32Term) -> u32 {
         match term {
             Bitvector32Term::Constant(value) => *value,
-            Bitvector32Term::BitwiseOr(left, right) => evaluate(left) | evaluate(right),
-            Bitvector32Term::BitwiseAnd(left, right) => evaluate(left) & evaluate(right),
-            Bitvector32Term::ShiftLeft(left, right) => evaluate(left).wrapping_shl(evaluate(right)),
-            Bitvector32Term::LogicalShiftRight(left, right) => {
+            binary_term!(Int32, BitwiseOr, left, right) => evaluate(left) | evaluate(right),
+            binary_term!(Int32, BitwiseAnd, left, right) => evaluate(left) & evaluate(right),
+            binary_term!(Int32, ShiftLeft, left, right) => {
+                evaluate(left).wrapping_shl(evaluate(right))
+            }
+            binary_term!(UInt32, ShiftRight, left, right) => {
                 evaluate(left).wrapping_shr(evaluate(right))
             }
             _ => panic!("unexpected extraction term"),

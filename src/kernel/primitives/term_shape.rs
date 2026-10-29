@@ -5,6 +5,8 @@
 
 use super::*;
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
+use crate::kernel::{binary_node, unary_node};
+use crate::kernel::{binary_term, unary_term};
 
 /// A two-operand arithmetic [`Bitvector32Term`] operator.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -48,32 +50,68 @@ pub(crate) enum BitvectorUnaryOp {
     },
 }
 
+/// The operator and format of a machine operator node, which its variant
+/// alone does not name ([`Bitvector32Term::machine_operator`]).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub(crate) enum MachineOperator {
+    Binary(MachineBinaryOp, MachineIntegerType),
+    Unary(MachineUnaryOp, MachineIntegerType),
+}
+
 impl Bitvector32Term {
+    /// The operator and format of a `Binary` or `Unary` node, `None` for any
+    /// other. Code that compares nodes by variant (a discriminant test, a
+    /// shape hash) compares this too, since one variant spells every
+    /// machine operator.
+    pub(crate) fn machine_operator(&self) -> Option<MachineOperator> {
+        match self {
+            Self::Binary { op, format, .. } => Some(MachineOperator::Binary(*op, *format)),
+            Self::Unary { op, format, .. } => Some(MachineOperator::Unary(*op, *format)),
+            _ => None,
+        }
+    }
+
     /// The operator and operands of a two-operand arithmetic node, or `None`
     /// for every other variant.
     pub(crate) fn as_binary(&self) -> Option<(BitvectorBinaryOp, &Self, &Self)> {
         match self {
-            Self::Add(left, right) => Some((BitvectorBinaryOp::Add, left, right)),
-            Self::Subtract(left, right) => Some((BitvectorBinaryOp::Subtract, left, right)),
-            Self::Multiply(left, right) => Some((BitvectorBinaryOp::Multiply, left, right)),
-            Self::Divide(left, right) => Some((BitvectorBinaryOp::Divide, left, right)),
-            Self::UnsignedDivide(left, right) => {
+            binary_term!(Int32, Add, left, right) => Some((BitvectorBinaryOp::Add, left, right)),
+            binary_term!(Int32, Subtract, left, right) => {
+                Some((BitvectorBinaryOp::Subtract, left, right))
+            }
+            binary_term!(Int32, Multiply, left, right) => {
+                Some((BitvectorBinaryOp::Multiply, left, right))
+            }
+            binary_term!(Int32, Divide, left, right) => {
+                Some((BitvectorBinaryOp::Divide, left, right))
+            }
+            binary_term!(UInt32, Divide, left, right) => {
                 Some((BitvectorBinaryOp::UnsignedDivide, left, right))
             }
-            Self::Remainder(left, right) => Some((BitvectorBinaryOp::Remainder, left, right)),
-            Self::UnsignedRemainder(left, right) => {
+            binary_term!(Int32, Remainder, left, right) => {
+                Some((BitvectorBinaryOp::Remainder, left, right))
+            }
+            binary_term!(UInt32, Remainder, left, right) => {
                 Some((BitvectorBinaryOp::UnsignedRemainder, left, right))
             }
-            Self::ShiftLeft(left, right) => Some((BitvectorBinaryOp::ShiftLeft, left, right)),
-            Self::ArithmeticShiftRight(left, right) => {
+            binary_term!(Int32, ShiftLeft, left, right) => {
+                Some((BitvectorBinaryOp::ShiftLeft, left, right))
+            }
+            binary_term!(Int32, ShiftRight, left, right) => {
                 Some((BitvectorBinaryOp::ArithmeticShiftRight, left, right))
             }
-            Self::LogicalShiftRight(left, right) => {
+            binary_term!(UInt32, ShiftRight, left, right) => {
                 Some((BitvectorBinaryOp::LogicalShiftRight, left, right))
             }
-            Self::BitwiseAnd(left, right) => Some((BitvectorBinaryOp::BitwiseAnd, left, right)),
-            Self::BitwiseOr(left, right) => Some((BitvectorBinaryOp::BitwiseOr, left, right)),
-            Self::BitwiseXor(left, right) => Some((BitvectorBinaryOp::BitwiseXor, left, right)),
+            binary_term!(Int32, BitwiseAnd, left, right) => {
+                Some((BitvectorBinaryOp::BitwiseAnd, left, right))
+            }
+            binary_term!(Int32, BitwiseOr, left, right) => {
+                Some((BitvectorBinaryOp::BitwiseOr, left, right))
+            }
+            binary_term!(Int32, BitwiseXor, left, right) => {
+                Some((BitvectorBinaryOp::BitwiseXor, left, right))
+            }
             Self::Binary {
                 format,
                 op,
@@ -104,7 +142,7 @@ impl Bitvector32Term {
             | Self::MemoryLoad(..)
             | Self::PointerAddress(_, _)
             | Self::IntegerToMachine { .. }
-            | Self::BitwiseNot(_)
+            | unary_term!(Int32, BitwiseNot, _)
             | Self::Unary { .. }
             | Self::Int64From32(_)
             | Self::UInt64From32(_)
@@ -123,7 +161,7 @@ impl Bitvector32Term {
     /// conversion, or `None` for every other variant.
     pub(crate) fn as_unary(&self) -> Option<(BitvectorUnaryOp, &Self)> {
         match self {
-            Self::BitwiseNot(value) => Some((BitvectorUnaryOp::BitwiseNot, value)),
+            unary_term!(Int32, BitwiseNot, value) => Some((BitvectorUnaryOp::BitwiseNot, value)),
             Self::Unary {
                 format,
                 op,
@@ -261,19 +299,19 @@ impl BitvectorBinaryOp {
         };
         let (left, right) = (Box::new(left), Box::new(right));
         match self {
-            Self::Add => Bitvector32Term::Add(left, right),
-            Self::Subtract => Bitvector32Term::Subtract(left, right),
-            Self::Multiply => Bitvector32Term::Multiply(left, right),
-            Self::Divide => Bitvector32Term::Divide(left, right),
-            Self::UnsignedDivide => Bitvector32Term::UnsignedDivide(left, right),
-            Self::Remainder => Bitvector32Term::Remainder(left, right),
-            Self::UnsignedRemainder => Bitvector32Term::UnsignedRemainder(left, right),
-            Self::ShiftLeft => Bitvector32Term::ShiftLeft(left, right),
-            Self::ArithmeticShiftRight => Bitvector32Term::ArithmeticShiftRight(left, right),
-            Self::LogicalShiftRight => Bitvector32Term::LogicalShiftRight(left, right),
-            Self::BitwiseAnd => Bitvector32Term::BitwiseAnd(left, right),
-            Self::BitwiseOr => Bitvector32Term::BitwiseOr(left, right),
-            Self::BitwiseXor => Bitvector32Term::BitwiseXor(left, right),
+            Self::Add => binary_node!(Int32, Add, left, right),
+            Self::Subtract => binary_node!(Int32, Subtract, left, right),
+            Self::Multiply => binary_node!(Int32, Multiply, left, right),
+            Self::Divide => binary_node!(Int32, Divide, left, right),
+            Self::UnsignedDivide => binary_node!(UInt32, Divide, left, right),
+            Self::Remainder => binary_node!(Int32, Remainder, left, right),
+            Self::UnsignedRemainder => binary_node!(UInt32, Remainder, left, right),
+            Self::ShiftLeft => binary_node!(Int32, ShiftLeft, left, right),
+            Self::ArithmeticShiftRight => binary_node!(Int32, ShiftRight, left, right),
+            Self::LogicalShiftRight => binary_node!(UInt32, ShiftRight, left, right),
+            Self::BitwiseAnd => binary_node!(Int32, BitwiseAnd, left, right),
+            Self::BitwiseOr => binary_node!(Int32, BitwiseOr, left, right),
+            Self::BitwiseXor => binary_node!(Int32, BitwiseXor, left, right),
             Self::Machine(format, op) => Bitvector32Term::Binary {
                 format,
                 op,
@@ -353,7 +391,7 @@ impl BitvectorUnaryOp {
         };
         let value = Box::new(value);
         match self {
-            Self::BitwiseNot => Bitvector32Term::BitwiseNot(value),
+            Self::BitwiseNot => unary_node!(Int32, BitwiseNot, value),
             Self::Machine(format, op) => Bitvector32Term::Unary {
                 format,
                 op,

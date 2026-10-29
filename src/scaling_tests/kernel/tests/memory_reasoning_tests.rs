@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// Unaddressable scalar declarations keep their permissions without growing
@@ -374,8 +375,12 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
     let base = Pointer::symbolic(Variable(9_319_000));
     let index = Bitvector32Term::Variable(Variable(9_319_001));
     let count = |length| {
-        Bitvector32Term::Subtract(
-            Box::new(Bitvector32Term::Add(
+        binary_node!(
+            Int32,
+            Subtract,
+            Box::new(binary_node!(
+                Int32,
+                Add,
                 Box::new(index.clone()),
                 Box::new(Bitvector32Term::Constant(length)),
             )),
@@ -392,7 +397,9 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
         let bytes = if width == 1 {
             count(4)
         } else {
-            Bitvector32Term::Multiply(
+            binary_node!(
+                Int32,
+                Multiply,
                 Box::new(count(4)),
                 Box::new(Bitvector32Term::Constant(width)),
             )
@@ -437,7 +444,9 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
         &base,
         &Bitvector32Term::Constant(4),
     ));
-    let wrapped = Bitvector32Term::Multiply(
+    let wrapped = binary_node!(
+        Int32,
+        Multiply,
         Box::new(count(0x4000_0000)),
         Box::new(Bitvector32Term::Constant(4)),
     );

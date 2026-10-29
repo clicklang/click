@@ -63,6 +63,7 @@
 //! bulk selection with per-cell stores; production stores do not recheck the
 //! cells their producer has already proved separate.
 
+use crate::kernel::binary_term;
 use crate::kernel::{Bitvector32Term, Pointer, PointerOffsetTerm, PureFactContext};
 
 /// The widest cell there is: no `CValue` is wider, and a cell holding
@@ -231,7 +232,7 @@ fn anchor_byte_form_cancels(anchor: &PointerOffsetTerm) -> bool {
             form,
             Bitvector32Term::Constant(_)
                 | Bitvector32Term::UInt32Constant(_)
-                | Bitvector32Term::Subtract(..)
+                | binary_term!(Int32, Subtract, ..)
         )
     })
 }

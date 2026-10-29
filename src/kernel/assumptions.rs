@@ -1,5 +1,8 @@
 use super::execution_facts::ContextFactKey;
 use super::prelude::*;
+#[cfg(test)]
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
 
 #[cfg(test)]
@@ -1658,6 +1661,7 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
             hash_memory_blind_pointer(pointer, hasher)
         }
         crate::kernel::binary_bitvector32_term!(left, right) => {
+            std::hash::Hash::hash(&term.machine_operator(), hasher);
             hash_memory_blind_bitvector(left, hasher);
             hash_memory_blind_bitvector(right, hasher);
         }
@@ -1692,9 +1696,9 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
             hash_memory_blind_bitvector(left, hasher);
             hash_memory_blind_bitvector(right, hasher);
         }
-        Bitvector32Term::BitwiseNot(value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => hash_memory_blind_bitvector(value, hasher),
+        Bitvector32Term::Float32Negate(value) | Bitvector32Term::Float64Negate(value) => {
+            hash_memory_blind_bitvector(value, hasher)
+        }
         Bitvector32Term::If {
             condition,
             then_term,
@@ -2139,7 +2143,7 @@ fn collect_bitvector_memory_loads_with_width(
         | Bitvector32Term::Float64Binary { left, right, .. } => {
             let child_width = if matches!(
                 term,
-                Bitvector32Term::Binary { .. } | Bitvector32Term::Float64Binary { .. }
+                crate::kernel::binary_wide_term!(_, _) | Bitvector32Term::Float64Binary { .. }
             ) {
                 Some(8)
             } else {
@@ -2167,7 +2171,6 @@ fn collect_bitvector_memory_loads_with_width(
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value)
         | Bitvector32Term::Unary { operand: value, .. }
-        | Bitvector32Term::BitwiseNot(value)
         | Bitvector32Term::Float32Negate(value)
         | Bitvector32Term::Float64Negate(value) => {
             let child_width = if matches!(term, Bitvector32Term::Float64Negate(_)) {
@@ -8546,8 +8549,8 @@ fn derivations_match_propositions(
 fn relative_range_offset(value: &Bitvector32Term, origin: &Bitvector32Term) -> Bitvector32Term {
     match (value, origin) {
         (
-            Bitvector32Term::Subtract(value, value_origin),
-            Bitvector32Term::Subtract(origin, origin_origin),
+            binary_term!(Int32, Subtract, value, value_origin),
+            binary_term!(Int32, Subtract, origin, origin_origin),
         ) if value_origin == origin_origin => {
             Bitvector32Term::subtract(value.as_ref().clone(), origin.as_ref().clone())
         }
@@ -8596,10 +8599,10 @@ fn range_intervals_cover_target(target: &CMemoryRange, mut intervals: Vec<(i64, 
 // Called only by memory_ranges_proven_equal after its wide-range branch.
 fn memory_range_length_term(range: &CMemoryRange) -> Bitvector32Term {
     match range.end() {
-        Bitvector32Term::Add(base, length) if base.as_ref() == range.start() => {
+        binary_term!(Int32, Add, base, length) if base.as_ref() == range.start() => {
             length.as_ref().clone()
         }
-        Bitvector32Term::Add(length, base) if base.as_ref() == range.start() => {
+        binary_term!(Int32, Add, length, base) if base.as_ref() == range.start() => {
             length.as_ref().clone()
         }
         end => Bitvector32Term::subtract(end.clone(), range.start().clone()),
@@ -9876,15 +9879,15 @@ fn collect_affine_bitvector_terms(
         Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             *constant = constant.checked_add(coefficient.checked_mul(i64::from(*value as i32))?)?;
         }
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             collect_affine_bitvector_terms(left, coefficient, terms, constant)?;
             collect_affine_bitvector_terms(right, coefficient, terms, constant)?;
         }
-        Bitvector32Term::Subtract(left, right) => {
+        binary_term!(Int32, Subtract, left, right) => {
             collect_affine_bitvector_terms(left, coefficient, terms, constant)?;
             collect_affine_bitvector_terms(right, coefficient.checked_neg()?, terms, constant)?;
         }
-        Bitvector32Term::Multiply(left, right) => {
+        binary_term!(Int32, Multiply, left, right) => {
             if let Some(value) = left.as_const() {
                 collect_affine_bitvector_terms(
                     right,
@@ -10932,7 +10935,9 @@ mod integer_observation_tests {
         // but its byte, 0, is.
         let sum = IntegerTerm::from_machine(
             MachineIntegerType::UInt8,
-            Bitvector32Term::Add(
+            binary_node!(
+                Int32,
+                Add,
                 Box::new(Bitvector32Term::Variable(Variable(812))),
                 Box::new(Bitvector32Term::Constant(1)),
             ),
@@ -11853,13 +11858,13 @@ pub(in crate::kernel) fn offset_snapshot_shape(offset: &PointerOffsetTerm) -> u6
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         match term {
             Bitvector32Term::MemoryLoad(_, _, kind) => (0u8, kind).hash(&mut hasher),
-            Bitvector32Term::Add(left, right) => {
+            binary_term!(Int32, Add, left, right) => {
                 (1u8, term_shape(left), term_shape(right)).hash(&mut hasher)
             }
-            Bitvector32Term::Subtract(left, right) => {
+            binary_term!(Int32, Subtract, left, right) => {
                 (2u8, term_shape(left), term_shape(right)).hash(&mut hasher)
             }
-            Bitvector32Term::Multiply(left, right) => {
+            binary_term!(Int32, Multiply, left, right) => {
                 (3u8, term_shape(left), term_shape(right)).hash(&mut hasher)
             }
             other => (4u8, other).hash(&mut hasher),

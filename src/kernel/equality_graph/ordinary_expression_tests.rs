@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{
     BitvectorBinaryOp as B, BitvectorUnaryOp as U, CarrierWidth as W, IntegerTerm as I,
     MachineIntegerType as M,
@@ -292,8 +293,13 @@ fn a_uint32_constant_is_one_class_with_its_word() {
         let x = Bitvector32Term::Variable(Variable(961_001));
         assert!(
             graph.are_int32_equal(
-                &Bitvector32Term::BitwiseXor(Box::new(x.clone()), Box::new(word.clone())),
-                &Bitvector32Term::BitwiseXor(Box::new(x), Box::new(formatted.clone())),
+                &binary_node!(
+                    Int32,
+                    BitwiseXor,
+                    Box::new(x.clone()),
+                    Box::new(word.clone())
+                ),
+                &binary_node!(Int32, BitwiseXor, Box::new(x), Box::new(formatted.clone())),
             ),
             "{bits} as an operand"
         );

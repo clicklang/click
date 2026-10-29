@@ -1,4 +1,6 @@
 use super::*;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl CParameter {
@@ -2794,12 +2796,12 @@ fn canonical_subtract(left: Bitvector32Term, right: Bitvector32Term) -> Bitvecto
         (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => left,
         _ if left == right => Bitvector32Term::Constant(0),
         (
-            Bitvector32Term::Add(left_base, left_addend),
-            Bitvector32Term::Add(right_base, right_addend),
+            binary_term!(Int32, Add, left_base, left_addend),
+            binary_term!(Int32, Add, right_base, right_addend),
         ) if left_base == right_base => {
             canonical_subtract(left_addend.as_ref().clone(), right_addend.as_ref().clone())
         }
-        _ => Bitvector32Term::Subtract(Box::new(left), Box::new(right)),
+        _ => binary_node!(Int32, Subtract, Box::new(left), Box::new(right)),
     }
 }
 
@@ -2813,7 +2815,7 @@ fn canonical_multiply(left: Bitvector32Term, right: Bitvector32Term) -> Bitvecto
         (Bitvector32Term::Constant(1), _) => right,
         (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0))
         | (Bitvector32Term::Constant(0), _) => Bitvector32Term::Constant(0),
-        _ => Bitvector32Term::Multiply(Box::new(left), Box::new(right)),
+        _ => binary_node!(Int32, Multiply, Box::new(left), Box::new(right)),
     }
 }
 
@@ -2939,7 +2941,7 @@ pub(crate) fn memory_range_byte_count_extent(
 /// [`memory_range_byte_count`], on the term only: it neither simplifies nor
 /// consults facts.
 pub(crate) fn scaled_extent_element_width(bytes: &Bitvector32Term) -> Option<u32> {
-    let Bitvector32Term::Multiply(left, right) = bytes else {
+    let binary_term!(Int32, Multiply, left, right) = bytes else {
         return None;
     };
     match (left.as_ref(), right.as_ref()) {

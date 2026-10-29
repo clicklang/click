@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 
 #[test]
@@ -151,7 +152,9 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
     for size in [16, 64, 256, 1024] {
         let mut operand = Bitvector32Term::Variable(Variable(149_003));
         for _ in 0..size {
-            operand = Bitvector32Term::Add(
+            operand = binary_node!(
+                Int32,
+                Add,
                 Box::new(operand),
                 Box::new(Bitvector32Term::Variable(Variable(149_004))),
             );
@@ -197,7 +200,9 @@ fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands
     for size in [16, 64, 256, 1024] {
         let mut sum = Bitvector32Term::Variable(Variable(149_005));
         for _ in 0..size {
-            sum = Bitvector32Term::Add(
+            sum = binary_node!(
+                Int32,
+                Add,
                 Box::new(sum),
                 Box::new(Bitvector32Term::Variable(Variable(149_006))),
             );

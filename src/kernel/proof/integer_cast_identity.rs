@@ -2,6 +2,8 @@
 //! destination range. The certificate names exactly two source bounds.
 
 use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+#[cfg(test)]
+use crate::kernel::binary_node;
 use crate::kernel::machine_integer::conversion::{cast, narrow_binder_word};
 use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 
@@ -442,7 +444,9 @@ mod tests {
         for destination in [Ty::UInt8, Ty::UInt16] {
             let mask = (1u32 << destination.format().bits()) - 1;
             let goal_with_mask = |mask| {
-                let narrowed = Bitvector32Term::BitwiseAnd(
+                let narrowed = binary_node!(
+                    Int32,
+                    BitwiseAnd,
                     Box::new(value.clone()),
                     Box::new(Bitvector32Term::Constant(mask)),
                 );

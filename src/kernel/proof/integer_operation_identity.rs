@@ -4,6 +4,8 @@
 //! bounds on the mathematical result.
 
 use super::arithmetic_special::SpecialArithmeticCheckError as Error;
+#[cfg(test)]
+use crate::kernel::binary_node;
 use crate::kernel::machine_integer::{identity::mathematical, range};
 use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 
@@ -287,7 +289,7 @@ mod tests {
         // A multiplication is not an addition.
         let product = IntegerTerm::from_machine(
             Ty::Int32,
-            Bitvector32Term::Multiply(Box::new(left), Box::new(right)),
+            binary_node!(Int32, Multiply, Box::new(left), Box::new(right)),
         )
         .unwrap();
         let forged = equal(product, value);

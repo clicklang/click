@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_term;
 
 /// A memory-resolution query in progress on this thread. The resolvers are
 /// mutually recursive over pointers, offsets, index terms, loads, stored
@@ -2051,7 +2052,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
         return bitvector_terms_proven_equal_for_memory_resolution(&left, &right, assumptions);
     }
     let zero = Bitvector32Term::Constant(0);
-    if let Bitvector32Term::Add(base, addend) = left
+    if let binary_term!(Int32, Add, base, addend) = left
         && ((bitvector_terms_proven_equal_for_memory_resolution(base, right, assumptions)
             && bitvector_terms_proven_equal_for_memory_resolution(addend, &zero, assumptions))
             || (bitvector_terms_proven_equal_for_memory_resolution(addend, right, assumptions)
@@ -2059,7 +2060,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     {
         return true;
     }
-    if let Bitvector32Term::Add(base, addend) = right
+    if let binary_term!(Int32, Add, base, addend) = right
         && ((bitvector_terms_proven_equal_for_memory_resolution(left, base, assumptions)
             && bitvector_terms_proven_equal_for_memory_resolution(addend, &zero, assumptions))
             || (bitvector_terms_proven_equal_for_memory_resolution(left, addend, assumptions)
@@ -2069,14 +2070,14 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     }
 
     match (left, right) {
-        (Bitvector32Term::Add(left_a, left_b), Bitvector32Term::Add(right_a, right_b))
+        (binary_term!(Int32, Add, left_a, left_b), binary_term!(Int32, Add, right_a, right_b))
         | (
-            Bitvector32Term::Subtract(left_a, left_b),
-            Bitvector32Term::Subtract(right_a, right_b),
+            binary_term!(Int32, Subtract, left_a, left_b),
+            binary_term!(Int32, Subtract, right_a, right_b),
         )
         | (
-            Bitvector32Term::Multiply(left_a, left_b),
-            Bitvector32Term::Multiply(right_a, right_b),
+            binary_term!(Int32, Multiply, left_a, left_b),
+            binary_term!(Int32, Multiply, right_a, right_b),
         ) => {
             bitvector_terms_proven_equal_for_memory_resolution(left_a, right_a, assumptions)
                 && bitvector_terms_proven_equal_for_memory_resolution(left_b, right_b, assumptions)

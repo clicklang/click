@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use num_bigint::BigInt;
 use num_traits::One;
@@ -152,7 +153,9 @@ fn integer_existential_scopes_definedness_with_its_witness() {
                     IntegerTerm::var(witness).into(),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        Bitvector32Term::Add(
+                        binary_node!(
+                            Int32,
+                            Add,
                             Box::new(Bitvector32Term::Variable(left)),
                             Box::new(Bitvector32Term::Variable(right)),
                         ),

@@ -10,6 +10,7 @@ use super::prelude::*;
 use super::spec::walk::{SpecNode, Visit, spec_tree_all};
 use super::thread_confinement::confined_resource_name;
 use crate::kernel::ResourceDescription;
+use crate::kernel::unary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use std::sync::Arc;
 
@@ -5026,7 +5027,7 @@ fn source_load_snapshot_for_proposition(
                 work.push(Work::Bitvector(right));
                 work.push(Work::Bitvector(left));
             }
-            Work::Bitvector(Bitvector32Term::BitwiseNot(body)) => {
+            Work::Bitvector(unary_term!(Int32, BitwiseNot, body)) => {
                 work.push(Work::Bitvector(body));
             }
             Work::Bitvector(_) => return Ok(None),

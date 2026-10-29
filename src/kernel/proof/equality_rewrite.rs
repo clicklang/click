@@ -3,6 +3,8 @@
 use super::fact_reasoning::exactly_available_fact;
 use super::{ProofFacts, PropositionObligation, PropositionSource};
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::*;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -1517,25 +1519,25 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     rewrite_through_load_variable(term, rewrite_pointer)
                         .unwrap_or_else(|| term.clone())
                 }
-                Bitvector32Term::Add(left_term, right_term) => {
+                binary_term!(Int32, Add, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Add(left, right)
+                    binary_node!(Int32, Add, left, right)
                 }
-                Bitvector32Term::Subtract(left_term, right_term) => {
+                binary_term!(Int32, Subtract, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Subtract(left, right)
+                    binary_node!(Int32, Subtract, left, right)
                 }
-                Bitvector32Term::Multiply(left_term, right_term) => {
+                binary_term!(Int32, Multiply, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Multiply(left, right)
+                    binary_node!(Int32, Multiply, left, right)
                 }
-                Bitvector32Term::Divide(left_term, right_term) => {
+                binary_term!(Int32, Divide, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Divide(left, right)
+                    binary_node!(Int32, Divide, left, right)
                 }
-                Bitvector32Term::Remainder(left_term, right_term) => {
+                binary_term!(Int32, Remainder, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
-                    Bitvector32Term::Remainder(left, right)
+                    binary_node!(Int32, Remainder, left, right)
                 }
                 _ => term.clone(),
             }
@@ -1789,35 +1791,35 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // it is deterministic arithmetic on the rewritten node only, so the
         // rewritten goal states the value the substitution denotes.
         match term {
-            Bitvector32Term::Add(left, right) => {
+            binary_term!(Int32, Add, left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
                     (
                         Bitvector32Term::Constant(first) | Bitvector32Term::UInt32Constant(first),
                         Bitvector32Term::Constant(second) | Bitvector32Term::UInt32Constant(second),
                     ) => Bitvector32Term::Constant(first.wrapping_add(*second)),
-                    _ => Bitvector32Term::Add(left, right),
+                    _ => binary_node!(Int32, Add, left, right),
                 }
             }
-            Bitvector32Term::Subtract(left, right) => {
+            binary_term!(Int32, Subtract, left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
                     (
                         Bitvector32Term::Constant(first) | Bitvector32Term::UInt32Constant(first),
                         Bitvector32Term::Constant(second) | Bitvector32Term::UInt32Constant(second),
                     ) => Bitvector32Term::Constant(first.wrapping_sub(*second)),
-                    _ => Bitvector32Term::Subtract(left, right),
+                    _ => binary_node!(Int32, Subtract, left, right),
                 }
             }
-            Bitvector32Term::Multiply(left, right) => Bitvector32Term::multiply(
+            binary_term!(Int32, Multiply, left, right) => Bitvector32Term::multiply(
                 rewrite_term(left, from, to),
                 rewrite_term(right, from, to),
             ),
-            Bitvector32Term::BitwiseAnd(left, right) => Bitvector32Term::bitwise_and(
+            binary_term!(Int32, BitwiseAnd, left, right) => Bitvector32Term::bitwise_and(
                 rewrite_term(left, from, to),
                 rewrite_term(right, from, to),
             ),
-            Bitvector32Term::ShiftLeft(left, right) => {
+            binary_term!(Int32, ShiftLeft, left, right) => {
                 // The term denotes the shifted bits; signed C overflow is
                 // checked separately during expression evaluation. Preserve
                 // unsigned high-bit results when substitution makes both
@@ -3264,7 +3266,7 @@ mod tests {
                         right: Box::new(one.clone()),
                     }
                 } else {
-                    Bitvector32Term::BitwiseAnd(Box::new(value), Box::new(one.clone()))
+                    binary_node!(Int32, BitwiseAnd, Box::new(value), Box::new(one.clone()))
                 }
             };
             let eq = |a, b| {
@@ -3336,7 +3338,9 @@ mod tests {
                         right: Box::new(one.clone()),
                     }
                 } else {
-                    Bitvector32Term::BitwiseOr(
+                    binary_node!(
+                        Int32,
+                        BitwiseOr,
                         Box::new(load(&after, pointer.clone(), kind)),
                         Box::new(one.clone()),
                     )

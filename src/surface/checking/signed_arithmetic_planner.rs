@@ -6,6 +6,7 @@
 //! certificate checker.
 
 use crate::kernel::MachineIntegerType;
+use crate::kernel::binary_node;
 use crate::kernel::proof::signed_arithmetic::{
     SignedArithmeticAtom, SignedArithmeticCarrier, SignedArithmeticCertificate,
     SignedArithmeticClaim, SignedArithmeticComparison, SignedArithmeticInterval,
@@ -13,6 +14,7 @@ use crate::kernel::proof::signed_arithmetic::{
 };
 use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition};
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{binary_term, unary_term};
 use num_bigint::BigInt;
 use num_traits::{One, ToPrimitive, Zero};
 use std::collections::{BTreeMap, HashMap};
@@ -621,11 +623,11 @@ fn decomposed_affine_difference(
                 charge_bigint_binary_work(&constant, &product)?;
                 constant += product;
             }
-            Bitvector32Term::Add(left, right) => {
+            binary_term!(Int32, Add, left, right) => {
                 pending.push((right, coefficient.clone()));
                 pending.push((left, coefficient));
             }
-            Bitvector32Term::Subtract(left, right) => {
+            binary_term!(Int32, Subtract, left, right) => {
                 pending.push((right, -coefficient.clone()));
                 pending.push((left, coefficient));
             }
@@ -642,7 +644,7 @@ fn decomposed_affine_difference(
             {
                 pending.push((value, coefficient));
             }
-            Bitvector32Term::Multiply(left, right) => {
+            binary_term!(Int32, Multiply, left, right) => {
                 if let Some(value) = left.as_const() {
                     let value = BigInt::from(value as i32);
                     let scaled = coefficient.clone() * &value;
@@ -877,9 +879,9 @@ fn affine_operation_terms(
     let is_affine_operation = |term: &Bitvector32Term| {
         matches!(
             term,
-            Bitvector32Term::Add(_, _)
-                | Bitvector32Term::Subtract(_, _)
-                | Bitvector32Term::Multiply(_, _)
+            binary_term!(Int32, Add, _, _)
+                | binary_term!(Int32, Subtract, _, _)
+                | binary_term!(Int32, Multiply, _, _)
         ) || is_narrowed_word_cast(term)
     };
     let left_operation = is_affine_operation(left).then_some(left);
@@ -898,20 +900,20 @@ fn contains_machine_operation(root: &Bitvector32Term) -> bool {
     let mut pending = vec![root];
     while let Some(term) = pending.pop() {
         match term {
-            Bitvector32Term::Add(_, _)
-            | Bitvector32Term::Subtract(_, _)
-            | Bitvector32Term::Multiply(_, _)
-            | Bitvector32Term::Divide(_, _)
-            | Bitvector32Term::Remainder(_, _)
-            | Bitvector32Term::ShiftLeft(_, _)
-            | Bitvector32Term::ArithmeticShiftRight(_, _)
-            | Bitvector32Term::LogicalShiftRight(_, _)
-            | Bitvector32Term::BitwiseAnd(_, _)
-            | Bitvector32Term::BitwiseOr(_, _)
-            | Bitvector32Term::BitwiseXor(_, _) => {
+            binary_term!(Int32, Add, _, _)
+            | binary_term!(Int32, Subtract, _, _)
+            | binary_term!(Int32, Multiply, _, _)
+            | binary_term!(Int32, Divide, _, _)
+            | binary_term!(Int32, Remainder, _, _)
+            | binary_term!(Int32, ShiftLeft, _, _)
+            | binary_term!(Int32, ShiftRight, _, _)
+            | binary_term!(UInt32, ShiftRight, _, _)
+            | binary_term!(Int32, BitwiseAnd, _, _)
+            | binary_term!(Int32, BitwiseOr, _, _)
+            | binary_term!(Int32, BitwiseXor, _, _) => {
                 return true;
             }
-            Bitvector32Term::BitwiseNot(_) => return true,
+            unary_term!(Int32, BitwiseNot, _) => return true,
             term if is_narrowed_word_cast(term) => return true,
             Bitvector32Term::PureFunctionApplication { arguments, .. } => {
                 pending.extend(arguments.iter());
@@ -1142,11 +1144,11 @@ fn definedness_parts_from_term(
     term: &Bitvector32Term,
 ) -> Option<(u8, &Bitvector32Term, &Bitvector32Term)> {
     Some(match term {
-        Bitvector32Term::Add(left, right) => (0, left, right),
-        Bitvector32Term::Subtract(left, right) => (1, left, right),
-        Bitvector32Term::Multiply(left, right) => (2, left, right),
-        Bitvector32Term::ShiftLeft(left, right) => (3, left, right),
-        Bitvector32Term::Remainder(left, right) => (4, left, right),
+        binary_term!(Int32, Add, left, right) => (0, left, right),
+        binary_term!(Int32, Subtract, left, right) => (1, left, right),
+        binary_term!(Int32, Multiply, left, right) => (2, left, right),
+        binary_term!(Int32, ShiftLeft, left, right) => (3, left, right),
+        binary_term!(Int32, Remainder, left, right) => (4, left, right),
         _ => return None,
     })
 }
@@ -1921,7 +1923,7 @@ impl<'a> Planner<'a> {
                             tasks.push(Task::Visit(right));
                             tasks.push(Task::Visit(left));
                         }
-                        Bitvector32Term::BitwiseNot(operand)
+                        unary_term!(Int32, BitwiseNot, operand)
                         | Bitvector32Term::Int64From32(operand)
                         | Bitvector32Term::UInt64From32(operand)
                         | Bitvector32Term::UInt32From64(operand)
@@ -1941,6 +1943,7 @@ impl<'a> Planner<'a> {
                     }
                     let mut hasher = std::collections::hash_map::DefaultHasher::new();
                     std::mem::discriminant(term).hash(&mut hasher);
+                    term.machine_operator().hash(&mut hasher);
                     match term {
                         Bitvector32Term::PureFunctionApplication { name, arguments } => {
                             name.hash(&mut hasher);
@@ -1959,7 +1962,7 @@ impl<'a> Planner<'a> {
                                 .get(&(right.as_ref() as *const Bitvector32Term as usize))?
                                 .hash(&mut hasher);
                         }
-                        Bitvector32Term::BitwiseNot(operand)
+                        unary_term!(Int32, BitwiseNot, operand)
                         | Bitvector32Term::Int64From32(operand)
                         | Bitvector32Term::UInt64From32(operand)
                         | Bitvector32Term::UInt32From64(operand)
@@ -2433,9 +2436,9 @@ impl<'a> Planner<'a> {
                     Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
                         results.push(self.interval_atom(term)?)
                     }
-                    Bitvector32Term::Add(left, right)
-                    | Bitvector32Term::Subtract(left, right)
-                    | Bitvector32Term::Multiply(left, right) => {
+                    binary_term!(Int32, Add, left, right)
+                    | binary_term!(Int32, Subtract, left, right)
+                    | binary_term!(Int32, Multiply, left, right) => {
                         if allow_direct && let Some(index) = self.interval_atom(term) {
                             results.push(index);
                             continue;
@@ -2448,9 +2451,9 @@ impl<'a> Planner<'a> {
                         tasks.push(Task::Visit(right, allow_direct));
                         tasks.push(Task::Visit(left, allow_direct));
                     }
-                    Bitvector32Term::Remainder(operand, divisor)
-                    | Bitvector32Term::ShiftLeft(operand, divisor)
-                    | Bitvector32Term::ArithmeticShiftRight(operand, divisor) => {
+                    binary_term!(Int32, Remainder, operand, divisor)
+                    | binary_term!(Int32, ShiftLeft, operand, divisor)
+                    | binary_term!(Int32, ShiftRight, operand, divisor) => {
                         divisor.as_const()?;
                         tasks.push(Task::Build(term));
                         tasks.push(Task::Visit(operand, allow_direct));
@@ -2471,8 +2474,8 @@ impl<'a> Planner<'a> {
                         tasks.push(Task::Build(term));
                         tasks.push(Task::Visit(value, allow_direct));
                     }
-                    Bitvector32Term::BitwiseAnd(left, right)
-                    | Bitvector32Term::BitwiseXor(left, right) => {
+                    binary_term!(Int32, BitwiseAnd, left, right)
+                    | binary_term!(Int32, BitwiseXor, left, right) => {
                         let (operand, _) = if right.as_const().is_some() {
                             (left, right)
                         } else if left.as_const().is_some() {
@@ -2488,9 +2491,11 @@ impl<'a> Planner<'a> {
                 Task::Build(term) => {
                     let operand = results.pop()?;
                     let (left, right) = match term {
-                        Bitvector32Term::Add(_, _)
-                        | Bitvector32Term::Subtract(_, _)
-                        | Bitvector32Term::Multiply(_, _) => (Some(results.pop()?), Some(operand)),
+                        binary_term!(Int32, Add, _, _)
+                        | binary_term!(Int32, Subtract, _, _)
+                        | binary_term!(Int32, Multiply, _, _) => {
+                            (Some(results.pop()?), Some(operand))
+                        }
                         _ => (None, Some(operand)),
                     };
                     let result = self.build_operation(term, left, right)?;
@@ -2524,9 +2529,9 @@ impl<'a> Planner<'a> {
             return direct;
         }
         let (left, right) = match term {
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right) => (left, right),
+            binary_term!(Int32, Add, left, right)
+            | binary_term!(Int32, Subtract, left, right)
+            | binary_term!(Int32, Multiply, left, right) => (left, right),
             _ => return direct,
         };
         let Some(structural) = (|| {
@@ -2606,7 +2611,7 @@ impl<'a> Planner<'a> {
                     interval,
                 )
             }
-            Bitvector32Term::Add(_, _) => {
+            binary_term!(Int32, Add, _, _) => {
                 let left = left_index?;
                 let right = right_index?;
                 let l = self.interval_at(left)?;
@@ -2641,7 +2646,7 @@ impl<'a> Planner<'a> {
                 }
                 None
             }
-            Bitvector32Term::Subtract(_, _) => {
+            binary_term!(Int32, Subtract, _, _) => {
                 let left = left_index?;
                 let right = right_index?;
                 let l = self.interval_at(left)?;
@@ -2665,7 +2670,7 @@ impl<'a> Planner<'a> {
                     interval,
                 )
             }
-            Bitvector32Term::Multiply(_, _) => {
+            binary_term!(Int32, Multiply, _, _) => {
                 let left = left_index?;
                 let right = right_index?;
                 let l = self.interval_at(left)?;
@@ -2695,15 +2700,17 @@ impl<'a> Planner<'a> {
                     interval,
                 )
             }
-            Bitvector32Term::Remainder(dividend, divisor) => {
+            binary_term!(Int32, Remainder, dividend, divisor) => {
                 // A known residue transports through a checked bounded sum.
-                if let Bitvector32Term::Add(base, addend) = dividend.as_ref()
+                if let binary_term!(Int32, Add, base, addend) = dividend.as_ref()
                     && Self::is_safe_interval_atom(base)
                     && let Some(addend) = addend.as_const().and_then(|v| v.to_i32())
                     && let Some(divisor) = divisor.as_const().and_then(|v| v.to_i32())
                     && let Some(operand) = self.build_interval(base)
                 {
-                    let original = Bitvector32Term::Remainder(
+                    let original = binary_node!(
+                        Int32,
+                        Remainder,
                         base.clone(),
                         Box::new(Bitvector32Term::Constant(divisor as u32)),
                     );
@@ -2758,7 +2765,7 @@ impl<'a> Planner<'a> {
                     interval,
                 )
             }
-            Bitvector32Term::ShiftLeft(_, shift) => {
+            binary_term!(Int32, ShiftLeft, _, shift) => {
                 let operand = right_index?;
                 let shift = shift.as_const()?.to_i32()?;
                 if !(0..32).contains(&shift) {
@@ -2788,7 +2795,7 @@ impl<'a> Planner<'a> {
                     interval,
                 )
             }
-            Bitvector32Term::ArithmeticShiftRight(_, shift) => {
+            binary_term!(Int32, ShiftRight, _, shift) => {
                 let operand = right_index?;
                 let shift = shift.as_const()?.to_i32()?;
                 if !(0..32).contains(&shift) {
@@ -2809,7 +2816,7 @@ impl<'a> Planner<'a> {
                     interval,
                 )
             }
-            Bitvector32Term::BitwiseAnd(left, right) => {
+            binary_term!(Int32, BitwiseAnd, left, right) => {
                 let operand = right_index?;
                 let mask = left.as_const().or_else(|| right.as_const())?;
                 if mask > i32::MAX as u32 {
@@ -2846,7 +2853,7 @@ fn exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool 
                 left,
                 right,
             },
-            Bitvector32Term::Add(a, b),
+            binary_term!(Int32, Add, a, b),
         )
         | (
             ConditionTerm::Overflows {
@@ -2855,7 +2862,7 @@ fn exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool 
                 left,
                 right,
             },
-            Bitvector32Term::Subtract(a, b),
+            binary_term!(Int32, Subtract, a, b),
         )
         | (
             ConditionTerm::Overflows {
@@ -2864,7 +2871,7 @@ fn exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool 
                 left,
                 right,
             },
-            Bitvector32Term::Multiply(a, b),
+            binary_term!(Int32, Multiply, a, b),
         )
         | (
             ConditionTerm::Overflows {
@@ -2873,7 +2880,7 @@ fn exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool 
                 left,
                 right,
             },
-            Bitvector32Term::ShiftLeft(a, b),
+            binary_term!(Int32, ShiftLeft, a, b),
         )
         | (
             ConditionTerm::Overflows {
@@ -2882,7 +2889,7 @@ fn exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool 
                 left,
                 right,
             },
-            Bitvector32Term::Remainder(a, b),
+            binary_term!(Int32, Remainder, a, b),
         ) => terms_equal(left, a) && terms_equal(right, b),
         _ => false,
     }
@@ -3040,7 +3047,7 @@ fn term_interval_proves(
     if !matches!(comparison, Comparison::LessEqual) || left_interval.lower < 0 {
         return false;
     }
-    let Bitvector32Term::ArithmeticShiftRight(operand, shift) = left else {
+    let binary_term!(Int32, ShiftRight, operand, shift) = left else {
         return false;
     };
     terms_equal(operand, right) && shift.as_const().is_some_and(|value| value <= 31)
@@ -3191,9 +3198,13 @@ mod tests {
 
     #[test]
     fn remainder_add_transports_checked_residue_and_rejects_forgery() {
-        let remainder = Bitvector32Term::Remainder(Box::new(var(1)), Box::new(constant(2)));
-        let successor = Bitvector32Term::Remainder(
-            Box::new(Bitvector32Term::Add(
+        let remainder = binary_node!(Int32, Remainder, Box::new(var(1)), Box::new(constant(2)));
+        let successor = binary_node!(
+            Int32,
+            Remainder,
+            Box::new(binary_node!(
+                Int32,
+                Add,
                 Box::new(var(1)),
                 Box::new(constant(1)),
             )),
@@ -3272,7 +3283,7 @@ mod tests {
                 true,
             )
         };
-        let decrement = Bitvector32Term::Subtract(Box::new(var(1)), Box::new(constant(1)));
+        let decrement = binary_node!(Int32, Subtract, Box::new(var(1)), Box::new(constant(1)));
         let premises = [eq(var(1), constant(5))];
         for goal in [
             eq(decrement.clone(), constant(4)),
@@ -3300,7 +3311,7 @@ mod tests {
     }
 
     fn plus(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
-        Bitvector32Term::Add(Box::new(left), Box::new(right))
+        binary_node!(Int32, Add, Box::new(left), Box::new(right))
     }
 
     fn checked_plan(goal: &Proposition, premises: &[Proposition]) {
@@ -3324,7 +3335,7 @@ mod tests {
         ];
         checked_plan(
             &equal(
-                Bitvector32Term::Subtract(Box::new(var(1)), Box::new(constant(1))),
+                binary_node!(Int32, Subtract, Box::new(var(1)), Box::new(constant(1))),
                 var(2),
             ),
             &premises,
@@ -3344,7 +3355,7 @@ mod tests {
         checked_plan(&equal(var(3), plus(var(2), constant(2))), &premises);
         checked_plan(
             &equal(
-                Bitvector32Term::Subtract(Box::new(var(3)), Box::new(constant(2))),
+                binary_node!(Int32, Subtract, Box::new(var(3)), Box::new(constant(2))),
                 var(2),
             ),
             &premises,
@@ -3469,8 +3480,8 @@ mod tests {
 
     #[test]
     fn symbolic_upper_premises_require_checked_operation_evidence() {
-        let difference = Bitvector32Term::Subtract(Box::new(constant(1000)), Box::new(var(2)));
-        let sum = Bitvector32Term::Add(Box::new(var(1)), Box::new(var(2)));
+        let difference = binary_node!(Int32, Subtract, Box::new(constant(1000)), Box::new(var(2)));
+        let sum = binary_node!(Int32, Add, Box::new(var(1)), Box::new(var(2)));
         let goal = le(var(1), constant(999));
         for premise in [
             le(var(1), difference.clone()),
@@ -3531,7 +3542,7 @@ mod tests {
         }
         // A bound on the opaque operation itself is not recursive evidence
         // that the operation was defined.
-        let overflowing_sum = Bitvector32Term::Add(Box::new(var(1)), Box::new(var(2)));
+        let overflowing_sum = binary_node!(Int32, Add, Box::new(var(1)), Box::new(var(2)));
         let premises = [le(overflowing_sum, constant(1000)), le(constant(1), var(2))];
         assert!(plan_signed_arithmetic_certificate(&goal, &premises).is_none());
     }
@@ -3539,10 +3550,15 @@ mod tests {
     #[test]
     fn compound_premises_and_goal_share_checked_affine_evidence() {
         let cap = constant(i32::MAX - 1);
-        let difference = Bitvector32Term::Subtract(Box::new(cap.clone()), Box::new(var(2)));
+        let difference = binary_node!(Int32, Subtract, Box::new(cap.clone()), Box::new(var(2)));
         let goal = le(
             Bitvector32Term::add(constant(1), var(1)),
-            Bitvector32Term::Subtract(Box::new(constant(i32::MAX)), Box::new(var(2))),
+            binary_node!(
+                Int32,
+                Subtract,
+                Box::new(constant(i32::MAX)),
+                Box::new(var(2))
+            ),
         );
         let premises = [
             le(constant(0), var(1)),
@@ -3567,14 +3583,24 @@ mod tests {
         unsafe_goal[1] = le(var(1), constant(i32::MAX));
         unsafe_goal[4] = le(
             var(1),
-            Bitvector32Term::Subtract(Box::new(constant(i32::MAX)), Box::new(var(2))),
+            binary_node!(
+                Int32,
+                Subtract,
+                Box::new(constant(i32::MAX)),
+                Box::new(var(2))
+            ),
         );
         assert!(plan_signed_arithmetic_certificate(&goal, &unsafe_goal).is_none());
         assert!(plan.check(&goal, &unsafe_goal).is_err());
 
         let unsafe_premise_goal = le(
             Bitvector32Term::add(constant(1), var(1)),
-            Bitvector32Term::Subtract(Box::new(constant(i32::MIN + 1)), Box::new(var(2))),
+            binary_node!(
+                Int32,
+                Subtract,
+                Box::new(constant(i32::MIN + 1)),
+                Box::new(var(2))
+            ),
         );
         let unsafe_premise = [
             le(constant(0), var(1)),
@@ -3583,7 +3609,12 @@ mod tests {
             le(var(2), constant(1)),
             le(
                 var(1),
-                Bitvector32Term::Subtract(Box::new(constant(i32::MIN)), Box::new(var(2))),
+                binary_node!(
+                    Int32,
+                    Subtract,
+                    Box::new(constant(i32::MIN)),
+                    Box::new(var(2))
+                ),
             ),
         ];
         // At x=0, y=1 the wrapped premise is true and the goal false.
@@ -3599,7 +3630,7 @@ mod tests {
     #[test]
     fn an_unsigned_order_goal_reads_its_operands_signed_intervals() {
         let (i, n) = (var(10), var(11));
-        let next = Bitvector32Term::Add(Box::new(i.clone()), Box::new(constant(1)));
+        let next = binary_node!(Int32, Add, Box::new(i.clone()), Box::new(constant(1)));
         let bound = |limit: i32| {
             proposition(
                 ConditionTerm::unsigned_less_equal(next.clone(), constant(limit)),
@@ -3681,7 +3712,7 @@ mod tests {
     fn predecessor_is_less_than_nonnegative_operand() {
         let n = var(90);
         let goal = lt(
-            Bitvector32Term::Subtract(Box::new(n.clone()), Box::new(constant(1))),
+            binary_node!(Int32, Subtract, Box::new(n.clone()), Box::new(constant(1))),
             n.clone(),
         );
         let plan = check_plan(&goal, &[le(constant(0), n)]);
@@ -3703,7 +3734,7 @@ mod tests {
         let y = var(92);
         let goal = lt(
             y.clone(),
-            Bitvector32Term::Subtract(Box::new(y), Box::new(x.clone())),
+            binary_node!(Int32, Subtract, Box::new(y), Box::new(x.clone())),
         );
         let premises = vec![lt(x.clone(), constant(0)), ge(x, constant(0))];
         assert!(
@@ -3715,7 +3746,7 @@ mod tests {
     #[test]
     fn predecessor_with_derived_leaf_and_extra_bounds() {
         let n = var(90);
-        let predecessor = Bitvector32Term::Subtract(Box::new(n.clone()), Box::new(constant(1)));
+        let predecessor = binary_node!(Int32, Subtract, Box::new(n.clone()), Box::new(constant(1)));
         let goal = lt(predecessor.clone(), n.clone());
         let premises = vec![
             le(constant(0), predecessor),
@@ -3730,7 +3761,7 @@ mod tests {
     #[test]
     fn predecessor_with_greater_equal_bound() {
         let n = var(90);
-        let predecessor = Bitvector32Term::Subtract(Box::new(n.clone()), Box::new(constant(1)));
+        let predecessor = binary_node!(Int32, Subtract, Box::new(n.clone()), Box::new(constant(1)));
         let goal = lt(predecessor.clone(), n.clone());
         let ge = proposition(
             ConditionTerm::Compare {
@@ -3782,7 +3813,7 @@ mod tests {
         let lower_b = le(constant(0), b.clone());
         let upper_b = le(b.clone(), constant(20));
         let defined = defined_add(a.clone(), b.clone());
-        let sum = Bitvector32Term::Add(Box::new(a), Box::new(b));
+        let sum = binary_node!(Int32, Add, Box::new(a), Box::new(b));
         let goal = le(sum, constant(30));
         let premises = vec![lower_a, upper_a, lower_b, upper_b, defined];
         let plan = check_plan(&goal, &premises);
@@ -3815,7 +3846,7 @@ mod tests {
         let lower_a = le(constant(0), a.clone());
         let lower_b = le(constant(0), b.clone());
         let defined = defined_add(a.clone(), b.clone());
-        let sum = Bitvector32Term::Add(Box::new(a), Box::new(b));
+        let sum = binary_node!(Int32, Add, Box::new(a), Box::new(b));
         let goal = le(constant(0), sum);
         let premises = vec![lower_a, lower_b, defined];
         let plan = check_plan(&goal, &premises);
@@ -3847,7 +3878,7 @@ mod tests {
             .find(|node| matches!(node, SignedArithmeticNode::DefinedPremise { .. }))
             .expect("definedness node");
         if let SignedArithmeticNode::DefinedPremise { term, .. } = node {
-            *term = Bitvector32Term::Add(Box::new(var(11)), Box::new(var(99)));
+            *term = binary_node!(Int32, Add, Box::new(var(11)), Box::new(var(99)));
         }
         assert!(tampered_definedness.check(&goal, &premises).is_err());
     }
@@ -3857,7 +3888,7 @@ mod tests {
         let n = var(13);
         let lower = le(constant(0), n.clone());
         let upper = le(n.clone(), constant(100));
-        let doubled = Bitvector32Term::Add(Box::new(n.clone()), Box::new(n.clone()));
+        let doubled = binary_node!(Int32, Add, Box::new(n.clone()), Box::new(n.clone()));
         let goal = le(doubled, constant(200));
         let plan = check_plan(&goal, &[lower, upper]);
         assert!(plan.nodes.iter().any(|node| matches!(
@@ -3984,7 +4015,7 @@ mod tests {
             .expect("affine conclusion node");
         if let SignedArithmeticNode::AffineConclusion { result, .. } = node {
             *result = le(
-                Bitvector32Term::Add(Box::new(var(13)), Box::new(var(14))),
+                binary_node!(Int32, Add, Box::new(var(13)), Box::new(var(14))),
                 constant(200),
             );
         }
@@ -3997,7 +4028,7 @@ mod tests {
         let lower = le(constant(0), x.clone());
         let upper = le(x.clone(), constant(10));
 
-        let remainder = Bitvector32Term::Remainder(Box::new(x.clone()), Box::new(constant(7)));
+        let remainder = binary_node!(Int32, Remainder, Box::new(x.clone()), Box::new(constant(7)));
         let remainder_goal = le(remainder.clone(), constant(6));
         let remainder_defined = proposition(
             ConditionTerm::Overflows {
@@ -4019,7 +4050,7 @@ mod tests {
                 .any(|node| matches!(node, SignedArithmeticNode::IntervalRemainder { .. }))
         );
 
-        let shift = Bitvector32Term::ShiftLeft(Box::new(x.clone()), Box::new(constant(2)));
+        let shift = binary_node!(Int32, ShiftLeft, Box::new(x.clone()), Box::new(constant(2)));
         let shift_goal = le(shift.clone(), constant(40));
         let shift_defined = proposition(
             ConditionTerm::Overflows {
@@ -4038,7 +4069,12 @@ mod tests {
                 .any(|node| matches!(node, SignedArithmeticNode::IntervalShiftLeft { .. }))
         );
 
-        let mask = Bitvector32Term::BitwiseAnd(Box::new(x.clone()), Box::new(constant(255)));
+        let mask = binary_node!(
+            Int32,
+            BitwiseAnd,
+            Box::new(x.clone()),
+            Box::new(constant(255))
+        );
         let mask_goal = le(mask, constant(255));
         let mask_plan = check_plan(&mask_goal, &[]);
         assert!(
@@ -4048,7 +4084,7 @@ mod tests {
                 .any(|node| matches!(node, SignedArithmeticNode::IntervalBitwiseAnd { .. }))
         );
 
-        let product = Bitvector32Term::Multiply(Box::new(x.clone()), Box::new(x.clone()));
+        let product = binary_node!(Int32, Multiply, Box::new(x.clone()), Box::new(x.clone()));
         let product_goal = le(product.clone(), constant(100));
         let product_defined = proposition(
             ConditionTerm::Overflows {
@@ -4078,7 +4114,7 @@ mod tests {
         let upper = le(x.clone(), constant(1));
         let mut term = x.clone();
         for _ in 0..127 {
-            term = Bitvector32Term::Add(Box::new(term), Box::new(x.clone()));
+            term = binary_node!(Int32, Add, Box::new(term), Box::new(x.clone()));
         }
         let goal = le(term, constant(128));
         let plan = check_plan(&goal, &[lower, upper]);
@@ -4097,9 +4133,14 @@ mod tests {
                 .any(|node| matches!(node, SignedArithmeticNode::AffineConclusion { .. }))
         );
 
-        let overflowing_inner = Bitvector32Term::Add(Box::new(x.clone()), Box::new(constant(1)));
-        let final_in_range =
-            Bitvector32Term::Subtract(Box::new(overflowing_inner), Box::new(constant(1)));
+        let overflowing_inner =
+            binary_node!(Int32, Add, Box::new(x.clone()), Box::new(constant(1)));
+        let final_in_range = binary_node!(
+            Int32,
+            Subtract,
+            Box::new(overflowing_inner),
+            Box::new(constant(1))
+        );
         let final_goal = le(final_in_range, constant(i32::MAX));
         let bounds = [le(constant(0), x.clone()), le(x, constant(i32::MAX))];
         assert!(plan_signed_arithmetic_certificate(&final_goal, &bounds).is_none());
@@ -4112,7 +4153,7 @@ mod tests {
             let x = var(72);
             let mut term = x.clone();
             for _ in 0..depth {
-                term = Bitvector32Term::Add(Box::new(term), Box::new(x.clone()));
+                term = binary_node!(Int32, Add, Box::new(term), Box::new(x.clone()));
             }
             let goal = le(term, constant(depth as i32 + 1));
             let mut premises = vec![le(constant(0), x.clone()), le(x, constant(1))];
@@ -4138,12 +4179,13 @@ mod tests {
             let mut term = x.clone();
             let mut premises = vec![le(constant(0), x.clone()), le(x, constant(1))];
             for index in 0..depth {
-                term = Bitvector32Term::Add(Box::new(term), Box::new(constant(1)));
+                term = binary_node!(Int32, Add, Box::new(term), Box::new(constant(1)));
                 if index + 1 < depth {
                     premises.push(le(term.clone(), constant(index as i32 + 2)));
                 }
             }
-            let goal_term = Bitvector32Term::BitwiseAnd(Box::new(term), Box::new(constant(255)));
+            let goal_term =
+                binary_node!(Int32, BitwiseAnd, Box::new(term), Box::new(constant(255)));
             let goal = le(goal_term, constant(255));
             let plan = plan_signed_arithmetic_certificate(&goal, &premises)
                 .unwrap_or_else(|| panic!("no plan at depth {depth}"));
@@ -4193,7 +4235,7 @@ mod tests {
     #[test]
     fn a_greater_equal_goal_over_a_subtraction_is_planned() {
         let n = var(43);
-        let predecessor = Bitvector32Term::Subtract(Box::new(n.clone()), Box::new(constant(1)));
+        let predecessor = binary_node!(Int32, Subtract, Box::new(n.clone()), Box::new(constant(1)));
         let goal = ge(predecessor, constant(0));
         let premises = [ge(n, constant(1))];
         check_plan(&goal, &premises);

@@ -2,6 +2,8 @@ use super::*;
 use crate::kernel::ExecutionFactSource;
 #[cfg(test)]
 use crate::kernel::OverflowOperation;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::proof_diagnostics::render;
@@ -957,14 +959,29 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
                 }),
                 *kind,
             ),
-            Bitvector32Term::Add(left, right) => {
-                Bitvector32Term::Add(Box::new(erase_term(left)), Box::new(erase_term(right)))
+            binary_term!(Int32, Add, left, right) => {
+                binary_node!(
+                    Int32,
+                    Add,
+                    Box::new(erase_term(left)),
+                    Box::new(erase_term(right))
+                )
             }
-            Bitvector32Term::Subtract(left, right) => {
-                Bitvector32Term::Subtract(Box::new(erase_term(left)), Box::new(erase_term(right)))
+            binary_term!(Int32, Subtract, left, right) => {
+                binary_node!(
+                    Int32,
+                    Subtract,
+                    Box::new(erase_term(left)),
+                    Box::new(erase_term(right))
+                )
             }
-            Bitvector32Term::Multiply(left, right) => {
-                Bitvector32Term::Multiply(Box::new(erase_term(left)), Box::new(erase_term(right)))
+            binary_term!(Int32, Multiply, left, right) => {
+                binary_node!(
+                    Int32,
+                    Multiply,
+                    Box::new(erase_term(left)),
+                    Box::new(erase_term(right))
+                )
             }
             other => other.clone(),
         }

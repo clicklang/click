@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 
 #[test]
 fn full_pointer_alias_keeps_typed_constructor_fields_in_linear_work() {
@@ -716,14 +717,18 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
             crate::kernel::LoadKind::Int32,
         );
         for _ in 0..depth {
-            mixed_c_payload = Bitvector32Term::Add(
+            mixed_c_payload = binary_node!(
+                Int32,
+                Add,
                 Box::new(mixed_c_payload),
                 Box::new(Bitvector32Term::IntegerToMachine {
                     value: SharedIntegerTerm::from(IntegerTerm::var(integer_capture)),
                     destination: crate::kernel::MachineIntegerType::Int32,
                 }),
             );
-            mixed_c_payload = Bitvector32Term::Add(
+            mixed_c_payload = binary_node!(
+                Int32,
+                Add,
                 Box::new(mixed_c_payload),
                 Box::new(Bitvector32Term::Variable(c_capture)),
             );
@@ -813,14 +818,18 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
         let mut c_replacement =
             Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
         for _ in 0..depth {
-            c_replacement = Bitvector32Term::Add(
+            c_replacement = binary_node!(
+                Int32,
+                Add,
                 Box::new(c_replacement),
                 Box::new(Bitvector32Term::IntegerToMachine {
                     value: SharedIntegerTerm::from(IntegerTerm::var(math_capture)),
                     destination: crate::kernel::MachineIntegerType::Int32,
                 }),
             );
-            c_replacement = Bitvector32Term::Add(
+            c_replacement = binary_node!(
+                Int32,
+                Add,
                 Box::new(c_replacement),
                 Box::new(Bitvector32Term::Variable(c_item_capture)),
             );

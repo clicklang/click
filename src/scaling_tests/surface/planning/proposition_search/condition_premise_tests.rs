@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
@@ -48,7 +49,12 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
                     if pair.len() == 1 {
                         pair[0].clone()
                     } else {
-                        Bitvector32Term::Add(Box::new(pair[0].clone()), Box::new(pair[1].clone()))
+                        binary_node!(
+                            Int32,
+                            Add,
+                            Box::new(pair[0].clone()),
+                            Box::new(pair[1].clone())
+                        )
                     }
                 })
                 .collect();
@@ -350,7 +356,9 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         );
         context = context.assume_proposition(alias.clone());
         let sum = reads.iter().fold(0.into(), |sum, (variable, _)| {
-            Bitvector32Term::Add(
+            binary_node!(
+                Int32,
+                Add,
                 Box::new(sum),
                 Box::new(Bitvector32Term::Variable(*variable)),
             )

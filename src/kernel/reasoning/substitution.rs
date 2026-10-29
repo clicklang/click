@@ -1,5 +1,8 @@
 use super::*;
 use crate::kernel::CompareRelation;
+#[cfg(test)]
+use crate::kernel::binary_node;
+use crate::kernel::unary_term;
 use num_traits::ToPrimitive;
 
 /// One variable substitution, bitvector or pointer, as the structural walks
@@ -1814,7 +1817,9 @@ mod resource_frame_substitution_tests {
                 },
             },
             Bitvector32Term::Variable(from),
-            Bitvector32Term::Add(
+            binary_node!(
+                Int32,
+                Add,
                 Box::new(Bitvector32Term::Variable(from)),
                 Box::new(Bitvector32Term::Constant(1)),
             ),
@@ -3141,7 +3146,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
         }
-        Bitvector32Term::BitwiseNot(value)
+        unary_term!(Int32, BitwiseNot, value)
         | Bitvector32Term::Float32Negate(value)
         | Bitvector32Term::Float64Negate(value) => {
             collect_bitvector_bound_variables(value, variables);
@@ -8597,8 +8602,12 @@ mod integer_range_fold_substitution_tests {
         let source = Variable(70_060);
         let mut payload = Bitvector32Term::Variable(source);
         for _ in 0..64 {
-            payload =
-                Bitvector32Term::Add(Box::new(payload), Box::new(Bitvector32Term::Constant(1)));
+            payload = binary_node!(
+                Int32,
+                Add,
+                Box::new(payload),
+                Box::new(Bitvector32Term::Constant(1))
+            );
         }
         let term = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,

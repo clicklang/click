@@ -1,5 +1,7 @@
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{binary_term, unary_term};
 
 /// Discharge one guard left open by a universal instantiation, naming the
 /// premises it consumed, or `None` when the retained exact routes do not
@@ -57,7 +59,7 @@ pub(crate) fn forall_loadable_range_parts(
 }
 
 fn exact_predecessor_base(term: &Bitvector32Term) -> Option<Bitvector32Term> {
-    let Bitvector32Term::Subtract(value, amount) = term else {
+    let binary_term!(Int32, Subtract, value, amount) = term else {
         return None;
     };
     (amount.as_ref() == &Bitvector32Term::Constant(1)).then(|| value.as_ref().clone())
@@ -1224,7 +1226,7 @@ impl SelectedFacts<'_> {
                 },
                 true,
             ) => match sum.as_ref() {
-                Bitvector32Term::Add(left, right)
+                binary_term!(Int32, Add, left, right)
                     if left.as_ref() == &Bitvector32Term::Constant(1)
                         && right.as_ref() == value.as_ref() =>
                 {
@@ -1288,7 +1290,9 @@ impl SelectedFacts<'_> {
                 false,
             ) => {
                 let zero = Bitvector32Term::Constant(0);
-                let headroom = Bitvector32Term::Subtract(
+                let headroom = binary_node!(
+                    Int32,
+                    Subtract,
                     Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
                     Box::new(amount.as_ref().clone()),
                 );
@@ -2072,7 +2076,7 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            let Bitvector32Term::Add(left, right) = sum.as_ref() else {
+            let binary_term!(Int32, Add, left, right) = sum.as_ref() else {
                 return false;
             };
             let int_max = Bitvector32Term::Constant(i32::MAX as u32);
@@ -2145,7 +2149,9 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            let headroom = Bitvector32Term::Subtract(
+            let headroom = binary_node!(
+                Int32,
+                Subtract,
                 Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
                 Box::new(amount.as_ref().clone()),
             );
@@ -3338,7 +3344,9 @@ impl PureFactContext {
                 collect_term_candidates(pattern_load, target_load, bound, candidates);
                 return;
             }
-            if std::mem::discriminant(pattern) != std::mem::discriminant(target) {
+            if std::mem::discriminant(pattern) != std::mem::discriminant(target)
+                || pattern.machine_operator() != target.machine_operator()
+            {
                 return;
             }
             fn binary(term: &Bitvector32Term) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
@@ -3350,7 +3358,7 @@ impl PureFactContext {
                 }
             }
             match (pattern, target) {
-                (Bitvector32Term::BitwiseNot(left), Bitvector32Term::BitwiseNot(right)) => {
+                (unary_term!(Int32, BitwiseNot, left), unary_term!(Int32, BitwiseNot, right)) => {
                     collect_term_candidates(left, right, bound, candidates);
                 }
                 (
@@ -3981,7 +3989,7 @@ impl PureFactContext {
                 && self.bitvector_terms_equal_for_transport(left_b, right_b);
         }
         match (left, right) {
-            (Bitvector32Term::BitwiseNot(left), Bitvector32Term::BitwiseNot(right)) => {
+            (unary_term!(Int32, BitwiseNot, left), unary_term!(Int32, BitwiseNot, right)) => {
                 self.bitvector_terms_equal_for_transport(left, right)
             }
             _ => false,
@@ -4099,14 +4107,17 @@ impl PureFactContext {
             (Bitvector32Term::MemoryLoad(_, _, _), Bitvector32Term::MemoryLoad(_, _, _)) => {
                 memory_load_terms_equal_for_fact_transport(left, right, self)
             }
-            (Bitvector32Term::Add(left_a, left_b), Bitvector32Term::Add(right_a, right_b))
-            | (
-                Bitvector32Term::Subtract(left_a, left_b),
-                Bitvector32Term::Subtract(right_a, right_b),
+            (
+                binary_term!(Int32, Add, left_a, left_b),
+                binary_term!(Int32, Add, right_a, right_b),
             )
             | (
-                Bitvector32Term::Multiply(left_a, left_b),
-                Bitvector32Term::Multiply(right_a, right_b),
+                binary_term!(Int32, Subtract, left_a, left_b),
+                binary_term!(Int32, Subtract, right_a, right_b),
+            )
+            | (
+                binary_term!(Int32, Multiply, left_a, left_b),
+                binary_term!(Int32, Multiply, right_a, right_b),
             ) => {
                 self.bitvector_terms_snapshot_equivalent(left_a, right_a)
                     && self.bitvector_terms_snapshot_equivalent(left_b, right_b)
@@ -4148,8 +4159,8 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        if !matches!(left, Bitvector32Term::Add(_, _))
-            && !matches!(right, Bitvector32Term::Add(_, _))
+        if !matches!(left, binary_term!(Int32, Add, _, _))
+            && !matches!(right, binary_term!(Int32, Add, _, _))
         {
             return false;
         }
@@ -4561,7 +4572,7 @@ pub(super) fn collect_order_index_add_terms(
     while let Some(term) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match term {
-            Bitvector32Term::Add(left, right) => {
+            binary_term!(Int32, Add, left, right) => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -4599,7 +4610,7 @@ pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
                     term @ Bitvector32Term::MemoryLoad(_, _, _) => {
                         results.push(equality_graph_term_key(&term));
                     }
-                    term @ Bitvector32Term::Add(_, _) => {
+                    term @ binary_term!(Int32, Add, _, _) => {
                         let mut raw = Vec::new();
                         let mut constant = 0u32;
                         collect_order_index_add_terms(&term, &mut raw, &mut constant);

@@ -1,6 +1,8 @@
 use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
+use crate::kernel::binary_node;
+use crate::kernel::{binary_term, unary_term};
 #[cfg(test)]
 use crate::surface::planning::solve::{
     SolveEvidence, plan_explicit_equality_rewrites_from, plan_solve_certificate,
@@ -492,8 +494,8 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
         | Bitvector32Term::Int64FromUInt32(_)
         | Bitvector32Term::UInt64FromInt32(_)
         | Bitvector32Term::UInt64FromInt64(_)
-        | Bitvector32Term::Binary { .. }
-        | Bitvector32Term::Unary { .. }
+        | crate::kernel::binary_wide_term!(_, _)
+        | crate::kernel::unary_wide_term!(_)
         | Bitvector32Term::Float32Negate(_)
         | Bitvector32Term::Float32Binary { .. }
         | Bitvector32Term::Float64Negate(_)
@@ -504,16 +506,16 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
         | Bitvector32Term::AlgebraicMatch { .. }
         | Bitvector32Term::PointerAddress(_, _)
         | Bitvector32Term::MemoryLoad(_, _, _) => None,
-        Bitvector32Term::Add(left, right) => Some(
+        binary_term!(Int32, Add, left, right) => Some(
             evaluate_bitvector_constant(left)?.wrapping_add(evaluate_bitvector_constant(right)?),
         ),
-        Bitvector32Term::Subtract(left, right) => Some(
+        binary_term!(Int32, Subtract, left, right) => Some(
             evaluate_bitvector_constant(left)?.wrapping_sub(evaluate_bitvector_constant(right)?),
         ),
-        Bitvector32Term::Multiply(left, right) => Some(
+        binary_term!(Int32, Multiply, left, right) => Some(
             evaluate_bitvector_constant(left)?.wrapping_mul(evaluate_bitvector_constant(right)?),
         ),
-        Bitvector32Term::Divide(left, right) => {
+        binary_term!(Int32, Divide, left, right) => {
             let left = evaluate_bitvector_constant(left)? as i32;
             let right = evaluate_bitvector_constant(right)? as i32;
             if right == 0 || (left == i32::MIN && right == -1) {
@@ -522,12 +524,12 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
                 Some((left / right) as u32)
             }
         }
-        Bitvector32Term::UnsignedDivide(left, right) => {
+        binary_term!(UInt32, Divide, left, right) => {
             let left = evaluate_bitvector_constant(left)?;
             let right = evaluate_bitvector_constant(right)?;
             (right != 0).then_some(left / right)
         }
-        Bitvector32Term::Remainder(left, right) => {
+        binary_term!(Int32, Remainder, left, right) => {
             let left = evaluate_bitvector_constant(left)? as i32;
             let right = evaluate_bitvector_constant(right)? as i32;
             if right == 0 || (left == i32::MIN && right == -1) {
@@ -536,12 +538,12 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
                 Some((left % right) as u32)
             }
         }
-        Bitvector32Term::UnsignedRemainder(left, right) => {
+        binary_term!(UInt32, Remainder, left, right) => {
             let left = evaluate_bitvector_constant(left)?;
             let right = evaluate_bitvector_constant(right)?;
             (right != 0).then_some(left % right)
         }
-        Bitvector32Term::ShiftLeft(left, right) => {
+        binary_term!(Int32, ShiftLeft, left, right) => {
             let left = evaluate_bitvector_constant(left)? as i32;
             let right = bitvector32_shift_count(evaluate_bitvector_constant(right)?)?;
             if left < 0 {
@@ -551,26 +553,28 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
                 (shifted <= i64::from(i32::MAX)).then_some((shifted as i32) as u32)
             }
         }
-        Bitvector32Term::ArithmeticShiftRight(left, right) => {
+        binary_term!(Int32, ShiftRight, left, right) => {
             let left = evaluate_bitvector_constant(left)? as i32;
             let right = bitvector32_shift_count(evaluate_bitvector_constant(right)?)?;
             Some((left >> right) as u32)
         }
-        Bitvector32Term::LogicalShiftRight(left, right) => {
+        binary_term!(UInt32, ShiftRight, left, right) => {
             let left = evaluate_bitvector_constant(left)?;
             let right = bitvector32_shift_count(evaluate_bitvector_constant(right)?)?;
             Some(left >> right)
         }
-        Bitvector32Term::BitwiseAnd(left, right) => {
+        binary_term!(Int32, BitwiseAnd, left, right) => {
             Some(evaluate_bitvector_constant(left)? & evaluate_bitvector_constant(right)?)
         }
-        Bitvector32Term::BitwiseOr(left, right) => {
+        binary_term!(Int32, BitwiseOr, left, right) => {
             Some(evaluate_bitvector_constant(left)? | evaluate_bitvector_constant(right)?)
         }
-        Bitvector32Term::BitwiseXor(left, right) => {
+        binary_term!(Int32, BitwiseXor, left, right) => {
             Some(evaluate_bitvector_constant(left)? ^ evaluate_bitvector_constant(right)?)
         }
-        Bitvector32Term::BitwiseNot(value) => Some(!evaluate_bitvector_constant(value)?),
+        unary_term!(Int32, BitwiseNot, value) => Some(!evaluate_bitvector_constant(value)?),
+        // A 32-bit sign-free operator is built at `int32` only.
+        Bitvector32Term::Binary { .. } => None,
         Bitvector32Term::If {
             condition,
             then_term,
@@ -598,50 +602,50 @@ pub(in crate::surface) fn normalize_bitvector(term: &Bitvector32Term) -> Bitvect
                 None => term.clone(),
             }
         }
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             bitvector32_add(normalize_bitvector(left), normalize_bitvector(right))
         }
-        Bitvector32Term::Subtract(left, right) => {
+        binary_term!(Int32, Subtract, left, right) => {
             bitvector32_subtract(normalize_bitvector(left), normalize_bitvector(right))
         }
-        Bitvector32Term::Multiply(left, right) => {
+        binary_term!(Int32, Multiply, left, right) => {
             bitvector32_multiply(normalize_bitvector(left), normalize_bitvector(right))
         }
-        Bitvector32Term::Divide(left, right) => {
+        binary_term!(Int32, Divide, left, right) => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             bitvector32_divide(left.clone(), right.clone())
-                .unwrap_or_else(|_| Bitvector32Term::Divide(Box::new(left), Box::new(right)))
+                .unwrap_or_else(|_| binary_node!(Int32, Divide, Box::new(left), Box::new(right)))
         }
-        Bitvector32Term::Remainder(left, right) => {
+        binary_term!(Int32, Remainder, left, right) => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             bitvector32_remainder(left.clone(), right.clone())
-                .unwrap_or_else(|_| Bitvector32Term::Remainder(Box::new(left), Box::new(right)))
+                .unwrap_or_else(|_| binary_node!(Int32, Remainder, Box::new(left), Box::new(right)))
         }
-        Bitvector32Term::ShiftLeft(left, right) => {
+        binary_term!(Int32, ShiftLeft, left, right) => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             bitvector32_shift_left(left.clone(), right.clone())
-                .unwrap_or_else(|_| Bitvector32Term::ShiftLeft(Box::new(left), Box::new(right)))
+                .unwrap_or_else(|_| binary_node!(Int32, ShiftLeft, Box::new(left), Box::new(right)))
         }
-        Bitvector32Term::ArithmeticShiftRight(left, right) => {
+        binary_term!(Int32, ShiftRight, left, right) => {
             let left = normalize_bitvector(left);
             let right = normalize_bitvector(right);
             bitvector32_shift_right(left.clone(), right.clone()).unwrap_or_else(|_| {
-                Bitvector32Term::ArithmeticShiftRight(Box::new(left), Box::new(right))
+                binary_node!(Int32, ShiftRight, Box::new(left), Box::new(right))
             })
         }
-        Bitvector32Term::BitwiseAnd(left, right) => {
+        binary_term!(Int32, BitwiseAnd, left, right) => {
             bitvector32_and(normalize_bitvector(left), normalize_bitvector(right))
         }
-        Bitvector32Term::BitwiseOr(left, right) => {
+        binary_term!(Int32, BitwiseOr, left, right) => {
             bitvector32_or(normalize_bitvector(left), normalize_bitvector(right))
         }
-        Bitvector32Term::BitwiseXor(left, right) => {
+        binary_term!(Int32, BitwiseXor, left, right) => {
             bitvector32_xor(normalize_bitvector(left), normalize_bitvector(right))
         }
-        Bitvector32Term::BitwiseNot(value) => bitvector32_not(normalize_bitvector(value)),
+        unary_term!(Int32, BitwiseNot, value) => bitvector32_not(normalize_bitvector(value)),
         Bitvector32Term::If {
             condition,
             then_term,

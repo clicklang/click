@@ -9,7 +9,10 @@
 use super::super::{Bitvector32Term, BitvectorBinaryOp, ConditionTerm, Proposition, Variable};
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
+#[cfg(test)]
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{binary_term, unary_term};
 use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::{BTreeMap, HashMap};
@@ -139,7 +142,7 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 name.len().saturating_add(arguments.len()).saturating_add(3)
             }
-            Bitvector32Term::BitwiseNot(_) => 2,
+            unary_term!(Int32, BitwiseNot, _) => 2,
             term if signed_binary(term).is_some() => 3,
             _ => 1,
         };
@@ -207,7 +210,7 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
                 });
                 pending.extend(arguments.iter().rev());
             }
-            Bitvector32Term::BitwiseNot(operand) => {
+            unary_term!(Int32, BitwiseNot, operand) => {
                 push_token!(SignedArithmeticAtomToken::UnaryNot);
                 pending.push(operand);
             }
@@ -571,26 +574,26 @@ fn explicit_binary(
     term: &Bitvector32Term,
 ) -> Option<(CheckedBinaryOperator, &Bitvector32Term, &Bitvector32Term)> {
     let (actual_operator, left, right) = match (operator, term) {
-        (CheckedBinaryOperator::Add, Bitvector32Term::Add(left, right)) => {
+        (CheckedBinaryOperator::Add, binary_term!(Int32, Add, left, right)) => {
             (CheckedBinaryOperator::Add, left, right)
         }
-        (CheckedBinaryOperator::Subtract, Bitvector32Term::Subtract(left, right)) => {
+        (CheckedBinaryOperator::Subtract, binary_term!(Int32, Subtract, left, right)) => {
             (CheckedBinaryOperator::Subtract, left, right)
         }
-        (CheckedBinaryOperator::Multiply, Bitvector32Term::Multiply(left, right)) => {
+        (CheckedBinaryOperator::Multiply, binary_term!(Int32, Multiply, left, right)) => {
             (CheckedBinaryOperator::Multiply, left, right)
         }
-        (CheckedBinaryOperator::Remainder, Bitvector32Term::Remainder(left, right)) => {
+        (CheckedBinaryOperator::Remainder, binary_term!(Int32, Remainder, left, right)) => {
             (CheckedBinaryOperator::Remainder, left, right)
         }
-        (CheckedBinaryOperator::ShiftLeft, Bitvector32Term::ShiftLeft(left, right)) => {
+        (CheckedBinaryOperator::ShiftLeft, binary_term!(Int32, ShiftLeft, left, right)) => {
             (CheckedBinaryOperator::ShiftLeft, left, right)
         }
         (
             CheckedBinaryOperator::ArithmeticShiftRight,
-            Bitvector32Term::ArithmeticShiftRight(left, right),
+            binary_term!(Int32, ShiftRight, left, right),
         ) => (CheckedBinaryOperator::ArithmeticShiftRight, left, right),
-        (CheckedBinaryOperator::BitwiseAnd, Bitvector32Term::BitwiseAnd(left, right)) => {
+        (CheckedBinaryOperator::BitwiseAnd, binary_term!(Int32, BitwiseAnd, left, right)) => {
             (CheckedBinaryOperator::BitwiseAnd, left, right)
         }
         _ => return None,
@@ -1578,22 +1581,22 @@ fn charge_term_work(root: &Bitvector32Term) -> bool {
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 name.len().saturating_add(arguments.len()).saturating_add(2)
             }
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right)
-            | Bitvector32Term::Divide(left, right)
-            | Bitvector32Term::Remainder(left, right)
-            | Bitvector32Term::ShiftLeft(left, right)
-            | Bitvector32Term::ArithmeticShiftRight(left, right)
-            | Bitvector32Term::LogicalShiftRight(left, right)
-            | Bitvector32Term::BitwiseAnd(left, right)
-            | Bitvector32Term::BitwiseOr(left, right)
-            | Bitvector32Term::BitwiseXor(left, right) => {
+            binary_term!(Int32, Add, left, right)
+            | binary_term!(Int32, Subtract, left, right)
+            | binary_term!(Int32, Multiply, left, right)
+            | binary_term!(Int32, Divide, left, right)
+            | binary_term!(Int32, Remainder, left, right)
+            | binary_term!(Int32, ShiftLeft, left, right)
+            | binary_term!(Int32, ShiftRight, left, right)
+            | binary_term!(UInt32, ShiftRight, left, right)
+            | binary_term!(Int32, BitwiseAnd, left, right)
+            | binary_term!(Int32, BitwiseOr, left, right)
+            | binary_term!(Int32, BitwiseXor, left, right) => {
                 pending.push(left);
                 pending.push(right);
                 3
             }
-            Bitvector32Term::BitwiseNot(operand) => {
+            unary_term!(Int32, BitwiseNot, operand) => {
                 pending.push(operand);
                 2
             }
@@ -1690,21 +1693,21 @@ fn signed_term_work(root: &Bitvector32Term) -> usize {
                 units = units.saturating_add((u32::BITS - value.leading_zeros()) as usize + 1);
             }
             Bitvector32Term::Variable(_) => {}
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right)
-            | Bitvector32Term::Divide(left, right)
-            | Bitvector32Term::Remainder(left, right)
-            | Bitvector32Term::ShiftLeft(left, right)
-            | Bitvector32Term::ArithmeticShiftRight(left, right)
-            | Bitvector32Term::LogicalShiftRight(left, right)
-            | Bitvector32Term::BitwiseAnd(left, right)
-            | Bitvector32Term::BitwiseOr(left, right)
-            | Bitvector32Term::BitwiseXor(left, right) => {
+            binary_term!(Int32, Add, left, right)
+            | binary_term!(Int32, Subtract, left, right)
+            | binary_term!(Int32, Multiply, left, right)
+            | binary_term!(Int32, Divide, left, right)
+            | binary_term!(Int32, Remainder, left, right)
+            | binary_term!(Int32, ShiftLeft, left, right)
+            | binary_term!(Int32, ShiftRight, left, right)
+            | binary_term!(UInt32, ShiftRight, left, right)
+            | binary_term!(Int32, BitwiseAnd, left, right)
+            | binary_term!(Int32, BitwiseOr, left, right)
+            | binary_term!(Int32, BitwiseXor, left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            Bitvector32Term::BitwiseNot(operand) => pending.push(operand),
+            unary_term!(Int32, BitwiseNot, operand) => pending.push(operand),
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 // Function application identity compares the name and every
                 // argument. Arguments are restricted to this same safe
@@ -2437,9 +2440,9 @@ fn affine_leaf(term: &Bitvector32Term) -> Option<(BTreeMap<SignedArithmeticAtom,
 fn contains_affine_machine_operation(root: &Bitvector32Term) -> bool {
     matches!(
         root,
-        Bitvector32Term::Add(_, _)
-            | Bitvector32Term::Subtract(_, _)
-            | Bitvector32Term::Multiply(_, _)
+        binary_term!(Int32, Add, _, _)
+            | binary_term!(Int32, Subtract, _, _)
+            | binary_term!(Int32, Multiply, _, _)
     )
 }
 
@@ -2595,7 +2598,7 @@ fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bo
                 left,
                 right,
             },
-            Bitvector32Term::Add(a, b),
+            binary_term!(Int32, Add, a, b),
         )
         | (
             ConditionTerm::Overflows {
@@ -2604,7 +2607,7 @@ fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bo
                 left,
                 right,
             },
-            Bitvector32Term::Subtract(a, b),
+            binary_term!(Int32, Subtract, a, b),
         )
         | (
             ConditionTerm::Overflows {
@@ -2613,7 +2616,7 @@ fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bo
                 left,
                 right,
             },
-            Bitvector32Term::Multiply(a, b),
+            binary_term!(Int32, Multiply, a, b),
         ) => signed_arithmetic_terms_equal(left, a) && signed_arithmetic_terms_equal(right, b),
         (
             ConditionTerm::Overflows {
@@ -2622,7 +2625,7 @@ fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bo
                 left,
                 right,
             },
-            Bitvector32Term::ShiftLeft(a, b),
+            binary_term!(Int32, ShiftLeft, a, b),
         ) => signed_arithmetic_terms_equal(left, a) && signed_arithmetic_terms_equal(right, b),
         (
             ConditionTerm::Overflows {
@@ -2631,7 +2634,7 @@ fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bo
                 left,
                 right,
             },
-            Bitvector32Term::Remainder(a, b),
+            binary_term!(Int32, Remainder, a, b),
         ) => signed_arithmetic_terms_equal(left, a) && signed_arithmetic_terms_equal(right, b),
         _ => false,
     }
@@ -3542,8 +3545,18 @@ mod tests {
 
     #[test]
     fn affine_conclusion_pair_requires_both_operation_roots() {
-        let left = Bitvector32Term::Add(Box::new(x()), Box::new(Bitvector32Term::Constant(0)));
-        let right = Bitvector32Term::Add(Box::new(x()), Box::new(Bitvector32Term::Constant(0)));
+        let left = binary_node!(
+            Int32,
+            Add,
+            Box::new(x()),
+            Box::new(Bitvector32Term::Constant(0))
+        );
+        let right = binary_node!(
+            Int32,
+            Add,
+            Box::new(x()),
+            Box::new(Bitvector32Term::Constant(0))
+        );
         let goal = equal(left.clone(), right.clone());
         let lower = le(Bitvector32Term::Constant(0), x());
         let upper = le(x(), Bitvector32Term::Constant(1));
@@ -3629,7 +3642,12 @@ mod tests {
 
     #[test]
     fn direct_compound_interval_checks_source_term_and_bounds() {
-        let operation = Bitvector32Term::Add(Box::new(x()), Box::new(Bitvector32Term::Constant(1)));
+        let operation = binary_node!(
+            Int32,
+            Add,
+            Box::new(x()),
+            Box::new(Bitvector32Term::Constant(1))
+        );
         let premise = le(operation.clone(), Bitvector32Term::Constant(0));
         let goal = premise.clone();
         let certificate = SignedArithmeticCertificate {
@@ -3666,7 +3684,12 @@ mod tests {
         let mut bad_term = certificate.clone();
         bad_term.nodes[1] = SignedArithmeticNode::IntervalFromAffineDirect {
             source: 0,
-            term: Bitvector32Term::Add(Box::new(x()), Box::new(Bitvector32Term::Constant(2))),
+            term: binary_node!(
+                Int32,
+                Add,
+                Box::new(x()),
+                Box::new(Bitvector32Term::Constant(2))
+            ),
             lower: SIGNED_MIN,
             upper: 0,
         };
@@ -3776,8 +3799,18 @@ mod tests {
 
     #[test]
     fn affine_conclusion_pair_rejects_swapped_and_malformed_evidence() {
-        let left = Bitvector32Term::Add(Box::new(x()), Box::new(Bitvector32Term::Constant(0)));
-        let right = Bitvector32Term::Add(Box::new(y()), Box::new(Bitvector32Term::Constant(0)));
+        let left = binary_node!(
+            Int32,
+            Add,
+            Box::new(x()),
+            Box::new(Bitvector32Term::Constant(0))
+        );
+        let right = binary_node!(
+            Int32,
+            Add,
+            Box::new(y()),
+            Box::new(Bitvector32Term::Constant(0))
+        );
         let goal = equal(left.clone(), right.clone());
         let source = equal(x(), y());
         let zero = Bitvector32Term::Constant(0);
@@ -3878,7 +3911,12 @@ mod tests {
 
     #[test]
     fn affine_premises_do_not_decompose_undefined_machine_operations_or_lp64_addresses() {
-        let operation = Bitvector32Term::Add(Box::new(x()), Box::new(Bitvector32Term::Constant(1)));
+        let operation = binary_node!(
+            Int32,
+            Add,
+            Box::new(x()),
+            Box::new(Bitvector32Term::Constant(1))
+        );
         let operation_premise = le(operation, Bitvector32Term::Constant(0));
         let unrelated_goal = le(x(), Bitvector32Term::Constant(0));
         let operation_certificate = SignedArithmeticCertificate {
@@ -4043,7 +4081,7 @@ mod tests {
     fn certificate_checks_scaled_affine_interval_and_definedness_derivation() {
         let lower_premise = le(Bitvector32Term::Constant(0), x());
         let upper_premise = le(x(), Bitvector32Term::Constant(100));
-        let add_term = Bitvector32Term::Add(Box::new(x()), Box::new(x()));
+        let add_term = binary_node!(Int32, Add, Box::new(x()), Box::new(x()));
         let defined =
             Proposition::ConditionIs(ConditionTerm::signed_add_overflows(x(), x()), false);
         let goal = le(add_term.clone(), Bitvector32Term::Constant(200));
@@ -4124,10 +4162,12 @@ mod tests {
     fn bitwise_and_is_total_after_checked_compound_operand() {
         let lower_premise = le(Bitvector32Term::Constant(0), x());
         let upper_premise = le(x(), Bitvector32Term::Constant(100));
-        let add_term = Bitvector32Term::Add(Box::new(x()), Box::new(x()));
+        let add_term = binary_node!(Int32, Add, Box::new(x()), Box::new(x()));
         let defined =
             Proposition::ConditionIs(ConditionTerm::signed_add_overflows(x(), x()), false);
-        let masked_term = Bitvector32Term::BitwiseAnd(
+        let masked_term = binary_node!(
+            Int32,
+            BitwiseAnd,
             Box::new(add_term.clone()),
             Box::new(Bitvector32Term::Constant(255)),
         );
@@ -4208,8 +4248,12 @@ mod tests {
 
     #[test]
     fn bitwise_and_accepts_safe_atoms_and_rejects_undefined_affine_interval_reuse() {
-        let masked_term =
-            Bitvector32Term::BitwiseAnd(Box::new(x()), Box::new(Bitvector32Term::Constant(255)));
+        let masked_term = binary_node!(
+            Int32,
+            BitwiseAnd,
+            Box::new(x()),
+            Box::new(Bitvector32Term::Constant(255))
+        );
         let goal = le(masked_term.clone(), Bitvector32Term::Constant(255));
         let certificate = SignedArithmeticCertificate {
             nodes: vec![
@@ -4245,7 +4289,7 @@ mod tests {
         };
         certificate.check(&goal, &[]).unwrap();
 
-        let compound = Bitvector32Term::Add(Box::new(x()), Box::new(x()));
+        let compound = binary_node!(Int32, Add, Box::new(x()), Box::new(x()));
         let unsafe_reuse = SignedArithmeticCertificate {
             nodes: vec![
                 SignedArithmeticNode::Premise {
@@ -4262,7 +4306,7 @@ mod tests {
             conclusion: 1,
         };
         let premise = le(
-            Bitvector32Term::Add(Box::new(x()), Box::new(x())),
+            binary_node!(Int32, Add, Box::new(x()), Box::new(x())),
             Bitvector32Term::Constant(200),
         );
         assert_eq!(
@@ -4270,7 +4314,9 @@ mod tests {
             Err(SignedArithmeticCheckError::InvalidOperator(1))
         );
 
-        let masked_compound = Bitvector32Term::BitwiseAnd(
+        let masked_compound = binary_node!(
+            Int32,
+            BitwiseAnd,
             Box::new(compound.clone()),
             Box::new(Bitvector32Term::Constant(255)),
         );
@@ -4390,7 +4436,7 @@ mod tests {
         let bad_operator = SignedArithmeticCertificate {
             nodes: vec![SignedArithmeticNode::IntervalAtom {
                 carrier: SignedArithmeticCarrier::SignedInt32,
-                term: Bitvector32Term::Add(Box::new(x()), Box::new(y())),
+                term: binary_node!(Int32, Add, Box::new(x()), Box::new(y())),
                 lower: SIGNED_MIN,
                 upper: SIGNED_MAX,
             }],
@@ -4460,7 +4506,9 @@ mod tests {
                 SignedArithmeticNode::DefinedPremise {
                     index: 0,
                     carrier: SignedArithmeticCarrier::SignedInt32,
-                    term: Bitvector32Term::Add(
+                    term: binary_node!(
+                        Int32,
+                        Add,
                         Box::new(left_term.clone()),
                         Box::new(right_term.clone()),
                     ),
@@ -4485,7 +4533,9 @@ mod tests {
         assert_eq!(
             overflow.check(
                 &le(
-                    Bitvector32Term::Add(
+                    binary_node!(
+                        Int32,
+                        Add,
                         Box::new(left_term.clone()),
                         Box::new(right_term.clone()),
                     ),

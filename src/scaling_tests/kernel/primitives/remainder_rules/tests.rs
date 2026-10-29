@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 
 #[test]
 fn uint64_small_remainder_requires_the_strict_full_width_guard() {
@@ -53,7 +54,7 @@ fn division_bound_lookup_ignores_unrelated_conditions() {
     let n = B::Variable(Variable(100));
     let d = B::Variable(Variable(101));
     let goal = C::signed_less_equal(
-        B::UnsignedDivide(Box::new(n), Box::new(d)),
+        binary_node!(UInt32, Divide, Box::new(n), Box::new(d)),
         B::Constant(65535),
     );
     let mut measured = Vec::new();
@@ -88,10 +89,20 @@ fn division_bound_work_scales_with_its_selected_expression() {
     for count in [16, 32, 64, 128] {
         let mut n = B::Variable(Variable(100));
         for i in 0..count {
-            n = B::Add(Box::new(n), Box::new(B::Variable(Variable(1000 + i))));
+            n = binary_node!(
+                Int32,
+                Add,
+                Box::new(n),
+                Box::new(B::Variable(Variable(1000 + i)))
+            );
         }
         let goal = C::signed_less_equal(
-            B::UnsignedDivide(Box::new(n), Box::new(B::Variable(Variable(101)))),
+            binary_node!(
+                UInt32,
+                Divide,
+                Box::new(n),
+                Box::new(B::Variable(Variable(101)))
+            ),
             B::Constant(65535),
         );
         let facts: HashMap<_, _> = goal

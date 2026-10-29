@@ -18,7 +18,10 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 use crate::kernel::OverflowOperation;
+#[cfg(test)]
+use crate::kernel::binary_node;
 use crate::kernel::{MachineBinaryOp, MachineIntegerType, MachineUnaryOp};
+use crate::kernel::{binary_term, unary_term};
 
 /// Which spelling policy a printer applies.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1190,7 +1193,7 @@ impl Printer<'_> {
                 op: MachineUnaryOp::BitwiseNot,
                 operand: _,
             } => Some(Hint::UInt64),
-            B::BitwiseNot(inner) => self.hint_of(inner),
+            unary_term!(Int32, BitwiseNot, inner) => self.hint_of(inner),
             _ => {
                 let (operator, left, right) = value.as_binary()?;
                 use crate::kernel::BitvectorBinaryOp as Op;
@@ -1412,9 +1415,9 @@ impl Printer<'_> {
             if !self.source_mode()
                 && !matches!(
                     value,
-                    B::Add(..)
-                        | B::Subtract(..)
-                        | B::Multiply(..)
+                    binary_term!(Int32, Add, ..)
+                        | binary_term!(Int32, Subtract, ..)
+                        | binary_term!(Int32, Multiply, ..)
                         | B::Binary {
                             format: MachineIntegerType::UInt64,
                             op: MachineBinaryOp::Add
@@ -1913,7 +1916,7 @@ impl Printer<'_> {
                 Bitvector32Term::UInt64Constant(value) if (*value as i64) % width == 0 => {
                     Some(atom(format!("{}u64", *value as i64 / width)))
                 }
-                Bitvector32Term::Multiply(left, right)
+                binary_term!(Int32, Multiply, left, right)
                 | Bitvector32Term::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
@@ -1922,7 +1925,7 @@ impl Printer<'_> {
                 } if right.as_const().map(i64::from) == Some(width) => {
                     self.bitvector(left, hint, depth)
                 }
-                Bitvector32Term::Multiply(left, right)
+                binary_term!(Int32, Multiply, left, right)
                 | Bitvector32Term::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
@@ -2786,7 +2789,12 @@ mod tests {
         for depth in [0, 16, 64, 256] {
             let mut term = Bitvector32Term::Variable(Variable(999));
             for _ in 0..depth {
-                term = Bitvector32Term::Add(Box::new(term), Box::new(Bitvector32Term::Constant(1)));
+                term = binary_node!(
+                    Int32,
+                    Add,
+                    Box::new(term),
+                    Box::new(Bitvector32Term::Constant(1))
+                );
             }
             let fact = equality(term);
             assert!(render(&fact, &mut labels).is_none());
@@ -2883,9 +2891,11 @@ mod tests {
         labels.source_name(Variable(8), "b".into());
         let a = || Box::new(Bitvector32Term::Variable(Variable(7)));
         let b = || Box::new(Bitvector32Term::Variable(Variable(8)));
-        let product = Bitvector32Term::Multiply(
-            Box::new(Bitvector32Term::Add(a(), b())),
-            Box::new(Bitvector32Term::Subtract(a(), b())),
+        let product = binary_node!(
+            Int32,
+            Multiply,
+            Box::new(binary_node!(Int32, Add, a(), b())),
+            Box::new(binary_node!(Int32, Subtract, a(), b())),
         );
         let less = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -2900,7 +2910,7 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::BitwiseAnd(a(), b())),
+                left: Box::new(binary_node!(Int32, BitwiseAnd, a(), b())),
                 right: Box::new(Bitvector32Term::Constant(0)),
             },
             true,

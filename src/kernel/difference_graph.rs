@@ -21,6 +21,7 @@
 //! `docs/internals/verification-efficiency.md`.
 
 use crate::kernel::MachineIntegerType;
+use crate::kernel::binary_term;
 use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, PointerOffsetTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
@@ -1293,7 +1294,7 @@ impl DifferenceGraph {
         }
         charge();
         let (low, high) = match (domain, term) {
-            (Domain::Int32, T::Add(a, b))
+            (Domain::Int32, binary_term!(Int32, Add, a, b))
             | (
                 Domain::Int64,
                 T::Binary {
@@ -1348,7 +1349,7 @@ impl DifferenceGraph {
                     ((a_low - (k_high - 1)).max(0), a_high)
                 }
             }
-            (Domain::Int32, T::Subtract(a, b))
+            (Domain::Int32, binary_term!(Int32, Subtract, a, b))
             | (
                 Domain::Int64,
                 T::Binary {
@@ -1367,7 +1368,7 @@ impl DifferenceGraph {
                     right: b,
                 },
             ) => self.difference_interval(domain, a, b),
-            (Domain::Int32, T::Multiply(a, b))
+            (Domain::Int32, binary_term!(Int32, Multiply, a, b))
             | (
                 Domain::Int64,
                 T::Binary {
@@ -1392,7 +1393,7 @@ impl DifferenceGraph {
             // C's truncating remainder by a divisor that cannot be zero:
             // its sign is the dividend's, and its magnitude is below the
             // divisor's and at most the dividend's.
-            (Domain::Int32, T::Remainder(a, b))
+            (Domain::Int32, binary_term!(Int32, Remainder, a, b))
             | (
                 Domain::Int64,
                 T::Binary {
@@ -1421,7 +1422,7 @@ impl DifferenceGraph {
             // C's truncating quotient by a divisor of one sign: monotone in
             // each operand, so the corners bound it. A quotient that leaves
             // the domain (`MIN / -1`) is caught below.
-            (Domain::Int32, T::Divide(a, b))
+            (Domain::Int32, binary_term!(Int32, Divide, a, b))
             | (
                 Domain::Int64,
                 T::Binary {
@@ -1470,7 +1471,10 @@ impl DifferenceGraph {
             // A 32-bit unsigned quotient or remainder, read as the signed
             // value the domain holds: computed on the operands' unsigned
             // readings, for a divisor that cannot be zero.
-            (Domain::Int32, T::UnsignedDivide(a, b) | T::UnsignedRemainder(a, b)) => {
+            (
+                Domain::Int32,
+                binary_term!(UInt32, Divide, a, b) | binary_term!(UInt32, Remainder, a, b),
+            ) => {
                 let unsigned = |term| {
                     let (low, high) = self.term_interval(domain, term);
                     wrap_range((0, (1 << 32) - 1), low, high)
@@ -1479,7 +1483,7 @@ impl DifferenceGraph {
                 if b_low < 1 {
                     return domain.range();
                 }
-                let (low, high) = if matches!(term, T::UnsignedDivide(..)) {
+                let (low, high) = if matches!(term, binary_term!(UInt32, Divide, ..)) {
                     (a_low / b_high, a_high / b_low)
                 } else if a_low == a_high && b_low == b_high {
                     (a_low % b_low, a_low % b_low)
@@ -1494,7 +1498,7 @@ impl DifferenceGraph {
                 wrap_interval(Domain::Int32, low, high)
             }
             // `x ^ MIN` moves a value of known sign by the modulus's half.
-            (Domain::Int32, T::BitwiseXor(..))
+            (Domain::Int32, binary_term!(Int32, BitwiseXor, ..))
             | (
                 Domain::Int64,
                 T::Binary {
@@ -1982,7 +1986,7 @@ fn word(domain: Domain, term: &Bitvector32Term) -> &Bitvector32Term {
 fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32Term> {
     use Bitvector32Term as T;
     let (a, b) = match (domain, term) {
-        (Domain::Int32, T::BitwiseXor(a, b))
+        (Domain::Int32, binary_term!(Int32, BitwiseXor, a, b))
         | (
             Domain::Int64,
             T::Binary {
@@ -2529,7 +2533,7 @@ impl PointerClasses {
 fn modular_parts(domain: Domain, term: &Bitvector32Term) -> Option<(&Bitvector32Term, i128)> {
     use Bitvector32Term as T;
     match (domain, term) {
-        (Domain::Int32, T::Add(a, b))
+        (Domain::Int32, binary_term!(Int32, Add, a, b))
         | (
             Domain::Int64,
             T::Binary {
@@ -2552,7 +2556,7 @@ fn modular_parts(domain: Domain, term: &Bitvector32Term) -> Option<(&Bitvector32
             (Some(k), _) => Some((b.as_ref(), k)),
             _ => None,
         },
-        (Domain::Int32, T::Subtract(a, b))
+        (Domain::Int32, binary_term!(Int32, Subtract, a, b))
         | (
             Domain::Int64,
             T::Binary {
@@ -2606,7 +2610,7 @@ fn link_parts(
 ) -> Option<(Domain, &Bitvector32Term, i128, bool)> {
     use Bitvector32Term as T;
     match (domain, term) {
-        (Domain::Int32, T::Add(left, right))
+        (Domain::Int32, binary_term!(Int32, Add, left, right))
         | (
             Domain::Int64,
             T::Binary {
@@ -2631,7 +2635,7 @@ fn link_parts(
                 constant(domain, left).map(|k| (domain, right.as_ref(), k, false))
             }
         }
-        (Domain::Int32, T::Subtract(left, right))
+        (Domain::Int32, binary_term!(Int32, Subtract, left, right))
         | (
             Domain::Int64,
             T::Binary {

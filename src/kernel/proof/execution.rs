@@ -6,6 +6,7 @@
 
 use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
 use crate::kernel::LoadKind;
+use crate::kernel::binary_term;
 use crate::kernel::population_authority::c_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
@@ -1292,10 +1293,14 @@ fn authority_control_evaluation_condition_proven(
         return false;
     };
     let pair = match (left.as_ref(), right.as_ref()) {
-        (Bitvector32Term::Add(value, increment), Bitvector32Term::Subtract(other, decrement))
-        | (Bitvector32Term::Subtract(other, decrement), Bitvector32Term::Add(value, increment))
-            if increment.as_const() == Some(1) && decrement.as_const() == Some(1) =>
-        {
+        (
+            binary_term!(Int32, Add, value, increment),
+            binary_term!(Int32, Subtract, other, decrement),
+        )
+        | (
+            binary_term!(Int32, Subtract, other, decrement),
+            binary_term!(Int32, Add, value, increment),
+        ) if increment.as_const() == Some(1) && decrement.as_const() == Some(1) => {
             (value.as_ref(), other.as_ref())
         }
         _ => return false,

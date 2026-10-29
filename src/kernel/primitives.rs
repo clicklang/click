@@ -718,20 +718,29 @@ pub enum Bitvector32Term {
     /// Checked wide payload; never truncated into the legacy 32/64-bit carriers.
     MachineIntegerConstant(MachineIntegerConstant),
     Variable(Variable),
-    Add(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Subtract(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Multiply(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Divide(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UnsignedDivide(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    Remainder(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    UnsignedRemainder(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    ShiftLeft(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    ArithmeticShiftRight(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    LogicalShiftRight(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    BitwiseAnd(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    BitwiseOr(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    BitwiseXor(Box<Bitvector32Term>, Box<Bitvector32Term>),
-    BitwiseNot(Box<Bitvector32Term>),
+    /// `left op right`, both operands read at `format`. Signed and unsigned
+    /// division, remainder and right shift are told apart by the format, not
+    /// the operator; a shift count is its own operand of any width. The
+    /// formats are the 32- and 64-bit ones. A 32-bit operator reads words
+    /// (rule K1), so the sign-free operators (`+ - * << & | ^`) are filed at
+    /// `int32`, the signed format of their width, as equality is, and only
+    /// `Divide`, `Remainder` and `ShiftRight` are built at `uint32`; the width
+    /// audit (`term_width`) refuses any other format. `op` precedes `format`
+    /// so that the derived order of the 32-bit nodes is the order their
+    /// per-operator variants had (`design/machine-integers.md`, "Stage 3").
+    Binary {
+        op: MachineBinaryOp,
+        format: MachineIntegerType,
+        left: Box<Bitvector32Term>,
+        right: Box<Bitvector32Term>,
+    },
+    /// `op operand`, the operand read at `format`, under the same format
+    /// restriction as [`Self::Binary`]: the 32-bit complement is at `int32`.
+    Unary {
+        format: MachineIntegerType,
+        op: MachineUnaryOp,
+        operand: Box<Bitvector32Term>,
+    },
     If {
         condition: Box<ConditionTerm>,
         then_term: Box<Bitvector32Term>,
@@ -797,25 +806,6 @@ pub enum Bitvector32Term {
     Int64FromUInt32(Box<Bitvector32Term>),
     UInt64FromInt32(Box<Bitvector32Term>),
     UInt64FromInt64(Box<Bitvector32Term>),
-    /// `left op right`, both operands read at `format`. Signed and unsigned
-    /// division, remainder and right shift are told apart by the format, not
-    /// the operator; a shift count is its own operand of any width. Only the
-    /// 64-bit formats are built here so far: the 32-bit operators above join
-    /// in a later step of `design/machine-integers.md` ("Stage 3"), and the
-    /// width audit (`term_width`) refuses any other format.
-    Binary {
-        format: MachineIntegerType,
-        op: MachineBinaryOp,
-        left: Box<Bitvector32Term>,
-        right: Box<Bitvector32Term>,
-    },
-    /// `op operand`, the operand read at `format`, under the same format
-    /// restriction as [`Self::Binary`].
-    Unary {
-        format: MachineIntegerType,
-        op: MachineUnaryOp,
-        operand: Box<Bitvector32Term>,
-    },
     Float32Negate(Box<Bitvector32Term>),
     Float32Binary {
         operator: CFloatBinaryOperator,
@@ -1233,23 +1223,88 @@ macro_rules! binary_bitvector_condition {
 }
 pub(crate) use binary_bitvector_condition;
 
+/// Matches the machine operation `$left op $right` at one format, as
+/// `binary_term!(Int32, Add, left, right)`, or with `..` in place of the
+/// operands. The 32-bit sign-free operators are at `Int32`; see
+/// [`Bitvector32Term::Binary`].
+macro_rules! binary_term {
+    ($format:ident, $op:ident, ..) => {
+        $crate::kernel::Bitvector32Term::Binary {
+            op: $crate::kernel::MachineBinaryOp::$op,
+            format: $crate::kernel::MachineIntegerType::$format,
+            ..
+        }
+    };
+    ($format:ident, $op:ident, $left:pat, $right:pat) => {
+        $crate::kernel::Bitvector32Term::Binary {
+            op: $crate::kernel::MachineBinaryOp::$op,
+            format: $crate::kernel::MachineIntegerType::$format,
+            left: $left,
+            right: $right,
+        }
+    };
+}
+pub(crate) use binary_term;
+
+/// Builds the bare machine node `$left op $right` at one format, unfolded,
+/// from boxed operands: `binary_node!(Int32, Add, left, right)`. The folding
+/// constructors (`Bitvector32Term::add`, `machine_binary`, ...) simplify.
+macro_rules! binary_node {
+    ($format:ident, $op:ident, $left:expr, $right:expr $(,)?) => {
+        $crate::kernel::Bitvector32Term::Binary {
+            op: $crate::kernel::MachineBinaryOp::$op,
+            format: $crate::kernel::MachineIntegerType::$format,
+            left: $left,
+            right: $right,
+        }
+    };
+}
+pub(crate) use binary_node;
+
+/// Matches the machine operation `op $operand` at one format, as
+/// `unary_term!(Int32, BitwiseNot, operand)`.
+macro_rules! unary_term {
+    ($format:ident, $op:ident, ..) => {
+        $crate::kernel::Bitvector32Term::Unary {
+            format: $crate::kernel::MachineIntegerType::$format,
+            op: $crate::kernel::MachineUnaryOp::$op,
+            ..
+        }
+    };
+    ($format:ident, $op:ident, $operand:pat) => {
+        $crate::kernel::Bitvector32Term::Unary {
+            format: $crate::kernel::MachineIntegerType::$format,
+            op: $crate::kernel::MachineUnaryOp::$op,
+            operand: $operand,
+        }
+    };
+}
+pub(crate) use unary_term;
+
+/// Builds the bare machine node `op $operand` at one format from a boxed
+/// operand: `unary_node!(Int32, BitwiseNot, operand)`.
+macro_rules! unary_node {
+    ($format:ident, $op:ident, $operand:expr $(,)?) => {
+        $crate::kernel::Bitvector32Term::Unary {
+            format: $crate::kernel::MachineIntegerType::$format,
+            op: $crate::kernel::MachineUnaryOp::$op,
+            operand: $operand,
+        }
+    };
+}
+pub(crate) use unary_node;
+
 /// Matches every two-operand 32-bit [`Bitvector32Term`] operation, binding the operands to `$left`
 /// and `$right`.
 macro_rules! binary_bitvector32_term {
     ($left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::Add($left, $right)
-            | $crate::kernel::Bitvector32Term::Subtract($left, $right)
-            | $crate::kernel::Bitvector32Term::Multiply($left, $right)
-            | $crate::kernel::Bitvector32Term::Divide($left, $right)
-            | $crate::kernel::Bitvector32Term::UnsignedDivide($left, $right)
-            | $crate::kernel::Bitvector32Term::Remainder($left, $right)
-            | $crate::kernel::Bitvector32Term::UnsignedRemainder($left, $right)
-            | $crate::kernel::Bitvector32Term::BitwiseAnd($left, $right)
-            | $crate::kernel::Bitvector32Term::BitwiseOr($left, $right)
-            | $crate::kernel::Bitvector32Term::BitwiseXor($left, $right)
-            | $crate::kernel::Bitvector32Term::ShiftLeft($left, $right)
-            | $crate::kernel::Bitvector32Term::ArithmeticShiftRight($left, $right)
-            | $crate::kernel::Bitvector32Term::LogicalShiftRight($left, $right)
+        $crate::kernel::Bitvector32Term::Binary {
+            format: $crate::kernel::MachineIntegerType::Int32
+                | $crate::kernel::MachineIntegerType::UInt32,
+            left: $left,
+            right: $right,
+            ..
+        }
     };
 }
 pub(crate) use binary_bitvector32_term;
@@ -1268,27 +1323,60 @@ macro_rules! binary_uint64_term {
 }
 pub(crate) use binary_uint64_term;
 
-/// Matches every format-carrying two-operand [`Bitvector32Term`] operation, binding the operands to
-/// `$left` and `$right`. Only the 64-bit formats, signed or unsigned, are built so far (see
-/// [`Bitvector32Term::Binary`]).
+/// Matches every two-operand [`Bitvector32Term`] operation that is not at a 32-bit format, binding
+/// the operands to `$left` and `$right`. Only the 64-bit formats, signed or unsigned, are built
+/// there (see [`Bitvector32Term::Binary`]); the others are listed so that this and
+/// [`binary_bitvector32_term`] together match every `Binary` node.
 macro_rules! binary_wide_term {
     ($left:pat, $right:pat) => {
         $crate::kernel::Bitvector32Term::Binary {
-            format: _,
-            op: _,
+            format: $crate::kernel::MachineIntegerType::Int64
+                | $crate::kernel::MachineIntegerType::UInt64
+                | $crate::kernel::MachineIntegerType::Int8
+                | $crate::kernel::MachineIntegerType::Int16
+                | $crate::kernel::MachineIntegerType::UInt8
+                | $crate::kernel::MachineIntegerType::UInt16
+                | $crate::kernel::MachineIntegerType::Int128
+                | $crate::kernel::MachineIntegerType::UInt128,
             left: $left,
             right: $right,
+            ..
         }
     };
 }
 pub(crate) use binary_wide_term;
 
+/// Matches every one-operand machine operator node ([`Bitvector32Term::Unary`]) that is not at
+/// `int32`, binding its operand to `$operand`. Only the 64-bit complements are built there; with
+/// `unary_term!(Int32, BitwiseNot, ..)` it matches every `Unary` node.
+macro_rules! unary_wide_term {
+    ($operand:pat) => {
+        $crate::kernel::Bitvector32Term::Unary {
+            format: $crate::kernel::MachineIntegerType::Int64
+                | $crate::kernel::MachineIntegerType::UInt64
+                | $crate::kernel::MachineIntegerType::UInt32
+                | $crate::kernel::MachineIntegerType::Int8
+                | $crate::kernel::MachineIntegerType::Int16
+                | $crate::kernel::MachineIntegerType::UInt8
+                | $crate::kernel::MachineIntegerType::UInt16
+                | $crate::kernel::MachineIntegerType::Int128
+                | $crate::kernel::MachineIntegerType::UInt128,
+            operand: $operand,
+            ..
+        }
+    };
+}
+pub(crate) use unary_wide_term;
+
 /// Matches every two-operand [`Bitvector32Term`] operation of any width, binding the operands to
 /// `$left` and `$right`.
 macro_rules! binary_machine_term {
     ($left:pat, $right:pat) => {
-        $crate::kernel::binary_bitvector32_term!($left, $right)
-            | $crate::kernel::binary_wide_term!($left, $right)
+        $crate::kernel::Bitvector32Term::Binary {
+            left: $left,
+            right: $right,
+            ..
+        }
     };
 }
 pub(crate) use binary_machine_term;
@@ -1469,8 +1557,7 @@ pub(crate) use arithmetic_c_value;
 /// `$term`.
 macro_rules! unary_machine_term {
     ($term:pat) => {
-        $crate::kernel::Bitvector32Term::BitwiseNot($term)
-            | $crate::kernel::Bitvector32Term::Unary { operand: $term, .. }
+        $crate::kernel::Bitvector32Term::Unary { operand: $term, .. }
             | $crate::kernel::Bitvector32Term::Int64From32($term)
             | $crate::kernel::Bitvector32Term::MachineIntegerCast { value: $term, .. }
             | $crate::kernel::Bitvector32Term::UInt64From32($term)

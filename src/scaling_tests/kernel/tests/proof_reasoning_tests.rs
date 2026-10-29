@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[test]
@@ -1107,7 +1108,10 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
                 false,
             )),
             Box::new(Proposition::ConditionIs(
-                ConditionTerm::equal(new, Bitvector32Term::Add(Box::new(old), Box::new(delta))),
+                ConditionTerm::equal(
+                    new,
+                    binary_node!(Int32, Add, Box::new(old), Box::new(delta)),
+                ),
                 true,
             )),
         )

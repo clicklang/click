@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_term;
 
 pub(in crate::kernel) fn condition_as_order_fact(
     condition: &ConditionTerm,
@@ -851,39 +852,41 @@ pub(in crate::kernel) fn bitvector_equality_after_additive_cancellation(
 ) -> Option<(Bitvector32Term, Bitvector32Term)> {
     match (left, right) {
         (
-            Bitvector32Term::Add(left_base, left_addend),
-            Bitvector32Term::Add(right_base, right_addend),
+            binary_term!(Int32, Add, left_base, left_addend),
+            binary_term!(Int32, Add, right_base, right_addend),
         ) if left_base == right_base => {
             Some((left_addend.as_ref().clone(), right_addend.as_ref().clone()))
         }
         (
-            Bitvector32Term::Add(left_base, left_addend),
-            Bitvector32Term::Add(right_base, right_addend),
+            binary_term!(Int32, Add, left_base, left_addend),
+            binary_term!(Int32, Add, right_base, right_addend),
         ) if left_base == right_addend => {
             Some((left_addend.as_ref().clone(), right_base.as_ref().clone()))
         }
         (
-            Bitvector32Term::Add(left_base, left_addend),
-            Bitvector32Term::Add(right_base, right_addend),
+            binary_term!(Int32, Add, left_base, left_addend),
+            binary_term!(Int32, Add, right_base, right_addend),
         ) if left_addend == right_base => {
             Some((left_base.as_ref().clone(), right_addend.as_ref().clone()))
         }
         (
-            Bitvector32Term::Add(left_base, left_addend),
-            Bitvector32Term::Add(right_base, right_addend),
+            binary_term!(Int32, Add, left_base, left_addend),
+            binary_term!(Int32, Add, right_base, right_addend),
         ) if left_addend == right_addend => {
             Some((left_base.as_ref().clone(), right_base.as_ref().clone()))
         }
-        (Bitvector32Term::Add(left_base, left_addend), _) if left_base.as_ref() == right => {
+        (binary_term!(Int32, Add, left_base, left_addend), _) if left_base.as_ref() == right => {
             Some((left_addend.as_ref().clone(), Bitvector32Term::Constant(0)))
         }
-        (Bitvector32Term::Add(left_base, left_addend), _) if left_addend.as_ref() == right => {
+        (binary_term!(Int32, Add, left_base, left_addend), _) if left_addend.as_ref() == right => {
             Some((left_base.as_ref().clone(), Bitvector32Term::Constant(0)))
         }
-        (_, Bitvector32Term::Add(right_base, right_addend)) if left == right_base.as_ref() => {
+        (_, binary_term!(Int32, Add, right_base, right_addend)) if left == right_base.as_ref() => {
             Some((Bitvector32Term::Constant(0), right_addend.as_ref().clone()))
         }
-        (_, Bitvector32Term::Add(right_base, right_addend)) if left == right_addend.as_ref() => {
+        (_, binary_term!(Int32, Add, right_base, right_addend))
+            if left == right_addend.as_ref() =>
+        {
             Some((Bitvector32Term::Constant(0), right_base.as_ref().clone()))
         }
         _ => None,
@@ -905,7 +908,7 @@ pub(in crate::kernel) fn collect_bitvector_add_terms(
     constant: &mut u32,
 ) {
     match term {
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             collect_bitvector_add_terms(left, terms, constant);
             collect_bitvector_add_terms(right, terms, constant);
         }
@@ -934,12 +937,12 @@ pub(in crate::kernel) fn count_fold_parts(term: &Bitvector32Term) -> Option<Coun
     }
 
     let contribution = match body.as_ref() {
-        Bitvector32Term::Add(left, right)
+        binary_term!(Int32, Add, left, right)
             if left.as_ref() == &Bitvector32Term::Variable(*accumulator) =>
         {
             right.as_ref().clone()
         }
-        Bitvector32Term::Add(left, right)
+        binary_term!(Int32, Add, left, right)
             if right.as_ref() == &Bitvector32Term::Variable(*accumulator) =>
         {
             left.as_ref().clone()
@@ -964,7 +967,7 @@ pub(in crate::kernel) fn count_fold_split_matches(
     let Some(whole) = count_fold_parts(whole) else {
         return false;
     };
-    let Bitvector32Term::Add(left, right) = split else {
+    let binary_term!(Int32, Add, left, right) = split else {
         return false;
     };
 
@@ -1289,11 +1292,11 @@ fn collect_bitvector_affine_atoms(
     constant: &mut u32,
 ) {
     match term {
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             collect_bitvector_affine_atoms(left, positive, atoms, constant);
             collect_bitvector_affine_atoms(right, positive, atoms, constant);
         }
-        Bitvector32Term::Subtract(left, right) => {
+        binary_term!(Int32, Subtract, left, right) => {
             collect_bitvector_affine_atoms(left, positive, atoms, constant);
             collect_bitvector_affine_atoms(right, !positive, atoms, constant);
         }

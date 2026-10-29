@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 
 #[test]
 #[ignore = "nightly: 1.3s in the parallel gate"]
@@ -373,7 +374,14 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn offset_premise_shallow_decision_and_forks_scale() {
-    let add = |v| Bitvector32Term::Add(Box::new(v), Box::new(Bitvector32Term::Constant(1)));
+    let add = |v| {
+        binary_node!(
+            Int32,
+            Add,
+            Box::new(v),
+            Box::new(Bitvector32Term::Constant(1))
+        )
+    };
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let mut parent = PureFactContext::new();

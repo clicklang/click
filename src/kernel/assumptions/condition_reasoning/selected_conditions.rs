@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// Only these operand families are compared up to memory resolution.
@@ -576,7 +577,9 @@ impl SelectedFacts<'_> {
                 right,
             } if self.exact_condition_value(&ConditionTerm::signed_less_than(
                 left.as_ref().clone(),
-                Bitvector32Term::Add(
+                binary_node!(
+                    Int32,
+                    Add,
                     Box::new(right.as_ref().clone()),
                     Box::new(Bitvector32Term::Constant(1)),
                 ),
@@ -748,7 +751,9 @@ impl SelectedFacts<'_> {
         } = condition
             && self.exact_condition_value(&ConditionTerm::signed_less_than(
                 left.as_ref().clone(),
-                Bitvector32Term::Add(
+                binary_node!(
+                    Int32,
+                    Add,
                     Box::new(right.as_ref().clone()),
                     Box::new(Bitvector32Term::Constant(1)),
                 ),

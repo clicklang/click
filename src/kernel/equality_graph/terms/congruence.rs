@@ -10,6 +10,7 @@ use crate::kernel::{
     ConditionTerm as C, PureFunctionArgument as A, SharedPureApplication,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{binary_term, unary_term};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ArgumentTag {
@@ -440,18 +441,20 @@ impl TermClasses {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))
                     } else if width == W::Bits32 {
                         match term {
-                            T::Add(a, b) => Some((Binary::Int32Add, a.as_ref(), b.as_ref())),
-                            T::UnsignedDivide(a, b) => Some((
+                            binary_term!(Int32, Add, a, b) => {
+                                Some((Binary::Int32Add, a.as_ref(), b.as_ref()))
+                            }
+                            binary_term!(UInt32, Divide, a, b) => Some((
                                 Binary::Int32(Int32Binary::UnsignedDivide),
                                 a.as_ref(),
                                 b.as_ref(),
                             )),
-                            T::UnsignedRemainder(a, b) => Some((
+                            binary_term!(UInt32, Remainder, a, b) => Some((
                                 Binary::Int32(Int32Binary::UnsignedRemainder),
                                 a.as_ref(),
                                 b.as_ref(),
                             )),
-                            T::BitwiseXor(a, b) => Some((
+                            binary_term!(Int32, BitwiseXor, a, b) => Some((
                                 Binary::Int32(Int32Binary::BitwiseXor),
                                 a.as_ref(),
                                 b.as_ref(),
@@ -484,7 +487,7 @@ impl TermClasses {
                         continue;
                     }
                     if width == W::Bits32 {
-                        let unary = if let T::BitwiseNot(value) = term {
+                        let unary = if let unary_term!(Int32, BitwiseNot, value) = term {
                             Some((Int32Unary::Not, value.as_ref(), false))
                         } else {
                             constants::word_cast_operand(term).map(

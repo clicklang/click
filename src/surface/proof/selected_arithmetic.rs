@@ -17,6 +17,8 @@ use super::wide_arithmetic::{
     Carrier, Relation, have, operation_identity, relate, relation_parts, to_integer, type_range,
 };
 use super::*;
+#[cfg(test)]
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::surface::checking::{IntegerRefutation, refute_integer_goal};
 
@@ -2506,7 +2508,7 @@ theorem black_color_is_black(color: Color) {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(capacity),
-                right: Box::new(Bitvector32Term::Add(Box::new(used), Box::new(slots))),
+                right: Box::new(binary_node!(Int32, Add, Box::new(used), Box::new(slots))),
             },
             true,
         );

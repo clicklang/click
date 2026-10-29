@@ -3,6 +3,9 @@
 
 use super::*;
 use crate::kernel::MachineBinaryOp;
+#[cfg(test)]
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::proof::arithmetic_special::{
     SpecialArithmeticCertificate as KernelCertificate, SpecialArithmeticNode as KernelNode,
     signed_constant_bound_on, signed_definedness_operands,
@@ -507,9 +510,9 @@ fn term_mentions_pointer(term: &Bitvector32Term, target: &crate::kernel::Pointer
                     return true;
                 }
             }
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right)
+            binary_term!(Int32, Add, left, right)
+            | binary_term!(Int32, Subtract, left, right)
+            | binary_term!(Int32, Multiply, left, right)
             | Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
                 op:
@@ -875,9 +878,9 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
             return false;
         }
         match term {
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right)
+            binary_term!(Int32, Add, left, right)
+            | binary_term!(Int32, Subtract, left, right)
+            | binary_term!(Int32, Multiply, left, right)
             | Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
                 op:
@@ -1105,7 +1108,12 @@ mod tests {
     fn deep_float_candidate_is_rejected_before_recursive_helpers() {
         let mut term = Bitvector32Term::Variable(Variable(1));
         for _ in 0..300 {
-            term = Bitvector32Term::Add(Box::new(term), Box::new(Bitvector32Term::Constant(1)));
+            term = binary_node!(
+                Int32,
+                Add,
+                Box::new(term),
+                Box::new(Bitvector32Term::Constant(1))
+            );
         }
         let goal = Proposition::ConditionIs(
             ConditionTerm::Float32(CFloatCondition::Comparison {

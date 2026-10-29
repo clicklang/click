@@ -1,8 +1,8 @@
 //! The one map between a format and the term nodes that spell it today.
 //!
 //! The term arena records no width (`docs/internals/kernel.md`, "Important
-//! types"): a 32-bit operation is `Add`, a 64-bit one a `Binary` node
-//! carrying its format, and values of 8 and 16 bits ride in the 32-bit word as
+//! types"): a 32- or 64-bit operation is a `Binary` node carrying its
+//! format, and values of 8 and 16 bits ride in the 32-bit word as
 //! their sign or zero extension. Rules ask this module for the node of an
 //! operation, comparison or overflow test at a format, or for the format
 //! and operation a node spells, and never match on a width themselves.
@@ -16,6 +16,8 @@
 
 use super::{Operation, Relation};
 use crate::kernel::MachineBinaryOp;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{Bitvector32Term, ConditionTerm, MachineIntegerType};
 use crate::kernel::{CompareRelation, OverflowOperation};
 
@@ -73,9 +75,9 @@ pub(crate) fn operation_word(
         (left, right)
     };
     Some(match (word(ty), operation) {
-        (Word::Bits32, Operation::Add) => T::Add(left, right),
-        (Word::Bits32, Operation::Subtract) => T::Subtract(left, right),
-        (Word::Bits32, Operation::Multiply) => T::Multiply(left, right),
+        (Word::Bits32, Operation::Add) => binary_node!(Int32, Add, left, right),
+        (Word::Bits32, Operation::Subtract) => binary_node!(Int32, Subtract, left, right),
+        (Word::Bits32, Operation::Multiply) => binary_node!(Int32, Multiply, left, right),
         (Word::Signed64 | Word::Unsigned64, operation) => T::Binary {
             format: ty,
             op: machine_binary_op_of(operation),
@@ -118,9 +120,13 @@ pub(crate) fn word_operation(
 ) -> Option<(Operation, &Bitvector32Term, &Bitvector32Term)> {
     use Bitvector32Term as T;
     let (operation, left, right) = match (word(ty), value) {
-        (Word::Bits32, T::Add(left, right)) => (Operation::Add, left, right),
-        (Word::Bits32, T::Subtract(left, right)) => (Operation::Subtract, left, right),
-        (Word::Bits32, T::Multiply(left, right)) => (Operation::Multiply, left, right),
+        (Word::Bits32, binary_term!(Int32, Add, left, right)) => (Operation::Add, left, right),
+        (Word::Bits32, binary_term!(Int32, Subtract, left, right)) => {
+            (Operation::Subtract, left, right)
+        }
+        (Word::Bits32, binary_term!(Int32, Multiply, left, right)) => {
+            (Operation::Multiply, left, right)
+        }
         (
             Word::Signed64 | Word::Unsigned64,
             T::Binary {
@@ -326,7 +332,7 @@ pub(crate) fn word_division(
     use Bitvector32Term as T;
     use MachineIntegerType as Ty;
     let (division, operand, divisor) = match (ty, value) {
-        (Ty::UInt32, T::UnsignedDivide(operand, divisor))
+        (Ty::UInt32, binary_term!(UInt32, Divide, operand, divisor))
         | (
             Ty::UInt64,
             T::Binary {
@@ -336,7 +342,7 @@ pub(crate) fn word_division(
                 right: divisor,
             },
         )
-        | (Ty::Int32, T::Divide(operand, divisor))
+        | (Ty::Int32, binary_term!(Int32, Divide, operand, divisor))
         | (
             Ty::Int64,
             T::Binary {
@@ -346,7 +352,7 @@ pub(crate) fn word_division(
                 right: divisor,
             },
         ) => (Division::Quotient, operand, divisor),
-        (Ty::UInt32, T::LogicalShiftRight(operand, amount))
+        (Ty::UInt32, binary_term!(UInt32, ShiftRight, operand, amount))
         | (
             Ty::UInt64,
             T::Binary {
@@ -356,7 +362,7 @@ pub(crate) fn word_division(
                 right: amount,
             },
         )
-        | (Ty::Int32, T::ArithmeticShiftRight(operand, amount))
+        | (Ty::Int32, binary_term!(Int32, ShiftRight, operand, amount))
         | (
             Ty::Int64,
             T::Binary {
@@ -366,7 +372,7 @@ pub(crate) fn word_division(
                 right: amount,
             },
         ) => (Division::ShiftRight, operand, amount),
-        (Ty::UInt32, T::UnsignedRemainder(operand, divisor))
+        (Ty::UInt32, binary_term!(UInt32, Remainder, operand, divisor))
         | (
             Ty::UInt64,
             T::Binary {
@@ -376,7 +382,7 @@ pub(crate) fn word_division(
                 right: divisor,
             },
         )
-        | (Ty::Int32, T::Remainder(operand, divisor))
+        | (Ty::Int32, binary_term!(Int32, Remainder, operand, divisor))
         | (
             Ty::Int64,
             T::Binary {

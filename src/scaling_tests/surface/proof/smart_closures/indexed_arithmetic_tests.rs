@@ -1,5 +1,6 @@
 // Scaling coverage for constant-bound selection beside earlier outcomes.
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
@@ -33,7 +34,9 @@ fn outcome_constant_bounds_keep_a_compact_selected_context() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: Box::new(x.clone()),
-                    right: Box::new(Bitvector32Term::Subtract(
+                    right: Box::new(binary_node!(
+                        Int32,
+                        Subtract,
                         Box::new(x.clone()),
                         Box::new(Bitvector32Term::Constant(index)),
                     )),
@@ -46,7 +49,9 @@ fn outcome_constant_bounds_keep_a_compact_selected_context() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(x.clone()),
-                right: Box::new(Bitvector32Term::Subtract(
+                right: Box::new(binary_node!(
+                    Int32,
+                    Subtract,
                     Box::new(x),
                     Box::new(Bitvector32Term::Constant(size)),
                 )),

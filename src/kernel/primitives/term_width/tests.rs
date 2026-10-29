@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_node;
 
 fn boxed(term: Bitvector32Term) -> Box<Bitvector32Term> {
     Box::new(term)
@@ -10,7 +11,9 @@ fn operator_families_imply_their_carrier() {
     let x = Bitvector32Term::Variable(Variable(1));
     assert_eq!(term_width(&x), Ok(None));
     assert_eq!(
-        term_width(&Bitvector32Term::Add(
+        term_width(&binary_node!(
+            Int32,
+            Add,
             boxed(x.clone()),
             boxed(Bitvector32Term::Constant(1))
         )),

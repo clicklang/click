@@ -2,8 +2,11 @@ use super::*;
 use crate::kernel::CheckedPopulationAuthorityExchange;
 use crate::kernel::CheckedPopulationMemberExchange;
 use crate::kernel::ResourceDescription;
+#[cfg(test)]
+use crate::kernel::binary_node;
 use crate::kernel::population_authority::c_creation::is_external_population_anchor;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{binary_term, unary_term};
 use std::fmt::Write;
 
 fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
@@ -328,46 +331,46 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             let _ = write!(identity, "tv{};", variable.0);
                         }
                     }
-                    Bitvector32Term::Add(left, right) => {
+                    binary_term!(Int32, Add, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "ta", *left, *right)
                     }
-                    Bitvector32Term::Subtract(left, right) => {
+                    binary_term!(Int32, Subtract, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "ts", *left, *right)
                     }
-                    Bitvector32Term::Multiply(left, right) => {
+                    binary_term!(Int32, Multiply, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tm", *left, *right)
                     }
-                    Bitvector32Term::Divide(left, right) => {
+                    binary_term!(Int32, Divide, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "td", *left, *right)
                     }
-                    Bitvector32Term::UnsignedDivide(left, right) => {
+                    binary_term!(UInt32, Divide, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tud", *left, *right)
                     }
-                    Bitvector32Term::Remainder(left, right) => {
+                    binary_term!(Int32, Remainder, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tr", *left, *right)
                     }
-                    Bitvector32Term::UnsignedRemainder(left, right) => {
+                    binary_term!(UInt32, Remainder, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tur", *left, *right)
                     }
-                    Bitvector32Term::ShiftLeft(left, right) => {
+                    binary_term!(Int32, ShiftLeft, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tl", *left, *right)
                     }
-                    Bitvector32Term::ArithmeticShiftRight(left, right) => {
+                    binary_term!(Int32, ShiftRight, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tar", *left, *right)
                     }
-                    Bitvector32Term::LogicalShiftRight(left, right) => {
+                    binary_term!(UInt32, ShiftRight, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tlr", *left, *right)
                     }
-                    Bitvector32Term::BitwiseAnd(left, right) => {
+                    binary_term!(Int32, BitwiseAnd, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tba", *left, *right)
                     }
-                    Bitvector32Term::BitwiseOr(left, right) => {
+                    binary_term!(Int32, BitwiseOr, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tbo", *left, *right)
                     }
-                    Bitvector32Term::BitwiseXor(left, right) => {
+                    binary_term!(Int32, BitwiseXor, left, right) => {
                         push_havoc_binary(&mut identity, &mut tasks, "tbx", *left, *right)
                     }
-                    Bitvector32Term::BitwiseNot(value) => {
+                    unary_term!(Int32, BitwiseNot, value) => {
                         identity.push_str("tbn(");
                         tasks.push(HavocIdentityTask::Text(")"));
                         tasks.push(HavocIdentityTask::Bitvector(*value));
@@ -1154,7 +1157,12 @@ mod havoc_identity_tests {
 
     fn nested_term(depth: usize, tail: u32) -> Bitvector32Term {
         (0..depth).fold(Bitvector32Term::Constant(tail), |term, _| {
-            Bitvector32Term::Add(Box::new(Bitvector32Term::Constant(0)), Box::new(term))
+            binary_node!(
+                Int32,
+                Add,
+                Box::new(Bitvector32Term::Constant(0)),
+                Box::new(term)
+            )
         })
     }
 
@@ -10292,8 +10300,15 @@ mod local_variable_spelling_tests {
         // Terms that share a fingerprint (same root and operand roots) but
         // differ deeper, beside equal terms held by several locals.
         let deep = |term: Bitvector32Term| {
-            Bitvector32Term::Add(
-                Box::new(Bitvector32Term::Add(Box::new(term), Box::new(x.clone()))),
+            binary_node!(
+                Int32,
+                Add,
+                Box::new(binary_node!(
+                    Int32,
+                    Add,
+                    Box::new(term),
+                    Box::new(x.clone())
+                )),
                 Box::new(Bitvector32Term::Constant(1)),
             )
         };

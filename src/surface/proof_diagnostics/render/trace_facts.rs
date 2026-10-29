@@ -1,7 +1,10 @@
 //! Typed diagnostic forms for facts without an exact source spelling.
 use super::*;
 #[cfg(test)]
+use crate::kernel::binary_node;
+#[cfg(test)]
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineIntegerType};
+use crate::kernel::{binary_term, unary_term};
 
 impl Renderer<'_> {
     pub(super) fn resource_arguments(&mut self, arguments: &[AlgebraicValue]) {
@@ -56,16 +59,16 @@ impl Renderer<'_> {
     pub(super) fn machine_operation(&mut self, value: &Bitvector32Term) -> bool {
         use Bitvector32Term::*;
         let binary = match value {
-            Divide(a, b) => Some((a, b, "bits32", "sdiv")),
-            UnsignedDivide(a, b) => Some((a, b, "bits32", "udiv")),
-            Remainder(a, b) => Some((a, b, "bits32", "srem")),
-            UnsignedRemainder(a, b) => Some((a, b, "bits32", "urem")),
-            ShiftLeft(a, b) => Some((a, b, "bits32", "<<")),
-            ArithmeticShiftRight(a, b) => Some((a, b, "bits32", "ashr")),
-            LogicalShiftRight(a, b) => Some((a, b, "bits32", "lshr")),
-            BitwiseAnd(a, b) => Some((a, b, "bits32", "&")),
-            BitwiseOr(a, b) => Some((a, b, "bits32", "|")),
-            BitwiseXor(a, b) => Some((a, b, "bits32", "^")),
+            binary_term!(Int32, Divide, a, b) => Some((a, b, "bits32", "sdiv")),
+            binary_term!(UInt32, Divide, a, b) => Some((a, b, "bits32", "udiv")),
+            binary_term!(Int32, Remainder, a, b) => Some((a, b, "bits32", "srem")),
+            binary_term!(UInt32, Remainder, a, b) => Some((a, b, "bits32", "urem")),
+            binary_term!(Int32, ShiftLeft, a, b) => Some((a, b, "bits32", "<<")),
+            binary_term!(Int32, ShiftRight, a, b) => Some((a, b, "bits32", "ashr")),
+            binary_term!(UInt32, ShiftRight, a, b) => Some((a, b, "bits32", "lshr")),
+            binary_term!(Int32, BitwiseAnd, a, b) => Some((a, b, "bits32", "&")),
+            binary_term!(Int32, BitwiseOr, a, b) => Some((a, b, "bits32", "|")),
+            binary_term!(Int32, BitwiseXor, a, b) => Some((a, b, "bits32", "^")),
             Binary {
                 format,
                 op,
@@ -88,7 +91,7 @@ impl Renderer<'_> {
             Int64FromUInt32(inner) => Some((inner, "Int64FromUInt32")),
             UInt64FromInt32(inner) => Some((inner, "UInt64FromInt32")),
             UInt64FromInt64(inner) => Some((inner, "UInt64FromInt64")),
-            BitwiseNot(inner) => Some((inner, "BitwiseNot")),
+            unary_term!(Int32, BitwiseNot, inner) => Some((inner, "BitwiseNot")),
             Unary {
                 format,
                 op: crate::kernel::MachineUnaryOp::BitwiseNot,
@@ -327,10 +330,10 @@ mod tests {
                 "uint64(",
             ),
             (
-                Bitvector32Term::LogicalShiftRight(a.clone(), b.clone()),
+                binary_node!(UInt32, ShiftRight, a.clone(), b.clone()),
                 "lshr",
             ),
-            (Bitvector32Term::ArithmeticShiftRight(a.clone(), b), "ashr"),
+            (binary_node!(Int32, ShiftRight, a.clone(), b), "ashr"),
             (Bitvector32Term::UInt64FromInt32(a), "UInt64FromInt32("),
         ] {
             let text = render(&Proposition::Equal(

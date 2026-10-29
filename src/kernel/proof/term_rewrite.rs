@@ -2,6 +2,8 @@
 //! Memory snapshots are opaque: this walks the selected logical expression,
 //! never a heap or an ambient proof state.
 use crate::kernel::CompareRelation;
+#[cfg(test)]
+use crate::kernel::binary_node;
 use crate::kernel::*;
 use crate::kernel::{
     AlgebraicBitvectorMatchArm, AlgebraicResultMatchArm, AlgebraicTerm, AlgebraicTermNode,
@@ -6221,7 +6223,9 @@ mod tests {
         let IntegerTerm::AlgebraicMatch { arms, .. } = &mut malformed_input else {
             unreachable!()
         };
-        arms[1].bindings[1] = AlgebraicValue::C(CValue::Int32(Bitvector32Term::Add(
+        arms[1].bindings[1] = AlgebraicValue::C(CValue::Int32(binary_node!(
+            Int32,
+            Add,
             Box::new(Bitvector32Term::Variable(bound_c)),
             Box::new(Bitvector32Term::Constant(1)),
         )));
@@ -6461,8 +6465,12 @@ mod tests {
         let source = Variable(880);
         let mut payload = Bitvector32Term::Variable(source);
         for _ in 0..128 {
-            payload =
-                Bitvector32Term::Add(Box::new(payload), Box::new(Bitvector32Term::Constant(1)));
+            payload = binary_node!(
+                Int32,
+                Add,
+                Box::new(payload),
+                Box::new(Bitvector32Term::Constant(1))
+            );
         }
         let input = Term::Integer(IntegerTerm::Machine(
             crate::kernel::SharedMachineIntegerTerm::intern(
@@ -6516,7 +6524,9 @@ mod tests {
         let source = Bitvector32Term::Variable(Variable(3_025_000));
         let mut replacement = Bitvector32Term::Variable(Variable(3_025_001));
         for _ in 0..128 {
-            replacement = Bitvector32Term::Add(
+            replacement = binary_node!(
+                Int32,
+                Add,
                 Box::new(replacement),
                 Box::new(Bitvector32Term::Constant(1)),
             );
@@ -7261,7 +7271,9 @@ mod tests {
     #[should_panic(expected = "never read `refusal()`")]
     fn refused_scope_dropped_unread_panics_in_debug_builds() {
         let source_variable = Variable(3_104_000);
-        let source = Bitvector32Term::Add(
+        let source = binary_node!(
+            Int32,
+            Add,
             Box::new(Bitvector32Term::Variable(source_variable)),
             Box::new(Bitvector32Term::Constant(1)),
         );
@@ -7290,7 +7302,9 @@ mod tests {
     #[test]
     fn composite_machine_source_is_rejected_under_c_binder() {
         let source_variable = Variable(3_103_000);
-        let source = Bitvector32Term::Add(
+        let source = binary_node!(
+            Int32,
+            Add,
             Box::new(Bitvector32Term::Variable(source_variable)),
             Box::new(Bitvector32Term::Constant(1)),
         );

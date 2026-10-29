@@ -1,6 +1,7 @@
 //! Admission of calls whose contracts touch populations, mutexes and authority resources: which assumed contracts may update an authority population, and the member, quantity and control effects a verified or preserving contract may have.
 
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 /// Whether any resource the contract moves can touch a population: a
@@ -1278,7 +1279,9 @@ pub(super) fn check_quantity_exchange_at_return(
                     let actual = if produce {
                         actual
                     } else {
-                        Bitvector32Term::Subtract(
+                        binary_node!(
+                            Int32,
+                            Subtract,
                             Box::new(Bitvector32Term::Constant(0)),
                             Box::new(actual),
                         )
@@ -1289,7 +1292,9 @@ pub(super) fn check_quantity_exchange_at_return(
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
                             left: Box::new(actual),
-                            right: Box::new(Bitvector32Term::Subtract(
+                            right: Box::new(binary_node!(
+                                Int32,
+                                Subtract,
                                 Box::new((**produced).clone()),
                                 Box::new((**consumed).clone()),
                             )),
