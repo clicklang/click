@@ -101,6 +101,10 @@ impl recursive_drop::Stack {
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
+                        have self.head.value == w by {
+                            rewrite(self.head == old(self.head.next));
+                            assumption();
+                        }
                         let after = fold(nodes(self.head), { values: List::Cons(w, more) }, { tail: next });
                     }
                 }

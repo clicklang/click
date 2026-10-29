@@ -114,9 +114,14 @@ int32 owned_string_init(
     step();
     step();
     step();
+    have owner->data == data;
+    have owner->len == 0;
+    have data[0] == 0;
     have terminated_at(owner->data, owner->len) by {
         unfold(terminated_at);
-        solve();
+        rewrite(owner->data == data);
+        rewrite(owner->len == 0);
+        assumption();
     }
     have 0 <= owner->len;
     have owner->len < owner->cap;

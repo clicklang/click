@@ -1106,6 +1106,21 @@ impl<'a> Proof<'a> {
         if let ProofStep::CloseInvariantsBy(body) = &step {
             return self.apply_close_invariants_body(&body.to_proof_tactics());
         }
+        if !super::execution_statements::implicit_auto_disabled()
+            && matches!(
+                &step,
+                ProofStep::UnfoldPredicate(_)
+                    | ProofStep::UnfoldFunction(_)
+                    | ProofStep::UnfoldResource(_)
+                    | ProofStep::UnfoldWitnesses { .. }
+            )
+        {
+            // The outer dispatcher records this accepted operation once.
+            // Probes and retries must not re-enter its census/trace wrapper.
+            return self.with_proved_lowering_requirements(&step, |proof| {
+                proof.apply_step_with_origin_inner(step.clone(), None)
+            });
+        }
         if let ProofStep::Have { proposition, proof } = &step {
             return self.apply_have_step(proposition, proof);
         }

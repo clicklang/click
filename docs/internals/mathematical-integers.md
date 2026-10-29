@@ -244,6 +244,13 @@ work; correctness checks and existing budgets remain in force. See the
 For an existential witness, definedness remains attached to that same witness.
 It cannot be weakened into an implication whose guard is false, since that
 would permit an irrelevant witness to establish the existential claim.
+Nor may each domain requirement be put under a separate existential: those
+requirements could select different witnesses from the body. Integer,
+algebraic, native-integer, and pointer existentials keep each value path's
+requirements with its body under one binder. The native conversion regressions
+`native_witness_conversion_keeps_its_domain.md` and
+`native_witness_conversion_rejects_an_out_of_range_witness.md` check this for
+an accepted and an out-of-range selected witness.
 
 ## Arithmetic automation and trust boundary
 
@@ -378,8 +385,9 @@ fold over the snapshot before the write.
 32, 64, or 128. `MachineIntegerConstant` pairs that format with a checked
 two's-complement payload; its private fields prevent oversized payloads from
 entering a consumer. The inclusive bounds, literal checking, numeric observation,
-and conversion policies share this representation. Boolean values remain a
-separate source type. Width gives the number of value bytes, not ABI alignment
+and conversion policies share this representation. `Bool` is not one of these
+formats: it is the logical sort (Stage 5 of `design/machine-integers.md`),
+whose integer value at a format is the cast `b as F` (rule C1). Width gives the number of value bytes, not ABI alignment
 or a promise that a frontend supports that width.
 
 Checked conversion preserves the numeric value or refuses it. Modulo conversion
@@ -456,9 +464,10 @@ is, and with nothing else: the identity with its operand is a checked
 signedness before the destination interpretation. Conversion construction
 inspects only a bounded number of root nodes.
 
-Boolean sources observe their normalized zero-or-one numeric value. Boolean
-results, floats, pointers, arrays, and unsupported widths are refused at this
-integer boundary; their ordinary conversions use their own rules. Evaluation
+A `Bool` source converts to its C1 cast at the destination, 1 when it holds
+and 0 otherwise, which owes nothing. A conversion to `bool` is the test
+`x != 0`, not this integer boundary. Floats, pointers, arrays, and unsupported
+widths are refused here; their ordinary conversions use their own rules. Evaluation
 of the operand still carries its definedness obligations, including overflow.
 This explicit policy does not relax ordinary C casts or checked Integer
 conversions. Casts involving 128-bit values use `MachineIntegerCast`, retaining

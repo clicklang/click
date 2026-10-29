@@ -448,3 +448,32 @@ fn direct_literal_and_store_checks_reject_alias_walks() {
         assert!(boundary::check_source(path, &source).is_ok());
     }
 }
+
+#[test]
+fn store_preservation_cannot_retry_general_composition_or_explicit_range_search() {
+    for name in [
+        "owned_composition_store_separated_evidence",
+        "owned_composition_store_separated_evidence_impl",
+        "pointers_proven_disjoint_by_explicit_range_for_memory_resolution",
+    ] {
+        for expression in [
+            format!("c.{name}()"),
+            format!("C::{name}"),
+            format!("invoke!(c.{name}())"),
+        ] {
+            let source =
+                format!("fn without_possible_aliasing_cells(c: C) {{ let _ = {expression}; }}");
+            assert!(
+                boundary::check_source("src/kernel/primitives/memory_state.rs", &source).is_err(),
+                "accepted {source}"
+            );
+        }
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/primitives/memory_state.rs",
+            "fn without_possible_aliasing_cells(c: C) { c.access_owned_apart_from_store(); }"
+        )
+        .is_ok()
+    );
+}

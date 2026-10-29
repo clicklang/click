@@ -854,7 +854,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
     }
     if matches!(
         goal,
-        Proposition::ConditionIs(ConditionTerm::PointerValueEqual(..), _)
+        Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(..) | ConditionTerm::PointerEqual(..),
+            _
+        )
     ) && let Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,

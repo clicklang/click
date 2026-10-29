@@ -39,7 +39,7 @@ this page covers each form's full rules and edge cases.
 | `P and Q`, `P or Q`, `P implies Q`, `not P` | Proposition connectives (C's `&&` and `\|\|` are not Click syntax) | [Propositions](#propositions) |
 | `forall (k: int32) { P }`, `(lo..hi).all(\|k\| { P })` | Quantified propositions; the range form guards memory reads | [Propositions](#propositions) |
 | `Integer`, `to_integer(x)` | Unbounded mathematical integers | [Mathematical integers](#mathematical-integers) |
-| `true`, `false`, `-> bool`, `ensures p(x);` | Specification booleans; a `bool` value written alone is the claim `value == true` | [Booleans](#booleans) |
+| `true`, `false`, `-> Bool`, `ensures p(x);` | The logical sort `Bool`; a `Bool` value written alone is the claim that it holds | [Booleans](#booleans) |
 | `function f(x: int32) -> int32 { ... }` | A pure Click function | [Pure Click functions](#pure-click-functions) |
 | `predicate p(...) { ... }` | A named proposition, possibly over resources | [Predicates](#predicates) |
 | `theorem t() { requires P; ensures Q; }` | A pure theorem | [Pure theorems](#pure-theorems) |
@@ -3235,11 +3235,14 @@ theorem three_is_in_range() {
   conditional is opened only when its condition is decided. The range
   `b == true or b == false` is a disjunction, proved like any other with a
   case split such as `if b { ... } else { ... }`.
-- **A C or C++ `bool` is tested against zero.** A C or C++ `bool` value
-  reaches `Bool` by C's own test: `b` claims `b != 0`, the test `if (b)`
-  makes, and `not b` claims `b == 0`. So `ensures early implies result == 7;`
-  meets the branch the code took without a comparison with zero
-  (`mdtests/a_c_bool_parameter_is_a_claim.md`).
+- **A C or C++ `bool` is a `Bool`.** A C or C++ `bool` parameter, local,
+  call result or return value is a `Bool` value, so `b` claims that it holds
+  and `not b` that it does not, as the test `if (b)` decides. A conversion
+  of an integer to `bool` is the test `x != 0`, and promoting a `bool` to an
+  integer gives `b as int32`. So `ensures early implies result == 7;` meets
+  the branch the code took with no comparison with zero
+  (`mdtests/a_c_bool_parameter_is_a_claim.md`). A `bool` object is one byte
+  holding 1 or 0; see [C](c.md).
 - **Rust.** A Rust sidecar spells the type `bool` as Rust does, and a
   parenthesized comparison there is a `Bool` value, `result == (x > 3)`
   ([Rust](../rust.md#signatures-in-rust-syntax)). In a C or C++ sidecar

@@ -120,6 +120,13 @@ int32 input_cursor_clone(
     step();
     step();
     step();
+    have target->data == old(source->data);
+    have target->len == old(source->len);
+    have separate(memory(*target), memory(target->data[0..target->len])) by {
+        rewrite(target->data == old(source->data));
+        rewrite(target->len == old(source->len));
+        assumption();
+    }
     fold(input_cursor(target));
     solve();
 }

@@ -241,7 +241,11 @@ fn evaluate_logical_memory_load_paths_unbridged(
     // fact-stable (`docs/internals/spellability.md`). A value stored under
     // another spelling of an equal address reaches the read through the
     // equality graph, which equates them.
-    if assumptions.should_keep_spec_loads_symbolic()
+    // Version-named reads already stay symbolic. Sending them through C
+    // evaluation for a pure-function proposition would resolve aliases from
+    // facts and substitute the selected cell's value.
+    if (assumptions.should_keep_spec_loads_symbolic()
+        && !logical_read_names_its_version(value_type))
         || assumptions.should_force_symbolic_external_loads()
     {
         let _assumptions_id_scope = assumptions.enter_id_scope();
@@ -297,6 +301,15 @@ fn evaluate_logical_memory_load_paths_unbridged(
             memory
                 .known_value(&pointer)
                 .filter(|stored| !named || holds_its_own_read(stored, &pointer))
+                // A value that does not name its version is the stored one,
+                // reached through an address based on a pointer read as
+                // through the pointer memory shows stored there.
+                .or_else(|| {
+                    (!named)
+                        .then(|| stored_pointer_address(&pointer))
+                        .flatten()
+                        .and_then(|address| memory.known_value(&address))
+                })
                 .and_then(|stored| {
                     let complete_pointer = matches!(&stored, CValue::Pointer(_))
                         || matches!(&stored, CValue::Int32(Bitvector32Term::Variable(variable))
@@ -373,8 +386,8 @@ fn holds_its_own_read(stored: &CValue, pointer: &Pointer) -> bool {
 
 /// Whether a logical read of a `value_type` cell lowers to the read at the
 /// cell's version rather than to a value the cell holds
-/// (`docs/internals/spellability.md`). Pointer and other cells still read
-/// their stored value.
+/// (`docs/internals/spellability.md`). Integer and pointer cells keep their
+/// read identities; abstract values still read their stored value.
 fn logical_read_names_its_version(value_type: CType) -> bool {
     matches!(
         value_type,
@@ -387,7 +400,7 @@ fn logical_read_names_its_version(value_type: CType) -> bool {
             | CType::UInt32
             | CType::Int64
             | CType::UInt64
-    )
+    ) || value_type.is_pointer()
 }
 
 /// Name the selected caller read with the existing scalar normalizer.
@@ -837,10 +850,20 @@ fn evaluate_c_memory_load_case(
     // An exact materialized cell is already the authoritative value for this
     // non-union pointer. Avoid proving every other symbolic cell distinct
     // before the direct map lookup.
-    if let Some(value) = memory.known_value(&pointer).filter(|stored| {
-        !(purpose == LoadPurpose::Logical && logical_read_names_its_version(value_type))
-            || holds_its_own_read(stored, &pointer)
-    }) {
+    let names_version =
+        purpose == LoadPurpose::Logical && logical_read_names_its_version(value_type);
+    // A value that does not name its version is the stored one, reached
+    // through an address based on a pointer read as through the pointer
+    // memory shows stored there.
+    let known = memory.known_value(&pointer).or_else(|| {
+        (!names_version)
+            .then(|| stored_pointer_address(&pointer))
+            .flatten()
+            .and_then(|address| memory.known_value(&address))
+    });
+    if let Some(value) =
+        known.filter(|stored| !names_version || holds_its_own_read(stored, &pointer))
+    {
         if let Some(value) = canonicalized_pointer_value_from_int_cell(
             memory,
             &pointer,
@@ -1903,10 +1926,17 @@ fn canonicalized_symbolic_load_value_with_identity(
     {
         return Some(complete_loaded_word(value, memory, &address));
     }
+    // A logical pointer read names the cell's version, whatever pointer the
+    // cell holds (`docs/internals/spellability.md`).
+    let names_version = purpose == LoadPurpose::Logical
+        && logical_read_names_its_version(value_type)
+        && value_type.pointee_type().is_some()
+        && !matches!(value_type, CType::FunctionPointer(_));
     // Canonical address selection can expose a materialized pointer cell that
     // the original spelling did not name. Reuse its complete stored value;
     // manufacturing another read here would discard the selected designation.
-    if let Some(value @ CValue::Pointer(_)) = memory.known_value(&address)
+    if !names_version
+        && let Some(value @ CValue::Pointer(_)) = memory.known_value(&address)
         && value_type.accepts(&value)
     {
         let CValue::Pointer(stored) = &value else {
@@ -1926,7 +1956,12 @@ fn canonicalized_symbolic_load_value_with_identity(
     {
         return Some(value);
     }
-    let value = symbolic_load_value(memory, &address, value_type)?;
+    let value = if names_version {
+        record_load_access_width(memory, &address, value_type.byte_width());
+        memory.symbolic_pointer_version_load(&address, value_type)
+    } else {
+        symbolic_load_value(memory, &address, value_type)?
+    };
     // Terms are canonical at creation: an int or byte load evaluates to its
     // load variable, with the defining fact beside it, so every fact,
     // offset, and range built from the value is canonical.
@@ -2001,6 +2036,29 @@ fn canonicalized_symbolic_load_value_with_identity(
     let CValue::Pointer(pointer_value) = &value else {
         return Some(complete_loaded_word(value, memory, &address));
     };
+    // The read keeps its version name. The equality graph relates it to the
+    // pointer stored there whenever a query names the read and memory alone
+    // shows that pointer (`EqualityGraph::register_logical_read_values`); the
+    // read equation beside it lets a context that keeps it reach the read from
+    // the stored pointer too.
+    if names_version {
+        if let Some(stored) = pointer_read_over_write_c_value(pointer_value.pointer()) {
+            facts.push(ExecutionPureFact::logical_read_equation(
+                stored.with_type(value_type),
+                pointer_value.pointer().clone(),
+            ));
+        }
+        // The raw read of this snapshot is the read the version names: one
+        // place, so a read through an alias of the address reaches it.
+        let raw = Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(memory), &address);
+        if raw != *pointer_value.pointer() {
+            facts.push(ExecutionPureFact::logical_read_equation(
+                pointer_value.clone(),
+                raw,
+            ));
+        }
+        return Some(value);
+    }
     // Losing a scalar cache does not lose a complete pointer stored in the
     // selected memory history. Return that whole value before minting another
     // numeric read coordinate, preserving its bounds and object class.
@@ -2012,9 +2070,10 @@ fn canonicalized_symbolic_load_value_with_identity(
         &crate::kernel::intern_c_memory_ref(memory),
         &address,
     );
-    // As in the cached-prefix route, fact-supported recovery cannot choose
-    // the value of a specification expression.
-    if !SpecificationReadScope::is_active()
+    // A logical or specification read keeps its term; recovery belongs to
+    // executed reads, with equality reasoning in the shared graph.
+    if !names_version
+        && !SpecificationReadScope::is_active()
         && !assumptions.should_force_symbolic_external_loads()
         && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
             complete_read.designation(),
@@ -4837,8 +4896,19 @@ mod tests {
                 vec![],
                 &context,
             );
+            // The structural read keeps its own designation. The complete
+            // stored value is related through the graph, not folded into it.
+            let CValue::Pointer(stored_value) = &value else {
+                unreachable!()
+            };
             assert!(
-                matches!(&ordinary[0].outcome, CExpressionOutcome::Value(actual) if actual == &value)
+                matches!(&ordinary[0].outcome, CExpressionOutcome::Value(CValue::Pointer(actual))
+                if actual.pointer() != &stored
+                    && context.equality_graph.knows_condition(
+                        &ConditionTerm::PointerValueEqual(
+                            Box::new(actual.clone()), Box::new(stored_value.clone()),
+                        ), true,
+                    ))
             );
             let forced_context = context.clone().force_symbolic_external_loads();
             let forced = evaluate_logical_memory_load_paths(
@@ -4909,13 +4979,9 @@ mod tests {
         let CExpressionOutcome::Value(CValue::Pointer(actual)) = &second[0].outcome else {
             panic!("retained pointer read")
         };
+        // The cell holds its own read, so the read is that read: no stored
+        // value stands in for it, and none needs an equation.
         assert_eq!(actual.pointer(), expected.pointer());
-        assert!(
-            second[0]
-                .facts
-                .iter()
-                .any(ExecutionPureFact::is_logical_read_equation)
-        );
     }
 
     #[test]
@@ -5008,7 +5074,13 @@ mod tests {
         assert!(!facts.has_path_conditions());
         let goal = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
         assert_eq!(wrap_path_context(goal.clone(), &facts, &[]), goal);
-        assert_eq!(guard_quantified_witness(goal.clone(), &facts), goal);
+        let path = crate::kernel::spec::SpecPropositionPath {
+            proposition: goal.clone(),
+            facts: facts.clone(),
+            obligations: Vec::new(),
+            introductions: Vec::new(),
+        };
+        assert_eq!(crate::kernel::spec::existential_body_branch(&path), goal);
         let ordinary: ExecutionFacts =
             vec![ExecutionPureFact::new(fact.proposition().clone())].into();
         assert!(ordinary.has_path_conditions());
@@ -5387,8 +5459,17 @@ mod tests {
                     Vec::new(),
                     &assumptions,
                 );
+                // The read names the cell; the pointer stored there is what
+                // the read-over-write authority relates it to.
                 assert!(
-                    matches!(&paths[0].outcome, CExpressionOutcome::Value(CValue::Pointer(value)) if value.pointer() == &target)
+                    matches!(&paths[0].outcome, CExpressionOutcome::Value(CValue::Pointer(value))
+                    if pointer_read_over_write_value(value.pointer()).as_ref() == Some(&target)
+                        && assumptions.equality_graph.knows_condition(
+                            &ConditionTerm::PointerValueEqual(
+                                Box::new(value.clone()),
+                                Box::new(CPointerValue::new(target.clone(), value_type)),
+                            ), true,
+                        ))
                 );
             }
         }
@@ -5927,29 +6008,74 @@ mod tests {
             };
             path.outcome.clone()
         };
-        let direct = read(&memory, right.clone(), &context);
-        assert_eq!(
-            direct,
-            CExpressionOutcome::Value(CValue::typed_pointer(target, CType::Int64Pointer))
-        );
-        assert_eq!(read(&memory, alias.offset_by_bytes(8), &context), direct);
-        assert_ne!(
-            read(&memory, alias.offset_by_bytes(8), &without_alias),
-            direct
-        );
-        assert_ne!(read(&memory, alias.offset_by_bytes(16), &context), direct);
+        let pointer = |outcome: &CExpressionOutcome| match outcome {
+            CExpressionOutcome::Value(CValue::Pointer(value)) => value.pointer().clone(),
+            outcome => panic!("a pointer read, not {outcome:?}"),
+        };
+        // A logical read keeps the address it was written with and names its
+        // version; the pointer stored there is related to it by memory alone.
+        let direct = pointer(&read(&memory, right.clone(), &context));
+        assert_eq!(pointer_read_over_write_value(&direct), Some(target));
+        // A read through the alias is another name for the same cell, which
+        // only the alias fact relates, through the frame it needs.
+        let proven_equal =
+            crate::kernel::reasoning::memory_resolution::pointers_proven_equal_for_memory_resolution;
+        let through_alias = pointer(&read(&memory, alias.offset_by_bytes(8), &context));
+        assert_ne!(through_alias, direct);
+        assert!(proven_equal(&through_alias, &direct, &context));
+        let without = pointer(&read(&memory, alias.offset_by_bytes(8), &without_alias));
+        assert!(!proven_equal(&without, &direct, &without_alias));
+        let past = pointer(&read(&memory, alias.offset_by_bytes(16), &context));
+        assert!(!proven_equal(&past, &direct, &context));
         let changed = memory.store(
             right,
             CValue::typed_pointer(Pointer::symbolic(Variable(955_925)), CType::Int64Pointer),
         );
-        let updated = read(&changed, alias.offset_by_bytes(8), &context);
-        assert_eq!(updated, read(&changed, owner.offset_by_bytes(8), &context));
-        assert_ne!(updated, direct);
+        let updated = pointer(&read(&changed, alias.offset_by_bytes(8), &context));
+        assert!(proven_equal(
+            &updated,
+            &pointer(&read(&changed, owner.offset_by_bytes(8), &context)),
+            &context
+        ));
+        assert!(!proven_equal(&updated, &direct, &context));
         assert!(!ResourceContext::new().permits_memory_read(
             &alias.offset_by_bytes(8),
             8,
             &context
         ));
+    }
+
+    #[test]
+    fn symbolic_logical_wide_reads_keep_their_term_under_alias_facts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(989_960));
+        let alias = Pointer::symbolic(Variable(989_961));
+        let memory = CMemory::new().store(
+            slot.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+        );
+        let empty = PureFactContext::new()
+            .allow_symbolic_contract_loads()
+            .prefer_symbolic_external_loads()
+            .keep_spec_loads_symbolic();
+        let facts = empty
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(slot, alias.clone()), true);
+        let read = |context: &PureFactContext| {
+            let paths = evaluate_logical_memory_load_paths(
+                &memory,
+                alias.clone(),
+                CType::UInt64,
+                ExecutionFacts::new(),
+                Vec::new(),
+                context,
+            );
+            let [path] = paths.as_slice() else {
+                panic!("one logical read: {paths:?}");
+            };
+            path.outcome.clone()
+        };
+        assert_eq!(read(&facts), read(&empty));
     }
 
     #[test]
@@ -6195,11 +6321,32 @@ mod tests {
             (value, facts)
         };
         let (value, facts) = read(&memory);
-        assert_eq!(value, stored);
-        assert_eq!(value.object_class(), Some(class));
-        assert_eq!(facts.len(), 1);
-        assert!(facts[0].is_logical_read_equation());
-        facts[0].retain_pointer_read_definition(&context);
+        // Naming stays structural; the graph retains the complete stored
+        // pointer, including the designation, bounds, and access class.
+        assert_ne!(value.pointer(), stored.pointer());
+        assert_eq!(value.designation(), value.pointer());
+        assert!(context.equality_graph.knows_condition(
+            &ConditionTerm::PointerValueEqual(Box::new(value.clone()), Box::new(stored.clone())),
+            true,
+        ));
+        assert_eq!(
+            pointer_read_over_write_value(value.pointer()),
+            Some(stored.pointer().clone())
+        );
+        assert_eq!(
+            context
+                .equality_graph
+                .pointer_value_representative(&value)
+                .object_class(),
+            Some(class)
+        );
+        // One equation relates the read to the stored value, and one the
+        // snapshot's raw read to the read.
+        assert_eq!(facts.len(), 2);
+        for fact in facts.iter() {
+            assert!(fact.is_logical_read_equation());
+            fact.retain_pointer_read_definition(&context);
+        }
         let current = CPointerValue::new(
             Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(&memory), &field),
             CType::Int32Pointer,
@@ -6840,7 +6987,12 @@ mod tests {
             let CExpressionOutcome::Value(CValue::Pointer(value)) = &paths[0].outcome else {
                 panic!("a cached pointer read");
             };
-            assert_eq!(value.pointer(), expected);
+            // The slot's read keeps its name; the pointer stored there is the
+            // field read, which the read-over-write authority relates it to.
+            assert_eq!(
+                pointer_read_over_write_value(value.pointer()).as_ref(),
+                Some(expected)
+            );
         }
         assert!(context.equality_graph.are_equal(&direct, &indirect));
         assert!(

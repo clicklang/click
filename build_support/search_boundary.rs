@@ -71,6 +71,17 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: {}: direct checking must use written equality/address premises, not discover alias paths ({name})", self.path, self.function));
         }
+        if self.path == "src/kernel/primitives/memory_state.rs"
+            && self.function == "without_possible_aliasing_cells"
+            && matches!(
+                name,
+                "owned_composition_store_separated_evidence"
+                    | "owned_composition_store_separated_evidence_impl"
+                    | "pointers_proven_disjoint_by_explicit_range_for_memory_resolution"
+            )
+        {
+            self.errors.push(format!("{}: {}: store preservation must not retry general composition or explicit-range search ({name}); supply separation and transport explicitly", self.path, self.function));
+        }
         if matches!(name, "exact_pointer_aliases" | "pointer_spellings")
             && matches!(
                 (self.path, self.function.as_str()),

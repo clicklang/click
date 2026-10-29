@@ -160,6 +160,20 @@ int32 owned_segmented_buffer_swap(struct owned_segmented_buffer* owner) {
     have 1 <= owner->second_len by {
         assumption();
     }
+    have owner->first_data == old(owner->second_data);
+    have owner->first_len == old(owner->second_len);
+    have separate(memory(*owner), memory(owner->first_data[0..owner->first_len])) by {
+        rewrite(owner->first_data == old(owner->second_data));
+        rewrite(owner->first_len == old(owner->second_len));
+        assumption();
+    }
+    have owner->second_data == old(owner->first_data);
+    have owner->second_len == old(owner->first_len);
+    have separate(memory(*owner), memory(owner->second_data[0..owner->second_len])) by {
+        rewrite(owner->second_data == old(owner->first_data));
+        rewrite(owner->second_len == old(owner->first_len));
+        assumption();
+    }
     fold(owned_segmented_buffer(owner));
     have 0 < owner->first_len by {
         have 0 < owner->first_len;

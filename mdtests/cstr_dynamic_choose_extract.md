@@ -40,43 +40,45 @@ uint64 read_terminator(uint8 bytes[]) {
                     forall (k: uint64) { to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k]) })
             }
             witness { len: found_len };
-            both {
+            both { solve(); } and {
                 both {
                     both {
                         both {
-                            solve();
+                            both {
+                                solve();
+                            } and {
+                                extract(at(function.entry, viewable(bytes[0..found_len + 1u64])));
+                                transport(
+                                    at(function.entry, viewable(bytes[0..found_len + 1u64])),
+                                    viewable(bytes[0..found_len + 1u64])
+                                ) using {
+                                    at(function.entry, viewable(bytes[0..found_len + 1u64]));
+                                };
+                            }
                         } and {
-                            extract(at(function.entry, viewable(bytes[0..found_len + 1u64])));
-                            transport(
-                                at(function.entry, viewable(bytes[0..found_len + 1u64])),
-                                viewable(bytes[0..found_len + 1u64])
-                            ) using {
-                                at(function.entry, viewable(bytes[0..found_len + 1u64]));
-                            };
+                            solve();
                         }
                     } and {
                         solve();
                     }
                 } and {
-                    solve();
+                    extract(at(function.entry, forall (k: uint64) {
+                        to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k])
+                    }));
+                    intro();
+                    intro();
+                    instantiate(at(function.entry, forall (k: uint64) {
+                        to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k])
+                    }), k) using {
+                        to_integer(k) < to_integer(found_len + 1u64);
+                    };
+                    transport(
+                        at(function.entry, defined(bytes[k])),
+                        defined(bytes[k])
+                    ) using {
+                        at(function.entry, defined(bytes[k]));
+                    };
                 }
-            } and {
-                extract(at(function.entry, forall (k: uint64) {
-                    to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k])
-                }));
-                intro();
-                intro();
-                instantiate(at(function.entry, forall (k: uint64) {
-                    to_integer(k) < to_integer(found_len + 1u64) implies defined(bytes[k])
-                }), k) using {
-                    to_integer(k) < to_integer(found_len + 1u64);
-                };
-                transport(
-                    at(function.entry, defined(bytes[k])),
-                    defined(bytes[k])
-                ) using {
-                    at(function.entry, defined(bytes[k]));
-                };
             }
         }
     }

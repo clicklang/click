@@ -540,8 +540,8 @@ An owner's own observation and identity expansion cache do not add authority;
 loan-bound views and nontrivial resource descriptions still have to agree.
 Different stored values remain a named join refusal
 (`mdtests/loop_break_exit_contract_call_different_store_rejected.md`). Numerical
-floating equality and normalized Boolean reads do not establish identical
-stored bits and are not used to fill the cell cache.
+floating equality and `bool` reads (the `Bool` `byte != 0`) do not establish
+identical stored bits and are not used to fill the cell cache.
 
 Exits can also disagree about bookkeeping no C expression observes after the
 loop, and the join reconciles each piece in the direction that claims less:

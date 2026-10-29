@@ -155,7 +155,14 @@ reasoning policy, variable allocation bounds and typing metadata queried by the
 selected load variables. It never clears the inherited graph's pointer sources.
 Step-refusal pure-fact listings use the capped sampler and identify truncation;
 conversion-condition refusals use indexed atomic checks and structural
-reflexive guards (including under native int32 universal binders), never general proof search. The build boundary checks these diagnostic entry points.
+reflexive guards (including under native int32 universal binders), never general
+proof search. At a `have` scope opening or an unfold, an unmet mandatory
+condition is exposed to the ordinary obligation probe. The implicit solver
+proves it at the operation's input state and retains its explicit `have`
+certificate before the operation; expanded proofs check without implicit
+solving. The fast checker itself still refuses an unmet condition. Probing a
+`have` stops at scope opening, so requirements from its body cannot escape
+nested binders. The build boundary checks these diagnostic entry points.
 
 Viewability checking looks up an exactly stated view directly. A candidate
 address-shape bucket supplies implicit evidence only when it contains one fact;
@@ -333,3 +340,13 @@ use `transport ... using` to carry the required read across the write, as in
 `mdtests/do_while_restored_field_frame_remains_separate.md`. Build-boundary
 checks reject the removed evidence and alias enumeration routes. Ownership
 member selection and cached-read preservation remain roadmap targets.
+
+Cached-value preservation does not retry the general
+`owned_composition_store_separated_evidence` search after the store's earlier
+checks miss. The build boundary forbids that call from
+`without_possible_aliasing_cells`; explicit transport and memory-history
+checking retain their separate support. The store also does not call
+`pointers_proven_disjoint_by_explicit_range_for_memory_resolution` directly.
+The direct-range fallback and the explicit-range route inside general pointer
+distinctness remain, along with ownership-member selection; this restriction
+does not make every store operation bounded.

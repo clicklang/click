@@ -11042,6 +11042,40 @@ impl<'a> Proof<'a> {
                     direct_caller: None,
                 }));
         }
+        let non_execution_surface = match self.context.as_ref() {
+            ProofContext::Pure(context) => Some(
+                super::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
+                    &requirement.proposition,
+                    ParameterBinding::new(&[], &[]),
+                    &context.source_state,
+                    &context.source_names,
+                ),
+            ),
+            ProofContext::FixedState(context) => Some(
+                super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
+                    &requirement.proposition,
+                    context.parameter_binding,
+                    context.fixed_state.pre_state,
+                    context.fixed_state.state,
+                ),
+            ),
+            ProofContext::Execution(_) => None,
+        };
+        if let Some(surface) = non_execution_surface {
+            let surface = surface.ok_or_else(|| self.step_error(
+                "a proof definedness requirement has no Surface spelling; this is a spellability defect",
+            ))?;
+            let lowered = self.lower_surface_goal(&surface, "proof definedness requirement")?;
+            if !lowered_states_requirement(&lowered, requirement) {
+                return Err(self.step_error(
+                    "a proof definedness requirement does not round-trip; this is a spellability defect",
+                ));
+            }
+            return Ok(Some(RequirementSpelling {
+                surface,
+                direct_caller: None,
+            }));
+        }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Ok(None);
         };
