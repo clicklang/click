@@ -527,7 +527,7 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
         binary_term!(UInt32, Divide, left, right) => {
             let left = evaluate_bitvector_constant(left)?;
             let right = evaluate_bitvector_constant(right)?;
-            (right != 0).then_some(left / right)
+            left.checked_div(right)
         }
         binary_term!(Int32, Remainder, left, right) => {
             let left = evaluate_bitvector_constant(left)? as i32;
@@ -541,7 +541,7 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
         binary_term!(UInt32, Remainder, left, right) => {
             let left = evaluate_bitvector_constant(left)?;
             let right = evaluate_bitvector_constant(right)?;
-            (right != 0).then_some(left % right)
+            left.checked_rem(right)
         }
         binary_term!(Int32, ShiftLeft, left, right) => {
             let left = evaluate_bitvector_constant(left)? as i32;
@@ -1356,5 +1356,38 @@ mod tests {
             error.contains("does not occur in the current goal"),
             "{error}"
         );
+    }
+}
+
+#[cfg(test)]
+mod partial_arithmetic_tests {
+    use super::*;
+
+    #[test]
+    fn unsigned_constant_division_and_remainder_leave_zero_undefined() {
+        for operator in [
+            crate::kernel::MachineBinaryOp::Divide,
+            crate::kernel::MachineBinaryOp::Remainder,
+        ] {
+            for (divisor, expected) in [
+                (0, None),
+                (
+                    2,
+                    Some(if operator == crate::kernel::MachineBinaryOp::Divide {
+                        2
+                    } else {
+                        1
+                    }),
+                ),
+            ] {
+                let term = Bitvector32Term::machine_binary(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    operator,
+                    Bitvector32Term::UInt32Constant(5),
+                    Bitvector32Term::UInt32Constant(divisor),
+                );
+                assert_eq!(evaluate_bitvector_constant(&term), expected);
+            }
+        }
     }
 }
