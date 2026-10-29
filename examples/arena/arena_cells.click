@@ -1283,6 +1283,18 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 at(opened, arena->capacity) == old(arena->capacity);
                 arena->capacity == old(arena->capacity);
             };
+            have forall (k: int32) {
+                i <= k and k < end implies load_int32(old(arena->occupied) + k) == 0
+            } by {
+                rewrite(old(arena->occupied) == arena->occupied);
+                assumption();
+            }
+            have forall (k: int32) {
+                start <= k and k < i implies load_int32(old(arena->occupied) + k) == 1
+            } by {
+                rewrite(old(arena->occupied) == arena->occupied);
+                assumption();
+            }
             let w = fold(arena_window(
                 old(arena->data),
                 old(arena->occupied),
