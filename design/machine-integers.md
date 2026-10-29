@@ -559,6 +559,48 @@ Progress:
   `machine_operator_chains_cost_the_same_per_node_at_every_format`.
 
 
+- Every format its own nodes (planned 2026-10-29, [Decisions](#decisions)).
+  The 32-bit merge kept one word for `int32` and `uint32`; the next steps
+  remove that identity and the narrow word, so a term keeps the structure
+  its source wrote. The census at `537534028` found five mechanisms:
+  constructors that peel σ, narrow widenings and `UInt32Constant` from
+  their operands (`into_word32`, `constant_word32`); σ sharing its
+  operand's node in the e-graph, the difference graph and observations
+  (`word32`, K1 to K3); a `uint32` read named by its `int32` read and C's
+  word reuse between narrow formats; the `uint32` equality and the
+  sign-free `uint32` operators filed at `int32` (K6, the merge); and narrow
+  values as words (K7, K8, Rust's promoted narrow arithmetic). About 456
+  non-test patterns name the sign-free `int32` operators and today also see
+  every unsigned one. The sequence, each PR output-neutral until step 4:
+  1. A signedness audit (`CLICK_FORMAT_AUDIT`, `scripts/format-audit.sh`;
+     `kernel/machine_integer/format_audit.rs`): a debug build records each
+     use of the identity by kind, site, fixture, claim and tactic. Done
+     (2026-10-29); it changes no term, decision, work unit or output. On
+     the gate corpus it reaches 1,438 fixtures; 1,339 re-file a `uint32`
+     constant, operator or equality at `int32`, which step 4's own nodes
+     replace with no relation. 315 (295 mdtests, 20 examples) also
+     use the identity where a relation must replace it: a σ peeled into an
+     operator, comparison or observation (132; R0 and R-dist), a narrow
+     widening peeled (117; R-comp and K7′), a `uint32` read named by its
+     `int32` read (97; R-mem), and narrow values as words (8), Rust's
+     promoted narrow arithmetic (4) and C's narrow word reuse (2). No
+     `signed_int32` certificate in the corpus, `design/` included, passes
+     a `uint32` operator through the signed fragment: its 61 blocks name
+     unsigned values only as σ atoms (`x as uint32 as int32`) or in
+     `interval_compare … ule`, which reads σ explicitly.
+  2. The relations, unused by terms yet: R0, R-dist, R-comp and K7′ in the
+     e-graph, σ reading links in the difference graph, with scaling
+     regressions.
+  3. Pattern classification: each sign-free `int32` pattern either accepts
+     both 32-bit formats or stays signed-only.
+  4. `uint32` has its own nodes: constructors stop peeling, K6 goes.
+  5. Reads by their own kind, with R-mem; typed index coordinates (G1).
+  6. Widenings are nodes: K8 and the word helpers go.
+  7. Native narrow operators, specification narrow arithmetic native (G2).
+  8. Rust native narrow `+ - * & | ^ ! <<` (G4).
+  9. The 64-bit relations and the legacy conversions merged into `Cast`.
+  10. Generic `T: intn` / `T: uintn` library theorems.
+
 ### Stage 4. Front ends and library
 
 - Lower C promotions, C narrowing, Rust narrow arithmetic and casts to the
@@ -985,3 +1027,50 @@ and refining the 2026-10-26 entry:
 - **`&bool`, `&[bool]` and C `bool *` stay unsupported** until the shared
   bool-cell pointer type in the Stage 5 follow-ups is designed and
   approved.
+
+Maintainer direction, 2026-10-29 (every format its own nodes), superseding
+the word identity of K1, K2, K5's naming, K6 and K8 as each step lands:
+
+- **Lowering keeps a term's structure** (`docs/internals/spellability.md`,
+  "Lowering is structural"). Every format has its own nodes: `+` at
+  `uint32` is `Binary { Add, UInt32 }` over `uint32` operands, and likewise
+  at 8, 16 and 64 bits; constants keep their format. A cast appears only
+  where the source writes one or the language's semantics insert one. C's
+  narrow arithmetic stays promote, operate, cast, which is its structure;
+  Rust's narrow arithmetic and specification arithmetic at a narrow type
+  become native narrow nodes.
+- **Cross-format relations are e-graph facts, each O(1) per firing, with no
+  scan:**
+  - R0: σ's inverse, `σ_{F→S}(σ_{S→F}(x)) = x` as a class, so equality
+    carries across σ by congruence.
+  - R-dist: for a cast `C` to a format no wider than the operator's,
+    `C(a op b) == C(a) op C(b)` for `+ - * & | ^`, `C(~a) == ~C(a)`, and
+    `C(a << k) == C(a) << k` when `k` is below the destination's width.
+    The same-width case is σ's distribution (R1).
+  - R-comp: a cast of a widening, or a truncation of a truncation, is one
+    cast. R-dist and R-comp together give the truncation of promoted
+    arithmetic (R2), with constants and mixed operand formats.
+  - K7′: a narrow cast's widening equals its operand's mask (K7 restated).
+  - R-mem: reads of the same bytes at two signednesses are related by σ.
+  - Division, remainder, right shift and comparisons keep their own signed
+    and unsigned nodes.
+- **K1, K2, K6 and K8 are deleted; K3 and K4 are restated** to read σ as an
+  explicit node; **K5's reinterpretation is kept** as memory semantics and
+  its naming deleted; **K7 is restated** as K7′.
+- Decisions G1 to G11:
+  - G1: typed index coordinates; if PR 5 cannot take them, the word stays
+    as a named address-only exception.
+  - G2: specification arithmetic at a narrow type is the native node.
+  - G3: R-dist with R-comp is the general form of R2.
+  - G4: Rust `+ - * & | ^ ! <<` native now; `/ % >>` and comparisons later
+    if needed.
+  - G5: each read its own load, with R-mem; 32 bits now, bytes later.
+  - G6: R-dist fires on class merges, not only on syntax.
+  - G7: pending the audit: what a `signed_int32` certificate does with a
+    `uint32` operator.
+  - G8: traces name the signedness, `read<UInt32>` and `read<Int32>`.
+  - G9: one formatted `Constant { format, bits }`, in a later
+    pure-reordering PR.
+  - G10: spellings print as written: `((a as int32) + 1) as uint32` raises
+    as itself.
+  - G11: the Charon-trial proofs are re-pinned when they change.

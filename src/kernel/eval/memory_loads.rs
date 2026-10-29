@@ -4452,6 +4452,10 @@ pub(crate) fn load_variable_for_term(
     // One word, one name: an unsigned 32-bit read is named, and defined, by
     // its word's `Int32` read (rule K5; [`mint_load_variable_identity`]).
     if *kind == LoadKind::UInt32 {
+        crate::kernel::machine_integer::format_audit::record(
+            crate::kernel::machine_integer::format_audit::WordIdentity::UInt32ReadNamedByInt32,
+            std::panic::Location::caller(),
+        );
         let Bitvector32Term::MemoryLoad(memory, pointer, _) = bits else {
             unreachable!("matched a memory load above");
         };

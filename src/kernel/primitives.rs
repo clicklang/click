@@ -623,6 +623,10 @@ impl LoadKind {
     /// every other kind is its own word.
     pub fn word_kind(self) -> Self {
         if self == Self::UInt32 {
+            crate::kernel::machine_integer::format_audit::record(
+                crate::kernel::machine_integer::format_audit::WordIdentity::UInt32ReadNamedByInt32,
+                std::panic::Location::caller(),
+            );
             Self::Int32
         } else {
             self

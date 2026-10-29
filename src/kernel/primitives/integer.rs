@@ -855,6 +855,7 @@ impl IntegerTerm {
         visit(self, &mut variables, &mut BTreeSet::new());
         variables.into_iter().next_back()
     }
+    #[track_caller]
     pub fn from_machine(ty: MachineIntegerType, value: Bitvector32Term) -> Option<Self> {
         if ty.format().bits() == 128 && !ty.accepts_wide_term(&value) {
             return None;
@@ -862,6 +863,22 @@ impl IntegerTerm {
         // An `int32` or `uint32` observation reads its operand's 32 bits,
         // which σ keeps (rule K2): `to_integer` of σ(x) at either format is
         // `to_integer` of `x` there.
+        {
+            use crate::kernel::machine_integer::format_audit as audit;
+            if audit::is_sign_free_word_operator(&value) {
+                if ty == MachineIntegerType::UInt32 {
+                    audit::record(
+                        audit::WordIdentity::UInt32OperatorAtInt32,
+                        std::panic::Location::caller(),
+                    );
+                } else if ty.format().bits() < 32 {
+                    audit::record(
+                        audit::WordIdentity::NarrowValueAsWord,
+                        std::panic::Location::caller(),
+                    );
+                }
+            }
+        }
         let value = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
             value.into_word32()
         } else {

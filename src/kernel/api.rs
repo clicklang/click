@@ -280,11 +280,16 @@ pub fn uint16(bits: impl Into<Bitvector32Term>) -> CValue {
 
 /// A `uint32` value. A root 32-bit constant takes the `uint32` format
 /// (`Bitvector32Term::in_format32`), so it prints as itself.
+#[track_caller]
 pub fn uint32(bits: impl Into<Bitvector32Term>) -> CValue {
-    CValue::UInt32(
-        bits.into()
-            .in_format32(crate::kernel::MachineIntegerType::UInt32),
-    )
+    let bits = bits.into();
+    if crate::kernel::machine_integer::format_audit::is_sign_free_word_operator(&bits) {
+        crate::kernel::machine_integer::format_audit::record(
+            crate::kernel::machine_integer::format_audit::WordIdentity::UInt32OperatorAtInt32,
+            std::panic::Location::caller(),
+        );
+    }
+    CValue::UInt32(bits.in_format32(crate::kernel::MachineIntegerType::UInt32))
 }
 
 /// A 64-bit value. A plain 32-bit constant, as `int64(-1)` writes, is widened

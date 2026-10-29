@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::machine_integer::format_audit as audit;
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
 use crate::kernel::{binary_node, unary_node};
 use crate::kernel::{binary_term, unary_term};
@@ -1705,6 +1706,7 @@ impl Bitvector32Term {
     /// a signed format and unsigned at an unsigned one; the other 32-bit
     /// operators are word operators, built at `int32` whichever 32-bit
     /// format is asked. No other format has [`Self::Binary`] nodes.
+    #[track_caller]
     pub(crate) fn machine_binary(
         format: MachineIntegerType,
         op: MachineBinaryOp,
@@ -1713,6 +1715,12 @@ impl Bitvector32Term {
     ) -> Self {
         use MachineBinaryOp as Op;
         use MachineIntegerType as Ty;
+        if format == Ty::UInt32 && !matches!(op, Op::Divide | Op::Remainder | Op::ShiftRight) {
+            audit::record(
+                audit::WordIdentity::UInt32OperatorAtInt32,
+                std::panic::Location::caller(),
+            );
+        }
         match (format, op) {
             // A 32-bit operator reads words (rule K1): only division,
             // remainder and the right shift depend on the format.
@@ -1755,11 +1763,18 @@ impl Bitvector32Term {
 
     /// `op operand` at a 32- or 64-bit `format`, through the operator's
     /// smart constructor.
+    #[track_caller]
     pub(crate) fn machine_unary(
         format: MachineIntegerType,
         op: MachineUnaryOp,
         operand: Self,
     ) -> Self {
+        if format == MachineIntegerType::UInt32 {
+            audit::record(
+                audit::WordIdentity::UInt32OperatorAtInt32,
+                std::panic::Location::caller(),
+            );
+        }
         match (format, op) {
             (
                 MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -3489,7 +3504,12 @@ impl ConditionTerm {
     /// The equality of two `uint32` words: [`Self::equal`] filed at
     /// `uint32`, which is the same fact as at `int32` (rule K6;
     /// [`ConditionTerm::fact_format`]) and prints its operands as `uint32`.
+    #[track_caller]
     pub(crate) fn uint32_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
+        audit::record(
+            audit::WordIdentity::UInt32EqualityAtInt32,
+            std::panic::Location::caller(),
+        );
         match Self::equal(left, right) {
             Self::Compare {
                 format: _,
