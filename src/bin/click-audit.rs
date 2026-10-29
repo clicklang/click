@@ -1453,13 +1453,29 @@ fn implicit_auto_sites(
         .iter()
         .map(|site| (site.click_path.clone(), site.claim.clone()))
         .collect::<BTreeSet<_>>();
+    let smart_positions = smart
+        .iter()
+        .map(|site| {
+            (
+                site.click_path.clone(),
+                site.click_position.line,
+                site.click_position.column,
+            )
+        })
+        .collect::<BTreeSet<_>>();
     let mut sites = Vec::new();
     let mut failures = Vec::new();
     for source_path in sources {
         if limit.deadline_exceeded() {
             return Err(RUN_LIMIT_EXHAUSTED.to_string());
         }
-        match implicit_auto_sites_in_source(source_path, &smart_claims, limit, keep_going) {
+        match implicit_auto_sites_in_source(
+            source_path,
+            &smart_claims,
+            &smart_positions,
+            limit,
+            keep_going,
+        ) {
             Ok((source_sites, source_failures)) => {
                 sites.extend(source_sites);
                 failures.extend(source_failures);
@@ -1481,6 +1497,7 @@ fn implicit_auto_sites(
 fn implicit_auto_sites_in_source(
     source_path: &Path,
     smart_claims: &BTreeSet<(PathBuf, String)>,
+    smart_positions: &BTreeSet<(PathBuf, usize, usize)>,
     limit: PhaseLimit,
     keep_going: bool,
 ) -> Result<(Vec<AuditSite>, Vec<String>), String> {
@@ -1549,6 +1566,16 @@ fn implicit_auto_sites_in_source(
                 }
                 Err(message) => return Err(message),
             };
+        // Runtime instrumentation can name the same generated proof through
+        // both its body-safety and synthetic ensure labels. The source site is
+        // already inventoried under its canonical label.
+        if smart_positions.contains(&(
+            canonical_path.clone(),
+            click_position.line,
+            click_position.column,
+        )) {
+            continue;
+        }
         sites.push(AuditSite {
             click_path: canonical_path.clone(),
             position: SourcePosition {
