@@ -283,6 +283,12 @@ unchanged store. In particular:
 
 These rules are soundness boundaries, not search heuristics.
 
+A mutable range with structurally identical endpoints changes no bytes. The
+`Empty` typed frame rule accepts it before any separation lookup, for signed
+and native bounds and every read width. It does not assume bounds are equal
+from facts or discard a nonempty range. In particular, an empty prefix carried
+by a loop resource must not block transport of nested pointer reads.
+
 For explicit separation facts, `SeparatedRangeEvidence` retains both selected
 members and the complete read's membership. Checking authenticates those members
 against the still-present fact, checks the whole mutable footprint is contained,

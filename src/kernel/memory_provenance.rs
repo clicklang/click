@@ -2272,6 +2272,11 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<RangeDisjointFromPointerEvidence> {
+    let (start, end) = range.bound_terms();
+    if start == end {
+        crate::instrumentation::record_deterministic_work(1);
+        return Some(RangeDisjointFromPointerEvidence::Empty);
+    }
     if range.base.blocks_proven_distinct(pointer) {
         return Some(RangeDisjointFromPointerEvidence::DistinctBlocks);
     }

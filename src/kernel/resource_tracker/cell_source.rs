@@ -382,6 +382,8 @@ pub(in crate::kernel) enum RangeBoundEvidence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum RangeDisjointFromPointerEvidence {
+    /// Identical endpoints describe no bytes, independent of the base.
+    Empty,
     DistinctBlocks,
     BorrowPartition(Box<BorrowPartitionRangeEvidence>),
     ExactSeparationFact(Box<SeparatedRangeEvidence>),
@@ -863,6 +865,10 @@ impl RangeDisjointFromPointerEvidence {
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
+            Self::Empty => {
+                let (start, end) = range.bound_terms();
+                start == end
+            }
             Self::DistinctBlocks => range.base.blocks_proven_distinct(pointer),
             Self::BorrowPartition(evidence) => evidence.checks(range, pointer, bytes, assumptions),
             Self::ExactSeparationFact(evidence) => {
@@ -2157,6 +2163,52 @@ mod unsigned_index_membership_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/resource_tracker/cell_source/unsigned_index_membership_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod empty_range_frame_tests {
+    use super::*;
+
+    #[test]
+    fn empty_frames_cover_every_access_width_but_not_nonempty_ranges() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(9_951_000));
+        let bound = Bitvector32Term::Variable(Variable(9_951_001));
+        let context = PureFactContext::new();
+        let ranges = [
+            CMemoryRange::new(base.clone(), bound.clone(), bound.clone()),
+            CMemoryRange::new_wide(base.clone(), bound.clone(), bound, 4),
+        ];
+        let nonempty = [
+            CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into()),
+            CMemoryRange::new_wide(
+                base.clone(),
+                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::UInt64Constant(1),
+                4,
+            ),
+        ];
+        for (empty, changed) in ranges.iter().zip(&nonempty) {
+            for bytes in [1, 4, 8, 16] {
+                let proof =
+                    typed_range_disjoint_from_pointer_evidence(empty, &base, bytes, &context)
+                        .expect("an empty footprint cannot change any bytes");
+                assert!(matches!(proof, RangeDisjointFromPointerEvidence::Empty));
+                assert!(proof.checks(empty, &base, bytes, &context));
+                assert!(!proof.checks(changed, &base, bytes, &context));
+                assert!(
+                    typed_range_disjoint_from_pointer_evidence(changed, &base, bytes, &context,)
+                        .is_none()
+                );
+            }
+        }
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/resource_tracker/cell_source/empty_range_frame_tests.rs"
         );
     }
 }
