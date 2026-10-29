@@ -338,6 +338,8 @@ Cached-value preservation does not retry the general
 `owned_composition_store_separated_evidence` search after the store's earlier
 checks miss. The build boundary forbids that call from
 `without_possible_aliasing_cells`; explicit transport and memory-history
-checking retain their separate support. The remaining range checks and
-ownership-member selection still need auditing; this restriction does not
-make every store operation bounded.
+checking retain their separate support. The store also does not call
+`pointers_proven_disjoint_by_explicit_range_for_memory_resolution` directly.
+The direct-range fallback and the explicit-range route inside general pointer
+distinctness remain, along with ownership-member selection; this restriction
+does not make every store operation bounded.

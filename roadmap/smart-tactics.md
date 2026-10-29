@@ -37,8 +37,7 @@ facts do not establish flat cost as the queried class or bucket grows.
    Written address bases no longer enumerate alias classes, but
    `store_members_in` still examines ownership members under those bases.
    The store's remaining preservation fallbacks include
-   `pointers_proven_disjoint_by_explicit_range_for_memory_resolution` and
-   `pointers_directly_disjoint_by_range`, as well as the range route reached
+   `pointers_directly_disjoint_by_range` and the explicit-range route reached
    through general pointer distinctness. Remove them individually and try
    explicit separation/transport repairs before introducing automation.
    The fixed-store regression
