@@ -1832,50 +1832,31 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 quantified_assumptions =
                     quantified_assumptions.assume_proposition(fact.proposition().clone());
             }
-            Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            let mut paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
                 scope,
                 body,
                 &quantified_assumptions,
                 budget,
-            )?
-            .into_iter()
-            .map(|mut path| {
+            )?;
+            for path in &mut paths {
                 let mut facts = range_facts.clone();
                 facts.append(&mut path.facts);
                 path.facts = facts;
-                SpecPropositionPath {
-                    // The head chain records the nodes an introduction reaches
-                    // before any other step. Nothing under this binder is one
-                    // of them until a `witness` names the bound value, so the
-                    // chain stops at the existential; the guards below belong
-                    // to the body, not to this head.
-                    introductions: Vec::new(),
-                    proposition: Proposition::Exists {
-                        name: name.clone(),
-                        var: *variable,
-                        sort: Sort::machine_integer(integer_type),
-                        body: Box::new(guard_quantified_witness(path.proposition, &path.facts)),
-                    },
-                    // Path facts may mention the bound variable, so they are
-                    // guards on the quantified body, exactly as under a
-                    // universal. Publishing them here would leave the binder's
-                    // variable free in the surrounding context.
-                    facts: Vec::new().into(),
-                    obligations: path
-                        .obligations
-                        .into_iter()
-                        .map(|obligation| {
-                            obligation.map_proposition(|proposition| Proposition::Exists {
-                                name: name.clone(),
-                                var: *variable,
-                                sort: Sort::machine_integer(integer_type),
-                                body: Box::new(guard_quantified_witness(proposition, &path.facts)),
-                            })
-                        })
-                        .collect(),
-                }
-            })
-            .collect())
+            }
+            // A witness selects its value path and owes that path's domains.
+            // Separate existential obligations could choose different values.
+            let body = proposition_or_all(paths.iter().map(existential_body_branch).collect());
+            Ok(vec![SpecPropositionPath {
+                introductions: Vec::new(),
+                proposition: Proposition::Exists {
+                    name: name.clone(),
+                    var: *variable,
+                    sort: Sort::machine_integer(integer_type),
+                    body: Box::new(body),
+                },
+                facts: Vec::new().into(),
+                obligations: Vec::new(),
+            }])
         }
         SpecProposition::ExistsPointer {
             name,
@@ -1883,38 +1864,24 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
             c_type,
             body,
         } => {
-            Ok(lower_spec_proposition_at_state_with_algebraic_bindings_in(
+            let paths = lower_spec_proposition_at_state_with_algebraic_bindings_in(
                 scope,
                 body,
                 assumptions,
                 budget,
-            )?
-            .into_iter()
-            .map(|path| SpecPropositionPath {
-                // See `ExistsInt32` above: the chain stops at the binder and
-                // the body's guards stay under it.
+            )?;
+            let body = proposition_or_all(paths.iter().map(existential_body_branch).collect());
+            Ok(vec![SpecPropositionPath {
                 introductions: Vec::new(),
                 proposition: Proposition::Exists {
                     name: name.clone(),
                     var: *variable,
                     sort: Sort::CPointer(*c_type),
-                    body: Box::new(guard_quantified_witness(path.proposition, &path.facts)),
+                    body: Box::new(body),
                 },
                 facts: Vec::new().into(),
-                obligations: path
-                    .obligations
-                    .into_iter()
-                    .map(|obligation| {
-                        obligation.map_proposition(|proposition| Proposition::Exists {
-                            name: name.clone(),
-                            var: *variable,
-                            sort: Sort::CPointer(*c_type),
-                            body: Box::new(guard_quantified_witness(proposition, &path.facts)),
-                        })
-                    })
-                    .collect(),
-            })
-            .collect())
+                obligations: Vec::new(),
+            }])
         }
         SpecProposition::Predicate {
             name,
@@ -2483,14 +2450,15 @@ fn verified_load_obligation_without_definition(
     Some(obligation.clone().map_proposition(|_| proposition))
 }
 
-/// Build one Integer-existential branch while removing only exact registered
+/// Build one existential branch while removing only exact registered
 /// load definitions. The path facts and obligations can both contain the
 /// same certified equation; loadability, range guards, and all user written
 /// conditions remain in the conjunction.
-fn existential_body_branch(path: &SpecPropositionPath) -> Proposition {
+pub(super) fn existential_body_branch(path: &SpecPropositionPath) -> Proposition {
     let facts = path
         .facts
         .iter()
+        .filter(|fact| !fact.is_logical_read_equation())
         .filter_map(|fact| {
             drop_verified_load_definition_conjuncts(fact.proposition().clone())
                 .map(|proposition| fact.clone().with_proposition(proposition))
