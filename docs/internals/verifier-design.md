@@ -333,3 +333,11 @@ use `transport ... using` to carry the required read across the write, as in
 `mdtests/do_while_restored_field_frame_remains_separate.md`. Build-boundary
 checks reject the removed evidence and alias enumeration routes. Ownership
 member selection and cached-read preservation remain roadmap targets.
+
+Cached-value preservation does not retry the general
+`owned_composition_store_separated_evidence` search after the store's earlier
+checks miss. The build boundary forbids that call from
+`without_possible_aliasing_cells`; explicit transport and memory-history
+checking retain their separate support. The remaining range checks and
+ownership-member selection still need auditing; this restriction does not
+make every store operation bounded.
