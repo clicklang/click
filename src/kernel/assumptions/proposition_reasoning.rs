@@ -303,6 +303,89 @@ impl PureFactContext {
             }
     }
 
+    // Preserve the original sum and both child domains across a unit transfer.
+    fn balanced_unit_sum_domain_proven(&self, goal: &Proposition) -> bool {
+        use crate::kernel::ConditionTerm;
+        let stated = |goal: &Proposition| {
+            matches!(crate::kernel::canonical_condition_fact(goal), Proposition::ConditionIs(condition, truth)
+                if self.exact_condition_value(&condition) == Some(truth))
+        };
+        if stated(goal) {
+            return true;
+        }
+        let Proposition::ConditionIs(
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left,
+                right,
+            },
+            false,
+        ) = goal
+        else {
+            return false;
+        };
+        let pair = match (left.as_ref(), right.as_ref()) {
+            (
+                binary_term!(Int32, Add, value, increment),
+                binary_term!(Int32, Subtract, other, decrement),
+            )
+            | (
+                binary_term!(Int32, Subtract, other, decrement),
+                binary_term!(Int32, Add, value, increment),
+            ) if increment.as_const() == Some(1) && decrement.as_const() == Some(1) => {
+                (value.as_ref(), other.as_ref())
+            }
+            _ => return false,
+        };
+        let one = Bitvector32Term::Constant(1);
+        let guards = [
+            ConditionTerm::signed_add_overflows(pair.0.clone(), pair.1.clone()),
+            ConditionTerm::signed_add_overflows(pair.0.clone(), one.clone()),
+            ConditionTerm::signed_subtract_overflows(pair.1.clone(), one),
+        ];
+        guards.iter().all(|condition| {
+            if stated(&Proposition::ConditionIs(condition.clone(), false)) {
+                return true;
+            }
+            if let ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Add,
+                left,
+                right,
+            } = condition
+                && stated(&Proposition::ConditionIs(
+                    ConditionTerm::signed_add_overflows(
+                        right.as_ref().clone(),
+                        left.as_ref().clone(),
+                    ),
+                    false,
+                ))
+            {
+                return true;
+            }
+            match condition {
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Add,
+                    left: value,
+                    right: one,
+                } if one.as_const() == Some(1) => self
+                    .indexed_constant_interval(value)
+                    .is_some_and(|(_, high)| high < i64::from(i32::MAX)),
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op: OverflowOperation::Subtract,
+                    left: value,
+                    right: one,
+                } if one.as_const() == Some(1) => self
+                    .indexed_constant_interval(value)
+                    .is_some_and(|(low, _)| low > i64::from(i32::MIN)),
+                _ => false,
+            }
+        })
+    }
+
     pub(crate) fn proves_atomic_without_search(&self, proposition: &Proposition) -> bool {
         self.proves_atomic_without_search_in(proposition, false)
     }
@@ -321,6 +404,7 @@ impl PureFactContext {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
                 self.decide(condition) == Some(*value)
+                    || self.balanced_unit_sum_domain_proven(proposition)
                     // The memory DAG answers first where it can.
                     || *value
                         && matches!(
