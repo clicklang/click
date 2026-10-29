@@ -71,6 +71,27 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: {}: direct checking must use written equality/address premises, not discover alias paths ({name})", self.path, self.function));
         }
+        if self.path == "src/kernel/assumptions/memory_reasoning.rs"
+            && matches!(
+                self.function.as_str(),
+                "owned_store_footprint"
+                    | "store_members_in"
+                    | "access_owned_apart_from_store"
+                    | "parameter_store_partition"
+                    | "parameter_partition_cell_base"
+            )
+            && matches!(
+                name,
+                "owned_memory_members_with_base"
+                    | "memory_members_with_base"
+                    | "owned_member_holding_access"
+                    | "listed_under"
+                    | "listed_under_members"
+                    | "listed_under_anchors"
+            )
+        {
+            self.errors.push(format!("{}: {}: automatic store ownership must select singleton buckets, not enumerate members or compositions ({name})", self.path, self.function));
+        }
         if self.path == "src/kernel/primitives/memory_state.rs"
             && self.function == "without_possible_aliasing_cells"
             && matches!(

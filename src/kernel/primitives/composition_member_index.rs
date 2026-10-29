@@ -192,6 +192,43 @@ impl CompositionMemberIndex {
         )
     }
 
+    /// Bounded candidates for automatic store preservation: the root and
+    /// one unambiguous composition per written base. Unlike `listed_under`,
+    /// this deliberately declines crowded historical buckets; explicit frame
+    /// reasoning retains the complete candidate query.
+    pub(in crate::kernel) fn directly_listed_under_bases<'k>(
+        &self,
+        bases: impl IntoIterator<Item = &'k Pointer>,
+    ) -> Vec<&ResourceContext> {
+        // With no listed deltas, only the root can answer. Avoid probing
+        // every written base again for each cached read in this common case.
+        if self.by_base.is_empty() {
+            crate::instrumentation::record_deterministic_work(1);
+            return self
+                .root
+                .and_then(|root| self.compositions.get(&root))
+                .into_iter()
+                .collect();
+        }
+        let mut ordinals = self
+            .root
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        for base in bases {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Some(entries) = self.by_base.get(base)
+                && entries.len() == 1
+                && let Some(ordinal) = entries.iter().next()
+            {
+                ordinals.insert(*ordinal);
+            }
+        }
+        ordinals
+            .into_iter()
+            .filter_map(|ordinal| self.compositions.get(&ordinal))
+            .collect()
+    }
+
     /// The admitted compositions listed under any of `anchors`, owned
     /// members' anchor offsets, and the root, in admission order, each once.
     pub(in crate::kernel) fn listed_under_anchors<'k>(

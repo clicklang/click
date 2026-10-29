@@ -345,8 +345,18 @@ access. It does not enumerate their pointer alias classes. When a resource is
 owned under another spelling, state the alias and separation explicitly and
 use `transport ... using` to carry the required read across the write, as in
 `mdtests/do_while_restored_field_frame_remains_separate.md`. Build-boundary
-checks reject the removed evidence and alias enumeration routes. Ownership
-member selection and cached-read preservation remain roadmap targets.
+checks reject the removed evidence and alias enumeration routes. Automatic
+store preservation selects at most one owned member per written base from the
+persistent base index; a crowded bucket declines without visiting its members.
+The parameter partition uses the same singleton rule for cached reads. Without
+current store owners, historical selection reads the root and at most one
+composition per written base; it does not enumerate crowded historical buckets.
+A miss may forget the cached value. State separation and use explicit transport
+when that value is needed, as in
+`mdtests/crowded_store_ownership_uses_explicit_transport.md`. Deterministic
+regressions grow both member and historical-composition buckets through cold,
+repeated and unsuccessful store queries with a fixed cache. Boundary checks
+reject the former enumeration helpers in these store paths.
 
 Cached-value preservation does not retry the general
 `owned_composition_store_separated_evidence` search after the store's earlier
@@ -365,8 +375,8 @@ it does not enumerate aliases. A miss forgets the cached value. The boundary
 rejects general resolution, range search, alias enumeration and order-path walks
 in this helper. Growing same-block separation buckets leave cold and repeated
 miss work unchanged, while written index disequality still respects access
-widths. This narrows distinctness selection; ownership-member selection,
-byte-gap eligibility and compact-run preservation remain separate audits.
+widths. Byte-gap eligibility and compact-run preservation remain separate
+audits.
 
 An explicit loop read frame can select a flat range withheld from the loop
 body by the checked ownership partition. The loop history retains that

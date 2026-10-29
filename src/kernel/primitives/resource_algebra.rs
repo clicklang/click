@@ -4248,6 +4248,24 @@ impl ResourceContext {
             })
     }
 
+    /// One owned member under a written base, without searching a crowded
+    /// bucket. Used by automatic store preservation, which may forget a cell
+    /// when selecting its owner would require proof search.
+    pub(in crate::kernel) fn unique_owned_memory_member_with_base(
+        &self,
+        base: &Pointer,
+    ) -> Option<(u64, &CMemoryRange)> {
+        crate::instrumentation::record_deterministic_work(1);
+        let entries = self.storage.index.memory_by_base.get(base)?;
+        if entries.len() != 1 {
+            return None;
+        }
+        let entry = *entries.iter().next()?;
+        self.fact(entry)
+            .memory_own_range()
+            .map(|range| (entry, range))
+    }
+
     /// One unambiguous member under an explicit base. A crowded raw bucket
     /// needs the prepared address index or an explicitly selected resource.
     pub(in crate::kernel) fn unique_memory_member_with_base(

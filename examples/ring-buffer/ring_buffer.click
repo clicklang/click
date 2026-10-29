@@ -64,6 +64,34 @@ int32 ring_buffer_push_wrap(
     ensures result == value;
     ensures owner->data[0] == value;
     ensures owner->tail == 1;
+} by {
+    step(); step();
+    have old(owner->data) == data by { normalize(); }
+    have separate(memory(data[0]), memory(owner->data));
+    have separate(memory(data[0]), memory(owner->tail));
+    have separate(memory(owner->tail), memory(owner->data));
+    step();
+    have data[0] == value by { normalize(); }
+    mark filled;
+    step();
+    have data[0] == value by {
+        transport(at(filled, data[0]) == value, data[0] == value) using {
+            at(filled, data[0]) == value;
+            separate(memory(data[0]), memory(owner->tail));
+        };
+    }
+    have owner->data == data by {
+        transport(old(owner->data) == data, owner->data == data) using {
+            old(owner->data) == data;
+            separate(memory(data[0]), memory(owner->data));
+            separate(memory(owner->tail), memory(owner->data));
+        };
+    }
+    have owner->data[0] == value by {
+        rewrite(owner->data == data);
+        assumption();
+    }
+    step(); solve();
 }
 
 int32 ring_buffer_wrapped_tail(

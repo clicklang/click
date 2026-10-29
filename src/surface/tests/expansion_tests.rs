@@ -19589,3 +19589,78 @@ fn theorem_entry_requirements_expand_to_explicit_haves() {
         "an entry debt cannot be assumed"
     );
 }
+
+#[test]
+#[ignore = "nightly: 0.6s selected crowded-ownership proof expansion"]
+fn crowded_store_ownership_explicit_transport_expands_without_search() {
+    let (source, sources) =
+        mdtest_sources("mdtests/crowded_store_ownership_uses_explicit_transport.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "put.contract").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: selected store-frame repair expansion corpus"]
+fn store_ownership_frame_repairs_expand_without_search() {
+    for (fixture, claim) in [
+        ("c_guarded_resource_disjoint_store.md", "f.contract"),
+        ("c_guarded_resource_disjoint_store_branch.md", "f.contract"),
+        (
+            "a_parent_word_frames_across_a_child_store_in_a_loop.md",
+            "rotate_child_link.contract",
+        ),
+        (
+            "arena_prefix_free_reads_region_arena.md",
+            "arena_release.contract",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, claim).unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{fixture}: {error:?}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: original pool and ring store-frame expansion"]
+fn original_pool_and_ring_store_frames_expand_without_search() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for (directory, sidecar, c_name, declaration, next, claim) in [
+        (
+            "bounded-pool",
+            "bounded_pool.click",
+            "pool_transfer.c",
+            "void pool_transfer(",
+            "void pool_transfer_pipeline(",
+            "pool_transfer.contract",
+        ),
+        (
+            "ring-buffer",
+            "ring_buffer.click",
+            "ring_push_wrap.c",
+            "int32 ring_buffer_push_wrap(",
+            "int32 ring_buffer_wrapped_tail(",
+            "ring_buffer_push_wrap.contract",
+        ),
+    ] {
+        let directory = root.join("examples").join(directory);
+        let text = std::fs::read_to_string(directory.join(sidecar)).unwrap();
+        let definitions = text.split("verifying ").next().unwrap();
+        let start = text.find(declaration).unwrap();
+        let proof = text[start..].split(next).next().unwrap();
+        let source = format!("{definitions}\nverifying \"{c_name}\";\n{proof}");
+        let c = std::fs::read_to_string(directory.join(c_name)).unwrap();
+        let sources = [(c_name, c.as_str())];
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, claim).unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{claim}: {error:?}"));
+    }
+}
