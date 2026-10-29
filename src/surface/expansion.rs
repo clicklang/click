@@ -474,7 +474,34 @@ fn function_expansion_claim_by_label(
     function: &FunctionBlock,
     claim_label: &str,
 ) -> Option<CProofClaim> {
-    function.claim_by_label(claim_label)
+    function.claim_by_label(claim_label).or_else(|| {
+        (has_body_safety_proof(function)
+            && [
+                claim_labels::body_safety_label(function.signature().name()),
+                function.ensure_claim_label(0),
+                function.contract_claim_label(),
+            ]
+            .iter()
+            .any(|label| label == claim_label))
+        .then_some(CProofClaim::Grouped)
+    })
+}
+
+/// A function with no stated outcomes still has a proof of body safety.
+/// Expansion writes that proof after the contract, without inventing a source
+/// postcondition or changing the verifier's per-claim proof protocol.
+fn has_body_safety_proof(function: &FunctionBlock) -> bool {
+    !function.is_external()
+        && !function.is_tactic_procedure()
+        && function.ensures().is_empty()
+        && function.exceptional_ensures().is_empty()
+}
+
+fn expansion_covering_proof(function: &FunctionBlock) -> Option<&SourceProof> {
+    static BODY_SAFETY: SourceProof = SourceProof::Tactic(SmartTactic::Auto);
+    function
+        .covering_proof()
+        .or_else(|| has_body_safety_proof(function).then_some(&BODY_SAFETY))
 }
 
 /// Expands one function claim selected by the same stable label used by
@@ -2712,7 +2739,9 @@ fn find_grouped_proof_edit(
     function: &FunctionSource,
     function_block: &FunctionBlock,
 ) -> Result<ProofSourceEdit, ClickError> {
-    if function_block.grouped_proof().is_some() || function_block.covering_proof().is_none() {
+    if function_block.grouped_proof().is_some()
+        || expansion_covering_proof(function_block).is_none()
+    {
         return Ok(ProofSourceEdit::Explicit(find_grouped_proof_span(
             tokens, function,
         )?));
@@ -4321,7 +4350,7 @@ fn source_tactic_entries(
         }
         let function_name = function_block.signature().name();
         let function = declarations.function(function_block)?;
-        if let Some(proof) = function_block.covering_proof() {
+        if let Some(proof) = expansion_covering_proof(function_block) {
             let edit = find_grouped_proof_edit(&tokens, &function, function_block)?;
             proof_tactic_entries(
                 &tokens,
@@ -5110,18 +5139,21 @@ fn c0_tactic_source_offsets_with_tokens(
         );
     }
     for function_block in proof_function_blocks(file) {
-        let selected = function_block
-            .claim_by_label(claim_label)
-            .and_then(|claim| match claim {
-                CProofClaim::Grouped => function_block.covering_proof().map(|proof| (claim, proof)),
-                CProofClaim::Ensure(index) => function_block
-                    .ensures()
-                    .get(index)
-                    .map(|ensure| (claim, ensure.proof())),
-                CProofClaim::ExceptionalEnsure(index) => function_block
-                    .exceptional_ensures()
-                    .get(index)
-                    .map(|ensure| (claim, ensure.proof())),
+        let selected =
+            function_expansion_claim_by_label(function_block, claim_label).and_then(|claim| {
+                match claim {
+                    CProofClaim::Grouped => {
+                        expansion_covering_proof(function_block).map(|proof| (claim, proof))
+                    }
+                    CProofClaim::Ensure(index) => function_block
+                        .ensures()
+                        .get(index)
+                        .map(|ensure| (claim, ensure.proof())),
+                    CProofClaim::ExceptionalEnsure(index) => function_block
+                        .exceptional_ensures()
+                        .get(index)
+                        .map(|ensure| (claim, ensure.proof())),
+                }
             });
         let Some((claim, proof)) = selected else {
             continue;
