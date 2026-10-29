@@ -16,8 +16,6 @@
 
 use super::{Operation, Relation};
 use crate::kernel::MachineBinaryOp;
-use crate::kernel::binary_node;
-use crate::kernel::binary_term;
 use crate::kernel::{Bitvector32Term, ConditionTerm, MachineIntegerType};
 use crate::kernel::{CompareRelation, OverflowOperation};
 
@@ -57,6 +55,18 @@ pub(crate) fn word_bits(ty: MachineIntegerType) -> Option<u32> {
     }
 }
 
+/// The format of the operator nodes that spell `ty`'s ring operations:
+/// `int32` for every format of at most 32 bits, whose operations are 32-bit
+/// word operations filed at `int32` (rule K1), `ty` itself at 64 bits, and
+/// `None` at 128 bits, which has no operators.
+fn operator_format(ty: MachineIntegerType) -> Option<MachineIntegerType> {
+    match word(ty) {
+        Word::Bits32 => Some(MachineIntegerType::Int32),
+        Word::Signed64 | Word::Unsigned64 => Some(ty),
+        Word::Bits128 => None,
+    }
+}
+
 /// The machine operation `left op right` at `ty`, as the node the term
 /// arena spells it with, unsimplified. `None` where `ty` has no such node.
 pub(crate) fn operation_word(
@@ -65,7 +75,7 @@ pub(crate) fn operation_word(
     left: Box<Bitvector32Term>,
     right: Box<Bitvector32Term>,
 ) -> Option<Bitvector32Term> {
-    use Bitvector32Term as T;
+    let format = operator_format(ty)?;
     let (left, right) = if word(ty) == Word::Bits32 {
         (
             Box::new(left.constant_word32()),
@@ -74,42 +84,29 @@ pub(crate) fn operation_word(
     } else {
         (left, right)
     };
-    Some(match (word(ty), operation) {
-        (Word::Bits32, Operation::Add) => binary_node!(Int32, Add, left, right),
-        (Word::Bits32, Operation::Subtract) => binary_node!(Int32, Subtract, left, right),
-        (Word::Bits32, Operation::Multiply) => binary_node!(Int32, Multiply, left, right),
-        (Word::Signed64 | Word::Unsigned64, operation) => T::Binary {
-            format: ty,
-            op: machine_binary_op_of(operation),
-            left,
-            right,
-        },
-        (Word::Bits128, _) => return None,
+    Some(Bitvector32Term::Binary {
+        op: machine_binary_op_of(operation),
+        format,
+        left,
+        right,
     })
 }
 
 /// The machine operation `left op right` at `ty`, built by the folding
-/// constructors (`Bitvector32Term::add`, `int64_add`, ...), which simplify
-/// constant operands. `None` where `ty` has no such node.
+/// constructors (`Bitvector32Term::machine_binary`), which simplify constant
+/// operands. `None` where `ty` has no such node.
 pub(crate) fn folded_operation_word(
     ty: MachineIntegerType,
     operation: Operation,
     left: Bitvector32Term,
     right: Bitvector32Term,
 ) -> Option<Bitvector32Term> {
-    use Bitvector32Term as T;
-    Some(match (word(ty), operation) {
-        (Word::Bits32, Operation::Add) => T::add(left, right),
-        (Word::Bits32, Operation::Subtract) => T::subtract(left, right),
-        (Word::Bits32, Operation::Multiply) => T::multiply(left, right),
-        (Word::Signed64, Operation::Add) => T::int64_add(left, right),
-        (Word::Signed64, Operation::Subtract) => T::int64_subtract(left, right),
-        (Word::Signed64, Operation::Multiply) => T::int64_multiply(left, right),
-        (Word::Unsigned64, Operation::Add) => T::uint64_add(left, right),
-        (Word::Unsigned64, Operation::Subtract) => T::uint64_subtract(left, right),
-        (Word::Unsigned64, Operation::Multiply) => T::uint64_multiply(left, right),
-        (Word::Bits128, _) => return None,
-    })
+    Some(Bitvector32Term::machine_binary(
+        operator_format(ty)?,
+        machine_binary_op_of(operation),
+        left,
+        right,
+    ))
 }
 
 /// The operation and operands of `value`, a word read at `ty`, when it is a
@@ -118,27 +115,19 @@ pub(crate) fn word_operation(
     ty: MachineIntegerType,
     value: &Bitvector32Term,
 ) -> Option<(Operation, &Bitvector32Term, &Bitvector32Term)> {
-    use Bitvector32Term as T;
-    let (operation, left, right) = match (word(ty), value) {
-        (Word::Bits32, binary_term!(Int32, Add, left, right)) => (Operation::Add, left, right),
-        (Word::Bits32, binary_term!(Int32, Subtract, left, right)) => {
-            (Operation::Subtract, left, right)
-        }
-        (Word::Bits32, binary_term!(Int32, Multiply, left, right)) => {
-            (Operation::Multiply, left, right)
-        }
-        (
-            Word::Signed64 | Word::Unsigned64,
-            T::Binary {
-                format,
-                op,
-                left,
-                right,
-            },
-        ) if *format == ty => (operation_of_machine_binary_op(*op)?, left, right),
-        _ => return None,
+    let Bitvector32Term::Binary {
+        op,
+        format,
+        left,
+        right,
+    } = value
+    else {
+        return None;
     };
-    Some((operation, left, right))
+    if Some(*format) != operator_format(ty) {
+        return None;
+    }
+    Some((operation_of_machine_binary_op(*op)?, left, right))
 }
 
 /// The format-carrying operator of a ring operation.
@@ -323,75 +312,31 @@ pub(crate) enum Division {
 
 /// The division, operand and divisor (or shift amount) of `value`, a word
 /// read at `ty`. The operation's signedness is the format's: an unsigned
-/// format's quotient is `UnsignedDivide`, a signed one's `Divide`. Narrow
+/// format's quotient is `Divide` at that format, as a signed one's is. Narrow
 /// and 128-bit formats have none.
 pub(crate) fn word_division(
     ty: MachineIntegerType,
     value: &Bitvector32Term,
 ) -> Option<(Division, &Bitvector32Term, &Bitvector32Term)> {
-    use Bitvector32Term as T;
     use MachineIntegerType as Ty;
-    let (division, operand, divisor) = match (ty, value) {
-        (Ty::UInt32, binary_term!(UInt32, Divide, operand, divisor))
-        | (
-            Ty::UInt64,
-            T::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Divide,
-                left: operand,
-                right: divisor,
-            },
-        )
-        | (Ty::Int32, binary_term!(Int32, Divide, operand, divisor))
-        | (
-            Ty::Int64,
-            T::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::Divide,
-                left: operand,
-                right: divisor,
-            },
-        ) => (Division::Quotient, operand, divisor),
-        (Ty::UInt32, binary_term!(UInt32, ShiftRight, operand, amount))
-        | (
-            Ty::UInt64,
-            T::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::ShiftRight,
-                left: operand,
-                right: amount,
-            },
-        )
-        | (Ty::Int32, binary_term!(Int32, ShiftRight, operand, amount))
-        | (
-            Ty::Int64,
-            T::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::ShiftRight,
-                left: operand,
-                right: amount,
-            },
-        ) => (Division::ShiftRight, operand, amount),
-        (Ty::UInt32, binary_term!(UInt32, Remainder, operand, divisor))
-        | (
-            Ty::UInt64,
-            T::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Remainder,
-                left: operand,
-                right: divisor,
-            },
-        )
-        | (Ty::Int32, binary_term!(Int32, Remainder, operand, divisor))
-        | (
-            Ty::Int64,
-            T::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::Remainder,
-                left: operand,
-                right: divisor,
-            },
-        ) => (Division::Remainder, operand, divisor),
+    // A division is built at its own 32- or 64-bit format, signed or
+    // unsigned: one node and one format test.
+    let Bitvector32Term::Binary {
+        op,
+        format,
+        left: operand,
+        right: divisor,
+    } = value
+    else {
+        return None;
+    };
+    if *format != ty || !matches!(ty, Ty::Int32 | Ty::UInt32 | Ty::Int64 | Ty::UInt64) {
+        return None;
+    }
+    let division = match op {
+        MachineBinaryOp::Divide => Division::Quotient,
+        MachineBinaryOp::ShiftRight => Division::ShiftRight,
+        MachineBinaryOp::Remainder => Division::Remainder,
         _ => return None,
     };
     Some((division, operand, divisor))

@@ -3,8 +3,8 @@ use super::reasoning::*;
 use super::resource_tracker::cell_source::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::binary_node;
-use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::binary_term;
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::collections::BTreeSet;
 
 /// Results retained from the actual selected read query, never reconstructed
