@@ -44,8 +44,11 @@ fails the audit; one with smart sites is reported by its session.
 A wholly selected claim is expanded once, with all its smart sites together.
 The rewritten claim must contain no smart tactics and pass retained and cold
 verification, including the performance comparison. Its cold verification runs
-with the implicit closer off, so an expanded claim is shown self-contained. A
-failed whole-claim expansion fails the audit.
+with the implicit closer off for the selected claim and its nested proofs,
+so that claim is shown self-contained. Other claims and modeled workers that
+the targeted verifier visits retain ordinary verification, including their
+implicit automation. A failed whole-claim expansion fails the audit; a selected
+claim that was not checked also fails.
 
 A cursor, site cap, or changed-source selection can select part of a claim.
 The selected sites are captured together in one verification and applied as

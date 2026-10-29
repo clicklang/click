@@ -2181,6 +2181,79 @@ int32 compare(uint8 bytes[]) {
     }
 }
 
+#[test]
+#[ignore = "nightly: whole-claim audits with neighboring proofs and pthread workers"]
+fn whole_claim_audits_allow_unexpanded_neighbors_and_workers() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests");
+    for (fixture, claim) in [
+        ("statement_at_snapshots", "set_first_twice.prefix_exit"),
+        (
+            "statement_at_snapshots",
+            "set_first_twice.adjacent_boundary",
+        ),
+        ("statement_at_snapshots", "set_first_twice.final_exit"),
+        ("composite_resource_borrow_fact", "inspect_server.owns_0"),
+        (
+            "composite_resource_borrow_fact",
+            "inspect_server.state_is_ready",
+        ),
+        ("composite_resource_observe_nested_fact", "return_fd.owns_0"),
+        (
+            "composite_resource_separate_fact",
+            "clobber_dst_packaged.owns_0",
+        ),
+        (
+            "composite_resource_separate_fact",
+            "clobber_dst_packaged.source_unchanged",
+        ),
+        (
+            "authority_modeled_pthread_distinct_workers_spend",
+            "run.contract",
+        ),
+        ("modeled_pthread_counted_join", "run.contract"),
+        ("modeled_pthread_counted_reverse_join", "run.contract"),
+    ] {
+        let path = root.join(format!("{fixture}.md"));
+        let arguments = parse_arguments([
+            "--claim".to_string(),
+            claim.to_string(),
+            path.display().to_string(),
+        ])
+        .unwrap();
+        run_audit(arguments).unwrap_or_else(|error| panic!("{fixture}, {claim}: {error}"));
+    }
+}
+
+#[test]
+#[ignore = "nightly: strict selected-proof refusals and scope restoration"]
+fn cold_claim_scope_keeps_selected_proofs_strict_and_refuses_unknown_labels() {
+    use click::surface::{without_implicit_auto, without_implicit_auto_for_claim};
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/statement_at_snapshots.md");
+    let source = load_audit_source(&path).unwrap();
+    let check = || {
+        verify_rewritten_with_inputs(&source, "set_first_twice.final_exit", &source.click_source)
+    };
+    let error = without_implicit_auto_for_claim("set_first_twice.final_exit", check).unwrap_err();
+    assert!(error.contains("set_first_twice.final_exit"), "{error}");
+    assert!(error.contains("implicit tail is off"), "{error}");
+    assert!(!error.contains("set_first_twice.prefix_exit"), "{error}");
+    check().expect("a refused selected proof must restore the ordinary policy");
+    let error = without_implicit_auto_for_claim("missing.claim", check).unwrap_err();
+    assert!(
+        error.contains("did not visit selected proof `missing.claim`"),
+        "{error}"
+    );
+    let error = without_implicit_auto(|| {
+        without_implicit_auto_for_claim("set_first_twice.final_exit", check)
+    })
+    .unwrap_err();
+    assert!(
+        error.contains("set_first_twice.prefix_exit"),
+        "the unconditional strict scope must still reject an unexpanded neighbor: {error}"
+    );
+    check().expect("nested strict scopes must restore the ordinary policy");
+}
+
 /// A negative mdtest is a boundary of the entire audit, including runtime
 /// discovery before smart-site inventory.
 #[test]

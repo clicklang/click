@@ -68,8 +68,9 @@ includes the phase costs for each claim batch.
 
 A claim whose sites are all selected is expanded once, with every site
 together, since expanding one site runs its whole claim, and its rewrite is
-cold-verified with the implicit `auto` off. Failure of that whole-claim
-expansion fails the audit. A partial selection is captured together in one verification as well;
+cold-verified with the implicit `auto` off inside that claim. Untouched
+neighboring claims and required workers are still verified normally. Failure
+of that whole-claim expansion fails the audit. A partial selection is captured together in one verification as well;
 its fixed-point check covers only the emitted regions, leaving unselected
 smart tactics unchanged.
 
@@ -2096,9 +2097,10 @@ fn audit_claim_rewrite(
             .name("click-audit-cold-rewritten".to_string())
             .stack_size(SESSION_THREAD_STACK_BYTES)
             .spawn_scoped(scope, || {
-                // The whole claim's expansion has nothing smart left: checked
-                // with the implicit `auto` off, it is shown self-contained.
-                click::surface::without_implicit_auto(|| {
+                // Only the expanded claim must be self-contained. The
+                // targeted verifier also checks untouched neighboring claims
+                // and modeled workers, whose automation remains ordinary.
+                click::surface::without_implicit_auto_for_claim(&site.claim, || {
                     cold_verify(
                         &expanded,
                         &cold_source,

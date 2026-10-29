@@ -2788,16 +2788,17 @@ thread_local! {
 
 pub(in crate::surface::proof) fn implicit_auto_disabled() -> bool {
     IMPLICIT_AUTO_DISABLED.with(std::cell::Cell::get)
+        || super::super::implicit_auto_scope::selected_claim_is_strict()
 }
 
 /// Runs `operation` with the implicit `auto` off: a step gets only its fast
 /// path and its written obligation proofs, with no search, so an obligation
-/// nothing written proves is refused with its structured requirement. This
+/// nothing written proves is refused with its structured requirement.
 /// The implicit tail is off with it: a script that leaves C to run, or a
-/// goal open, at its end is refused instead of finished by search. This
-/// is how an expanded proof is checked cold:
-/// `click expand --claim` and `click audit`'s whole-claim expansion check their
-/// output this way.
+/// goal open, at its end is refused instead of finished by search. This is
+/// unconditional across all proof units. Audit uses
+/// [`crate::surface::without_implicit_auto_for_claim`] when untouched proof
+/// units are also visited during targeted verification.
 pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
     struct Restore(bool);
     impl Drop for Restore {

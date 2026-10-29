@@ -1779,6 +1779,7 @@ fn verify_theorem_ensure(
     theorem_environment: &TheoremEnvironment,
     function_environment: Option<&CExecutionEnvironment>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
+    let _automation_scope = super::implicit_auto_scope::ClaimScope::enter(claim_label);
     // Resolve declaration aliases against the outer parameter values once.
     // Proof-local introductions can shadow either name without recapturing it.
     let scoped_context;
