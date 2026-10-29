@@ -7070,9 +7070,25 @@ fn a_cell_straddling_two_owned_members_is_not_separated_from_either() {
         "the store forgets the straddling cell"
     );
     assert!(
-        words.access_owned_apart_from_store(&footprint, &upper, &object, 4),
-        "a four-byte access at the lower word stays in its own member"
+        !words.access_owned_apart_from_store(&footprint, &upper, &object, 4),
+        "automatic ownership selection declines a crowded base bucket"
     );
+    assert!(
+        CMemory::new()
+            .store(object.clone(), int32(9))
+            .without_possible_aliasing_cells(&upper, 4, &words)
+            .has_known_cell_at(&object),
+        "the direct byte gap still keeps the nonoverlapping four-byte cell"
+    );
+    // Selecting one member per written base retains the complete-width check.
+    let selected = PureFactContext::new().assume_proposition(Proposition::CResourceComposition(
+        ResourceContext::new()
+            .unchecked_with_fact(own_memory_fact(object.clone(), 0, 1))
+            .unchecked_with_fact(own_memory_fact(upper.clone(), 0, 1)),
+    ));
+    let footprint = selected.owned_store_footprint(&upper, 4);
+    assert!(selected.access_owned_apart_from_store(&footprint, &upper, &object, 4));
+    assert!(!selected.access_owned_apart_from_store(&footprint, &upper, &object, 8));
 }
 
 #[test]

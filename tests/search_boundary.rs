@@ -499,3 +499,36 @@ fn direct_store_distinctness_rejects_search_and_alias_walks() {
         );
     }
 }
+
+#[test]
+fn store_ownership_selection_rejects_member_and_composition_walks() {
+    for function in [
+        "owned_store_footprint",
+        "store_members_in",
+        "access_owned_apart_from_store",
+        "parameter_store_partition",
+        "parameter_partition_cell_base",
+    ] {
+        for name in [
+            "owned_memory_members_with_base",
+            "memory_members_with_base",
+            "owned_member_holding_access",
+            "listed_under",
+            "listed_under_members",
+            "listed_under_anchors",
+        ] {
+            let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
+            assert!(
+                boundary::check_source("src/kernel/assumptions/memory_reasoning.rs", &source)
+                    .is_err(),
+                "accepted {source}"
+            );
+        }
+        let source = format!(
+            "fn {function}(c: C) {{ c.unique_owned_memory_member_with_base(); c.directly_listed_under_bases(); }}"
+        );
+        assert!(
+            boundary::check_source("src/kernel/assumptions/memory_reasoning.rs", &source).is_ok()
+        );
+    }
+}

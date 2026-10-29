@@ -32,7 +32,17 @@ int32 f(struct cell* root) {
     ensures root->base.left != 0 implies root->value == old(child.number);
 } by {
     if root->base.left != 0 {
-        unfold(child); step_until(function.exit); fold(child); solve();
+        unfold(child);
+        have separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value));
+        mark before_store;
+        step_until(function.exit);
+        have (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value) by {
+            transport(at(before_store, (root->base.left as (void *) as (struct cell *))->value) == at(before_store, (root->base.left as (void *) as (struct cell *))->value),
+                      (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value)) using {
+                separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value));
+            };
+        }
+        fold(child); solve();
     } else {
         unfold(child); step_until(function.exit); fold(child); solve();
     }

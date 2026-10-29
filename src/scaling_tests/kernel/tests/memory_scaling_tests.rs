@@ -2276,3 +2276,103 @@ fn store_distinctness_does_not_search_same_block_range_candidates() {
     );
     eprintln!("store distinctness misses: {samples:?}");
 }
+
+#[test]
+fn store_ownership_selection_bounds_same_base_candidates() {
+    for explicit_owner in [false, true] {
+        for crowded_read in [false, true] {
+            for miss in [false, true] {
+                let mut samples = Vec::new();
+                for size in [4u64, 16, 64] {
+                    let _session = crate::kernel::VerificationSession::enter();
+                    let object = |i| Pointer {
+                        block: PointerBlock::ExternalArgument,
+                        offset: PointerOffsetTerm::Variable(Variable(999_100 + i)),
+                    };
+                    let own = |base, start: u32| {
+                        CResourceFact::own_memory(CMemoryRange::new(
+                            object(base),
+                            start.into(),
+                            (start + 1).into(),
+                        ))
+                    };
+                    let crowded = u64::from(crowded_read);
+                    let mut owner = ResourceContext::new().unchecked_with_fact(own(1 - crowded, 0));
+                    for i in 0..size {
+                        owner = owner.unchecked_with_fact(own(crowded, (2 * i) as u32));
+                    }
+                    let mut facts = PureFactContext::new()
+                        .assume_proposition(Proposition::CResourceComposition(owner.clone()));
+                    if explicit_owner {
+                        facts = facts.with_store_owner(Some(owner));
+                    }
+                    let offset = if miss { 4 } else { 0 };
+                    let write = object(0).offset_by_bytes(if crowded_read { 0 } else { offset });
+                    let read = object(1).offset_by_bytes(if crowded_read { offset } else { 0 });
+                    // Fixed cache and fixed delta: only the ownership bucket grows.
+                    let memory = CMemory::new().store(read.clone(), scaling_value(9));
+                    let mut work = Vec::new();
+                    for _ in 0..3 {
+                        let (after, units) =
+                            crate::instrumentation::measure_deterministic_work(|| {
+                                memory.without_possible_aliasing_cells(&write, 4, &facts)
+                            });
+                        assert!(
+                            !after.has_known_cell_at(&read),
+                            "crowded ownership declines implicit preservation"
+                        );
+                        work.push(units);
+                    }
+                    samples.push((size, work));
+                }
+                assert!(
+                    samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+                    "ownership members explicit={explicit_owner} read={crowded_read} miss={miss}: {samples:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn store_ownership_selection_bounds_same_base_compositions() {
+    for miss in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let object = |i| Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(999_500 + i)),
+            };
+            let own = |base, end: u32| {
+                CResourceFact::own_memory(CMemoryRange::new(object(base), 0u32.into(), end.into()))
+            };
+            let mut facts =
+                PureFactContext::new().assume_proposition(Proposition::CResourceComposition(
+                    ResourceContext::new().unchecked_with_fact(own(1, 1)),
+                ));
+            for i in 0..size {
+                let owner = ResourceContext::new()
+                    .unchecked_with_fact(own(0, i as u32 + 1))
+                    .unchecked_with_fact(own(10 + i, 1));
+                facts = facts.assume_proposition(Proposition::CResourceComposition(owner));
+            }
+            let write = object(0);
+            let read = object(if miss { 9 } else { 9 + size });
+            let memory = CMemory::new().store(read, scaling_value(9));
+            let mut work = Vec::new();
+            for _ in 0..3 {
+                let (_, units) = crate::instrumentation::measure_deterministic_work(|| {
+                    memory.without_possible_aliasing_cells(&write, 4, &facts)
+                });
+                work.push(units);
+            }
+            samples.push((size, work));
+        }
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "ownership compositions miss={miss}: {samples:?}"
+        );
+        eprintln!("ownership compositions miss={miss}: {samples:?}");
+    }
+}

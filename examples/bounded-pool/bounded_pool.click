@@ -251,8 +251,23 @@ void pool_transfer(struct pool* source, struct pool* destination, struct object*
             have defined(destination->checked_out + 1);
             unfold(pool_object(source, object));
             unfold(pool_slot(destination));
+            have separate(memory(source->checked_out), memory(destination->checked_out));
+            have separate(memory(source->checked_out), memory(destination->capacity));
+            mark before_source_write;
             step();
+            have destination->checked_out == at(before_source_write, destination->checked_out) by {
+                transport(at(before_source_write, destination->checked_out) == at(before_source_write, destination->checked_out),
+                          destination->checked_out == at(before_source_write, destination->checked_out)) using {
+                    separate(memory(source->checked_out), memory(destination->checked_out));
+                };
+            }
             step();
+            have destination->capacity == at(before_source_write, destination->capacity) by {
+                transport(at(before_source_write, destination->capacity) == at(before_source_write, destination->capacity),
+                          destination->capacity == at(before_source_write, destination->capacity)) using {
+                    separate(memory(source->checked_out), memory(destination->capacity));
+                };
+            }
             fold(pool_object(destination, object));
             fold(pool_slot(source));
             have destination->capacity

@@ -76,7 +76,32 @@ void arena_release(struct region* region) {
 } by {
     let { live: n } = unfold(before);
     let { start: s, end: e } = unfold(freed);
+    have separate(memory(*region), memory(region->arena->live_regions));
+    mark before_store;
     step_until(function.exit);
+    have region->arena == at(before_store, region->arena) by {
+        transport(at(before_store, region->arena) == at(before_store, region->arena),
+                  region->arena == at(before_store, region->arena)) using {
+            at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
+        };
+    }
+    have defined(region->arena) by {
+        transport(defined(at(before_store, region->arena)), defined(region->arena)) using {
+            at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
+        };
+    }
+    have region->start == s by {
+        transport(at(before_store, region->start) == s, region->start == s) using {
+            at(before_store, region->start) == s;
+            at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
+        };
+    }
+    have region->end == e by {
+        transport(at(before_store, region->end) == e, region->end == e) using {
+            at(before_store, region->end) == e;
+            at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
+        };
+    }
     let after = fold(arena_live_count(region->arena), { live: n - 1 });
     solve();
 }

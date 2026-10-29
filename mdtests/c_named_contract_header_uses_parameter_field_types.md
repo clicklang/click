@@ -37,7 +37,19 @@ void f(struct cell* root) {
     requires root->base.left != root as (void *) as (struct base *);
     ensures child.number == old(child.number);
     ensures root->value == old(child.number);
-} by { unfold(child); step_until(function.exit); fold(child); solve(); }
+} by {
+    unfold(child);
+    have separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value));
+    mark before_store;
+    step_until(function.exit);
+    have (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value) by {
+        transport(at(before_store, (root->base.left as (void *) as (struct cell *))->value) == at(before_store, (root->base.left as (void *) as (struct cell *))->value),
+                  (root->base.left as (void *) as (struct cell *))->value == at(before_store, (root->base.left as (void *) as (struct cell *))->value)) using {
+            separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value));
+        };
+    }
+    fold(child); solve();
+}
 ```
 ```expect
 pass

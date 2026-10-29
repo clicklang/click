@@ -54,12 +54,24 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
         preserve by {
             let { child: c } = unfold(s);
             unfold(c);
+            have separate(memory(gparent->rb_left), memory(parent->rb_right));
             mark before_store;
             step();
             have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
                 transport(at(before_store, parent->__rb_parent_color) == at(before_store, parent->__rb_parent_color),
                           parent->__rb_parent_color == at(before_store, parent->__rb_parent_color)) using {
                     parent == gparent->rb_left;
+                };
+            }
+            have gparent->rb_left == at(before_store, gparent->rb_left) by {
+                transport(at(before_store, gparent->rb_left) == at(before_store, gparent->rb_left),
+                          gparent->rb_left == at(before_store, gparent->rb_left)) using {
+                    separate(memory(gparent->rb_left), memory(parent->rb_right));
+                };
+            }
+            have defined(gparent->rb_left) by {
+                transport(defined(at(before_store, gparent->rb_left)), defined(gparent->rb_left)) using {
+                    separate(memory(gparent->rb_left), memory(parent->rb_right));
                 };
             }
             let c = fold(node_at(gparent->rb_left), { v: 0 });

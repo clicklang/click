@@ -1651,7 +1651,8 @@ impl PureFactContext {
     }
 
     /// Prepare ownership separation for a store of `bytes` at `write`.
-    /// Explicit store owners supply their containing members once per store.
+    /// Explicit store owners supply singleton containing members once per
+    /// written base. Crowded member buckets decline automatic preservation.
     /// Without them, retain the write's base spellings until
     /// [`Self::access_owned_apart_from_store`] can select stated compositions
     /// through the member index under both the write and the cached read.
@@ -1676,8 +1677,8 @@ impl PureFactContext {
                 &spellings,
                 bytes,
             )),
-            // The composition index is complete for pairs, not for every
-            // restatement of one member. Select once the read is known.
+            // Select the root and singleton historical buckets only once the
+            // read's written bases are known too. Ambiguous buckets decline.
             None => OwnedStoreFootprint::Indexed {
                 spellings,
                 bytes,
@@ -1699,7 +1700,7 @@ impl PureFactContext {
         for resources in compositions {
             crate::instrumentation::record_deterministic_work(1);
             for (base, access) in spellings {
-                for (entry, range) in resources.owned_memory_members_with_base(base) {
+                if let Some((entry, range)) = resources.unique_owned_memory_member_with_base(base) {
                     let contains = *decided
                         .entry(range)
                         .or_insert_with(|| self.access_within_memory_range(access, bytes, range));
@@ -1749,7 +1750,7 @@ impl PureFactContext {
                 // the index's root.
                 let candidates = self
                     .composition_members
-                    .listed_under(spellings.iter().map(|(base, _)| base), std::iter::empty());
+                    .directly_listed_under_bases(spellings.iter().map(|(base, _)| base));
                 self.store_members_in(candidates, &spellings, bytes)
             }
         };
@@ -1788,9 +1789,16 @@ impl PureFactContext {
         pointer: &Pointer,
         bytes: u32,
     ) -> Option<Pointer> {
-        let range = self.owned_member_holding_access(resources, pointer, bytes)?;
-        let base = parameter_partition_root(range.base())?;
-        (parameter_partition_root(pointer)? == base).then_some(base)
+        additive_base_spellings(pointer)
+            .iter()
+            .find_map(|written_base| {
+                let (_, range) = resources.unique_owned_memory_member_with_base(written_base)?;
+                if !self.access_within_memory_range(pointer, bytes, range) {
+                    return None;
+                }
+                let base = parameter_partition_root(range.base())?;
+                (parameter_partition_root(pointer)? == base).then_some(base)
+            })
     }
 
     /// Whether ownership alone keeps an access of `bytes` at `pointer` off a
@@ -1805,8 +1813,9 @@ impl PureFactContext {
     /// of its first element, and the same guards apply: the two addresses
     /// must not be proven equal, and ranges whose distinct base spellings
     /// were later proven equal must not overlap. Lookup is by base, so the
-    /// question costs what the two accesses spell and the members they name,
-    /// independent of the other objects owned in the block.
+    /// question checks only singleton member buckets under the written bases.
+    /// Without explicit owners it also checks the root and singleton historical
+    /// composition buckets. Crowded buckets need explicit frame reasoning.
     pub(in crate::kernel) fn access_owned_apart_from_store<'a>(
         &'a self,
         footprint: &OwnedStoreFootprint<'a>,
@@ -1826,12 +1835,11 @@ impl PureFactContext {
                 bytes: write_bytes,
                 members,
             } => {
-                let candidates = self.composition_members.listed_under(
+                let candidates = self.composition_members.directly_listed_under_bases(
                     write_spellings
                         .iter()
                         .chain(&spellings)
                         .map(|(base, _)| base),
-                    std::iter::empty(),
                 );
                 // One immutable context and write own this footprint. A
                 // composition selected by several cached reads needs its
@@ -1862,8 +1870,8 @@ impl PureFactContext {
             .find(|(resources, write_entry, write_range)| {
                 spellings.iter().any(|(base, access)| {
                     resources
-                        .owned_memory_members_with_base(base)
-                        .any(|(entry, range)| {
+                        .unique_owned_memory_member_with_base(base)
+                        .is_some_and(|(entry, range)| {
                             entry != *write_entry
                                 && self.access_within_memory_range(access, bytes, range)
                                 && !self

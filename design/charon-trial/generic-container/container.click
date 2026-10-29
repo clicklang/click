@@ -159,7 +159,23 @@ impl<T> generic_container::Stack<T> {
                 unfold(first(List::Cons(v, tail_values)));
                 unfold(rest(List::Cons(v, tail_values)));
                 let { tail: tail } = unfold(before);
+                have separate(memory(self.head), memory(self.len));
+                have separate(memory(*self.head), memory(self.head));
+                have separate(memory(*self.head), memory(self.len));
+                mark before_pop;
                 step_until(function.exit);
+                have self.head == old(self.head.next) by {
+                    transport(old(self.head.next) == old(self.head.next), self.head == old(self.head.next)) using {
+                        separate(memory(self.head), memory(self.len));
+                        at(before_pop, separate(memory(*self.head), memory(self.head)));
+                    };
+                }
+                have result == Option::Some(v) by {
+                    transport(old(self.head.value) == v, result == Option::Some(v)) using {
+                        at(before_pop, separate(memory(*self.head), memory(self.head)));
+                        at(before_pop, separate(memory(*self.head), memory(self.len)));
+                    };
+                }
                 match tail_values {
                     List::Nil => {
                         let {} = unfold(tail);
