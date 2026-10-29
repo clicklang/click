@@ -3,8 +3,8 @@
 A consumed model selects the index used by the success outcome. The C body
 writes through the ordinary scalar parameter, while the outcome postcondition
 and a checked outcome-local memory proposition use a pure helper over the
-entry resource. At the return outcome the helper equals that scalar only on
-one checked lowering path.
+entry resource. At the return outcome the proof rewrites the helper to that scalar on the
+success arm; lowering itself retains the symbolic index.
 
 ```c filename=early_return_indexed_postcondition_path_selection.c
 int32 write_selected(int32 cells[], int32 index, int32 enabled) {
@@ -131,6 +131,7 @@ int32 write_selected(int32 cells[], int32 index, int32 enabled) {
             have enabled == 1 implies
                 result == cells[selected_index(old(before.shape))] by {
                 intro();
+                rewrite(selected_index(old(before.shape)) == index);
                 normalize();
             }
             solve();

@@ -241,7 +241,11 @@ fn evaluate_logical_memory_load_paths_unbridged(
     // fact-stable (`docs/internals/spellability.md`). A value stored under
     // another spelling of an equal address reaches the read through the
     // equality graph, which equates them.
-    if assumptions.should_keep_spec_loads_symbolic()
+    // Version-named reads already stay symbolic. Sending them through C
+    // evaluation for a pure-function proposition would resolve aliases from
+    // facts and substitute the selected cell's value.
+    if (assumptions.should_keep_spec_loads_symbolic()
+        && !logical_read_names_its_version(value_type))
         || assumptions.should_force_symbolic_external_loads()
     {
         let _assumptions_id_scope = assumptions.enter_id_scope();
@@ -6033,6 +6037,39 @@ mod tests {
             8,
             &context
         ));
+    }
+
+    #[test]
+    fn symbolic_logical_wide_reads_keep_their_term_under_alias_facts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(989_960));
+        let alias = Pointer::symbolic(Variable(989_961));
+        let memory = CMemory::new().store(
+            slot.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+        );
+        let empty = PureFactContext::new()
+            .allow_symbolic_contract_loads()
+            .prefer_symbolic_external_loads()
+            .keep_spec_loads_symbolic();
+        let facts = empty
+            .clone()
+            .assume_condition(ConditionTerm::pointer_equal(slot, alias.clone()), true);
+        let read = |context: &PureFactContext| {
+            let paths = evaluate_logical_memory_load_paths(
+                &memory,
+                alias.clone(),
+                CType::UInt64,
+                ExecutionFacts::new(),
+                Vec::new(),
+                context,
+            );
+            let [path] = paths.as_slice() else {
+                panic!("one logical read: {paths:?}");
+            };
+            path.outcome.clone()
+        };
+        assert_eq!(read(&facts), read(&empty));
     }
 
     #[test]

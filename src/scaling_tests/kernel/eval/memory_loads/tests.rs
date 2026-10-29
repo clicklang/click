@@ -1878,3 +1878,76 @@ fn scalar_projection_congruence_scales_with_selected_versions() {
         "unrelated facts: {unrelated:?}"
     );
 }
+
+#[test]
+fn symbolic_logical_wide_reads_do_not_scan_ambient_cells_or_facts() {
+    let mut samples = Vec::new();
+    let mut cold_samples = Vec::new();
+    for size in [16u64, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let slot = Pointer::symbolic(Variable(989_970));
+        let alias = Pointer::symbolic(Variable(989_971));
+        let mut memory = CMemory::new();
+        let mut context = PureFactContext::new()
+            .allow_symbolic_contract_loads()
+            .prefer_symbolic_external_loads()
+            .keep_spec_loads_symbolic();
+        for i in 0..size {
+            memory = memory.store(Pointer::symbolic(Variable(990_000 + i)), int32(7));
+            context = context.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(992_000 + i)),
+                    7u32.into(),
+                ),
+                true,
+            );
+        }
+        memory = memory.store(
+            slot.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+        );
+        context = context.assume_condition(ConditionTerm::pointer_equal(slot, alias.clone()), true);
+        // The first read catches up the reachable-cell index with the stores
+        // constructed above. Charge that startup separately; the next read
+        // uses a fresh pointer so a cached load cannot hide an ambient scan.
+        let (_, cold_work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_logical_memory_load_paths(
+                &memory,
+                Pointer::symbolic(Variable(989_972)),
+                CType::UInt64,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &context,
+            )
+        });
+        cold_samples.push(cold_work);
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            evaluate_logical_memory_load_paths(
+                &memory,
+                alias,
+                CType::UInt64,
+                ExecutionFacts::new(),
+                Vec::new(),
+                &context,
+            )
+        });
+        let [path] = paths.as_slice() else {
+            panic!("one logical read");
+        };
+        let CExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("logical value");
+        };
+        assert!(matches!(
+            value.numeric_value(),
+            CValue::UInt64(Bitvector32Term::Variable(_))
+        ));
+        samples.push(work);
+    }
+    for pair in cold_samples.windows(2) {
+        assert!(pair[1] <= 4 * pair[0] + 128, "startup: {cold_samples:?}");
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 128),
+        "fresh reads after startup: {samples:?}"
+    );
+}
