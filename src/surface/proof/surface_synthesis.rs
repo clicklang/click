@@ -2256,8 +2256,9 @@ fn synthesize_surface_atomic_proposition(
         return None;
     };
     if let ConditionTerm::Overflows {
-        format: MachineIntegerType::Int32,
-        op: OverflowOperation::Add,
+        format: format @ (MachineIntegerType::Int32 | MachineIntegerType::Int64),
+        op:
+            op @ (OverflowOperation::Add | OverflowOperation::Subtract | OverflowOperation::Multiply),
         left,
         right,
     } = condition
@@ -2265,7 +2266,17 @@ fn synthesize_surface_atomic_proposition(
     {
         return Some(ClickProposition::Defined {
             expression: synthesize_surface_bitvector(
-                &binary_node!(Int32, Add, left.clone(), right.clone()),
+                &Bitvector32Term::Binary {
+                    format: *format,
+                    op: match op {
+                        OverflowOperation::Add => MachineBinaryOp::Add,
+                        OverflowOperation::Subtract => MachineBinaryOp::Subtract,
+                        OverflowOperation::Multiply => MachineBinaryOp::Multiply,
+                        _ => unreachable!("arithmetic overflow matched above"),
+                    },
+                    left: left.clone(),
+                    right: right.clone(),
+                },
                 parameter_binding,
                 state,
                 bound_variables,
@@ -2273,14 +2284,25 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let ConditionTerm::Constant(condition) = condition {
-        return Some(ClickProposition::Comparison {
-            left: ContractExpression::CFragment(CExpression::Value(int32(0))),
-            operator: if condition == value {
+        // An exact Integer comparison keeps the condition's constant value.
+        // A native `0 != 0` instead lowers to Constant(true) with false
+        // polarity, which is equivalent but is not the same proposition.
+        let comparison = ClickProposition::Comparison {
+            left: ContractExpression::Call {
+                name: "to_integer".into(),
+                arguments: vec![ContractExpression::IntegerLiteral("0".into())],
+            },
+            operator: if *condition {
                 ComparisonOperator::Equal
             } else {
                 ComparisonOperator::NotEqual
             },
-            right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            right: ContractExpression::IntegerLiteral("0".into()),
+        };
+        return Some(if *value {
+            comparison
+        } else {
+            ClickProposition::Not(Box::new(comparison))
         });
     }
     if let ConditionTerm::PointerOffsetEqual(left, right) = condition {

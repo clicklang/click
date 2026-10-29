@@ -31,6 +31,7 @@ pub(in crate::surface) use have_proofs::{
     evaluate_fixed_state_expression_through_kernel_with_algebraic_and_integer_values,
     evaluate_fixed_state_expression_through_kernel_with_algebraic_values,
     evaluate_resource_argument_through_kernel, evaluate_resource_fragment_through_kernel,
+    lower_fixed_state_proposition_retaining_requirements,
     lower_fixed_state_proposition_through_kernel,
     lower_fixed_state_proposition_through_kernel_with,
     lower_fixed_state_proposition_through_kernel_with_facts,

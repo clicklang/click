@@ -7,5 +7,5 @@ theorem bad(a: Integer) {
 ```
 
 ```expect
-fail: 0 != 0
+fail: to_integer(0) != 0
 ```

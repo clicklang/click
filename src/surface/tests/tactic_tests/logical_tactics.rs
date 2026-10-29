@@ -3131,13 +3131,10 @@ fn pure_machine_witness_preserves_binder_widths() {
         );
         verify_c0_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{scalar_type}: {}", error.message()));
-        let range_intros = match scalar_type {
-            "int8" | "int16" => "intro(); intro();",
-            "uint8" | "uint16" => "intro(); intro(); intro();",
-            _ => "",
-        };
+        // Type bounds are supplied by the typed binder's introduction;
+        // only the written forall needs an intro, at every machine width.
         let source = format!(
-            "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro(); {range_intros} witness {{ y: x }}; solve(); }} }}"
+            "theorem retain(n: {scalar_type}) {{ ensures forall (x: {scalar_type}) {{ exists (y: {scalar_type}) {{ y == x }} }} by {{ intro(); witness {{ y: x }}; solve(); }} }}"
         );
         verify_c0_sources(&source, &[])
             .unwrap_or_else(|error| panic!("{scalar_type} universal: {}", error.message()));
@@ -3179,11 +3176,6 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
         ("uint8", ""),
         ("Integer", ": Integer"),
     ] {
-        let range_intros = if ty == "uint8" {
-            "intro(); intro(); intro();"
-        } else {
-            ""
-        };
         let source = format!(
             r#"
             theorem retain(p: {ty}) {{
@@ -3198,7 +3190,6 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
                     intro();
-                    {range_intros}
                     witness {{ q: saved }};
                     solve();
                 }}
@@ -3207,7 +3198,6 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 ensures forall (saved: {ty}) {{ exists (q: {ty}) {{ q == saved }} }} by {{
                     intro();
-                    {range_intros}
                     witness {{ q: saved }};
                     solve();
                 }}
@@ -3216,7 +3206,6 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
                 let saved{annotation} = p;
                 ensures forall (p: {ty}) {{ exists (saved: {ty}) {{ saved == p }} }} by {{
                     intro();
-                    {range_intros}
                     witness {{ saved: p }};
                     solve();
                 }}

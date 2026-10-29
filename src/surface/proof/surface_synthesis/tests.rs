@@ -2108,6 +2108,57 @@ fn owned_string_actual_len_load_equation_round_trips() {
 }
 
 #[test]
+fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
+    for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        for op in [
+            OverflowOperation::Add,
+            OverflowOperation::Subtract,
+            OverflowOperation::Multiply,
+        ] {
+            let left = Bitvector32Term::Variable(Variable(1));
+            let right = Bitvector32Term::Variable(Variable(2));
+            let value = |term| match format {
+                MachineIntegerType::Int32 => CValue::Int32(term),
+                MachineIntegerType::Int64 => CValue::Int64(term),
+                _ => unreachable!(),
+            };
+            let state = CState::new()
+                .with_local("left", value(left.clone()))
+                .with_local("right", value(right.clone()));
+            let requirement = Proposition::ConditionIs(
+                ConditionTerm::Overflows {
+                    format,
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                false,
+            );
+            let surface =
+                synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
+                    .expect("arithmetic definedness must have a spelling");
+            let lowered = relower_written_proposition(&surface, &state).unwrap();
+            assert_eq!(lowered, requirement, "{format:?} {op:?}: {surface:?}");
+        }
+    }
+}
+
+#[test]
+fn constant_integer_domain_requirements_round_trip() {
+    for (condition, truth) in [(false, false), (false, true), (true, false), (true, true)] {
+        let requirement = Proposition::ConditionIs(ConditionTerm::Constant(condition), truth);
+        let state = CState::new();
+        let surface =
+            synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
+                .expect("constant domain requirement must have a spelling");
+        assert_eq!(
+            relower_written_proposition(&surface, &state).unwrap(),
+            requirement
+        );
+    }
+}
+
+#[test]
 fn strlen_existential_guard_round_trips_without_duplicate_guard() {
     let variable = Variable(1);
     let increment = binary_node!(

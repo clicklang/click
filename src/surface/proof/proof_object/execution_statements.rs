@@ -1596,6 +1596,45 @@ impl<'a> Proof<'a> {
         Ok((close(&proved)?, Some(Box::new(body))))
     }
 
+    /// Discharge a theorem's retained entry requirements before its main
+    /// proof. Explicit leading haves are already in the indexed fact store;
+    /// otherwise the ordinary implicit solver produces those same haves.
+    pub(in crate::surface::proof) fn discharge_entry_requirements(
+        &self,
+        surface_goal: &ClickProposition,
+        requirements: &super::super::execution_planning::OpenObligationProbe,
+    ) -> Result<Self, ClickError> {
+        let pending = requirements
+            .recorded
+            .iter()
+            .enumerate()
+            .filter(|(_, requirement)| {
+                !self
+                    .facts()
+                    .assumptions()
+                    .states_required_goal(&requirement.proposition)
+            })
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            return Ok(self.clone());
+        }
+        if implicit_auto_disabled() {
+            return Err(requirements.refusals[pending[0].0].clone());
+        }
+        let step = ProofStep::Have {
+            proposition: surface_goal.clone(),
+            proof: Box::new(ProofCertificate::from_proof_tactics(&[]).expect("empty certificate")),
+        };
+        let references = pending
+            .iter()
+            .map(|(_, requirement)| *requirement)
+            .collect::<Vec<_>>();
+        match self.prove_obligations_by_auto_or_name_the_first_missed(&step, &references)? {
+            Ok((proved, _)) => Ok(proved),
+            Err(missed) => Err(requirements.refusals[pending[missed].0].clone()),
+        }
+    }
+
     /// Lowering requirements of a proof operation are proved at its input
     /// state. Keep the resulting `have` certificates before the operation,
     /// so expansion uses existing explicit proof syntax without searching.

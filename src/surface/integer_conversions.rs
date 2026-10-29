@@ -1283,7 +1283,12 @@ mod tests {
             verify_c0_sources(&expanded, &[]).unwrap();
             for guard in requirements {
                 let invalid = source.replace(&format!("requires {guard};"), "");
-                assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+                if *guard == "d != 0" && requirements.contains(&"0 < d") {
+                    verify_c0_sources(&invalid, &[])
+                        .expect("the entry solver derives nonzero from a positive divisor");
+                } else {
+                    assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
+                }
             }
             let invalid = source.replace(&format!("ensures {goal}"), "ensures n == d");
             assert!(verify_c0_sources(&invalid, &[]).is_err(), "{invalid}");
@@ -1362,10 +1367,14 @@ mod tests {
         verify_c0_sources(guarded, &[]).unwrap();
         for bad in [
             guarded.replace("requires defined(x + 1i64);", ""),
-            guarded.replace("requires d != 0;", ""),
+            guarded
+                .replace("requires d != 0;", "")
+                .replace("requires 1 <= d;", ""),
         ] {
             assert!(verify_c0_sources(&bad, &[]).is_err(), "{bad}");
         }
+        verify_c0_sources(&guarded.replace("requires d != 0;", ""), &[])
+            .expect("the entry solver derives nonzero from 1 <= d");
         // Written for the Integer parameters without `to_integer`, `x + 1i64`
         // is the exact sum, which owes no definedness.
         let exact = guarded
