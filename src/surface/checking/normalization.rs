@@ -506,13 +506,13 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
         | Bitvector32Term::AlgebraicMatch { .. }
         | Bitvector32Term::PointerAddress(_, _)
         | Bitvector32Term::MemoryLoad(_, _, _) => None,
-        binary_term!(Int32, Add, left, right) => Some(
+        binary_term!(Bits32, Add, left, right) => Some(
             evaluate_bitvector_constant(left)?.wrapping_add(evaluate_bitvector_constant(right)?),
         ),
-        binary_term!(Int32, Subtract, left, right) => Some(
+        binary_term!(Bits32, Subtract, left, right) => Some(
             evaluate_bitvector_constant(left)?.wrapping_sub(evaluate_bitvector_constant(right)?),
         ),
-        binary_term!(Int32, Multiply, left, right) => Some(
+        binary_term!(Bits32, Multiply, left, right) => Some(
             evaluate_bitvector_constant(left)?.wrapping_mul(evaluate_bitvector_constant(right)?),
         ),
         binary_term!(Int32, Divide, left, right) => {
@@ -543,7 +543,7 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
             let right = evaluate_bitvector_constant(right)?;
             left.checked_rem(right)
         }
-        binary_term!(Int32, ShiftLeft, left, right) => {
+        binary_term!(Bits32, ShiftLeft, left, right) => {
             let left = evaluate_bitvector_constant(left)? as i32;
             let right = bitvector32_shift_count(evaluate_bitvector_constant(right)?)?;
             if left < 0 {
@@ -563,18 +563,16 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
             let right = bitvector32_shift_count(evaluate_bitvector_constant(right)?)?;
             Some(left >> right)
         }
-        binary_term!(Int32, BitwiseAnd, left, right) => {
+        binary_term!(Bits32, BitwiseAnd, left, right) => {
             Some(evaluate_bitvector_constant(left)? & evaluate_bitvector_constant(right)?)
         }
-        binary_term!(Int32, BitwiseOr, left, right) => {
+        binary_term!(Bits32, BitwiseOr, left, right) => {
             Some(evaluate_bitvector_constant(left)? | evaluate_bitvector_constant(right)?)
         }
-        binary_term!(Int32, BitwiseXor, left, right) => {
+        binary_term!(Bits32, BitwiseXor, left, right) => {
             Some(evaluate_bitvector_constant(left)? ^ evaluate_bitvector_constant(right)?)
         }
-        unary_term!(Int32, BitwiseNot, value) => Some(!evaluate_bitvector_constant(value)?),
-        // A 32-bit sign-free operator is built at `int32` only.
-        Bitvector32Term::Binary { .. } => None,
+        unary_term!(Bits32, BitwiseNot, value) => Some(!evaluate_bitvector_constant(value)?),
         Bitvector32Term::If {
             condition,
             then_term,

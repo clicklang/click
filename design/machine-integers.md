@@ -602,7 +602,24 @@ Progress:
      unchanged; work units rose by 0.13% in total, at most 7,953 units in
      one session's preparation and 1,762 in one claim.
   3. Pattern classification: each sign-free `int32` pattern either accepts
-     both 32-bit formats or stays signed-only.
+     both 32-bit formats or stays signed-only. Done for the readers whose
+     answer depends only on the operation's bits (2026-10-29):
+     `binary_term!(Bits32, ..)` and `unary_term!(Bits32, ..)` match either
+     32-bit format, and `Bits32 @ f` binds it. The constant evaluators
+     (`as_const`, `evaluate_bitvector_constant`), the narrow carrier check,
+     the unsigned bound of a mask, and the traversals that collect reads or
+     variables, detect machine arithmetic or estimate work read either
+     format; the structural rewrites that rebuild an operator over
+     rewritten operands (memory provenance, load-pointer rewriting, load
+     expansion, fact-transport erasure) keep the matched format. The signed
+     certificate fragment reads `int32` operators and a word's logical
+     right shift only, never a `uint32` sign-free one (G7). `unary_wide_term!`
+     no longer counts `uint32` as wide. Every other pattern stays `int32`,
+     which is sound: a `uint32` node misses it. The constructors (the
+     kernel's and the lowering's folding builders), the structural
+     comparisons of two terms, the keys and the printers become
+     format-parametric with step 4, where the change has `uint32` nodes to
+     act on and the corpus to test it. No output changes.
   4. `uint32` has its own nodes: constructors stop peeling, K6 goes.
   5. Reads by their own kind, with R-mem; typed index coordinates (G1).
   6. Widenings are nodes: K8 and the word helpers go.

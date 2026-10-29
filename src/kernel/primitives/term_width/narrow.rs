@@ -58,17 +58,17 @@ fn shape(word: &Bitvector32Term) -> &'static str {
         T::MachineIntegerCast { .. } => "a cast to another format",
         T::IntegerToMachine { .. } => "an Integer conversion to another format",
         T::If { .. } => "If",
-        binary_term!(Int32, Add, ..) => "Add",
-        binary_term!(Int32, Subtract, ..) => "Subtract",
-        binary_term!(Int32, Multiply, ..) => "Multiply",
+        binary_term!(Bits32, Add, ..) => "Add",
+        binary_term!(Bits32, Subtract, ..) => "Subtract",
+        binary_term!(Bits32, Multiply, ..) => "Multiply",
         binary_term!(Int32, Divide, ..) | binary_term!(UInt32, Divide, ..) => "Divide",
         binary_term!(Int32, Remainder, ..) | binary_term!(UInt32, Remainder, ..) => "Remainder",
-        binary_term!(Int32, ShiftLeft, ..) => "ShiftLeft",
+        binary_term!(Bits32, ShiftLeft, ..) => "ShiftLeft",
         binary_term!(Int32, ShiftRight, ..) | binary_term!(UInt32, ShiftRight, ..) => "ShiftRight",
-        binary_term!(Int32, BitwiseAnd, ..) => "BitwiseAnd",
-        binary_term!(Int32, BitwiseOr, ..) => "BitwiseOr",
-        binary_term!(Int32, BitwiseXor, ..) => "BitwiseXor",
-        unary_term!(Int32, BitwiseNot, ..) => "BitwiseNot",
+        binary_term!(Bits32, BitwiseAnd, ..) => "BitwiseAnd",
+        binary_term!(Bits32, BitwiseOr, ..) => "BitwiseOr",
+        binary_term!(Bits32, BitwiseXor, ..) => "BitwiseXor",
+        unary_term!(Bits32, BitwiseNot, ..) => "BitwiseNot",
         T::UInt32From64(..) => "UInt32From64",
         T::PureFunctionApplication { .. } => "PureFunctionApplication",
         T::ClickFunctionApplication { .. } => "ClickFunctionApplication",
@@ -157,26 +157,26 @@ fn carrier_violation(
         }
         // Zero extension survives a mask by anything; sign extension
         // survives the bitwise operations of two sign-extended words.
-        binary_term!(Int32, BitwiseAnd, left, right) if !ty.format().is_signed() => {
+        binary_term!(Bits32, BitwiseAnd, left, right) if !ty.format().is_signed() => {
             narrow_carrier_violation(ty, left).or_else(|_| narrow_carrier_violation(ty, right))
         }
-        binary_term!(Int32, BitwiseAnd, left, right)
-        | binary_term!(Int32, BitwiseOr, left, right)
-        | binary_term!(Int32, BitwiseXor, left, right) => {
+        binary_term!(Bits32, BitwiseAnd, left, right)
+        | binary_term!(Bits32, BitwiseOr, left, right)
+        | binary_term!(Bits32, BitwiseXor, left, right) => {
             narrow_carrier_violation(ty, left)?;
             narrow_carrier_violation(ty, right)
         }
-        unary_term!(Int32, BitwiseNot, value) if ty.format().is_signed() => {
+        unary_term!(Bits32, BitwiseNot, value) if ty.format().is_signed() => {
             narrow_carrier_violation(ty, value)
         }
         // A modular conversion into a signed narrow format spells the sign
         // extension of the low bits: `((w & mask) ^ sign) - sign`.
-        binary_term!(Int32, Subtract, left, sign)
+        binary_term!(Bits32, Subtract, left, sign)
             if ty.format().is_signed()
                 && **sign == T::Constant(1 << (ty.format().bits() - 1))
-                && let binary_term!(Int32, BitwiseXor, a, b) = left.as_ref()
+                && let binary_term!(Bits32, BitwiseXor, a, b) = left.as_ref()
                 && let Some(masked) = (a == sign).then_some(b).or((b == sign).then_some(a))
-                && let binary_term!(Int32, BitwiseAnd, a, b) = masked.as_ref()
+                && let binary_term!(Bits32, BitwiseAnd, a, b) = masked.as_ref()
                 && [a, b]
                     .iter()
                     .any(|side| ***side == T::Constant((1 << ty.format().bits()) - 1)) =>

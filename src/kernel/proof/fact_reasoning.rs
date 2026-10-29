@@ -1090,21 +1090,21 @@ fn expand_load_variables_shallow(bits: &Bitvector32Term) -> Bitvector32Term {
             crate::kernel::registered_load_term_for_variable(variable)
                 .unwrap_or_else(|| bits.clone())
         }
-        binary_term!(Int32, Add, left, right) => binary_node!(
-            Int32,
-            Add,
+        binary_term!(Bits32 @ format32, Add, left, right) => binary_node!(
+                @ *format32,
+                Add,
             Box::new(expand_load_variables_shallow(left)),
             Box::new(expand_load_variables_shallow(right)),
         ),
-        binary_term!(Int32, Subtract, left, right) => binary_node!(
-            Int32,
-            Subtract,
+        binary_term!(Bits32 @ format32, Subtract, left, right) => binary_node!(
+                @ *format32,
+                Subtract,
             Box::new(expand_load_variables_shallow(left)),
             Box::new(expand_load_variables_shallow(right)),
         ),
-        binary_term!(Int32, Multiply, left, right) => binary_node!(
-            Int32,
-            Multiply,
+        binary_term!(Bits32 @ format32, Multiply, left, right) => binary_node!(
+                @ *format32,
+                Multiply,
             Box::new(expand_load_variables_shallow(left)),
             Box::new(expand_load_variables_shallow(right)),
         ),

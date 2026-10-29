@@ -3033,9 +3033,9 @@ fn observes_machine_arithmetic(reading: &Proposition) -> bool {
             side.as_ref(),
             IntegerTerm::Machine(machine) if matches!(
                 machine.value(),
-                binary_term!(Int32, Add, ..)
-                    | binary_term!(Int32, Subtract, ..)
-                    | binary_term!(Int32, Multiply, ..)
+                binary_term!(Bits32, Add, ..)
+                    | binary_term!(Bits32, Subtract, ..)
+                    | binary_term!(Bits32, Multiply, ..)
                     | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Add, .. }
                     | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Subtract, .. }
                     | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Multiply, .. }
