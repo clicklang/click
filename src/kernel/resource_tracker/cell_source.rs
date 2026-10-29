@@ -153,6 +153,11 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     LoopHavocRanges {
         ranges: Vec<RangeDisjointFromPointerEvidence>,
     },
+    LoopHavocKeptRange {
+        range: CMemoryRange,
+        first: PointerInRangeEvidence,
+        last: PointerInRangeEvidence,
+    },
     /// A `CellsSeeded` edge crossed: one justification per store it stands
     /// for, newest first ([`CMemoryDerivation::seeded_stores`]).
     SeededStores {
@@ -724,13 +729,24 @@ impl MemoryDagHopJustification {
                         evidence.checks(range, pointer, bytes, assumptions)
                     })
             }
-            Self::CallHavocKeptRange { range, first, last } => {
-                let CMemoryDerivation::CallHavoc {
-                    kept_by_caller: Some(kept),
-                    ..
-                } = derivation
-                else {
-                    return false;
+            Self::CallHavocKeptRange { range, first, last }
+            | Self::LoopHavocKeptRange { range, first, last } => {
+                let kept = match (self, derivation) {
+                    (
+                        Self::CallHavocKeptRange { .. },
+                        CMemoryDerivation::CallHavoc {
+                            kept_by_caller: Some(kept),
+                            ..
+                        },
+                    )
+                    | (
+                        Self::LoopHavocKeptRange { .. },
+                        CMemoryDerivation::LoopHavoc {
+                            kept_by_function: Some(kept),
+                            ..
+                        },
+                    ) => kept,
+                    _ => return false,
                 };
                 let width = range.element_width();
                 width != 0

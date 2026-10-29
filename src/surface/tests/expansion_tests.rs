@@ -19503,3 +19503,24 @@ fn retained_loop_metadata_transport_expands_and_rechecks() {
     let expanded = expand_c0_claim_source_by_label(&source, &sources, "clear.contract").unwrap();
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
+
+#[test]
+#[ignore = "nightly: original arena_free proof takes about eight seconds"]
+fn original_arena_free_expands_and_rechecks_without_implicit_search() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let sidecar = std::fs::read_to_string(root.join("examples/arena/arena_cells.click")).unwrap();
+    let definitions = sidecar.split("verifying \"arena_init.c\";").next().unwrap();
+    let proof = sidecar
+        .split("verifying \"arena_free.c\";")
+        .nth(1)
+        .unwrap()
+        .split("verifying \"arena_write.c\";")
+        .next()
+        .unwrap();
+    let source = format!("{definitions}\nverifying \"arena_free.c\";\n{proof}");
+    let c = std::fs::read_to_string(root.join("examples/arena/arena_free.c")).unwrap();
+    let sources = [("arena_free.c", c.as_str())];
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "arena_free.contract").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}

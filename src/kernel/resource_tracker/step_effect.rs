@@ -550,6 +550,7 @@ fn cell_effect(
         }
         CMemoryDerivation::LoopHavoc {
             mutable_ranges: Some(mutable_ranges),
+            kept_by_function,
             ..
         } => {
             if !evidence.cross_loop_havoc
@@ -557,6 +558,31 @@ fn cell_effect(
                 || !explicit_dag_check_active()
             {
                 return unknown();
+            }
+            // The body cannot write memory withheld by its checked ownership
+            // partition, even when an iterated footprint includes those bytes.
+            // Select one indexed range and require coverage of the whole read.
+            if let Some((range, first, last)) = kept_by_function.as_ref().and_then(|kept| {
+                let range = kept.range_holding(assumptions, None, pointer, bytes)?;
+                let width = range.element_width();
+                if width == 0 || bytes == 0 || !bytes.is_multiple_of(width) {
+                    return None;
+                }
+                let first = super::cell_source::PointerInRangeEvidence::for_pointer(
+                    pointer,
+                    &range,
+                    assumptions,
+                )?;
+                let last_pointer =
+                    pointer.offset_by_elements(Bitvector32Term::Constant(bytes / width - 1), width);
+                let last = super::cell_source::PointerInRangeEvidence::for_pointer(
+                    &last_pointer,
+                    &range,
+                    assumptions,
+                )?;
+                Some((range, first, last))
+            }) {
+                return hop(MemoryDagHopJustification::LoopHavocKeptRange { range, first, last });
             }
             if let Some(ranges) = typed_ranges_disjoint_from_pointer_evidence(
                 mutable_ranges,

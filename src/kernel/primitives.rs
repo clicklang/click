@@ -8160,6 +8160,9 @@ pub enum CMemoryDerivation {
         base: SharedCMemory,
         variable: Variable,
         mutable_ranges: Option<Vec<CMemoryRange>>,
+        /// Flat ownership withheld from the body by its checked resource
+        /// partition, even where an iterated footprint over-approximates writes.
+        kept_by_function: Option<CallKeptRanges>,
     },
     /// `base` after an automatic-storage object's lifetime ended. The block
     /// is named so the memory-DAG can preserve unrelated loads while stopping

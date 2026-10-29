@@ -281,3 +281,57 @@ fn forgotten_cell_recovery_ignores_older_history_and_unrelated_cache_entries() {
         );
     });
 }
+
+#[test]
+fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
+    use crate::kernel::{CResourceFact, CallKeptRanges, ResourceContext};
+    let mut samples = Vec::new();
+    for size in [4u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(980115));
+        let ambiguous = Pointer::symbolic(Variable(980116));
+        let range = |base: Pointer, count: u32| {
+            CMemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 1)
+        };
+        let mut owners = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(range(field.clone(), 8)));
+        for index in 0..size {
+            owners = owners
+                .unchecked_with_fact(CResourceFact::own_memory(range(
+                    Pointer::symbolic(Variable(981000 + u64::from(index))),
+                    8,
+                )))
+                .unchecked_with_fact(CResourceFact::own_memory(range(
+                    ambiguous.clone(),
+                    index + 16,
+                )));
+        }
+        let base = CMemory::new();
+        let before = intern_c_memory(base.clone());
+        let after = intern_c_memory(base.with_loop_memory_havoc_preserving_frame(
+            Variable(980117),
+            &std::collections::BTreeSet::new(),
+            Some(&[range(field.clone(), 128), range(ambiguous.clone(), 128)]),
+            None,
+            Some(CallKeptRanges::new(owners, vec![], None)),
+        ));
+        let context = PureFactContext::new();
+        let query = |address: &Pointer| {
+            crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                &Pointer::loaded_value(&before, address),
+                &Pointer::loaded_value(&after, address),
+                &context,
+            )
+        };
+        let (hit, hit_work) = crate::instrumentation::measure_deterministic_work(|| query(&field));
+        let (miss, miss_work) =
+            crate::instrumentation::measure_deterministic_work(|| query(&ambiguous));
+        assert!(hit);
+        assert!(!miss, "an ambiguous supplier bucket must not be searched");
+        samples.push((hit_work, miss_work));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}

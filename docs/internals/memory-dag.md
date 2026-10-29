@@ -352,7 +352,13 @@ the DAG load-equality memo and the atomic derivation memo each do.
 
 Loop havoc uses the same edge-local rule as call havoc when a whole-loop effect
 summary has been checked: its owned ranges are carried on `LoopHavoc`, and a
-load may cross only with evidence that it is outside every range. The copy-back
+load may cross with evidence that it is outside every range. A declaring loop
+also retains the flat ownership withheld from its body. Explicit read transport
+may select one indexed kept range covering the entire read, even if a
+conditional collection over-approximates the mutable footprint. The persistent
+kept-range identity is part of the havoc marker; snapshots with different
+frames cannot intern together. No composite or alias search is enabled.
+The copy-back
 in `prepare_loop_top_state` materializes entry cells already known to be stable;
 it is an abstract-state optimization, not the soundness source for post-loop
 load transport. If a footprint cannot be evaluated, the edge retains the

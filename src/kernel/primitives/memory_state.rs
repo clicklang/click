@@ -4213,11 +4213,28 @@ impl CMemory {
     }
 
     pub(in crate::kernel) fn with_loop_memory_havoc_preserving_loans(
+        self,
+        variable: Variable,
+        preserved_blocks: &dyn BlockMembership,
+        mutable_ranges: Option<&[CMemoryRange]>,
+        ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ) -> Self {
+        self.with_loop_memory_havoc_preserving_frame(
+            variable,
+            preserved_blocks,
+            mutable_ranges,
+            ledger,
+            None,
+        )
+    }
+
+    pub(in crate::kernel) fn with_loop_memory_havoc_preserving_frame(
         mut self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[CMemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
+        kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
         // A loop body that may write memory can clobber, through some
         // pointer, any value it can reach. Drop cached values (cells and
@@ -4238,8 +4255,15 @@ impl CMemory {
             }
             None => self.forget_every_zero_reading(),
         }
+        // Interned histories may share a variable and write footprint only
+        // when they retain the same frame. The persistent frame identity is
+        // already maintained; naming it does not enumerate its resources.
+        let marker = kept_by_function.as_ref().map_or_else(
+            || format!("havoc:{}", variable.0),
+            |kept| format!("havoc:{}:{}", variable.0, kept.identity()),
+        );
         std::sync::Arc::make_mut(&mut self.blocks).insert(
-            format!("havoc:{}", variable.0).into(),
+            marker.into(),
             CBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
         );
         if let Some(base) = base {
@@ -4249,6 +4273,7 @@ impl CMemory {
                     base,
                     variable,
                     mutable_ranges: mutable_ranges.map(|ranges| ranges.to_vec()),
+                    kept_by_function,
                 },
             );
         }

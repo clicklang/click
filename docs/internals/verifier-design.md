@@ -353,3 +353,12 @@ in this helper. Growing same-block separation buckets leave cold and repeated
 miss work unchanged, while written index disequality still respects access
 widths. This narrows distinctness selection; ownership-member selection,
 byte-gap eligibility and compact-run preservation remain separate audits.
+
+An explicit loop read frame can select a flat range withheld from the loop
+body by the checked ownership partition. The loop history retains that
+persistent frame even when a conditional collection's conservative mutable
+footprint overlaps it. Selection reuses the indexed kept-range query with no
+composite expansion; a singleton covering range must include the entire read.
+A scalar cached prefix does not preserve a complete pointer. Distinct retained
+frames have distinct havoc identities, and a later overlapping store still
+invalidates the read. This adds no implicit store-preservation search.

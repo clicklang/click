@@ -6071,12 +6071,22 @@ pub(super) fn prepare_loop_top_state(
             validate_loop_havoc_stable_loans(ledger, validated.as_deref(), assumptions).err()
         });
     let mut resource_failures = capture_failures;
+    let withheld = if resource_specs.is_empty() || effect_ranges.is_empty() {
+        None
+    } else {
+        loop_declared_and_withheld_resources(entry_state, resource_specs, assumptions, budget)?
+            .ok()
+            .map(|(_, withheld)| withheld)
+    };
     let mut top_state = havoc_loop_modified_locals(
         entry_state,
         body,
         variables,
         budget,
         loop_havoc_ranges.as_deref(),
+        withheld
+            .as_ref()
+            .map(|frame| CallKeptRanges::new(frame.clone(), Vec::new(), None)),
     )?;
     let mut summaries =
         collect_whole_loop_effect_summaries(entry_state, &top_state, &effect_ranges);
@@ -6099,13 +6109,6 @@ pub(super) fn prepare_loop_top_state(
     // iterated fact counts every element it could ever hold), so a cell the
     // function owns can sit inside it without being writable; the partition
     // at entry is what keeps it apart.
-    let withheld = if resource_specs.is_empty() || summaries.is_empty() {
-        None
-    } else {
-        loop_declared_and_withheld_resources(entry_state, resource_specs, assumptions, budget)?
-            .ok()
-            .map(|(_, withheld)| withheld)
-    };
     let kept_by_function = |pointer: &Pointer, bytes: u32| {
         withheld.as_ref().is_some_and(|withheld| {
             assumptions.access_held_by_owned_member(withheld, pointer, bytes)
@@ -8572,6 +8575,7 @@ pub(super) fn havoc_loop_modified_locals(
     variables: &mut KernelVariableGenerator,
     budget: &mut ExecutionBudget,
     mutable_ranges: Option<&[CMemoryRange]>,
+    kept_by_function: Option<CallKeptRanges>,
 ) -> ExecutionResult<CState> {
     let mut state = state.clone();
     let mut names = BTreeSet::new();
@@ -8630,11 +8634,12 @@ pub(super) fn havoc_loop_modified_locals(
         let havoced_memory = state
             .memory
             .clone()
-            .with_loop_memory_havoc_preserving_loans(
+            .with_loop_memory_havoc_preserving_frame(
                 variables.next_in(budget)?,
                 &preserved_blocks,
                 mutable_ranges,
                 state.loan_ledger(),
+                kept_by_function,
             );
         state.set_memory(havoced_memory);
     }

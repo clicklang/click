@@ -1187,7 +1187,9 @@ fn loop_havoc_is_its_own_edge_kind_and_keeps_its_marker_block() {
             base: recorded_base,
             variable,
             mutable_ranges,
+            kept_by_function,
         } => {
+            assert!(kept_by_function.is_none());
             assert_eq!(recorded_base.as_ref(), &base);
             assert_eq!(*variable, Variable(0));
             assert_eq!(*mutable_ranges, None);
@@ -1306,6 +1308,56 @@ fn loop_havoc_carries_a_verified_write_set_for_disjoint_loads() {
         &read,
         &PureFactContext::new()
     ));
+}
+
+#[test]
+fn loop_kept_frame_preserves_only_complete_pointer_reads() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let field = arc_pointer(0);
+    let base = CMemory::new()
+        .with_block("arg-memory", 16)
+        .store(field.clone(), CValue::Int32(7u32.into()));
+    let before = crate::kernel::intern_c_memory_ref(&base);
+    let ranges = [memory_range(field.clone(), 0, 16)];
+    let havoc = |kept_bytes: u32| {
+        let kept = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
+            CMemoryRange::new_with_element_width(field.clone(), 0u32.into(), kept_bytes.into(), 1),
+        ));
+        base.clone().with_loop_memory_havoc_preserving_frame(
+            Variable(980114),
+            &BTreeSet::new(),
+            Some(&ranges),
+            None,
+            Some(CallKeptRanges::new(kept, vec![], None)),
+        )
+    };
+    let complete = havoc(8);
+    let prefix = havoc(4);
+    assert_ne!(
+        complete, prefix,
+        "different retained frames need different snapshots"
+    );
+    let unchanged = |after: &CMemory| {
+        crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+            &Pointer::loaded_value(&before, &field),
+            &Pointer::loaded_value(&crate::kernel::intern_c_memory_ref(after), &field),
+            &PureFactContext::new(),
+        )
+    };
+    assert!(unchanged(&complete));
+    assert!(!unchanged(&prefix));
+    let unframed = base.clone().with_loop_memory_havoc_preserving_loans(
+        Variable(980114),
+        &BTreeSet::new(),
+        Some(&ranges),
+        None,
+    );
+    assert!(!unchanged(&unframed));
+    let overwritten = complete.store(field.offset_by_bytes(4), CValue::Int32(9u32.into()));
+    assert!(
+        !unchanged(&overwritten),
+        "the upper pointer half was overwritten"
+    );
 }
 
 #[test]
