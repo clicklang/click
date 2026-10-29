@@ -1137,12 +1137,9 @@ fn machine_quantifier_range_facts(sort: &Sort, variable: Variable) -> ExecutionF
 }
 
 fn wrap_spec_universal_path(
-    mut path: SpecPropositionPath,
+    path: SpecPropositionPath,
     binder: &SpecUniversalBinder,
 ) -> SpecPropositionPath {
-    let mut range_facts = machine_quantifier_range_facts(&binder.sort, binder.variable);
-    range_facts.append(&mut path.facts);
-    path.facts = range_facts;
     let (body, guards) = wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
     let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
         name: binder.name.clone(),
@@ -1653,45 +1650,17 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 budget,
             )?
             .into_iter()
-            .map(|mut path| {
-                let mut facts = range_facts.clone();
-                facts.append(&mut path.facts);
-                path.facts = facts;
-                let (body, guards) =
-                    wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
-                let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
-                    name: name.clone(),
-                    variable: *variable,
-                    pointer: false,
-                    integer: false,
-                }];
-                introductions.extend(guards);
-                introductions.extend(path.introductions);
-                SpecPropositionPath {
-                    proposition: Proposition::ForAll {
-                        var: *variable,
-                        name: BinderName::written(name),
+            .map(|path| {
+                wrap_spec_universal_path(
+                    path,
+                    &SpecUniversalBinder {
+                        name: name.clone(),
+                        variable: *variable,
                         sort: Sort::machine_integer(integer_type),
-                        body: Box::new(body),
+                        pointer: false,
+                        integer: false,
                     },
-                    // Path facts may mention the bound variable. They are
-                    // guards on this quantified path, not facts in the
-                    // surrounding context.
-                    facts: Vec::new().into(),
-                    obligations: path
-                        .obligations
-                        .into_iter()
-                        .map(|obligation| {
-                            obligation.map_proposition(|proposition| Proposition::ForAll {
-                                var: *variable,
-                                name: BinderName::written(name),
-                                sort: Sort::machine_integer(integer_type),
-                                body: Box::new(wrap_path_context(proposition, &path.facts, &[])),
-                            })
-                        })
-                        .collect(),
-                    introductions,
-                }
+                )
             })
             .collect())
         }

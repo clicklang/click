@@ -1808,23 +1808,50 @@ fn verify_theorem_ensure(
         return Ok(verified);
     }
     let lowering_assumptions = assumptions_from_propositions(&context.requires);
-    let (goal, goal_introductions) = lower_pure_theorem_proposition_recording_introductions(
-        theorem.name(),
-        surface_goal,
-        &lowering_assumptions,
-        ContractEnvironment::new(&context.values, &context.array_refs),
-        &BTreeMap::new(),
-        &context.integer_values,
-        &context.memory,
-        spec_definitions,
-    )
-    .map_err(|message| {
-        ClickError::new(format!(
-            "`{claim_label}` failed: could not lower conclusion: {message}"
-        ))
-    })?;
+    let state = CState::new().with_memory(context.memory.clone());
+    let (goal, goal_introductions, _, obligations) =
+        lower_fixed_state_proposition_retaining_requirements(
+            surface_goal,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&context.values, &context.array_refs),
+            FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+            spec_definitions,
+            FixedStateLoweringOptions {
+                integer_values: Some(&context.integer_values),
+                obligation_assumptions: Some(&lowering_assumptions),
+                ..Default::default()
+            },
+        )
+        .map_err(|message| {
+            ClickError::new(format!(
+                "`{claim_label}` failed: could not lower conclusion: pure theorem `{}`: {message}",
+                theorem.name()
+            ))
+        })?;
+    // This probe checks only retained requirements, not a proof operation.
+    // No unchecked successor or theorem authority is produced here.
+    let (entry_check, entry_requirements) =
+        super::execution_planning::probe_open_obligations(|| {
+            super::fixed_state_proofs::conversion_conditions::refuse_unproved_conversion_bounds(
+                &obligations,
+                &lowering_assumptions,
+                &super::fixed_state_proofs::conversion_conditions::StatedSite::new(
+                    super::fixed_state_proofs::conversion_conditions::StatedForm::Proposition(
+                        surface_goal,
+                    ),
+                    &state,
+                    &context.values,
+                )
+                .with_integer_values(&context.integer_values),
+            )
+        });
+
+    entry_check.map_err(ClickError::new)?;
 
     if is_kernel_standard_theorem_name(theorem.name()) {
+        if let Some(error) = entry_requirements.refusals.first() {
+            return Err(error.clone());
+        }
         return verify_kernel_standard_theorem_axiom(
             theorem,
             ensure_index,
@@ -1848,6 +1875,7 @@ fn verify_theorem_ensure(
                 surface_goal,
                 &goal,
                 &goal_introductions,
+                &entry_requirements,
                 spec_definitions,
                 theorem_environment,
             )?;
@@ -1872,6 +1900,9 @@ fn verify_theorem_ensure(
                 )));
             }
             if matches!(tactics.first(), Some(ProofTactic::StructuralInduct { .. })) {
+                if let Some(error) = entry_requirements.refusals.first() {
+                    return Err(error.clone());
+                }
                 let (certificate, completions) = check_pure_structural_induction(
                     theorem,
                     claim_label,
@@ -1895,6 +1926,7 @@ fn verify_theorem_ensure(
                     surface_goal,
                     &goal,
                     &goal_introductions,
+                    &entry_requirements,
                     &tactics,
                     setup.as_ref(),
                     spec_definitions,
@@ -2387,6 +2419,7 @@ fn check_direct_pure_goal_with_proof(
     surface_goal: &ClickProposition,
     goal: &Proposition,
     goal_introductions: &crate::kernel::LoweringIntroductions,
+    entry_requirements: &super::execution_planning::OpenObligationProbe,
     spec_definitions: SpecDefinitions<'_>,
     theorem_environment: &TheoremEnvironment,
 ) -> Result<(ProofCertificate, crate::kernel::proof::CheckedProposition), ClickError> {
@@ -2400,6 +2433,7 @@ fn check_direct_pure_goal_with_proof(
         theorem_environment,
     )
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
+    let root = root.discharge_entry_requirements(surface_goal, entry_requirements)?;
     let mut search = super::attempt::search_scope("pure theorem solve");
     // Default proof search has a budget and timing, but no written tactic
     // occurrence. Its failure belongs to the declaration, not a fabricated
@@ -2954,6 +2988,7 @@ fn check_pure_script_with_proof(
     surface_goal: &ClickProposition,
     goal: &Proposition,
     goal_introductions: &crate::kernel::LoweringIntroductions,
+    entry_requirements: &super::execution_planning::OpenObligationProbe,
     tactics: &[ProofTactic],
     induction_setup: Option<&PureInductionSetup>,
     spec_definitions: SpecDefinitions<'_>,
@@ -2981,9 +3016,38 @@ fn check_pure_script_with_proof(
         ),
     }
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
+    let all_sites = claim_script_sites(&root, tactics, 0);
+    let prefix = if entry_requirements.recorded.is_empty() {
+        0
+    } else {
+        tactics
+            .iter()
+            .take_while(|tactic| matches!(tactic, ProofTactic::Have(_)))
+            .count()
+    };
+    let root = if prefix == 0 {
+        root
+    } else {
+        let mut unfinished = None;
+        let completed = root.try_addressed_linear_script(
+            &tactics[..prefix],
+            &all_sites[..prefix],
+            &mut None,
+            Some(&mut unfinished),
+        )?;
+        if completed.is_some() {
+            return Err(ClickError::new(
+                "theorem entry requirements must be proved before closing the conclusion",
+            ));
+        }
+        unfinished
+            .ok_or_else(|| ClickError::new("theorem entry requirement prelude did not complete"))?
+    };
+    let root = root.discharge_entry_requirements(surface_goal, entry_requirements)?;
+    let tactics = &tactics[prefix..];
     let mut search = super::attempt::search_scope("pure theorem script");
     let mut declined = None;
-    let sites = claim_script_sites(&root, tactics, 0);
+    let sites = &all_sites[prefix..];
     let mut unfinished = None;
     let checked = match root.try_addressed_linear_script(
         tactics,
@@ -3002,7 +3066,7 @@ fn check_pure_script_with_proof(
             }
             Some(super::smart_closures::LinearScriptDecline::Step(index)) => format!(
                 "could not complete tactic {} (`{}`)",
-                index + 1,
+                prefix + index + 1,
                 tactic_name(&tactics[index])
             ),
             None => "ended with its goal still open".to_string(),

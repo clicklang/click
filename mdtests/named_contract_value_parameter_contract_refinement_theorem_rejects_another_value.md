@@ -38,5 +38,5 @@ theorem adds_three_shifts_two(f: int32 (*)(int32)) {
 ```
 
 ```expect
-fail: could not establish `0 <= x and x <= 1000 and (0 == 0 and 0 == 0) implies 0 <= x and x <= 1000 and (0 == 0 and 0 == 0) and (defined((x + 3)) and result == (x + 3) implies defined((x + 2)) and result == (x + 2))`
+fail: could not establish `0 <= x and x <= 1000 and (to_integer(0) == 0 and to_integer(0) == 0) implies 0 <= x and x <= 1000 and (to_integer(0) == 0 and to_integer(0) == 0) and (defined((x + 3)) and result == (x + 3) implies defined((x + 2)) and result == (x + 2))`
 ```

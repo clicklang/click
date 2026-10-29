@@ -2464,3 +2464,51 @@ fn deferred_terminal_tactics_share_ambient_bindings_without_map_work() {
         eprintln!("ambient bindings={size}, cursor work={work}");
     }
 }
+
+#[test]
+fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let context = pure_identity_fixture();
+    let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    let surface_truth = ClickProposition::Comparison {
+        left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+    };
+    let samples = [4, 16, 64, 256].map(|size| {
+        let facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
+        let root = Proof::for_pure_surface_goal(
+            "typed intro spelling",
+            &facts,
+            Proposition::ForAll {
+                name: Default::default(),
+                var: Variable(0),
+                sort: Sort::machine_integer(MachineIntegerType::UInt8),
+                body: Box::new(truth.clone()),
+            },
+            ClickProposition::ForAll {
+                click_type: ClickType::C(syntax::C0Type::UInt8),
+                name: "byte".into(),
+                written_name: None,
+                body: Box::new(surface_truth.clone()),
+            },
+            &context,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+        );
+        let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+            root.apply_intro(Some("bound")).unwrap()
+        });
+        assert_eq!(next.state().added_facts().len(), 3);
+        for fact in next.state().added_facts() {
+            assert_eq!(next.locals().surface_facts.surfaces(fact).count(), 1);
+        }
+        work
+    });
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 128),
+        "typed intro spelling work: {samples:?}"
+    );
+}

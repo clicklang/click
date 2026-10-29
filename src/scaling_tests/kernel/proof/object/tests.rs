@@ -434,3 +434,79 @@ fn pure_match_constructor_obligation_work_is_linear_in_the_family() {
         assert!(pair[1] <= pair[0] * 5, "{costs:?}");
     }
 }
+
+#[test]
+fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
+    use crate::kernel::{ConditionTerm, MachineIntegerType};
+    type TestProof = ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+    let binder = Variable(186);
+    let body = Proposition::Predicate {
+        name: "holds".into(),
+        arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(binder))],
+    };
+    let goal = Proposition::ForAll {
+        name: Default::default(),
+        var: binder,
+        sort: Sort::machine_integer(MachineIntegerType::UInt8),
+        body: Box::new(body),
+    };
+    let sample = |size: u64, related: bool| {
+        let ambient = (0..size)
+            .map(|index| {
+                Proposition::ConditionIs(
+                    ConditionTerm::signed_less_than(
+                        Bitvector32Term::Variable(if related {
+                            binder
+                        } else {
+                            Variable(700_000 + index)
+                        }),
+                        Bitvector32Term::Constant(1000 + index as u32),
+                    ),
+                    true,
+                )
+            })
+            .collect::<Vec<_>>();
+        let proof = TestProof::root(
+            (),
+            ProofBranch::new(
+                ProofObligation::Proposition(PropositionObligation::new(goal.clone(), ())),
+                ProofBranchState {
+                    facts: ProofFacts::from_ordered(&ambient),
+                    unfolded_predicates: PersistentOrderedSet::default(),
+                    execution: None,
+                },
+            ),
+        );
+        let mut fresh = None;
+        let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
+            proof
+                .apply_intro(|_, introduction, _| {
+                    if let PropositionIntroduction::Universal { variable, .. } = introduction {
+                        fresh = Some(variable);
+                    }
+                })
+                .unwrap_or_else(|_| panic!("typed universal introduction"))
+        });
+        let fresh = fresh.unwrap();
+        if related {
+            assert_ne!(fresh, binder);
+        }
+        let expected = crate::kernel::c_narrow_integer_range_facts(
+            &MachineIntegerType::UInt8.symbolic_value(fresh),
+        )
+        .unwrap();
+        assert_eq!(next.state().added_facts(), expected);
+        let (_, facts) = next.focused_proposition().unwrap();
+        for bound in expected {
+            assert!(facts.contains(&bound));
+        }
+        work
+    };
+    for related in [false, true] {
+        let samples = [4, 16, 64, 256].map(|size| sample(size, related));
+        assert!(
+            samples.iter().all(|work| *work <= samples[0] + 64),
+            "intro work: {samples:?}"
+        );
+    }
+}

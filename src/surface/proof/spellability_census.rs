@@ -162,6 +162,36 @@ mod tests {
     use crate::kernel::{Bitvector32Term, Sort, Variable};
 
     #[test]
+    fn introduced_narrow_binder_bounds_have_checked_spellings() {
+        for ty in ["int8", "uint8", "int16", "uint16"] {
+            let source = format!(
+                r#"
+                theorem bounded() {{
+                    ensures forall (x: {ty}) {{ x == x }} by {{
+                        intro() as value;
+                        normalize();
+                    }}
+                }}
+            "#
+            );
+            let lines = capture(|| {
+                crate::surface::proof::without_implicit_auto(|| {
+                    crate::surface::verify_click_theorems(&source).unwrap();
+                });
+            });
+            let facts = lines
+                .iter()
+                .filter(|line| line.split('\t').nth(1) == Some("fact"))
+                .collect::<Vec<_>>();
+            assert!(facts.len() >= 2, "{ty}: {lines:#?}");
+            assert!(
+                facts.iter().all(|line| line.starts_with("spelled\t")),
+                "{ty}: {facts:#?}"
+            );
+        }
+    }
+
+    #[test]
     fn an_obligation_probe_does_not_duplicate_the_unfold_census() {
         let source = r#"
             predicate positive(x: int32) { x > 0 }

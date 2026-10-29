@@ -162,7 +162,14 @@ proves it at the operation's input state and retains its explicit `have`
 certificate before the operation; expanded proofs check without implicit
 solving. The fast checker itself still refuses an unmet condition. Probing a
 `have` stops at scope opening, so requirements from its body cannot escape
-nested binders. The build boundary checks these diagnostic entry points.
+nested binders. Pure theorem conclusions retain their mandatory requirements
+until entry proof checking. Explicit leading `have` steps can establish them;
+otherwise the implicit solver retains an equivalent `have` prelude. The
+remaining script starts only after these requirements are established, and
+expansion checks the prelude with implicit search disabled. Native universal
+introduction supplies the fresh binder's intrinsic machine bounds as facts;
+these bounds are not inserted as implications into the lowered proposition.
+The build boundary checks these diagnostic entry points.
 
 Viewability checking looks up an exactly stated view directly. A candidate
 address-shape bucket supplies implicit evidence only when it contains one fact;
