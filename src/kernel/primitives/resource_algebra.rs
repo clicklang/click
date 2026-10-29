@@ -3530,35 +3530,21 @@ impl ResourceContext {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
             let candidate = self.fact(entry);
-            let Some(available) = candidate.memory_own_range() else {
-                return None;
-            };
+            let available = candidate.memory_own_range()?;
             // Symbolic 64-bit suppliers retain their native direct-coverage
             // route; byte regrouping here handles constant 32-bit bounds.
-            if available.int32_bounds().is_none() {
-                return None;
-            }
-            let Some(base) = entries.address() else {
-                return None;
-            };
+            available.int32_bounds()?;
+            let base = entries.address()?;
             let point =
                 CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
             let byte_available = byte_normalized_memory_range(available);
-            let Some(at) = exact_constant_base_delta(&byte_available, &point, Some(assumptions))
-            else {
-                return None;
-            };
-            let Some(available_end) = byte_available.signed_constant_end() else {
-                return None;
-            };
-            let Some(bytes) = available_end
+            let at = exact_constant_base_delta(&byte_available, &point, Some(assumptions))?;
+            let available_end = byte_available.signed_constant_end()?;
+            let bytes = available_end
                 .checked_sub(at)
                 .map(|bytes| bytes.min(end - cursor))
                 .filter(|bytes| *bytes > 0)
-                .and_then(|bytes| u32::try_from(bytes).ok())
-            else {
-                return None;
-            };
+                .and_then(|bytes| u32::try_from(bytes).ok())?;
             let piece = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
                 base,
                 0u32.into(),
@@ -6498,12 +6484,8 @@ impl ResourceContext {
         if !self.fact(entry).has_proven_positive_quantity(assumptions) {
             return None;
         }
-        let Some(address) = entries.address() else {
-            return None;
-        };
-        let Some(range) = self.fact(entry).memory_range() else {
-            return None;
-        };
+        let address = entries.address()?;
+        let range = self.fact(entry).memory_range()?;
         if designation.is_some_and(|d| !assumptions.access_designations_match(d, range)) {
             return None;
         }
@@ -6529,9 +6511,7 @@ impl ResourceContext {
         let entry = entries.entry();
         crate::instrumentation::record_deterministic_work(1);
         let fact = self.fact(entry);
-        let Some(range) = fact.memory_own_range() else {
-            return None;
-        };
+        let range = fact.memory_own_range()?;
         if self.storage.supported_by.contains_key(&entry)
             || range.start_pointer() != *pointer
             || range
@@ -6567,17 +6547,13 @@ impl ResourceContext {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
             let resource = self.fact(entry);
-            let Some(range) = resource.memory_own_range() else {
-                return None;
-            };
+            let range = resource.memory_own_range()?;
             if designation
                 .is_some_and(|origin| !assumptions.access_designations_match(origin, range))
             {
                 return None;
             }
-            let Some(address) = entries.address() else {
-                return None;
-            };
+            let address = entries.address()?;
             if memory_resource_fact_permits_write(resource, &address, byte_width, assumptions) {
                 return Some(range);
             }
@@ -6600,12 +6576,8 @@ impl ResourceContext {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
             let resource = self.fact(entry);
-            let Some(range) = resource.memory_own_range() else {
-                return None;
-            };
-            let Some(address) = entries.address() else {
-                return None;
-            };
+            let range = resource.memory_own_range()?;
+            let address = entries.address()?;
             // Permission lookup uses the historical logical pointer-cell
             // unit when selecting candidates. Separation needs all physical
             // bytes, just as the existing held-range/frame judgment does.

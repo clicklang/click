@@ -1355,21 +1355,17 @@ impl ResourceContext {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
             let fact = self.storage.facts.get(&entry)?;
-            let Some(range) = (if include_views {
+            let range = (if include_views {
                 fact.memory_range()
             } else {
                 fact.memory_own_range()
-            }) else {
-                return None;
-            };
+            })?;
             if fact.owned_quantity_term().is_some_and(|quantity| {
                 !super::resource_algebra::resource_quantity_is_positive(quantity, assumptions)
             }) {
                 return None;
             }
-            let Some(address) = entries.address() else {
-                return None;
-            };
+            let address = entries.address()?;
             if needs_current_equality && !assumptions.pointers_known_equal(pointer, &address) {
                 return None;
             }
