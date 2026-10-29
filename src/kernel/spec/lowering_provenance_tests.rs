@@ -222,3 +222,34 @@ fn an_integer_existential_does_not_expose_nested_introductions_at_its_head() {
         "unexpected existential head chain: {recorded:?}"
     );
 }
+
+#[test]
+fn native_existential_conversion_obligations_share_the_claim_witness() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let k = Variable(41);
+    let narrowed = SpecExpression::IntegerToMachine {
+        value: Box::new(SpecIntegerExpression::FromMachine(Box::new(bound(k)))),
+        destination: MachineIntegerType::UInt8,
+    };
+    let claim = existential(SpecProposition::Comparison {
+        left: narrowed,
+        operator: CComparisonOperator::Equal,
+        right: SpecExpression::Value(CValue::UInt8(255u32.into())),
+    });
+    let (goal, _, obligations, _) =
+        crate::kernel::c_lower_spec_proposition_with_checked_obligations(
+            &CState::new(),
+            &claim,
+            None,
+            &PureFactContext::new(),
+        )
+        .expect("one existential");
+    assert!(
+        obligations.is_empty(),
+        "a separate existential can choose a different witness: {obligations:?}"
+    );
+    let Proposition::Exists { body, .. } = goal else {
+        panic!("existential claim");
+    };
+    assert!(matches!(*body, Proposition::And(_, _)), "{body:?}");
+}

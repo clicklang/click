@@ -244,6 +244,13 @@ work; correctness checks and existing budgets remain in force. See the
 For an existential witness, definedness remains attached to that same witness.
 It cannot be weakened into an implication whose guard is false, since that
 would permit an irrelevant witness to establish the existential claim.
+Nor may each domain requirement be put under a separate existential: those
+requirements could select different witnesses from the body. Integer,
+algebraic, native-integer, and pointer existentials keep each value path's
+requirements with its body under one binder. The native conversion regressions
+`native_witness_conversion_keeps_its_domain.md` and
+`native_witness_conversion_rejects_an_out_of_range_witness.md` check this for
+an accepted and an out-of-range selected witness.
 
 ## Arithmetic automation and trust boundary
 
