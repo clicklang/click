@@ -19479,3 +19479,27 @@ fn selected_alias_condition_and_read_validity_expand_without_search() {
         assert!(without_implicit_auto(|| verify_click_theorems(&missing)).is_err());
     }
 }
+
+#[test]
+fn scoped_conversion_requirements_expand_before_the_have() {
+    let source = r#"
+        theorem scoped_conversion(j: int32) {
+            requires 0 <= j and j <= 255;
+            ensures 0 == 0 by {
+                have forall (k: int32) { k < j implies to_uint8(to_integer(j)) == to_uint8(to_integer(j)) } by {
+                    intro(); intro(); solve();
+                }
+                normalize();
+            }
+        }
+    "#;
+    crate::surface::proof::without_implicit_auto(|| verify_click_theorems(source))
+        .expect_err("the scoped requirement is not an atomic fast-path fact");
+    verify_click_theorems(source).expect("scoped definedness uses ordinary proof checking");
+    let expanded = expand_c0_claim_source_by_label(source, &[], "scoped_conversion.ensures_0")
+        .expect("the requirement proof is retained");
+    assert!(expanded.matches("have ").count() > 1, "{expanded}");
+    assert!(!expanded.contains("solve();"), "{expanded}");
+    crate::surface::proof::without_implicit_auto(|| verify_click_theorems(&expanded))
+        .expect("the expanded scoped requirement checks with implicit search disabled");
+}
