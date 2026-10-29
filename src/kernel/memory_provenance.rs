@@ -4522,20 +4522,20 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             }
         }
         match term {
-            binary_term!(Int32, Add, left, right) => binary_node!(
-                Int32,
+            binary_term!(Bits32 @ format32, Add, left, right) => binary_node!(
+                @ *format32,
                 Add,
                 Box::new(rewrite_term(left, equations)),
                 Box::new(rewrite_term(right, equations)),
             ),
-            binary_term!(Int32, Subtract, left, right) => binary_node!(
-                Int32,
+            binary_term!(Bits32 @ format32, Subtract, left, right) => binary_node!(
+                @ *format32,
                 Subtract,
                 Box::new(rewrite_term(left, equations)),
                 Box::new(rewrite_term(right, equations)),
             ),
-            binary_term!(Int32, Multiply, left, right) => binary_node!(
-                Int32,
+            binary_term!(Bits32 @ format32, Multiply, left, right) => binary_node!(
+                @ *format32,
                 Multiply,
                 Box::new(rewrite_term(left, equations)),
                 Box::new(rewrite_term(right, equations)),

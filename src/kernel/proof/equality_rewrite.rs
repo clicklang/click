@@ -1522,17 +1522,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     rewrite_through_load_variable(term, rewrite_pointer)
                         .unwrap_or_else(|| term.clone())
                 }
-                binary_term!(Int32, Add, left_term, right_term) => {
+                binary_term!(Bits32 @ format32, Add, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
-                    binary_node!(Int32, Add, left, right)
+                    binary_node!(@ *format32, Add, left, right)
                 }
-                binary_term!(Int32, Subtract, left_term, right_term) => {
+                binary_term!(Bits32 @ format32, Subtract, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
-                    binary_node!(Int32, Subtract, left, right)
+                    binary_node!(@ *format32, Subtract, left, right)
                 }
-                binary_term!(Int32, Multiply, left_term, right_term) => {
+                binary_term!(Bits32 @ format32, Multiply, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
-                    binary_node!(Int32, Multiply, left, right)
+                    binary_node!(@ *format32, Multiply, left, right)
                 }
                 binary_term!(Int32, Divide, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);

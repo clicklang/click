@@ -1313,6 +1313,76 @@ mod tests {
         }
     }
 
+    /// `Bits32 @ f` binds the matched 32-bit format, so a rule that rebuilds
+    /// the operator over new operands keeps it (`binary_node!(@ f, ..)`).
+    #[test]
+    fn a_rebuilt_32_bit_operator_keeps_its_format() {
+        use crate::kernel::{binary_node, binary_term};
+        let rebuild = |term: &Bitvector32Term| match term {
+            binary_term!(Bits32 @ format, Add, left, right) => Some(binary_node!(
+                @ *format,
+                Add,
+                right.clone(),
+                left.clone()
+            )),
+            _ => None,
+        };
+        let (a, b) = (
+            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(186_021))),
+            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(186_022))),
+        );
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            let sum = binary_node!(@ format, Add, a.clone(), b.clone());
+            assert_eq!(
+                rebuild(&sum),
+                Some(binary_node!(@ format, Add, b.clone(), a.clone()))
+            );
+        }
+        assert_eq!(
+            rebuild(&binary_node!(@ MachineIntegerType::Int64, Add, a, b)),
+            None
+        );
+    }
+
+    /// A rule that reads only an operation's bits reads it at either 32-bit
+    /// format (`binary_term!(Bits32, ..)`): the constant value of a `uint32`
+    /// sum is its bits, and a `uint32` mask is a canonical byte carrier.
+    #[test]
+    fn bit_readers_read_a_32_bit_operator_at_either_format() {
+        use crate::kernel::{binary_node, unary_node};
+        let constant = |value| Box::new(Bitvector32Term::Constant(value));
+        for (signed, unsigned) in [
+            (
+                binary_node!(Int32, Add, constant(7), constant(u32::MAX)),
+                binary_node!(UInt32, Add, constant(7), constant(u32::MAX)),
+            ),
+            (
+                binary_node!(Int32, BitwiseXor, constant(5), constant(3)),
+                binary_node!(UInt32, BitwiseXor, constant(5), constant(3)),
+            ),
+            (
+                unary_node!(Int32, BitwiseNot, constant(0)),
+                unary_node!(UInt32, BitwiseNot, constant(0)),
+            ),
+        ] {
+            assert!(signed.as_const().is_some());
+            assert_eq!(unsigned.as_const(), signed.as_const(), "{unsigned:?}");
+        }
+        let byte = binary_node!(
+            UInt32,
+            BitwiseAnd,
+            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(186_011))),
+            constant(255)
+        );
+        assert_eq!(
+            crate::kernel::primitives::term_width::narrow_carrier_violation(
+                MachineIntegerType::UInt8,
+                &byte
+            ),
+            Ok(())
+        );
+    }
+
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/primitives/machine_integer/tests.rs");

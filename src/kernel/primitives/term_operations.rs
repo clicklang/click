@@ -222,10 +222,13 @@ impl Bitvector32Term {
     fn unsigned32_upper_bound(&self) -> u32 {
         match self {
             Self::Constant(value) => *value,
-            binary_term!(Int32, BitwiseAnd, left, right) => match (left.as_ref(), right.as_ref()) {
-                (Self::Constant(mask), _) | (_, Self::Constant(mask)) => *mask,
-                _ => u32::MAX,
-            },
+            binary_term!(Bits32, BitwiseAnd, left, right) => {
+                match (left.as_ref(), right.as_ref()) {
+                    (Self::Constant(mask) | Self::UInt32Constant(mask), _)
+                    | (_, Self::Constant(mask) | Self::UInt32Constant(mask)) => *mask,
+                    _ => u32::MAX,
+                }
+            }
             Self::UInt32From64(value) => match value.as_ref() {
                 Self::Binary {
                     format: MachineIntegerType::UInt64,
@@ -340,13 +343,13 @@ impl Bitvector32Term {
             | Self::Float32Binary { .. }
             | Self::Float64Negate(_)
             | Self::Float64Binary { .. } => None,
-            binary_term!(Int32, Add, left, right) => {
+            binary_term!(Bits32, Add, left, right) => {
                 Some(left.as_const()?.wrapping_add(right.as_const()?))
             }
-            binary_term!(Int32, Subtract, left, right) => {
+            binary_term!(Bits32, Subtract, left, right) => {
                 Some(left.as_const()?.wrapping_sub(right.as_const()?))
             }
-            binary_term!(Int32, Multiply, left, right) => {
+            binary_term!(Bits32, Multiply, left, right) => {
                 Some(left.as_const()?.wrapping_mul(right.as_const()?))
             }
             binary_term!(Int32, Divide, left, right) => {
@@ -361,7 +364,7 @@ impl Bitvector32Term {
             binary_term!(UInt32, Remainder, left, right) => {
                 checked_unsigned_remainder_const(left.as_const()?, right.as_const()?)
             }
-            binary_term!(Int32, ShiftLeft, left, right) => {
+            binary_term!(Bits32, ShiftLeft, left, right) => {
                 // This untyped term denotes the shifted 32-bit pattern.
                 // Signed C overflow is a separate expression obligation.
                 Some(
@@ -375,18 +378,16 @@ impl Bitvector32Term {
             binary_term!(UInt32, ShiftRight, left, right) => {
                 checked_logical_shift_right_const(left.as_const()?, right.as_const()?)
             }
-            binary_term!(Int32, BitwiseAnd, left, right) => {
+            binary_term!(Bits32, BitwiseAnd, left, right) => {
                 Some(left.as_const()? & right.as_const()?)
             }
-            binary_term!(Int32, BitwiseOr, left, right) => {
+            binary_term!(Bits32, BitwiseOr, left, right) => {
                 Some(left.as_const()? | right.as_const()?)
             }
-            binary_term!(Int32, BitwiseXor, left, right) => {
+            binary_term!(Bits32, BitwiseXor, left, right) => {
                 Some(left.as_const()? ^ right.as_const()?)
             }
-            unary_term!(Int32, BitwiseNot, value) => Some(!value.as_const()?),
-            // A 32-bit sign-free operator is built at `int32` only.
-            Self::Binary { .. } => None,
+            unary_term!(Bits32, BitwiseNot, value) => Some(!value.as_const()?),
             Self::If {
                 condition,
                 then_term,

@@ -1231,7 +1231,41 @@ pub(crate) use binary_bitvector_condition;
 /// `binary_term!(Int32, Add, left, right)`, or with `..` in place of the
 /// operands. The 32-bit sign-free operators are at `Int32`; see
 /// [`Bitvector32Term::Binary`].
+///
+/// `Bits32` in place of the format matches the operation at either 32-bit
+/// format, for a rule that reads only the operation's bits; `Bits32 @ f`
+/// also binds the matched format to `f`, so a rule that rebuilds the node
+/// keeps it (`design/machine-integers.md`, "Every format its own nodes").
+/// A rule that reads a signed result, an order or an interval names its
+/// format.
 macro_rules! binary_term {
+    (Bits32, $op:ident, ..) => {
+        $crate::kernel::Bitvector32Term::Binary {
+            op: $crate::kernel::MachineBinaryOp::$op,
+            format: $crate::kernel::MachineIntegerType::Int32
+                | $crate::kernel::MachineIntegerType::UInt32,
+            ..
+        }
+    };
+    (Bits32, $op:ident, $left:pat, $right:pat) => {
+        $crate::kernel::Bitvector32Term::Binary {
+            op: $crate::kernel::MachineBinaryOp::$op,
+            format: $crate::kernel::MachineIntegerType::Int32
+                | $crate::kernel::MachineIntegerType::UInt32,
+            left: $left,
+            right: $right,
+        }
+    };
+    (Bits32 @ $bound:ident, $op:ident, $left:pat, $right:pat) => {
+        $crate::kernel::Bitvector32Term::Binary {
+            op: $crate::kernel::MachineBinaryOp::$op,
+            format:
+                $bound @ ($crate::kernel::MachineIntegerType::Int32
+                | $crate::kernel::MachineIntegerType::UInt32),
+            left: $left,
+            right: $right,
+        }
+    };
     ($format:ident, $op:ident, ..) => {
         $crate::kernel::Bitvector32Term::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
@@ -1251,9 +1285,18 @@ macro_rules! binary_term {
 pub(crate) use binary_term;
 
 /// Builds the bare machine node `$left op $right` at one format, unfolded,
-/// from boxed operands: `binary_node!(Int32, Add, left, right)`. The folding
+/// from boxed operands: `binary_node!(Int32, Add, left, right)`, or at a
+/// format value, `binary_node!(@ format, Add, left, right)`. The folding
 /// constructors (`Bitvector32Term::add`, `machine_binary`, ...) simplify.
 macro_rules! binary_node {
+    (@ $format:expr, $op:ident, $left:expr, $right:expr $(,)?) => {
+        $crate::kernel::Bitvector32Term::Binary {
+            op: $crate::kernel::MachineBinaryOp::$op,
+            format: $format,
+            left: $left,
+            right: $right,
+        }
+    };
     ($format:ident, $op:ident, $left:expr, $right:expr $(,)?) => {
         $crate::kernel::Bitvector32Term::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
@@ -1266,8 +1309,34 @@ macro_rules! binary_node {
 pub(crate) use binary_node;
 
 /// Matches the machine operation `op $operand` at one format, as
-/// `unary_term!(Int32, BitwiseNot, operand)`.
+/// `unary_term!(Int32, BitwiseNot, operand)`; `Bits32` (and `Bits32 @ f`)
+/// as for [`binary_term`].
 macro_rules! unary_term {
+    (Bits32, $op:ident, ..) => {
+        $crate::kernel::Bitvector32Term::Unary {
+            format: $crate::kernel::MachineIntegerType::Int32
+                | $crate::kernel::MachineIntegerType::UInt32,
+            op: $crate::kernel::MachineUnaryOp::$op,
+            ..
+        }
+    };
+    (Bits32, $op:ident, $operand:pat) => {
+        $crate::kernel::Bitvector32Term::Unary {
+            format: $crate::kernel::MachineIntegerType::Int32
+                | $crate::kernel::MachineIntegerType::UInt32,
+            op: $crate::kernel::MachineUnaryOp::$op,
+            operand: $operand,
+        }
+    };
+    (Bits32 @ $bound:ident, $op:ident, $operand:pat) => {
+        $crate::kernel::Bitvector32Term::Unary {
+            format:
+                $bound @ ($crate::kernel::MachineIntegerType::Int32
+                | $crate::kernel::MachineIntegerType::UInt32),
+            op: $crate::kernel::MachineUnaryOp::$op,
+            operand: $operand,
+        }
+    };
     ($format:ident, $op:ident, ..) => {
         $crate::kernel::Bitvector32Term::Unary {
             format: $crate::kernel::MachineIntegerType::$format,
@@ -1363,14 +1432,13 @@ macro_rules! binary_wide_term {
 }
 pub(crate) use binary_wide_term;
 
-/// Matches every one-operand machine operator node ([`Bitvector32Term::Unary`]) that is not at
-/// `int32`, binding its operand to `$operand`. Only the 64-bit complements are built there; with
-/// `unary_term!(Int32, BitwiseNot, ..)` it matches every `Unary` node.
+/// Matches every one-operand machine operator node ([`Bitvector32Term::Unary`]) that is not at a
+/// 32-bit format, binding its operand to `$operand`. Only the 64-bit complements are built there;
+/// with `unary_term!(Bits32, BitwiseNot, ..)` it matches every `Unary` node.
 macro_rules! unary_wide_term {
     (..) => {
         $crate::kernel::Bitvector32Term::Unary {
-            format: $crate::kernel::MachineIntegerType::UInt32
-                | $crate::kernel::MachineIntegerType::Int64
+            format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
                 | $crate::kernel::MachineIntegerType::Int8
                 | $crate::kernel::MachineIntegerType::Int16
@@ -1385,7 +1453,6 @@ macro_rules! unary_wide_term {
         $crate::kernel::Bitvector32Term::Unary {
             format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
-                | $crate::kernel::MachineIntegerType::UInt32
                 | $crate::kernel::MachineIntegerType::Int8
                 | $crate::kernel::MachineIntegerType::Int16
                 | $crate::kernel::MachineIntegerType::UInt8

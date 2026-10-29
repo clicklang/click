@@ -236,23 +236,25 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
     Some(SignedArithmeticAtom { tokens })
 }
 
-/// A 32-bit operation of the supported signed fragment. The unsigned
-/// division and remainder read their operands unsigned, so they stay out.
+/// A 32-bit operation of the supported signed fragment: an `int32`
+/// operator, or the logical right shift of a word. The unsigned division
+/// and remainder read their operands unsigned, so they stay out, and so
+/// does a `uint32` sign-free operator: the fragment reads its result as an
+/// `int32` value, which a `uint32` one is only through σ (decision G7,
+/// `design/machine-integers.md`; such a certificate is refused, and its
+/// author writes the `int32` value).
 fn signed_binary(
     term: &Bitvector32Term,
 ) -> Option<(BitvectorBinaryOp, &Bitvector32Term, &Bitvector32Term)> {
     term.as_binary().filter(|(operator, _, _)| {
-        operator.is_bitvector32()
-            && !matches!(
-                operator,
-                BitvectorBinaryOp::Machine(
+        matches!(
+            operator,
+            BitvectorBinaryOp::Machine(crate::kernel::MachineIntegerType::Int32, _)
+                | BitvectorBinaryOp::Machine(
                     crate::kernel::MachineIntegerType::UInt32,
-                    crate::kernel::MachineBinaryOp::Divide
-                ) | BitvectorBinaryOp::Machine(
-                    crate::kernel::MachineIntegerType::UInt32,
-                    crate::kernel::MachineBinaryOp::Remainder
+                    crate::kernel::MachineBinaryOp::ShiftRight
                 )
-            )
+        )
     })
 }
 
@@ -4737,5 +4739,30 @@ mod narrowed_expression_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/proof/signed_arithmetic/narrowed_expression_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+    use crate::kernel::Variable;
+
+    /// The signed fragment reads `int32` operators and a word's logical
+    /// right shift, never a `uint32` sign-free operator, whose value it
+    /// would read as an `int32` one (decision G7).
+    #[test]
+    fn the_signed_fragment_refuses_a_uint32_sign_free_operator() {
+        let operand = || Box::new(Bitvector32Term::Variable(Variable(186_001)));
+        assert!(signed_binary(&binary_node!(Int32, Add, operand(), operand())).is_some());
+        assert!(signed_binary(&binary_node!(Int32, Divide, operand(), operand())).is_some());
+        assert!(signed_binary(&binary_node!(UInt32, ShiftRight, operand(), operand())).is_some());
+        for node in [
+            binary_node!(UInt32, Add, operand(), operand()),
+            binary_node!(UInt32, Multiply, operand(), operand()),
+            binary_node!(UInt32, Divide, operand(), operand()),
+            binary_node!(UInt32, Remainder, operand(), operand()),
+        ] {
+            assert!(signed_binary(&node).is_none(), "{node:?}");
+        }
     }
 }

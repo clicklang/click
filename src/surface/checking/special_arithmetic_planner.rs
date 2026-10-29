@@ -510,9 +510,9 @@ fn term_mentions_pointer(term: &Bitvector32Term, target: &crate::kernel::Pointer
                     return true;
                 }
             }
-            binary_term!(Int32, Add, left, right)
-            | binary_term!(Int32, Subtract, left, right)
-            | binary_term!(Int32, Multiply, left, right)
+            binary_term!(Bits32, Add, left, right)
+            | binary_term!(Bits32, Subtract, left, right)
+            | binary_term!(Bits32, Multiply, left, right)
             | Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
                 op:
@@ -878,9 +878,9 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
             return false;
         }
         match term {
-            binary_term!(Int32, Add, left, right)
-            | binary_term!(Int32, Subtract, left, right)
-            | binary_term!(Int32, Multiply, left, right)
+            binary_term!(Bits32, Add, left, right)
+            | binary_term!(Bits32, Subtract, left, right)
+            | binary_term!(Bits32, Multiply, left, right)
             | Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
                 op:

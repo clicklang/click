@@ -605,7 +605,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                 collect_shallow_term_variables(left, variables);
                 collect_shallow_term_variables(right, variables);
             }
-            unary_term!(Int32, BitwiseNot, inner)
+            unary_term!(Bits32, BitwiseNot, inner)
             | Bitvector32Term::Float32Negate(inner)
             | Bitvector32Term::Float64Negate(inner) => {
                 collect_shallow_term_variables(inner, variables);
@@ -2991,7 +2991,10 @@ fn match_quantified_int32_term(
             Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
         ) => left == right,
         (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => left == right,
-        (unary_term!(Int32, BitwiseNot, pattern), unary_term!(Int32, BitwiseNot, target)) => {
+        (
+            unary_term!(Bits32 @ pattern_format, BitwiseNot, pattern),
+            unary_term!(Bits32 @ target_format, BitwiseNot, target),
+        ) if pattern_format == target_format => {
             match_quantified_int32_term(pattern, target, binders, substitutions)
         }
         _ => pattern == target,

@@ -1563,7 +1563,7 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
             collect_bitvector_reads(left, reads);
             collect_bitvector_reads(right, reads);
         }
-        unary_term!(Int32, BitwiseNot, inner)
+        unary_term!(Bits32, BitwiseNot, inner)
         | Bitvector32Term::Int64From32(inner)
         | Bitvector32Term::MachineIntegerCast { value: inner, .. }
         | Bitvector32Term::UInt64From32(inner)

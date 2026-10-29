@@ -959,26 +959,26 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
                 }),
                 *kind,
             ),
-            binary_term!(Int32, Add, left, right) => {
+            binary_term!(Bits32 @ format32, Add, left, right) => {
                 binary_node!(
-                    Int32,
-                    Add,
+                @ *format32,
+                Add,
                     Box::new(erase_term(left)),
                     Box::new(erase_term(right))
                 )
             }
-            binary_term!(Int32, Subtract, left, right) => {
+            binary_term!(Bits32 @ format32, Subtract, left, right) => {
                 binary_node!(
-                    Int32,
-                    Subtract,
+                @ *format32,
+                Subtract,
                     Box::new(erase_term(left)),
                     Box::new(erase_term(right))
                 )
             }
-            binary_term!(Int32, Multiply, left, right) => {
+            binary_term!(Bits32 @ format32, Multiply, left, right) => {
                 binary_node!(
-                    Int32,
-                    Multiply,
+                @ *format32,
+                Multiply,
                     Box::new(erase_term(left)),
                     Box::new(erase_term(right))
                 )
