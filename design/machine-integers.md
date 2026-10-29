@@ -526,6 +526,36 @@ Progress:
   a `uint32` equality in its own type (`old(u[0]) == 4294967295u32`,
   `uint32 =(…, 4294967295)`), where they printed its `int32` reading
   (`== -1`). No verdict changed.
+- Step 4, the 32-bit operator merge, is done (2026-10-29). The 13
+  per-operator 32-bit variants and `BitwiseNot` are `Binary { op, format,
+  .. }` and `Unary { format, op, .. }` at `int32` or `uint32`, as the 64-bit
+  operators are. The map is one to one: a 32-bit operator reads words (K1),
+  so the sign-free ones (`+ - * << & | ^ ~`) are filed at `int32`, as
+  equality is, and only `Divide`, `Remainder` and `ShiftRight` are built at
+  `uint32`; the width check refuses a `uint32` sign-free node and any narrow
+  or 128-bit one. No term gains or loses an identity, so no K-rule is
+  needed. `Binary` sits where the 32-bit variants were and orders by
+  operator before format, so the derived order of the 32-bit terms is the
+  old one; the 64-bit nodes moved from after the casts to beside them.
+  Patterns use `binary_term!`/`unary_term!` and bare nodes
+  `binary_node!`/`unary_node!`; the term shape reads every operator as
+  `Machine(format, op)` (`BitvectorBinaryOp` and `BitvectorUnaryOp` lost
+  their 32-bit names), `machine_binary`/`machine_unary` dispatch every 32-
+  and 64-bit format, and the representation map (`operation_word`,
+  `word_operation`, `word_division`) reads one node at the format's
+  operator format. Arms that read `Binary { .. }` as 64-bit name their
+  formats (`binary_wide_term!`, `unary_wide_term!`), and code that compares
+  nodes by discriminant or hashes their shape also compares
+  `machine_operator()`. Output is unchanged: every `click verify` output
+  and `click audit --verbose` verdict over the integer mdtests and the
+  examples is the same, and every expansion count. Work units moved on
+  eight examples only, deterministically: session preparation by -1.0% to
+  +0.01% (`multifile-registry` the most), claim verification by at most
+  0.15%; the 64-bit nodes' derived order and every term's derived hash
+  changed. The e-graph keeps its own
+  interned node kinds (`Int32Add`, `Int32Binary`, `UInt64Binary`), which are
+  signatures, not terms. Scaling regression:
+  `machine_operator_chains_cost_the_same_per_node_at_every_format`.
 
 
 ### Stage 4. Front ends and library
