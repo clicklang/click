@@ -184,8 +184,8 @@ From lowest to highest precedence:
 
 Thus `p implies q implies r` means `p implies (q implies r)`, while `p or q
 or r` means `(p or q) or r`. Use parentheses whenever grouping carries the
-explanation. A `bool` value written alone as an atom, such as `flag` or a
-call `f(x)` of a `bool` function, means `value == true`; see
+explanation. A `Bool` value written alone as an atom, such as `flag` or a
+call `f(x)` of a `Bool` function, means `value == true`; see
 [Booleans](index.md#booleans).
 
 ## Contract-expression precedence

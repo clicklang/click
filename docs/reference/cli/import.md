@@ -1054,7 +1054,9 @@ kernel. Clang's integral promotions and signed casts are explicit artifact
 nodes; mixed-width operands require those conversions. Signed 64-to-32
 narrowing follows C++20's modulo semantics using the kernel's unsigned bit
 conversion and signed reinterpretation. Boolean conversion preserves the
-nonzero meaning of all 64 bits. Division truncates towards zero, and remainder
+nonzero meaning of all 64 bits: a C++ `bool` is Click's logical `Bool`, a
+conversion to it is the test `x != 0`, and a `bool` promoted to an integer is
+its value `b as int32`, 1 when it holds and 0 otherwise. Division truncates towards zero, and remainder
 has the dividend's sign. Zero divisors and the `MIN / -1` and `MIN % -1`
 overflow pair fail verification. Addition, subtraction, multiplication, and
 negation retain their signed-overflow obligations. Scalar local call initializers

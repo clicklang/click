@@ -283,8 +283,9 @@ through two calls to a pointer-taking helper without resetting the state.
   `uint64` in a specification position specifies either.
   See `mdtests/long_and_long_long_values_convert_implicitly.md` and
   `mdtests/a_long_pointer_does_not_initialize_a_long_long_pointer.md`.
-- C `_Bool` and the modeled `stdbool.h` spelling `bool`; both use one-byte
-  storage and normalize values to `0` or `1`
+- C `_Bool` and the modeled `stdbool.h` spelling `bool`; both denote Click's
+  logical `Bool` and use one-byte storage whose byte is `1` or `0` (see
+  Boolean objects below)
 - `float` (IEEE-754 binary32) and `double` (IEEE-754 binary64) as typed value
   types with width-preserving arithmetic, comparisons, and conversions
 - Standard spellings for the modeled integer types: under the supported LP64
@@ -311,9 +312,10 @@ through two calls to a pointer-taking helper without resetting the state.
   `false` spellings are understood directly by Click. The `true` and `false`
   constants are fallbacks when no ordinary C declaration binds that name;
   explicit macros expand before parsing.
-  These fallback constants apply in C source. In contract expressions, use
-  `1`/`0` or another `bool` value; an unbound `true` or `false` is diagnosed
-  at its clause. Other unbound value names in `requires` and `ensures` are
+  These fallback constants apply in C source. In contract expressions `true`
+  and `false` are Click's `Bool` literals; a `bool` is compared with them or
+  written as a claim on its own, and `1` or `0` against a `bool` is refused
+  (write `flag as int32 == 1`). Other unbound value names in `requires` and `ensures` are
   also refused during declaration checking, before any proof runs.
 - `void` as a function return type
 - `void*` and `const void*` as opaque object pointers. They preserve pointer
@@ -718,17 +720,28 @@ combinations, including a struct pointer against a non-null `void *`, are
 rejected with a source-positioned diagnostic. See
 `mdtests/c_conditional_null_pointer_constant.md`.
 
-Boolean objects use Click's one-byte LP64 layout and always contain the normalized
-values `0` or `1`. Assignment, initialization, parameter passing, returns, and
-casts to `bool` or `_Bool` convert integer values by zero-testing and convert
-pointers by null-testing. Boolean rvalues undergo the usual integer promotion
-to `int32` before arithmetic, comparisons, shifts, and bitwise operators;
-comparisons and logical operators still produce `int32` results. A `bool`
-parameter's entry value carries its range `flag == 0 or flag == 1` as an
-available fact, so a claim such as `result == 0 or result == 1` about the
-promoted value needs no explicit case split; the range does not decide which
-value the parameter holds. Pointers to boolean objects and boolean pointer
-arithmetic are not modeled.
+A `bool` value is Click's logical `Bool`, not an integer. Assignment,
+initialization, parameter passing, returns, and casts to `bool` or `_Bool`
+convert an integer `x` to the `Bool` `x != 0`, exactly at every width
+(`(bool)2` and `(bool)-1` are true), and a pointer to its non-null test. A
+`bool` rvalue is promoted for arithmetic, comparisons, shifts, and bitwise
+operators to its integer value `b as int32`, 1 when it holds and 0 otherwise;
+comparisons and logical operators still produce `int32` results, and `a == b`
+over two `bool`s is their logical equality. A `bool` parameter is a named
+`Bool`, and each `bool` value read in C files the range of its integer
+value, `0 <= flag as int32`, `flag as int32 <= 1` and `flag as int32 == 0
+or flag as int32 == 1`, so a claim such as `result == 0 or result == 1`
+about the promoted value needs no explicit case split. In a contract a
+`bool` is a claim (`ensures result;`) or is compared with `true`, `false` or
+another `bool`; its integer value is written `flag as int32`.
+
+Boolean objects use Click's one-byte LP64 layout. A store writes the byte
+`b as uint8`, `1` or `0`, and a read of a byte `β` is the `Bool` `β != 0`.
+Nothing else writes a `bool` object's byte: a pointer of another type to one
+and a byte copy into one are refused
+(`mdtests/a_bool_cell_is_not_written_through_another_type.md`,
+`mdtests/a_bool_cell_is_not_copied_into_as_bytes.md`). Pointers to boolean
+objects and boolean pointer arithmetic are not modeled.
 
 ## Supported expressions and statements
 
@@ -1298,8 +1311,8 @@ Supported C surface includes:
   value has independent storage and may be accessed with `value.field`
 
 Comparisons return C-style `int32` values: `0` or `1`. They are not Click
-propositions by themselves. `bool`, `int8`, `int16`, `uint8`, and `uint16` rvalues
-promote to `int32` for arithmetic, ordered comparisons, shifts, bitwise operators,
+propositions by themselves. `int8`, `int16`, `uint8`, and `uint16` rvalues, and
+a `bool`'s integer value `b as int32`, promote to `int32` for arithmetic, ordered comparisons, shifts, bitwise operators,
 assignments, and returns.
 `uint32` equality compares 32-bit values directly and its ordered comparisons
 use unsigned order. Its addition, subtraction, and multiplication wrap modulo
