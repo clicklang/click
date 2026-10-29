@@ -1585,7 +1585,12 @@ audit handles that file.
 A claim whose sites are all selected is audited in one pass: the whole claim
 is expanded once (`click expand --claim`), the expanded claim must hold no
 smart tactic, and it gets the **verify** and **cold** checks below. Failure
-of whole-claim expansion fails the audit. Expanding
+of whole-claim expansion fails the audit. Its cold check disables implicit
+automation only inside the selected claim, including nested proofs. Untouched
+neighboring claims and required modeled workers are still verified normally.
+The selected runtime label must be visited; a missing label is a failure rather
+than a check with automation left enabled. The unconditional
+`without_implicit_auto` API remains strict for every proof it visits. Expanding
 one site runs its whole claim, so this costs a fixed number of runs of the
 claim where the per-site path costs one per site. The per-site path that
 follows is used only when `--start-at`, `--max-sites` or `--changed-since` selects a
