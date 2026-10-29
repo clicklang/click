@@ -2213,3 +2213,66 @@ fn store_preservation_ignores_unrelated_owned_members() {
         eprintln!("store preservation explicit_owner={explicit_owner}: {samples:?}");
     }
 }
+
+#[test]
+fn store_distinctness_does_not_search_same_block_range_candidates() {
+    let index = |i| Bitvector32Term::Variable(Variable(998_000 + i));
+    let pointer = |i| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(index(i), 4),
+    };
+    let mut samples = Vec::new();
+    for size in [4u64, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut facts = PureFactContext::new();
+        for i in 0..size {
+            facts = facts.assume_proposition(Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(CMemoryRange::new(
+                    pointer(2 * i + 10),
+                    0u32.into(),
+                    1u32.into(),
+                ))),
+                right: Box::new(CResource::Memory(CMemoryRange::new(
+                    pointer(2 * i + 11),
+                    0u32.into(),
+                    1u32.into(),
+                ))),
+            });
+        }
+        let memory = CMemory::new().store(pointer(1), scaling_value(9));
+        let mut measured = Vec::new();
+        for _ in 0..2 {
+            let ((after, events), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    crate::instrumentation::collect(|| {
+                        memory.without_possible_aliasing_cells(&pointer(0), 4, &facts)
+                    })
+                });
+            assert!(!after.has_known_cell_at(&pointer(1)));
+            assert!(events.iter().all(|event| !matches!(event,
+                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                    if name.starts_with("explicit range:") || name.starts_with("general distinctness:")
+            )), "a store entered general distinctness or range search at size {size}");
+            measured.push(work);
+        }
+        let distinct = facts.assume_condition(ConditionTerm::equal(index(0), index(1)), false);
+        assert!(
+            memory
+                .without_possible_aliasing_cells(&pointer(0), 4, &distinct)
+                .has_known_cell_at(&pointer(1)),
+            "written index disequality keeps a narrow cell"
+        );
+        assert!(
+            !memory
+                .without_possible_aliasing_cells(&pointer(0), 8, &distinct)
+                .has_known_cell_at(&pointer(1)),
+            "index disequality does not separate an overlapping wide store"
+        );
+        samples.push((size, measured));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+        "same-block range candidates changed store miss work: {samples:?}"
+    );
+    eprintln!("store distinctness misses: {samples:?}");
+}

@@ -79,9 +79,29 @@ impl Boundary<'_> {
                     | "owned_composition_store_separated_evidence_impl"
                     | "pointers_proven_disjoint_by_explicit_range_for_memory_resolution"
                     | "pointers_directly_disjoint_by_range"
+                    | "pointers_proven_distinct_for_memory_resolution"
             )
         {
             self.errors.push(format!("{}: {}: store preservation must not retry general composition or range search ({name}); supply separation and transport explicitly", self.path, self.function));
+        }
+        if self.path == "src/kernel/reasoning/memory_resolution.rs"
+            && self.function == "pointers_directly_distinct_for_store"
+            && matches!(
+                name,
+                "pointers_proven_distinct_for_memory_resolution"
+                    | "pointers_proven_distinct_for_memory_resolution_unmemoized"
+                    | "pointer_offsets_equal_for_memory_resolution"
+                    | "pointer_offsets_with_common_base_proven_distinct_for_memory_resolution"
+                    | "pointers_proven_disjoint_by_explicit_range_for_memory_resolution"
+                    | "exact_pointer_aliases"
+                    | "proves_recorded_signed_order"
+                    | "decide"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: store distinctness must use direct evidence, not general search ({name})",
+                self.path, self.function
+            ));
         }
         if matches!(name, "exact_pointer_aliases" | "pointer_spellings")
             && matches!(

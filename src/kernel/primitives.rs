@@ -6,8 +6,8 @@ use super::memory_provenance::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEq
 use super::reasoning::{
     bitvector_terms_proven_equal_for_memory_resolution, bitvector_variable, collect_or_cases,
     instantiate_range_fold_step, memory_snapshots_proven_equal_at_pointer,
-    pointers_proven_distinct_for_memory_resolution, pointers_proven_equal_for_memory_resolution,
-    resource_context_has_read, signed_bitvector_constant, signed_i64_bitvector_constant,
+    pointers_proven_equal_for_memory_resolution, resource_context_has_read,
+    signed_bitvector_constant, signed_i64_bitvector_constant,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::{BTreeMap, BTreeSet};

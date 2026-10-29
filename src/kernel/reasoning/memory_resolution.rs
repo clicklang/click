@@ -652,6 +652,48 @@ fn closure_failure_memo_answers_a_repeated_failure_once() {
     assert_eq!(runs.get(), 6, "nothing outlives the closure");
 }
 
+/// Direct evidence for store cache preservation. A miss forgets the value;
+/// it must not invoke memory resolution, range selection or alias enumeration.
+/// The caller separately checks that distinct addresses separate whole accesses.
+pub(in crate::kernel) fn pointers_directly_distinct_for_store(
+    left: &Pointer,
+    right: &Pointer,
+    assumptions: &PureFactContext,
+) -> bool {
+    if left == right {
+        return false;
+    }
+    if left.blocks_proven_distinct(right)
+        || constant_byte_shift(left, right).is_some_and(|shift| shift != 0)
+        || assumptions
+            .exact_condition_value(&ConditionTerm::pointer_equal(left.clone(), right.clone()))
+            == Some(false)
+    {
+        return true;
+    }
+    if let Some((left, right, _)) = common_base_element_indices(left, right) {
+        if assumptions.exact_condition_value(&ConditionTerm::equal(left.clone(), right.clone()))
+            == Some(false)
+            || assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
+                left.clone(),
+                right.clone(),
+            )) == Some(true)
+            || assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
+                right.clone(),
+                left.clone(),
+            )) == Some(true)
+        {
+            return true;
+        }
+    }
+    let private_local = |local: &Pointer, value: &Pointer| {
+        matches!(value.block, PointerBlock::Symbolic(_))
+            && crate::kernel::primitives::block_is_never_address_taken_local(&local.block)
+            && assumptions.pointer_in_block(value, &local.block).is_none()
+    };
+    private_local(left, right) || private_local(right, left)
+}
+
 /// Alias check used while resolving a symbolic memory load. This deliberately
 /// avoids general equality transport because that transport may itself resolve
 /// memory loads.

@@ -6787,7 +6787,7 @@ impl CMemory {
             )
                 == crate::kernel::reasoning::AccessByteOverlap::Separate;
             let kept = address_inequality_separates_bytes
-                && pointers_proven_distinct_for_memory_resolution(
+                && crate::kernel::reasoning::pointers_directly_distinct_for_store(
                     &normalized_cell_pointer,
                     &normalized_pointer,
                     assumptions,
@@ -6857,7 +6857,7 @@ impl CMemory {
             )
                 == crate::kernel::reasoning::AccessByteOverlap::Separate;
             let kept = address_inequality_separates_bytes
-                && pointers_proven_distinct_for_memory_resolution(
+                && crate::kernel::reasoning::pointers_directly_distinct_for_store(
                     &normalized_cell_pointer,
                     &normalized_pointer,
                     assumptions,
