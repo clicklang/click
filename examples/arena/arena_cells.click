@@ -244,6 +244,8 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     step();
     step();
     step();
+    have arena->occupied == occupied;
+    have arena->capacity == capacity;
     have forall (k: int32) {
         0 <= k and k < arena->capacity implies arena->occupied[k] == 0
     } by {
@@ -257,6 +259,8 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             0 <= k;
             k < capacity;
         };
+        have occupied[k] == 0 by { assumption(); }
+        rewrite(arena->occupied == occupied);
         assumption();
     }
     fold(arena_initialized_storage(

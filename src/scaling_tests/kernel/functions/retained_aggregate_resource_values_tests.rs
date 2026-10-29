@@ -62,7 +62,25 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         let (_, measured) =
             crate::instrumentation::measure_deterministic_work(|| resolve(&mut expression));
         work.push(measured);
-        assert_eq!(expression, CExpression::Value(value.clone()));
+        // The retained field keeps its entry-read name; the graph relates
+        // its complete value to the pointer stored at that snapshot.
+        let retained = |expression: &CExpression| match expression {
+            CExpression::Value(CValue::Pointer(read)) => {
+                let CValue::Pointer(stored) = &value else {
+                    unreachable!()
+                };
+                read.pointer() != stored.pointer()
+                    && PureFactContext::new().equality_graph.knows_condition(
+                        &ConditionTerm::PointerValueEqual(
+                            Box::new(read.clone()),
+                            Box::new(stored.clone()),
+                        ),
+                        true,
+                    )
+            }
+            _ => false,
+        };
+        assert!(retained(&expression), "{expression:?}");
         let address = CExpression::AddressOf(Box::new(field.clone()));
         let mut expression = address.clone();
         resolve(&mut expression);
@@ -72,9 +90,9 @@ fn retained_resource_fields_preserve_lvalues_and_scale_with_expression() {
         );
         let mut expression = CExpression::Load(Box::new(field.clone()));
         resolve(&mut expression);
-        assert_eq!(
-            expression,
-            CExpression::Load(Box::new(CExpression::Value(value.clone())))
+        assert!(
+            matches!(&expression, CExpression::Load(inner) if retained(inner)),
+            "{expression:?}"
         );
         assert!(!state.memory.has_block(&slot.block));
         assert!(state.resources().facts().is_empty());

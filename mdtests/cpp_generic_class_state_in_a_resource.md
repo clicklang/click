@@ -181,6 +181,12 @@ template<class T> void Stack<T>::push(T value) {
         List::Cons(top, below) => {
             let { tail: rest } = unfold(state);
             step_until(function.exit);
+            have this->head->next == old(this->head);
+            have this->head->next->value == old(this->head)->value by {
+                rewrite(this->head->next == old(this->head));
+                normalize();
+            }
+            have old(this->head)->value == top;
             let tail = fold(nodes<T>(this->head->next), { items: List::Cons(top, below) }, { tail: rest });
             let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)) }, { tail: tail });
             unfold(length(List::Cons(value, List::Cons(top, below))));

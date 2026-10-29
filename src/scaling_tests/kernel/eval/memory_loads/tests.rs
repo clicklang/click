@@ -85,7 +85,14 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
             CExpressionOutcome::Value(CValue::Pointer(cached_value.clone()))
         );
         assert!(path.obligations.is_empty());
-        assert_eq!(path.facts.len(), 1);
+        // A materialized read needs its current-cell equation, and may
+        // also carry the complete stored-value equation.
+        assert!((1..=2).contains(&path.facts.len()));
+        assert!(
+            path.facts
+                .iter()
+                .all(ExecutionPureFact::is_logical_read_equation)
+        );
         assert!(!path.facts.has_path_conditions());
         assert_eq!(
             equal(&context),
@@ -1091,7 +1098,11 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             );
         }
         let snapshot = intern_c_memory_ref(&memory);
-        assert_eq!(logical_pointer_read(&memory, &address, &context), stored);
+        // A logical read keeps its name. The checked C-read producer below
+        // supplies the alias-supported equation in this context.
+        let proven_equal =
+            crate::kernel::reasoning::memory_resolution::pointers_proven_equal_for_memory_resolution;
+        let logical = logical_pointer_read(&memory, &address, &context);
 
         // A later projection may name the same cell by its scalar load.
         // The checked C pointer read must still denote the cached value.
@@ -1126,6 +1137,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             panic!("pointer read expected");
         };
         assert!(context.pointers_known_equal(&stored, checked.pointer()));
+        assert!(proven_equal(&logical, &stored, &context));
         // The producer may return the complete stored value directly. The
         // read equation, rather than literal value reflexivity, is scoped.
         let current_read = Pointer::loaded_value(&intern_c_memory_ref(&projected), &address);
@@ -1141,10 +1153,10 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             CValue::typed_pointer(replacement.clone(), CType::Int64Pointer),
         );
         let changed = logical_pointer_read(&later, &address, &context);
-        assert_eq!(changed, replacement);
-        assert!(!context.pointers_known_equal(&stored, &changed));
         let later_read = Pointer::symbolic(Variable(98_000 + count));
         context.register_checked_pointer_read(&later_read, &intern_c_memory_ref(&later), &address);
+        assert!(proven_equal(&changed, &replacement, &context));
+        assert!(!context.pointers_known_equal(&stored, &changed));
         assert!(context.pointers_known_equal(&replacement, &later_read));
         assert!(!context.pointers_known_equal(&stored, &later_read));
     }
@@ -1661,6 +1673,64 @@ fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
     assert!(
         samples.iter().all(|units| *units == samples[0]),
         "naming an unsigned read grew with unrelated cells: {samples:?}"
+    );
+}
+
+#[test]
+fn complete_pointer_read_definitions_scale_with_selected_reads() {
+    let measure = |selected: u64, unrelated: u64| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut context = PureFactContext::new();
+        for i in 0..unrelated {
+            context = context.assume_condition(
+                ConditionTerm::pointer_equal(
+                    Pointer::symbolic(Variable(982_000 + i * 2)),
+                    Pointer::symbolic(Variable(982_001 + i * 2)),
+                ),
+                true,
+            );
+        }
+        let mut queries = Vec::new();
+        for i in 0..selected {
+            let slot = Pointer::symbolic(Variable(983_000 + i));
+            let target = Pointer::symbolic(Variable(984_000 + i));
+            let stored = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+                SubobjectExtent {
+                    start: target,
+                    width: 4u32.into(),
+                },
+            ));
+            let memory = intern_c_memory_ref(
+                &CMemory::new().store(slot.clone(), CValue::Pointer(stored.clone())),
+            );
+            let read =
+                CPointerValue::new(Pointer::version_read(&memory, &slot), CType::Int32Pointer);
+            queries.push(ConditionTerm::PointerValueEqual(
+                Box::new(read),
+                Box::new(stored),
+            ));
+        }
+        crate::instrumentation::measure_deterministic_work(|| {
+            for query in &queries {
+                assert!(context.equality_graph.knows_condition(query, true));
+            }
+        })
+        .1
+    };
+    let samples: Vec<_> = [8, 16, 32, 64].into_iter().map(|n| measure(n, 0)).collect();
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 2 + 128,
+            "complete pointer reads: {samples:?}"
+        );
+    }
+    let unrelated: Vec<_> = [0, 16, 64, 256]
+        .into_iter()
+        .map(|n| measure(8, n))
+        .collect();
+    assert!(
+        unrelated.iter().all(|work| *work <= unrelated[0] + 128),
+        "unrelated facts: {unrelated:?}"
     );
 }
 

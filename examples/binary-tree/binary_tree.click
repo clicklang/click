@@ -220,6 +220,7 @@ struct node* tree_rotate_left(struct node* node) {
     step();
     step();
     step();
+    have node->right == old(node->right->left);
     fold(tree(node));
     fold(tree(result));
     assumption();

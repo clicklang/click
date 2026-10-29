@@ -22,5 +22,5 @@ void probe(struct buffer* owner, int32* data) {
 }
 ```
 ```expect
-fail: missing resource fact `owns data[0]`
+fail: missing resource fact `owns owner->data[0..1]`
 ```

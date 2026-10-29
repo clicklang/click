@@ -35,6 +35,9 @@ struct holder wrap(int32* p) {
     consumes cell(p);
     produces cell(result.p);
     ensures result.p == p;
+} by {
+    step_until(function.exit);
+    have result.p == p;
 }
 
 int32 rewrap(int32* p) {
