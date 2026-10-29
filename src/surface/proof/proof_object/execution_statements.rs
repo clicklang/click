@@ -1596,6 +1596,39 @@ impl<'a> Proof<'a> {
         Ok((close(&proved)?, Some(Box::new(body))))
     }
 
+    /// Lowering requirements of a proof operation are proved at its input
+    /// state. Keep the resulting `have` certificates before the operation,
+    /// so expansion uses existing explicit proof syntax without searching.
+    pub(super) fn with_proved_lowering_requirements<T>(
+        &self,
+        step: &ProofStep,
+        operation: impl Fn(&Self) -> Result<T, ClickError>,
+    ) -> Result<T, ClickError> {
+        let fast = || without_implicit_auto(|| operation(self));
+        let (probe, recorded) = probe_open_obligations(fast);
+        if recorded.recorded.is_empty() {
+            return probe;
+        }
+        let open = distinct_requirements(recorded.recorded.clone());
+        let references = open.iter().collect::<Vec<_>>();
+        match self.prove_obligations_by_auto_or_name_the_first_missed(step, &references)? {
+            Ok((proved, _)) => without_implicit_auto(|| operation(&proved)),
+            Err(missed) => {
+                let position = recorded
+                    .recorded
+                    .iter()
+                    .position(|requirement| {
+                        crate::kernel::proof::propositions_are_alpha_equal(
+                            &requirement.proposition,
+                            &open[missed].proposition,
+                        )
+                    })
+                    .expect("a distinct requirement came from the probe");
+                Err(recorded.refusals[position].clone())
+            }
+        }
+    }
+
     /// A simple tactic's fast path: a statement step under the `Fast`
     /// policy, or a `fold`, whose body checks are exact. Either refuses an
     /// obligation it cannot close exactly, or records it while probed.

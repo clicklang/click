@@ -536,11 +536,11 @@ pub(in crate::surface::proof) fn refuse_unproved_conversion_bounds(
         {
             continue;
         }
-        return Err(describe_refusal(
-            obligation.proposition(),
-            assumptions,
-            site,
-        ));
+        let message = describe_refusal(obligation.proposition(), assumptions, site);
+        crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+            ClickError::new(message.clone()).with_unresolved_requirement(obligation),
+        )
+        .map_err(|_| message)?;
     }
     Ok(())
 }
@@ -582,6 +582,10 @@ fn established_condition(assumptions: &PureFactContext, goal: &Proposition) -> b
         Proposition::And(left, right) => {
             established_condition(assumptions, left) && established_condition(assumptions, right)
         }
+        // Scoped requirements belong to the ordinary proof operation. The
+        // atomic helper's universal route enumerates same-shape premises;
+        // exact/alpha-equivalent membership was already checked above.
+        Proposition::ForAll { .. } | Proposition::Exists { .. } => false,
         _ => assumptions.proves_atomic_without_search(goal),
     }
 }

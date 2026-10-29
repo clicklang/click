@@ -161,6 +161,31 @@ mod tests {
     use super::*;
     use crate::kernel::{Bitvector32Term, Sort, Variable};
 
+    #[test]
+    fn an_obligation_probe_does_not_duplicate_the_unfold_census() {
+        let source = r#"
+            predicate positive(x: int32) { x > 0 }
+            theorem from_positive(x: int32) {
+                requires positive(x);
+                ensures x > 0 by { unfold(positive); assumption(); }
+            }
+        "#;
+        let checked = capture(|| {
+            crate::surface::proof::without_implicit_auto(|| {
+                crate::surface::verify_click_theorems(source).unwrap();
+            });
+        });
+        let probed = capture(|| {
+            crate::surface::verify_click_theorems(source).unwrap();
+        });
+        assert!(
+            checked
+                .iter()
+                .any(|line| line.split('\t').nth(4) == Some("unfold"))
+        );
+        assert_eq!(probed, checked, "probing is not another accepted operation");
+    }
+
     /// After `a[i] = 5`, `a[i]` names the read at the store's version, so a
     /// rewrite that moves `a[j]` to `a[i]` leaves the goal `a[i] == 5`: the
     /// rewritten read is named as writing `a[i]` names it, not folded to the
