@@ -3551,6 +3551,14 @@ one element of the one held iterated ownership fact at `base`, spelled as for
 
 It consumes the element and clears the index from the taken-out set.
 
+Both `give` and `take` accept an explicitly saved pointer base:
+`give(at(opened, arena->data)[i..i + 1])` or `take(old(data)[i..i + 1])`.
+Only the base expression selects an earlier state. Bounds outside that selector
+refer to the current state, and guard checking and ownership transfer occur in
+the current state. This selects the recorded base directly when a fresh read
+of a descriptor field does not find its iterated ownership fact; it does not
+search for equivalent pointer spellings.
+
 **Outside it**, with what to write instead:
 
 - An element never taken out: there is nothing to return; the fact already
@@ -3564,7 +3572,7 @@ It consumes the element and clears the index from the taken-out set.
 A guard that is false or unknown, or an element that is not out, fails. Checked
 and expanded like `take`.
 
-**Checked examples:** [`iterated_ownership_release_one.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md), [`iterated_ownership_rejects_give_false_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_give_false_guard.md)
+**Checked examples:** [`iterated_saved_base_release.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_saved_base_release.md), [`iterated_saved_base_current_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_saved_base_current_bounds.md), [`iterated_ownership_release_one.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_release_one.md), [`iterated_ownership_rejects_give_false_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/iterated_ownership_rejects_give_false_guard.md)
 
 ### Gathering resources
 

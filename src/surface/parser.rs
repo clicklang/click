@@ -9759,7 +9759,19 @@ impl Parser {
             }
             "take" | "give" => {
                 self.expect(Token::LParen)?;
-                let segment = self.parse_current_contract_segment()?;
+                let segment = if matches!(self.peek_ident(), Some("at" | "old"))
+                    && self.peek_next() == Some(&Token::LParen)
+                {
+                    let base = self.parse_contract_primary()?;
+                    self.expect(Token::LBracket)?;
+                    let start = self.parse_contract_expression()?;
+                    self.expect(Token::DotDot)?;
+                    let end = self.parse_contract_expression()?;
+                    self.expect(Token::RBracket)?;
+                    IteratedElement::SavedBase { base, start, end }
+                } else {
+                    IteratedElement::Current(self.parse_current_contract_segment()?)
+                };
                 self.expect(Token::RParen)?;
                 ProofTactic::Iterated(if name == "take" {
                     IteratedTactic::Take(segment)

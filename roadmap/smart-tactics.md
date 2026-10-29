@@ -41,12 +41,12 @@ facts do not establish flat cost as the queried class or bucket grows.
    preservation in `run_slots_kept_by_store` still asks
    `typed_ranges_disjoint_from_pointer_evidence` and may inspect symbolic slots.
    Finish the direct-distinctness experiment before removing another fallback:
-   repair the `arena_free` proof's `give(arena->data[i..i + 1])` after its store.
-   The iterated ownership is available, but the current pointer spelling does
-   not select its recorded base. Trace the selected ownership and pointer
-   equality explicitly. Preserve the original C and claims and rerun the
-   complete ordinary corpus before landing the removal. Do not restore ambient
-   range search for these proof repairs.
+   repair `arena_free`'s remaining metadata preservation after the occupied-cell
+   store. Explicit saved-base `give` selects the iterated ownership successfully;
+   the next refused link needs `region->start` preserved to derive its bound
+   against the incremented loop cursor. Preserve the original C and claims and
+   rerun the complete ordinary corpus before landing the removal. Do not
+   restore ambient range search for these proof repairs.
    Measure these store callers before selecting the next removal, coordinating
    run/history work with the frame-walk item below.
    Measure overlapping member buckets and repeated stores, keeping actual

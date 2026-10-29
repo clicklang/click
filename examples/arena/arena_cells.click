@@ -1765,7 +1765,7 @@ void arena_free(struct region* region) {
             have i < arena->capacity;
             mark opened;
             step();
-            give(arena->data[i..i + 1]);
+            give(at(opened, arena->data)[i..i + 1]);
             step();
             have region->start <= at(opened, i) + 1;
             have forall (k: int32) {
