@@ -40,12 +40,6 @@ facts do not establish flat cost as the queried class or bucket grows.
    through `one_element_gap_separates_bytes` on wide-access misses. Compact-run
    preservation in `run_slots_kept_by_store` still asks
    `typed_ranges_disjoint_from_pointer_evidence` and may inspect symbolic slots.
-   Finish validation of the direct-distinctness experiment: the original
-   `arena_free` proof now closes using the loop's retained ownership frame.
-   Check full-width pointer preservation and partial-width/overwrite refusals,
-   expansion without implicit search, deterministic retained-owner bucket
-   growth, and the complete ordinary corpus and original arena before landing.
-   Preserve the original C and claims; do not restore ambient range search.
    Measure these store callers before selecting the next removal, coordinating
    run/history work with the frame-walk item below.
    Measure overlapping member buckets and repeated stores, keeping actual

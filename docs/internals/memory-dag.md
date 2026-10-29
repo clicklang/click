@@ -273,7 +273,8 @@ unchanged store. In particular:
   that shares the edge kept the same memory; placing the cell inside one is still decided
   in the querying context;
 - a `LoopHavoc` edge with no checked footprint isn't crossed; a verified
-  footprint is crossed only with range-disjointness evidence;
+  footprint is crossed with range-disjointness evidence or a selected
+  withheld ownership range covering the full read;
 - allocation and free preserve unrelated locations but don't preserve a load
   through the affected allocation;
 - havoc marker blocks remain attached during materialization-source
