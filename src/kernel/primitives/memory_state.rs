@@ -5796,6 +5796,22 @@ impl CMemory {
         }
     }
 
+    /// Name one contract field at its selected source snapshot without
+    /// recording a program write. The producer's source is shared by all
+    /// fields of the same entry object; deriving the value here preserves
+    /// that identity without accepting an arbitrary cached value.
+    pub(crate) fn materialize_cell_from_source(
+        self,
+        pointer: Pointer,
+        c_type: CType,
+        source: SharedCMemory,
+    ) -> Self {
+        let kind = LoadKind::of_type(c_type).expect("contract fields have scalar read kinds");
+        let load = crate::kernel::canonical_form_of_load(source, pointer.clone(), kind);
+        let value = crate::kernel::cell_run_value(c_type, load);
+        self.materialize_named_cell(pointer, value)
+    }
+
     /// Cache the canonical value of an already existing cell for a resource
     /// projection. This is not a C write and cannot establish initialization.
     /// Kernel producers supply the value they observed or proved at this point.

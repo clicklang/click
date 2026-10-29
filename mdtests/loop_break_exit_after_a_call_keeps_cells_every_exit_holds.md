@@ -42,18 +42,26 @@ int32 keep(int32* p, int32* q, int32 flag) {
     owns q[0..1];
     ensures result == old(q[0]);
 } by {
+    have separate(memory(p[0]), memory(q[0]));
     loop {
         decreases 0;
+        invariant q[0] == old(q[0]);
         owns p[0..1];
 
         preserve by {
             if flag == 0 {
                 step();
                 step();
+                transport(old(q[0]) == old(q[0]), q[0] == old(q[0])) using {
+                    separate(memory(p[0]), memory(q[0]));
+                };
                 step();
             } else {
                 step();
                 step();
+                transport(old(q[0]) == old(q[0]), q[0] == old(q[0])) using {
+                    separate(memory(p[0]), memory(q[0]));
+                };
                 step();
             }
         }
