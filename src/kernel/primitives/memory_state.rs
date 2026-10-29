@@ -6792,7 +6792,7 @@ impl CMemory {
                     &normalized_pointer,
                     assumptions,
                 )
-                // The three range rungs. A field cell survives a store into
+                // The remaining range rungs. A field cell survives a store into
                 // an array it is separated from: separation facts plus range
                 // membership decide the cross-base pairs offset reasoning
                 // cannot, and `access_byte_overlap` has no counterpart for
@@ -6808,22 +6808,7 @@ impl CMemory {
                     &normalized_pointer,
                 )
                 || assumptions
-                    .pointers_directly_disjoint_by_range(&normalized_cell_pointer, &normalized_pointer)
-                // Last: a separating composition owns the written address and
-                // this cell's address through two different members, so the
-                // partition invariant keeps the cell. Kept here beside the
-                // range scan above, for the same reason: once the store has
-                // dropped a cell, the two snapshots differ *at the read's own
-                // address*, and no later framing route can recover it — the
-                // question is only decidable while the cell is still there.
-                || crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
-                    &normalized_pointer,
-                    bytes,
-                    &normalized_cell_pointer,
-                    crate::kernel::reasoning::cell_access_byte_width(cell_value),
-                    assumptions,
-                )
-                .is_some();
+                    .pointers_directly_disjoint_by_range(&normalized_cell_pointer, &normalized_pointer);
             if kept {
                 CachedValueFate::Kept
             } else {
@@ -6897,15 +6882,7 @@ impl CMemory {
                 || assumptions.pointers_directly_disjoint_by_range(
                     &normalized_cell_pointer,
                     &normalized_pointer,
-                )
-                || crate::kernel::memory_provenance::owned_composition_store_separated_evidence(
-                    &normalized_pointer,
-                    bytes,
-                    &normalized_cell_pointer,
-                    cell_type.byte_width().max(1),
-                    assumptions,
-                )
-                .is_some();
+                );
             if kept {
                 CachedValueFate::Kept
             } else {

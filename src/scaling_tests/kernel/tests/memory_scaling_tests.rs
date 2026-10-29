@@ -2150,3 +2150,64 @@ fn direct_literal_checks_do_not_walk_related_equality_classes() {
         eprintln!("direct literal checking {shape}: {samples:?}");
     }
 }
+
+#[test]
+fn store_preservation_does_not_retry_the_general_composition_search() {
+    for explicit_owner in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let object = |i| Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Variable(Variable(997_000 + i)),
+            };
+            let own = |i| {
+                CResourceFact::own_memory(CMemoryRange::new(object(i), 0u32.into(), 2u32.into()))
+            };
+            let mut facts = PureFactContext::new();
+            let mut owner = ResourceContext::new().unchecked_with_fact(own(0));
+            for i in 1..=size {
+                let resources = ResourceContext::new()
+                    .unchecked_with_fact(own(2 * i + 10))
+                    .unchecked_with_fact(own(2 * i + 11));
+                facts = facts.assume_proposition(Proposition::CResourceComposition(resources));
+                owner = owner.unchecked_with_fact(own(i + 1000));
+            }
+            facts = facts.assume_proposition(Proposition::CResourceComposition(owner.clone()));
+            if explicit_owner {
+                facts = facts.with_store_owner(Some(owner));
+            }
+            let write = object(0).offset_by_bytes(4);
+            let read = object(1).offset_by_bytes(4);
+            let kept = object(1001).offset_by_bytes(4);
+            let memory = CMemory::new()
+                .store(read.clone(), scaling_value(9))
+                .store(kept.clone(), scaling_value(10))
+                .store(write.clone(), scaling_value(11));
+            let mut measured = Vec::new();
+            for _ in 0..2 {
+                let ((after, events), work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        crate::instrumentation::collect(|| {
+                            memory.without_possible_aliasing_cells(&write, 4, &facts)
+                        })
+                    });
+                assert!(!after.has_known_cell_at(&read));
+                assert!(!after.has_known_cell_at(&write));
+                assert!(after.has_known_cell_at(&kept));
+                assert!(
+                    events.iter().all(|event| !matches!(event,
+                        crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                            if name == "composition-owned store separation"
+                    )),
+                    "a store miss retried the general composition search at size {size}"
+                );
+                measured.push(work);
+            }
+            // Other range ladders are still audited separately; this test
+            // pins zero calls to the removed search on both cold and warm stores.
+            samples.push((size, measured));
+        }
+        eprintln!("composition fallback explicit_owner={explicit_owner}: {samples:?}");
+    }
+}
