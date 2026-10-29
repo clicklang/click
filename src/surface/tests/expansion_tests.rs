@@ -19491,3 +19491,15 @@ fn saved_iterated_pointer_base_expands_and_rechecks() {
     assert!(expanded.contains("give(at(before, data)"), "{expanded}");
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
+
+#[test]
+fn retained_loop_metadata_transport_expands_and_rechecks() {
+    let (source, sources) =
+        mdtest_sources("mdtests/retained_loop_metadata_transport_crosses_a_separated_store.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "clear.contract").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}

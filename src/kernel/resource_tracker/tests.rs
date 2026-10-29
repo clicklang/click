@@ -1327,3 +1327,57 @@ fn named_cell_stop_retains_the_decision_made_by_its_walk() {
         "a retained stop runs no equality or history checks"
     );
 }
+
+#[test]
+fn a_forgotten_observation_retains_only_its_complete_typed_value() {
+    use super::cell_source::{CellWalkStop, memory_dag_cell_source_with_stop};
+    use crate::kernel::{CType, LoadKind};
+    crate::kernel::memory_provenance::with_extended_dag_bridging(|| {
+        let pointer = at(block("global:g"), 0);
+        let source = intern_c_memory(entry_memory());
+        let observed = source.memory().clone().materialize_cell_from_source(
+            pointer.clone(),
+            CType::Int32,
+            source.clone(),
+        );
+        let value = observed.known_value(&pointer).unwrap();
+        let assumptions = PureFactContext::new();
+        let forgotten = intern_c_memory(observed.without_possible_aliasing_cells(
+            &pointer.offset_by_bytes(1),
+            1,
+            &assumptions,
+        ));
+        let (cell, stop) =
+            memory_dag_cell_source_with_stop(&forgotten, &pointer, 4, &assumptions, true).unwrap();
+        assert_eq!(stop, CellWalkStop::RetainedValue);
+        assert_eq!(cell.resolved_value(&pointer, LoadKind::Int32), Some(value));
+        assert!(cell.resolved_value(&pointer, LoadKind::Bits64).is_none());
+        assert!(cell.checks_walk_from(&forgotten, &pointer, 4, &assumptions));
+        let (wide, stop) =
+            memory_dag_cell_source_with_stop(&forgotten, &pointer, 8, &assumptions, true).unwrap();
+        assert_ne!(stop, CellWalkStop::RetainedValue);
+        assert!(wide.resolved_value(&pointer, LoadKind::Bits64).is_none());
+        let changed = intern_c_memory(forgotten.memory().clone().store(pointer.clone(), one()));
+        let (cell, stop) =
+            memory_dag_cell_source_with_stop(&changed, &pointer, 4, &assumptions, true).unwrap();
+        assert_eq!(stop, CellWalkStop::Affected);
+        assert_eq!(cell.resolved_value(&pointer, LoadKind::Int32), Some(one()));
+        let load = |memory| {
+            Bitvector32Term::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32)
+        };
+        assert!(
+            crate::kernel::explicit_atomic_equality_from_memory_derivations(
+                &load(source.clone()),
+                &load(forgotten),
+                &assumptions,
+            )
+        );
+        assert!(
+            !crate::kernel::explicit_atomic_equality_from_memory_derivations(
+                &load(source),
+                &load(changed),
+                &assumptions,
+            )
+        );
+    });
+}

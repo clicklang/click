@@ -41,12 +41,18 @@ facts do not establish flat cost as the queried class or bucket grows.
    preservation in `run_slots_kept_by_store` still asks
    `typed_ranges_disjoint_from_pointer_evidence` and may inspect symbolic slots.
    Finish the direct-distinctness experiment before removing another fallback:
-   repair `arena_free`'s remaining metadata preservation after the occupied-cell
-   store. Explicit saved-base `give` selects the iterated ownership successfully;
-   the next refused link needs `region->start` preserved to derive its bound
-   against the incremented loop cursor. Preserve the original C and claims and
-   rerun the complete ordinary corpus before landing the removal. Do not
-   restore ambient range search for these proof repairs.
+   repair `arena_free`'s remaining occupied-array frame after the store. The
+   next refusal transports an earlier zero cell across the write to a different
+   index, inside the cleared-prefix invariant. The region-start equality and
+   its selected instantiation premise now hold, as do explicit preservation
+   facts for the occupied pointer and capacity. Trace the remaining source/target
+   read snapshots and pointer identities before adding reasoning. Preserve the
+   original C and claims and rerun the complete ordinary corpus before landing
+   the removal. Reduce the full-proof setup cost of
+   `saved_iterated_base_ignores_aliases_snapshots_and_unrelated_resources` while
+   retaining its success/refusal scaling controls; it hit the 30-second gate
+   timeout in the concurrent regression run. Do not restore ambient range
+   search for these proof repairs.
    Measure these store callers before selecting the next removal, coordinating
    run/history work with the frame-walk item below.
    Measure overlapping member buckets and repeated stores, keeping actual

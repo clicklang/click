@@ -243,3 +243,41 @@ fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
         "fresh offsets after separate stores: {samples:?}"
     );
 }
+
+#[test]
+fn forgotten_cell_recovery_ignores_older_history_and_unrelated_cache_entries() {
+    use super::super::cell_source::{CellWalkStop, memory_dag_cell_source_with_stop};
+    crate::kernel::memory_provenance::with_extended_dag_bridging(|| {
+        let mut samples = Vec::new();
+        for size in [4, 16, 64] {
+            let pointer = at(block("global:g"), 0);
+            let assumptions = PureFactContext::new();
+            let mut before = CMemory::new()
+                .with_block(block("global:g"), 4)
+                .with_block(block("global:h"), (size * 4) as u32);
+            for index in 0..size {
+                before = before.store(pointer.clone(), one());
+                before = before.store(at(block("global:h"), index * 4), one());
+            }
+            let forgotten = intern_c_memory(before.without_possible_aliasing_cells(
+                &pointer.offset_by_bytes(1),
+                1,
+                &assumptions,
+            ));
+            let ((cell, stop), work) = crate::instrumentation::measure_deterministic_work(|| {
+                memory_dag_cell_source_with_stop(&forgotten, &pointer, 4, &assumptions, true)
+                    .unwrap()
+            });
+            assert_eq!(stop, CellWalkStop::RetainedValue);
+            assert_eq!(
+                cell.resolved_value(&pointer, crate::kernel::LoadKind::Int32),
+                Some(one())
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+    });
+}

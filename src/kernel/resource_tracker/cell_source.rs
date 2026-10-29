@@ -59,6 +59,8 @@ pub(crate) enum MemoryDagCell {
 pub(in crate::kernel) enum CellWalkStop {
     /// The paired walks met at the same snapshot; its older history is irrelevant.
     CommonSnapshot,
+    /// A cache-only forgetting edge retains the queried typed value in its input.
+    RetainedValue,
     /// The walk reached a snapshot with no recorded derivation: the oldest
     /// point the recorded history reaches.
     OldestRecorded,
@@ -1540,9 +1542,10 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
     // The version walk takes this lookup's guard at its first step, so it is
     // asked before the guard is: a walk starting here jumps as one that
     // reaches here does.
-    let first = resumes_version_walk()
-        .then(|| super::cell_last_same_point(memory, pointer, bytes))
-        .flatten();
+    let first = (resumes_version_walk()
+        && !has_retained_value_before_forgetting(memory, pointer, bytes))
+    .then(|| super::cell_last_same_point(memory, pointer, bytes))
+    .flatten();
     // A lookup of a cell already being looked up is a cycle and has no
     // answer; see `CELL_LOOKUPS_IN_PROGRESS`.
     let _lookup = CellLookupGuard::enter(memory, pointer)?;
@@ -1624,6 +1627,21 @@ fn resumes_version_walk() -> bool {
     !crate::kernel::memory_provenance::explicit_dag_check_active()
 }
 
+/// Test the exact cache-forgetting input before starting a version walk.
+/// The cold walk itself may otherwise visit history older than this value.
+fn has_retained_value_before_forgetting(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> bool {
+    crate::kernel::memory_provenance::extended_dag_bridging_active()
+        && memory.derivation().is_some_and(|step| {
+            matches!(step.as_ref(), CMemoryDerivation::CellsForgotten { base }
+                if base.cells.concrete().get(pointer).is_some_and(|value|
+                    matches!(value, crate::kernel::integer32_c_value!(_)) && value.byte_width() == bytes))
+        })
+}
+
 fn memory_dag_cell_source_walk_inner(
     memory: &SharedCMemory,
     pointer: &Pointer,
@@ -1642,6 +1660,31 @@ fn memory_dag_cell_source_walk_inner(
     // The walk ends at a snapshot with no derivation: ids strictly
     // decrease along `base`, so every chain is finite.
     loop {
+        // Forgetting cached cells changes knowledge, not bytes. An exact
+        // value in that edge's input is already a checked observation; do
+        // not jump past it and demand a frame across an older loop havoc.
+        // This reads one named predecessor and one exact address, never a
+        // cache bucket or an alternate pointer spelling.
+        if crate::kernel::memory_provenance::extended_dag_bridging_active()
+            && max_hops.is_none_or(|limit| path.len() < limit)
+            && let Some(derivation) = current.derivation()
+            && let CMemoryDerivation::CellsForgotten { base } = derivation.as_ref()
+            && base.cells.concrete().get(pointer).is_some_and(|value| {
+                matches!(value, crate::kernel::integer32_c_value!(_)) && value.byte_width() == bytes
+            })
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let node = base.clone();
+            path.push(MemoryDagHop {
+                derived: current,
+                derivation,
+                justification: MemoryDagHopJustification::IntrinsicNoWrite,
+            });
+            return (
+                MemoryDagCell::Unwritten { node, path },
+                CellWalkStop::RetainedValue,
+            );
+        }
         // The memoized version walk crosses every step memory alone shows
         // separate; facts are applied only at the step where it stopped
         // (`roadmap/fact-aware-frame-walks.md`). Repeating a query after each

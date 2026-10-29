@@ -1765,6 +1765,32 @@ void arena_free(struct region* region) {
             have i < arena->capacity;
             mark opened;
             step();
+            transport(
+                at(opened, region->start) == at(opened, region->start),
+                region->start == at(opened, region->start)
+            ) using {
+                at(opened, separate(memory(*region), memory(arena->occupied[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            transport(
+                at(opened, arena->occupied) == at(opened, arena->occupied),
+                arena->occupied == at(opened, arena->occupied)
+            ) using {
+                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            transport(
+                at(opened, arena->capacity) == at(opened, arena->capacity),
+                arena->capacity == at(opened, arena->capacity)
+            ) using {
+                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
             give(at(opened, arena->data)[i..i + 1]);
             step();
             have region->start <= at(opened, i) + 1;
@@ -1784,13 +1810,20 @@ void arena_free(struct region* region) {
                                 at(opened, arena->occupied[j]) == at(opened, 0)
                         }, k) using {
                             region->start <= k;
+                            region->start == at(opened, region->start);
                             k < m;
                         };
                         assumption();
                     }
                     have 0 <= k;
+                    have k < at(opened, arena->capacity);
                     transport(at(opened, arena->occupied[k]) == 0, arena->occupied[k] == 0) using {
                         at(opened, arena->occupied[k]) == 0;
+                        arena->occupied == at(opened, arena->occupied);
+                        arena->capacity == at(opened, arena->capacity);
+                        at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                        at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
+                        k < at(opened, arena->capacity);
                         k < at(opened, i);
                         0 <= k;
                         0 <= at(opened, i);

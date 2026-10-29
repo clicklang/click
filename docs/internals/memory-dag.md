@@ -328,6 +328,15 @@ A narrow read, a scalar cell, or an intervening partial write cannot supply a
 full pointer value. These rules establish only the selected equality and do
 not grant ownership or initialization authority.
 
+Explicit frame checking can stop at a `CellsForgotten` edge's retained input
+value instead of skipping it and trying to cross an older loop footprint.
+The query reads the exact address in that one predecessor and requires the
+complete access width. A typed scalar observation that names the other
+endpoint's canonical read supplies equality evidence; pointer representations
+are excluded. The retained no-write path and the read kind remain part of the
+certificate. A later overlapping write still stops recovery, and neither
+ownership nor initialization follows from this value equality.
+
 The stronger bridging that crosses `BlockDeclared` and `CellsForgotten` is
 scoped to viewability reasoning through `with_extended_dag_bridging`. Enabling
 that reasoning globally can change which surface facts a planner selects and
