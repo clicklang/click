@@ -5179,6 +5179,20 @@ pub(crate) fn narrow_read_has_recorded_value(
     right: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> bool {
+    // Identical conversions preserve equality of the selected raw reads.
+    // Signed narrow reads are represented by an unsigned read wrapped in
+    // a machine conversion. Walk only the two explicitly named terms.
+    let (mut left, mut right) = (left, right);
+    while let (Some((left_op, left_value)), Some((right_op, right_value))) =
+        (left.as_unary(), right.as_unary())
+    {
+        if left_op != right_op {
+            break;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        left = left_value;
+        right = right_value;
+    }
     let origin = |term: &Bitvector32Term| match term {
         Bitvector32Term::Variable(variable) => {
             crate::kernel::eval::registered_load_origin_term_for_variable(variable)

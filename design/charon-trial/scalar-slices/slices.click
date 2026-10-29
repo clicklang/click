@@ -49,6 +49,23 @@ fn get(xs: &[u16], k: usize) -> u16 {
 fn swap_ends(xs: &mut [i8]) {
     owns *xs;
     ensures xs.len() >= 2 implies xs[0] == old(xs[xs.len() - 1]);
+} by {
+    if xs.len() >= 2 {
+        have 0u64 < xs.len() - 1u64 by { solve(); }
+        have xs.len() - 1u64 < xs.len() by { solve(); }
+        step_until(function.exit);
+        have xs[0] == old(xs[xs.len() - 1]) by {
+            normalize() using {
+                xs.len() >= 2;
+                0u64 < xs.len() - 1u64;
+                xs.len() - 1u64 < xs.len();
+            };
+        }
+        solve();
+    } else {
+        step_until(function.exit);
+        solve();
+    }
 }
 
 fn last(xs: &[i64]) -> i64 {

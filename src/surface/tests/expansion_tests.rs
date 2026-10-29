@@ -19548,3 +19548,19 @@ fn scoped_conversion_requirements_expand_before_the_have() {
     crate::surface::proof::without_implicit_auto(|| verify_click_theorems(&expanded))
         .expect("the expanded scoped requirement checks with implicit search disabled");
 }
+
+#[test]
+#[ignore = "nightly: 1.6s selected signed-byte swap expansion"]
+fn signed_byte_swap_selected_frame_expands_without_search() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/signed_byte_swap_uses_a_selected_frame.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(source, &sources, "swap.contract").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
