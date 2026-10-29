@@ -299,7 +299,16 @@ fn signed_surface_terms_equal(
                     return false;
                 };
                 let signed_or_native = (operator.is_bitvector32()
-                    && !matches!(operator, Op::UnsignedDivide | Op::UnsignedRemainder))
+                    && !matches!(
+                        operator,
+                        Op::Machine(
+                            crate::kernel::MachineIntegerType::UInt32,
+                            crate::kernel::MachineBinaryOp::Divide
+                        ) | Op::Machine(
+                            crate::kernel::MachineIntegerType::UInt32,
+                            crate::kernel::MachineBinaryOp::Remainder
+                        )
+                    ))
                     || matches!(
                         operator,
                         Op::Machine(

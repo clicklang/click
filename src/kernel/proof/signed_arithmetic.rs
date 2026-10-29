@@ -245,7 +245,13 @@ fn signed_binary(
         operator.is_bitvector32()
             && !matches!(
                 operator,
-                BitvectorBinaryOp::UnsignedDivide | BitvectorBinaryOp::UnsignedRemainder
+                BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Divide
+                ) | BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Remainder
+                )
             )
     })
 }
@@ -1189,7 +1195,10 @@ impl SignedArithmeticCertificate {
                             (CheckedTerm::Atom(base), CheckedTerm::Atom(actual)) => {
                                 let mut expected = Vec::with_capacity(base.tokens.len() + 2);
                                 expected.push(SignedArithmeticAtomToken::Binary(
-                                    BitvectorBinaryOp::Remainder,
+                                    BitvectorBinaryOp::Machine(
+                                        crate::kernel::MachineIntegerType::Int32,
+                                        crate::kernel::MachineBinaryOp::Remainder,
+                                    ),
                                 ));
                                 expected.extend(base.tokens.iter().cloned());
                                 expected.push(SignedArithmeticAtomToken::Constant(*divisor as u32));

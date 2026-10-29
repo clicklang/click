@@ -547,7 +547,11 @@ impl TermClasses {
                         && !matches!(op, U::Float32Negate | U::Float64Negate)
                         && width
                             == match op {
-                                U::BitwiseNot | U::UInt32From64 => W::Bits32,
+                                U::Machine(
+                                    crate::kernel::MachineIntegerType::Int32,
+                                    crate::kernel::MachineUnaryOp::BitwiseNot,
+                                )
+                                | U::UInt32From64 => W::Bits32,
                                 U::MachineIntegerCast { destination, .. } => {
                                     W::of_machine_type(destination)
                                 }
@@ -559,7 +563,10 @@ impl TermClasses {
                             | U::UInt64From32
                             | U::Int64FromUInt32
                             | U::UInt64FromInt32
-                            | U::BitwiseNot => W::Bits32,
+                            | U::Machine(
+                                crate::kernel::MachineIntegerType::Int32,
+                                crate::kernel::MachineUnaryOp::BitwiseNot,
+                            ) => W::Bits32,
                             U::UInt32From64 | U::UInt64FromInt64 => W::Bits64,
                             U::Machine(format, _) => W::of_machine_type(format),
                             U::MachineIntegerCast { source, .. } => W::of_machine_type(source),
@@ -834,7 +841,10 @@ impl TermClasses {
         };
         let mask = self.intern_typed_machine(&T::Constant(mask), W::Bits32);
         let mut carrier = self.intern_node(Node::Int32Binary(
-            Int32Binary::Other(B::BitwiseAnd),
+            Int32Binary::Other(B::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::BitwiseAnd,
+            )),
             word,
             mask,
         ));
@@ -844,7 +854,10 @@ impl TermClasses {
             let flipped =
                 self.intern_node(Node::Int32Binary(Int32Binary::BitwiseXor, sign, carrier));
             carrier = self.intern_node(Node::Int32Binary(
-                Int32Binary::Other(B::Subtract),
+                Int32Binary::Other(B::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::Subtract,
+                )),
                 flipped,
                 sign,
             ));

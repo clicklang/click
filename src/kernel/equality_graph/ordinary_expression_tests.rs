@@ -10,19 +10,58 @@ fn word(v: u64) -> Bitvector32Term {
 }
 fn binary_operations() -> Vec<B> {
     vec![
-        B::Add,
-        B::Subtract,
-        B::Multiply,
-        B::Divide,
-        B::UnsignedDivide,
-        B::Remainder,
-        B::UnsignedRemainder,
-        B::ShiftLeft,
-        B::ArithmeticShiftRight,
-        B::LogicalShiftRight,
-        B::BitwiseAnd,
-        B::BitwiseOr,
-        B::BitwiseXor,
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::Add,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::Subtract,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::Multiply,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::Divide,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::UInt32,
+            crate::kernel::MachineBinaryOp::Divide,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::Remainder,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::UInt32,
+            crate::kernel::MachineBinaryOp::Remainder,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::ShiftLeft,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::ShiftRight,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::UInt32,
+            crate::kernel::MachineBinaryOp::ShiftRight,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::BitwiseAnd,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::BitwiseOr,
+        ),
+        B::Machine(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::BitwiseXor,
+        ),
         B::Machine(MachineIntegerType::Int64, MachineBinaryOp::Add),
         B::Machine(MachineIntegerType::Int64, MachineBinaryOp::Subtract),
         B::Machine(MachineIntegerType::Int64, MachineBinaryOp::Multiply),
@@ -47,7 +86,14 @@ fn binary_operations() -> Vec<B> {
 }
 fn unary_operations() -> Vec<(U, bool, bool)> {
     let mut ops = vec![
-        (U::BitwiseNot, false, false),
+        (
+            U::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineUnaryOp::BitwiseNot,
+            ),
+            false,
+            false,
+        ),
         (
             U::Machine(MachineIntegerType::Int64, MachineUnaryOp::BitwiseNot),
             true,
@@ -255,10 +301,20 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
         ))],
     };
     let expression = |pointer| {
-        U::UInt64From32.build_raw(B::BitwiseAnd.build_raw(
-            B::Multiply.build_raw(call(pointer), word(940_053)),
-            Bitvector32Term::Constant(7),
-        ))
+        U::UInt64From32.build_raw(
+            B::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::BitwiseAnd,
+            )
+            .build_raw(
+                B::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::Multiply,
+                )
+                .build_raw(call(pointer), word(940_053)),
+                Bitvector32Term::Constant(7),
+            ),
+        )
     };
     let mut graph = EqualityGraph::default();
     let a = expression(p.clone());

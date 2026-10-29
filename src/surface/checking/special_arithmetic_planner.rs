@@ -973,18 +973,23 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
                 };
                 let compared = matches!(
                     operator,
-                    Op::Add
-                        | Op::Subtract
-                        | Op::Multiply
-                        | Op::Machine(
-                            MachineIntegerType::UInt64,
-                            MachineBinaryOp::Add
-                                | MachineBinaryOp::Subtract
-                                | MachineBinaryOp::Multiply
-                                | MachineBinaryOp::BitwiseAnd
-                                | MachineBinaryOp::BitwiseOr
-                        )
-                        | Op::Float32(_)
+                    Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::Add
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::Subtract
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::Multiply
+                    ) | Op::Machine(
+                        MachineIntegerType::UInt64,
+                        MachineBinaryOp::Add
+                            | MachineBinaryOp::Subtract
+                            | MachineBinaryOp::Multiply
+                            | MachineBinaryOp::BitwiseAnd
+                            | MachineBinaryOp::BitwiseOr
+                    ) | Op::Float32(_)
                         | Op::Float64(_)
                 );
                 if operator != other || !compared {

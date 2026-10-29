@@ -4,26 +4,12 @@
 //! the uniform arithmetic variants through this split and its rebuild.
 
 use super::*;
+use crate::kernel::unary_term;
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
-use crate::kernel::{binary_node, unary_node};
-use crate::kernel::{binary_term, unary_term};
 
 /// A two-operand arithmetic [`Bitvector32Term`] operator.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum BitvectorBinaryOp {
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    UnsignedDivide,
-    Remainder,
-    UnsignedRemainder,
-    ShiftLeft,
-    ArithmeticShiftRight,
-    LogicalShiftRight,
-    BitwiseAnd,
-    BitwiseOr,
-    BitwiseXor,
     /// A format-carrying machine operator ([`Bitvector32Term::Binary`]).
     Machine(MachineIntegerType, MachineBinaryOp),
     Float32(CFloatBinaryOperator),
@@ -33,7 +19,6 @@ pub(crate) enum BitvectorBinaryOp {
 /// A one-operand arithmetic [`Bitvector32Term`] operator or conversion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum BitvectorUnaryOp {
-    BitwiseNot,
     /// A format-carrying machine operator ([`Bitvector32Term::Unary`]).
     Machine(MachineIntegerType, MachineUnaryOp),
     Int64From32,
@@ -75,43 +60,6 @@ impl Bitvector32Term {
     /// for every other variant.
     pub(crate) fn as_binary(&self) -> Option<(BitvectorBinaryOp, &Self, &Self)> {
         match self {
-            binary_term!(Int32, Add, left, right) => Some((BitvectorBinaryOp::Add, left, right)),
-            binary_term!(Int32, Subtract, left, right) => {
-                Some((BitvectorBinaryOp::Subtract, left, right))
-            }
-            binary_term!(Int32, Multiply, left, right) => {
-                Some((BitvectorBinaryOp::Multiply, left, right))
-            }
-            binary_term!(Int32, Divide, left, right) => {
-                Some((BitvectorBinaryOp::Divide, left, right))
-            }
-            binary_term!(UInt32, Divide, left, right) => {
-                Some((BitvectorBinaryOp::UnsignedDivide, left, right))
-            }
-            binary_term!(Int32, Remainder, left, right) => {
-                Some((BitvectorBinaryOp::Remainder, left, right))
-            }
-            binary_term!(UInt32, Remainder, left, right) => {
-                Some((BitvectorBinaryOp::UnsignedRemainder, left, right))
-            }
-            binary_term!(Int32, ShiftLeft, left, right) => {
-                Some((BitvectorBinaryOp::ShiftLeft, left, right))
-            }
-            binary_term!(Int32, ShiftRight, left, right) => {
-                Some((BitvectorBinaryOp::ArithmeticShiftRight, left, right))
-            }
-            binary_term!(UInt32, ShiftRight, left, right) => {
-                Some((BitvectorBinaryOp::LogicalShiftRight, left, right))
-            }
-            binary_term!(Int32, BitwiseAnd, left, right) => {
-                Some((BitvectorBinaryOp::BitwiseAnd, left, right))
-            }
-            binary_term!(Int32, BitwiseOr, left, right) => {
-                Some((BitvectorBinaryOp::BitwiseOr, left, right))
-            }
-            binary_term!(Int32, BitwiseXor, left, right) => {
-                Some((BitvectorBinaryOp::BitwiseXor, left, right))
-            }
             Self::Binary {
                 format,
                 op,
@@ -161,7 +109,6 @@ impl Bitvector32Term {
     /// conversion, or `None` for every other variant.
     pub(crate) fn as_unary(&self) -> Option<(BitvectorUnaryOp, &Self)> {
         match self {
-            unary_term!(Int32, BitwiseNot, value) => Some((BitvectorUnaryOp::BitwiseNot, value)),
             Self::Unary {
                 format,
                 op,
@@ -214,25 +161,12 @@ impl BitvectorBinaryOp {
     pub(crate) fn c_symbol(self) -> &'static str {
         match self {
             Self::Machine(_, op) => op.c_symbol(),
-            Self::Add
-            | Self::Float32(CFloatBinaryOperator::Add)
-            | Self::Float64(CFloatBinaryOperator::Add) => "+",
-            Self::Subtract
-            | Self::Float32(CFloatBinaryOperator::Subtract)
-            | Self::Float64(CFloatBinaryOperator::Subtract) => "-",
-            Self::Multiply
-            | Self::Float32(CFloatBinaryOperator::Multiply)
-            | Self::Float64(CFloatBinaryOperator::Multiply) => "*",
-            Self::Divide
-            | Self::UnsignedDivide
-            | Self::Float32(CFloatBinaryOperator::Divide)
-            | Self::Float64(CFloatBinaryOperator::Divide) => "/",
-            Self::Remainder | Self::UnsignedRemainder => "%",
-            Self::ShiftLeft => "<<",
-            Self::ArithmeticShiftRight | Self::LogicalShiftRight => ">>",
-            Self::BitwiseAnd => "&",
-            Self::BitwiseOr => "|",
-            Self::BitwiseXor => "^",
+            Self::Float32(operator) | Self::Float64(operator) => match operator {
+                CFloatBinaryOperator::Add => "+",
+                CFloatBinaryOperator::Subtract => "-",
+                CFloatBinaryOperator::Multiply => "*",
+                CFloatBinaryOperator::Divide => "/",
+            },
         }
     }
 
@@ -241,43 +175,18 @@ impl BitvectorBinaryOp {
         matches!(self, Self::Float32(_) | Self::Float64(_))
     }
 
-    /// Whether the operator is one of the original 32-bit word operators.
+    /// Whether the operator is a 32-bit machine operator, which reads words.
     /// Some traversals rebuild exactly these as bare nodes.
     pub(crate) fn is_bitvector32(self) -> bool {
         matches!(
             self,
-            Self::Add
-                | Self::Subtract
-                | Self::Multiply
-                | Self::Divide
-                | Self::UnsignedDivide
-                | Self::Remainder
-                | Self::UnsignedRemainder
-                | Self::ShiftLeft
-                | Self::ArithmeticShiftRight
-                | Self::LogicalShiftRight
-                | Self::BitwiseAnd
-                | Self::BitwiseOr
-                | Self::BitwiseXor
+            Self::Machine(MachineIntegerType::Int32 | MachineIntegerType::UInt32, _)
         )
     }
 
     /// Applies the operator through its smart constructor.
     pub(crate) fn build(self, left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
         match self {
-            Self::Add => Bitvector32Term::add(left, right),
-            Self::Subtract => Bitvector32Term::subtract(left, right),
-            Self::Multiply => Bitvector32Term::multiply(left, right),
-            Self::Divide => Bitvector32Term::divide(left, right),
-            Self::UnsignedDivide => Bitvector32Term::unsigned_divide(left, right),
-            Self::Remainder => Bitvector32Term::remainder(left, right),
-            Self::UnsignedRemainder => Bitvector32Term::unsigned_remainder(left, right),
-            Self::ShiftLeft => Bitvector32Term::shift_left(left, right),
-            Self::ArithmeticShiftRight => Bitvector32Term::arithmetic_shift_right(left, right),
-            Self::LogicalShiftRight => Bitvector32Term::logical_shift_right(left, right),
-            Self::BitwiseAnd => Bitvector32Term::bitwise_and(left, right),
-            Self::BitwiseOr => Bitvector32Term::bitwise_or(left, right),
-            Self::BitwiseXor => Bitvector32Term::bitwise_xor(left, right),
             Self::Machine(format, op) => Bitvector32Term::machine_binary(format, op, left, right),
             Self::Float32(operator) => Bitvector32Term::float32_binary(left, right, operator),
             Self::Float64(operator) => Bitvector32Term::float64_binary(left, right, operator),
@@ -293,25 +202,13 @@ impl BitvectorBinaryOp {
     ) -> Bitvector32Term {
         // A 32-bit operator reads words: a `uint32` constant operand is its
         // word's `Constant` (rule K1).
-        let (left, right) = match self {
-            Self::Machine(..) | Self::Float32(_) | Self::Float64(_) => (left, right),
-            _ => (left.constant_word32(), right.constant_word32()),
+        let (left, right) = if self.is_bitvector32() {
+            (left.constant_word32(), right.constant_word32())
+        } else {
+            (left, right)
         };
         let (left, right) = (Box::new(left), Box::new(right));
         match self {
-            Self::Add => binary_node!(Int32, Add, left, right),
-            Self::Subtract => binary_node!(Int32, Subtract, left, right),
-            Self::Multiply => binary_node!(Int32, Multiply, left, right),
-            Self::Divide => binary_node!(Int32, Divide, left, right),
-            Self::UnsignedDivide => binary_node!(UInt32, Divide, left, right),
-            Self::Remainder => binary_node!(Int32, Remainder, left, right),
-            Self::UnsignedRemainder => binary_node!(UInt32, Remainder, left, right),
-            Self::ShiftLeft => binary_node!(Int32, ShiftLeft, left, right),
-            Self::ArithmeticShiftRight => binary_node!(Int32, ShiftRight, left, right),
-            Self::LogicalShiftRight => binary_node!(UInt32, ShiftRight, left, right),
-            Self::BitwiseAnd => binary_node!(Int32, BitwiseAnd, left, right),
-            Self::BitwiseOr => binary_node!(Int32, BitwiseOr, left, right),
-            Self::BitwiseXor => binary_node!(Int32, BitwiseXor, left, right),
             Self::Machine(format, op) => Bitvector32Term::Binary {
                 format,
                 op,
@@ -352,16 +249,18 @@ impl BitvectorUnaryOp {
         )
     }
 
-    /// Whether the operator is the original 32-bit word complement. Some
-    /// traversals rebuild exactly the 32-bit word operators as bare nodes.
+    /// Whether the operator is the 32-bit word complement. Some traversals
+    /// rebuild exactly the 32-bit word operators as bare nodes.
     pub(crate) fn is_bitvector32(self) -> bool {
-        self == Self::BitwiseNot
+        matches!(
+            self,
+            Self::Machine(MachineIntegerType::Int32 | MachineIntegerType::UInt32, _)
+        )
     }
 
     /// Applies the operator through its smart constructor.
     pub(crate) fn build(self, value: Bitvector32Term) -> Bitvector32Term {
         match self {
-            Self::BitwiseNot => Bitvector32Term::bitwise_not(value),
             Self::Machine(format, op) => Bitvector32Term::machine_unary(format, op, value),
             Self::Int64From32 => Bitvector32Term::int64_from_32(value),
             Self::UInt64From32 => Bitvector32Term::uint64_from_32(value),
@@ -382,7 +281,7 @@ impl BitvectorUnaryOp {
     /// normalization.
     pub(crate) fn build_raw(self, value: Bitvector32Term) -> Bitvector32Term {
         let value = match self {
-            Self::BitwiseNot
+            Self::Machine(MachineIntegerType::Int32 | MachineIntegerType::UInt32, _)
             | Self::Int64From32
             | Self::UInt64From32
             | Self::Int64FromUInt32
@@ -391,7 +290,6 @@ impl BitvectorUnaryOp {
         };
         let value = Box::new(value);
         match self {
-            Self::BitwiseNot => unary_node!(Int32, BitwiseNot, value),
             Self::Machine(format, op) => Bitvector32Term::Unary {
                 format,
                 op,
@@ -648,19 +546,58 @@ mod tests {
 
     fn binary_ops() -> Vec<BitvectorBinaryOp> {
         let mut ops = vec![
-            BitvectorBinaryOp::Add,
-            BitvectorBinaryOp::Subtract,
-            BitvectorBinaryOp::Multiply,
-            BitvectorBinaryOp::Divide,
-            BitvectorBinaryOp::UnsignedDivide,
-            BitvectorBinaryOp::Remainder,
-            BitvectorBinaryOp::UnsignedRemainder,
-            BitvectorBinaryOp::ShiftLeft,
-            BitvectorBinaryOp::ArithmeticShiftRight,
-            BitvectorBinaryOp::LogicalShiftRight,
-            BitvectorBinaryOp::BitwiseAnd,
-            BitvectorBinaryOp::BitwiseOr,
-            BitvectorBinaryOp::BitwiseXor,
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::Add,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::Subtract,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::Multiply,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::Divide,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::UInt32,
+                crate::kernel::MachineBinaryOp::Divide,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::Remainder,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::UInt32,
+                crate::kernel::MachineBinaryOp::Remainder,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::ShiftLeft,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::ShiftRight,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::UInt32,
+                crate::kernel::MachineBinaryOp::ShiftRight,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::BitwiseAnd,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::BitwiseOr,
+            ),
+            BitvectorBinaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::BitwiseXor,
+            ),
         ];
         for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
             for op in MACHINE_BINARY_OPERATORS {
@@ -676,7 +613,10 @@ mod tests {
 
     fn unary_ops() -> Vec<BitvectorUnaryOp> {
         vec![
-            BitvectorUnaryOp::BitwiseNot,
+            BitvectorUnaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineUnaryOp::BitwiseNot,
+            ),
             BitvectorUnaryOp::Machine(MachineIntegerType::Int64, MachineUnaryOp::BitwiseNot),
             BitvectorUnaryOp::Machine(MachineIntegerType::UInt64, MachineUnaryOp::BitwiseNot),
             BitvectorUnaryOp::Int64From32,
@@ -778,7 +718,13 @@ mod tests {
             .into_iter()
             .filter(|op| op.is_bitvector32())
             .collect::<Vec<_>>();
-        assert_eq!(word_unaries, vec![BitvectorUnaryOp::BitwiseNot]);
+        assert_eq!(
+            word_unaries,
+            vec![BitvectorUnaryOp::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineUnaryOp::BitwiseNot
+            )]
+        );
     }
 
     fn comparison_ops() -> Vec<BitvectorComparisonOp> {

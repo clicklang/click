@@ -3982,8 +3982,13 @@ impl PureFactContext {
                 && operator.is_bitvector32()
                 && !matches!(
                     operator,
-                    crate::kernel::BitvectorBinaryOp::UnsignedDivide
-                        | crate::kernel::BitvectorBinaryOp::UnsignedRemainder
+                    crate::kernel::BitvectorBinaryOp::Machine(
+                        crate::kernel::MachineIntegerType::UInt32,
+                        crate::kernel::MachineBinaryOp::Divide
+                    ) | crate::kernel::BitvectorBinaryOp::Machine(
+                        crate::kernel::MachineIntegerType::UInt32,
+                        crate::kernel::MachineBinaryOp::Remainder
+                    )
                 )
                 && self.bitvector_terms_equal_for_transport(left_a, right_a)
                 && self.bitvector_terms_equal_for_transport(left_b, right_b);

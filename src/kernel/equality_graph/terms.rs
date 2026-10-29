@@ -1905,10 +1905,19 @@ impl TermClasses {
             && op.is_bitvector32()
             && !matches!(
                 op,
-                crate::kernel::BitvectorBinaryOp::Add
-                    | crate::kernel::BitvectorBinaryOp::UnsignedDivide
-                    | crate::kernel::BitvectorBinaryOp::UnsignedRemainder
-                    | crate::kernel::BitvectorBinaryOp::BitwiseXor
+                crate::kernel::BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::Add
+                ) | crate::kernel::BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Divide
+                ) | crate::kernel::BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Remainder
+                ) | crate::kernel::BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::BitwiseXor
+                )
             )
             && let (Some(left), Some(right)) = (
                 self.existing_scalar_atom(left),
@@ -2421,9 +2430,18 @@ impl TermClasses {
         {
             use crate::kernel::BitvectorBinaryOp as O;
             let op = match op {
-                Int32Binary::UnsignedDivide => O::UnsignedDivide,
-                Int32Binary::UnsignedRemainder => O::UnsignedRemainder,
-                Int32Binary::BitwiseXor => O::BitwiseXor,
+                Int32Binary::UnsignedDivide => O::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Divide,
+                ),
+                Int32Binary::UnsignedRemainder => O::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Remainder,
+                ),
+                Int32Binary::BitwiseXor => O::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::BitwiseXor,
+                ),
                 Int32Binary::Other(op) => op,
             };
             let term = op.build(

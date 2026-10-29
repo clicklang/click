@@ -390,12 +390,22 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
                 };
                 let compared = matches!(
                     operator,
-                    Op::Add
-                        | Op::Subtract
-                        | Op::BitwiseAnd
-                        | Op::BitwiseOr
-                        | Op::BitwiseXor
-                        | Op::Machine(MachineIntegerType::Int64, MachineBinaryOp::Add)
+                    Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::Add
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::Subtract
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::BitwiseAnd
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::BitwiseOr
+                    ) | Op::Machine(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::BitwiseXor
+                    ) | Op::Machine(MachineIntegerType::Int64, MachineBinaryOp::Add)
                         | Op::Machine(
                             MachineIntegerType::UInt64,
                             MachineBinaryOp::Add
