@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 
 #[test]
 fn compound_premise_and_goal_evidence_scales_with_expression_size() {
@@ -11,8 +12,8 @@ fn compound_premise_and_goal_evidence_scales_with_expression_size() {
         let mut a = var(1);
         let mut b = var(2);
         for _ in 0..depth {
-            a = Bitvector32Term::Add(Box::new(a), Box::new(constant(0)));
-            b = Bitvector32Term::Add(Box::new(b), Box::new(constant(0)));
+            a = binary_node!(Int32, Add, Box::new(a), Box::new(constant(0)));
+            b = binary_node!(Int32, Add, Box::new(b), Box::new(constant(0)));
         }
         let premises = [
             le(
@@ -44,11 +45,11 @@ fn checked_affine_premise_evidence_scales_with_both_expression_roots() {
         let mut a = var(1);
         let mut b = var(2);
         for _ in 0..depth {
-            a = Bitvector32Term::Add(Box::new(a), Box::new(constant(0)));
-            b = Bitvector32Term::Add(Box::new(b), Box::new(constant(0)));
+            a = binary_node!(Int32, Add, Box::new(a), Box::new(constant(0)));
+            b = binary_node!(Int32, Add, Box::new(b), Box::new(constant(0)));
         }
-        let sum = Bitvector32Term::Add(Box::new(a), Box::new(b.clone()));
-        let difference = Bitvector32Term::Add(Box::new(constant(1000)), Box::new(b));
+        let sum = binary_node!(Int32, Add, Box::new(a), Box::new(b.clone()));
+        let difference = binary_node!(Int32, Add, Box::new(constant(1000)), Box::new(b));
         let premises = [
             le(sum, difference),
             le(constant(0), var(1)),
@@ -77,11 +78,11 @@ fn two_sided_compound_affine_evidence_scales_with_shared_depth() {
         let mut left_base = var(1);
         let mut right_base = var(2);
         for _ in 0..depth {
-            left_base = Bitvector32Term::Add(Box::new(left_base), Box::new(constant(0)));
-            right_base = Bitvector32Term::Add(Box::new(right_base), Box::new(constant(0)));
+            left_base = binary_node!(Int32, Add, Box::new(left_base), Box::new(constant(0)));
+            right_base = binary_node!(Int32, Add, Box::new(right_base), Box::new(constant(0)));
         }
-        let left = Bitvector32Term::Add(Box::new(left_base), Box::new(constant(1)));
-        let right = Bitvector32Term::Add(Box::new(right_base), Box::new(constant(1)));
+        let left = binary_node!(Int32, Add, Box::new(left_base), Box::new(constant(1)));
+        let right = binary_node!(Int32, Add, Box::new(right_base), Box::new(constant(1)));
         let goal = le(left, right);
         let premises = vec![
             le(var(1), var(2)),

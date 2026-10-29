@@ -6,6 +6,8 @@
 
 pub(crate) use super::integer_affine_atoms::IntegerAffineAtom;
 use super::integer_affine_atoms::{IntegerFoldAtomRecord, intern_integer_fold_atom};
+#[cfg(test)]
+use crate::kernel::binary_node;
 use crate::kernel::machine_integer::bounds::operation_bound;
 use crate::kernel::{ConditionTerm, IntegerTerm, Proposition};
 use num_bigint::BigInt;
@@ -1188,7 +1190,7 @@ mod tests {
         let y = observe(MachineIntegerType::Int32, y_bits.clone());
         let machine_sum = observe(
             MachineIntegerType::Int32,
-            Bitvector32Term::Add(Box::new(bits), Box::new(y_bits)),
+            binary_node!(Int32, Add, Box::new(bits), Box::new(y_bits)),
         );
         let unchecked_distribution = proposition(ConditionTerm::integer_equal(
             machine_sum,
@@ -1778,11 +1780,21 @@ mod tests {
             ),
             machine(
                 MachineIntegerType::Int32,
-                Bitvector32Term::Divide(x(), Box::new(Bitvector32Term::Constant(-1000i32 as u32))),
+                binary_node!(
+                    Int32,
+                    Divide,
+                    x(),
+                    Box::new(Bitvector32Term::Constant(-1000i32 as u32))
+                ),
             ),
             machine(
                 MachineIntegerType::UInt32,
-                Bitvector32Term::Divide(x(), Box::new(Bitvector32Term::Constant(1000))),
+                binary_node!(
+                    Int32,
+                    Divide,
+                    x(),
+                    Box::new(Bitvector32Term::Constant(1000))
+                ),
             ),
         ] {
             assert_eq!(operation_bound(&value, false), None);

@@ -15,6 +15,7 @@
 
 use super::*;
 use crate::kernel::MachineBinaryOp;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::proof_diagnostics::render;
 
@@ -363,19 +364,19 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
             op: OverflowOperation::Add,
             left,
             right,
-        } => Some(Bitvector32Term::Add(left.clone(), right.clone())),
+        } => Some(binary_node!(Int32, Add, left.clone(), right.clone())),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
             left,
             right,
-        } => Some(Bitvector32Term::Subtract(left.clone(), right.clone())),
+        } => Some(binary_node!(Int32, Subtract, left.clone(), right.clone())),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Multiply,
             left,
             right,
-        } => Some(Bitvector32Term::Multiply(left.clone(), right.clone())),
+        } => Some(binary_node!(Int32, Multiply, left.clone(), right.clone())),
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,

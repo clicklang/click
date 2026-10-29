@@ -1,5 +1,7 @@
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 
 /// Whether a memory fact about `base` established in `range_memory` still
 /// describes an available region in `current_memory`: the block must be
@@ -806,7 +808,9 @@ pub(in crate::kernel) fn byte_offset_from_pointer_offset(
             match width {
                 0 => Some(Bitvector32Term::Constant(0)),
                 1 => Some(value.as_ref().clone()),
-                _ => Some(Bitvector32Term::Multiply(
+                _ => Some(binary_node!(
+                    Int32,
+                    Multiply,
                     Box::new(value.as_ref().clone()),
                     Box::new(Bitvector32Term::Constant(width)),
                 )),
@@ -831,10 +835,10 @@ pub(in crate::kernel) fn element_count_from_bytes(
     }
     let element_width = Bitvector32Term::Constant(element_width);
     match bytes {
-        Bitvector32Term::Multiply(left, right) if right.as_ref() == &element_width => {
+        binary_term!(Int32, Multiply, left, right) if right.as_ref() == &element_width => {
             Some(left.as_ref().clone())
         }
-        Bitvector32Term::Multiply(left, right) if left.as_ref() == &element_width => {
+        binary_term!(Int32, Multiply, left, right) if left.as_ref() == &element_width => {
             Some(right.as_ref().clone())
         }
         Bitvector32Term::Constant(bytes) | Bitvector32Term::UInt32Constant(bytes)

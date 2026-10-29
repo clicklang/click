@@ -1,5 +1,6 @@
 use super::prelude::*;
 use super::spec::walk::{SpecNode, Visit, WalkBudget, Walked, walk_spec};
+use crate::kernel::binary_term;
 use std::sync::Arc;
 
 /// Charges `units` of termination work to the ambient deterministic-work
@@ -3506,7 +3507,7 @@ fn ranking_affine_form(term: &Bitvector32Term) -> (BTreeMap<Bitvector32Term, i64
         Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             (BTreeMap::new(), i64::from(*value as i32))
         }
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             let (mut terms, constant) = ranking_affine_form(left);
             let (right_terms, right_constant) = ranking_affine_form(right);
             let constant = constant.saturating_add(right_constant);
@@ -3524,7 +3525,7 @@ fn ranking_affine_form(term: &Bitvector32Term) -> (BTreeMap<Bitvector32Term, i64
             }
             (terms, constant)
         }
-        Bitvector32Term::Subtract(left, right) => {
+        binary_term!(Int32, Subtract, left, right) => {
             let (mut terms, constant) = ranking_affine_form(left);
             let (right_terms, right_constant) = ranking_affine_form(right);
             let constant = constant.saturating_sub(right_constant);
@@ -3542,7 +3543,7 @@ fn ranking_affine_form(term: &Bitvector32Term) -> (BTreeMap<Bitvector32Term, i64
             }
             (terms, constant)
         }
-        Bitvector32Term::Multiply(left, right) => {
+        binary_term!(Int32, Multiply, left, right) => {
             let left_constant = left.as_const().map(|value| i64::from(value as i32));
             let right_constant = right.as_const().map(|value| i64::from(value as i32));
             if let Some(constant) = left_constant {

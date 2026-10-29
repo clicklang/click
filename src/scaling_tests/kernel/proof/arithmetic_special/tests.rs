@@ -6,6 +6,7 @@ use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
+use crate::kernel::binary_node;
 
 #[test]
 fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
@@ -45,8 +46,12 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
             crate::kernel::Variable(1),
         )));
         for _ in 0..size {
-            index =
-                Bitvector32Term::Subtract(Box::new(index), Box::new(Bitvector32Term::Constant(0)));
+            index = binary_node!(
+                Int32,
+                Subtract,
+                Box::new(index),
+                Box::new(Bitvector32Term::Constant(0))
+            );
         }
         let relation = pointer_eq(p.clone(), add(arr.clone(), scaled(index.clone())));
         let bound = Proposition::ConditionIs(
@@ -62,7 +67,9 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
             add(p, PointerOffsetTerm::Constant(4)),
             add(
                 arr,
-                scaled(Bitvector32Term::Add(
+                scaled(binary_node!(
+                    Int32,
+                    Add,
                     Box::new(index),
                     Box::new(Bitvector32Term::Constant(1)),
                 )),
@@ -516,7 +523,12 @@ fn unsigned_widening_identity_work_scales_with_operand_payload() {
     for size in [4, 16, 64, 96] {
         let mut value = Bitvector32Term::Variable(crate::kernel::Variable(994_111));
         for _ in 0..size {
-            value = Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(0)));
+            value = binary_node!(
+                Int32,
+                Add,
+                Box::new(value),
+                Box::new(Bitvector32Term::Constant(0))
+            );
         }
         let widened = Bitvector32Term::UInt64From32(Box::new(value));
         let (same, work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -6,6 +6,8 @@ use super::{
     PersistentSequence, QuantifiedEquivalenceKey, SnapshotBlindPropositionKey,
     quantified_equivalence_index_key, snapshot_blind_proposition_key,
 };
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::*;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::persistent::{PersistentMap, PersistentSet};
@@ -2368,21 +2370,26 @@ fn substituted_range_extent(
         crate::kernel::reasoning::substitute_bitvector_variable(term, from, to)
     };
     let (count, width) = match bytes {
-        Bitvector32Term::Multiply(count, width) => match width.as_ref() {
+        binary_term!(Int32, Multiply, count, width) => match width.as_ref() {
             Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
                 (count.as_ref(), Some(width.as_ref().clone()))
             }
             _ => return None,
         },
-        count @ Bitvector32Term::Subtract(_, _) => (count, None),
+        count @ binary_term!(Int32, Subtract, _, _) => (count, None),
         _ => return None,
     };
-    let Bitvector32Term::Subtract(end, start) = count else {
+    let binary_term!(Int32, Subtract, end, start) = count else {
         return None;
     };
-    let count = Bitvector32Term::Subtract(Box::new(substitute(end)), Box::new(substitute(start)));
+    let count = binary_node!(
+        Int32,
+        Subtract,
+        Box::new(substitute(end)),
+        Box::new(substitute(start))
+    );
     Some(match width {
-        Some(width) => Bitvector32Term::Multiply(Box::new(count), Box::new(width)),
+        Some(width) => binary_node!(Int32, Multiply, Box::new(count), Box::new(width)),
         None => count,
     })
 }

@@ -3,6 +3,7 @@
 // calls it, so the tests import the planner explicitly.
 use super::*;
 use crate::kernel::LoanViewBinding;
+use crate::kernel::binary_node;
 use crate::kernel::loans::{LoanLedger, LoanViewBindings};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
@@ -4580,7 +4581,9 @@ fn observed_projection_tracks_loaded_address_prerequisite() {
         // Keep the load nested in the bound expression, as it is after
         // lowering an indexed composite member rather than a hand-written
         // standalone cell range.
-        Bitvector32Term::Add(
+        binary_node!(
+            Int32,
+            Add,
             Box::new(selector_load),
             Box::new(Bitvector32Term::Constant(0)),
         ),
@@ -4662,7 +4665,9 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
             offset: PointerOffsetTerm::Constant(8),
         },
         selector_load.clone(),
-        Bitvector32Term::Add(
+        binary_node!(
+            Int32,
+            Add,
             Box::new(selector_load),
             Box::new(Bitvector32Term::Constant(1)),
         ),
@@ -5825,8 +5830,12 @@ mod population_quantity_totals {
         let assumptions = PureFactContext::new();
         let available = Bitvector32Term::Variable(Variable(11));
         let used = Bitvector32Term::Variable(Variable(12));
-        let remainder =
-            Bitvector32Term::Subtract(Box::new(available.clone()), Box::new(used.clone()));
+        let remainder = binary_node!(
+            Int32,
+            Subtract,
+            Box::new(available.clone()),
+            Box::new(used.clone())
+        );
         assert_eq!(
             merged_quantity(used.clone(), remainder.clone(), &assumptions),
             Some(available.clone())

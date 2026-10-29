@@ -17,6 +17,7 @@
 
 use super::*;
 use crate::kernel::MachineBinaryOp;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use std::cell::Cell;
 
@@ -584,13 +585,13 @@ impl GuardedTermSpeller<'_, '_> {
             Some((Box::new(self.term(left)?), Box::new(self.term(right)?)))
         };
         let composite = match term {
-            Bitvector32Term::Add(left, right) => {
+            binary_term!(Int32, Add, left, right) => {
                 binary(left, right).map(|(left, right)| ContractExpression::Add(left, right))
             }
-            Bitvector32Term::Subtract(left, right) => {
+            binary_term!(Int32, Subtract, left, right) => {
                 binary(left, right).map(|(left, right)| ContractExpression::Subtract(left, right))
             }
-            Bitvector32Term::Multiply(left, right)
+            binary_term!(Int32, Multiply, left, right)
             | Bitvector32Term::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Multiply,

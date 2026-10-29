@@ -12,6 +12,8 @@
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
 use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable};
+use crate::kernel::unary_node;
+use crate::kernel::unary_term;
 use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
@@ -1883,9 +1885,8 @@ impl TermClasses {
         &self,
         term: &crate::kernel::Bitvector32Term,
     ) -> Option<Option<u64>> {
-        use crate::kernel::Bitvector32Term as T;
         if term.as_const().is_none() {
-            let unary = if let T::BitwiseNot(value) = term {
+            let unary = if let unary_term!(Int32, BitwiseNot, value) = term {
                 Some((Int32Unary::Not, value.as_ref()))
             } else {
                 constants::word_cast_operand(term).map(|(value, source, destination)| {
@@ -1904,10 +1905,19 @@ impl TermClasses {
             && op.is_bitvector32()
             && !matches!(
                 op,
-                crate::kernel::BitvectorBinaryOp::Add
-                    | crate::kernel::BitvectorBinaryOp::UnsignedDivide
-                    | crate::kernel::BitvectorBinaryOp::UnsignedRemainder
-                    | crate::kernel::BitvectorBinaryOp::BitwiseXor
+                crate::kernel::BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::Add
+                ) | crate::kernel::BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Divide
+                ) | crate::kernel::BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Remainder
+                ) | crate::kernel::BitvectorBinaryOp::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::BitwiseXor
+                )
             )
             && let (Some(left), Some(right)) = (
                 self.existing_scalar_atom(left),
@@ -2420,9 +2430,18 @@ impl TermClasses {
         {
             use crate::kernel::BitvectorBinaryOp as O;
             let op = match op {
-                Int32Binary::UnsignedDivide => O::UnsignedDivide,
-                Int32Binary::UnsignedRemainder => O::UnsignedRemainder,
-                Int32Binary::BitwiseXor => O::BitwiseXor,
+                Int32Binary::UnsignedDivide => O::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Divide,
+                ),
+                Int32Binary::UnsignedRemainder => O::Machine(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    crate::kernel::MachineBinaryOp::Remainder,
+                ),
+                Int32Binary::BitwiseXor => O::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::BitwiseXor,
+                ),
                 Int32Binary::Other(op) => op,
             };
             let term = op.build(
@@ -2442,7 +2461,7 @@ impl TermClasses {
             use crate::kernel::Bitvector32Term as T;
             let value = T::Constant(value as u32);
             let term = match op {
-                Int32Unary::Not => T::BitwiseNot(Box::new(value)),
+                Int32Unary::Not => unary_node!(Int32, BitwiseNot, Box::new(value)),
                 Int32Unary::Cast(source, destination) => {
                     T::machine_integer_cast(source, destination, value)
                 }

@@ -5,6 +5,7 @@
 //! currently reaches, and the spellings a reader depends on.
 
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 /// `probe(p, index)` with `p` an external `int32*` argument and `index`
@@ -128,7 +129,9 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
         .assume_proposition(Proposition::CMemoryLoadable {
             memory: state.memory().clone(),
             base: pointer_base(&values),
-            bytes: Bitvector32Term::Multiply(
+            bytes: binary_node!(
+                Int32,
+                Multiply,
                 Box::new(Bitvector32Term::Variable(Variable(1))),
                 Box::new(Bitvector32Term::Constant(4)),
             ),

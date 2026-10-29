@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::VerificationSession;
+use crate::kernel::binary_node;
 
 fn var(id: u64) -> Bitvector32Term {
     Bitvector32Term::Variable(Variable(id))
@@ -10,12 +11,18 @@ fn eq(left: &Bitvector32Term, right: &Bitvector32Term) -> ConditionTerm {
 }
 
 fn unsigned_composition(value: Bitvector32Term) -> Bitvector32Term {
-    Bitvector32Term::BitwiseXor(
-        Box::new(Bitvector32Term::UnsignedRemainder(
+    binary_node!(
+        Int32,
+        BitwiseXor,
+        Box::new(binary_node!(
+            UInt32,
+            Remainder,
             Box::new(value.clone()),
             Box::new(var(90_001)),
         )),
-        Box::new(Bitvector32Term::UnsignedDivide(
+        Box::new(binary_node!(
+            UInt32,
+            Divide,
             Box::new(value),
             Box::new(var(90_002)),
         )),
@@ -41,9 +48,14 @@ fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coe
         &unsigned_composition(a.clone()),
         &unsigned_composition(b.clone())
     ));
-    let unsigned = Bitvector32Term::UnsignedRemainder(Box::new(a.clone()), Box::new(var(90_001)));
-    let signed = Bitvector32Term::Remainder(Box::new(b.clone()), Box::new(var(90_001)));
-    let quotient = Bitvector32Term::UnsignedDivide(Box::new(b.clone()), Box::new(var(90_001)));
+    let unsigned = binary_node!(
+        UInt32,
+        Remainder,
+        Box::new(a.clone()),
+        Box::new(var(90_001))
+    );
+    let signed = binary_node!(Int32, Remainder, Box::new(b.clone()), Box::new(var(90_001)));
+    let quotient = binary_node!(UInt32, Divide, Box::new(b.clone()), Box::new(var(90_001)));
     assert!(!graph.are_int32_equal(&unsigned, &signed));
     assert!(!graph.are_int32_equal(&unsigned, &quotient));
     let mut results_only = EqualityGraph::default();
@@ -52,8 +64,12 @@ fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coe
         &unsigned_composition(b.clone()),
     );
     assert!(!results_only.are_int32_equal(&a, &b));
-    let undefined =
-        Bitvector32Term::UnsignedDivide(Box::new(a), Box::new(Bitvector32Term::Constant(0)));
+    let undefined = binary_node!(
+        UInt32,
+        Divide,
+        Box::new(a),
+        Box::new(Bitvector32Term::Constant(0))
+    );
     assert!(!graph.are_int32_equal(&undefined, &Bitvector32Term::Constant(0)));
 }
 
@@ -124,8 +140,14 @@ fn int32_equality_is_transitive_symmetric_and_branch_local() {
 #[test]
 fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
     let (a, b) = (var(1), var(2));
-    let plus_one =
-        |value| Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
+    let plus_one = |value| {
+        binary_node!(
+            Int32,
+            Add,
+            Box::new(value),
+            Box::new(Bitvector32Term::Constant(1))
+        )
+    };
     let premise = eq(&a, &b);
     let parent = PureFactContext::new();
     let branch = parent.clone().assume_condition(premise.clone(), true);
@@ -542,11 +564,23 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
         &PointerOffsetTerm::scale_int32(a.clone(), 4),
         &PointerOffsetTerm::scale_int32(b.clone(), 4),
     ));
-    let plus_one =
-        |value| Bitvector32Term::Add(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
+    let plus_one = |value| {
+        binary_node!(
+            Int32,
+            Add,
+            Box::new(value),
+            Box::new(Bitvector32Term::Constant(1))
+        )
+    };
     assert!(graph.are_int32_equal(&plus_one(a.clone()), &plus_one(b.clone())));
-    let minus_one =
-        |value| Bitvector32Term::Subtract(Box::new(value), Box::new(Bitvector32Term::Constant(1)));
+    let minus_one = |value| {
+        binary_node!(
+            Int32,
+            Subtract,
+            Box::new(value),
+            Box::new(Bitvector32Term::Constant(1))
+        )
+    };
     assert!(graph.are_int32_equal(&minus_one(a.clone()), &minus_one(b.clone())));
     assert!(!graph.are_int32_equal(&plus_one(a), &minus_one(b)));
     graph.add_offset_equality(
@@ -646,7 +680,7 @@ fn int32_load_identity_keeps_snapshots_and_exact_support_separate() {
             .equality_graph
             .are_offsets_equal(&scale(load(&after)), &scale(a.clone()))
     );
-    let sum = |value| Bitvector32Term::Add(Box::new(value), Box::new(var(42)));
+    let sum = |value| binary_node!(Int32, Add, Box::new(value), Box::new(var(42)));
     assert!(
         context
             .equality_graph

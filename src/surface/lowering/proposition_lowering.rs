@@ -1,5 +1,7 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{binary_node, unary_node};
+use crate::kernel::{binary_term, unary_term};
 
 /// Two lowered operands whose C types have no common comparison, named by
 /// value and type rather than as kernel term dumps.
@@ -233,38 +235,42 @@ pub(in crate::surface) fn bitvector32_add(
             Bitvector32Term::Constant(left) | Bitvector32Term::UInt32Constant(left),
             Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
         ) => Bitvector32Term::Constant(left.wrapping_add(*right)),
-        (Bitvector32Term::Constant(constant), Bitvector32Term::Subtract(base, subtrahend))
+        (Bitvector32Term::Constant(constant), binary_term!(Int32, Subtract, base, subtrahend))
             if subtrahend.as_ref() == &Bitvector32Term::Constant(*constant) =>
         {
             base.as_ref().clone()
         }
         (
-            Bitvector32Term::Subtract(base, subtrahend),
+            binary_term!(Int32, Subtract, base, subtrahend),
             Bitvector32Term::Constant(constant) | Bitvector32Term::UInt32Constant(constant),
         ) if subtrahend.as_ref() == &Bitvector32Term::Constant(*constant) => base.as_ref().clone(),
-        (Bitvector32Term::Subtract(zero, subtrahend), Bitvector32Term::Add(base, addend))
-            if zero.as_ref() == &Bitvector32Term::Constant(0) && subtrahend == base =>
-        {
+        (
+            binary_term!(Int32, Subtract, zero, subtrahend),
+            binary_term!(Int32, Add, base, addend),
+        ) if zero.as_ref() == &Bitvector32Term::Constant(0) && subtrahend == base => {
             addend.as_ref().clone()
         }
-        (Bitvector32Term::Subtract(zero, subtrahend), Bitvector32Term::Add(addend, base))
-            if zero.as_ref() == &Bitvector32Term::Constant(0) && subtrahend == base =>
-        {
+        (
+            binary_term!(Int32, Subtract, zero, subtrahend),
+            binary_term!(Int32, Add, addend, base),
+        ) if zero.as_ref() == &Bitvector32Term::Constant(0) && subtrahend == base => {
             addend.as_ref().clone()
         }
-        (Bitvector32Term::Add(base, addend), Bitvector32Term::Subtract(zero, subtrahend))
-            if zero.as_ref() == &Bitvector32Term::Constant(0) && base == subtrahend =>
-        {
+        (
+            binary_term!(Int32, Add, base, addend),
+            binary_term!(Int32, Subtract, zero, subtrahend),
+        ) if zero.as_ref() == &Bitvector32Term::Constant(0) && base == subtrahend => {
             addend.as_ref().clone()
         }
-        (Bitvector32Term::Add(addend, base), Bitvector32Term::Subtract(zero, subtrahend))
-            if zero.as_ref() == &Bitvector32Term::Constant(0) && base == subtrahend =>
-        {
+        (
+            binary_term!(Int32, Add, addend, base),
+            binary_term!(Int32, Subtract, zero, subtrahend),
+        ) if zero.as_ref() == &Bitvector32Term::Constant(0) && base == subtrahend => {
             addend.as_ref().clone()
         }
         (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => left,
         (Bitvector32Term::Constant(0), _) => right,
-        _ => Bitvector32Term::Add(Box::new(left), Box::new(right)),
+        _ => binary_node!(Int32, Add, Box::new(left), Box::new(right)),
     }
 }
 
@@ -280,42 +286,44 @@ pub(in crate::surface) fn bitvector32_subtract(
         (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => left,
         _ if left == right => Bitvector32Term::Constant(0),
         (
-            Bitvector32Term::Add(left_base, left_addend),
-            Bitvector32Term::Add(right_base, right_addend),
+            binary_term!(Int32, Add, left_base, left_addend),
+            binary_term!(Int32, Add, right_base, right_addend),
         ) if left_base == right_base => {
             bitvector32_subtract(left_addend.as_ref().clone(), right_addend.as_ref().clone())
         }
         (
-            Bitvector32Term::Add(left_base, left_addend),
-            Bitvector32Term::Add(right_base, right_addend),
+            binary_term!(Int32, Add, left_base, left_addend),
+            binary_term!(Int32, Add, right_base, right_addend),
         ) if left_base == right_addend => {
             bitvector32_subtract(left_addend.as_ref().clone(), right_base.as_ref().clone())
         }
         (
-            Bitvector32Term::Add(left_base, left_addend),
-            Bitvector32Term::Add(right_base, right_addend),
+            binary_term!(Int32, Add, left_base, left_addend),
+            binary_term!(Int32, Add, right_base, right_addend),
         ) if left_addend == right_base => {
             bitvector32_subtract(left_base.as_ref().clone(), right_addend.as_ref().clone())
         }
         (
-            Bitvector32Term::Add(left_base, left_addend),
-            Bitvector32Term::Add(right_base, right_addend),
+            binary_term!(Int32, Add, left_base, left_addend),
+            binary_term!(Int32, Add, right_base, right_addend),
         ) if left_addend == right_addend => {
             bitvector32_subtract(left_base.as_ref().clone(), right_base.as_ref().clone())
         }
-        (Bitvector32Term::Add(left_base, left_addend), _) if left_base.as_ref() == &right => {
+        (binary_term!(Int32, Add, left_base, left_addend), _) if left_base.as_ref() == &right => {
             left_addend.as_ref().clone()
         }
-        (Bitvector32Term::Add(left_base, left_addend), _) if left_addend.as_ref() == &right => {
+        (binary_term!(Int32, Add, left_base, left_addend), _) if left_addend.as_ref() == &right => {
             left_base.as_ref().clone()
         }
-        (_, Bitvector32Term::Add(right_base, right_addend)) if &left == right_base.as_ref() => {
+        (_, binary_term!(Int32, Add, right_base, right_addend)) if &left == right_base.as_ref() => {
             bitvector32_subtract(Bitvector32Term::Constant(0), right_addend.as_ref().clone())
         }
-        (_, Bitvector32Term::Add(right_base, right_addend)) if &left == right_addend.as_ref() => {
+        (_, binary_term!(Int32, Add, right_base, right_addend))
+            if &left == right_addend.as_ref() =>
+        {
             bitvector32_subtract(Bitvector32Term::Constant(0), right_base.as_ref().clone())
         }
-        _ => Bitvector32Term::Subtract(Box::new(left), Box::new(right)),
+        _ => binary_node!(Int32, Subtract, Box::new(left), Box::new(right)),
     }
 }
 
@@ -332,7 +340,7 @@ pub(in crate::surface) fn bitvector32_multiply(
         (Bitvector32Term::Constant(1), _) => right,
         (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0))
         | (Bitvector32Term::Constant(0), _) => Bitvector32Term::Constant(0),
-        _ => Bitvector32Term::Multiply(Box::new(left), Box::new(right)),
+        _ => binary_node!(Int32, Multiply, Box::new(left), Box::new(right)),
     }
 }
 
@@ -357,7 +365,7 @@ pub(in crate::surface) fn bitvector32_divide(
             ((*left as i32) / (*right as i32)) as u32,
         )),
         (_, Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => Ok(left),
-        _ => Ok(Bitvector32Term::Divide(Box::new(left), Box::new(right))),
+        _ => Ok(binary_node!(Int32, Divide, Box::new(left), Box::new(right))),
     }
 }
 
@@ -384,7 +392,12 @@ pub(in crate::surface) fn bitvector32_remainder(
         (_, Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => {
             Ok(Bitvector32Term::Constant(0))
         }
-        _ => Ok(Bitvector32Term::Remainder(Box::new(left), Box::new(right))),
+        _ => Ok(binary_node!(
+            Int32,
+            Remainder,
+            Box::new(left),
+            Box::new(right)
+        )),
     }
 }
 
@@ -419,7 +432,12 @@ pub(in crate::surface) fn bitvector32_shift_left(
                 Ok(Bitvector32Term::Constant((shifted as i32) as u32))
             }
         }
-        _ => Ok(Bitvector32Term::ShiftLeft(Box::new(left), Box::new(right))),
+        _ => Ok(binary_node!(
+            Int32,
+            ShiftLeft,
+            Box::new(left),
+            Box::new(right)
+        )),
     }
 }
 
@@ -442,7 +460,9 @@ pub(in crate::surface) fn bitvector32_shift_right(
             Ok(Bitvector32Term::Constant(((*left as i32) >> count) as u32))
         }
         (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => Ok(left),
-        _ => Ok(Bitvector32Term::ArithmeticShiftRight(
+        _ => Ok(binary_node!(
+            Int32,
+            ShiftRight,
             Box::new(left),
             Box::new(right),
         )),
@@ -465,7 +485,7 @@ pub(in crate::surface) fn bitvector32_and(
         (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0))
         | (Bitvector32Term::Constant(0), _) => Bitvector32Term::Constant(0),
         _ if left == right => left,
-        _ => Bitvector32Term::BitwiseAnd(Box::new(left), Box::new(right)),
+        _ => binary_node!(Int32, BitwiseAnd, Box::new(left), Box::new(right)),
     }
 }
 
@@ -483,7 +503,7 @@ pub(in crate::surface) fn bitvector32_or(
         (_, Bitvector32Term::Constant(u32::MAX) | Bitvector32Term::UInt32Constant(u32::MAX))
         | (Bitvector32Term::Constant(u32::MAX), _) => Bitvector32Term::Constant(u32::MAX),
         _ if left == right => left,
-        _ => Bitvector32Term::BitwiseOr(Box::new(left), Box::new(right)),
+        _ => binary_node!(Int32, BitwiseOr, Box::new(left), Box::new(right)),
     }
 }
 
@@ -499,7 +519,7 @@ pub(in crate::surface) fn bitvector32_xor(
         (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => left,
         (Bitvector32Term::Constant(0), _) => right,
         _ if left == right => Bitvector32Term::Constant(0),
-        _ => Bitvector32Term::BitwiseXor(Box::new(left), Box::new(right)),
+        _ => binary_node!(Int32, BitwiseXor, Box::new(left), Box::new(right)),
     }
 }
 
@@ -508,8 +528,8 @@ pub(in crate::surface) fn bitvector32_not(value: Bitvector32Term) -> Bitvector32
         Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             Bitvector32Term::Constant(!value)
         }
-        Bitvector32Term::BitwiseNot(inner) => *inner,
-        value => Bitvector32Term::BitwiseNot(Box::new(value)),
+        unary_term!(Int32, BitwiseNot, inner) => *inner,
+        value => unary_node!(Int32, BitwiseNot, Box::new(value)),
     }
 }
 

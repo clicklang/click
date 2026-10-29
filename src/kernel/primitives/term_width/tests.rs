@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_node;
 
 fn boxed(term: Bitvector32Term) -> Box<Bitvector32Term> {
     Box::new(term)
@@ -10,7 +11,9 @@ fn operator_families_imply_their_carrier() {
     let x = Bitvector32Term::Variable(Variable(1));
     assert_eq!(term_width(&x), Ok(None));
     assert_eq!(
-        term_width(&Bitvector32Term::Add(
+        term_width(&binary_node!(
+            Int32,
+            Add,
             boxed(x.clone()),
             boxed(Bitvector32Term::Constant(1))
         )),
@@ -287,16 +290,17 @@ fn order_chains_decide_alike_at_every_width() {
     }
 }
 
-/// Only the 64-bit formats have format-carrying operator nodes so far
-/// (`design/machine-integers.md`, "Stage 3"): the width audit refuses a
-/// `Binary` or `Unary` node at any other format, whatever its operands.
+/// Only the 32- and 64-bit formats have format-carrying operator nodes
+/// (`design/machine-integers.md`, "Stage 3"), and a 32-bit sign-free
+/// operator is filed at `int32`: the width audit refuses a `Binary` or
+/// `Unary` node at any other format, and a `uint32` `+` or `~`, whatever its
+/// operands.
 #[test]
 fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
     let x = boxed(Bitvector32Term::Variable(Variable(1)));
     for format in [
         MachineIntegerType::Int8,
         MachineIntegerType::UInt16,
-        MachineIntegerType::Int32,
         MachineIntegerType::UInt32,
         MachineIntegerType::Int128,
         MachineIntegerType::UInt128,
@@ -350,4 +354,20 @@ fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
         };
         assert_eq!(term_width(&binary), Ok(Some(CarrierWidth::Bits64)));
     }
+    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+        let binary = Bitvector32Term::Binary {
+            format,
+            op: MachineBinaryOp::ShiftRight,
+            left: x.clone(),
+            right: boxed(Bitvector32Term::Constant(3)),
+        };
+        assert_eq!(term_width(&binary), Ok(Some(CarrierWidth::Bits32)));
+    }
+    let word_add = Bitvector32Term::Binary {
+        format: MachineIntegerType::Int32,
+        op: MachineBinaryOp::Add,
+        left: x.clone(),
+        right: x.clone(),
+    };
+    assert_eq!(term_width(&word_add), Ok(Some(CarrierWidth::Bits32)));
 }

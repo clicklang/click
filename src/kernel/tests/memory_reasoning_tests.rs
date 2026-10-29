@@ -3,6 +3,7 @@
 // calls it, so the tests import the planner explicitly.
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_node;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 mod ordered_range_access_tests {
@@ -1545,11 +1546,15 @@ fn disjoint_range_proves_mutable_frame_cell_distinct() {
             byte_width: 4,
         },
     };
-    let i_plus_one = Bitvector32Term::Add(
+    let i_plus_one = binary_node!(
+        Int32,
+        Add,
         Box::new(i_bits.clone()),
         Box::new(Bitvector32Term::Constant(1)),
     );
-    let j_plus_one = Bitvector32Term::Add(
+    let j_plus_one = binary_node!(
+        Int32,
+        Add,
         Box::new(j_bits.clone()),
         Box::new(Bitvector32Term::Constant(1)),
     );
@@ -3329,8 +3334,12 @@ fn integer_range_fold_endpoint_congruence_normalizes_an_affine_endpoint() {
     // `(hi - 1) + 1` is the endpoint every induction step carries back to
     // `hi`. It needs no ordering or definedness fact: 32-bit `Add` and
     // `Subtract` wrap, so the two affine normal forms are equal outright.
-    let successor_of_predecessor = Bitvector32Term::Add(
-        Box::new(Bitvector32Term::Subtract(
+    let successor_of_predecessor = binary_node!(
+        Int32,
+        Add,
+        Box::new(binary_node!(
+            Int32,
+            Subtract,
             Box::new(hi.clone()),
             Box::new(Bitvector32Term::Constant(1)),
         )),
@@ -4980,7 +4989,9 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::signed_less_than(
                     k_bits.clone(),
-                    Bitvector32Term::Add(
+                    binary_node!(
+                        Int32,
+                        Add,
                         Box::new(i_bits.clone()),
                         Box::new(Bitvector32Term::Constant(1)),
                     ),

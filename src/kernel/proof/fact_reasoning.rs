@@ -1,4 +1,6 @@
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::*;
 
 pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
@@ -115,7 +117,7 @@ fn collect_machine_affine_atoms(
 ) {
     crate::instrumentation::record_deterministic_work(1);
     match (term, wide) {
-        (Bitvector32Term::Add(left, right), false)
+        (binary_term!(Int32, Add, left, right), false)
         | (
             Bitvector32Term::Binary {
                 format: MachineIntegerType::Int64,
@@ -137,7 +139,7 @@ fn collect_machine_affine_atoms(
             collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
             collect_machine_affine_atoms(right, coefficient, wide, atoms, constant);
         }
-        (Bitvector32Term::Subtract(left, right), false)
+        (binary_term!(Int32, Subtract, left, right), false)
         | (
             Bitvector32Term::Binary {
                 format: MachineIntegerType::Int64,
@@ -1088,15 +1090,21 @@ fn expand_load_variables_shallow(bits: &Bitvector32Term) -> Bitvector32Term {
             crate::kernel::registered_load_term_for_variable(variable)
                 .unwrap_or_else(|| bits.clone())
         }
-        Bitvector32Term::Add(left, right) => Bitvector32Term::Add(
+        binary_term!(Int32, Add, left, right) => binary_node!(
+            Int32,
+            Add,
             Box::new(expand_load_variables_shallow(left)),
             Box::new(expand_load_variables_shallow(right)),
         ),
-        Bitvector32Term::Subtract(left, right) => Bitvector32Term::Subtract(
+        binary_term!(Int32, Subtract, left, right) => binary_node!(
+            Int32,
+            Subtract,
             Box::new(expand_load_variables_shallow(left)),
             Box::new(expand_load_variables_shallow(right)),
         ),
-        Bitvector32Term::Multiply(left, right) => Bitvector32Term::Multiply(
+        binary_term!(Int32, Multiply, left, right) => binary_node!(
+            Int32,
+            Multiply,
             Box::new(expand_load_variables_shallow(left)),
             Box::new(expand_load_variables_shallow(right)),
         ),

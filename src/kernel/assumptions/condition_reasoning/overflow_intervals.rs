@@ -1,4 +1,6 @@
 use super::*;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[cfg(test)]
@@ -594,7 +596,7 @@ impl PureFactContext {
                 let value = value as i32 as i64;
                 return Some((value, value));
             }
-            let Bitvector32Term::BitwiseAnd(a, b) = term else {
+            let binary_term!(Int32, BitwiseAnd, a, b) = term else {
                 return None;
             };
             let mask = a.as_const().or_else(|| b.as_const())?;
@@ -916,7 +918,9 @@ impl PureFactContext {
     ) -> Option<bool> {
         // From the operands, as for subtraction: a bound recorded on the
         // product bounds its wrapped value, not the integer product.
-        self.signed_interval_from_operands(&Bitvector32Term::Multiply(
+        self.signed_interval_from_operands(&binary_node!(
+            Int32,
+            Multiply,
             Box::new(left.clone()),
             Box::new(right.clone()),
         ))
@@ -1054,9 +1058,9 @@ impl PureFactContext {
             return (lower <= upper).then_some((lower, upper));
         }
         match term {
-            Bitvector32Term::Add(_, _)
-            | Bitvector32Term::Subtract(_, _)
-            | Bitvector32Term::Multiply(_, _) => {
+            binary_term!(Int32, Add, _, _)
+            | binary_term!(Int32, Subtract, _, _)
+            | binary_term!(Int32, Multiply, _, _) => {
                 return self.signed_interval_from_operands(term);
             }
             // A signed byte read is its unsigned byte's two's-complement
@@ -1079,7 +1083,7 @@ impl PureFactContext {
             }
             // A mask with its sign bit clear keeps only bits of the mask, so
             // `x & m` is between 0 and `m` whatever `x` is: `u & 1` is 0 or 1.
-            Bitvector32Term::BitwiseAnd(left, right)
+            binary_term!(Int32, BitwiseAnd, left, right)
                 if [left, right]
                     .iter()
                     .any(|operand| signed_bitvector_constant(operand).is_some_and(|m| m >= 0)) =>
@@ -1154,19 +1158,19 @@ impl PureFactContext {
     /// wrapped. `None` for any other term or an operand with no range.
     fn integer_interval_from_operands(&self, term: &Bitvector32Term) -> Option<(i128, i128)> {
         let (left, right) = match term {
-            Bitvector32Term::Add(left, right)
-            | Bitvector32Term::Subtract(left, right)
-            | Bitvector32Term::Multiply(left, right) => (left, right),
+            binary_term!(Int32, Add, left, right)
+            | binary_term!(Int32, Subtract, left, right)
+            | binary_term!(Int32, Multiply, left, right) => (left, right),
             _ => return None,
         };
         let (left_lower, left_upper) = self.signed_interval(left)?;
         let (right_lower, right_upper) = self.signed_interval(right)?;
         let (lower, upper) = match term {
-            Bitvector32Term::Add(_, _) => (
+            binary_term!(Int32, Add, _, _) => (
                 i128::from(left_lower) + i128::from(right_lower),
                 i128::from(left_upper) + i128::from(right_upper),
             ),
-            Bitvector32Term::Subtract(_, _) => (
+            binary_term!(Int32, Subtract, _, _) => (
                 i128::from(left_lower) - i128::from(right_upper),
                 i128::from(left_upper) - i128::from(right_lower),
             ),
@@ -1665,8 +1669,8 @@ mod tests {
         let a = Bitvector32Term::Variable(Variable(93_010));
         let b = Bitvector32Term::Variable(Variable(93_011));
         for result in [
-            Bitvector32Term::Subtract(Box::new(a.clone()), Box::new(b.clone())),
-            Bitvector32Term::Multiply(Box::new(a.clone()), Box::new(b.clone())),
+            binary_node!(Int32, Subtract, Box::new(a.clone()), Box::new(b.clone())),
+            binary_node!(Int32, Multiply, Box::new(a.clone()), Box::new(b.clone())),
         ] {
             let assumptions = PureFactContext::new()
                 .assume_condition(
@@ -1681,7 +1685,7 @@ mod tests {
                     true,
                 );
             let overflows = match &result {
-                Bitvector32Term::Subtract(..) => {
+                binary_term!(Int32, Subtract, ..) => {
                     ConditionTerm::signed_subtract_overflows(a.clone(), b.clone())
                 }
                 _ => ConditionTerm::signed_multiply_overflows(a.clone(), b.clone()),

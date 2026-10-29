@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::binary_node;
 
 // The held-term index answers from the locals that hold the variable, so
 // declaring more unrelated locals adds no work.
@@ -32,7 +33,12 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
     let variable = Variable(971_012);
     for depth in [4usize, 16, 64, 256, 1024] {
         let nested = (0..depth).fold(Bitvector32Term::Variable(variable), |term, _| {
-            Bitvector32Term::Add(Box::new(Bitvector32Term::Constant(0)), Box::new(term))
+            binary_node!(
+                Int32,
+                Add,
+                Box::new(Bitvector32Term::Constant(0)),
+                Box::new(term)
+            )
         });
         let state = scalar(CState::new(), "noise", CValue::Int32(nested));
         let base = Pointer {

@@ -2,6 +2,7 @@
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
 // calls it, so the tests import the planner explicitly.
 use super::*;
+use crate::kernel::binary_node;
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
@@ -2807,7 +2808,9 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
         .assume_proposition(Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: Bitvector32Term::Multiply(
+            bytes: binary_node!(
+                Int32,
+                Multiply,
                 Box::new(n_bits.clone()),
                 Box::new(Bitvector32Term::Constant(4)),
             ),
@@ -2899,7 +2902,9 @@ fn nonnegative_bound_rules_out_decrement_overflow() {
 fn interval_arithmetic_uses_lower_bound_for_incremented_values() {
     let i = Variable(73);
     let i_bits = Bitvector32Term::Variable(i);
-    let incremented = Bitvector32Term::Add(
+    let incremented = binary_node!(
+        Int32,
+        Add,
         Box::new(i_bits.clone()),
         Box::new(Bitvector32Term::Constant(1)),
     );

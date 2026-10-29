@@ -10,6 +10,7 @@
 use super::representation::{self, Division};
 use super::*;
 use crate::kernel::MachineBinaryOp;
+use crate::kernel::binary_node;
 use crate::kernel::proof::arithmetic_special::{
     SpecialArithmeticCertificate, SpecialArithmeticNode,
 };
@@ -505,8 +506,8 @@ fn division_word(
     let (operand, divisor) = (Box::new(operand), Box::new(divisor));
     let candidates = match division {
         Division::Quotient => [
-            T::Divide(operand.clone(), divisor.clone()),
-            T::UnsignedDivide(operand.clone(), divisor.clone()),
+            binary_node!(Int32, Divide, operand.clone(), divisor.clone()),
+            binary_node!(UInt32, Divide, operand.clone(), divisor.clone()),
             T::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Divide,
@@ -521,8 +522,8 @@ fn division_word(
             },
         ],
         Division::ShiftRight => [
-            T::ArithmeticShiftRight(operand.clone(), divisor.clone()),
-            T::LogicalShiftRight(operand.clone(), divisor.clone()),
+            binary_node!(Int32, ShiftRight, operand.clone(), divisor.clone()),
+            binary_node!(UInt32, ShiftRight, operand.clone(), divisor.clone()),
             T::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::ShiftRight,
@@ -537,8 +538,8 @@ fn division_word(
             },
         ],
         Division::Remainder => [
-            T::Remainder(operand.clone(), divisor.clone()),
-            T::UnsignedRemainder(operand.clone(), divisor.clone()),
+            binary_node!(Int32, Remainder, operand.clone(), divisor.clone()),
+            binary_node!(UInt32, Remainder, operand.clone(), divisor.clone()),
             T::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Remainder,
@@ -1077,8 +1078,8 @@ fn a_division_reads_only_at_its_own_signedness() {
         Bitvector32Term::Variable(Variable(172_071)),
         Bitvector32Term::Constant(4),
     );
-    let signed = Bitvector32Term::Divide(Box::new(x.clone()), Box::new(four.clone()));
-    let unsigned = Bitvector32Term::UnsignedDivide(Box::new(x), Box::new(four));
+    let signed = binary_node!(Int32, Divide, Box::new(x.clone()), Box::new(four.clone()));
+    let unsigned = binary_node!(UInt32, Divide, Box::new(x), Box::new(four));
     assert!(representation::word_division(Ty::UInt32, &signed).is_none());
     assert!(representation::word_division(Ty::Int32, &unsigned).is_none());
     let machine = |word: Bitvector32Term, ty: Ty| -> SharedMachineIntegerTerm {

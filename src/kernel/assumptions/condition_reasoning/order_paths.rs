@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl PureFactContext {
@@ -1484,7 +1485,7 @@ fn drop_aligned_scaled_addends(
     // scale may sit inside the index as a constant factor.
     fn constant_factor(term: &Bitvector32Term) -> Option<i64> {
         match term {
-            Bitvector32Term::Multiply(left, right) => left
+            binary_term!(Int32, Multiply, left, right) => left
                 .as_const()
                 .map(|constant| i64::from(constant as i32))
                 .or_else(|| right.as_const().map(|constant| i64::from(constant as i32))),
@@ -2416,7 +2417,7 @@ impl PureFactContext {
         // or unsigned. The range check below is made on that sum.
         let truncated = |term: &Bitvector32Term, unsigned: bool| match term {
             Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
-            Bitvector32Term::Add(left, right) => {
+            binary_term!(Int32, Add, left, right) => {
                 let (value, constant) = match (left.as_ref(), right.as_ref()) {
                     (Bitvector32Term::UInt32From64(value), constant)
                     | (constant, Bitvector32Term::UInt32From64(value)) => (value, small(constant)?),

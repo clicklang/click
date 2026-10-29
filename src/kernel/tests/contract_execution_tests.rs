@@ -3,6 +3,7 @@
 // calls it, so the tests import the planner explicitly.
 use super::*;
 use crate::kernel::LoanRefusalCategory;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use std::sync::Arc;
@@ -970,7 +971,9 @@ fn symbolic_execution_reports_overflow_facts() {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement.clone()),
                 outcome: CStatementOutcome::Return {
-                    value: int32(Bitvector32Term::Add(
+                    value: int32(binary_node!(
+                        Int32,
+                        Add,
                         Box::new(left_bits),
                         Box::new(right_bits)
                     )),
@@ -1024,7 +1027,9 @@ fn symbolic_execution_uses_no_overflow_fact() {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: CStatementOutcome::Return {
-                    value: int32(Bitvector32Term::Add(
+                    value: int32(binary_node!(
+                        Int32,
+                        Add,
                         Box::new(left_bits),
                         Box::new(right_bits)
                     )),
@@ -1065,7 +1070,9 @@ fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
 
     assert!(assumptions.proves(&Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Add(
+            binary_node!(
+                Int32,
+                Add,
                 Box::new(Bitvector32Term::Variable(left)),
                 Box::new(Bitvector32Term::Variable(right)),
             ),
@@ -1098,7 +1105,9 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: CStatementOutcome::Return {
-                    value: int32(Bitvector32Term::Add(
+                    value: int32(binary_node!(
+                        Int32,
+                        Add,
                         Box::new(x_bits),
                         Box::new(Bitvector32Term::Constant(1)),
                     )),

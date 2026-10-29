@@ -2,6 +2,7 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 use crate::kernel::{MachineIntegerType, OverflowOperation};
+use crate::kernel::{binary_term, unary_term};
 
 pub(in crate::surface::proof) fn explicit_loop_preservation_tactics(
     clause: &StructuralClause,
@@ -668,7 +669,7 @@ fn is_one_byte_external_range(bytes: &Bitvector32Term) -> bool {
     matches!(
         bytes,
         Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)
-    ) || matches!(bytes, Bitvector32Term::Subtract(end, start)
+    ) || matches!(bytes, binary_term!(Int32, Subtract, end, start)
             if end.as_ref() == &Bitvector32Term::add(start.as_ref().clone(), Bitvector32Term::Constant(1)))
 }
 
@@ -944,7 +945,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 work.push(Work::Bitvector(right));
                 work.push(Work::Bitvector(left));
             }
-            Work::Bitvector(Bitvector32Term::BitwiseNot(body)) => {
+            Work::Bitvector(unary_term!(Int32, BitwiseNot, body)) => {
                 work.push(Work::Bitvector(body));
             }
             Work::Bitvector(_) => return Ok(false),

@@ -3,6 +3,9 @@
 //! checked at their full width.
 use super::{Bitvector32Term as B, ConditionTerm as C};
 use crate::kernel::MachineBinaryOp;
+#[cfg(test)]
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 impl C {
@@ -31,10 +34,10 @@ impl C {
             (left.as_ref(), Some(right.as_ref()))
         };
         let (n, d) = match result {
-            B::Divide(n, d)
-            | B::UnsignedDivide(n, d)
-            | B::Remainder(n, d)
-            | B::UnsignedRemainder(n, d) => (n, d),
+            binary_term!(Int32, Divide, n, d)
+            | binary_term!(UInt32, Divide, n, d)
+            | binary_term!(Int32, Remainder, n, d)
+            | binary_term!(UInt32, Remainder, n, d) => (n, d),
             _ => return None,
         };
         let mut guards = vec![
@@ -150,8 +153,10 @@ impl B {
                 vec![C::uint64_less_than(n.as_ref().clone(), d.as_ref().clone())],
                 n.as_ref().clone(),
             )),
-            B::Remainder(_, d) if d.as_const() == Some(1) => Some((Vec::new(), B::Constant(0))),
-            B::Remainder(n, d) => {
+            binary_term!(Int32, Remainder, _, d) if d.as_const() == Some(1) => {
+                Some((Vec::new(), B::Constant(0)))
+            }
+            binary_term!(Int32, Remainder, n, d) => {
                 let k = d.as_const()? as i32;
                 if k <= 0 {
                     return None;
@@ -180,7 +185,7 @@ impl B {
                         B::Constant(0),
                     ));
                 }
-                if let B::Subtract(original, step) = n.as_ref()
+                if let binary_term!(Int32, Subtract, original, step) = n.as_ref()
                     && step == d
                 {
                     return Some((
@@ -216,10 +221,10 @@ mod tests {
         let n = B::Variable(Variable(100));
         let d = B::Variable(Variable(101));
         for result in [
-            B::Divide(Box::new(n.clone()), Box::new(d.clone())),
-            B::UnsignedDivide(Box::new(n.clone()), Box::new(d.clone())),
-            B::Remainder(Box::new(n.clone()), Box::new(d.clone())),
-            B::UnsignedRemainder(Box::new(n.clone()), Box::new(d.clone())),
+            binary_node!(Int32, Divide, Box::new(n.clone()), Box::new(d.clone())),
+            binary_node!(UInt32, Divide, Box::new(n.clone()), Box::new(d.clone())),
+            binary_node!(Int32, Remainder, Box::new(n.clone()), Box::new(d.clone())),
+            binary_node!(UInt32, Remainder, Box::new(n.clone()), Box::new(d.clone())),
         ] {
             for goal in [
                 C::signed_less_equal(B::Constant(0), result.clone()),

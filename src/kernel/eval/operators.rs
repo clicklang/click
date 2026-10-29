@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_term;
 
 type ValidShiftCountEvaluator = fn(
     Bitvector32Term,
@@ -321,10 +322,10 @@ pub(in crate::kernel) fn evaluate_c_add_paths(
 /// [`apply_c_add`] directly and keeps the shape its proof names, in which a
 /// compound operand can be an opaque affine atom.
 fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExpressionPath {
-    if let CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Add(base, increment))) =
+    if let CExpressionOutcome::Value(CValue::Int32(binary_term!(Int32, Add, base, increment))) =
         &path.outcome
         && let (
-            Bitvector32Term::Add(inner, addend),
+            binary_term!(Int32, Add, inner, addend),
             Bitvector32Term::Constant(increment) | Bitvector32Term::UInt32Constant(increment),
         ) = (base.as_ref(), increment.as_ref())
         && let Bitvector32Term::Constant(addend) | Bitvector32Term::UInt32Constant(addend) =
@@ -2630,7 +2631,7 @@ fn byte_stride_index(
     if byte_width != 1 || unsigned || wide {
         return None;
     }
-    let Bitvector32Term::Multiply(left, right) = offset else {
+    let binary_term!(Int32, Multiply, left, right) = offset else {
         return None;
     };
     let (index, stride) = match (left.as_const(), right.as_const()) {
@@ -3442,7 +3443,7 @@ fn owed_guard_paths(
 /// Keep the combined offset signed-representable for interval reconstruction.
 fn c_int32_add_value(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
     if let (
-        Bitvector32Term::Add(base, trailing),
+        binary_term!(Int32, Add, base, trailing),
         Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
     ) = (&left, &right)
         && let Bitvector32Term::Constant(trailing) | Bitvector32Term::UInt32Constant(trailing) =

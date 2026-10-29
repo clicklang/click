@@ -62,6 +62,7 @@ pub(in crate::kernel) mod step_effect;
 
 use crate::kernel::memory_provenance::with_extended_dag_bridging;
 use crate::kernel::primitives::*;
+use crate::kernel::unary_term;
 
 /// A point on the current proof path, named by the memory snapshot the
 /// kernel had reached there: `entry`, a `mark`ed label, or "here".
@@ -1562,7 +1563,7 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
             collect_bitvector_reads(left, reads);
             collect_bitvector_reads(right, reads);
         }
-        Bitvector32Term::BitwiseNot(inner)
+        unary_term!(Int32, BitwiseNot, inner)
         | Bitvector32Term::Int64From32(inner)
         | Bitvector32Term::MachineIntegerCast { value: inner, .. }
         | Bitvector32Term::UInt64From32(inner)

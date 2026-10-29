@@ -1,4 +1,7 @@
 use super::*;
+#[cfg(test)]
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 mod observable;
 
@@ -8491,12 +8494,12 @@ pub(in crate::kernel) fn population_quantity_sum(
     // Recombining a framed remainder is what a contract refinement does
     // (`mdtests/c_named_contract_refines_symbolic_resource_quantity.md`), and
     // the term it lands on is the one it started from.
-    if let Bitvector32Term::Subtract(total, taken) = right
+    if let binary_term!(Int32, Subtract, total, taken) = right
         && taken.as_ref() == left
     {
         return Some(total.as_ref().clone());
     }
-    if let Bitvector32Term::Subtract(total, taken) = left
+    if let binary_term!(Int32, Subtract, total, taken) = left
         && taken.as_ref() == right
     {
         return Some(total.as_ref().clone());
@@ -9587,14 +9590,14 @@ fn range_endpoint_terms_equal(
     // Structural descent covers the common affine endpoint forms
     // (base + load, load - base, load * scale).
     let structurally_bridged = match (left, right) {
-        (Bitvector32Term::Add(left_a, left_b), Bitvector32Term::Add(right_a, right_b))
+        (binary_term!(Int32, Add, left_a, left_b), binary_term!(Int32, Add, right_a, right_b))
         | (
-            Bitvector32Term::Subtract(left_a, left_b),
-            Bitvector32Term::Subtract(right_a, right_b),
+            binary_term!(Int32, Subtract, left_a, left_b),
+            binary_term!(Int32, Subtract, right_a, right_b),
         )
         | (
-            Bitvector32Term::Multiply(left_a, left_b),
-            Bitvector32Term::Multiply(right_a, right_b),
+            binary_term!(Int32, Multiply, left_a, left_b),
+            binary_term!(Int32, Multiply, right_a, right_b),
         ) => {
             range_endpoint_terms_equal(left_a, right_a, assumptions)
                 && range_endpoint_terms_equal(left_b, right_b, assumptions)
@@ -9960,7 +9963,7 @@ pub(in crate::kernel) fn checked_native_range_endpoint(
         }
         Bitvector32Term::Variable(_) => term.clone(),
         Bitvector32Term::UInt32From64(value) => value.as_ref().clone(),
-        Bitvector32Term::Add(left, right) => {
+        binary_term!(Int32, Add, left, right) => {
             let (value, constant) = match (left.as_ref(), right.as_ref()) {
                 (
                     value,
@@ -11730,7 +11733,12 @@ mod support_removal_tests {
         );
         let mut nested = load;
         for _ in 0..(MAX_MEMORY_LOAD_FOOTPRINT_DEPTH + 8) {
-            nested = Bitvector32Term::Add(Box::new(nested), Box::new(Bitvector32Term::Constant(0)));
+            nested = binary_node!(
+                Int32,
+                Add,
+                Box::new(nested),
+                Box::new(Bitvector32Term::Constant(0))
+            );
         }
         let fact = CResourceFact::view_memory(CMemoryRange::new(
             Pointer {

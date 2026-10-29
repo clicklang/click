@@ -8,6 +8,8 @@
 //! here because they read the same recorded edges under the same rules; see
 //! `docs/internals/resource-tracker.md` and `docs/internals/memory-dag.md`.
 
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::memory_provenance::*;
 use crate::kernel::primitives::*;
 use crate::kernel::reasoning::*;
@@ -1210,12 +1212,12 @@ impl PointerInRangeEvidence {
         let (start, _) = range.int32_bounds()?;
         let index =
             pointer.element_index_from_base_with_width(range.base(), range.element_width())?;
-        let Bitvector32Term::Add(left, right) = &index else {
+        let binary_term!(Int32, Add, left, right) = &index else {
             return None;
         };
         let candidates = [
-            Bitvector32Term::Add(Box::new(start.clone()), right.clone()),
-            Bitvector32Term::Add(left.clone(), Box::new(start.clone())),
+            binary_node!(Int32, Add, Box::new(start.clone()), right.clone()),
+            binary_node!(Int32, Add, left.clone(), Box::new(start.clone())),
         ];
         for candidate in candidates {
             if candidate == index {
@@ -1847,7 +1849,9 @@ mod wide_range_reader_tests {
             4,
         );
         let facts = PureFactContext::new();
-        let signed_index = Bitvector32Term::Add(
+        let signed_index = binary_node!(
+            Int32,
+            Add,
             Box::new(Bitvector32Term::Variable(Variable(984_301))),
             Box::new(Bitvector32Term::Variable(Variable(984_302))),
         );
@@ -1904,8 +1908,10 @@ mod separated_range_frame_tests {
         let loaded_start = word(9_941_002);
         let end = word(9_941_003);
         let index = word(9_941_004);
-        let model_index = Bitvector32Term::Add(Box::new(start.clone()), Box::new(index.clone()));
-        let actual_index = Bitvector32Term::Add(Box::new(loaded_start.clone()), Box::new(index));
+        let model_index =
+            binary_node!(Int32, Add, Box::new(start.clone()), Box::new(index.clone()));
+        let actual_index =
+            binary_node!(Int32, Add, Box::new(loaded_start.clone()), Box::new(index));
         let field = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),

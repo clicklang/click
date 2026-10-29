@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_node;
 use num_bigint::BigInt;
 
 fn evaluated(expression: CExpression) -> CExpressionOutcome {
@@ -147,7 +148,9 @@ fn wide_scalar_rejects_legacy_carriers_and_unsupported_arithmetic() {
             Bitvector32Term::Int64Constant(1),
             Bitvector32Term::UInt64Constant(1),
             wrong,
-            Bitvector32Term::Add(
+            binary_node!(
+                Int32,
+                Add,
                 Box::new(Bitvector32Term::Variable(Variable(148_002))),
                 Box::new(Bitvector32Term::Constant(1)),
             ),

@@ -2,6 +2,7 @@
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
 // calls it, so the tests import the planner explicitly.
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -121,9 +122,6 @@ fn collect_offset_load_variables_from_term(
             collect_offset_load_variables_from_term(left, load_variables);
             collect_offset_load_variables_from_term(right, load_variables);
         }
-        Bitvector32Term::BitwiseNot(value) => {
-            collect_offset_load_variables_from_term(value, load_variables)
-        }
         Bitvector32Term::If {
             condition: _,
             then_term,
@@ -200,9 +198,6 @@ fn assert_scaled_index_free_of_raw_loads(
         crate::kernel::binary_wide_term!(left, right) => {
             assert_scaled_index_free_of_raw_loads(left, load_variables);
             assert_scaled_index_free_of_raw_loads(right, load_variables);
-        }
-        Bitvector32Term::BitwiseNot(value) => {
-            assert_scaled_index_free_of_raw_loads(value, load_variables)
         }
         Bitvector32Term::Float32Negate(value) | Bitvector32Term::Float64Negate(value) => {
             assert_scaled_index_free_of_raw_loads(value, load_variables)
@@ -367,11 +362,6 @@ fn unresolved_canonicalization_test_load() -> Bitvector32Term {
 
 #[test]
 fn canonical_term_is_idempotent_for_every_term_shape() {
-    macro_rules! binary {
-        ($variant:ident, $left:expr, $right:expr) => {
-            Bitvector32Term::$variant(Box::new($left), Box::new($right))
-        };
-    }
     macro_rules! machine_binary {
         ($format:ident, $op:ident, $left:expr, $right:expr) => {
             Bitvector32Term::Binary {
@@ -406,20 +396,20 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
         Bitvector32Term::Int64Constant(3),
         Bitvector32Term::UInt64Constant(3),
         Bitvector32Term::Variable(Variable(30_001)),
-        binary!(Add, load.clone(), u32_value.clone()),
-        binary!(Subtract, load.clone(), u32_value.clone()),
-        binary!(Multiply, load.clone(), u32_value.clone()),
-        binary!(Divide, load.clone(), u32_value.clone()),
-        binary!(UnsignedDivide, load.clone(), u32_value.clone()),
-        binary!(Remainder, load.clone(), u32_value.clone()),
-        binary!(UnsignedRemainder, load.clone(), u32_value.clone()),
-        binary!(ShiftLeft, load.clone(), u32_value.clone()),
-        binary!(ArithmeticShiftRight, load.clone(), u32_value.clone()),
-        binary!(LogicalShiftRight, load.clone(), u32_value.clone()),
-        binary!(BitwiseAnd, load.clone(), u32_value.clone()),
-        binary!(BitwiseOr, load.clone(), u32_value.clone()),
-        binary!(BitwiseXor, load.clone(), u32_value.clone()),
-        unary!(BitwiseNot, load.clone()),
+        machine_binary!(Int32, Add, load.clone(), u32_value.clone()),
+        machine_binary!(Int32, Subtract, load.clone(), u32_value.clone()),
+        machine_binary!(Int32, Multiply, load.clone(), u32_value.clone()),
+        machine_binary!(Int32, Divide, load.clone(), u32_value.clone()),
+        machine_binary!(UInt32, Divide, load.clone(), u32_value.clone()),
+        machine_binary!(Int32, Remainder, load.clone(), u32_value.clone()),
+        machine_binary!(UInt32, Remainder, load.clone(), u32_value.clone()),
+        machine_binary!(Int32, ShiftLeft, load.clone(), u32_value.clone()),
+        machine_binary!(Int32, ShiftRight, load.clone(), u32_value.clone()),
+        machine_binary!(UInt32, ShiftRight, load.clone(), u32_value.clone()),
+        machine_binary!(Int32, BitwiseAnd, load.clone(), u32_value.clone()),
+        machine_binary!(Int32, BitwiseOr, load.clone(), u32_value.clone()),
+        machine_binary!(Int32, BitwiseXor, load.clone(), u32_value.clone()),
+        machine_unary!(Int32, BitwiseNot, load.clone()),
         Bitvector32Term::If {
             condition: Box::new(ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -489,7 +479,9 @@ fn canonical_term_is_idempotent_at_multiple_term_depths() {
     for target_depth in [1_usize, 8, 32, 96, 256] {
         let mut term = unresolved_canonicalization_test_load();
         for depth in 0..target_depth {
-            term = Bitvector32Term::Add(
+            term = binary_node!(
+                Int32,
+                Add,
                 Box::new(Bitvector32Term::If {
                     condition: Box::new(ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -681,8 +673,18 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
         crate::kernel::LoadKind::Int32,
     );
     for value in 0..128 {
-        left = Bitvector32Term::Add(Box::new(left), Box::new(Bitvector32Term::Constant(value)));
-        right = Bitvector32Term::Add(Box::new(right), Box::new(Bitvector32Term::Constant(value)));
+        left = binary_node!(
+            Int32,
+            Add,
+            Box::new(left),
+            Box::new(Bitvector32Term::Constant(value))
+        );
+        right = binary_node!(
+            Int32,
+            Add,
+            Box::new(right),
+            Box::new(Bitvector32Term::Constant(value))
+        );
     }
 
     assert_eq!(
@@ -1370,7 +1372,9 @@ fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
         value: Box::new(value),
         byte_width: 4,
     };
-    let wrapping = scaled(Bitvector32Term::Add(
+    let wrapping = scaled(binary_node!(
+        Int32,
+        Add,
         Box::new(u.clone()),
         Box::new(Bitvector32Term::Constant(0x8000_0000)),
     ));
@@ -1433,7 +1437,9 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
         },
     };
 
-    let wrapping = Bitvector32Term::Add(
+    let wrapping = binary_node!(
+        Int32,
+        Add,
         Box::new(Bitvector32Term::Variable(Variable(7_960_101))),
         Box::new(Bitvector32Term::Constant(0x8000_0000)),
     );
@@ -1445,7 +1451,9 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     );
     assert_eq!(kept, SlotSet::AskWithin(0, 8), "no slot is kept unasked");
 
-    let neighbour = Bitvector32Term::Add(
+    let neighbour = binary_node!(
+        Int32,
+        Add,
         Box::new(Bitvector32Term::Variable(Variable(7_960_102))),
         Box::new(Bitvector32Term::Constant(1)),
     );

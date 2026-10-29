@@ -1881,7 +1881,9 @@ mod tests {
                     *value as i32 as i64
                 }
                 Bitvector32Term::Variable(variable) => bits[variable],
-                Bitvector32Term::Add(left, right) => eval_bits(left, bits) + eval_bits(right, bits),
+                binary_term!(Int32, Add, left, right) => {
+                    eval_bits(left, bits) + eval_bits(right, bits)
+                }
                 _ => panic!("test evaluator only needs signed constants, variables, and add"),
             }
         }

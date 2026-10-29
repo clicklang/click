@@ -1,6 +1,8 @@
 use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{PureFactContext, Variable};
 
@@ -23,7 +25,12 @@ fn constant(value: i32) -> Bitvector32Term {
 }
 
 fn plus(term: &Bitvector32Term, value: i32) -> Bitvector32Term {
-    Bitvector32Term::Add(Box::new(term.clone()), Box::new(constant(value)))
+    binary_node!(
+        Int32,
+        Add,
+        Box::new(term.clone()),
+        Box::new(constant(value))
+    )
 }
 
 fn lt(a: &Bitvector32Term, b: &Bitvector32Term) -> ConditionTerm {
@@ -174,7 +181,7 @@ fn decisions_hold_in_every_model_and_are_complete() {
     let value = |term: &Bitvector32Term, model: &[i128]| -> i128 {
         match term {
             Bitvector32Term::Constant(value) => i128::from(*value as i32),
-            Bitvector32Term::Add(base, offset) => {
+            binary_term!(Int32, Add, base, offset) => {
                 let base = variables.iter().position(|v| v == base.as_ref()).unwrap();
                 let Bitvector32Term::Constant(offset) = offset.as_ref() else {
                     unreachable!()
@@ -334,16 +341,22 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
     fn value(term: &Bitvector32Term, variables: &[Bitvector32Term], model: &[i32]) -> i32 {
         match term {
             T::Constant(value) => *value as i32,
-            T::Add(a, b) => value(a, variables, model).wrapping_add(value(b, variables, model)),
-            T::Subtract(a, b) => {
+            binary_term!(Int32, Add, a, b) => {
+                value(a, variables, model).wrapping_add(value(b, variables, model))
+            }
+            binary_term!(Int32, Subtract, a, b) => {
                 value(a, variables, model).wrapping_sub(value(b, variables, model))
             }
-            T::Multiply(a, b) => {
+            binary_term!(Int32, Multiply, a, b) => {
                 value(a, variables, model).wrapping_mul(value(b, variables, model))
             }
-            T::BitwiseXor(a, b) => value(a, variables, model) ^ value(b, variables, model),
+            binary_term!(Int32, BitwiseXor, a, b) => {
+                value(a, variables, model) ^ value(b, variables, model)
+            }
             // The pool divides only by constants other than 0 and -1.
-            T::Remainder(a, b) => value(a, variables, model) % value(b, variables, model),
+            binary_term!(Int32, Remainder, a, b) => {
+                value(a, variables, model) % value(b, variables, model)
+            }
             _ => model[variables.iter().position(|v| v == term).unwrap()],
         }
     }
@@ -352,22 +365,61 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let mut pool = variables.clone();
     pool.push(plus(&variables[0], 1));
-    pool.push(T::Subtract(boxed(&variables[1]), boxed(&constant(1))));
-    pool.push(T::Subtract(boxed(&constant(0)), boxed(&variables[2])));
-    pool.push(T::Subtract(boxed(&variables[0]), boxed(&variables[1])));
-    pool.push(T::Add(boxed(&variables[1]), boxed(&variables[2])));
-    pool.push(T::Multiply(boxed(&variables[0]), boxed(&constant(2))));
+    pool.push(binary_node!(
+        Int32,
+        Subtract,
+        boxed(&variables[1]),
+        boxed(&constant(1))
+    ));
+    pool.push(binary_node!(
+        Int32,
+        Subtract,
+        boxed(&constant(0)),
+        boxed(&variables[2])
+    ));
+    pool.push(binary_node!(
+        Int32,
+        Subtract,
+        boxed(&variables[0]),
+        boxed(&variables[1])
+    ));
+    pool.push(binary_node!(
+        Int32,
+        Add,
+        boxed(&variables[1]),
+        boxed(&variables[2])
+    ));
+    pool.push(binary_node!(
+        Int32,
+        Multiply,
+        boxed(&variables[0]),
+        boxed(&constant(2))
+    ));
     // A sign-bit flip moves a value of known sign by half the modulus.
-    pool.push(T::BitwiseXor(
+    pool.push(binary_node!(
+        Int32,
+        BitwiseXor,
         boxed(&constant(i32::MIN)),
         boxed(&variables[1]),
     ));
-    pool.push(T::BitwiseXor(
+    pool.push(binary_node!(
+        Int32,
+        BitwiseXor,
         boxed(&variables[2]),
         boxed(&constant(i32::MIN)),
     ));
-    pool.push(T::Remainder(boxed(&variables[0]), boxed(&constant(2))));
-    pool.push(T::Remainder(boxed(&variables[1]), boxed(&constant(-3))));
+    pool.push(binary_node!(
+        Int32,
+        Remainder,
+        boxed(&variables[0]),
+        boxed(&constant(2))
+    ));
+    pool.push(binary_node!(
+        Int32,
+        Remainder,
+        boxed(&variables[1]),
+        boxed(&constant(-3))
+    ));
     let constants = [i32::MIN, -1, 0, 1, i32::MAX].map(constant);
     let holds = |condition: &ConditionTerm, model: &[i32]| -> bool {
         let v = |term: &Bitvector32Term| value(term, &variables, model);
@@ -684,8 +736,8 @@ fn a_disequality_at_a_range_end_tightens_it() {
 fn a_named_compound_term_keeps_its_operands_bounds() {
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let difference = Bitvector32Term::Subtract(boxed(&y), boxed(&x));
-    let less_one = Bitvector32Term::Subtract(boxed(&difference), boxed(&constant(1)));
+    let difference = binary_node!(Int32, Subtract, boxed(&y), boxed(&x));
+    let less_one = binary_node!(Int32, Subtract, boxed(&difference), boxed(&constant(1)));
     let graph = graph(&[
         (le(&constant(0), &less_one), true),
         (lt(&x, &y), true),
@@ -759,7 +811,7 @@ fn overflow_facts_shifts_and_products_are_read() {
         }),
         Some(false)
     );
-    let doubled = Bitvector32Term::Multiply(boxed(&x), boxed(&constant(2)));
+    let doubled = binary_node!(Int32, Multiply, boxed(&x), boxed(&constant(2)));
     assert_eq!(
         byte.decide(&ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -815,7 +867,7 @@ fn graph_of_negative(term: &Bitvector32Term) -> DifferenceGraph {
 fn a_remainder_by_a_constant_is_bounded() {
     let x = variable(0);
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let remainder = |k: i32| Bitvector32Term::Remainder(boxed(&x), boxed(&constant(k)));
+    let remainder = |k: i32| binary_node!(Int32, Remainder, boxed(&x), boxed(&constant(k)));
     let zero = graph(&[(ConditionTerm::equal(x.clone(), constant(0)), true)]);
     assert_eq!(
         zero.decide(&ConditionTerm::equal(remainder(2), constant(0))),
@@ -1342,9 +1394,11 @@ fn a_sign_flip_of_known_sign_is_bounded() {
     use Bitvector32Term as T;
     let (a, b) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let flipped = T::BitwiseXor(
+    let flipped = binary_node!(
+        Int32,
+        BitwiseXor,
         Box::new(T::Constant(i32::MIN as u32)),
-        Box::new(T::Subtract(boxed(&a), boxed(&b))),
+        Box::new(binary_node!(Int32, Subtract, boxed(&a), boxed(&b))),
     );
     let below_zero = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
@@ -1385,13 +1439,20 @@ fn an_unsigned_quotient_of_words_is_bounded() {
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let flip = |term: Bitvector32Term| {
-        T::BitwiseXor(Box::new(T::Constant(i32::MIN as u32)), Box::new(term))
+        binary_node!(
+            Int32,
+            BitwiseXor,
+            Box::new(T::Constant(i32::MIN as u32)),
+            Box::new(term)
+        )
     };
     let fits = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
         left: Box::new(flip(x.clone())),
-        right: Box::new(flip(T::UnsignedDivide(
+        right: Box::new(flip(binary_node!(
+            UInt32,
+            Divide,
             Box::new(T::Constant(u32::MAX)),
             boxed(&y),
         ))),
@@ -1786,10 +1847,9 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
 /// the word size.
 #[test]
 fn a_no_overflow_fact_answers_its_operands_under_other_names() {
-    use Bitvector32Term as T;
     let (l, r, v) = (variable(0), variable(1), variable(2));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let one_more = |x: &Bitvector32Term| T::Add(boxed(&constant(1)), boxed(x));
+    let one_more = |x: &Bitvector32Term| binary_node!(Int32, Add, boxed(&constant(1)), boxed(x));
     let overflows = |x: &Bitvector32Term| ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
@@ -1811,7 +1871,7 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
-                left: Box::new(Bitvector32Term::Add(boxed(&constant(1)), boxed(l))),
+                left: Box::new(binary_node!(Int32, Add, boxed(&constant(1)), boxed(l))),
                 right: boxed(r),
             },
             false,

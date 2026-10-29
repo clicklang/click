@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
@@ -572,7 +573,9 @@ fn concise_reason_keeps_list_entries_and_definitions_whole() {
 fn click_addition_cancels_a_negated_pointer_base() {
     let base = Bitvector32Term::Variable(Variable(90));
     let index = Bitvector32Term::Variable(Variable(91));
-    let negative_base = Bitvector32Term::Subtract(
+    let negative_base = binary_node!(
+        Int32,
+        Subtract,
         Box::new(Bitvector32Term::Constant(0)),
         Box::new(base.clone()),
     );
@@ -580,7 +583,7 @@ fn click_addition_cancels_a_negated_pointer_base() {
     assert_eq!(
         super::lowering::bitvector32_add(
             negative_base,
-            Bitvector32Term::Add(Box::new(base), Box::new(index.clone())),
+            binary_node!(Int32, Add, Box::new(base), Box::new(index.clone())),
         ),
         index
     );
@@ -3402,7 +3405,9 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
             Pointer {
                 block: PointerBlock::Concrete("nodes".into()),
                 offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::Subtract(
+                    binary_node!(
+                        Int32,
+                        Subtract,
                         Box::new(Bitvector32Term::MemoryLoad(
                             intern_c_memory(memory),
                             Box::new(read.clone()),

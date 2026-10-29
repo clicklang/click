@@ -3,6 +3,7 @@
 use super::*;
 use crate::kernel::LoweringIntroduction;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{binary_term, unary_term};
 use num_traits::ToPrimitive;
 
 fn signed_constant_expression(expression: &ContractExpression) -> Option<num_bigint::BigInt> {
@@ -91,7 +92,7 @@ fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> boo
     else {
         return false;
     };
-    let crate::kernel::Bitvector32Term::Subtract(value, amount) = left.as_ref() else {
+    let binary_term!(Int32, Subtract, value, amount) = left.as_ref() else {
         return false;
     };
     signed_atom_matches(value, right)
@@ -143,20 +144,20 @@ fn signed_atom_matches(
                 }
             }
             (
-                crate::kernel::Bitvector32Term::Add(left, right),
-                crate::kernel::Bitvector32Term::Add(other_left, other_right),
+                binary_term!(Int32, Add, left, right),
+                binary_term!(Int32, Add, other_left, other_right),
             )
             | (
-                crate::kernel::Bitvector32Term::Subtract(left, right),
-                crate::kernel::Bitvector32Term::Subtract(other_left, other_right),
+                binary_term!(Int32, Subtract, left, right),
+                binary_term!(Int32, Subtract, other_left, other_right),
             )
             | (
-                crate::kernel::Bitvector32Term::Multiply(left, right),
-                crate::kernel::Bitvector32Term::Multiply(other_left, other_right),
+                binary_term!(Int32, Multiply, left, right),
+                binary_term!(Int32, Multiply, other_left, other_right),
             )
             | (
-                crate::kernel::Bitvector32Term::Remainder(left, right),
-                crate::kernel::Bitvector32Term::Remainder(other_left, other_right),
+                binary_term!(Int32, Remainder, left, right),
+                binary_term!(Int32, Remainder, other_left, other_right),
             ) => {
                 pending.push((left, other_left));
                 pending.push((right, other_right));
@@ -181,7 +182,7 @@ fn signed_scaled_term_matches(
     {
         return true;
     }
-    let crate::kernel::Bitvector32Term::Multiply(left, right) = target else {
+    let binary_term!(Int32, Multiply, left, right) = target else {
         return false;
     };
     let coefficient_i32 = coefficient.to_i32();
@@ -315,12 +316,12 @@ fn signed_add_surface_shape(
         if signed_term_constant_value(first) == Some(0) && signed_atom_matches(target, second) {
             return true;
         }
-        if let crate::kernel::Bitvector32Term::Add(target_first, target_second) = target {
+        if let binary_term!(Int32, Add, target_first, target_second) = target {
             // Lowering may combine two trailing, signed-representable
             // constants. Recognize that encoding of this same child sum;
             // the emitted kernel node still uses the children's exact
             // mathematical claim, not the lowered machine-value claim.
-            if let crate::kernel::Bitvector32Term::Add(base, trailing) = first
+            if let binary_term!(Int32, Add, base, trailing) = first
                 && let crate::kernel::Bitvector32Term::Constant(trailing)
                 | crate::kernel::Bitvector32Term::UInt32Constant(trailing) = trailing.as_ref()
                 && let crate::kernel::Bitvector32Term::Constant(second)
@@ -341,7 +342,7 @@ fn signed_add_surface_shape(
                         (Some(left), Some(right)) if left == right
                     ));
         }
-        if let crate::kernel::Bitvector32Term::Subtract(target_first, target_second) = target {
+        if let binary_term!(Int32, Subtract, target_first, target_second) = target {
             return signed_atom_matches(target_first, first)
                 && matches!(
                     (
@@ -427,12 +428,12 @@ fn signed_term_constant_value(term: &crate::kernel::Bitvector32Term) -> Option<i
                 | crate::kernel::Bitvector32Term::UInt32Constant(value) => {
                     values.push(Some(*value as i32 as i64));
                 }
-                crate::kernel::Bitvector32Term::Add(left, right) => {
+                binary_term!(Int32, Add, left, right) => {
                     pending.push(Task::Combine(true));
                     pending.push(Task::Visit(right));
                     pending.push(Task::Visit(left));
                 }
-                crate::kernel::Bitvector32Term::Subtract(left, right) => {
+                binary_term!(Int32, Subtract, left, right) => {
                     if signed_atom_matches(left, right) {
                         values.push(Some(0));
                     } else {
@@ -604,16 +605,16 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
     let mut pending = vec![left, right];
     while let Some(term) = pending.pop() {
         match term {
-            crate::kernel::Bitvector32Term::Add(left, right)
-            | crate::kernel::Bitvector32Term::Subtract(left, right)
-            | crate::kernel::Bitvector32Term::Multiply(left, right)
-            | crate::kernel::Bitvector32Term::Divide(left, right)
-            | crate::kernel::Bitvector32Term::Remainder(left, right)
-            | crate::kernel::Bitvector32Term::ShiftLeft(left, right)
-            | crate::kernel::Bitvector32Term::ArithmeticShiftRight(left, right)
-            | crate::kernel::Bitvector32Term::LogicalShiftRight(left, right) => {
+            binary_term!(Int32, Add, left, right)
+            | binary_term!(Int32, Subtract, left, right)
+            | binary_term!(Int32, Multiply, left, right)
+            | binary_term!(Int32, Divide, left, right)
+            | binary_term!(Int32, Remainder, left, right)
+            | binary_term!(Int32, ShiftLeft, left, right)
+            | binary_term!(Int32, ShiftRight, left, right)
+            | binary_term!(UInt32, ShiftRight, left, right) => {
                 machine_operation = true;
-                if matches!(term, crate::kernel::Bitvector32Term::Multiply(_, _))
+                if matches!(term, binary_term!(Int32, Multiply, _, _))
                     && signed_term_constant_value(left).is_none()
                     && signed_term_constant_value(right).is_none()
                 {
@@ -625,13 +626,13 @@ fn signed_goal_shape_flags(goal: &crate::kernel::Proposition) -> Option<(bool, b
             // Bitwise operations are total. Inspect their operands for
             // partial arithmetic, but do not invent an overflow obligation
             // for the mask or the unsigned-order sign-bit xor itself.
-            crate::kernel::Bitvector32Term::BitwiseAnd(left, right)
-            | crate::kernel::Bitvector32Term::BitwiseOr(left, right)
-            | crate::kernel::Bitvector32Term::BitwiseXor(left, right) => {
+            binary_term!(Int32, BitwiseAnd, left, right)
+            | binary_term!(Int32, BitwiseOr, left, right)
+            | binary_term!(Int32, BitwiseXor, left, right) => {
                 pending.push(left);
                 pending.push(right);
             }
-            crate::kernel::Bitvector32Term::BitwiseNot(inner) => {
+            unary_term!(Int32, BitwiseNot, inner) => {
                 pending.push(inner);
             }
             crate::kernel::Bitvector32Term::PureFunctionApplication { arguments, .. } => {

@@ -4,6 +4,9 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
+#[cfg(test)]
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use std::sync::Arc;
 
@@ -203,11 +206,15 @@ mod certificate_tests {
             crate::kernel::LoadKind::Int32,
         );
 
-        assert!(bitvector_term_is_load_free(&Bitvector32Term::Add(
+        assert!(bitvector_term_is_load_free(&binary_node!(
+            Int32,
+            Add,
             Box::new(Bitvector32Term::Variable(Variable(1))),
             Box::new(Bitvector32Term::Constant(1)),
         )));
-        assert!(!bitvector_term_is_load_free(&Bitvector32Term::Add(
+        assert!(!bitvector_term_is_load_free(&binary_node!(
+            Int32,
+            Add,
             Box::new(load),
             Box::new(Bitvector32Term::Constant(1)),
         )));
@@ -217,7 +224,12 @@ mod certificate_tests {
     fn surface_synthesis_rejects_too_deep_terms_with_a_bounded_reason() {
         let mut term = Bitvector32Term::Variable(Variable(1));
         for _ in 0..=SURFACE_SYNTHESIS_DEPTH_LIMIT {
-            term = Bitvector32Term::Add(Box::new(term), Box::new(Bitvector32Term::Constant(1)));
+            term = binary_node!(
+                Int32,
+                Add,
+                Box::new(term),
+                Box::new(Bitvector32Term::Constant(1))
+            );
         }
         let proposition = Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -2705,7 +2717,7 @@ fn evaluate_entry_resource_context(
                 return None;
             };
             let range = match bytes {
-                Bitvector32Term::Multiply(left, right)
+                binary_term!(Int32, Multiply, left, right)
                     if **right == Bitvector32Term::Constant(CType::Int32.byte_width()) =>
                 {
                     CMemoryRange::new(
@@ -2714,7 +2726,7 @@ fn evaluate_entry_resource_context(
                         left.as_ref().clone(),
                     )
                 }
-                Bitvector32Term::Multiply(left, right)
+                binary_term!(Int32, Multiply, left, right)
                     if **left == Bitvector32Term::Constant(CType::Int32.byte_width()) =>
                 {
                     CMemoryRange::new(

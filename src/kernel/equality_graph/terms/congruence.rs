@@ -10,6 +10,7 @@ use crate::kernel::{
     ConditionTerm as C, PureFunctionArgument as A, SharedPureApplication,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{binary_term, unary_term};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ArgumentTag {
@@ -440,18 +441,20 @@ impl TermClasses {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))
                     } else if width == W::Bits32 {
                         match term {
-                            T::Add(a, b) => Some((Binary::Int32Add, a.as_ref(), b.as_ref())),
-                            T::UnsignedDivide(a, b) => Some((
+                            binary_term!(Int32, Add, a, b) => {
+                                Some((Binary::Int32Add, a.as_ref(), b.as_ref()))
+                            }
+                            binary_term!(UInt32, Divide, a, b) => Some((
                                 Binary::Int32(Int32Binary::UnsignedDivide),
                                 a.as_ref(),
                                 b.as_ref(),
                             )),
-                            T::UnsignedRemainder(a, b) => Some((
+                            binary_term!(UInt32, Remainder, a, b) => Some((
                                 Binary::Int32(Int32Binary::UnsignedRemainder),
                                 a.as_ref(),
                                 b.as_ref(),
                             )),
-                            T::BitwiseXor(a, b) => Some((
+                            binary_term!(Int32, BitwiseXor, a, b) => Some((
                                 Binary::Int32(Int32Binary::BitwiseXor),
                                 a.as_ref(),
                                 b.as_ref(),
@@ -484,7 +487,7 @@ impl TermClasses {
                         continue;
                     }
                     if width == W::Bits32 {
-                        let unary = if let T::BitwiseNot(value) = term {
+                        let unary = if let unary_term!(Int32, BitwiseNot, value) = term {
                             Some((Int32Unary::Not, value.as_ref(), false))
                         } else {
                             constants::word_cast_operand(term).map(
@@ -544,7 +547,11 @@ impl TermClasses {
                         && !matches!(op, U::Float32Negate | U::Float64Negate)
                         && width
                             == match op {
-                                U::BitwiseNot | U::UInt32From64 => W::Bits32,
+                                U::Machine(
+                                    crate::kernel::MachineIntegerType::Int32,
+                                    crate::kernel::MachineUnaryOp::BitwiseNot,
+                                )
+                                | U::UInt32From64 => W::Bits32,
                                 U::MachineIntegerCast { destination, .. } => {
                                     W::of_machine_type(destination)
                                 }
@@ -556,7 +563,10 @@ impl TermClasses {
                             | U::UInt64From32
                             | U::Int64FromUInt32
                             | U::UInt64FromInt32
-                            | U::BitwiseNot => W::Bits32,
+                            | U::Machine(
+                                crate::kernel::MachineIntegerType::Int32,
+                                crate::kernel::MachineUnaryOp::BitwiseNot,
+                            ) => W::Bits32,
                             U::UInt32From64 | U::UInt64FromInt64 => W::Bits64,
                             U::Machine(format, _) => W::of_machine_type(format),
                             U::MachineIntegerCast { source, .. } => W::of_machine_type(source),
@@ -831,7 +841,10 @@ impl TermClasses {
         };
         let mask = self.intern_typed_machine(&T::Constant(mask), W::Bits32);
         let mut carrier = self.intern_node(Node::Int32Binary(
-            Int32Binary::Other(B::BitwiseAnd),
+            Int32Binary::Other(B::Machine(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::BitwiseAnd,
+            )),
             word,
             mask,
         ));
@@ -841,7 +854,10 @@ impl TermClasses {
             let flipped =
                 self.intern_node(Node::Int32Binary(Int32Binary::BitwiseXor, sign, carrier));
             carrier = self.intern_node(Node::Int32Binary(
-                Int32Binary::Other(B::Subtract),
+                Int32Binary::Other(B::Machine(
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::Subtract,
+                )),
                 flipped,
                 sign,
             ));

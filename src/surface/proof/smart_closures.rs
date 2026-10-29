@@ -1,4 +1,6 @@
 //! Smart closure search and linear script interpretation.
+use crate::kernel::binary_node;
+use crate::kernel::binary_term;
 use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 
 use super::selected_arithmetic::RewriteClosers;
@@ -297,7 +299,16 @@ fn signed_surface_terms_equal(
                     return false;
                 };
                 let signed_or_native = (operator.is_bitvector32()
-                    && !matches!(operator, Op::UnsignedDivide | Op::UnsignedRemainder))
+                    && !matches!(
+                        operator,
+                        Op::Machine(
+                            crate::kernel::MachineIntegerType::UInt32,
+                            crate::kernel::MachineBinaryOp::Divide
+                        ) | Op::Machine(
+                            crate::kernel::MachineIntegerType::UInt32,
+                            crate::kernel::MachineBinaryOp::Remainder
+                        )
+                    ))
                     || matches!(
                         operator,
                         Op::Machine(
@@ -1437,7 +1448,7 @@ fn kernel_upper_bound_split_candidate(
     if !plus_one {
         return Some((*variable, right.as_ref().clone()));
     }
-    let Bitvector32Term::Add(pivot, one) = right.as_ref() else {
+    let binary_term!(Int32, Add, pivot, one) = right.as_ref() else {
         return None;
     };
     (**one == Bitvector32Term::Constant(1)).then(|| (*variable, pivot.as_ref().clone()))
@@ -2888,7 +2899,8 @@ impl<'a> Proof<'a> {
             // the same base without spelling unrelated historical premises.
             fn offset_base(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
                 match term {
-                    Bitvector32Term::Add(base, delta) | Bitvector32Term::Subtract(base, delta)
+                    binary_term!(Int32, Add, base, delta)
+                    | binary_term!(Int32, Subtract, base, delta)
                         if matches!(delta.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value != 0) =>
                     {
                         Some(base)
@@ -8306,7 +8318,13 @@ impl<'a> Proof<'a> {
         match order {
             UnsignedOrder::Less => {
                 // `value - 1 <u value` from `0 <u value`.
-                if left == Bitvector32Term::Subtract(Box::new(right.clone()), Box::new(one.clone()))
+                if left
+                    == binary_node!(
+                        Int32,
+                        Subtract,
+                        Box::new(right.clone()),
+                        Box::new(one.clone())
+                    )
                 {
                     if let Some((proof, premise, _, value)) =
                         self.unsigned_strict_fact(&zero, &right, surface_fact)
@@ -8319,7 +8337,7 @@ impl<'a> Proof<'a> {
                     }
                     // The value is a difference `upper - lower`, nonzero
                     // because `lower <u upper`.
-                    if let Bitvector32Term::Subtract(upper, lower) = &right
+                    if let binary_term!(Int32, Subtract, upper, lower) = &right
                         && let Some((proof, premise, lower, upper)) =
                             self.unsigned_strict_fact(lower, upper, surface_fact)
                     {
@@ -8369,11 +8387,11 @@ impl<'a> Proof<'a> {
                 // `value <u bound`: the affine forms a measure `bound -
                 // value` over a constant evaluates to.
                 if let (
-                    Bitvector32Term::Add(left_base, left_offset),
-                    Bitvector32Term::Add(right_base, right_offset),
+                    binary_term!(Int32, Add, left_base, left_offset),
+                    binary_term!(Int32, Add, right_base, right_offset),
                 ) = (&left, &right)
                     && left_base == right_base
-                    && let Bitvector32Term::Subtract(negated_zero, value) = left_base.as_ref()
+                    && let binary_term!(Int32, Subtract, negated_zero, value) = left_base.as_ref()
                     && negated_zero.as_ref() == &zero
                     && let (Some(lower), Some(bound)) =
                         (left_offset.as_const(), right_offset.as_const())
@@ -8395,7 +8413,7 @@ impl<'a> Proof<'a> {
             }
             UnsignedOrder::LessEqual => {
                 // `value + 1 <=u upper` from `value <u upper`.
-                if let Bitvector32Term::Add(value, amount) = &left
+                if let binary_term!(Int32, Add, value, amount) = &left
                     && amount.as_ref() == &one
                     && let Some((proof, premise, value, upper)) =
                         self.unsigned_strict_fact(value, &right, surface_fact)
@@ -8442,7 +8460,7 @@ impl<'a> Proof<'a> {
         else {
             return None;
         };
-        let Bitvector32Term::Subtract(value, amount) = predecessor.as_ref() else {
+        let binary_term!(Int32, Subtract, value, amount) = predecessor.as_ref() else {
             return None;
         };
         if amount.as_ref() != &Bitvector32Term::Constant(1) {
