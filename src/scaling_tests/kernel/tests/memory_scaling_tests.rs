@@ -2152,7 +2152,7 @@ fn direct_literal_checks_do_not_walk_related_equality_classes() {
 }
 
 #[test]
-fn store_preservation_does_not_retry_the_general_composition_search() {
+fn store_preservation_ignores_unrelated_owned_members() {
     for explicit_owner in [false, true] {
         let mut samples = Vec::new();
         for size in [4u64, 16, 64] {
@@ -2204,10 +2204,12 @@ fn store_preservation_does_not_retry_the_general_composition_search() {
                 );
                 measured.push(work);
             }
-            // Other range ladders are still audited separately; this test
-            // pins zero calls to the removed search on both cold and warm stores.
             samples.push((size, measured));
         }
-        eprintln!("composition fallback explicit_owner={explicit_owner}: {samples:?}");
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "unrelated ownership changed cold or warm store work (explicit_owner={explicit_owner}): {samples:?}"
+        );
+        eprintln!("store preservation explicit_owner={explicit_owner}: {samples:?}");
     }
 }

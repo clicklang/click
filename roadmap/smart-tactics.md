@@ -36,16 +36,14 @@ facts do not establish flat cost as the queried class or bucket grows.
    called by memory-store processing in `src/kernel/primitives/memory_state.rs`.
    Written address bases no longer enumerate alias classes, but
    `store_members_in` still examines ownership members under those bases.
-   The store's remaining preservation fallbacks include
-   `pointers_directly_disjoint_by_range` and the explicit-range route reached
-   through general pointer distinctness. Remove them individually and try
+   Store preservation still reaches explicit-range search through general
+   pointer distinctness. Remove that implicit route and try
    explicit separation/transport repairs before introducing automation.
-   The fixed-store regression
-   `store_preservation_does_not_retry_the_general_composition_search` records
-   growing cold and warm miss costs with unrelated owned members; use that
-   case to isolate the remaining work from initial index preparation.
    Measure overlapping member buckets and repeated stores, keeping actual
-   changed-cell work separate from candidate discovery. Restrict implicit
+   changed-cell work separate from candidate discovery. The fixed-cache
+   `store_preservation_ignores_unrelated_owned_members` regression is a control
+   for unrelated ownership growth, not evidence that overlapping member
+   selection or the general distinctness route is bounded. Restrict implicit
    preservation reasoning first, then repair affected proofs with explicit
    separation and transport. Add automation only for demonstrated proof
    friction; do not assume that all current automatic preservation must remain.

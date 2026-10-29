@@ -450,11 +450,12 @@ fn direct_literal_and_store_checks_reject_alias_walks() {
 }
 
 #[test]
-fn store_preservation_cannot_retry_general_composition_or_explicit_range_search() {
+fn store_preservation_cannot_retry_general_composition_or_range_search() {
     for name in [
         "owned_composition_store_separated_evidence",
         "owned_composition_store_separated_evidence_impl",
         "pointers_proven_disjoint_by_explicit_range_for_memory_resolution",
+        "pointers_directly_disjoint_by_range",
     ] {
         for expression in [
             format!("c.{name}()"),

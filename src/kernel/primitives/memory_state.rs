@@ -6791,11 +6791,7 @@ impl CMemory {
                     &normalized_cell_pointer,
                     &normalized_pointer,
                     assumptions,
-                )
-                // The direct-range fallback remains for now. General explicit-range
-                // candidate search belongs outside store cache preservation.
-                || assumptions
-                    .pointers_directly_disjoint_by_range(&normalized_cell_pointer, &normalized_pointer);
+                );
             if kept {
                 CachedValueFate::Kept
             } else {
@@ -6865,10 +6861,6 @@ impl CMemory {
                     &normalized_cell_pointer,
                     &normalized_pointer,
                     assumptions,
-                )
-                || assumptions.pointers_directly_disjoint_by_range(
-                    &normalized_cell_pointer,
-                    &normalized_pointer,
                 );
             if kept {
                 CachedValueFate::Kept

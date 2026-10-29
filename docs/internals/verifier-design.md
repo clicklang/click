@@ -340,6 +340,8 @@ checks miss. The build boundary forbids that call from
 `without_possible_aliasing_cells`; explicit transport and memory-history
 checking retain their separate support. The store also does not call
 `pointers_proven_disjoint_by_explicit_range_for_memory_resolution` directly.
-The direct-range fallback and the explicit-range route inside general pointer
-distinctness remain, along with ownership-member selection; this restriction
-does not make every store operation bounded.
+The direct-range fallback is also absent for both scalar cells and union
+views: an unresolved cached value is forgotten. The build boundary rejects
+restoring either range helper directly. The explicit-range route inside
+general pointer distinctness remains, along with ownership-member selection;
+these restrictions do not make every store operation bounded.
