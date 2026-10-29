@@ -859,8 +859,14 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
         ),
         // C's widening between narrow formats reuses the word: K8 reads a
         // widening into 32 bits only.
-        (CType::Int16, CValue::Int8(value) | CValue::UInt8(value)) => Some(CValue::Int16(value)),
-        (CType::UInt16, CValue::UInt8(value)) => Some(CValue::UInt16(value)),
+        (CType::Int16, CValue::Int8(value) | CValue::UInt8(value)) => {
+            record_narrow_word_reuse();
+            Some(CValue::Int16(value))
+        }
+        (CType::UInt16, CValue::UInt8(value)) => {
+            record_narrow_word_reuse();
+            Some(CValue::UInt16(value))
+        }
         (
             target @ (CType::Int8
             | CType::UInt8
@@ -1093,6 +1099,15 @@ fn narrow_integer(
 /// the form a comparison of words takes, which a Rust narrow result's `==`
 /// lowers to. A conversion that cannot change the value, or a folded
 /// constant, has no node and files nothing.
+/// Records C's word reuse between narrow formats for the signedness audit.
+#[track_caller]
+fn record_narrow_word_reuse() {
+    crate::kernel::machine_integer::format_audit::record(
+        crate::kernel::machine_integer::format_audit::WordIdentity::NarrowWordReused,
+        std::panic::Location::caller(),
+    );
+}
+
 pub(in crate::kernel) fn checked_narrowing_identity(
     source: &CValue,
     converted: &CValue,

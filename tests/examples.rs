@@ -1347,7 +1347,19 @@ fn example_name(examples: &Path, directory: &Path) -> String {
 
 fn run_example_in_thread(project: &Path) -> Result<(), String> {
     let project = project.to_path_buf();
-    limits::spawn("example verifier", "click-example".to_string(), move || {
+    // The thread names its example, as an mdtest's names its fixture, so a
+    // census (`scripts/format-audit.sh`) can attribute what it records.
+    let components = project
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    let thread_name = match components.iter().rposition(|part| part == "examples") {
+        Some(index) if index + 1 < components.len() => {
+            format!("example-{}", components[index + 1..].join("/"))
+        }
+        _ => "click-example".to_string(),
+    };
+    limits::spawn("example verifier", thread_name, move || {
         run_example_project(&project)
     })?
 }

@@ -33,6 +33,7 @@ pub(crate) mod bounds;
 pub(crate) mod comparison;
 pub(crate) mod conversion;
 pub(crate) mod definedness;
+pub(crate) mod format_audit;
 pub(crate) mod identity;
 pub(crate) mod modular;
 pub(crate) mod range;
