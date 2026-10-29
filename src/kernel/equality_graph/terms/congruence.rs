@@ -814,6 +814,34 @@ impl TermClasses {
         value: u64,
         inverse: bool,
     ) -> u64 {
+        let (node, carrier) = self.narrow_cast_with_word(source, destination, value, inverse);
+        self.close(vec![(node, carrier)]);
+        node
+    }
+
+    /// [`Self::narrow_cast_node`] with its rule-K7 union queued on `pending`
+    /// instead of closed, for a caller that is closing already.
+    pub(super) fn narrow_cast_parts(
+        &mut self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+        value: u64,
+        pending: &mut PendingUnions,
+    ) -> u64 {
+        let (node, carrier) = self.narrow_cast_with_word(source, destination, value, false);
+        pending.push((node, carrier));
+        node
+    }
+
+    /// The narrow cast node and the class of its rule-K7 word, not yet
+    /// joined.
+    fn narrow_cast_with_word(
+        &mut self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+        value: u64,
+        inverse: bool,
+    ) -> (u64, u64) {
         use crate::kernel::BitvectorBinaryOp as B;
         crate::instrumentation::record_deterministic_work(1);
         let (mask, sign) = representation::narrow_carrier_mask(destination)
@@ -862,8 +890,7 @@ impl TermClasses {
                 sign,
             ));
         }
-        self.close(vec![(node, carrier)]);
-        node
+        (node, carrier)
     }
 
     fn algebraic_type_token(&mut self, ty: &crate::kernel::AlgebraicType) -> SharedPureApplication {

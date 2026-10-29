@@ -757,6 +757,7 @@ the widths a rule supports; it asks the module
 | Usual arithmetic conversions | `conversion::usual_arithmetic_format` | C11 6.3.1.8 in LP64: the format two integer operands are converted to, after promoting narrow formats to `int32` |
 | Narrow-widening word (K8) | `primitives::is_word_cast32`, `Bitvector32Term::word32`, `word_cast32_operand` | the word of `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` is `v`'s |
 | Narrow-cast word (K7) | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node` | the word of `Cast(S -> F, x)` into an 8- or 16-bit `F` is `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word |
+| Cross-format relations (R0, R-dist, R-comp) | the e-graph's `terms/machine_relations.rs`: `relate_machine_application`, `merge_machine_relations` | a conversion to a format no wider than its source distributes over `+ - * & \| ^ ~` and a constant `<<` below the destination's width; a conversion of a value-preserving conversion it reads exactly, or one keeping no more bits than either, is one conversion; a same-width conversion of at least 32 bits has its inverse in its operand's class |
 | `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
 | `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |
 | `Bool` unfolding (L-Unfold) | `ConditionTerm::bool_unfold_equation`; `unfold` lowers `f(args) == body` to `BoolEqual` | unfolding a `-> Bool` function's application files `application == body` |
@@ -813,6 +814,28 @@ narrow cast interns this word from the operand's class, at most five nodes
 and one merge, so the work is constant per cast and a nested cast is
 interned once (`equality_graph/narrow_cast_tests.rs` and its scaling test);
 `matrix_tests.rs` checks the word value by value at every narrow format.
+
+The cross-format relations (decision of 2026-10-29,
+`design/machine-integers.md`, "Every format its own nodes") are e-graph
+facts between nodes of different formats. Soundness: a sign-free operator
+computes modulo `2^w`, and reducing to fewer bits is a ring homomorphism
+that commutes with the bitwise operators bit by bit (R-dist); every
+conversion keeps its operand's low bits, and a widening into a format that
+contains its source keeps its value (R-comp); a conversion between the two
+formats of one width is a bijection (R0). A narrow operand's word is a
+canonical carrier only by its producer's range facts, so neither R0 nor an
+R-comp that names a narrow operand itself applies at 8 or 16 bits: a
+conversion reads only its operand's low bits there (K7), and only a byte
+read is inverted, by its own rule. Each fires where a conversion
+node meets an operator or conversion node in one class, when either is
+interned or a union brings them together. A class keeps one operator per
+format and operator, one conversion per kind applied to it and one
+conversion per kind it holds, and each pair fires once, from a queue the
+closing loop drains one relation at a time, so a firing is at most three
+interned nodes and one union, and a chain under a conversion is a loop, not
+a recursion (`equality_graph/machine_relations_tests.rs` and its scaling
+tests). While σ and narrow widenings at 32 bits are peeled (K1, K8) the
+rules act on the 64-bit conversions and on conversions into 8 and 16 bits.
 
 Conditions carry their format (`Compare`, `Overflows`), but the term arena
 still spells each width with its own operator nodes, so one file,
