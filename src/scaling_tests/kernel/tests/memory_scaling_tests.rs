@@ -2073,3 +2073,80 @@ fn open_sided_condition_queries_read_only_their_variables_facts() {
         "{samples:?}"
     );
 }
+
+/// Literal discovery and its memory caller must not rediscover equality paths.
+#[test]
+fn direct_literal_checks_do_not_walk_related_equality_classes() {
+    for shape in ["chain", "star", "unrelated", "unpinned", "folded"] {
+        let mut samples = Vec::new();
+        for size in [8u64, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let var = |i| Bitvector32Term::Variable(Variable(990_000 + i));
+            let mut facts = PureFactContext::new();
+            for i in 1..=size {
+                let (a, b) = match shape {
+                    "chain" => (var(i - 1), var(i)),
+                    "unrelated" => (var(2 * i), var(2 * i + 1)),
+                    _ => (var(0), var(i)),
+                };
+                facts = facts.assume_condition(ConditionTerm::equal(a, b), true);
+            }
+            if shape != "unpinned" {
+                let endpoint = if shape == "unrelated" {
+                    var(0)
+                } else {
+                    var(size)
+                };
+                facts = facts.assume_condition(ConditionTerm::equal(endpoint, 7u32.into()), true);
+            }
+            let query = if shape == "folded" {
+                Bitvector32Term::add(var(0), 1u32.into())
+            } else {
+                var(0)
+            };
+            let expected = if shape == "unrelated" { Some(7) } else { None };
+            let pointer = |index| Pointer {
+                block: Pointer::symbolic(Variable(995_000)).block,
+                offset: PointerOffsetTerm::scale_int32(index, 4),
+            };
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..4 {
+                    assert_eq!(
+                        facts.bitvector_constant_from_direct_equalities(&query),
+                        expected
+                    );
+                    let _ = facts.decide_bitvector_equality_shallow(&query, &9u32.into());
+                    let _ = crate::kernel::reasoning::memory_resolution::pointers_proven_distinct_for_memory_resolution(
+                        &pointer(query.clone()), &pointer(9u32.into()), &facts);
+                }
+            });
+            let explicit =
+                facts.assume_condition(ConditionTerm::equal(query.clone(), 7u32.into()), true);
+            // A folded term was already pinned to 8; do not use a contradictory
+            // branch as evidence for the successful literal path.
+            if shape != "folded" {
+                let (_, hit_work) = crate::instrumentation::measure_deterministic_work(|| {
+                    for _ in 0..4 {
+                        assert_eq!(
+                            explicit.bitvector_constant_from_direct_equalities(&query),
+                            Some(7)
+                        );
+                        assert_eq!(
+                            explicit.decide_bitvector_equality_shallow(&query, &9u32.into()),
+                            Some(false)
+                        );
+                        assert!(crate::kernel::reasoning::memory_resolution::pointers_proven_distinct_for_memory_resolution(
+                            &pointer(query.clone()), &pointer(9u32.into()), &explicit));
+                    }
+                });
+                assert!(hit_work <= 300, "{shape} hit grew at {size}: {hit_work}");
+            }
+            samples.push((size, work));
+        }
+        assert!(
+            samples.iter().all(|(_, work)| *work <= 300),
+            "{shape}: {samples:?}"
+        );
+        eprintln!("direct literal checking {shape}: {samples:?}");
+    }
+}

@@ -49,6 +49,28 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if (self.path == "src/kernel/equality_graph/evidence.rs"
+            && self.function == "direct_scalar_constant"
+            && matches!(
+                name,
+                "scalar_evidence_inputs" | "scalar_evidence_class" | "scalar_evidence_derivation"
+            ))
+            || (self.path == "src/kernel/assumptions/memory_reasoning.rs"
+                && matches!(
+                    self.function.as_str(),
+                    "written_base_spellings"
+                        | "owned_store_footprint"
+                        | "access_owned_apart_from_store"
+                )
+                && matches!(
+                    name,
+                    "pointer_alias_class"
+                        | "exact_pointer_aliases"
+                        | "base_spellings_through_aliases"
+                ))
+        {
+            self.errors.push(format!("{}: {}: direct checking must use written equality/address premises, not discover alias paths ({name})", self.path, self.function));
+        }
         if matches!(name, "exact_pointer_aliases" | "pointer_spellings")
             && matches!(
                 (self.path, self.function.as_str()),

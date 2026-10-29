@@ -1676,9 +1676,11 @@ fn canonicalized_pointer_value_from_int_cell(
     // value is still present in the recorded memory. Select that whole value
     // inside the typed read producer; never infer its bounds from the prefix
     // or publish the known pointer as an unconditional name for one cell.
-    // Recovery may cross a store using separation facts. Specification
-    // lowering must retain the read term; its equalities belong in the graph.
-    if !SpecificationReadScope::is_active()
+    // Recovery may cross a store using separation facts. Logical reads and
+    // C expressions in specification scope retain the read term; their
+    // equalities belong in the graph.
+    if purpose != LoadPurpose::Logical
+        && !SpecificationReadScope::is_active()
         && let Some(stored) = crate::kernel::memory_provenance::complete_pointer_read_value(
             result.designation(),
             assumptions,
@@ -6369,7 +6371,7 @@ mod tests {
                 &mut ExecutionFacts::new(),
                 &context,
                 None,
-                LoadPurpose::Logical,
+                LoadPurpose::Program,
             )
             .unwrap() else {
                 panic!("pointer read")
@@ -6645,26 +6647,32 @@ mod tests {
                     .unchecked_with_fact(own(slot.clone()))
                     .unchecked_with_fact(own(write)),
             ));
+        let read = |facts: &PureFactContext, purpose| {
+            canonicalized_pointer_value_from_int_cell(
+                &memory,
+                &slot,
+                &cached,
+                CType::Int32Pointer,
+                &mut ExecutionFacts::new(),
+                facts,
+                None,
+                purpose,
+            )
+            .expect("typed cached read")
+        };
+        // Logical reads can enter directly, outside the scope used for
+        // C expressions in specifications. They must still retain their term.
+        assert_eq!(
+            read(&context, LoadPurpose::Logical),
+            read(&empty, LoadPurpose::Logical)
+        );
         let _scope = SpecificationReadScope::enter();
         for purpose in [
             LoadPurpose::Logical,
             LoadPurpose::Validity,
             LoadPurpose::Program,
         ] {
-            let read = |facts: &PureFactContext| {
-                canonicalized_pointer_value_from_int_cell(
-                    &memory,
-                    &slot,
-                    &cached,
-                    CType::Int32Pointer,
-                    &mut ExecutionFacts::new(),
-                    facts,
-                    None,
-                    purpose,
-                )
-                .expect("typed cached read")
-            };
-            assert_eq!(read(&context), read(&empty));
+            assert_eq!(read(&context, purpose), read(&empty, purpose));
             let uncached_read = |facts: &PureFactContext| {
                 canonicalized_symbolic_load_value_with_identity(
                     &memory,

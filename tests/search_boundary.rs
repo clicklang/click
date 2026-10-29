@@ -397,3 +397,54 @@ fn constant_equality_evidence_cannot_restore_bucket_enumeration() {
         );
     }
 }
+
+#[test]
+fn direct_literal_and_store_checks_reject_alias_walks() {
+    for (path, function, names) in [
+        (
+            "src/kernel/equality_graph/evidence.rs",
+            "direct_scalar_constant",
+            &[
+                "scalar_evidence_inputs",
+                "scalar_evidence_class",
+                "scalar_evidence_derivation",
+            ][..],
+        ),
+        (
+            "src/kernel/assumptions/memory_reasoning.rs",
+            "written_base_spellings",
+            &[
+                "pointer_alias_class",
+                "exact_pointer_aliases",
+                "base_spellings_through_aliases",
+            ][..],
+        ),
+        (
+            "src/kernel/assumptions/memory_reasoning.rs",
+            "owned_store_footprint",
+            &["pointer_alias_class"][..],
+        ),
+        (
+            "src/kernel/assumptions/memory_reasoning.rs",
+            "access_owned_apart_from_store",
+            &["pointer_alias_class"][..],
+        ),
+    ] {
+        for name in names {
+            for expression in [
+                format!("c.{name}()"),
+                format!("C::{name}"),
+                format!("invoke!(c.{name}())"),
+            ] {
+                let source = format!("fn {function}(c: C) {{ let _ = {expression}; }}");
+                assert!(
+                    boundary::check_source(path, &source).is_err(),
+                    "accepted {source}"
+                );
+            }
+        }
+        let source =
+            format!("fn {function}(c: C) {{ c.scalar_evidence_keys.contains_key(&key); }}");
+        assert!(boundary::check_source(path, &source).is_ok());
+    }
+}

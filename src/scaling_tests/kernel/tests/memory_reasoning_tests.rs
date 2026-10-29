@@ -666,12 +666,11 @@ fn store_separation_work_is_independent_of_earlier_compositions() {
     );
 }
 
-/// A store through `q->next` is kept off `marker[0]` by ownership a matched
-/// arm filed under `identity->next`, once `q == identity` is assumed. The
-/// lookup follows the write's own alias class: other owned objects, each with
-/// an alias of its own, leave the work unchanged.
+/// Ownership lookup declines an aliased access and accepts the written owned
+/// address. Neither query visits aliases of unrelated owned objects. The
+/// corresponding C proof supplies separation and transports the read explicitly.
 #[test]
-fn store_separation_through_an_alias_ignores_other_objects_aliases() {
+fn written_store_separation_and_alias_refusal_ignore_unrelated_objects() {
     let pointer = |index: u64| Pointer::symbolic(Variable(97_100 + index));
     let equal = |left: &Pointer, right: &Pointer| {
         Proposition::ConditionIs(
@@ -702,9 +701,15 @@ fn store_separation_through_an_alias_ignores_other_objects_aliases() {
             };
             let (separated, used) = crate::instrumentation::measure_deterministic_work(|| {
                 let footprint = context.owned_store_footprint(&write, 8);
-                context.access_owned_apart_from_store(&footprint, &write, &marker, 4)
+                let aliased = context.access_owned_apart_from_store(&footprint, &write, &marker, 4);
+                let written = identity.offset_by_bytes(8);
+                let footprint = context.owned_store_footprint(&written, 8);
+                (
+                    aliased,
+                    context.access_owned_apart_from_store(&footprint, &written, &marker, 4),
+                )
             });
-            assert!(separated, "size={size}");
+            assert_eq!(separated, (false, true), "size={size}");
             work.push(used);
         }
         assert!(
