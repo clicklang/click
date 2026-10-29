@@ -358,3 +358,71 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
         );
     }
 }
+
+#[test]
+fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
+    let mut samples = Vec::new();
+    for size in [4u64, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(9_889_000));
+        let mut memory = CMemory::new();
+        let mut facts = PureFactContext::new();
+        for index in 0..size {
+            memory = memory.store(
+                Pointer::symbolic(Variable(9_890_000 + index)),
+                CValue::UInt8(Bitvector32Term::Constant(7)),
+            );
+            facts = facts.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(9_891_000 + index)),
+                    Bitvector32Term::Constant(3),
+                ),
+                true,
+            );
+        }
+        let value = Bitvector32Term::Constant(129);
+        memory = memory.store(pointer.clone(), CValue::UInt8(value.clone()));
+        let load = Bitvector32Term::MemoryLoad(
+            intern_c_memory(memory),
+            Box::new(pointer),
+            LoadKind::UInt8,
+        );
+        let cast = |value| Bitvector32Term::MachineIntegerCast {
+            source: MachineIntegerType::UInt8,
+            destination: MachineIntegerType::Int8,
+            value: Box::new(value),
+        };
+        let left = cast(load.clone());
+        let right = cast(value.clone());
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            narrow_read_has_recorded_value(&left, &right, &facts)
+        });
+        assert!(holds);
+        assert!(work > 0);
+        samples.push(work);
+        assert!(!narrow_read_has_recorded_value(
+            &left,
+            &cast(Bitvector32Term::Constant(7)),
+            &facts
+        ));
+        let other_cast = Bitvector32Term::MachineIntegerCast {
+            source: MachineIntegerType::UInt8,
+            destination: MachineIntegerType::UInt16,
+            value: Box::new(value),
+        };
+        assert!(!narrow_read_has_recorded_value(&left, &other_cast, &facts));
+        let Bitvector32Term::MemoryLoad(memory, pointer, _) = load else {
+            unreachable!()
+        };
+        let wide = cast(Bitvector32Term::MemoryLoad(
+            memory,
+            pointer,
+            LoadKind::Int32,
+        ));
+        assert!(!narrow_read_has_recorded_value(&wide, &right, &facts));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}

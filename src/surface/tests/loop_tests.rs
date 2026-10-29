@@ -750,11 +750,21 @@ fn explicit_straight_line_swap_transports_an_entry_bound() {
                 consumes p[0..3];
                 ensures p[0] <= p[2];
             } by {
-                step(); step(); step(); step();
+                step(); step(); step();
+                have p[$index] == old(p[$index + 1]) by { normalize(); }
+                mark first_written;
+                step();
+                have p[$index] == old(p[$index + 1]) by {
+                    transport(at(first_written, p[$index]) == old(p[$index + 1]),
+                              p[$index] == old(p[$index + 1])) using {
+                        at(first_written, p[$index]) == old(p[$index + 1]);
+                        j == 0;
+                    };
+                }
                 have p[0] == old(p[1]) by {
-                    transport(old(p[1]) == old(p[1]), p[0] == old(p[1])) using {
-                        old(j) == 0;
-                    }
+                    transport(p[$index] == old(p[$index + 1]), p[0] == old(p[1])) using {
+                        p[$index] == old(p[$index + 1]); j == 0;
+                    };
                 }
                 have p[2] == old(p[2]) by { normalize(); }
                 have p[0] <= p[2] by {
@@ -764,8 +774,9 @@ fn explicit_straight_line_swap_transports_an_entry_bound() {
                 }
                 step(); solve();
             }
-        "#;
-        verify_c0_sources(click, &[("swap.c", c.as_str())])
+        "#
+        .replace("$index", index);
+        verify_c0_sources(&click, &[("swap.c", c.as_str())])
             .unwrap_or_else(|e| panic!("index {index}: {}", e.message()));
     }
 }

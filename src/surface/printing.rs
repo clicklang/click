@@ -1948,7 +1948,15 @@ pub(in crate::surface) fn describe_iterated_tactic(tactic: &IteratedTactic) -> S
         tactic.name(),
         match tactic {
             IteratedTactic::Take(segment) | IteratedTactic::Give(segment) => {
-                describe_contract_segment(segment)
+                match segment {
+                    IteratedElement::Current(segment) => describe_contract_segment(segment),
+                    IteratedElement::SavedBase { base, start, end } => format!(
+                        "{}[{}..{}]",
+                        describe_contract_expression(base),
+                        describe_contract_expression(start),
+                        describe_contract_expression(end),
+                    ),
+                }
             }
             IteratedTactic::Gather(resource) | IteratedTactic::Scatter(resource) => {
                 format_resource_target(resource)

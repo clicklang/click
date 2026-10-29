@@ -715,11 +715,21 @@ int32 vector_fill(struct vector* owner, int32 value) {
     loop as fill_cells {
         decreases owner->len - i;
         invariant i >= 0 and i <= owner->len;
+        invariant owner->len == old(owner->len);
         invariant owner->data == old(owner->data);
         owns owner->data[0..owner->len];
         initialize by solve();
         preserve by {
+            mark before_fill;
             step();
+            transport(at(before_fill, owner->len) == old(owner->len),
+                      owner->len == old(owner->len)) using {
+                at(before_fill, owner->len) == old(owner->len);
+                at(before_fill, separate(memory(*owner), memory(owner->data[0..owner->cap])));
+                0 <= at(before_fill, i);
+                at(before_fill, i) < at(before_fill, owner->len);
+                at(before_fill, owner->len) <= at(before_fill, owner->cap);
+            };
             step();
             have 0 - at(region(3).entry, i) + owner->len - 1
                 < 0 - at(region(3).entry, i) + owner->len;

@@ -354,6 +354,25 @@ checks miss. The build boundary forbids that call from
 `without_possible_aliasing_cells`; explicit transport and memory-history
 checking retain their separate support. The store also does not call
 `pointers_proven_disjoint_by_explicit_range_for_memory_resolution` directly.
-The direct-range fallback and the explicit-range route inside general pointer
-distinctness remain, along with ownership-member selection; this restriction
-does not make every store operation bounded.
+The direct-range fallback is also absent for both scalar cells and union
+views: an unresolved cached value is forgotten. The build boundary rejects
+restoring either range helper directly. Scalar-cell and union-view preservation
+also use `pointers_directly_distinct_for_store`, not general memory-resolution
+distinctness: structural byte shifts, exact pointer/index inequalities and
+exact signed-order facts supply direct evidence. Private-local separation reads
+the addressability registry and an indexed equality-graph block coordinate;
+it does not enumerate aliases. A miss forgets the cached value. The boundary
+rejects general resolution, range search, alias enumeration and order-path walks
+in this helper. Growing same-block separation buckets leave cold and repeated
+miss work unchanged, while written index disequality still respects access
+widths. This narrows distinctness selection; ownership-member selection,
+byte-gap eligibility and compact-run preservation remain separate audits.
+
+An explicit loop read frame can select a flat range withheld from the loop
+body by the checked ownership partition. The loop history retains that
+persistent frame even when a conditional collection's conservative mutable
+footprint overlaps it. Selection reuses the indexed kept-range query with no
+composite expansion; a singleton covering range must include the entire read.
+A scalar cached prefix does not preserve a complete pointer. Distinct retained
+frames have distinct havoc identities, and a later overlapping store still
+invalidates the read. This adds no implicit store-preservation search.

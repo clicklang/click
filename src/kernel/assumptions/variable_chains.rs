@@ -334,7 +334,7 @@ mod memory_tests {
     use super::*;
 
     #[test]
-    fn ordered_store_filter_matches_scalar_reference_and_checks_wide_neighbors() {
+    fn ordered_store_filter_keeps_only_disjoint_ranks_and_checks_wide_neighbors() {
         let variables = [
             Variable(931),
             Variable(117),
@@ -376,11 +376,25 @@ mod memory_tests {
         for at in [0, 4, 8] {
             let address = pointer(variables[at], 4);
             let fast = memory.without_possible_aliasing_cells(&address, 4, &context);
-            let reference =
-                crate::kernel::reasoning::store_gap::with_store_gap_skip_disabled(|| {
-                    memory.without_possible_aliasing_cells(&address, 4, &context)
-                });
-            assert_eq!(fast, reference, "store at logical rank {at}");
+            // Indexed skips can preserve more than the direct scalar
+            // fallback, but a chunk that reaches the written rank may still
+            // forget other cells. Check soundness without requiring complete
+            // preservation from either path.
+            assert!(fast.cells.get(&address).is_none());
+            for (rank, variable) in variables.iter().enumerate() {
+                let value = fast.cells.get(&pointer(*variable, 4));
+                if let Some(value) = &value {
+                    assert_ne!(rank, at, "the written cell must be forgotten");
+                    assert_eq!(value, &int32(rank as u32));
+                }
+                if at == 0 && rank != at {
+                    assert_eq!(
+                        value,
+                        Some(int32(rank as u32)),
+                        "the wholly disjoint suffix is retained by its indexed skip"
+                    );
+                }
+            }
         }
         let near = pointer(variables[3], 4);
         let wide = memory
@@ -396,11 +410,13 @@ mod memory_tests {
         );
         let mixed = pointer(variables[0], 8);
         let mixed_memory = memory.store(mixed.clone(), int32(11));
+        // The first index at stride eight and the second at stride four
+        // both name byte eight. Distinct logical ranks do not separate them.
         let after =
-            mixed_memory.without_possible_aliasing_cells(&pointer(variables[8], 4), 4, &context);
-        let reference = crate::kernel::reasoning::store_gap::with_store_gap_skip_disabled(|| {
-            mixed_memory.without_possible_aliasing_cells(&pointer(variables[8], 4), 4, &context)
-        });
-        assert_eq!(after, reference, "mixed strides require ordinary checks");
+            mixed_memory.without_possible_aliasing_cells(&pointer(variables[1], 4), 4, &context);
+        assert!(
+            after.cells.get(&mixed).is_none(),
+            "mixed strides alias here"
+        );
     }
 }

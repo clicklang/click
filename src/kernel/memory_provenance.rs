@@ -125,6 +125,7 @@ pub(in crate::kernel) fn record_transport_cell_walk(
         } else {
             match stop {
                 CellWalkStop::CommonSnapshot => "common snapshot reached",
+                CellWalkStop::RetainedValue => "retained typed value before cache forgetting",
                 CellWalkStop::OldestRecorded => "oldest recorded snapshot reached",
                 CellWalkStop::Affected => "step affects the queried bytes",
                 CellWalkStop::NotShownSeparate => "step not proved separate from the queried bytes",
@@ -689,6 +690,8 @@ pub(crate) struct MemoryDagLoadEqualityEvidence {
 pub(super) enum MemoryDagLoadEqualityReason {
     CommonSource,
     EqualResolvedValue(CValue),
+    LeftRetainsRightRead,
+    RightRetainsLeftRead,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2003,7 +2006,9 @@ impl AtomicMemoryLoadEqualityEvidence {
             MemoryDagLoadEqualityEvidence {
                 left,
                 right,
-                reason: MemoryDagLoadEqualityReason::CommonSource,
+                reason: MemoryDagLoadEqualityReason::CommonSource
+                    | MemoryDagLoadEqualityReason::LeftRetainsRightRead
+                    | MemoryDagLoadEqualityReason::RightRetainsLeftRead,
             } if left.has_only_typed_hops() && right.has_only_typed_hops()
         )
     }
@@ -2052,11 +2057,8 @@ impl AtomicMemoryLoadEqualityEvidence {
         let MemoryDagLoadEqualityEvidence {
             left: left_evidence,
             right: right_evidence,
-            reason: MemoryDagLoadEqualityReason::CommonSource,
-        } = equality
-        else {
-            return false;
-        };
+            reason,
+        } = equality;
         let (
             Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
             Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
@@ -2078,7 +2080,18 @@ impl AtomicMemoryLoadEqualityEvidence {
         };
         left_pointer == right_pointer
             && left_kind == right_kind
-            && left_evidence.node() == right_evidence.node()
+            && match reason {
+                MemoryDagLoadEqualityReason::CommonSource => {
+                    left_evidence.node() == right_evidence.node()
+                }
+                MemoryDagLoadEqualityReason::LeftRetainsRightRead => {
+                    retained_cell_names_load(left_evidence, right_start, left_pointer, *left_kind)
+                }
+                MemoryDagLoadEqualityReason::RightRetainsLeftRead => {
+                    retained_cell_names_load(right_evidence, left_start, left_pointer, *left_kind)
+                }
+                MemoryDagLoadEqualityReason::EqualResolvedValue(_) => false,
+            }
             && left_evidence.checks_walk_from(
                 left_start,
                 left_pointer,
@@ -2274,6 +2287,11 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
     bytes: u32,
     assumptions: &PureFactContext,
 ) -> Option<RangeDisjointFromPointerEvidence> {
+    let (start, end) = range.bound_terms();
+    if start == end {
+        crate::instrumentation::record_deterministic_work(1);
+        return Some(RangeDisjointFromPointerEvidence::Empty);
+    }
     if range.base.blocks_proven_distinct(pointer) {
         return Some(RangeDisjointFromPointerEvidence::DistinctBlocks);
     }
@@ -3389,7 +3407,45 @@ pub(super) fn memory_load_equality_evidence_at(
     if let Some(common) = one_snapshot_equality_evidence(left_memory, right_memory) {
         return Some(common);
     }
-    LoadCellWalks::run(left_memory, right_memory, pointer, kind, assumptions)?.equality(pointer)
+    let walks = LoadCellWalks::run(left_memory, right_memory, pointer, kind, assumptions)?;
+    let reason = walks.equality_reason(pointer).or_else(|| {
+        if !extended_dag_bridging_active() {
+            return None;
+        }
+        if retained_cell_names_load(&walks.left, right_memory, pointer, kind) {
+            Some(MemoryDagLoadEqualityReason::LeftRetainsRightRead)
+        } else if retained_cell_names_load(&walks.right, left_memory, pointer, kind) {
+            Some(MemoryDagLoadEqualityReason::RightRetainsLeftRead)
+        } else {
+            None
+        }
+    })?;
+    Some(MemoryDagLoadEqualityEvidence {
+        left: walks.left,
+        right: walks.right,
+        reason,
+    })
+}
+
+/// A retained scalar observation names exactly the other typed read. The
+/// load registry canonicalizes that one named endpoint; facts and aliases do
+/// not choose its value. Pointer representations are deliberately excluded.
+fn retained_cell_names_load(
+    cell: &MemoryDagCell,
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    kind: LoadKind,
+) -> bool {
+    let Some(crate::kernel::integer32_c_value!(value)) = cell
+        .node()
+        .cells
+        .concrete()
+        .get(pointer)
+        .and_then(|value| kind.read_cell(value))
+    else {
+        return false;
+    };
+    value == crate::kernel::canonical_form_of_load(memory.clone(), pointer.clone(), kind)
 }
 
 /// The equality two identical snapshots have without walking anything.
@@ -3554,6 +3610,22 @@ impl LoadCellWalks {
             return self
                 .equality(pointer)
                 .map(AtomicMemoryLoadEqualityEvidence::SameCell);
+        }
+        let reason = if retained_cell_names_load(&self.left, right_memory, pointer, self.kind) {
+            Some(MemoryDagLoadEqualityReason::LeftRetainsRightRead)
+        } else if retained_cell_names_load(&self.right, left_memory, pointer, self.kind) {
+            Some(MemoryDagLoadEqualityReason::RightRetainsLeftRead)
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            return Some(AtomicMemoryLoadEqualityEvidence::SameCell(
+                MemoryDagLoadEqualityEvidence {
+                    left: self.left,
+                    right: self.right,
+                    reason,
+                },
+            ));
         }
         let kind = self.kind;
         let load = |memory: &SharedCMemory| {
@@ -5069,6 +5141,9 @@ fn wide_read_observations_have_value(
                         } else {
                             match stop {
                                 CellWalkStop::CommonSnapshot => "common snapshot reached",
+                                CellWalkStop::RetainedValue => {
+                                    "retained typed value before cache forgetting"
+                                }
                                 CellWalkStop::OldestRecorded => "oldest recorded snapshot reached",
                                 CellWalkStop::Affected => "step affects the read's bytes",
                                 CellWalkStop::NotShownSeparate => {
@@ -5104,6 +5179,20 @@ pub(crate) fn narrow_read_has_recorded_value(
     right: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> bool {
+    // Identical conversions preserve equality of the selected raw reads.
+    // Signed narrow reads are represented by an unsigned read wrapped in
+    // a machine conversion. Walk only the two explicitly named terms.
+    let (mut left, mut right) = (left, right);
+    while let (Some((left_op, left_value)), Some((right_op, right_value))) =
+        (left.as_unary(), right.as_unary())
+    {
+        if left_op != right_op {
+            break;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        left = left_value;
+        right = right_value;
+    }
     let origin = |term: &Bitvector32Term| match term {
         Bitvector32Term::Variable(variable) => {
             crate::kernel::eval::registered_load_origin_term_for_variable(variable)

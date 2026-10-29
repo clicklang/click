@@ -2125,69 +2125,6 @@ impl PureFactContext {
                 ))
     }
 
-    pub(in crate::kernel) fn pointers_directly_disjoint_by_range(
-        &self,
-        left: &Pointer,
-        right: &Pointer,
-    ) -> bool {
-        if self.pointers_proven_equal_ignoring_memory_separation(left, right) {
-            return false;
-        }
-        let contains = |pointer: &Pointer, range: &CMemoryRange| {
-            if range.wide_bounds().is_some() {
-                self.pointer_access_in_wide_range(pointer, range.element_width(), range)
-            } else {
-                self.pointer_in_range_with_width(
-                    pointer,
-                    range.base(),
-                    range.start(),
-                    range.end(),
-                    range.element_width(),
-                )
-            }
-        };
-        if self
-            .borrow_partition_separated_members(
-                left,
-                right,
-                |range| contains(left, range),
-                |range| contains(right, range),
-            )
-            .is_some()
-        {
-            return true;
-        }
-        let direct = self
-            .memory_separation_candidates(&left.block, &right.block)
-            .find_map(|(proposition, left_range, right_range)| {
-                let contained = contains(left, left_range) && contains(right, right_range)
-                    || contains(right, left_range) && contains(left, right_range);
-                (contained
-                    && !self.memory_ranges_overlap_after_base_equality(left_range, right_range))
-                .then_some(proposition)
-            });
-        if let Some(proposition) = direct {
-            record_implicit_reasoning_provenance(self, proposition);
-            return true;
-        }
-        if let Some((resources, _, _)) = self.composition_separated_members(
-            left,
-            right,
-            |range| contains(left, range),
-            |range| contains(right, range),
-            |left_range, right_range| {
-                !self.memory_ranges_overlap_after_base_equality(left_range, right_range)
-            },
-        ) {
-            record_implicit_reasoning_provenance(
-                self,
-                &Proposition::CResourceComposition(resources.clone()),
-            );
-            return true;
-        }
-        false
-    }
-
     pub(in crate::kernel) fn pointers_proven_disjoint_by_shallow_explicit_range(
         &self,
         left: &Pointer,

@@ -61,6 +61,8 @@ pub(crate) enum MemoryDagCell {
 pub(in crate::kernel) enum CellWalkStop {
     /// The paired walks met at the same snapshot; its older history is irrelevant.
     CommonSnapshot,
+    /// A cache-only forgetting edge retains the queried typed value in its input.
+    RetainedValue,
     /// The walk reached a snapshot with no recorded derivation: the oldest
     /// point the recorded history reaches.
     OldestRecorded,
@@ -152,6 +154,11 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     },
     LoopHavocRanges {
         ranges: Vec<RangeDisjointFromPointerEvidence>,
+    },
+    LoopHavocKeptRange {
+        range: CMemoryRange,
+        first: PointerInRangeEvidence,
+        last: PointerInRangeEvidence,
     },
     /// A `CellsSeeded` edge crossed: one justification per store it stands
     /// for, newest first ([`CMemoryDerivation::seeded_stores`]).
@@ -384,6 +391,8 @@ pub(in crate::kernel) enum RangeBoundEvidence {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum RangeDisjointFromPointerEvidence {
+    /// Identical endpoints describe no bytes, independent of the base.
+    Empty,
     DistinctBlocks,
     BorrowPartition(Box<BorrowPartitionRangeEvidence>),
     ExactSeparationFact(Box<SeparatedRangeEvidence>),
@@ -722,13 +731,24 @@ impl MemoryDagHopJustification {
                         evidence.checks(range, pointer, bytes, assumptions)
                     })
             }
-            Self::CallHavocKeptRange { range, first, last } => {
-                let CMemoryDerivation::CallHavoc {
-                    kept_by_caller: Some(kept),
-                    ..
-                } = derivation
-                else {
-                    return false;
+            Self::CallHavocKeptRange { range, first, last }
+            | Self::LoopHavocKeptRange { range, first, last } => {
+                let kept = match (self, derivation) {
+                    (
+                        Self::CallHavocKeptRange { .. },
+                        CMemoryDerivation::CallHavoc {
+                            kept_by_caller: Some(kept),
+                            ..
+                        },
+                    )
+                    | (
+                        Self::LoopHavocKeptRange { .. },
+                        CMemoryDerivation::LoopHavoc {
+                            kept_by_function: Some(kept),
+                            ..
+                        },
+                    ) => kept,
+                    _ => return false,
                 };
                 let width = range.element_width();
                 width != 0
@@ -865,6 +885,10 @@ impl RangeDisjointFromPointerEvidence {
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
+            Self::Empty => {
+                let (start, end) = range.bound_terms();
+                start == end
+            }
             Self::DistinctBlocks => range.base.blocks_proven_distinct(pointer),
             Self::BorrowPartition(evidence) => evidence.checks(range, pointer, bytes, assumptions),
             Self::ExactSeparationFact(evidence) => {
@@ -1536,9 +1560,10 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
     // The version walk takes this lookup's guard at its first step, so it is
     // asked before the guard is: a walk starting here jumps as one that
     // reaches here does.
-    let first = resumes_version_walk()
-        .then(|| super::cell_last_same_point(memory, pointer, bytes))
-        .flatten();
+    let first = (resumes_version_walk()
+        && !has_retained_value_before_forgetting(memory, pointer, bytes))
+    .then(|| super::cell_last_same_point(memory, pointer, bytes))
+    .flatten();
     // A lookup of a cell already being looked up is a cycle and has no
     // answer; see `CELL_LOOKUPS_IN_PROGRESS`.
     let _lookup = CellLookupGuard::enter(memory, pointer)?;
@@ -1620,6 +1645,21 @@ fn resumes_version_walk() -> bool {
     !crate::kernel::memory_provenance::explicit_dag_check_active()
 }
 
+/// Test the exact cache-forgetting input before starting a version walk.
+/// The cold walk itself may otherwise visit history older than this value.
+fn has_retained_value_before_forgetting(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    bytes: u32,
+) -> bool {
+    crate::kernel::memory_provenance::extended_dag_bridging_active()
+        && memory.derivation().is_some_and(|step| {
+            matches!(step.as_ref(), CMemoryDerivation::CellsForgotten { base }
+                if base.cells.concrete().get(pointer).is_some_and(|value|
+                    matches!(value, crate::kernel::integer32_c_value!(_)) && value.byte_width() == bytes))
+        })
+}
+
 fn memory_dag_cell_source_walk_inner(
     memory: &SharedCMemory,
     pointer: &Pointer,
@@ -1638,6 +1678,31 @@ fn memory_dag_cell_source_walk_inner(
     // The walk ends at a snapshot with no derivation: ids strictly
     // decrease along `base`, so every chain is finite.
     loop {
+        // Forgetting cached cells changes knowledge, not bytes. An exact
+        // value in that edge's input is already a checked observation; do
+        // not jump past it and demand a frame across an older loop havoc.
+        // This reads one named predecessor and one exact address, never a
+        // cache bucket or an alternate pointer spelling.
+        if crate::kernel::memory_provenance::extended_dag_bridging_active()
+            && max_hops.is_none_or(|limit| path.len() < limit)
+            && let Some(derivation) = current.derivation()
+            && let CMemoryDerivation::CellsForgotten { base } = derivation.as_ref()
+            && base.cells.concrete().get(pointer).is_some_and(|value| {
+                matches!(value, crate::kernel::integer32_c_value!(_)) && value.byte_width() == bytes
+            })
+        {
+            crate::instrumentation::record_deterministic_work(1);
+            let node = base.clone();
+            path.push(MemoryDagHop {
+                derived: current,
+                derivation,
+                justification: MemoryDagHopJustification::IntrinsicNoWrite,
+            });
+            return (
+                MemoryDagCell::Unwritten { node, path },
+                CellWalkStop::RetainedValue,
+            );
+        }
         // The memoized version walk crosses every step memory alone shows
         // separate; facts are applied only at the step where it stopped
         // (`roadmap/fact-aware-frame-walks.md`). Repeating a query after each
@@ -2163,6 +2228,52 @@ mod unsigned_index_membership_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/resource_tracker/cell_source/unsigned_index_membership_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod empty_range_frame_tests {
+    use super::*;
+
+    #[test]
+    fn empty_frames_cover_every_access_width_but_not_nonempty_ranges() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(9_951_000));
+        let bound = Bitvector32Term::Variable(Variable(9_951_001));
+        let context = PureFactContext::new();
+        let ranges = [
+            CMemoryRange::new(base.clone(), bound.clone(), bound.clone()),
+            CMemoryRange::new_wide(base.clone(), bound.clone(), bound, 4),
+        ];
+        let nonempty = [
+            CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into()),
+            CMemoryRange::new_wide(
+                base.clone(),
+                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::UInt64Constant(1),
+                4,
+            ),
+        ];
+        for (empty, changed) in ranges.iter().zip(&nonempty) {
+            for bytes in [1, 4, 8, 16] {
+                let proof =
+                    typed_range_disjoint_from_pointer_evidence(empty, &base, bytes, &context)
+                        .expect("an empty footprint cannot change any bytes");
+                assert!(matches!(proof, RangeDisjointFromPointerEvidence::Empty));
+                assert!(proof.checks(empty, &base, bytes, &context));
+                assert!(!proof.checks(changed, &base, bytes, &context));
+                assert!(
+                    typed_range_disjoint_from_pointer_evidence(changed, &base, bytes, &context,)
+                        .is_none()
+                );
+            }
+        }
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/resource_tracker/cell_source/empty_range_frame_tests.rs"
         );
     }
 }

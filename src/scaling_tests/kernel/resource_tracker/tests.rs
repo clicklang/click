@@ -243,3 +243,95 @@ fn fresh_cell_offsets_share_the_whole_block_version_prefix() {
         "fresh offsets after separate stores: {samples:?}"
     );
 }
+
+#[test]
+fn forgotten_cell_recovery_ignores_older_history_and_unrelated_cache_entries() {
+    use super::super::cell_source::{CellWalkStop, memory_dag_cell_source_with_stop};
+    crate::kernel::memory_provenance::with_extended_dag_bridging(|| {
+        let mut samples = Vec::new();
+        for size in [4, 16, 64] {
+            let pointer = at(block("global:g"), 0);
+            let assumptions = PureFactContext::new();
+            let mut before = CMemory::new()
+                .with_block(block("global:g"), 4)
+                .with_block(block("global:h"), (size * 4) as u32);
+            for index in 0..size {
+                before = before.store(pointer.clone(), one());
+                before = before.store(at(block("global:h"), index * 4), one());
+            }
+            let forgotten = intern_c_memory(before.without_possible_aliasing_cells(
+                &pointer.offset_by_bytes(1),
+                1,
+                &assumptions,
+            ));
+            let ((cell, stop), work) = crate::instrumentation::measure_deterministic_work(|| {
+                memory_dag_cell_source_with_stop(&forgotten, &pointer, 4, &assumptions, true)
+                    .unwrap()
+            });
+            assert_eq!(stop, CellWalkStop::RetainedValue);
+            assert_eq!(
+                cell.resolved_value(&pointer, crate::kernel::LoadKind::Int32),
+                Some(one())
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{samples:?}"
+        );
+    });
+}
+
+#[test]
+fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
+    use crate::kernel::{CResourceFact, CallKeptRanges, ResourceContext};
+    let mut samples = Vec::new();
+    for size in [4u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(980115));
+        let ambiguous = Pointer::symbolic(Variable(980116));
+        let range = |base: Pointer, count: u32| {
+            CMemoryRange::new_with_element_width(base, 0u32.into(), count.into(), 1)
+        };
+        let mut owners = ResourceContext::new()
+            .unchecked_with_fact(CResourceFact::own_memory(range(field.clone(), 8)));
+        for index in 0..size {
+            owners = owners
+                .unchecked_with_fact(CResourceFact::own_memory(range(
+                    Pointer::symbolic(Variable(981000 + u64::from(index))),
+                    8,
+                )))
+                .unchecked_with_fact(CResourceFact::own_memory(range(
+                    ambiguous.clone(),
+                    index + 16,
+                )));
+        }
+        let base = CMemory::new();
+        let before = intern_c_memory(base.clone());
+        let after = intern_c_memory(base.with_loop_memory_havoc_preserving_frame(
+            Variable(980117),
+            &std::collections::BTreeSet::new(),
+            Some(&[range(field.clone(), 128), range(ambiguous.clone(), 128)]),
+            None,
+            Some(CallKeptRanges::new(owners, vec![], None)),
+        ));
+        let context = PureFactContext::new();
+        let query = |address: &Pointer| {
+            crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                &Pointer::loaded_value(&before, address),
+                &Pointer::loaded_value(&after, address),
+                &context,
+            )
+        };
+        let (hit, hit_work) = crate::instrumentation::measure_deterministic_work(|| query(&field));
+        let (miss, miss_work) =
+            crate::instrumentation::measure_deterministic_work(|| query(&ambiguous));
+        assert!(hit);
+        assert!(!miss, "an ambiguous supplier bucket must not be searched");
+        samples.push((hit_work, miss_work));
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}

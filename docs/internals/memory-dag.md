@@ -273,7 +273,8 @@ unchanged store. In particular:
   that shares the edge kept the same memory; placing the cell inside one is still decided
   in the querying context;
 - a `LoopHavoc` edge with no checked footprint isn't crossed; a verified
-  footprint is crossed only with range-disjointness evidence;
+  footprint is crossed with range-disjointness evidence or a selected
+  withheld ownership range covering the full read;
 - allocation and free preserve unrelated locations but don't preserve a load
   through the affected allocation;
 - havoc marker blocks remain attached during materialization-source
@@ -282,6 +283,12 @@ unchanged store. In particular:
   so the source can't restore a cell the havoc erased.
 
 These rules are soundness boundaries, not search heuristics.
+
+A mutable range with structurally identical endpoints changes no bytes. The
+`Empty` typed frame rule accepts it before any separation lookup, for signed
+and native bounds and every read width. It does not assume bounds are equal
+from facts or discard a nonempty range. In particular, an empty prefix carried
+by a loop resource must not block transport of nested pointer reads.
 
 For explicit separation facts, `SeparatedRangeEvidence` retains both selected
 members and the complete read's membership. Checking authenticates those members
@@ -322,6 +329,15 @@ A narrow read, a scalar cell, or an intervening partial write cannot supply a
 full pointer value. These rules establish only the selected equality and do
 not grant ownership or initialization authority.
 
+Explicit frame checking can stop at a `CellsForgotten` edge's retained input
+value instead of skipping it and trying to cross an older loop footprint.
+The query reads the exact address in that one predecessor and requires the
+complete access width. A typed scalar observation that names the other
+endpoint's canonical read supplies equality evidence; pointer representations
+are excluded. The retained no-write path and the read kind remain part of the
+certificate. A later overlapping write still stops recovery, and neither
+ownership nor initialization follows from this value equality.
+
 The stronger bridging that crosses `BlockDeclared` and `CellsForgotten` is
 scoped to viewability reasoning through `with_extended_dag_bridging`. Enabling
 that reasoning globally can change which surface facts a planner selects and
@@ -337,7 +353,13 @@ the DAG load-equality memo and the atomic derivation memo each do.
 
 Loop havoc uses the same edge-local rule as call havoc when a whole-loop effect
 summary has been checked: its owned ranges are carried on `LoopHavoc`, and a
-load may cross only with evidence that it is outside every range. The copy-back
+load may cross with evidence that it is outside every range. A declaring loop
+also retains the flat ownership withheld from its body. Explicit read transport
+may select one indexed kept range covering the entire read, even if a
+conditional collection over-approximates the mutable footprint. The persistent
+kept-range identity is part of the havoc marker; snapshots with different
+frames cannot intern together. No composite or alias search is enabled.
+The copy-back
 in `prepare_loop_top_state` materializes entry cells already known to be stable;
 it is an abstract-state optimization, not the soundness source for post-loop
 load transport. If a footprint cannot be evaluated, the edge retains the

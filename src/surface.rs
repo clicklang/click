@@ -1852,13 +1852,24 @@ pub enum ResourceClause {
 pub enum IteratedTactic {
     /// `take(base[a..b]);` moves one element out of the iterated fact whose
     /// elements live at `base`.
-    Take(ContractSegment),
+    Take(IteratedElement),
     /// `give(base[a..b]);` moves one element back.
-    Give(ContractSegment),
+    Give(IteratedElement),
     /// `gather(resource(...));` forms the named resource's iterated fact.
     Gather(ResourceClause),
     /// `scatter(resource(...));` dissolves it.
     Scatter(ResourceClause),
+}
+
+/// A current range or a range through an explicitly selected saved pointer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IteratedElement {
+    Current(ContractSegment),
+    SavedBase {
+        base: ContractExpression,
+        start: ContractExpression,
+        end: ContractExpression,
+    },
 }
 
 impl IteratedTactic {

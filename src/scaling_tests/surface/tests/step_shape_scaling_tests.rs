@@ -1075,3 +1075,55 @@ fn a_have_ignores_unrelated_parameters() {
         work[1]
     );
 }
+
+#[test]
+#[ignore = "nightly: reduced full-proof setup took 2.8s; larger fixture hit the 30s gate limit"]
+fn saved_iterated_base_ignores_aliases_snapshots_and_unrelated_resources() {
+    let (source, sources) =
+        super::expansion_tests::mdtest_sources("mdtests/iterated_saved_base_release.md");
+    // Exact work equality detects a scan even at these small sizes. Larger
+    // parameter sets mostly measure full-function setup before `give`.
+    let work = [1, 2, 4].map(|size| {
+        let parameters = (0..size)
+            .map(|i| format!(", int32* alias{i}, int32* spare{i}"))
+            .collect::<String>();
+        let signature = format!("int32 index{parameters})");
+        let c = sources[0].1.replace("int32 index)", &signature);
+        let mut click = source.replace("int32 index)", &signature);
+        let requirements = (0..size)
+            .map(|i| format!("    requires alias{i} == data;\n    owns spare{i}[0..1];\n"))
+            .collect::<String>();
+        click = click.replace(
+            "    requires 0 <= index;",
+            &format!("{requirements}    requires 0 <= index;"),
+        );
+        let marks = (0..size)
+            .map(|i| format!("    mark unrelated{i};\n"))
+            .collect::<String>();
+        click = click.replace("    mark before;", &format!("{marks}    mark before;"));
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&click, &[(sources[0].0.as_str(), c.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("size {size}: {}", error.message()));
+        let successful = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "give")
+            .map(|sample| sample.work)
+            .max()
+            .expect("give work");
+        let false_guard = c.replace("occupied[index] = 0", "occupied[index] = 1");
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&click, &[(sources[0].0.as_str(), false_guard.as_str())])
+        });
+        assert!(result.unwrap_err().message().contains("the guard is false"));
+        let refused = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "give")
+            .map(|sample| sample.work)
+            .max()
+            .expect("refused give work");
+        (successful, refused)
+    });
+    assert_eq!(work[0], work[1], "saved-base work: {work:?}");
+    assert_eq!(work[1], work[2], "saved-base work: {work:?}");
+}

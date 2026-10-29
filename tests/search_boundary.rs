@@ -450,11 +450,13 @@ fn direct_literal_and_store_checks_reject_alias_walks() {
 }
 
 #[test]
-fn store_preservation_cannot_retry_general_composition_or_explicit_range_search() {
+fn store_preservation_cannot_retry_general_composition_or_range_search() {
     for name in [
         "owned_composition_store_separated_evidence",
         "owned_composition_store_separated_evidence_impl",
         "pointers_proven_disjoint_by_explicit_range_for_memory_resolution",
+        "pointers_directly_disjoint_by_range",
+        "pointers_proven_distinct_for_memory_resolution",
     ] {
         for expression in [
             format!("c.{name}()"),
@@ -476,4 +478,24 @@ fn store_preservation_cannot_retry_general_composition_or_explicit_range_search(
         )
         .is_ok()
     );
+}
+
+#[test]
+fn direct_store_distinctness_rejects_search_and_alias_walks() {
+    for name in [
+        "pointers_proven_distinct_for_memory_resolution",
+        "pointers_proven_distinct_for_memory_resolution_unmemoized",
+        "pointer_offsets_equal_for_memory_resolution",
+        "pointer_offsets_with_common_base_proven_distinct_for_memory_resolution",
+        "pointers_proven_disjoint_by_explicit_range_for_memory_resolution",
+        "exact_pointer_aliases",
+        "proves_recorded_signed_order",
+        "decide",
+    ] {
+        let source = format!("fn pointers_directly_distinct_for_store(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/reasoning/memory_resolution.rs", &source).is_err(),
+            "accepted {source}"
+        );
+    }
 }

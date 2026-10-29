@@ -38,15 +38,11 @@
 //!   bitvector `subtract` rule for two sums with one base (checked once per
 //!   store on the anchor's byte form, [`anchor_byte_form_cancels`]), or reads
 //!   `c` directly against a bare-`S` store — and answers `Separate`;
-//! * `pointers_proven_distinct_for_memory_resolution` proves distinctness by
-//!   its offset-cancellation rung, which matches the shared `S` by
-//!   structural identity before it would consult a fact, and then compares
-//!   two different constants; for two constant offsets, the offset
-//!   disequality rung decides `Constant(c) == Constant(k)` false.
+//! * `pointers_directly_distinct_for_store` recognizes the nonzero constant
+//!   byte shift between the two addresses, without consulting facts.
 //!
-//! The rungs before those (ownership, the range rungs after them) can only
-//! keep a cell too. So skipping these cells changes neither the result nor
-//! the forget mark: a kept cell never sets it. Two things the ladder does
+//! The earlier ownership rules can only keep a cell too. Skipping these cells
+//! changes neither the result nor the forget mark: a kept cell never sets it. Two things the ladder does
 //! besides answering are not reproduced, and each disables the skip:
 //! while implicit reasoning provenance is being captured, the ownership
 //! rung records the composition it used, so nothing is skipped; and once the

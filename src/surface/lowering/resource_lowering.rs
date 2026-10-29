@@ -816,9 +816,11 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
                                     crate::kernel::intern_c_memory(base_memory.clone()),
                                 );
                             }
-                            let value =
-                                symbolic_value_for_element(&base_memory, &pointer, element_type);
-                            memory.store(pointer, value)
+                            memory.materialize_cell_from_source(
+                                pointer,
+                                element_type,
+                                crate::kernel::intern_c_memory(base_memory.clone()),
+                            )
                         },
                     );
                 }
@@ -831,7 +833,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
             continue;
         };
         // Every whole element of the range, as one run: the cells it holds
-        // are exactly the stores of `symbolic_value_for_element` in element
+        // are exactly the typed source loads seeded in element
         // order, skipping elements that already hold a cell, at a cost that
         // does not depend on how many elements there are.
         let count = range.bytes.checked_div(range.element_width).unwrap_or(0);
@@ -1292,13 +1294,11 @@ fn materialize_access_segment_cells(
                     {
                         return memory;
                     }
-                    let load = crate::kernel::canonical_form_of_load(
+                    memory.materialize_cell_from_source(
+                        pointer,
+                        element_type,
                         crate::kernel::intern_c_memory(base_memory.clone()),
-                        pointer.clone(),
-                        load_kind_of_element(element_type),
-                    );
-                    let value = symbolic_value_from_load(element_type, load);
-                    memory.store(pointer, value)
+                    )
                 },
             );
         }
@@ -1325,13 +1325,11 @@ fn materialize_access_segment_cells(
                         {
                             return memory;
                         }
-                        let load = crate::kernel::canonical_form_of_load(
+                        memory.materialize_cell_from_source(
+                            pointer,
+                            element_type,
                             crate::kernel::intern_c_memory(base_memory.clone()),
-                            pointer.clone(),
-                            load_kind_of_element(element_type),
-                        );
-                        let value = symbolic_value_from_load(element_type, load);
-                        memory.store(pointer, value)
+                        )
                     },
                 );
             }
@@ -3747,32 +3745,6 @@ pub(in crate::surface) fn contract_expression_element_width(
         },
         _ => None,
     }
-}
-
-fn symbolic_value_for_element(memory: &CMemory, pointer: &Pointer, element_type: CType) -> CValue {
-    let load = crate::kernel::canonical_form_of_load(
-        crate::kernel::intern_c_memory(memory.clone()),
-        pointer.clone(),
-        load_kind_of_element(element_type),
-    );
-    symbolic_value_from_load(element_type, load)
-}
-
-/// The kind of read a resource element of `element_type` is: the element's
-/// own C read, which is what a C load of the element names.
-pub(in crate::surface) fn load_kind_of_element(element_type: CType) -> crate::kernel::LoadKind {
-    crate::kernel::LoadKind::of_type(element_type)
-        .expect("memory ranges cannot contain aggregate elements")
-}
-
-pub(in crate::surface) fn symbolic_value_from_load(
-    element_type: CType,
-    load: Bitvector32Term,
-) -> CValue {
-    // Share the kernel's seeded-cell constructor, including its retained
-    // typed pointer-load definition. Surface entry cells and lazy cell runs
-    // must name the same value through later model aliases.
-    crate::kernel::cell_run_value(element_type, load)
 }
 
 pub(in crate::surface) fn requirement_proposition_prop(

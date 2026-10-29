@@ -4221,11 +4221,28 @@ impl CMemory {
     }
 
     pub(in crate::kernel) fn with_loop_memory_havoc_preserving_loans(
+        self,
+        variable: Variable,
+        preserved_blocks: &dyn BlockMembership,
+        mutable_ranges: Option<&[CMemoryRange]>,
+        ledger: Option<&crate::kernel::loans::LoanLedger>,
+    ) -> Self {
+        self.with_loop_memory_havoc_preserving_frame(
+            variable,
+            preserved_blocks,
+            mutable_ranges,
+            ledger,
+            None,
+        )
+    }
+
+    pub(in crate::kernel) fn with_loop_memory_havoc_preserving_frame(
         mut self,
         variable: Variable,
         preserved_blocks: &dyn BlockMembership,
         mutable_ranges: Option<&[CMemoryRange]>,
         ledger: Option<&crate::kernel::loans::LoanLedger>,
+        kept_by_function: Option<CallKeptRanges>,
     ) -> Self {
         // A loop body that may write memory can clobber, through some
         // pointer, any value it can reach. Drop cached values (cells and
@@ -4246,8 +4263,15 @@ impl CMemory {
             }
             None => self.forget_every_zero_reading(),
         }
+        // Interned histories may share a variable and write footprint only
+        // when they retain the same frame. The persistent frame identity is
+        // already maintained; naming it does not enumerate its resources.
+        let marker = kept_by_function.as_ref().map_or_else(
+            || format!("havoc:{}", variable.0),
+            |kept| format!("havoc:{}:{}", variable.0, kept.identity()),
+        );
         std::sync::Arc::make_mut(&mut self.blocks).insert(
-            format!("havoc:{}", variable.0).into(),
+            marker.into(),
             CBlock::new(mutable_ranges.map_or(0, memory_havoc_write_set_fingerprint)),
         );
         if let Some(base) = base {
@@ -4257,6 +4281,7 @@ impl CMemory {
                     base,
                     variable,
                     mutable_ranges: mutable_ranges.map(|ranges| ranges.to_vec()),
+                    kept_by_function,
                 },
             );
         }
@@ -5804,6 +5829,22 @@ impl CMemory {
         }
     }
 
+    /// Name one contract field at its selected source snapshot without
+    /// recording a program write. The producer's source is shared by all
+    /// fields of the same entry object; deriving the value here preserves
+    /// that identity without accepting an arbitrary cached value.
+    pub(crate) fn materialize_cell_from_source(
+        self,
+        pointer: Pointer,
+        c_type: CType,
+        source: SharedCMemory,
+    ) -> Self {
+        let kind = LoadKind::of_type(c_type).expect("contract fields have scalar read kinds");
+        let load = crate::kernel::canonical_form_of_load(source, pointer.clone(), kind);
+        let value = crate::kernel::cell_run_value(c_type, load);
+        self.materialize_named_cell(pointer, value)
+    }
+
     /// Cache the canonical value of an already existing cell for a resource
     /// projection. This is not a C write and cannot establish initialization.
     /// Kernel producers supply the value they observed or proved at this point.
@@ -6795,15 +6836,11 @@ impl CMemory {
             )
                 == crate::kernel::reasoning::AccessByteOverlap::Separate;
             let kept = address_inequality_separates_bytes
-                && pointers_proven_distinct_for_memory_resolution(
+                && crate::kernel::reasoning::pointers_directly_distinct_for_store(
                     &normalized_cell_pointer,
                     &normalized_pointer,
                     assumptions,
-                )
-                // The direct-range fallback remains for now. General explicit-range
-                // candidate search belongs outside store cache preservation.
-                || assumptions
-                    .pointers_directly_disjoint_by_range(&normalized_cell_pointer, &normalized_pointer);
+                );
             if kept {
                 CachedValueFate::Kept
             } else {
@@ -6869,14 +6906,10 @@ impl CMemory {
             )
                 == crate::kernel::reasoning::AccessByteOverlap::Separate;
             let kept = address_inequality_separates_bytes
-                && pointers_proven_distinct_for_memory_resolution(
+                && crate::kernel::reasoning::pointers_directly_distinct_for_store(
                     &normalized_cell_pointer,
                     &normalized_pointer,
                     assumptions,
-                )
-                || assumptions.pointers_directly_disjoint_by_range(
-                    &normalized_cell_pointer,
-                    &normalized_pointer,
                 );
             if kept {
                 CachedValueFate::Kept

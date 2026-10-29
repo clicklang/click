@@ -1066,6 +1066,27 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             have i < arena->capacity;
             mark opened;
             step();
+            transport(at(opened, arena->occupied) == old(arena->occupied),
+                      arena->occupied == old(arena->occupied)) using {
+                at(opened, arena->occupied) == old(arena->occupied);
+                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            transport(at(opened, arena->capacity) == old(arena->capacity),
+                      arena->capacity == old(arena->capacity)) using {
+                at(opened, arena->capacity) == old(arena->capacity);
+                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            transport(at(opened, arena->data) == old(arena->data),
+                      arena->data == old(arena->data)) using {
+                at(opened, arena->data) == old(arena->data);
+                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
             have forall (k: int32) {
                 at(opened, i) + 1 <= k and k < end implies
                     arena->occupied[k] == 0
@@ -1094,6 +1115,10 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     at(opened, arena->occupied[k]) == 0,
                     arena->occupied[k] == 0
                 ) using {
+                    at(opened, arena->occupied) == old(arena->occupied);
+                    arena->occupied == old(arena->occupied);
+                    at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                    at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
                     at(opened, arena->occupied[k]) == 0;
                     at(opened, i) < k;
                     0 <= at(opened, i);
@@ -1139,7 +1164,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     have k <= at(opened, i);
                     have k == at(opened, i);
                     rewrite(k == at(opened, i));
-                    normalize();
+                    normalize() using { arena->occupied == old(arena->occupied); };
                 }
             }
             step();
@@ -1185,6 +1210,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 intro();
                 extract(end <= k);
                 extract(k < arena->capacity);
+                have k < at(opened, arena->capacity);
                 have at(opened, arena->occupied[k]) ==
                     at(mark_free_run.entry, arena->occupied[k]) by {
                     instantiate(forall (j: int32) {
@@ -1194,7 +1220,7 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                                 at(mark_free_run.entry, arena->occupied[j])
                     }, k) using {
                         end <= k;
-                        k < arena->capacity;
+                        k < at(opened, arena->capacity);
                     };
                     assumption();
                 }
@@ -1247,11 +1273,32 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 };
                 assumption();
             }
-            have viewable(arena->occupied[0..arena->capacity]);
+            transport(
+                at(opened, viewable(arena->occupied[0..arena->capacity])),
+                viewable(arena->occupied[0..arena->capacity])
+            ) using {
+                at(opened, viewable(arena->occupied[0..arena->capacity]));
+                at(opened, arena->occupied) == old(arena->occupied);
+                arena->occupied == old(arena->occupied);
+                at(opened, arena->capacity) == old(arena->capacity);
+                arena->capacity == old(arena->capacity);
+            };
+            have forall (k: int32) {
+                i <= k and k < end implies load_int32(old(arena->occupied) + k) == 0
+            } by {
+                rewrite(old(arena->occupied) == arena->occupied);
+                assumption();
+            }
+            have forall (k: int32) {
+                start <= k and k < i implies load_int32(old(arena->occupied) + k) == 1
+            } by {
+                rewrite(old(arena->occupied) == arena->occupied);
+                assumption();
+            }
             let w = fold(arena_window(
-                arena->data,
-                arena->occupied,
-                arena->capacity,
+                old(arena->data),
+                old(arena->occupied),
+                old(arena->capacity),
                 start,
                 end
             ), {
@@ -1718,7 +1765,50 @@ void arena_free(struct region* region) {
             have i < arena->capacity;
             mark opened;
             step();
-            give(arena->data[i..i + 1]);
+            transport(
+                at(opened, region->start) == at(opened, region->start),
+                region->start == at(opened, region->start)
+            ) using {
+                at(opened, separate(memory(*region), memory(arena->occupied[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            transport(
+                at(opened, region->end) == at(opened, region->end),
+                region->end == at(opened, region->end)
+            ) using {
+                at(opened, separate(memory(*region), memory(arena->occupied[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            transport(
+                at(opened, arena->occupied) == at(opened, arena->occupied),
+                arena->occupied == at(opened, arena->occupied)
+            ) using {
+                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            transport(
+                at(opened, arena->data) == at(opened, arena->data),
+                arena->data == at(opened, arena->data)
+            ) using {
+                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            transport(
+                at(opened, arena->capacity) == at(opened, arena->capacity),
+                arena->capacity == at(opened, arena->capacity)
+            ) using {
+                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            give(at(opened, arena->data)[i..i + 1]);
             step();
             have region->start <= at(opened, i) + 1;
             have forall (k: int32) {
@@ -1737,24 +1827,34 @@ void arena_free(struct region* region) {
                                 at(opened, arena->occupied[j]) == at(opened, 0)
                         }, k) using {
                             region->start <= k;
+                            region->start == at(opened, region->start);
                             k < m;
                         };
                         assumption();
                     }
                     have 0 <= k;
-                    transport(at(opened, arena->occupied[k]) == 0, arena->occupied[k] == 0) using {
+                    have k < at(opened, arena->capacity);
+                    transport(at(opened, arena->occupied[k]) == 0, at(opened, arena->occupied)[k] == 0) using {
                         at(opened, arena->occupied[k]) == 0;
+                        arena->occupied == at(opened, arena->occupied);
+                        arena->capacity == at(opened, arena->capacity);
+                        at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
+                        at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
+                        k < at(opened, arena->capacity);
                         k < at(opened, i);
                         0 <= k;
                         0 <= at(opened, i);
                         at(opened, i) < arena->capacity;
                     };
+                    rewrite(arena->occupied == at(opened, arena->occupied));
+                    assumption();
                 } else {
                     have to_integer(k) == to_integer(at(opened, i)) by solve() using {
                         k < at(opened, i) + 1;
                         not (k < at(opened, i));
                     };
                     rewrite(k == at(opened, i));
+                    rewrite(arena->occupied == at(opened, arena->occupied));
                     normalize();
                 }
             }
@@ -1776,6 +1876,7 @@ void arena_free(struct region* region) {
                     }, k) using {
                         0 <= k;
                         k < region->start;
+                        region->start == at(opened, region->start);
                     };
                     assumption();
                 }
@@ -1783,7 +1884,7 @@ void arena_free(struct region* region) {
                 transport(
                     at(opened, arena->occupied[k]) ==
                         at(clear_occupied.entry, arena->occupied[k]),
-                    arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
+                    at(opened, arena->occupied)[k] == at(clear_occupied.entry, arena->occupied[k])
                 ) using {
                     at(opened, arena->occupied[k]) ==
                         at(clear_occupied.entry, arena->occupied[k]);
@@ -1792,6 +1893,8 @@ void arena_free(struct region* region) {
                     0 <= at(opened, i);
                     at(opened, i) < arena->capacity;
                 };
+                rewrite(arena->occupied == at(opened, arena->occupied));
+                assumption();
             }
             have forall (k: int32) {
                 region->end <= k and k < arena->capacity implies
@@ -1810,7 +1913,9 @@ void arena_free(struct region* region) {
                                 at(clear_occupied.entry, arena->occupied[j])
                     }, k) using {
                         region->end <= k;
+                        region->end == at(opened, region->end);
                         k < arena->capacity;
+                        arena->capacity == at(opened, arena->capacity);
                     };
                     assumption();
                 }
@@ -1820,7 +1925,7 @@ void arena_free(struct region* region) {
                 transport(
                     at(opened, arena->occupied[k]) ==
                         at(clear_occupied.entry, arena->occupied[k]),
-                    arena->occupied[k] == at(clear_occupied.entry, arena->occupied[k])
+                    at(opened, arena->occupied)[k] == at(clear_occupied.entry, arena->occupied[k])
                 ) using {
                     at(opened, arena->occupied[k]) ==
                         at(clear_occupied.entry, arena->occupied[k]);
@@ -1830,6 +1935,8 @@ void arena_free(struct region* region) {
                     0 <= k;
                     k < arena->capacity;
                 };
+                rewrite(arena->occupied == at(opened, arena->occupied));
+                assumption();
             }
             have forall (k: int32) {
                 region->start <= k and k < i implies arena->occupied[k] == 0
@@ -1847,10 +1954,40 @@ void arena_free(struct region* region) {
                 };
                 assumption();
             }
-            let w = fold(arena_clear_window(arena->data, arena->occupied, arena->capacity, region->start, region->end), {
+            have arena->occupied == old(region->arena->occupied);
+            have region->start == old(region->start);
+            // Capture the saved pointer value, then read current memory through it.
+            have forall (k: int32) {
+                old(region->start) <= k and k < i implies
+                    (let saved: int32* = old(region->arena->occupied); saved[k]) == 0
+            } by {
+                intro();
+                intro();
+                extract(old(region->start) <= k);
+                extract(k < i);
+                instantiate(forall (j: int32) {
+                    region->start <= j and j < i implies arena->occupied[j] == 0
+                }, k) using {
+                    old(region->start) <= k;
+                    region->start == old(region->start);
+                    k < i;
+                };
+                rewrite(old(region->arena->occupied) == arena->occupied);
+                assumption();
+            }
+            let w = fold(arena_clear_window(old(region->arena->data), old(region->arena->occupied), old(region->arena->capacity), old(region->start), old(region->end)), {
                 next: i
             });
             have region->start <= region->end;
+            transport(
+                at(opened, region->arena) == at(opened, region->arena),
+                region->arena == at(opened, region->arena)
+            ) using {
+                at(opened, separate(memory(*region), memory(arena->occupied[0..arena->capacity])));
+                0 <= at(opened, i);
+                at(opened, i) < at(opened, arena->capacity);
+            };
+            have region->arena == old(region->arena);
             have to_integer(i) == to_integer(at(opened, i)) + 1;
             have 0 <= to_integer(region->end) - to_integer(i);
             have to_integer(region->end) - to_integer(i) < to_integer(region->end) - to_integer(at(opened, i));

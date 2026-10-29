@@ -2154,13 +2154,72 @@ impl<'a> Proof<'a> {
         let state = &*execution.core.state;
         let parameters = context.parsed_function.parameters();
         let element =
-            |segment: &ContractSegment| -> Result<crate::kernel::CMemoryRange, ClickError> {
-                let lowered = lower_resource_clause_at_current_locals(
-                    &ResourceClause::OwnMemory(segment.clone()),
-                    ParameterBinding::new(parameters, context.arguments),
-                    state,
-                    None,
-                )?;
+            |element: &IteratedElement| -> Result<crate::kernel::CMemoryRange, ClickError> {
+                let captured;
+                let segment = match element {
+                    IteratedElement::Current(segment) => segment,
+                    IteratedElement::SavedBase { base, start, end } => {
+                        let evaluate = |expression: &ContractExpression| {
+                            let expression =
+                                self.substitute_fixed_state_locals_in_expression(expression)?;
+                            let names = contract_expression_referenced_names(&expression);
+                            let (values, array_refs) = contract_environment_for_names(
+                                context.parameter_binding(),
+                                &names,
+                                state,
+                            )?;
+                            evaluate_fixed_state_expression_through_kernel(
+                                &expression,
+                                self.facts().assumptions(),
+                                ContractEnvironment::new(&values, &array_refs),
+                                FixedStateFrame::new(
+                                    context.old_reference_state(&execution.core.frontier, state),
+                                    state,
+                                    None,
+                                    &execution.presentation.recorded_snapshots,
+                                ),
+                                context.spec_definitions,
+                                &BTreeSet::new(),
+                            )
+                            .map(CExpression::Value)
+                            .map_err(|message| {
+                                self.step_error(format!("`{name}` operand: {message}"))
+                            })
+                        };
+                        let base = evaluate(base)?;
+                        let start = evaluate(start)?;
+                        let end = evaluate(end)?;
+                        captured = ContractSegment {
+                            state: ContractSegmentState::Current,
+                            surface: ContractSegmentSurface::Range {
+                                base: ContractExpression::CFragment(base.clone()),
+                                start: ContractExpression::CFragment(start.clone()),
+                                end: ContractExpression::CFragment(end.clone()),
+                            },
+                            base,
+                            start,
+                            end,
+                            uninitialized: false,
+                        };
+                        &captured
+                    }
+                };
+                let resource = ResourceClause::OwnMemory(segment.clone());
+                let lowered = match element {
+                    IteratedElement::Current(_) => lower_resource_clause_at_current_locals(
+                        &resource,
+                        context.parameter_binding(),
+                        state,
+                        None,
+                    ),
+                    // All three operands are captured values: there are no
+                    // C locals or parameters left to populate or resolve.
+                    IteratedElement::SavedBase { .. } => lower_resource_clause_at_state(
+                        &resource,
+                        ParameterBinding::new(&[], &[]),
+                        state,
+                    ),
+                }?;
                 lowered
                     .memory_own_range()
                     .cloned()
