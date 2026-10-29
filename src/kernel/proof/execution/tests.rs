@@ -24,10 +24,7 @@ fn balanced_unit_sum_domain_requires_all_three_original_domains() {
             .fold(PureFactContext::new(), |facts, (_, condition)| {
                 facts.assume_condition(condition.clone(), false)
             });
-        assert_eq!(
-            super::authority_control_evaluation_condition_proven(&facts, &goal),
-            missing == 3
-        );
+        assert_eq!(facts.settles_exactly(&goal), missing == 3);
     }
     // Return reverses the two original summands. Commutativity must
     // preserve the check without dropping either child-domain premise.
@@ -44,10 +41,7 @@ fn balanced_unit_sum_domain_requires_all_three_original_domains() {
             .fold(PureFactContext::new(), |facts, (_, condition)| {
                 facts.assume_condition(condition.clone(), false)
             });
-        assert_eq!(
-            super::authority_control_evaluation_condition_proven(&facts, &goal),
-            missing == 3
-        );
+        assert_eq!(facts.settles_exactly(&goal), missing == 3);
     }
     // The original sum fits, but the increment wraps at MAX, or the
     // predecessor wraps at MIN. Modular equality must not certify either.

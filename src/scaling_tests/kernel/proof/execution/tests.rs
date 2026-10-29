@@ -45,16 +45,15 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
                 true,
             );
         }
-        let (valid, work) = crate::instrumentation::measure_deterministic_work(|| {
-            super::super::authority_control_evaluation_condition_proven(&facts, &goal)
-        });
+        let (valid, work) =
+            crate::instrumentation::measure_deterministic_work(|| facts.settles_exactly(&goal));
         assert!(valid);
         // Removing the old domain must fail without searching the frame.
         let missing_old = PureFactContext::new().assume_condition(
             ConditionTerm::signed_less_than(a.clone(), Bitvector32Term::Constant(i32::MAX as u32)),
             true,
         );
-        assert!(!super::super::authority_control_evaluation_condition_proven(&missing_old, &goal));
+        assert!(!missing_old.settles_exactly(&goal));
         measurements.push(work);
     }
     assert!(

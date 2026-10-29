@@ -6,7 +6,6 @@
 
 use super::{PersistentOrderedSet, PersistentSequence, ProofFacts, SharedValue, SharedVec};
 use crate::kernel::LoadKind;
-use crate::kernel::binary_term;
 use crate::kernel::population_authority::c_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
@@ -17,7 +16,7 @@ use crate::kernel::{
     CVerifiedLoopRule, ExecutionBudget, ExecutionLimit, ExecutionPureFact, Pointer, Proposition,
     PureFactContext, ResourceContext, SpecProposition, Theorem, Variable,
 };
-use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::persistent::PersistentSet;
 use std::collections::{BTreeMap, HashMap};
@@ -1265,91 +1264,6 @@ fn cell_value_is_exactly_load(
     }
 }
 
-/// A unit checkout preserves the mathematical sum only when neither child
-/// update wraps. Check the three original domains through named/indexed facts;
-/// modular equality of the two sums alone is insufficient.
-fn authority_control_evaluation_condition_proven(
-    assumptions: &PureFactContext,
-    goal: &Proposition,
-) -> bool {
-    use crate::kernel::ConditionTerm;
-    let stated = |goal: &Proposition| {
-        matches!(crate::kernel::canonical_condition_fact(goal), Proposition::ConditionIs(condition, truth)
-            if assumptions.exact_condition_value(&condition) == Some(truth))
-    };
-    if stated(goal) {
-        return true;
-    }
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left,
-            right,
-        },
-        false,
-    ) = goal
-    else {
-        return false;
-    };
-    let pair = match (left.as_ref(), right.as_ref()) {
-        (
-            binary_term!(Int32, Add, value, increment),
-            binary_term!(Int32, Subtract, other, decrement),
-        )
-        | (
-            binary_term!(Int32, Subtract, other, decrement),
-            binary_term!(Int32, Add, value, increment),
-        ) if increment.as_const() == Some(1) && decrement.as_const() == Some(1) => {
-            (value.as_ref(), other.as_ref())
-        }
-        _ => return false,
-    };
-    let one = Bitvector32Term::Constant(1);
-    let guards = [
-        ConditionTerm::signed_add_overflows(pair.0.clone(), pair.1.clone()),
-        ConditionTerm::signed_add_overflows(pair.0.clone(), one.clone()),
-        ConditionTerm::signed_subtract_overflows(pair.1.clone(), one),
-    ];
-    guards.iter().all(|condition| {
-        if stated(&Proposition::ConditionIs(condition.clone(), false)) {
-            return true;
-        }
-        if let ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left,
-            right,
-        } = condition
-            && stated(&Proposition::ConditionIs(
-                ConditionTerm::signed_add_overflows(right.as_ref().clone(), left.as_ref().clone()),
-                false,
-            ))
-        {
-            return true;
-        }
-        match condition {
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Add,
-                left: value,
-                right: one,
-            } if one.as_const() == Some(1) => assumptions
-                .indexed_constant_interval(value)
-                .is_some_and(|(_, high)| high < i64::from(i32::MAX)),
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Subtract,
-                left: value,
-                right: one,
-            } if one.as_const() == Some(1) => assumptions
-                .indexed_constant_interval(value)
-                .is_some_and(|(low, _)| low > i64::from(i32::MIN)),
-            _ => false,
-        }
-    })
-}
-
 /// Exact comparison retained at a failed named-resource rewrite. Diagnostic
 /// data only: carrying it grants no fact or resource authority.
 #[derive(Clone, Debug)]
@@ -1668,17 +1582,14 @@ impl CheckedResourceRewrite {
             let path =
                 crate::kernel::api::exactly_selected_spec_proposition_path(&paths, assumptions)
                     .ok_or("authority control invariant needs one checked path")?;
-            if !path.facts.iter().all(|fact| {
-                authority_control_evaluation_condition_proven(
-                    &evaluation_assumptions,
-                    fact.proposition(),
-                )
-            }) || !path.obligations.iter().all(|obligation| {
-                authority_control_evaluation_condition_proven(
-                    &evaluation_assumptions,
-                    obligation.proposition(),
-                )
-            }) {
+            if !path
+                .facts
+                .iter()
+                .all(|fact| evaluation_assumptions.settles_exactly(fact.proposition()))
+                || !path.obligations.iter().all(|obligation| {
+                    evaluation_assumptions.settles_exactly(obligation.proposition())
+                })
+            {
                 return Err(
                     "authority control invariant has an unproved evaluation condition".into(),
                 );
