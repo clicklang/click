@@ -40,16 +40,14 @@ facts do not establish flat cost as the queried class or bucket grows.
    through `one_element_gap_separates_bytes` on wide-access misses. Compact-run
    preservation in `run_slots_kept_by_store` still asks
    `typed_ranges_disjoint_from_pointer_evidence` and may inspect symbolic slots.
-   Finish the direct-distinctness experiment before removing another fallback.
-   The remaining `arena_alloc` element-transport refusal is reproduced by a
-   short loop: adding an empty `owns data[start..start]` range to its resource
-   changes a passing explicit transport into a refusal. The descriptor-pointer
-   transport still succeeds. Conditional element ownership, the allocator's
-   scan, allocation calls, and region bookkeeping are not required. Investigate
-   empty ranges retained in `LoopHavoc` effects and their effect on canonical
-   load projections; an empty footprint must not obstruct an otherwise valid
-   frame. Retain the failing/passing pair and check the original arena proof
-   after the fix. Do not restore ambient range search to hide the refusal.
+   Finish the direct-distinctness experiment before removing another fallback:
+   repair explicit resource reconstruction in `arena_alloc` after the
+   `mark_free_run` store. The descriptor values now need explicit transports,
+   and rebuilding `arena_window` at the stable entry pointer values needs its
+   quantified body facts aligned with those addresses. Preserve the original C
+   and claims, use selected evidence, and rerun the complete ordinary corpus
+   before landing the removal. Do not restore ambient range search for these
+   proof repairs.
    Measure these store callers before selecting the next removal, coordinating
    run/history work with the frame-walk item below.
    Measure overlapping member buckets and repeated stores, keeping actual
