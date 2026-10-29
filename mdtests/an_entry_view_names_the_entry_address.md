@@ -5,7 +5,9 @@ lowers it at the *entry* state, so the fact it produces names the address
 `p->buf` held on entry. The body then stores a different pointer into that
 field, and the postcondition reads through the new `p->buf`, which is
 `other` — an address the contract says nothing about. The entry fact does
-not reach it.
+not reach it. Structural lowering keeps the postcondition spelled through
+`p->buf`; the equality to `other` belongs to the graph. The expectation checks
+the rejected goal rather than a supplemental history explanation.
 
 ```c filename=an_entry_view_names_the_entry_address.c
 struct holder {
@@ -30,5 +32,5 @@ void f(struct holder* p, int32* other, int32 n) {
 ```
 
 ```expect
-fail: `other[0]` may have changed since earlier in this function: the store to `p->buf` may have written `other[0]`. Establish that the two accesses touch separate bytes.
+fail: unclosed goal: p->buf[0] == 5
 ```

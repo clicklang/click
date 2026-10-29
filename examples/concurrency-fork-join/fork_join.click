@@ -108,4 +108,47 @@ int fill_parallel(int output[4]) {
          output[2] == 0 and output[3] == 0) or
         (output[0] == 11 and output[1] == 11 and
          output[2] == 0 and output[3] == 0);
+} by {
+    step_until(statement(5));
+    have first_job.output == output;
+    have second_job.output == output;
+    step();
+    branch {
+        step_until(function.exit);
+        solve();
+    } else {}
+    step();
+    branch {
+        step();
+        have range_filled(&first_job);
+        have forall (k: int32) {
+            first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
+        } by { unfold(range_filled); assumption(); }
+        have first_job.output[0] == first_job.value;
+        have first_job.output[1] == first_job.value;
+        have output[0] == 11;
+        have output[1] == 11;
+        step_until(function.exit);
+        solve();
+    } else {}
+    step();
+    have range_filled(&first_job);
+    have forall (k: int32) {
+        first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
+    } by { unfold(range_filled); assumption(); }
+    have first_job.output[0] == first_job.value;
+    have first_job.output[1] == first_job.value;
+    have output[0] == 11;
+    have output[1] == 11;
+    step();
+    have range_filled(&second_job);
+    have forall (k: int32) {
+        second_job.begin <= k and k < second_job.end implies second_job.output[k] == second_job.value
+    } by { unfold(range_filled); assumption(); }
+    have second_job.output[2] == second_job.value;
+    have second_job.output[3] == second_job.value;
+    have output[2] == 22;
+    have output[3] == 22;
+    step_until(function.exit);
+    solve();
 }

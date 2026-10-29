@@ -122,11 +122,18 @@ the one the text names.
   choosing a term by known provenance. Equalities stay in the equality graph
   and the comparison form, which every check consults.
 
-Known violations, each a defect to remove: pointer reads lower to the
-pointer stored at the cell, both in C-level propositions and in resource
-arguments (`complete_pointer_read_value` and the stored-pointer fold in
-`Pointer::loaded`); comparisons folded to constants; decided guards and
-disjuncts dropped; and comparison kinds chosen by known provenance.
+Logical object-pointer reads now retain their version names, including when
+memory stores a complete pointer at the cell. The read's complete stored value
+is related through `EqualityGraph::register_logical_read_values` and the
+producer's read equations; its address, bounds, and designation are not folded
+into the lowered term. The cached-prefix route also excludes logical reads
+from fact-supported recovery, even outside specification scope.
+
+Remaining violations include legacy stored-pointer folds outside this logical
+read route (`complete_pointer_read_value` and `Pointer::loaded`), comparisons
+folded to constants, decided guards and disjuncts dropped, and comparison kinds
+chosen by known provenance. The logical-read switch does not establish complete
+fact stability or spelling coverage.
 
 ## Lowering is fact-stable
 
@@ -162,7 +169,7 @@ into the check that needs it.
 
 ## A read names its version
 
-A Click read of an integer cell lowers to the read at the cell's version,
+A Click read of an integer or object-pointer cell lowers to the read at the cell's version,
 never to the value a store left there: after `a[i] = 5`, `a[i]` lowers to the
 read, not to `5` (`logical_read_names_its_version` in
 `kernel::eval::memory_loads`). A read lowered to its stored value has no

@@ -1304,13 +1304,13 @@ void change(struct node *g, struct node *source, struct node *t) {
     match c.model ensuring { owns c: child(t); fact c.model == old(c.model); fact g->right == p; } {
         Model::Empty => {
             unfold(c); step(); step();
-            have g->right == p by { normalize(); }
+            have g->right == p by { solve(); }
             let c = fold(child(t), { model: Model::Empty });
             have c.model == old(c.model) by { solve(); }
         },
         Model::Nonempty => {
             unfold(c); step(); step(); step();
-            have g->right == p by { normalize(); }
+            have g->right == p by { solve(); }
             let c = fold(child(t), { model: Model::Nonempty });
             have c.model == old(c.model) by { solve(); }
         },
