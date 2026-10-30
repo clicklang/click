@@ -362,7 +362,9 @@ fn mathematical_certificate_result_decoding_scales_with_explicit_atoms() {
             .collect::<Vec<_>>();
         while terms.len() > 1 {
             terms = terms
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| IntegerTerm::add(pair[0].clone(), pair[1].clone()))
                 .collect();
         }

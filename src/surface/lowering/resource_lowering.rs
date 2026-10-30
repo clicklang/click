@@ -1753,6 +1753,7 @@ pub(in crate::surface) fn resource_context_from_requirements(
     Ok(context)
 }
 
+#[cfg(test)]
 pub(in crate::surface) fn lower_resource_clause(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
@@ -1773,6 +1774,7 @@ pub(in crate::surface) fn lower_resource_clause(
     lower_resource_clause_with_values(resource, parameter_binding, &values, &state, None)
 }
 
+#[cfg(test)]
 pub(in crate::surface) fn lower_resource_clause_facts(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
