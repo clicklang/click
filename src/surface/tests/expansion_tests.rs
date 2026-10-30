@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: original branching alias proofs and expansion take one second"]
+fn alias_load_outcome_requirements_keep_recorded_value_names_in_expansion() {
+    let (mut source, sources) =
+        mdtest_sources("mdtests/a_load_that_may_read_an_earlier_store_splits_into_its_cases.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    for function in ["planned", "stepped"] {
+        let verified = verify_c0_sources(&source, &sources).unwrap();
+        source = expand_checked_grouped_claim(&source, &verified, function).unwrap();
+    }
+    without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+}
+
+#[test]
 fn unsigned_widening_special_certificates_expand_and_recheck() {
     let (source, _) =
         mdtest_sources("mdtests/unsigned_widening_keeps_special_certificate_results.md");
