@@ -2264,7 +2264,7 @@ fn synthesize_surface_atomic_proposition(
         return None;
     };
     if let ConditionTerm::Overflows {
-        format: format @ (MachineIntegerType::Int32 | MachineIntegerType::Int64),
+        format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
         op:
             op @ (OverflowOperation::Add | OverflowOperation::Subtract | OverflowOperation::Multiply),
         left,
@@ -2272,24 +2272,27 @@ fn synthesize_surface_atomic_proposition(
     } = condition
         && !value
     {
-        return Some(ClickProposition::Defined {
-            expression: synthesize_surface_bitvector(
-                &Bitvector32Term::Binary {
-                    format: *format,
-                    op: match op {
-                        OverflowOperation::Add => MachineBinaryOp::Add,
-                        OverflowOperation::Subtract => MachineBinaryOp::Subtract,
-                        OverflowOperation::Multiply => MachineBinaryOp::Multiply,
-                        _ => unreachable!("arithmetic overflow matched above"),
-                    },
-                    left: left.clone(),
-                    right: right.clone(),
-                },
-                parameter_binding,
-                state,
-                bound_variables,
-            )?,
-        });
+        // Definedness names this operation, not a local that already holds
+        // its result. `defined(result)` would lose the operation's domain.
+        let left = Box::new(synthesize_surface_bitvector(
+            left,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?);
+        let right = Box::new(synthesize_surface_bitvector(
+            right,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?);
+        let expression = match op {
+            OverflowOperation::Add => ContractExpression::Add(left, right),
+            OverflowOperation::Subtract => ContractExpression::Subtract(left, right),
+            OverflowOperation::Multiply => ContractExpression::Multiply(left, right),
+            _ => unreachable!("arithmetic overflow matched above"),
+        };
+        return Some(ClickProposition::Defined { expression });
     }
     if let ConditionTerm::Constant(condition) = condition {
         // An exact Integer comparison keeps the condition's constant value.

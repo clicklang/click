@@ -2124,7 +2124,21 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
             };
             let state = CState::new()
                 .with_local("left", value(left.clone()))
-                .with_local("right", value(right.clone()));
+                .with_local("right", value(right.clone()))
+                .with_local(
+                    "result",
+                    value(Bitvector32Term::machine_binary(
+                        format,
+                        match op {
+                            OverflowOperation::Add => MachineBinaryOp::Add,
+                            OverflowOperation::Subtract => MachineBinaryOp::Subtract,
+                            OverflowOperation::Multiply => MachineBinaryOp::Multiply,
+                            _ => unreachable!(),
+                        },
+                        left.clone(),
+                        right.clone(),
+                    )),
+                );
             let requirement = Proposition::ConditionIs(
                 ConditionTerm::Overflows {
                     format,
