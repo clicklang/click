@@ -1901,3 +1901,50 @@ fn direct_order_fact_survives_a_high_degree_source() {
     assert_eq!(graph.decide(&less(variable(last), n.clone())), Some(true));
     assert_eq!(graph.decide(&less(n, variable(last))), Some(false));
 }
+
+#[test]
+fn word_equality_uses_unsigned_strict_bounds_without_losing_signed_evidence() {
+    let (value, divisor) = (variable(993), variable(994));
+    let strict = graph(&[(
+        ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
+        true,
+    )]);
+    let non_strict = graph(&[(
+        ConditionTerm::unsigned_less_equal(value.clone(), divisor.clone()),
+        true,
+    )]);
+    let signed_zero = graph(&[
+        (lt(&value, &divisor), true),
+        (ConditionTerm::equal(divisor.clone(), constant(0)), true),
+    ]);
+    let signed_negative = graph(&[
+        (le(&constant(-1), &divisor), true),
+        (lt(&divisor, &constant(0)), true),
+    ]);
+    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+        for reversed in [false, true] {
+            let equal_to = |other: Bitvector32Term| {
+                let (left, right) = if reversed {
+                    (other, divisor.clone())
+                } else {
+                    (divisor.clone(), other)
+                };
+                ConditionTerm::Compare {
+                    format,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                }
+            };
+            let zero = equal_to(constant(0));
+            assert_eq!(
+                strict.decide(&zero),
+                Some(false),
+                "{format:?}, reversed={reversed}"
+            );
+            assert_eq!(non_strict.decide(&zero), None);
+            assert_eq!(signed_zero.decide(&zero), Some(true));
+            assert_eq!(signed_negative.decide(&equal_to(constant(-1))), Some(true));
+        }
+    }
+}

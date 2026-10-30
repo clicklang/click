@@ -45,6 +45,7 @@ fn work_is_independent_of_unrelated_bounded_values() {
 #[test]
 fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
     let (i, n) = (variable(0), variable(1));
+    let unbounded_divisor = variable(2);
     let unsigned_lt = |a: &Bitvector32Term, b: &Bitvector32Term| {
         ConditionTerm::unsigned_less_than(a.clone(), b.clone())
     };
@@ -55,6 +56,7 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
             let other = variable(10 + index);
             graph.assume_condition(&unsigned_lt(&other, &constant(4)), true);
             graph.assume_condition(&lt(&other, &n), true);
+            graph.assume_condition(&unsigned_lt(&other, &unbounded_divisor), true);
         }
         graph.assume_condition(&unsigned_lt(&n, &constant(1000)), true);
         let (_, insert) = graph_work(|| graph.assume_condition(&unsigned_lt(&i, &n), true));
@@ -62,7 +64,16 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
         assert_eq!(answer, Some(true));
         let (answer, signed) = graph_work(|| graph.decide(&le(&constant(0), &i)));
         assert_eq!(answer, Some(true));
-        samples.push((insert, unsigned, signed));
+        // Every extra value also supplies a strict unsigned predecessor of
+        // this divisor. Equality uses its maintained bound, not those edges.
+        let (answer, nonzero) = graph_work(|| {
+            graph.decide(&ConditionTerm::uint32_equal(
+                unbounded_divisor.clone(),
+                constant(0),
+            ))
+        });
+        assert_eq!(answer, Some(false));
+        samples.push((insert, unsigned, signed, nonzero));
     }
     assert!(
         samples.windows(2).all(|pair| pair[0] == pair[1]),
