@@ -147,9 +147,10 @@ impl PureFactContext {
         // four-byte integer read may use the int32 graph for its value.
         let is_four_byte_load = |load: &Bitvector32Term| match load {
             Bitvector32Term::Variable(variable) => {
-                crate::kernel::registered_load_kind_for_variable(variable) == Some(LoadKind::Int32)
+                crate::kernel::registered_load_kind_for_variable(variable)
+                    .is_some_and(LoadKind::is_word32)
             }
-            Bitvector32Term::MemoryLoad(_, _, kind) => *kind == LoadKind::Int32,
+            Bitvector32Term::MemoryLoad(_, _, kind) => kind.is_word32(),
             _ => false,
         };
         let graph_proves_resolved_int32 =

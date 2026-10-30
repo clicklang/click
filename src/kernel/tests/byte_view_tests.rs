@@ -422,7 +422,8 @@ fn a_one_byte_cell_is_read_as_its_own_access() {
 /// sign cast σ of the stored word, which folds a constant (`4294967295u`
 /// reads as `-1`) and keeps an explicit σ of a symbolic word; a read at the
 /// stored signedness is the stored value. A load term reads the word, so
-/// both 32-bit kinds read either cell's term, and name one word.
+/// both 32-bit kinds read either cell's term (rules K5 and K1), though each
+/// read is its own load.
 #[test]
 fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
     use MachineIntegerType::{Int32, UInt32};
@@ -448,7 +449,6 @@ fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
                 "{stored:?} cell read at {read:?}"
             );
             let kind = LoadKind::of_type(read.c_type()).unwrap();
-            assert_eq!(kind.word_kind(), LoadKind::Int32);
             assert!(
                 kind.reads_value(&cell),
                 "{stored:?} cell, {read:?} load term"

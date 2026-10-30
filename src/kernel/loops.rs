@@ -7495,7 +7495,7 @@ pub(super) fn collect_loop_effect_check_obligations(
                 .memory()
                 .known_value(pointer)
                 .or_else(|| before_state.memory().known_value(pointer))
-                .and_then(|value| LoadKind::of_value(&value).map(LoadKind::word_kind))
+                .and_then(|value| LoadKind::of_value(&value))
             else {
                 return true;
             };

@@ -4097,8 +4097,7 @@ pub(in crate::surface) fn diagnostic_model_load_cell(
     parameter_binding: ParameterBinding<'_>,
 ) -> Option<String> {
     if let Some((cell, value_type)) = cpp_model::describe_model_field_at(pointer, parameter_binding)
-        && crate::kernel::LoadKind::of_type(value_type).map(crate::kernel::LoadKind::word_kind)
-            == Some(kind.word_kind())
+        && crate::kernel::LoadKind::of_type(value_type).is_some_and(|read| read.reads_word_of(kind))
     {
         return Some(cell);
     }
@@ -5838,8 +5837,7 @@ pub(in crate::surface) fn diagnostic_loaded_field_load_cell(
     let mut fields = layout.fields().iter().filter(|(_, field)| {
         u64::from(field.offset_bytes()) == offset
             && crate::kernel::LoadKind::of_type(field.c_type().to_kernel_type())
-                .map(crate::kernel::LoadKind::word_kind)
-                == Some(kind.word_kind())
+                .is_some_and(|read| read.reads_word_of(kind))
     });
     let (Some((name, _)), None) = (fields.next(), fields.next()) else {
         return None;

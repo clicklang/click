@@ -564,12 +564,12 @@ Soundness: the read returns the same four bytes in F, which is the modular
 conversion. A load *term* is a word, so a route that answers a load term
 from a cell reads the stored word whichever signedness stored it
 (`LoadKind::reads_value` and `LoadKind::read_cell` compare word kinds,
-`LoadKind::word_kind`), which K1 makes the same word. One word, one name:
-a load variable has no format, so a `UInt32` read is named and defined by
-its word's `Int32` read (`load_variable_for_term`,
-`mint_load_variable_identity`), and the reader's tag gives it its
-signedness. Kernel-internal reads (index arithmetic, pointer words) are
-`Int32`.
+`LoadKind::reads_word_of`), which K1 makes the same word. Each read is its
+own load: a `UInt32` read has a load variable of its own, defined by its
+own read (`load_variable_for_term`, `mint_load_variable_identity`), and the
+equality graph relates the two reads of one cell by σ (R-mem): both are
+the cell's word load application, which K1 makes one value. Kernel-internal
+reads (index arithmetic, pointer words) are `Int32`.
 
 A 32-bit constant has a format too: `Bitvector32Term::Constant(v)` is
 `int32`, the format of every kernel-internal constant, and
