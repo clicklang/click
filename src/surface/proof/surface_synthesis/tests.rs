@@ -3104,3 +3104,73 @@ fn allocation_result_names_survive_reassignment_and_follow_snapshot_scope() {
     snapshots.remove(&point);
     assert!(snapshots.allocation_result(&second).is_none());
 }
+
+#[test]
+fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
+    let function = crate::kernel::CFunction::new(
+        CType::Void,
+        "array_entry",
+        vec![],
+        crate::kernel::CStatement::Skip,
+    )
+    .with_global_arrays(vec![crate::kernel::CGlobalArray::new_with_kernel_name(
+        "g",
+        "g",
+        CType::Int32,
+        4,
+        vec![int32(0); 4],
+    )]);
+    let entry = crate::kernel::c_function_entry_state(&CState::new(), &function, &[]).unwrap();
+    let pointer = CMemory::global_pointer("g").offset_by_bytes(12);
+    let term = crate::kernel::canonical_form_of_load(
+        crate::kernel::intern_c_memory_ref(entry.memory()),
+        pointer.clone(),
+        crate::kernel::LoadKind::Int32,
+    );
+    let post = entry
+        .clone()
+        .with_memory(entry.memory().clone().store(pointer, int32(7)));
+    let requirement = Proposition::ConditionIs(
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op: OverflowOperation::Add,
+            left: Box::new(term),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
+        false,
+    );
+    let mut owners = SynthesisStructOwners::default();
+    owners
+        .storage_arrays
+        .insert("g".into(), ("g".into(), vec![2, 2]));
+    let _scope = LocalStructLayoutScope(
+        SYNTHESIS_STRUCT_OWNERS.with(|slot| slot.replace(Some(std::sync::Arc::new(owners)))),
+    );
+    let spelled = synthesize_surface_proposition_at_entry_and_post(
+        &requirement,
+        ParameterBinding::default(),
+        &entry,
+        &post,
+    )
+    .expect("an overwritten global array element keeps its entry spelling");
+    assert!(format!("{spelled:?}").contains("Old("), "{spelled:?}");
+    assert!(format!("{spelled:?}").contains("ArrayIndex"), "{spelled:?}");
+    let (values, arrays) = crate::surface::lowering::contract_environment_for_names(
+        ParameterBinding::default(),
+        &BTreeSet::from(["g".to_string()]),
+        &post,
+    )
+    .unwrap();
+    let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+        &spelled,
+        &PureFactContext::new(),
+        ContractEnvironment::new(&values, &arrays),
+        FixedStateFrame::new(&entry, &post, None, &RecordedSnapshots::new()),
+        SpecDefinitions::new(
+            &PredicateEnvironment::new(&[]),
+            &ClickFunctionEnvironment::new(&[]),
+        ),
+        FixedStateLoweringOptions::default(),
+    ).map(|(proposition, _, _, _)| proposition);
+    assert_eq!(lowered, Ok(requirement));
+}
