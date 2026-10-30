@@ -621,6 +621,21 @@ Progress:
      format-parametric with step 4, where the change has `uint32` nodes to
      act on and the corpus to test it. No output changes.
   4. `uint32` has its own nodes: constructors stop peeling, K6 goes.
+     Split in two. Step 4a is done (2026-10-30): a `uint32` operator and
+     its constants keep their format (`Binary { op, UInt32 }`,
+     `UInt32Constant`); the 32-bit constructors take a format (`add_at`,
+     `subtract_at`, `multiply_at`, `bitwise_and_at`, `bitwise_or_at`,
+     `bitwise_xor_at`, `bitwise_not_at`, `uint32_shift_left`, and the
+     unsigned division, remainder and right shift), C's unsigned
+     arithmetic and the `uint32` axioms build them, and the width check
+     accepts them. σ, narrow widenings and K6 stay: operands are still
+     words, and the e-graph, the difference graph, the signed intervals
+     and the representation map read a 32-bit sign-free operator by its
+     bits at either format. Rust's checked `u8`/`u16` arithmetic converts
+     from its `uint32` result rather than through `int32`, so its
+     identities read at one format. Step 4b makes σ a node of its own and
+     removes K1, K2 and K6, with R0 at 32 bits and the difference graph's
+     σ links.
   5. Reads by their own kind, with R-mem; typed index coordinates (G1).
   6. Widenings are nodes: K8 and the word helpers go.
   7. Native narrow operators, specification narrow arithmetic native (G2).

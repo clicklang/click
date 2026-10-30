@@ -148,6 +148,28 @@ impl PointerFactSources {
 pub(super) type PointerFactBucket =
     PersistentMap<String, PersistentMap<(bool, usize), Arc<dyn PointerFactSource>>>;
 
+/// The word operator a 32-bit operator computes: a sign-free `uint32`
+/// operator is the `int32` one of the same words; division, remainder and
+/// the right shift keep their format, which reads the words.
+pub(super) fn word_operator(
+    op: crate::kernel::BitvectorBinaryOp,
+) -> crate::kernel::BitvectorBinaryOp {
+    use crate::kernel::BitvectorBinaryOp as B;
+    match op {
+        B::Machine(
+            MachineIntegerType::UInt32,
+            op @ (MachineBinaryOp::Add
+            | MachineBinaryOp::Subtract
+            | MachineBinaryOp::Multiply
+            | MachineBinaryOp::ShiftLeft
+            | MachineBinaryOp::BitwiseAnd
+            | MachineBinaryOp::BitwiseOr
+            | MachineBinaryOp::BitwiseXor),
+        ) => B::Machine(MachineIntegerType::Int32, op),
+        op => op,
+    }
+}
+
 /// These tags keep signed division and wider integer operations distinct.
 /// Congruence does not establish C/Rust arithmetic definedness.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -1910,7 +1932,7 @@ impl TermClasses {
         term: &crate::kernel::Bitvector32Term,
     ) -> Option<Option<u64>> {
         if term.as_const().is_none() {
-            let unary = if let unary_term!(Int32, BitwiseNot, value) = term {
+            let unary = if let unary_term!(Bits32, BitwiseNot, value) = term {
                 Some((Int32Unary::Not, value.as_ref()))
             } else {
                 constants::word_cast_operand(term).map(|(value, source, destination)| {
@@ -1927,6 +1949,7 @@ impl TermClasses {
         if term.as_const().is_none()
             && let Some((op, left, right)) = term.as_binary()
             && op.is_bitvector32()
+            && let op = word_operator(op)
             && !matches!(
                 op,
                 crate::kernel::BitvectorBinaryOp::Machine(

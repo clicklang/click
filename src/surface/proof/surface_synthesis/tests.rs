@@ -2521,7 +2521,7 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
     let quotient = binary_node!(
         UInt32,
         Divide,
-        Box::new(Bitvector32Term::Constant(u32::MAX)),
+        Box::new(Bitvector32Term::UInt32Constant(u32::MAX)),
         Box::new(divisor.clone()),
     );
     let remainder = binary_node!(UInt32, Remainder, Box::new(x.clone()), Box::new(divisor));

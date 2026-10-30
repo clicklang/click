@@ -200,12 +200,12 @@ impl BitvectorBinaryOp {
         left: Bitvector32Term,
         right: Bitvector32Term,
     ) -> Bitvector32Term {
-        // A 32-bit operator reads words: a `uint32` constant operand is its
-        // word's `Constant` (rule K1).
-        let (left, right) = if self.is_bitvector32() {
-            (left.constant_word32(), right.constant_word32())
-        } else {
-            (left, right)
+        // A 32-bit operator's constant operands are spelled in its format.
+        let (left, right) = match self {
+            Self::Machine(format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32), _) => {
+                (left.constant_in32(format), right.constant_in32(format))
+            }
+            _ => (left, right),
         };
         let (left, right) = (Box::new(left), Box::new(right));
         match self {

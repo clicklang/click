@@ -170,7 +170,8 @@ pub(crate) fn convert_term(
         L::Identity => value,
         L::SignCast => Bitvector32Term::sign_cast32(source, destination, value),
         L::Cast => Bitvector32Term::machine_integer_cast(source, destination, value),
-        L::LowWord => Bitvector32Term::uint32_from_64(value),
+        // A folded low word is a constant of the destination's format.
+        L::LowWord => Bitvector32Term::uint32_from_64(value).in_format32(destination),
         L::Reinterpret64 if to.is_signed() => Bitvector32Term::int64_from_uint64_bits(value),
         L::Reinterpret64 => Bitvector32Term::uint64_from_int64(value),
         L::Extend64 => match (to.is_signed(), from.is_signed()) {
@@ -456,7 +457,7 @@ pub(crate) fn cast(
     let narrow_unsigned =
         |ty: MachineIntegerType| ty.format().bits() < 32 && !ty.format().is_signed();
     let masked_unsigned_source = match (operand.ty(), operand.value()) {
-        (ty, binary_term!(Int32, BitwiseAnd, left, right)) if narrow_unsigned(ty) => {
+        (ty, binary_term!(Bits32, BitwiseAnd, left, right)) if narrow_unsigned(ty) => {
             let mask = (1u32 << operand.ty().format().bits()) - 1;
             matches!(left.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
                 || matches!(right.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
@@ -486,11 +487,11 @@ pub(crate) fn cast(
     // u32 word, with the source bounds still required below.
     if operand.ty() == MachineIntegerType::UInt32
         && narrow_unsigned(machine.ty())
-        && let binary_term!(Int32, BitwiseAnd, left, right) = machine.value()
+        && let binary_term!(Bits32, BitwiseAnd, left, right) = machine.value()
     {
         let mask = (1u32 << machine.ty().format().bits()) - 1;
         let matches = |value: &Bitvector32Term, bits: &Bitvector32Term| {
-            value == operand.value() && bits == &Bitvector32Term::Constant(mask)
+            value == operand.value() && bits.constant32() == Some(mask)
         };
         if matches(left, right) || matches(right, left) {
             return Some(machine.ty().format());

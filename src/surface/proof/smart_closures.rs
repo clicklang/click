@@ -1,5 +1,4 @@
 //! Smart closure search and linear script interpretation.
-use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 
@@ -1462,6 +1461,23 @@ fn native_int32_split_operand(operand: ContractExpression) -> ContractExpression
         lowered: CExpression::Cast {
             expression: Box::new(CExpression::Value(int32(0))),
             target_type: crate::kernel::CType::Int32,
+            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+    }
+}
+
+/// [`native_int32_split_operand`] at `uint32`: the operand lowered as the
+/// native `uint32` expression it spells.
+fn native_uint32_split_operand(operand: ContractExpression) -> ContractExpression {
+    ContractExpression::CUnary {
+        operand: Box::new(operand),
+        lowered: CExpression::Cast {
+            expression: Box::new(CExpression::Value(int32(0))),
+            target_type: crate::kernel::CType::UInt32,
             integer_mode: crate::kernel::CIntegerCastMode::CConversion,
             pointee_struct: None,
             pointee_volatile: false,
@@ -3690,7 +3706,11 @@ impl<'a> Proof<'a> {
         // An observation nothing written names, such as a population's
         // count at entry, is spelled from its value at the proof's state.
         if let crate::kernel::IntegerTerm::Machine(machine) = term
-            && machine.ty() == crate::kernel::MachineIntegerType::Int32
+            && matches!(
+                machine.ty(),
+                crate::kernel::MachineIntegerType::Int32
+                    | crate::kernel::MachineIntegerType::UInt32
+            )
             && let Some(view) = self.premise_fixed_state_view()
         {
             // An operation under a stored narrowing refers to the counter's
@@ -3700,14 +3720,24 @@ impl<'a> Proof<'a> {
                 crate::surface::proof::surface_synthesis::SynthesisRecordedPointsScope::enter(
                     view.fixed_state.recorded_snapshots,
                 );
+            let unsigned = machine.ty() == crate::kernel::MachineIntegerType::UInt32;
+            let value = if unsigned {
+                CValue::UInt32(machine.value().clone())
+            } else {
+                CValue::Int32(machine.value().clone())
+            };
             if let Some(value) = crate::surface::proof::surface_synthesis::synthesize_surface_value(
-                &CValue::Int32(machine.value().clone()),
+                &value,
                 view.parameter_binding,
                 view.fixed_state.state,
             ) {
                 return Some(ContractExpression::Call {
                     name: "to_integer".into(),
-                    arguments: vec![native_int32_split_operand(value)],
+                    arguments: vec![if unsigned {
+                        native_uint32_split_operand(value)
+                    } else {
+                        native_int32_split_operand(value)
+                    }],
                 });
             }
         }
@@ -8286,7 +8316,6 @@ impl<'a> Proof<'a> {
     ) -> Option<Self> {
         let (order, left, right) = unsigned_order_parts(self.goal()?)?;
         let zero = Bitvector32Term::Constant(0);
-        let one = Bitvector32Term::Constant(1);
         // The goal from one comparison read the other way round, by
         // Integer arithmetic: the premise's operands, compared the goal's
         // way. `arithmetic() using` reads such a premise itself.
@@ -8318,13 +8347,11 @@ impl<'a> Proof<'a> {
         match order {
             UnsignedOrder::Less => {
                 // `value - 1 <u value` from `0 <u value`.
-                if left
-                    == binary_node!(
-                        Int32,
-                        Subtract,
-                        Box::new(right.clone()),
-                        Box::new(one.clone())
-                    )
+                // A `uint32` operator is its own node, its constants
+                // `uint32` ones; a word operator of the same bits reads alike.
+                if let binary_term!(Bits32, Subtract, decremented, amount) = &left
+                    && decremented.as_ref() == &right
+                    && amount.constant32() == Some(1)
                 {
                     if let Some((proof, premise, _, value)) =
                         self.unsigned_strict_fact(&zero, &right, surface_fact)
@@ -8337,7 +8364,7 @@ impl<'a> Proof<'a> {
                     }
                     // The value is a difference `upper - lower`, nonzero
                     // because `lower <u upper`.
-                    if let binary_term!(Int32, Subtract, upper, lower) = &right
+                    if let binary_term!(Bits32, Subtract, upper, lower) = &right
                         && let Some((proof, premise, lower, upper)) =
                             self.unsigned_strict_fact(lower, upper, surface_fact)
                     {
@@ -8387,12 +8414,12 @@ impl<'a> Proof<'a> {
                 // `value <u bound`: the affine forms a measure `bound -
                 // value` over a constant evaluates to.
                 if let (
-                    binary_term!(Int32, Add, left_base, left_offset),
-                    binary_term!(Int32, Add, right_base, right_offset),
+                    binary_term!(Bits32, Add, left_base, left_offset),
+                    binary_term!(Bits32, Add, right_base, right_offset),
                 ) = (&left, &right)
                     && left_base == right_base
-                    && let binary_term!(Int32, Subtract, negated_zero, value) = left_base.as_ref()
-                    && negated_zero.as_ref() == &zero
+                    && let binary_term!(Bits32, Subtract, negated_zero, value) = left_base.as_ref()
+                    && negated_zero.constant32() == Some(0)
                     && let (Some(lower), Some(bound)) =
                         (left_offset.as_const(), right_offset.as_const())
                     && bound != 0
@@ -8413,8 +8440,8 @@ impl<'a> Proof<'a> {
             }
             UnsignedOrder::LessEqual => {
                 // `value + 1 <=u upper` from `value <u upper`.
-                if let binary_term!(Int32, Add, value, amount) = &left
-                    && amount.as_ref() == &one
+                if let binary_term!(Bits32, Add, value, amount) = &left
+                    && amount.constant32() == Some(1)
                     && let Some((proof, premise, value, upper)) =
                         self.unsigned_strict_fact(value, &right, surface_fact)
                 {

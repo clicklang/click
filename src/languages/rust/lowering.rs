@@ -2132,11 +2132,15 @@ impl Context<'_> {
                 {
                     // Checked narrow arithmetic cannot discard bits. Its range
                     // obligation permits an exact coercion; only casts,
-                    // bitwise results and shifts need explicit truncation.
-                    Ok(c_cast(
-                        c_cast(result, CType::Int32),
-                        scalar_type(left_type)?.to_kernel_type(),
-                    ))
+                    // bitwise results and shifts need explicit truncation. An
+                    // unsigned operation is computed in `uint32` and converts
+                    // from there; a signed one in `int32`.
+                    let computed = if matches!(left_type, Type::U8 | Type::U16) {
+                        result
+                    } else {
+                        c_cast(result, CType::Int32)
+                    };
+                    Ok(c_cast(computed, scalar_type(left_type)?.to_kernel_type()))
                 } else {
                     Ok(rust_scalar_cast(
                         result,

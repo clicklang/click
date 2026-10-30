@@ -440,8 +440,11 @@ impl TermClasses {
                     let binary = if wide {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))
                     } else if width == W::Bits32 {
+                        // The e-graph reads a 32-bit sign-free operator as
+                        // the word operator it computes, at either format
+                        // (rule K1, until σ is a node of its own).
                         match term {
-                            binary_term!(Int32, Add, a, b) => {
+                            binary_term!(Bits32, Add, a, b) => {
                                 Some((Binary::Int32Add, a.as_ref(), b.as_ref()))
                             }
                             binary_term!(UInt32, Divide, a, b) => Some((
@@ -454,7 +457,7 @@ impl TermClasses {
                                 a.as_ref(),
                                 b.as_ref(),
                             )),
-                            binary_term!(Int32, BitwiseXor, a, b) => Some((
+                            binary_term!(Bits32, BitwiseXor, a, b) => Some((
                                 Binary::Int32(Int32Binary::BitwiseXor),
                                 a.as_ref(),
                                 b.as_ref(),
@@ -462,7 +465,9 @@ impl TermClasses {
                             _ => term
                                 .as_binary()
                                 .filter(|(op, _, _)| op.is_bitvector32())
-                                .map(|(op, a, b)| (Binary::Int32(Int32Binary::Other(op)), a, b)),
+                                .map(|(op, a, b)| {
+                                    (Binary::Int32(Int32Binary::Other(word_operator(op))), a, b)
+                                }),
                         }
                     } else {
                         None
@@ -487,7 +492,7 @@ impl TermClasses {
                         continue;
                     }
                     if width == W::Bits32 {
-                        let unary = if let unary_term!(Int32, BitwiseNot, value) = term {
+                        let unary = if let unary_term!(Bits32, BitwiseNot, value) = term {
                             Some((Int32Unary::Not, value.as_ref(), false))
                         } else {
                             constants::word_cast_operand(term).map(

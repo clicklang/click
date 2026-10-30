@@ -52,8 +52,9 @@ fn machine_operation_chain(format: MachineIntegerType, size: u32) -> Bitvector32
 
 /// The work of assuming and deciding an equality over a chain of machine
 /// operations grows by a bounded amount per operation at every size, and by
-/// the same amount at `int32` and `uint32`, whose operators are one `Binary`
-/// node at a format rather than per-width variants. `int64` is linear too.
+/// about the same amount at `int32` and `uint32`, whose operators are one
+/// `Binary` node at a format rather than per-width variants. `int64` is
+/// linear too.
 #[test]
 fn machine_operator_chains_cost_the_same_per_node_at_every_format() {
     let measure = |format: MachineIntegerType, size: u32| {
@@ -99,8 +100,14 @@ fn machine_operator_chains_cost_the_same_per_node_at_every_format() {
         }
         work_by_format.push(work);
     }
-    assert_eq!(
-        work_by_format[0], work_by_format[1],
-        "int32 and uint32 chains cost alike"
-    );
+    // Since `uint32` operators are nodes of their own format (step 4 of
+    // "Every format its own nodes"), the two chains are different terms, and
+    // the caches the decision consults place them differently, so their work
+    // differs by a few units; it stays within a tenth at every size.
+    for ((int32, uint32), size) in work_by_format[0].iter().zip(&work_by_format[1]).zip(sizes) {
+        assert!(
+            int32.abs_diff(*uint32) * 10 <= *int32,
+            "size {size}: int32 and uint32 chains cost {int32} and {uint32}"
+        );
+    }
 }

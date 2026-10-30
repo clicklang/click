@@ -9028,7 +9028,11 @@ pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
     };
-    let observed_sum = observe(Bitvector32Term::add(left.clone(), right.clone()));
+    let observed_sum = observe(Bitvector32Term::add_at(
+        MachineIntegerType::UInt32,
+        left.clone(),
+        right.clone(),
+    ));
     let exact = IntegerTerm::Add(observe(left).into(), observe(right).into());
     implication(
         [premise],
@@ -9046,7 +9050,11 @@ pub fn prove_uint32_subtract_to_integer(left: Bitvector32Term, right: Bitvector3
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
     };
-    let difference = observe(Bitvector32Term::subtract(left.clone(), right.clone()));
+    let difference = observe(Bitvector32Term::subtract_at(
+        MachineIntegerType::UInt32,
+        left.clone(),
+        right.clone(),
+    ));
     let exact = IntegerTerm::Subtract(observe(left.clone()).into(), observe(right.clone()).into());
     implication(
         [Proposition::ConditionIs(
@@ -9069,7 +9077,11 @@ pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
     };
-    let product = observe(Bitvector32Term::multiply(left.clone(), right.clone()));
+    let product = observe(Bitvector32Term::multiply_at(
+        MachineIntegerType::UInt32,
+        left.clone(),
+        right.clone(),
+    ));
     let exact = IntegerTerm::Multiply(observe(left).into(), observe(right).into());
     implication(
         [premise],
@@ -9263,14 +9275,14 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
     let (packed, low_bound, high_bound) = match ty {
         MachineIntegerType::UInt32 => (
             binary_node!(
-                Int32,
+                UInt32,
                 BitwiseOr,
                 low.clone().into(),
                 binary_node!(
-                    Int32,
+                    UInt32,
                     ShiftLeft,
                     high.clone().into(),
-                    Bitvector32Term::Constant(16).into(),
+                    Bitvector32Term::UInt32Constant(16).into(),
                 )
                 .into(),
             ),
@@ -9293,13 +9305,13 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
     let packed = if high_first {
         match ty {
             MachineIntegerType::UInt32 => binary_node!(
-                Int32,
+                UInt32,
                 BitwiseOr,
                 binary_node!(
-                    Int32,
+                    UInt32,
                     ShiftLeft,
                     high.clone().into(),
-                    Bitvector32Term::Constant(16).into(),
+                    Bitvector32Term::UInt32Constant(16).into(),
                 )
                 .into(),
                 low.clone().into(),
@@ -9355,13 +9367,13 @@ fn prove_uint32_unpack_uint16_word(
     // bits. Masking selects the low half; logically shifting right first
     // selects the high half, including when the packed word's sign bit is set.
     let packed = binary_node!(
-        Int32,
+        UInt32,
         BitwiseOr,
         binary_node!(
-            Int32,
+            UInt32,
             ShiftLeft,
             high.clone().into(),
-            Bitvector32Term::Constant(16).into()
+            Bitvector32Term::UInt32Constant(16).into()
         )
         .into(),
         low.clone().into(),
@@ -9371,16 +9383,16 @@ fn prove_uint32_unpack_uint16_word(
             UInt32,
             ShiftRight,
             packed.into(),
-            Bitvector32Term::Constant(16).into()
+            Bitvector32Term::UInt32Constant(16).into()
         )
     } else {
         packed
     };
     let extracted = binary_node!(
-        Int32,
+        UInt32,
         BitwiseAnd,
         selected.into(),
-        Bitvector32Term::Constant(65535).into()
+        Bitvector32Term::UInt32Constant(65535).into()
     );
     let exact = if high_word { high.clone() } else { low.clone() };
     implication(
@@ -9394,7 +9406,7 @@ fn prove_uint32_unpack_uint16_word(
                 true,
             ),
         ],
-        Proposition::ConditionIs(ConditionTerm::equal(extracted, exact), true),
+        Proposition::ConditionIs(ConditionTerm::uint32_equal(extracted, exact), true),
     )
 }
 
@@ -9953,10 +9965,10 @@ pub fn prove_uint32_positive_predecessor_strictly_decreases(value: Bitvector32Te
         ConditionTerm::unsigned_less_than(Bitvector32Term::Constant(0), value.clone()),
         ConditionTerm::unsigned_less_than(
             binary_node!(
-                Int32,
+                UInt32,
                 Subtract,
                 Box::new(value.clone()),
-                Box::new(Bitvector32Term::Constant(1)),
+                Box::new(Bitvector32Term::UInt32Constant(1)),
             ),
             value,
         ),
@@ -9973,7 +9985,11 @@ pub fn prove_uint32_increment_upper_bound(
     uint32_implication(
         ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
         ConditionTerm::unsigned_less_equal(
-            Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
+            Bitvector32Term::add_at(
+                MachineIntegerType::UInt32,
+                value,
+                Bitvector32Term::UInt32Constant(1),
+            ),
             upper,
         ),
     )
@@ -9989,7 +10005,7 @@ pub fn prove_uint32_lt_implies_positive_difference(
         ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
         ConditionTerm::unsigned_less_than(
             Bitvector32Term::Constant(0),
-            binary_node!(Int32, Subtract, Box::new(upper), Box::new(value)),
+            binary_node!(UInt32, Subtract, Box::new(upper), Box::new(value)),
         ),
     )
 }
@@ -10005,26 +10021,26 @@ pub fn prove_uint32_difference_decreases_after_increment(
     bound: Bitvector32Term,
 ) -> Theorem {
     let negated = binary_node!(
-        Int32,
+        UInt32,
         Subtract,
-        Box::new(Bitvector32Term::Constant(0)),
+        Box::new(Bitvector32Term::UInt32Constant(0)),
         Box::new(value.clone()),
     );
     uint32_implication(
         ConditionTerm::unsigned_less_than(value, bound.clone()),
         ConditionTerm::unsigned_less_than(
             binary_node!(
-                Int32,
+                UInt32,
                 Add,
                 Box::new(negated.clone()),
                 Box::new(binary_node!(
-                    Int32,
+                    UInt32,
                     Subtract,
                     Box::new(bound.clone()),
-                    Box::new(Bitvector32Term::Constant(1)),
+                    Box::new(Bitvector32Term::UInt32Constant(1)),
                 )),
             ),
-            binary_node!(Int32, Add, Box::new(negated), Box::new(bound)),
+            binary_node!(UInt32, Add, Box::new(negated), Box::new(bound)),
         ),
     )
 }

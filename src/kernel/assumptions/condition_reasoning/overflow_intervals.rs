@@ -596,7 +596,7 @@ impl PureFactContext {
                 let value = value as i32 as i64;
                 return Some((value, value));
             }
-            let binary_term!(Int32, BitwiseAnd, a, b) = term else {
+            let binary_term!(Bits32, BitwiseAnd, a, b) = term else {
                 return None;
             };
             let mask = a.as_const().or_else(|| b.as_const())?;
@@ -1058,9 +1058,11 @@ impl PureFactContext {
             return (lower <= upper).then_some((lower, upper));
         }
         match term {
-            binary_term!(Int32, Add, _, _)
-            | binary_term!(Int32, Subtract, _, _)
-            | binary_term!(Int32, Multiply, _, _) => {
+            // The exact range of a word sum, difference or product, when it
+            // fits `int32`, is its signed reading whatever its format.
+            binary_term!(Bits32, Add, _, _)
+            | binary_term!(Bits32, Subtract, _, _)
+            | binary_term!(Bits32, Multiply, _, _) => {
                 return self.signed_interval_from_operands(term);
             }
             // A signed byte read is its unsigned byte's two's-complement
@@ -1083,7 +1085,7 @@ impl PureFactContext {
             }
             // A mask with its sign bit clear keeps only bits of the mask, so
             // `x & m` is between 0 and `m` whatever `x` is: `u & 1` is 0 or 1.
-            binary_term!(Int32, BitwiseAnd, left, right)
+            binary_term!(Bits32, BitwiseAnd, left, right)
                 if [left, right]
                     .iter()
                     .any(|operand| signed_bitvector_constant(operand).is_some_and(|m| m >= 0)) =>
@@ -1154,23 +1156,23 @@ impl PureFactContext {
     }
 
     /// The integer range of an addition, subtraction or multiplication of
-    /// two int32 operands, from the operands' value ranges, with nothing
-    /// wrapped. `None` for any other term or an operand with no range.
+    /// two 32-bit words, from the operands' signed value ranges, with
+    /// nothing wrapped. `None` for any other term or an operand with no range.
     fn integer_interval_from_operands(&self, term: &Bitvector32Term) -> Option<(i128, i128)> {
         let (left, right) = match term {
-            binary_term!(Int32, Add, left, right)
-            | binary_term!(Int32, Subtract, left, right)
-            | binary_term!(Int32, Multiply, left, right) => (left, right),
+            binary_term!(Bits32, Add, left, right)
+            | binary_term!(Bits32, Subtract, left, right)
+            | binary_term!(Bits32, Multiply, left, right) => (left, right),
             _ => return None,
         };
         let (left_lower, left_upper) = self.signed_interval(left)?;
         let (right_lower, right_upper) = self.signed_interval(right)?;
         let (lower, upper) = match term {
-            binary_term!(Int32, Add, _, _) => (
+            binary_term!(Bits32, Add, _, _) => (
                 i128::from(left_lower) + i128::from(right_lower),
                 i128::from(left_upper) + i128::from(right_upper),
             ),
-            binary_term!(Int32, Subtract, _, _) => (
+            binary_term!(Bits32, Subtract, _, _) => (
                 i128::from(left_lower) - i128::from(right_upper),
                 i128::from(left_upper) - i128::from(right_lower),
             ),

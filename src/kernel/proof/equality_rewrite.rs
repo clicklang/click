@@ -1832,6 +1832,40 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     rewrite_term(right, from, to),
                 )
             }
+            // The same at `uint32`, whose operators and constants keep their
+            // format.
+            binary_term!(UInt32, Add, left, right) => {
+                let (left, right) = binary(left, right);
+                match (left.constant32(), right.constant32()) {
+                    (Some(first), Some(second)) => {
+                        Bitvector32Term::UInt32Constant(first.wrapping_add(second))
+                    }
+                    _ => binary_node!(UInt32, Add, left, right),
+                }
+            }
+            binary_term!(UInt32, Subtract, left, right) => {
+                let (left, right) = binary(left, right);
+                match (left.constant32(), right.constant32()) {
+                    (Some(first), Some(second)) => {
+                        Bitvector32Term::UInt32Constant(first.wrapping_sub(second))
+                    }
+                    _ => binary_node!(UInt32, Subtract, left, right),
+                }
+            }
+            binary_term!(UInt32, Multiply, left, right) => Bitvector32Term::multiply_at(
+                MachineIntegerType::UInt32,
+                rewrite_term(left, from, to),
+                rewrite_term(right, from, to),
+            ),
+            binary_term!(UInt32, BitwiseAnd, left, right) => Bitvector32Term::bitwise_and_at(
+                MachineIntegerType::UInt32,
+                rewrite_term(left, from, to),
+                rewrite_term(right, from, to),
+            ),
+            binary_term!(UInt32, ShiftLeft, left, right) => Bitvector32Term::uint32_shift_left(
+                rewrite_term(left, from, to),
+                rewrite_term(right, from, to),
+            ),
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 Bitvector32Term::PureFunctionApplication {
                     name: name.clone(),

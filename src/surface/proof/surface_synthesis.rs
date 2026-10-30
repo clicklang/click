@@ -1031,7 +1031,7 @@ pub(in crate::surface) fn synthesize_surface_value(
             state,
             &BTreeMap::new(),
         ),
-        CValue::Int32(term) => {
+        CValue::Int32(term) | CValue::UInt32(term) => {
             synthesize_surface_bitvector(term, parameter_binding, state, &BTreeMap::new())
         }
         _ => None,
@@ -3204,11 +3204,13 @@ fn synthesize_surface_bitvector(
             name.clone(),
         )));
     }
-    if let Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) = term {
+    if let Bitvector32Term::Constant(_) = term {
         return Some(ContractExpression::CFragment(CExpression::Value(
             CValue::Int32(term.clone()),
         )));
     }
+    // A `uint32` constant keeps its format, so an operator over it spells
+    // and lowers back at `uint32`.
     if let Bitvector32Term::UInt32Constant(_) = term {
         return Some(ContractExpression::CFragment(CExpression::Value(
             CValue::UInt32(term.clone()),
@@ -3318,15 +3320,15 @@ fn synthesize_surface_bitvector(
         Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
             unreachable!("constants returned above")
         }
-        binary_term!(Int32, Add, left, right) => {
+        binary_term!(Bits32, Add, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Add(left, right))
         }
-        binary_term!(Int32, Subtract, left, right) => {
+        binary_term!(Bits32, Subtract, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Subtract(left, right))
         }
-        binary_term!(Int32, Multiply, left, right) => {
+        binary_term!(Bits32, Multiply, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::Multiply(left, right))
         }
@@ -3352,7 +3354,7 @@ fn synthesize_surface_bitvector(
                 Box::new(synthesize_uint32_operand(*right)?),
             ))
         }
-        binary_term!(Int32, ShiftLeft, left, right) => {
+        binary_term!(Bits32, ShiftLeft, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::ShiftLeft(left, right))
         }
@@ -3364,19 +3366,19 @@ fn synthesize_surface_bitvector(
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::ShiftRight(left, right))
         }
-        binary_term!(Int32, BitwiseAnd, left, right) => {
+        binary_term!(Bits32, BitwiseAnd, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::BitwiseAnd(left, right))
         }
-        binary_term!(Int32, BitwiseOr, left, right) => {
+        binary_term!(Bits32, BitwiseOr, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::BitwiseOr(left, right))
         }
-        binary_term!(Int32, BitwiseXor, left, right) => {
+        binary_term!(Bits32, BitwiseXor, left, right) => {
             let (left, right) = binary(left, right)?;
             Some(ContractExpression::BitwiseXor(left, right))
         }
-        unary_term!(Int32, BitwiseNot, value) => Some(ContractExpression::BitwiseNot(Box::new(
+        unary_term!(Bits32, BitwiseNot, value) => Some(ContractExpression::BitwiseNot(Box::new(
             synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
         ))),
         // Floating-point operation terms are not integer surface fragments;

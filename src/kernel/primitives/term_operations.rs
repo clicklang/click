@@ -1,7 +1,7 @@
 use super::*;
+use crate::kernel::binary_node;
 use crate::kernel::machine_integer::format_audit as audit;
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
-use crate::kernel::{binary_node, unary_node};
 use crate::kernel::{binary_term, unary_term};
 
 // Operands here have already undergone the language's scalar promotions.
@@ -447,118 +447,195 @@ impl Bitvector32Term {
         }
     }
 
+    /// `left + right` at `int32`, folded (`Self::add_at`).
     pub(crate) fn add(left: Self, right: Self) -> Self {
-        let (left, right) = (left.into_word32(), right.into_word32());
-        match (&left, &right) {
-            (Self::Constant(left), Self::Constant(right)) => {
-                Self::Constant(left.wrapping_add(*right))
-            }
-            (_, binary_term!(Int32, Subtract, base, subtrahend))
-                if subtrahend.as_ref() == &left =>
-            {
-                base.as_ref().clone()
-            }
-            (binary_term!(Int32, Subtract, base, subtrahend), _)
-                if subtrahend.as_ref() == &right =>
-            {
-                base.as_ref().clone()
-            }
-            (
-                binary_term!(Int32, Subtract, zero, subtrahend),
-                binary_term!(Int32, Add, base, addend),
-            ) if zero.as_ref() == &Self::Constant(0) && subtrahend == base => {
-                addend.as_ref().clone()
-            }
-            (
-                binary_term!(Int32, Subtract, zero, subtrahend),
-                binary_term!(Int32, Add, addend, base),
-            ) if zero.as_ref() == &Self::Constant(0) && subtrahend == base => {
-                addend.as_ref().clone()
-            }
-            (
-                binary_term!(Int32, Add, base, addend),
-                binary_term!(Int32, Subtract, zero, subtrahend),
-            ) if zero.as_ref() == &Self::Constant(0) && base == subtrahend => {
-                addend.as_ref().clone()
-            }
-            (
-                binary_term!(Int32, Add, addend, base),
-                binary_term!(Int32, Subtract, zero, subtrahend),
-            ) if zero.as_ref() == &Self::Constant(0) && base == subtrahend => {
-                addend.as_ref().clone()
-            }
-            (_, Self::Constant(0)) => left,
-            (Self::Constant(0), _) => right,
-            _ => binary_node!(Int32, Add, Box::new(left), Box::new(right)),
+        Self::add_at(MachineIntegerType::Int32, left, right)
+    }
+
+    /// An operand of a 32-bit operator at `format`: its word (σ and a narrow
+    /// widening name their operand's word, rules K1 and K8), with a root
+    /// constant in `format`'s spelling, `Constant` at `int32` and
+    /// `UInt32Constant` at `uint32` (`design/machine-integers.md`, "Every
+    /// format its own nodes").
+    pub(crate) fn operand32(format: MachineIntegerType, term: Self) -> Self {
+        match (format, term.into_word32()) {
+            (MachineIntegerType::UInt32, Self::Constant(value)) => Self::UInt32Constant(value),
+            (_, word) => word,
         }
     }
 
+    /// `self` with a root 32-bit constant spelled in `format`; any other
+    /// term unchanged.
+    pub(crate) fn constant_in32(self, format: MachineIntegerType) -> Self {
+        match self.word_constant() {
+            Some(value) => Self::constant_at32(format, value),
+            None => self,
+        }
+    }
+
+    /// The constant `value` in `format`'s spelling.
+    pub(crate) fn constant_at32(format: MachineIntegerType, value: u32) -> Self {
+        match format {
+            MachineIntegerType::UInt32 => Self::UInt32Constant(value),
+            _ => Self::Constant(value),
+        }
+    }
+
+    /// The bits of a root 32-bit constant, either spelling.
+    fn word_constant(&self) -> Option<u32> {
+        match self {
+            Self::Constant(value) | Self::UInt32Constant(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    /// The 32-bit operator node `left op right` at `format`, unfolded.
+    fn node32(format: MachineIntegerType, op: MachineBinaryOp, left: Self, right: Self) -> Self {
+        Self::Binary {
+            op,
+            format,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+
+    /// `left + right` at the 32-bit `format`, folded: constants, `x + 0`,
+    /// and the cancellations `x + (y - x)`, `(y - x) + x`, `(0 - x) + (x + y)`
+    /// and their mirrors, matching operands of `format` only.
+    pub(crate) fn add_at(format: MachineIntegerType, left: Self, right: Self) -> Self {
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        let subtraction = |term: &Self| match term {
+            binary_term!(Bits32 @ found, Subtract, base, subtrahend) if *found == format => {
+                Some((base.as_ref().clone(), subtrahend.as_ref().clone()))
+            }
+            _ => None,
+        };
+        let addition = |term: &Self| match term {
+            binary_term!(Bits32 @ found, Add, base, addend) if *found == format => {
+                Some((base.as_ref().clone(), addend.as_ref().clone()))
+            }
+            _ => None,
+        };
+        if let (Some(left), Some(right)) = (left.word_constant(), right.word_constant()) {
+            return Self::constant_at32(format, left.wrapping_add(right));
+        }
+        if let Some((base, subtrahend)) = subtraction(&right)
+            && subtrahend == left
+        {
+            return base;
+        }
+        if let Some((base, subtrahend)) = subtraction(&left)
+            && subtrahend == right
+        {
+            return base;
+        }
+        for (negation, sum) in [(&left, &right), (&right, &left)] {
+            if let (Some((zero, subtrahend)), Some((first, second))) =
+                (subtraction(negation), addition(sum))
+                && zero.word_constant() == Some(0)
+            {
+                if subtrahend == first {
+                    return second;
+                }
+                if subtrahend == second {
+                    return first;
+                }
+            }
+        }
+        if right.word_constant() == Some(0) {
+            return left;
+        }
+        if left.word_constant() == Some(0) {
+            return right;
+        }
+        Self::node32(format, MachineBinaryOp::Add, left, right)
+    }
+
+    /// `left - right` at `int32`, folded (`Self::subtract_at`).
     pub(in crate::kernel) fn subtract(left: Self, right: Self) -> Self {
-        let (left, right) = (left.into_word32(), right.into_word32());
-        match (&left, &right) {
-            (Self::Constant(left), Self::Constant(right)) => {
-                Self::Constant(left.wrapping_sub(*right))
-            }
-            (_, Self::Constant(0)) => left,
-            _ if left == right => Self::Constant(0),
-            (
-                binary_term!(Int32, Add, left_base, left_addend),
-                binary_term!(Int32, Add, right_base, right_addend),
-            ) if left_base == right_base => {
-                Self::subtract(left_addend.as_ref().clone(), right_addend.as_ref().clone())
-            }
-            (
-                binary_term!(Int32, Add, left_base, left_addend),
-                binary_term!(Int32, Add, right_base, right_addend),
-            ) if left_base == right_addend => {
-                Self::subtract(left_addend.as_ref().clone(), right_base.as_ref().clone())
-            }
-            (
-                binary_term!(Int32, Add, left_base, left_addend),
-                binary_term!(Int32, Add, right_base, right_addend),
-            ) if left_addend == right_base => {
-                Self::subtract(left_base.as_ref().clone(), right_addend.as_ref().clone())
-            }
-            (
-                binary_term!(Int32, Add, left_base, left_addend),
-                binary_term!(Int32, Add, right_base, right_addend),
-            ) if left_addend == right_addend => {
-                Self::subtract(left_base.as_ref().clone(), right_base.as_ref().clone())
-            }
-            (binary_term!(Int32, Add, left_base, left_addend), _)
-                if left_base.as_ref() == &right =>
-            {
-                left_addend.as_ref().clone()
-            }
-            (binary_term!(Int32, Add, left_base, left_addend), _)
-                if left_addend.as_ref() == &right =>
-            {
-                left_base.as_ref().clone()
-            }
-            (_, binary_term!(Int32, Add, right_base, right_addend))
-                if &left == right_base.as_ref() =>
-            {
-                Self::subtract(Self::Constant(0), right_addend.as_ref().clone())
-            }
-            (_, binary_term!(Int32, Add, right_base, right_addend))
-                if &left == right_addend.as_ref() =>
-            {
-                Self::subtract(Self::Constant(0), right_base.as_ref().clone())
-            }
-            _ => binary_node!(Int32, Subtract, Box::new(left), Box::new(right)),
-        }
+        Self::subtract_at(MachineIntegerType::Int32, left, right)
     }
 
-    pub(crate) fn multiply(left: Self, right: Self) -> Self {
-        let (left, right) = (left.into_word32(), right.into_word32());
-        match (&left, &right) {
-            (Self::Constant(left), Self::Constant(right)) => {
-                Self::Constant(left.wrapping_mul(*right))
+    /// `left - right` at the 32-bit `format`, folded: constants, `x - 0`,
+    /// `x - x`, and the cancellation of a shared addend of two sums or of a
+    /// sum and one of its addends, matching operands of `format` only.
+    pub(crate) fn subtract_at(format: MachineIntegerType, left: Self, right: Self) -> Self {
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        let addition = |term: &Self| match term {
+            binary_term!(Bits32 @ found, Add, base, addend) if *found == format => {
+                Some((base.as_ref().clone(), addend.as_ref().clone()))
             }
-            (_, Self::Constant(1)) => left,
-            (Self::Constant(1), _) => right,
-            (_, Self::Constant(0)) | (Self::Constant(0), _) => Self::Constant(0),
-            _ => binary_node!(Int32, Multiply, Box::new(left), Box::new(right)),
+            _ => None,
+        };
+        if let (Some(left), Some(right)) = (left.word_constant(), right.word_constant()) {
+            return Self::constant_at32(format, left.wrapping_sub(right));
+        }
+        if right.word_constant() == Some(0) {
+            return left;
+        }
+        if left == right {
+            return Self::constant_at32(format, 0);
+        }
+        let zero = || Self::constant_at32(format, 0);
+        if let (Some((left_base, left_addend)), Some((right_base, right_addend))) =
+            (addition(&left), addition(&right))
+        {
+            if left_base == right_base {
+                return Self::subtract_at(format, left_addend, right_addend);
+            }
+            if left_base == right_addend {
+                return Self::subtract_at(format, left_addend, right_base);
+            }
+            if left_addend == right_base {
+                return Self::subtract_at(format, left_base, right_addend);
+            }
+            if left_addend == right_addend {
+                return Self::subtract_at(format, left_base, right_base);
+            }
+        }
+        if let Some((left_base, left_addend)) = addition(&left) {
+            if left_base == right {
+                return left_addend;
+            }
+            if left_addend == right {
+                return left_base;
+            }
+        }
+        if let Some((right_base, right_addend)) = addition(&right) {
+            if left == right_base {
+                return Self::subtract_at(format, zero(), right_addend);
+            }
+            if left == right_addend {
+                return Self::subtract_at(format, zero(), right_base);
+            }
+        }
+        Self::node32(format, MachineBinaryOp::Subtract, left, right)
+    }
+
+    /// `left * right` at `int32`, folded (`Self::multiply_at`).
+    pub(crate) fn multiply(left: Self, right: Self) -> Self {
+        Self::multiply_at(MachineIntegerType::Int32, left, right)
+    }
+
+    /// `left * right` at the 32-bit `format`, folded: constants, `x * 1`
+    /// and `x * 0`.
+    pub(crate) fn multiply_at(format: MachineIntegerType, left: Self, right: Self) -> Self {
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        match (left.word_constant(), right.word_constant()) {
+            (Some(left), Some(right)) => Self::constant_at32(format, left.wrapping_mul(right)),
+            (_, Some(1)) => left,
+            (Some(1), _) => right,
+            (_, Some(0)) | (Some(0), _) => Self::constant_at32(format, 0),
+            _ => Self::node32(format, MachineBinaryOp::Multiply, left, right),
         }
     }
 
@@ -582,21 +659,20 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn unsigned_divide(left: Self, right: Self) -> Self {
-        let (left, right) = (left.into_word32(), right.into_word32());
-        match (&left, &right) {
-            (Self::Constant(left), Self::Constant(right)) => {
-                match checked_unsigned_divide_const(*left, *right) {
-                    Some(value) => Self::Constant(value),
-                    None => binary_node!(
-                        UInt32,
-                        Divide,
-                        Box::new(Self::Constant(*left)),
-                        Box::new(Self::Constant(*right)),
-                    ),
+        let format = MachineIntegerType::UInt32;
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        match (left.word_constant(), right.word_constant()) {
+            (Some(left_bits), Some(right_bits)) => {
+                match checked_unsigned_divide_const(left_bits, right_bits) {
+                    Some(value) => Self::constant_at32(format, value),
+                    None => Self::node32(format, MachineBinaryOp::Divide, left, right),
                 }
             }
-            (_, Self::Constant(1)) => left,
-            _ => binary_node!(UInt32, Divide, Box::new(left), Box::new(right)),
+            (_, Some(1)) => left,
+            _ => Self::node32(format, MachineBinaryOp::Divide, left, right),
         }
     }
 
@@ -619,20 +695,19 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn unsigned_remainder(left: Self, right: Self) -> Self {
-        let (left, right) = (left.into_word32(), right.into_word32());
-        match (&left, &right) {
-            (Self::Constant(left), Self::Constant(right)) => {
-                match checked_unsigned_remainder_const(*left, *right) {
-                    Some(value) => Self::Constant(value),
-                    None => binary_node!(
-                        UInt32,
-                        Remainder,
-                        Box::new(Self::Constant(*left)),
-                        Box::new(Self::Constant(*right)),
-                    ),
+        let format = MachineIntegerType::UInt32;
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        match (left.word_constant(), right.word_constant()) {
+            (Some(left_bits), Some(right_bits)) => {
+                match checked_unsigned_remainder_const(left_bits, right_bits) {
+                    Some(value) => Self::constant_at32(format, value),
+                    None => Self::node32(format, MachineBinaryOp::Remainder, left, right),
                 }
             }
-            _ => binary_node!(UInt32, Remainder, Box::new(left), Box::new(right)),
+            _ => Self::node32(format, MachineBinaryOp::Remainder, left, right),
         }
     }
 
@@ -693,60 +768,93 @@ impl Bitvector32Term {
     }
 
     pub(crate) fn logical_shift_right(left: Self, right: Self) -> Self {
-        let (left, right) = (left.into_word32(), right.into_word32());
-        match (&left, &right) {
-            (Self::Constant(left), Self::Constant(right)) => {
-                match checked_logical_shift_right_const(*left, *right) {
-                    Some(value) => Self::Constant(value),
-                    None => binary_node!(
-                        UInt32,
-                        ShiftRight,
-                        Box::new(Self::Constant(*left)),
-                        Box::new(Self::Constant(*right)),
-                    ),
+        let format = MachineIntegerType::UInt32;
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        match (left.word_constant(), right.word_constant()) {
+            (Some(left_bits), Some(right_bits)) => {
+                match checked_logical_shift_right_const(left_bits, right_bits) {
+                    Some(value) => Self::constant_at32(format, value),
+                    None => Self::node32(format, MachineBinaryOp::ShiftRight, left, right),
                 }
             }
-            (_, Self::Constant(0)) => left,
-            _ => binary_node!(UInt32, ShiftRight, Box::new(left), Box::new(right)),
+            (_, Some(0)) => left,
+            _ => Self::node32(format, MachineBinaryOp::ShiftRight, left, right),
         }
     }
 
     pub(in crate::kernel) fn bitwise_and(left: Self, right: Self) -> Self {
-        let (left, right) = (left.into_word32(), right.into_word32());
-        match (&left, &right) {
-            (Self::Constant(left), Self::Constant(right)) => Self::Constant(*left & *right),
-            (_, Self::Constant(u32::MAX)) => left,
-            (Self::Constant(u32::MAX), _) => right,
-            (_, Self::Constant(0)) | (Self::Constant(0), _) => Self::Constant(0),
+        Self::bitwise_and_at(MachineIntegerType::Int32, left, right)
+    }
+
+    /// `left & right` at the 32-bit `format`, folded.
+    pub(crate) fn bitwise_and_at(format: MachineIntegerType, left: Self, right: Self) -> Self {
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        match (left.word_constant(), right.word_constant()) {
+            (Some(left), Some(right)) => Self::constant_at32(format, left & right),
+            (_, Some(u32::MAX)) => left,
+            (Some(u32::MAX), _) => right,
+            (_, Some(0)) | (Some(0), _) => Self::constant_at32(format, 0),
             _ if left == right => left,
-            _ => binary_node!(Int32, BitwiseAnd, Box::new(left), Box::new(right)),
+            _ => Self::node32(format, MachineBinaryOp::BitwiseAnd, left, right),
         }
     }
 
     pub(in crate::kernel) fn bitwise_or(left: Self, right: Self) -> Self {
-        let (left, right) = (left.into_word32(), right.into_word32());
-        match (&left, &right) {
-            (Self::Constant(left), Self::Constant(right)) => Self::Constant(*left | *right),
-            (_, Self::Constant(0)) => left,
-            (Self::Constant(0), _) => right,
-            (_, Self::Constant(u32::MAX)) | (Self::Constant(u32::MAX), _) => {
-                Self::Constant(u32::MAX)
-            }
+        Self::bitwise_or_at(MachineIntegerType::Int32, left, right)
+    }
+
+    /// `left | right` at the 32-bit `format`, folded.
+    pub(crate) fn bitwise_or_at(format: MachineIntegerType, left: Self, right: Self) -> Self {
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        match (left.word_constant(), right.word_constant()) {
+            (Some(left), Some(right)) => Self::constant_at32(format, left | right),
+            (_, Some(0)) => left,
+            (Some(0), _) => right,
+            (_, Some(u32::MAX)) | (Some(u32::MAX), _) => Self::constant_at32(format, u32::MAX),
             _ if left == right => left,
-            _ => binary_node!(Int32, BitwiseOr, Box::new(left), Box::new(right)),
+            _ => Self::node32(format, MachineBinaryOp::BitwiseOr, left, right),
         }
     }
 
     pub(in crate::kernel) fn bitwise_xor(left: Self, right: Self) -> Self {
-        let (left, right) = (left.into_word32(), right.into_word32());
-        fn flatten(term: Bitvector32Term, constant: &mut u32, terms: &mut Vec<Bitvector32Term>) {
+        Self::bitwise_xor_at(MachineIntegerType::Int32, left, right)
+    }
+
+    /// `left ^ right` at the 32-bit `format`, normalized: the operands of a
+    /// chain of `format`'s `^` are sorted, pairs cancel, and the constants
+    /// fold into one.
+    pub(crate) fn bitwise_xor_at(format: MachineIntegerType, left: Self, right: Self) -> Self {
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        fn flatten(
+            format: MachineIntegerType,
+            term: Bitvector32Term,
+            constant: &mut u32,
+            terms: &mut Vec<Bitvector32Term>,
+        ) {
             match term {
                 Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
                     *constant ^= value
                 }
-                binary_term!(Int32, BitwiseXor, left, right) => {
-                    flatten(*left, constant, terms);
-                    flatten(*right, constant, terms);
+                Bitvector32Term::Binary {
+                    op: MachineBinaryOp::BitwiseXor,
+                    format: found,
+                    left,
+                    right,
+                } if found == format => {
+                    flatten(format, *left, constant, terms);
+                    flatten(format, *right, constant, terms);
                 }
                 term => terms.push(term),
             }
@@ -754,8 +862,8 @@ impl Bitvector32Term {
 
         let mut constant = 0;
         let mut terms = Vec::new();
-        flatten(left, &mut constant, &mut terms);
-        flatten(right, &mut constant, &mut terms);
+        flatten(format, left, &mut constant, &mut terms);
+        flatten(format, right, &mut constant, &mut terms);
         terms.sort();
 
         let mut normalized = Vec::new();
@@ -771,21 +879,54 @@ impl Bitvector32Term {
             index = end;
         }
         if constant != 0 {
-            normalized.push(Self::Constant(constant));
+            normalized.push(Self::constant_at32(format, constant));
             normalized.sort();
         }
 
         normalized
             .into_iter()
-            .reduce(|left, right| binary_node!(Int32, BitwiseXor, Box::new(left), Box::new(right)))
-            .unwrap_or(Self::Constant(0))
+            .reduce(|left, right| Self::node32(format, MachineBinaryOp::BitwiseXor, left, right))
+            .unwrap_or(Self::constant_at32(format, 0))
     }
 
     pub(in crate::kernel) fn bitwise_not(value: Self) -> Self {
-        match value.into_word32() {
-            Self::Constant(value) => Self::Constant(!value),
-            unary_term!(Int32, BitwiseNot, inner) => *inner,
-            value => unary_node!(Int32, BitwiseNot, Box::new(value)),
+        Self::bitwise_not_at(MachineIntegerType::Int32, value)
+    }
+
+    /// `~value` at the 32-bit `format`, folded.
+    pub(crate) fn bitwise_not_at(format: MachineIntegerType, value: Self) -> Self {
+        let value = Self::operand32(format, value);
+        if let Some(bits) = value.word_constant() {
+            return Self::constant_at32(format, !bits);
+        }
+        match value {
+            Self::Unary {
+                format: found,
+                op: MachineUnaryOp::BitwiseNot,
+                operand,
+            } if found == format => *operand,
+            value => Self::Unary {
+                format,
+                op: MachineUnaryOp::BitwiseNot,
+                operand: Box::new(value),
+            },
+        }
+    }
+
+    /// `left << right` at `uint32`: the bits shifted, a constant count below
+    /// 32 folding a constant operand, a zero count the operand itself.
+    pub(crate) fn uint32_shift_left(left: Self, right: Self) -> Self {
+        let format = MachineIntegerType::UInt32;
+        let (left, right) = (
+            Self::operand32(format, left),
+            Self::operand32(format, right),
+        );
+        match (left.word_constant(), right.word_constant()) {
+            (Some(bits), Some(count)) if checked_shift_count_const(count).is_some() => {
+                Self::constant_at32(format, bits.wrapping_shl(count))
+            }
+            (_, Some(0)) => left,
+            _ => Self::node32(format, MachineBinaryOp::ShiftLeft, left, right),
         }
     }
 
@@ -1704,10 +1845,10 @@ impl Bitvector32Term {
 
     /// `left op right` at a 32- or 64-bit `format`, through the operator's
     /// smart constructor. Division, remainder and right shift are signed at
-    /// a signed format and unsigned at an unsigned one; the other 32-bit
-    /// operators are word operators, built at `int32` whichever 32-bit
-    /// format is asked. No other format has [`Self::Binary`] nodes.
-    #[track_caller]
+    /// a signed format and unsigned at an unsigned one; every other operator
+    /// is built at the format asked, over operands in that format
+    /// (`design/machine-integers.md`, "Every format its own nodes"). No
+    /// other format has [`Self::Binary`] nodes.
     pub(crate) fn machine_binary(
         format: MachineIntegerType,
         op: MachineBinaryOp,
@@ -1716,28 +1857,21 @@ impl Bitvector32Term {
     ) -> Self {
         use MachineBinaryOp as Op;
         use MachineIntegerType as Ty;
-        if format == Ty::UInt32 && !matches!(op, Op::Divide | Op::Remainder | Op::ShiftRight) {
-            audit::record(
-                audit::WordIdentity::UInt32OperatorAtInt32,
-                std::panic::Location::caller(),
-            );
-        }
         match (format, op) {
-            // A 32-bit operator reads words (rule K1): only division,
-            // remainder and the right shift depend on the format.
-            (Ty::Int32 | Ty::UInt32, Op::Add) => Self::add(left, right),
-            (Ty::Int32 | Ty::UInt32, Op::Subtract) => Self::subtract(left, right),
-            (Ty::Int32 | Ty::UInt32, Op::Multiply) => Self::multiply(left, right),
+            (Ty::Int32 | Ty::UInt32, Op::Add) => Self::add_at(format, left, right),
+            (Ty::Int32 | Ty::UInt32, Op::Subtract) => Self::subtract_at(format, left, right),
+            (Ty::Int32 | Ty::UInt32, Op::Multiply) => Self::multiply_at(format, left, right),
             (Ty::Int32, Op::Divide) => Self::divide(left, right),
             (Ty::UInt32, Op::Divide) => Self::unsigned_divide(left, right),
             (Ty::Int32, Op::Remainder) => Self::remainder(left, right),
             (Ty::UInt32, Op::Remainder) => Self::unsigned_remainder(left, right),
-            (Ty::Int32 | Ty::UInt32, Op::ShiftLeft) => Self::shift_left(left, right),
+            (Ty::Int32, Op::ShiftLeft) => Self::shift_left(left, right),
+            (Ty::UInt32, Op::ShiftLeft) => Self::uint32_shift_left(left, right),
             (Ty::Int32, Op::ShiftRight) => Self::arithmetic_shift_right(left, right),
             (Ty::UInt32, Op::ShiftRight) => Self::logical_shift_right(left, right),
-            (Ty::Int32 | Ty::UInt32, Op::BitwiseAnd) => Self::bitwise_and(left, right),
-            (Ty::Int32 | Ty::UInt32, Op::BitwiseOr) => Self::bitwise_or(left, right),
-            (Ty::Int32 | Ty::UInt32, Op::BitwiseXor) => Self::bitwise_xor(left, right),
+            (Ty::Int32 | Ty::UInt32, Op::BitwiseAnd) => Self::bitwise_and_at(format, left, right),
+            (Ty::Int32 | Ty::UInt32, Op::BitwiseOr) => Self::bitwise_or_at(format, left, right),
+            (Ty::Int32 | Ty::UInt32, Op::BitwiseXor) => Self::bitwise_xor_at(format, left, right),
             (Ty::Int64, Op::Add) => Self::int64_add(left, right),
             (Ty::Int64, Op::Subtract) => Self::int64_subtract(left, right),
             (Ty::Int64, Op::Multiply) => Self::int64_multiply(left, right),
@@ -1764,23 +1898,16 @@ impl Bitvector32Term {
 
     /// `op operand` at a 32- or 64-bit `format`, through the operator's
     /// smart constructor.
-    #[track_caller]
     pub(crate) fn machine_unary(
         format: MachineIntegerType,
         op: MachineUnaryOp,
         operand: Self,
     ) -> Self {
-        if format == MachineIntegerType::UInt32 {
-            audit::record(
-                audit::WordIdentity::UInt32OperatorAtInt32,
-                std::panic::Location::caller(),
-            );
-        }
         match (format, op) {
             (
                 MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 MachineUnaryOp::BitwiseNot,
-            ) => Self::bitwise_not(operand),
+            ) => Self::bitwise_not_at(format, operand),
             (MachineIntegerType::Int64, MachineUnaryOp::BitwiseNot) => {
                 Self::int64_bitwise_not(operand)
             }

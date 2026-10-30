@@ -55,10 +55,13 @@ pub(crate) fn word_bits(ty: MachineIntegerType) -> Option<u32> {
     }
 }
 
-/// The format of the operator nodes that spell `ty`'s ring operations:
-/// `int32` for every format of at most 32 bits, whose operations are 32-bit
-/// word operations filed at `int32` (rule K1), `ty` itself at 64 bits, and
-/// `None` at 128 bits, which has no operators.
+/// The format of the operator nodes a rule builds for `ty`'s ring
+/// operations: `int32` for every format of at most 32 bits, whose
+/// operations the rules read as 32-bit word operations (rule K1; a `uint32`
+/// equality reads at both 32-bit formats until K6 goes), `ty` itself at 64
+/// bits, and `None` at 128 bits, which has no operators. A `uint32`
+/// operator of a program is its own node, which [`word_operation`] reads
+/// as the same word operation.
 fn operator_format(ty: MachineIntegerType) -> Option<MachineIntegerType> {
     match word(ty) {
         Word::Bits32 => Some(MachineIntegerType::Int32),
@@ -78,8 +81,8 @@ pub(crate) fn operation_word(
     let format = operator_format(ty)?;
     let (left, right) = if word(ty) == Word::Bits32 {
         (
-            Box::new(left.constant_word32()),
-            Box::new(right.constant_word32()),
+            Box::new(Bitvector32Term::operand32(format, *left)),
+            Box::new(Bitvector32Term::operand32(format, *right)),
         )
     } else {
         (left, right)
@@ -124,7 +127,9 @@ pub(crate) fn word_operation(
     else {
         return None;
     };
-    if Some(*format) != operator_format(ty) {
+    let reads = Some(*format) == operator_format(ty)
+        || (ty.format().bits() == 32 && *format == MachineIntegerType::UInt32);
+    if !reads {
         return None;
     }
     Some((operation_of_machine_binary_op(*op)?, left, right))
