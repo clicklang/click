@@ -226,8 +226,8 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
             &certificate.nodes[2],
             SignedArithmeticStep::Add {
                 result: ClickProposition::Comparison {
-                    left: ContractExpression::CUnary { .. },
-                    right: ContractExpression::CUnary { .. },
+                    left: ContractExpression::Add(..),
+                    right: ContractExpression::Add(..),
                     ..
                 },
                 ..

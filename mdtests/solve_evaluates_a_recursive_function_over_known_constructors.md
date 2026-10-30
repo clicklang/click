@@ -5,6 +5,9 @@ constructor, then keeps unfolding the recursive calls the definition exposes,
 to a fixed fuel (design-review P5, R3). An argument known only through an
 equation such as `u == Tree::Node(..)` is rewritten to its constructor first.
 Each unfold and rewrite is an ordinary checked step in the expansion.
+Machine additions also need their domains proved. The nested example
+establishes the inner calls first, so the outer unfold can prove that its
+addition fits in `int32`.
 
 ```click
 spec enum Tree {
@@ -20,7 +23,11 @@ function count(t: Tree) -> int32 decreases t {
 }
 
 theorem nested_constructors(v: int32, w: int32, r: Tree, s: Tree) {
-    ensures count(Tree::Node(v, Tree::Node(w, Tree::Leaf, s), r)) == 2 by solve();
+    ensures count(Tree::Node(v, Tree::Node(w, Tree::Leaf, s), r)) == 2 by {
+        have count(Tree::Leaf) == 0 by solve();
+        have count(Tree::Node(w, Tree::Leaf, s)) == 1 by solve();
+        solve();
+    };
 }
 
 theorem constructors_through_equations(t: Tree, u: Tree, v: int32, w: int32, r: Tree, s: Tree) {

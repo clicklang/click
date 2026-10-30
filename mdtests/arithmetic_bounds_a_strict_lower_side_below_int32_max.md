@@ -35,14 +35,14 @@ theorem successor_nonnegative_certificate(i: int32, n: int32) {
             premise 0: 0 <= i => 0 <= i;
             premise 1: i < n => i < n;
             int32_range => n <= 2147483647;
-            add 1, 2 => ((i + n) as int32) < ((n + 2147483647) as int32);
+            add 1, 2 => (i + n) < (n + 2147483647);
             interval_from_affine 0 (i) (0) (2147483647);
             interval_from_affine 3 (i) (-2147483648) (2147483646);
             interval_intersect 4, 5 (0) (2147483646);
             interval_atom (1) (1) (1);
             interval_add_bounded 6, 7 (1) (2147483647);
             trivial => -1 <= 0;
-            add 0, 9 => ((0 + -1) as int32) <= ((i + 0) as int32);
+            add 0, 9 => (0 + -1) <= (i + 0);
             affine_conclusion 10 8 => (0 as int32) <= ((i + 1) as int32);
             conclusion 11;
         }

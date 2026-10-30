@@ -343,3 +343,48 @@ fn affine_multi_key_and_deep_atom_work_scales() {
         "multi-key deep atom work must scale: {measurements:?}"
     );
 }
+
+#[test]
+fn mathematical_certificate_result_decoding_scales_with_explicit_atoms() {
+    use crate::kernel::IntegerTerm;
+
+    let mut measurements = Vec::new();
+    for size in [4usize, 8, 16, 32] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut terms = (0..size)
+            .map(|index| {
+                IntegerTerm::from_machine(
+                    MachineIntegerType::Int32,
+                    Bitvector32Term::Variable(Variable(991_920 + index as u64)),
+                )
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        while terms.len() > 1 {
+            terms = terms
+                .chunks_exact(2)
+                .map(|pair| IntegerTerm::add(pair[0].clone(), pair[1].clone()))
+                .collect();
+        }
+        let proposition = Proposition::ConditionIs(
+            ConditionTerm::integer_less_equal(terms.pop().unwrap(), IntegerTerm::constant_i64(0)),
+            true,
+        );
+        let (claim, work) = crate::instrumentation::measure_deterministic_work(|| {
+            signed_arithmetic_integer_result(&proposition).unwrap()
+        });
+        assert_eq!(claim.terms.len(), size);
+        measurements.push(work);
+    }
+    assert!(measurements[0] > 0);
+    for pair in measurements.windows(2) {
+        assert!(
+            pair[1] > pair[0],
+            "decoder work must be charged: {measurements:?}"
+        );
+        assert!(
+            pair[1] <= pair[0] * 3 + 64,
+            "explicit affine decoder work must scale near linearly: {measurements:?}"
+        );
+    }
+}

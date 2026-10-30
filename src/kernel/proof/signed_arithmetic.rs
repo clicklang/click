@@ -3013,6 +3013,51 @@ pub(crate) fn signed_arithmetic_claim(proposition: &Proposition) -> Option<Signe
     affine_claim(proposition)
 }
 
+/// Decode a certificate's mathematical intermediate over exact int32
+/// observations. This names an affine claim; it does not assert the result.
+/// In particular, sums of observations are not wrapping machine operations.
+pub(crate) fn signed_arithmetic_integer_result(
+    proposition: &Proposition,
+) -> Option<SignedArithmeticClaim> {
+    use super::integer_arithmetic::{
+        IntegerAffineAtom, IntegerAffineRelation, integer_affine_claim,
+    };
+    let claim = integer_affine_claim(proposition)?;
+    let mut terms = BTreeMap::new();
+    for (atom, coefficient) in claim.terms {
+        let IntegerAffineAtom::Machine(machine) = atom else {
+            return None;
+        };
+        if machine.ty() != MachineIntegerType::Int32 {
+            return None;
+        }
+        let term = canonical_term_budgeted(machine.value())?;
+        let atom = SignedArithmeticAtom::from_term(&term)?;
+        if !charge_affine_map_update_work(&terms, &atom, &coefficient) {
+            return None;
+        }
+        let previous = terms.get(&atom).cloned().unwrap_or_default();
+        if !charge_bigint_binary_work(&previous, &coefficient) {
+            return None;
+        }
+        let updated = previous + coefficient;
+        if updated.is_zero() {
+            terms.remove(&atom);
+        } else {
+            terms.insert(atom, updated);
+        }
+    }
+    Some(SignedArithmeticClaim {
+        carrier: SignedArithmeticCarrier::SignedInt32,
+        relation: match claim.relation {
+            IntegerAffineRelation::LessEqual => SignedArithmeticRelation::LessEqual,
+            IntegerAffineRelation::Equal => SignedArithmeticRelation::Equal,
+        },
+        terms,
+        constant: claim.constant,
+    })
+}
+
 /// Compare source propositions used by a signed certificate without falling
 /// back to recursive proposition equality.  Arithmetic premises compare by
 /// their normalized affine claim; exact overflow-definedness premises compare
@@ -3186,6 +3231,42 @@ fn propositions_match(left: &Proposition, right: &Proposition) -> bool {
 mod tests {
     use super::*;
     use crate::kernel::{Pointer, Variable};
+
+    #[test]
+    fn mathematical_certificate_results_keep_machine_sums_opaque() {
+        use crate::kernel::{IntegerTerm, MachineBinaryOp};
+        let x = Bitvector32Term::Variable(Variable(991_910));
+        let y = Bitvector32Term::Variable(Variable(991_911));
+        let observe = |format, term| IntegerTerm::from_machine(format, term).unwrap();
+        let result = |term| {
+            Proposition::ConditionIs(
+                ConditionTerm::integer_less_equal(term, IntegerTerm::constant_i64(0)),
+                true,
+            )
+        };
+        let math = result(IntegerTerm::add(
+            observe(MachineIntegerType::Int32, x.clone()),
+            observe(MachineIntegerType::Int32, y.clone()),
+        ));
+        let machine = result(observe(
+            MachineIntegerType::Int32,
+            Bitvector32Term::machine_binary(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                x.clone(),
+                y,
+            ),
+        ));
+        let math_claim = signed_arithmetic_integer_result(&math).unwrap();
+        let machine_claim = signed_arithmetic_integer_result(&machine).unwrap();
+        assert_eq!(math_claim.terms.len(), 2);
+        assert_eq!(machine_claim.terms.len(), 1);
+        assert_ne!(math_claim, machine_claim);
+        assert!(
+            signed_arithmetic_integer_result(&result(observe(MachineIntegerType::UInt32, x)))
+                .is_none()
+        );
+    }
 
     #[test]
     fn interval_comparisons_accept_direction_and_truth_equivalents() {

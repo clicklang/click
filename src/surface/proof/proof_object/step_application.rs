@@ -2370,11 +2370,17 @@ impl<'a> Proof<'a> {
             proof.lower_surface_proposition_direct(proposition, description)
         };
         let claim = |proposition: &Proposition, description: &str| {
-            signed_arithmetic_claim(proposition).ok_or_else(|| {
-                self.step_error(format!(
-                    "{description} must be a supported signed_int32 arithmetic proposition"
-                ))
-            })
+            signed_arithmetic_claim(proposition)
+                .or_else(|| {
+                    crate::kernel::proof::signed_arithmetic::signed_arithmetic_integer_result(
+                        proposition,
+                    )
+                })
+                .ok_or_else(|| {
+                    self.step_error(format!(
+                        "{description} must be a supported signed_int32 arithmetic proposition"
+                    ))
+                })
         };
         let node_claim = |node: &SignedArithmeticNode| match node {
             SignedArithmeticNode::Premise { result, .. }

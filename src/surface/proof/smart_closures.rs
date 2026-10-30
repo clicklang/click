@@ -1933,6 +1933,30 @@ impl<'a> Proof<'a> {
             .nodes
             .iter()
             .any(|node| matches!(node, SignedArithmeticNode::AffinePremise { .. }));
+        let observe_operand = |operand: ContractExpression| {
+            if matches!(&operand, ContractExpression::Call { name, arguments } if name == "to_integer" && arguments.len() == 1)
+            {
+                operand
+            } else {
+                ContractExpression::Call {
+                    name: "to_integer".into(),
+                    // Observe the promoted operand used by the signed certificate.
+                    arguments: vec![native_int32_split_operand(operand)],
+                }
+            }
+        };
+        let observe_comparison = |surface: ClickProposition| match surface {
+            ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } => ClickProposition::Comparison {
+                left: observe_operand(left),
+                operator,
+                right: observe_operand(right),
+            },
+            surface => surface,
+        };
         let mut surfaces: Vec<Option<ClickProposition>> = Vec::with_capacity(plan.nodes.len());
         let claim_surface = |claim: &SignedArithmeticClaim| {
             let value = claim.constant.to_i32()?;
@@ -1950,7 +1974,7 @@ impl<'a> Proof<'a> {
         for node in &plan.nodes {
             let value = match node {
                 SignedArithmeticNode::Premise { index, .. } => {
-                    Some(rendered_premises.get(*index)?.clone())
+                    Some(observe_comparison(rendered_premises.get(*index)?.clone()))
                 }
                 SignedArithmeticNode::AffinePremise { source, .. } => {
                     surfaces.get(*source)?.clone()
@@ -1959,8 +1983,10 @@ impl<'a> Proof<'a> {
                     source,
                     coefficient,
                     result,
-                } => integer_surface_scale(surfaces.get(*source)?.as_ref()?, coefficient)
-                    .or_else(|| claim_surface(result)),
+                } => {
+                    integer_certificate_surface_scale(surfaces.get(*source)?.as_ref()?, coefficient)
+                        .or_else(|| claim_surface(result))
+                }
                 SignedArithmeticNode::Add {
                     left,
                     right,
@@ -1993,7 +2019,7 @@ impl<'a> Proof<'a> {
                             if weakening_source == Some(surfaces.len()) {
                                 integer_surface_transitive(left_surface, right_surface)
                             } else {
-                                integer_surface_add(left_surface, right_surface)
+                                integer_certificate_surface_add(left_surface, right_surface)
                             }
                         })
                     }
@@ -2031,7 +2057,7 @@ impl<'a> Proof<'a> {
                     let atom = term(&crate::kernel::Bitvector32Term::Variable(
                         atom.as_variable()?,
                     ))?;
-                    Some(if coefficient.is_positive() {
+                    Some(observe_comparison(if coefficient.is_positive() {
                         ClickProposition::Comparison {
                             left: atom,
                             operator: ComparisonOperator::LessEqual,
@@ -2043,7 +2069,7 @@ impl<'a> Proof<'a> {
                             operator: ComparisonOperator::LessEqual,
                             right: atom,
                         }
-                    })
+                    }))
                 }
                 SignedArithmeticNode::IntervalCompare { .. }
                 | SignedArithmeticNode::AffineConclusion { .. }
@@ -2104,16 +2130,16 @@ impl<'a> Proof<'a> {
                 SignedArithmeticNode::Scale {
                     source,
                     coefficient,
-                    result: claim,
+                    result: _,
                 } => SignedArithmeticStep::Scale {
                     source: r(*source),
                     coefficient: surface_signed_integer_literal(coefficient),
-                    result: native_result(result()?, claim),
+                    result: result()?,
                 },
                 SignedArithmeticNode::Add {
                     left,
                     right,
-                    result: claim,
+                    result: _,
                 } => SignedArithmeticStep::Add {
                     left: r(*left),
                     right: r(*right),
@@ -2121,14 +2147,11 @@ impl<'a> Proof<'a> {
                     // affine claim. Reuse that source spelling instead of
                     // printing another composite expression whose machine
                     // additions may lower to different atoms.
-                    result: native_result(
-                        if node_index == plan.conclusion && weakening_source.is_some() {
-                            surface_goal.clone()
-                        } else {
-                            result()?
-                        },
-                        claim,
-                    ),
+                    result: if node_index == plan.conclusion && weakening_source.is_some() {
+                        surface_goal.clone()
+                    } else {
+                        result()?
+                    },
                 },
                 SignedArithmeticNode::EqualityToLessEqual {
                     source, reverse, ..
