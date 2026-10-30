@@ -672,8 +672,8 @@ pub(in crate::kernel) fn pointers_directly_distinct_for_store(
     {
         return true;
     }
-    if let Some((left, right, _)) = common_base_element_indices(left, right) {
-        if assumptions.exact_condition_value(&ConditionTerm::equal(left.clone(), right.clone()))
+    if let Some((left, right, _)) = common_base_element_indices(left, right)
+        && (assumptions.exact_condition_value(&ConditionTerm::equal(left.clone(), right.clone()))
             == Some(false)
             || assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
                 left.clone(),
@@ -682,10 +682,9 @@ pub(in crate::kernel) fn pointers_directly_distinct_for_store(
             || assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
                 right.clone(),
                 left.clone(),
-            )) == Some(true)
-        {
-            return true;
-        }
+            )) == Some(true))
+    {
+        return true;
     }
     let private_local = |local: &Pointer, value: &Pointer| {
         matches!(value.block, PointerBlock::Symbolic(_))

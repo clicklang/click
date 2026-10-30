@@ -5087,7 +5087,6 @@ fn lower_spec_disjunction_at_state_in(
             let guarded_right_obligations = right_path
                 .obligations
                 .iter()
-                .cloned()
                 .filter(
                     |obligation| match (&left_path.proposition, obligation.proposition()) {
                         (Proposition::ConditionIs(left, a), Proposition::ConditionIs(right, b))
@@ -5100,6 +5099,7 @@ fn lower_spec_disjunction_at_state_in(
                         _ => true,
                     },
                 )
+                .cloned()
                 .map(|obligation| {
                     let left = left_path.proposition.clone();
                     obligation.map_proposition(|proposition| {

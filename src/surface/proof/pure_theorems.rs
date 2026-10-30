@@ -3082,7 +3082,7 @@ fn check_pure_script_with_proof(
     let mut unfinished = None;
     let checked = match root.try_addressed_linear_script(
         tactics,
-        &sites,
+        sites,
         &mut declined,
         Some(&mut unfinished),
     ) {
