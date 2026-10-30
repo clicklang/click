@@ -378,7 +378,10 @@ fn mathematical_certificate_result_decoding_scales_with_explicit_atoms() {
     }
     assert!(measurements[0] > 0);
     for pair in measurements.windows(2) {
-        assert!(pair[1] > pair[0], "decoder work must be charged: {measurements:?}");
+        assert!(
+            pair[1] > pair[0],
+            "decoder work must be charged: {measurements:?}"
+        );
         assert!(
             pair[1] <= pair[0] * 3 + 64,
             "explicit affine decoder work must scale near linearly: {measurements:?}"
