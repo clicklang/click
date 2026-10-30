@@ -1115,7 +1115,10 @@ impl DifferenceGraph {
                     ..
                 }
             ) {
-                &[Domain::Int32]
+                // Equality of a word has the same truth in either reading.
+                // Resolve each operand in that reading's domain; unsigned
+                // order facts may exclude zero without bounding the sign bit.
+                &[Domain::Int32, Domain::UInt32]
             } else {
                 &[Domain::Int64, Domain::UInt64]
             };
