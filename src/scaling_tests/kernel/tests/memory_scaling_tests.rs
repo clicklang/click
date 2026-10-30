@@ -2376,3 +2376,40 @@ fn store_ownership_selection_bounds_same_base_compositions() {
         eprintln!("ownership compositions miss={miss}: {samples:?}");
     }
 }
+
+#[test]
+fn store_byte_gap_bounds_recorded_order_walks() {
+    for hit in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4u64, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let index = |i| Bitvector32Term::Variable(Variable(999_800 + i));
+            let pointer = |i| Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(index(i), 4),
+            };
+            let mut facts = PureFactContext::new();
+            for i in 0..size {
+                facts = facts.assume_condition(
+                    ConditionTerm::signed_less_than(index(i), index(i + 1)),
+                    true,
+                );
+            }
+            let read = pointer(if hit { size } else { size + 1 });
+            let memory = CMemory::new().store(read, scaling_value(9));
+            let mut work = Vec::new();
+            for _ in 0..3 {
+                let (_, units) = crate::instrumentation::measure_deterministic_work(|| {
+                    memory.without_possible_aliasing_cells(&pointer(0), 8, &facts)
+                });
+                work.push(units);
+            }
+            samples.push((size, work));
+        }
+        eprintln!("byte-gap order hit={hit}: {samples:?}");
+        assert!(
+            samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
+            "{samples:?}"
+        );
+    }
+}

@@ -1092,7 +1092,7 @@ fn local_lifetime_end_retains_complete_separated_range_evidence_and_scales() {
 }
 
 #[test]
-fn preliminary_byte_gap_uses_only_selected_recorded_order() {
+fn preliminary_byte_gap_uses_only_stated_endpoint_order() {
     use crate::kernel::reasoning::memory_resolution::{AccessByteOverlap, access_byte_overlap};
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_c_memory_ref(&CMemory::new());
@@ -1173,7 +1173,7 @@ fn preliminary_byte_gap_uses_only_selected_recorded_order() {
             );
             assert_eq!(
                 access_byte_overlap(&left, 4, &right, 8, &chained),
-                AccessByteOverlap::Separate
+                AccessByteOverlap::Unknown
             );
             assert_eq!(
                 access_byte_overlap(&left, 4, &right, 8, &broken),

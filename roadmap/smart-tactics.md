@@ -31,17 +31,20 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Store byte-gap eligibility and compact-run preservation.**
-   The byte-gap eligibility check still reaches `proves_recorded_signed_order`
-   through `one_element_gap_separates_bytes` on wide-access misses. Compact-run
-   preservation in `run_slots_kept_by_store` still asks
+1. **Compact-run store preservation.**
+   `run_slots_kept_by_store` still asks
    `typed_ranges_disjoint_from_pointer_evidence` and may inspect symbolic slots.
-   Measure these store callers before selecting the next removal, coordinating
-   run/history work with the frame-walk item below. Keep actual changed-cell
-   work separate from candidate discovery. Restrict implicit preservation
-   reasoning first, then repair affected proofs with explicit separation and
-   transport. Add automation only for demonstrated proof friction; do not assume
-   that all current automatic preservation must remain.
+   Complete the conservative-forgetting experiment, retaining deterministic
+   growth tests for logical run sizes and separation/ownership buckets.
+   Repair affected proofs with explicit separation and transport while
+   preserving C and contracts. Resolve the pre-existing field-separation
+   spelling/matching blocker exposed by
+   `function_pointer_read_uses_checked_table_alias`: under `cb == &table`,
+   an explicit `assumption()` refuses an apparently available separation;
+   removing the alias makes that step succeed. Validate the remaining
+   descriptor/range proofs and expansion before landing compact-run changes.
+   Keep actual changed-cell work separate from candidate discovery; add
+   bounded automation only for demonstrated proof friction.
 2. **Direct resource support selection.**
    `directly_supporting_owned_entry_with_separation` and
    `has_other_directly_supporting_owned_entry` in
