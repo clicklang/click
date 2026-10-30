@@ -417,16 +417,23 @@ pub(crate) fn render_trace_context_with_requirement(
     labels: &mut render::SnapshotLabels,
 ) -> String {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
-    render_diagnostic_labeled(
-        None,
-        diagnostic,
-        search_failures,
-        RequiredGoal {
-            requirement,
-            resource,
-        },
-        labels,
-    )
+    // Only explicit trace rendering pays for collision detection. The first
+    // bounded rendering collects exactly the footprints displayed below; a
+    // collision triggers one rerender so both earlier and later occurrences
+    // receive the same report-local labels. No proof operation is rerun.
+    labels.begin_range_collision_detection();
+    let required = RequiredGoal {
+        requirement,
+        resource,
+    };
+    let first = render_diagnostic_labeled(None, diagnostic, search_failures, required, labels);
+    let report = if labels.finish_range_collision_detection() {
+        render_diagnostic_labeled(None, diagnostic, search_failures, required, labels)
+    } else {
+        first
+    };
+    labels.end_range_collision_detection();
+    report
 }
 
 /// What a refused C operation needed, when it is the report's goal.
@@ -609,6 +616,9 @@ fn render_diagnostic_labeled(
     }
     if summary.is_some() && !crate::surface::proof_trace::enabled_for(&diagnostic.claim_label) {
         rendered.push_str(&labels.trace_legend());
+    }
+    if summary.is_none() {
+        rendered.push_str(&labels.range_collision_legend());
     }
     const MAX_REPORT_BYTES: usize = 64 * 1024;
     if rendered.len() > MAX_REPORT_BYTES {

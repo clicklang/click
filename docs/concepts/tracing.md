@@ -254,6 +254,14 @@ operands, and otherwise a memory operand prints as
 The width, snapshot, and address remain visible even when the source wrote only
 `parent->__rb_parent_color`.
 
+In the failed-check section, memory ranges whose identical printed footprints
+hide different pointer metadata receive shared `[range A]`, `[range B]`
+labels. A range-identity legend gives their object identities and known or
+opaque bounds. Comparison happens only when rendering this trace, over at most
+64 distinct displayed range representations; hitting that cap is reported.
+Equal ranges keep one label, and unambiguous footprints gain no annotation.
+This describes a representation mismatch, not additional proof evidence.
+
 Within a trace, goals, requirements, and traced facts share names and snapshot
 labels. A `transport` refusal that finds no frame evidence prints its own
 legend first, and the trace continues its numbering, so a label in the refusal

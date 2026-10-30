@@ -2403,6 +2403,16 @@ impl CMemoryRange {
         )
     }
 
+    /// Retained identity metadata for diagnostic rendering only. Reading this
+    /// view performs no inference, normalization, or proof-state traversal.
+    pub(crate) fn diagnostic_pointer_metadata(&self) -> (&Pointer, Option<&Pointer>, bool) {
+        (
+            &self.designation,
+            self.opaque_extent.as_deref(),
+            self.carrier_extent_known,
+        )
+    }
+
     pub fn kind(&self) -> RangeIndexKind {
         self.kind
     }

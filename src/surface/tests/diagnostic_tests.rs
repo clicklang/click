@@ -4063,3 +4063,49 @@ fn a_uint32_equality_above_int32_max_prints_in_its_own_type() {
     assert!(message.contains("old(u[0]) == 4294967295u32"), "{message}");
     assert!(!message.contains("== -1"), "{message}");
 }
+
+#[test]
+fn trace_disambiguates_separation_pointer_metadata_only_when_rendered() {
+    let c = r#"struct callbacks { void (*call)(int *p); };
+        static void target(int *p) { }
+        static const struct callbacks table = { .call = target };
+        void copy(const struct callbacks *cb, struct callbacks *out) { out->call = cb->call; }"#;
+    let source = r#"verifying "callback-read.c";
+        void copy(const struct callbacks* cb, struct callbacks* out) {
+            requires cb == &table;
+            views cb->call;
+            owns out->call;
+        } by {
+            have separate(memory(out->call), memory(cb->call)) by assumption();
+        }"#;
+    with_proof_trace("copy", || {
+        let error = verify_c0_sources(source, &[("callback-read.c", c)]).unwrap_err();
+        let ordinary = error.report();
+        assert!(!ordinary.contains("[range "), "{ordinary}");
+        let trace = error.trace_context_report().unwrap();
+        assert!(
+            trace.contains("[range A]") && trace.contains("[range B]"),
+            "{trace}"
+        );
+        assert!(
+            trace.contains("object identity = parameter `cb`"),
+            "{trace}"
+        );
+        assert!(
+            trace.contains("object identity = object `global:table"),
+            "{trace}"
+        );
+        assert!(
+            trace.contains("bounds = opaque extent")
+                && trace.contains("bounds = known object extent"),
+            "{trace}"
+        );
+        let failed = trace.split("failed check:").nth(1).unwrap();
+        let goal = failed.lines().find(|line| line.contains("goal:")).unwrap();
+        assert!(goal.contains("[range B]"), "{trace}");
+        assert_eq!(trace, error.trace_context_report().unwrap());
+        assert_eq!(ordinary, error.report());
+    });
+    let no_alias = source.replace("requires cb == &table;", "");
+    verify_c0_sources(&no_alias, &[("callback-read.c", c)]).unwrap();
+}

@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 
 mod legend;
+mod range_collisions;
 mod surface;
 mod trace_facts;
 
@@ -48,6 +49,7 @@ pub(crate) struct SnapshotLabels {
     memories: Vec<CMemory>,
     memory_identities: HashMap<(usize, usize, usize, usize, usize), usize>,
     trace_labels: bool,
+    range_collisions: Option<range_collisions::RangeCollisions>,
     pointer_values: HashMap<Pointer, usize>,
     pointer_sources: HashMap<Pointer, String>,
     source_memories: Vec<(CMemory, String, std::sync::Arc<NamingTables>)>,
@@ -2333,6 +2335,7 @@ impl Renderer<'_> {
                 self.push("))");
             }
             CResource::Memory(range) => {
+                let start = self.output.len();
                 self.push("memory(");
                 self.pointer(range.base());
                 self.fmt(format_args!("[{:?}:", range.kind()));
@@ -2340,6 +2343,16 @@ impl Renderer<'_> {
                 self.push("..");
                 self.bitvector(range.bound_terms().1);
                 self.fmt(format_args!("], stride={})", range.element_width()));
+                if !self.truncated {
+                    let suffix = self
+                        .labels
+                        .range_collisions
+                        .as_mut()
+                        .and_then(|collisions| collisions.observe(&self.output[start..], range));
+                    if let Some(suffix) = suffix {
+                        self.push(&suffix);
+                    }
+                }
             }
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 self.push(name);
