@@ -2270,7 +2270,6 @@ fn synthesize_surface_atomic_proposition(
         left,
         right,
     } = condition
-        && !value
     {
         // Definedness names this operation, not a local that already holds
         // its result. `defined(result)` would lose the operation's domain.
@@ -2292,7 +2291,12 @@ fn synthesize_surface_atomic_proposition(
             OverflowOperation::Multiply => ContractExpression::Multiply(left, right),
             _ => unreachable!("arithmetic overflow matched above"),
         };
-        return Some(ClickProposition::Defined { expression });
+        let defined = ClickProposition::Defined { expression };
+        return Some(if *value {
+            ClickProposition::Not(Box::new(defined))
+        } else {
+            defined
+        });
     }
     if let ConditionTerm::Constant(condition) = condition {
         // An exact Integer comparison keeps the condition's constant value.

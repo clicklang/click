@@ -2139,20 +2139,28 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
                         right.clone(),
                     )),
                 );
-            let requirement = Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format,
-                    op,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                },
-                false,
-            );
-            let surface =
-                synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
-                    .expect("arithmetic definedness must have a spelling");
-            let lowered = relower_written_proposition(&surface, &state).unwrap();
-            assert_eq!(lowered, requirement, "{format:?} {op:?}: {surface:?}");
+            for truth in [false, true] {
+                let requirement = Proposition::ConditionIs(
+                    ConditionTerm::Overflows {
+                        format,
+                        op,
+                        left: Box::new(left.clone()),
+                        right: Box::new(right.clone()),
+                    },
+                    truth,
+                );
+                let surface = synthesize_surface_proposition(
+                    &requirement,
+                    ParameterBinding::default(),
+                    &state,
+                )
+                .expect("arithmetic definedness must have a spelling");
+                let lowered = relower_written_proposition(&surface, &state).unwrap();
+                assert_eq!(
+                    lowered, requirement,
+                    "{format:?} {op:?} {truth}: {surface:?}"
+                );
+            }
         }
     }
 }

@@ -121,6 +121,26 @@ passed all 4,916 fixtures in 218s and recorded zero differences, down from
 the three pointer-tag observations. This does not settle the spelling census.
 Atomic division/shift overflow-domain spellings also still need targeted auditing.
 
+A fresh census after the pointer-tag fix passed all 4,916 ordinary mdtests
+in 229s: 23,042 observations, with 2,040 written and 6,870 smart misses. These
+are observations, not distinct defects. A direct atomic-domain spelling audit
+found six missing positive-overflow spellings (add/subtract/multiply at int32
+and int64), plus both polarities of division and left-shift overflow at both
+widths. The polarity increment on `codex/arithmetic-domain-spellings` spells
+positive add/subtract/multiply overflow as `not defined(expression)` and keeps
+negative overflow as `defined(expression)`. Exact round-trip tests cover both
+polarities and widths. It changes synthesis only, not evaluation or domains.
+The full `scripts/check.sh --no-fail-fast` gate passed with both frontends
+required: 6,877 unit/API/import/scaling tests, 58 examples, and 4,916 mdtests.
+It took 11m05s, above the ten-minute target. No limits were raised and no
+nightly suite ran.
+
+The division/shift atoms remain separate: `defined(a / b)` also includes the
+nonzero-divisor requirement, and `defined(a << b)` also includes count/sign
+requirements. Substituting those compound propositions for an atomic fact is
+not a round-trip. Their reproductions are retained for the next spelling design
+step; no syntax or domain semantics have been changed for them.
+
 An attempted standalone certification extraction on upstream after #2152 is
 **not publishable**: `codex/final-certification-slice` at `6ec3c8a95` failed its
 full gate (6,841 of 6,842 units passed; fixture phase was not reached). The

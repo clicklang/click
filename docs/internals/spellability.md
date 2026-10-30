@@ -170,6 +170,12 @@ address equalities over a common exact wide stride retain full-width index
 equalities. A table-read branch extends its context with its one new address
 disequality before considering the next cell.
 
+Signed add/subtract/multiply overflow facts retain their polarity when spelled:
+no overflow is `defined(expression)`, and overflow is `not defined(expression)`.
+The spelling names the operation rather than a local holding its result.
+Division and left-shift atomic overflow conditions are not interchangeable with
+the complete `defined(expression)` domain, which also contains other conditions.
+
 Masked uint64 tag expressions retain their full numeric term. Exact tag-bound
 lookups may produce a separate equality removing the masked tag; addition also
 requires the word's low bits proved clear, so no carry reaches address bits.
