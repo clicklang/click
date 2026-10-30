@@ -76,12 +76,34 @@ write one of the intermediate facts in Click, it is `inexpressible-fact`.
 
 The first link that fails becomes the new `G`; go back to step 2.
 
-A refusal ends with `refused by:`, naming the tactic and its class, when
-Click can tell. `refused by: nothing` means the proof ended with that goal
-still open: no tactic failed, and the next link is missing. A link that a smart tactic such as `solve` or the implicit tail
-does not prove is too big. Split it (`A` implies `C` implies `D` implies `B`) and run again. Stop splitting only
-when a link is one simple tactic: one `apply ... using`, `unfold`, `step()`,
-`rewrite`, `normalize()`, or arithmetic certificate.
+Before refining, use the primitive-rule map in
+`docs/concepts/tracing.md#identify-the-primitive-rule` and the full **Accepts**
+list of the referenced tactic. State the rule, its instantiated premises, and
+its conclusion. The library reference supplies named mathematical laws;
+the tactic reference supplies logical, execution, resource, and transport rules.
+Count logical rule applications, not tactic calls: a single tactic can hide a
+walk, while an explicit certificate can contain several primitive steps.
+
+A refusal ends with `refused by:` when Click can identify the tactic.
+`refused by: nothing` means the proof ended with the goal open. A failed
+`solve` does not tell you whether the argument is primitive. Split a link that
+needs several rules into links justified by those rules. Stop when all the
+premises of a documented primitive are written. If a concrete, justified
+inference has expressible premises and conclusion but no supported primitive,
+stop at `missing-rule` for design discussion; do not keep asking for smaller
+facts without a rule that could connect them.
+
+For memory preservation, one checked store transition, the read's value at
+its pre-state, and separation of the full read from its writes must support a
+fast primitive. Work may scale with those explicit inputs and effect, not
+with earlier history. Internal cache/forget/read-origin constructions are not
+extra program steps the author should have to prove. This is a design
+requirement, not a claim that all current transport paths implement it.
+Transport that searches across several transitions must expand to explicit
+primitive applications with their transitions and premises; replay must not
+rediscover the history. A `using` list alone does not guarantee fast checking.
+For a successful proof that still walks history, follow verifier-design and
+retain a deterministic scaling reproduction instead of calling the cost fixed.
 
 To split a link a smart tactic proved part of, read its trace. A step marked
 ``(from `implicit tail`)``, ``(from `step_until`)``, ``(from `solve`)`` or
@@ -129,12 +151,16 @@ Stop at exactly one, and say which:
   the counterexample.
 - `unclear-goal`: you cannot say why `G` holds. Give `G`, the premises, and
   what you tried.
+- `missing-rule`: the premises and conclusion are expressible and the
+  inference is justified, but no supported primitive connects them. Preserve
+  the rule schema, references checked, and reduced example for design
+  discussion. A search miss alone does not establish this outcome.
 - `inexpressible-fact`: the argument needs an intermediate fact that Click
   cannot write. Report a bug (below).
 - `failing-tactic`: a link that is a single simple tactic, within what that
   tactic is documented to do (the **Accepts** list in `click docs NAME`), is
   refused, still in its smallest form after step 6. Report a bug (below). A smart tactic such as `solve` that does not prove a
-  link is never `failing-tactic`: the link is too big. A search miss is
+  link is never `failing-tactic`: identify the primitive and write its premises. A search miss is
   never `failing-tactic` either: write the argument and run again.
 - `unclear-trace`: there is no `goal:` line, the goal cannot be read, or the
   refusal is not "`G` was not proved". Report a bug (below).

@@ -97,10 +97,13 @@ describes its notation.
 
 Repair a failed proof by the [tracing procedure](tracing.md): record the goal
 that failed, write the argument for it as a chain of `have` goals, and refine
-the first link that does not close until each link is one simple tactic. Each
+the first link that does not close by identifying its primitive rule and
+writing that rule's premises. Each
 attempt must change that chain; a new spelling, position, or tactic for the
-same link is not progress. The procedure ends at one of six named outcomes,
-and the three that point at the tool (`inexpressible-fact`, `failing-tactic`,
+same link is not progress. The procedure ends at one of seven named outcomes.
+`missing-rule` identifies a justified inference with no supported primitive
+for design discussion; it is not inferred merely from a failed search.
+The three bug outcomes (`inexpressible-fact`, `failing-tactic`,
 and `unclear-trace`) leave a reduced reproduction.
 Tooling improvements in response require discussion and user approval before
 implementation, including new diagnostic content, trace presentation, or a

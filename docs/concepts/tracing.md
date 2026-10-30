@@ -2,7 +2,7 @@
 
 This page is the procedure for repairing a failed proof from its diagnostic
 and `--trace-proof` output: find the goal that could not be proved, prove it
-through explicit intermediate goals, and stop at one of six named outcomes. It
+through explicit intermediate goals, and stop at one of seven named outcomes. It
 replaces trial-and-error tactic variation with a decomposition that each
 attempt must advance.
 
@@ -79,6 +79,91 @@ C address, such as a pointer local and the `g + 16 bytes` cell it was loaded
 from, or a read at entry and the same read inside a loop, are often the whole
 explanation.
 
+## Identify the primitive rule
+
+Before splitting a link, identify the inference that should justify it. A
+single proof step has specified premises, a specified conclusion, and a
+checked rule connecting them. Counting tactic calls is insufficient: one
+`transport ... using` can still hide a history walk. Conversely, an explicit
+certificate may contain several primitive steps.
+
+Use this map to find the applicable rule, then read its full **Accepts** list
+and checked examples. The linked tactic reference is the catalog of supported
+forms; this map groups them by the argument they express, not by a promise
+that every current implementation meets the checking-cost contract.
+
+| Argument needed | Rule reference | Explicit input to identify |
+| --- | --- | --- |
+| Reuse a fact or select a conjunct | [Available facts](../reference/tactics/index.md#available-facts), [extracting a fact](../reference/tactics/index.md#extracting-a-fact) | The available proposition and selected component |
+| Introduce an assumption or binder, split cases, or instantiate a universal fact | [Introducing a binder or premise](../reference/tactics/index.md#introducing-a-binder-or-premise), [explicit cases](../reference/tactics/index.md#explicit-cases), [instantiation with selected premises](../reference/tactics/index.md#instantiation-with-selected-premises) | The connective or quantified fact, witnesses, and branch obligations |
+| Replace an equal term | [Rewriting](../reference/tactics/index.md#rewriting) | The equality, direction, and expression being rewritten |
+| Evaluate a definition or computation | [Unfolding pure functions](../reference/tactics/index.md#unfolding-pure-functions), [context-free normalization](../reference/tactics/index.md#context-free-normalization) | The named definition/application or explicit expression |
+| Apply a mathematical or separation law | [Theorem application with selected premises](../reference/tactics/index.md#theorem-application-with-selected-premises), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
+| Establish arithmetic | [Arithmetic certificates](../reference/tactics/index.md#arithmetic-certificates) | The family, cited premises, and checked certificate nodes |
+| Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
+| Preserve a fact across a state transition | [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
+| Manipulate ownership or open a resource definition | [Scoped resource opening](../reference/tactics/index.md#scoped-resource-opening), [tactic reference](../reference/tactics/index.md) | The selected resource instance, its definition, and required ownership quantities |
+
+When adding a primitive, document its premises, conclusion, explicit Click
+form, supported types and states, and checking-cost bound in its reference
+entry. Include a passing example and controls for invalid premises, and
+expansion/replay coverage when search can produce the step. A tactic name
+without this rule contract is not enough guidance for tracing.
+
+Do not invent a library law because its mathematical statement seems familiar.
+Find the declaration or documented kernel rule, instantiate its premises, and
+say which premise is missing. If the premises and conclusion are expressible
+and the inference is sound, but no supported primitive expresses it, stop at
+`missing-rule`. Give that inference for design discussion instead of repeatedly
+changing tactics or demanding intermediate facts with no rule to connect them.
+If a documented rule already covers the link and refuses it, use
+`failing-tactic` instead. If the mathematics itself is not established, use
+`unclear-goal`; a failed search alone is not evidence of a missing rule.
+
+### One-step preservation must be fast
+
+The required primitive for a separated store has this logical shape:
+
+```text
+read(before, B) = value
+checked store transition before -> after writes only A
+separate(A, B)
+-----------------------------------------------------
+read(after, B) = value
+```
+
+Here B covers the complete typed read, and the source read is valid. This is a
+store-preservation rule, not permission to ignore lifetime changes at arbitrary
+calls or deallocations. The transition/effect comes from checked execution;
+separation comes from an explicit proof. Neither is an assumption the user may
+invent. Its cost must be proportional to the selected read, supplied premises,
+and explicit transition effect, up to indexing factors, independent of the
+history before `before`. A large explicit effect may require proportional work.
+
+“One step” here means one checked program transition, not one internal memory
+construction. Caching a read, forgetting cached cells, or retaining an older
+read origin must not make the author prove a chain of bookkeeping equalities
+or make the checker search that chain. The value supplied from the preceding
+step and the separation premise must suffice for this primitive.
+
+This is a checking design requirement, not a claim that current `transport`
+already implements it for every read kind. Separate a failure to express the
+rule, a refusal of a documented rule, and a successful check that still walks
+history. For the last case, retain a deterministic scaling reproduction as
+required by [verifier design](../internals/verifier-design.md); proof success
+alone does not meet the cost requirement.
+
+Test the one-step bound by growing the preceding history while holding the
+last store, read, and supplied premises fixed. Check pointer-valued as well as
+scalar reads, and reject a store that overlaps the read. This measures the
+primitive rather than merely demonstrating a short successful proof.
+
+For a multi-step transport, discovering the intermediate transitions or
+premises may be search. Its expansion must name the transitions and premises
+used by the primitive applications, so replay costs roughly the written proof
+size and does not rediscover history. An explicit `using` list only selects
+premises; it does not by itself certify that checking is fast.
+
 ## The procedure
 
 1. **Record the goal.** Write down the failing goal `G`, the program point
@@ -95,18 +180,18 @@ explanation.
    `inexpressible-fact`.
 4. **Run it.** The first link that fails is the new `G`. Return to step 1 with
    it.
-5. **Refine a link that does not close.** A link `A implies B` that a smart
-   tactic such as `solve` or the implicit tail does not prove is too big. Split it into smaller
-   links, `A implies C`, `C implies D`, `D implies B`, and run again. Stop
-   splitting when a link is a single simple tactic: one `apply ... using`,
-   `unfold`, `step()`, `rewrite`, `normalize()`, or arithmetic certificate.
+5. **Refine a link that does not close.** Identify its primitive rule using
+   the map above. If the argument needs several rules, split it into links
+   with those rules as endpoints and run again. A failed smart tactic does
+   not establish whether a link is primitive. Stop splitting when all the
+   premises for a documented primitive are written, or when a concrete sound
+   inference has no supported primitive (`missing-rule`). Do not classify a
+   link as primitive solely because it is one tactic call.
    The [tactic table](../reference/tactics/index.md) gives each tactic's class,
-   and `click docs NAME` prints a tactic's forms, class, and documented
-   behavior. A refusal Click can attribute to a written tactic ends with
-   `refused by:` and its class; `refused by: nothing` means the proof ended
-   with that goal open, so the next link is missing. If a simple tactic is refused although the
-   link is within what the tactic is documented to do (its section's
-   **Accepts** list), stop at `failing-tactic`.
+   and `click docs NAME` prints its forms and documented behavior. A refusal
+   may identify the tactic with `refused by:`; `refused by: nothing` means
+   that the proof ended with the goal open. If a written primitive is refused
+   within its documented **Accepts** list, stop at `failing-tactic`.
 
    To split a link that a smart tactic proved part of, read its trace: a step
    marked ``(from `implicit tail`)``, ``(from `solve`)`` or
@@ -146,12 +231,13 @@ The procedure ends at exactly one of these:
 | `success` | The proof verifies. Keep the explicit links that the default automation needed; they document the argument. |
 | `false-goal` | `G` does not hold on some execution the contract admits. Give the counterexample: the claim, the contract, or the C is wrong, not the proof. |
 | `unclear-goal` | You cannot say why `G` holds. Give `G`, the premises, and what you tried. |
+| `missing-rule` | The premises and conclusion are expressible and the inference is justified, but no supported primitive connects them. Record the rule schema, the references checked, and the reduced example for design discussion. This is not established by a search miss alone. |
 | `inexpressible-fact` | The argument needs an intermediate fact Click cannot write, such as a missing predicate, quantifier form, memory spelling, or resource form. Report a bug. |
 | `failing-tactic` | Every link is written, and one link is a single simple tactic that is refused although the link is within what that tactic is documented to do. Report a bug. |
 | `unclear-trace` | The failure has no `goal:` line, the goal cannot be read (for example, it is spelled with placeholders such as `<unnamed A>` that no proof can name), or the refusal is not "goal `G` was not proved". Report a bug. |
 
 A smart tactic that does not prove a link is never `failing-tactic`: smart
-tactics may miss, so the link is still too big. A search miss is never
+tactics may miss even a primitive link; identify its rule and supply its premises. A search miss is never
 `failing-tactic` either: the argument is still to be written. `false-goal` and
 `unclear-goal` usually mean the claim, the contract, or the argument needs
 another look rather than that Click is wrong.
@@ -326,8 +412,9 @@ tactic@11: apply
   adds: x <= z
 ```
 
-Writing the `chosen:` form in place of the elided one gives the same step with
-no search. A step with neither mark is one the script wrote.
+Writing the `chosen:` form removes the search for those arguments. It does
+not establish that the checked implementation avoids history walks; apply
+the one-step cost requirement above separately. A step with neither mark is one the script wrote.
 
 A failure trace also ends with a separately labelled `failed check`. It retains
 the refusal, checking stage, proof context, up to sixteen available premises,
