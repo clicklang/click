@@ -32,9 +32,10 @@ void tag(struct node* n, struct node* p, int32 color) {
         }
     }
     have (n->word & ~3) == address(p) by {
+        rewrite(color == 1);
         arithmetic_certificate rules {
             premise 0: aligned(p, 8) => aligned(p, 8);
-            pointer_word_from_alignment alignments [0] => (address(p) & ~3) == address(p);
+            pointer_word_from_alignment alignments [0] => ((address(p) | 1) & ~3) == address(p);
             conclusion 0;
         }
     }

@@ -4222,3 +4222,50 @@ fn index_observation_follows_machine_arithmetic() {
         assert_eq!(value.pointer().offset, PointerOffsetTerm::Constant(bytes));
     }
 }
+
+#[test]
+fn tag_clearing_lowering_keeps_the_written_word_under_bounds() {
+    let word = Bitvector32Term::Variable(Variable(989_990));
+    let tag = Bitvector32Term::Variable(Variable(989_991));
+    let mask = Bitvector32Term::UInt64Constant(!3);
+    let bounded = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(0u32.into(), tag.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_equal(tag.clone(), 1u32.into()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::uint64_bitwise_and(
+                    word.clone(),
+                    Bitvector32Term::UInt64Constant(1),
+                ),
+                Bitvector32Term::UInt64Constant(0),
+            ),
+            true,
+        );
+    for inner in [
+        Bitvector32Term::uint64_bitwise_or(word.clone(), Bitvector32Term::uint64_from_int32(tag)),
+        Bitvector32Term::uint64_add(word, Bitvector32Term::UInt64Constant(1)),
+    ] {
+        let leaf = |term| SpecExpression::CExpression(CExpression::Value(CValue::UInt64(term)));
+        let expression =
+            SpecExpression::BitwiseAnd(Box::new(leaf(inner.clone())), Box::new(leaf(mask.clone())));
+        let expected = CValue::UInt64(Bitvector32Term::uint64_bitwise_and(inner, mask.clone()));
+        for facts in [&PureFactContext::new(), &bounded] {
+            let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+                &CState::new(),
+                &expression,
+                facts,
+                &BTreeMap::new(),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap();
+            assert_eq!(paths.len(), 1);
+            assert_eq!(paths[0].value, expected);
+        }
+    }
+}

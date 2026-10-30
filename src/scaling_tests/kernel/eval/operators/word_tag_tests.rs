@@ -90,3 +90,52 @@ fn commuted_word_tag_or_ignores_unrelated_facts() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn tag_clearing_equations_ignore_unrelated_and_looser_bounds() {
+    let costs = [4u64, 16, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let word = Bitvector32Term::Variable(Variable(997_090));
+        let tag = Bitvector32Term::Variable(Variable(997_091));
+        let mut context = PureFactContext::new().assume_condition(
+            ConditionTerm::uint64_less_equal(tag.clone(), Bitvector32Term::UInt64Constant(1)),
+            true,
+        );
+        for index in 0..size {
+            context = context
+                .assume_condition(
+                    ConditionTerm::uint64_equal(
+                        Bitvector32Term::Variable(Variable(998_000 + index)),
+                        Bitvector32Term::UInt64Constant(index),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::uint64_less_equal(
+                        tag.clone(),
+                        Bitvector32Term::UInt64Constant(index + 8),
+                    ),
+                    true,
+                );
+        }
+        let masked = Bitvector32Term::uint64_bitwise_and(
+            Bitvector32Term::uint64_bitwise_or(word.clone(), tag),
+            Bitvector32Term::UInt64Constant(!3),
+        );
+        let (equation, work) = crate::instrumentation::measure_deterministic_work(|| {
+            bounded_uint64_tag_equation(&masked, &context)
+        });
+        assert_eq!(
+            equation,
+            Some(ConditionTerm::uint64_equal(
+                masked,
+                Bitvector32Term::uint64_bitwise_and(word, Bitvector32Term::UInt64Constant(!3))
+            ))
+        );
+        work
+    });
+    assert!(
+        costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 64),
+        "{costs:?}"
+    );
+}

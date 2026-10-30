@@ -170,6 +170,13 @@ address equalities over a common exact wide stride retain full-width index
 equalities. A table-read branch extends its context with its one new address
 disequality before considering the next cell.
 
+Masked uint64 tag expressions retain their full numeric term. Exact tag-bound
+lookups may produce a separate equality removing the masked tag; addition also
+requires the word's low bits proved clear, so no carry reaches address bits.
+Those facts accompany evaluation instead of replacing its result. Explicit
+arithmetic certificates must conclude the full written goal (after explicit
+rewrites), rather than depend on tag removal during lowering.
+
 `CLICK_FACT_STABILITY=<path>` lowers each checked proof proposition again
 under the same policy with no facts (`kernel::fact_stability`) and records
 every lowering whose term differs. `scripts/fact-stability.sh` runs the
