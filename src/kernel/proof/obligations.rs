@@ -96,7 +96,7 @@ impl<S, O> PropositionObligation<S, O> {
     /// The obligation to prove the kernel's goal for one contract claim. Its
     /// proposition is the goal's own, so the claim it records is the claim
     /// it states.
-    pub(crate) fn for_claim_goal(
+    pub(super) fn for_claim_goal(
         goal: &crate::kernel::CClaimGoal,
         presentation: S,
         outcome: Option<O>,

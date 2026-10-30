@@ -9920,6 +9920,51 @@ fn collect_affine_bitvector_terms(
 }
 
 impl ProofObligation {
+    /// The ordinary indexed check for an evaluation requirement. Scoped
+    /// quantifiers are discharged by proof operations, never by searching
+    /// ambient quantified premises here.
+    pub(crate) fn evaluation_requirement_is_established(
+        assumptions: &PureFactContext,
+        goal: &Proposition,
+    ) -> bool {
+        // Lowering can guard a native int32 universal's partial operation
+        // with its own domain. Preserve only that existing reflexive route:
+        // other binder sorts have distinct obligations, and logical
+        // reflexivity must not erase a partial free expression's domain.
+        fn reflexive_guard(goal: &Proposition) -> bool {
+            let mut pending = vec![goal];
+            while let Some(goal) = pending.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                match goal {
+                    Proposition::ForAll {
+                        sort: Sort::CInt32,
+                        body,
+                        ..
+                    } => pending.push(body),
+                    Proposition::And(left, right) => {
+                        pending.extend([left.as_ref(), right.as_ref()])
+                    }
+                    Proposition::Implies(left, right) if left == right => {}
+                    _ => return false,
+                }
+            }
+            true
+        }
+        fn established(assumptions: &PureFactContext, goal: &Proposition) -> bool {
+            if assumptions.states_required_goal(goal) || reflexive_guard(goal) {
+                return true;
+            }
+            match goal {
+                Proposition::And(left, right) => {
+                    established(assumptions, left) && established(assumptions, right)
+                }
+                Proposition::ForAll { .. } | Proposition::Exists { .. } => false,
+                _ => assumptions.proves_atomic_without_search(goal),
+            }
+        }
+        established(assumptions, goal)
+    }
+
     pub fn new(proposition: Proposition) -> Self {
         Self {
             proposition,

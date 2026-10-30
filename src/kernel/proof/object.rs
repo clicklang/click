@@ -563,6 +563,48 @@ impl<L, P: Clone, O: Clone, S: Clone>
 impl<L: Clone, P: Clone, S: Clone, E: Clone>
     ProofObject<L, ProofObligation<P, Arc<OutcomeProofState<S>>>, E>
 {
+    /// Open the contract judgment on this branch. Its requirements, facts,
+    /// outcome identity and execution all come from this same checked branch;
+    /// no separately supplied context can reuse a domain-discharge receipt.
+    pub(crate) fn focus_contract_claim(
+        &self,
+        goal: &crate::kernel::CClaimGoal,
+        presentation: P,
+    ) -> Result<Self, Vec<crate::kernel::ProofObligation>> {
+        let branch = self
+            .state
+            .open_branches
+            .get(self.focused_branch)
+            .ok_or_else(Vec::new)?;
+        let outcome = match &branch.obligation {
+            ProofObligation::FunctionOutcome(outcome) => Some(outcome.data.clone()),
+            ProofObligation::Frontier(_) => None,
+            _ => return Err(Vec::new()),
+        };
+        let pending = goal.unproved_requirements(branch.state.facts.assumptions());
+        if !pending.is_empty() {
+            return Err(pending);
+        }
+        let mut state = branch.state.clone();
+        state.facts = state
+            .facts
+            .with_selected_resource_separation(goal.proposition());
+        if outcome.is_none() {
+            state.execution = None;
+        }
+        Ok(Self::root(
+            self.state.locals.clone(),
+            ProofBranch::new(
+                ProofObligation::Proposition(super::PropositionObligation::for_claim_goal(
+                    goal,
+                    presentation,
+                    outcome,
+                )),
+                state,
+            ),
+        ))
+    }
+
     /// Returns an owned, kernel-issued record of the exact root proposition
     /// discharged by this proof. The record is available only after every
     /// branch in the proof lineage has closed.

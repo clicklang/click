@@ -2130,7 +2130,7 @@ fn heap_free_effect_is_valid(
 
 /// The goal a proof closes to establish one proposition claim of a contract
 /// at one outcome: the kernel's lowering of that `ensures` there, with the
-/// facts its loads introduced.
+/// facts its loads introduced and its outstanding evaluation obligations.
 ///
 /// Only the kernel builds one, so a proof obligation opened from it
 /// (`crate::kernel::proof::PropositionObligation::for_claim_goal`) is known
@@ -2142,9 +2142,26 @@ pub struct CClaimGoal {
     target: CFunctionContractClaimTarget,
     proposition: Proposition,
     facts: Vec<Proposition>,
+    obligations: Vec<ProofObligation>,
 }
 
 impl CClaimGoal {
+    pub(crate) fn unproved_requirements(
+        &self,
+        assumptions: &PureFactContext,
+    ) -> Vec<ProofObligation> {
+        self.obligations
+            .iter()
+            .filter(|obligation| {
+                !ProofObligation::evaluation_requirement_is_established(
+                    assumptions,
+                    obligation.proposition(),
+                )
+            })
+            .cloned()
+            .collect()
+    }
+
     pub fn proposition(&self) -> &Proposition {
         &self.proposition
     }
@@ -2311,6 +2328,7 @@ impl<'a> CFunctionEnsureGoalContext<'a> {
                 .map(|path| CClaimGoal {
                     target: CFunctionContractClaimTarget::EnsureProposition(contract_index),
                     proposition: path.proposition.clone(),
+                    obligations: path.obligations.clone(),
                     facts: path
                         .facts
                         .iter()
@@ -2416,6 +2434,7 @@ pub(crate) fn c_function_exceptional_ensure_goals(
             .map(|path| CClaimGoal {
                 target: CFunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index),
                 proposition: path.proposition.clone(),
+                obligations: path.obligations.clone(),
                 facts: path
                     .facts
                     .iter()
@@ -3603,5 +3622,117 @@ mod diagnostic_scaling_tests {
     use super::*;
     include!(
         "../../../scaling_tests/kernel/api/contract_certification/contract_claims/diagnostic_sample_tests.rs"
+    );
+}
+
+#[cfg(test)]
+mod claim_requirement_tests {
+    use super::*;
+
+    use crate::kernel::proof::{
+        FunctionOutcomeObligation, OutcomeIdentity, OutcomeProofCore, OutcomeProofState,
+        PersistentOrderedSet, ProofBranch, ProofBranchState, ProofFacts, ProofObject,
+        ProofObligation as BranchObligation, PropositionAssumptionContext,
+    };
+
+    type ClaimProof = ProofObject<(), BranchObligation<(), Arc<OutcomeProofState<()>>>, ()>;
+    fn root(facts: ProofFacts, outcome: &Arc<OutcomeProofState<()>>) -> ClaimProof {
+        ClaimProof::root(
+            (),
+            ProofBranch::new(
+                BranchObligation::FunctionOutcome(FunctionOutcomeObligation::new(
+                    0,
+                    outcome.clone(),
+                )),
+                ProofBranchState {
+                    facts,
+                    unfolded_predicates: PersistentOrderedSet::default(),
+                    execution: None,
+                },
+            ),
+        )
+    }
+
+    #[test]
+    fn claim_identity_requires_its_evaluation_obligations_in_this_context() {
+        let domain = Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(991_001)),
+                Bitvector32Term::Constant(1),
+            ),
+            true,
+        );
+        let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let empty = ProofFacts::from_ordered(std::slice::from_ref(&truth));
+        let established = empty.with_kernel_checked_fact(domain.clone());
+        for (target, is_exceptional) in [
+            (CFunctionContractClaimTarget::EnsureProposition(0), false),
+            (
+                CFunctionContractClaimTarget::ExceptionalEnsureProposition(0),
+                true,
+            ),
+        ] {
+            let goal = CClaimGoal {
+                target,
+                proposition: truth.clone(),
+                facts: vec![],
+                obligations: vec![ProofObligation::verification_condition(domain.clone())],
+            };
+            let outcome = Arc::new(OutcomeProofState::new(
+                OutcomeProofCore {
+                    identity: OutcomeIdentity::fresh(),
+                    result: Arc::new(int32(0)),
+                    state: CState::new().into(),
+                    store_consequences_available: false,
+                    is_exceptional,
+                    effect_facts: ExecutionFacts::new().into(),
+                },
+                (),
+            ));
+            assert!(
+                root(empty.clone(), &outcome)
+                    .focus_contract_claim(&goal, ())
+                    .is_err(),
+                "a true claim still owes its evaluation domain"
+            );
+            let mut assumable = goal.clone();
+            assumable.obligations = vec![ProofObligation::new(domain.clone())];
+            assert!(
+                root(empty.clone(), &outcome)
+                    .focus_contract_claim(&assumable, ())
+                    .is_err(),
+                "an assumable execution condition is not a proved claim requirement"
+            );
+            let checked = root(established.clone(), &outcome)
+                .focus_contract_claim(&goal, ())
+                .expect("the ordinary proof context establishes the domain")
+                .apply_assumption(PropositionAssumptionContext::Exact)
+                .unwrap_or_else(|_| panic!("the stated claim must close"));
+            let completion = checked.completed_proposition().unwrap();
+            assert_eq!(completion.claim(), Some(goal.target()));
+            assert!(
+                completion
+                    .outcome()
+                    .unwrap()
+                    .identity
+                    .same_as(&outcome.core.identity)
+            );
+            assert_eq!(completion.outcome().unwrap().is_exceptional, is_exceptional);
+            assert!(
+                root(empty.clone(), &outcome)
+                    .focus_contract_claim(&goal, ())
+                    .is_err(),
+                "a sibling context acquires no authority from the completed proof"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod claim_requirement_scaling_tests {
+    use super::*;
+    use crate::kernel::proof::ProofFacts;
+    include!(
+        "../../../scaling_tests/kernel/api/contract_certification/contract_claims/requirements_tests.rs"
     );
 }
