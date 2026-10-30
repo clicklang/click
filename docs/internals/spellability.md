@@ -179,6 +179,11 @@ Generic calls spell the declared source name rather than the kernel's
 constructors) reconstruct the same instance when lowered. Name selection must
 include variables inside opaque call arguments and both goal binders and
 proof-local witnesses, respecting `intro` shadowing.
+Algebraic equality inside a Boolean expression spells as an ordinary comparison.
+Match-arm algebraic bindings retain their source names for premise synthesis,
+including list tails and C type-parameter values stored in constructors. These
+names are selected from existing proof bindings; no equality search reconstructs
+them.
 A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.

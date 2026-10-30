@@ -2029,6 +2029,24 @@ fn synthesize_surface_bool(
             then_branch: Box::new(operand(then_condition)?),
             else_branch: Box::new(operand(else_condition)?),
         }),
+        ConditionTerm::AlgebraicEqual(left, right) => {
+            proposition_bool_value(ClickProposition::Comparison {
+                left: synthesize_surface_algebraic(
+                    left,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?,
+                operator: ComparisonOperator::Equal,
+                right: synthesize_surface_algebraic(
+                    right,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?,
+            })
+            .ok()
+        }
         ConditionTerm::BoolEqual(left, right) => {
             proposition_bool_value(ClickProposition::Comparison {
                 left: operand(left)?,
@@ -5185,6 +5203,9 @@ fn synthesize_surface_algebraic(
             synthesize_surface_call(name, arguments, parameter_binding, state, bound_variables)
         }
         crate::kernel::AlgebraicTermNode::Variable(variable) => {
+            if let Some(name) = proof_binder_name(*variable) {
+                return Some(ContractExpression::Binding(name));
+            }
             // A parameter's own algebraic value is spelled by its name.
             if let Some((parameter, _)) = parameter_binding
                 .parameters
@@ -5239,6 +5260,14 @@ fn synthesize_surface_algebraic(
             let arguments = fields
                 .iter()
                 .map(|field| match field {
+                    crate::kernel::AlgebraicValue::C(CValue::Parameter(term)) => {
+                        synthesize_surface_algebraic(
+                            term,
+                            parameter_binding,
+                            state,
+                            bound_variables,
+                        )
+                    }
                     crate::kernel::AlgebraicValue::Algebraic(term) => synthesize_surface_algebraic(
                         term,
                         parameter_binding,
