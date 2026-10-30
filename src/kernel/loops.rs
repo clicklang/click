@@ -7906,9 +7906,11 @@ fn evaluate_loop_effect_segment_value_capturing(
     diagnostic: Option<&mut Option<CRuntimeError>>,
 ) -> ExecutionResult<Result<(CValue, ExecutionFacts), ValueRefusal>> {
     // A contract's operand, such as a resource argument, is a specification:
-    // its reads are not C accesses.
+    // its reads are not C accesses, and facts must not replace pointer metadata.
+    // Use the same fact-stable evaluation as written proof propositions so a
+    // resource footprint and its explicit memory(...) spelling have one identity.
     let paths = {
-        let _specification = crate::kernel::eval::SpecificationAccessScope::enter();
+        let _specification = crate::kernel::eval::SpecificationReadScope::enter();
         evaluate_c_expression_paths(state, expression, assumptions, budget)?
     };
     // An endpoint the facts do not keep defined splits into its defined value
