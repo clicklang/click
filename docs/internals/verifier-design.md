@@ -375,8 +375,15 @@ it does not enumerate aliases. A miss forgets the cached value. The boundary
 rejects general resolution, range search, alias enumeration and order-path walks
 in this helper. Growing same-block separation buckets leave cold and repeated
 miss work unchanged, while written index disequality still respects access
-widths. Byte-gap eligibility and compact-run preservation remain separate
-audits.
+widths. Compact-run preservation remains a separate audit.
+
+Automatic store byte-gap eligibility reads an exact stated endpoint order;
+it does not follow recorded order chains or invoke general condition decision.
+For an order that follows transitively, write the endpoint bound before the
+store (for example `have i < j by solve() using { i < middle; middle < j; };`).
+That search expands into explicit proof steps. The checking boundary rejects
+order-walk helpers in `one_element_gap_separates_bytes`; deterministic tests
+hold the store fixed while increasing both successful and missing order chains.
 
 An explicit loop read frame can select a flat range withheld from the loop
 body by the checked ownership partition. The loop history retains that

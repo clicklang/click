@@ -4341,11 +4341,10 @@ fn one_element_gap_separates_bytes(
     let strictly_below = |low: &Bitvector32Term, high: &Bitvector32Term| {
         let condition = ConditionTerm::signed_less_than(low.clone(), high.clone());
         // This preliminary byte-gap check runs inside memory-history walks.
-        // General arithmetic reasoning may resolve these same load atoms and
-        // recursively start another history walk. Use recorded order evidence;
-        // unknown geometry is left to the complete range-separation checks.
+        // Even a recorded-order graph walk grows with ambient facts. Read
+        // one stated order only; a proof can establish that order explicitly
+        // before requesting preservation across a store.
         assumptions.exact_condition_value(&condition) == Some(true)
-            || assumptions.proves_recorded_signed_order(low, high, true)
     };
     let lower_access_bytes = if strictly_below(&left_index, &right_index) {
         left_bytes

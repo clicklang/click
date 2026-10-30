@@ -622,7 +622,7 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
 }
 
 #[test]
-fn retained_common_base_store_hop_carries_a_signed_order_path() {
+fn retained_common_base_store_hop_uses_a_stated_endpoint_order() {
     let base = CMemory::new().with_block("arg-memory", 64);
     let root = Pointer {
         block: "arg-memory".into(),
@@ -644,6 +644,19 @@ fn retained_common_base_store_hop_carries_a_signed_order_path() {
     let after = base
         .clone()
         .store(write, CValue::Int32(Bitvector32Term::Constant(7)));
+    assert!(
+        memory_load_equality_evidence_at(
+            &crate::kernel::intern_c_memory_ref(&after),
+            &crate::kernel::intern_c_memory_ref(&base),
+            &read,
+            crate::kernel::LoadKind::Int32,
+            &assumptions,
+        )
+        .is_none(),
+        "byte-gap checking does not derive the endpoint order"
+    );
+    let endpoint = ConditionTerm::signed_less_than(write_index.clone(), read_index.clone());
+    let assumptions = assumptions.assume_condition(endpoint.clone(), true);
     let evidence = memory_load_equality_evidence_at(
         &crate::kernel::intern_c_memory_ref(&after),
         &crate::kernel::intern_c_memory_ref(&base),
@@ -651,7 +664,7 @@ fn retained_common_base_store_hop_carries_a_signed_order_path() {
         crate::kernel::LoadKind::Int32,
         &assumptions,
     )
-    .expect("the derived index inequality crosses the store");
+    .expect("the stated endpoint order crosses the store");
     let hop = &retained_memory_dag_path(&evidence.left)[0];
     let MemoryDagHopJustification::StoreCommonBaseSignedOrder {
         condition,
@@ -672,7 +685,7 @@ fn retained_common_base_store_hop_carries_a_signed_order_path() {
             .collect::<Vec<_>>(),
         vec![
             Proposition::ConditionIs(first, true),
-            Proposition::ConditionIs(second.clone(), true),
+            Proposition::ConditionIs(second.clone(), true)
         ]
     );
     assert!(

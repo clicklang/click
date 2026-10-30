@@ -19664,3 +19664,16 @@ fn original_pool_and_ring_store_frames_expand_without_search() {
             .unwrap_or_else(|error| panic!("{claim}: {error:?}"));
     }
 }
+
+#[test]
+#[ignore = "nightly: explicit store byte-gap expansion"]
+fn explicit_store_byte_gap_expands_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/store_byte_gap_uses_explicit_order.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "wide_after.contract").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
