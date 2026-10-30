@@ -1837,7 +1837,9 @@ an exact constant byte footprint, disjoint from a complete pointer or 32/64-bit
 integer cell. The result is oriented after-to-before. Reads use the exact cell
 index or the symbolic read of that snapshot. Registered scalar load names are
 read through their indexed definitions; no alias or history fallback runs.
-`transitive` supports pointer-value and native machine-integer equalities.
+Pointer preservation also accepts address equality when the pointer domains
+already agree. `transitive` supports pointer-value, pointer-address, and native
+machine-integer equalities.
 Resource descriptions are used in the syntax, but non-memory resource effects,
 symbolic extents, and multiple write footprints are not yet supported.
 An unavailable premise, unsupported rule, or mismatched endpoint fails locally.

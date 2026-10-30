@@ -118,6 +118,12 @@ fn preserve(effect: &Proposition, separation: &Proposition, result: &Proposition
             return false;
         };
         match result {
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(a, b), true)
+                if bytes == C_POINTER_BYTE_WIDTH =>
+            {
+                pointer_address_at(after, &address).as_ref() == Some(a.as_ref())
+                    && pointer_address_at(before, &address).as_ref() == Some(b.as_ref())
+            }
             Proposition::ConditionIs(ConditionTerm::PointerValueEqual(a, b), true)
                 if bytes == C_POINTER_BYTE_WIDTH && a.c_type() == b.c_type() =>
             {
@@ -142,6 +148,19 @@ fn preserve(effect: &Proposition, separation: &Proposition, result: &Proposition
             _ => false,
         }
     })
+}
+
+// Equal complete pointer domains lower to numeric pointer equality. This
+// reads the same exact cell as value preservation, without granting a domain.
+fn pointer_address_at(memory: &CMemory, address: &Pointer) -> Option<Pointer> {
+    match memory.load(address) {
+        CExpressionOutcome::Value(CValue::Pointer(value)) => Some(value.pointer().clone()),
+        CExpressionOutcome::Value(_) => None,
+        _ => Some(Pointer::loaded_value(
+            &crate::kernel::intern_c_memory(memory.clone()),
+            address,
+        )),
+    }
 }
 
 /// Read only the exact cell index. An absent cache denotes a symbolic read of
@@ -193,6 +212,11 @@ fn scalar_value_at(
 
 fn transitive(a: &Proposition, b: &Proposition, result: &Proposition) -> bool {
     match (a, b, result) {
+        (
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(x, y), true),
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(y2, z), true),
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(x2, z2), true),
+        ) => x == x2 && y == y2 && z == z2,
         (
             Proposition::ConditionIs(ConditionTerm::PointerValueEqual(x, y), true),
             Proposition::ConditionIs(ConditionTerm::PointerValueEqual(y2, z), true),

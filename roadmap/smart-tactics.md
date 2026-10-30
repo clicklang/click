@@ -57,8 +57,16 @@ facts do not establish flat cost as the queried class or bucket grows.
 
 Memory-history traversal and frame-query consolidation are tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md). Coordinate overlapping
-fixes there; this item does not duplicate that work or require a general audit
-of all history upkeep, diagnostics, or verifier code before closure.
+fixes there. Before removing the pointer-history and cell-source fallback
+walks, complete the explicit-certificate proof repairs. The removal experiment
+currently affects 24 existing ordinary fixtures (including negative fixtures
+that refuse earlier). Two concrete prerequisites remain: match complete pointer
+reads against their recorded identities without walking history or discarding
+provenance, and establish explicit separation for distinct indexed cells of one
+array. Keep these separate from the compact-run experiment above. Rerun the
+ordinary corpus with the walks actually disabled before landing removal.
+This item does not require a general audit of all history upkeep, diagnostics,
+or verifier code before closure.
 
 ## Acceptance for each target
 
