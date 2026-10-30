@@ -3059,7 +3059,7 @@ pub enum CExpression {
     Divide(Box<CExpression>, Box<CExpression>),
     Remainder(Box<CExpression>, Box<CExpression>),
     ShiftLeft(Box<CExpression>, Box<CExpression>),
-    /// Rust-source shifts retained through resource argument expressions.
+    /// Rust-width shifts retained in resource argument expressions.
     RustShiftLeft(Box<CExpression>, Box<CExpression>),
     RustShiftRight(Box<CExpression>, Box<CExpression>),
     ShiftRight(Box<CExpression>, Box<CExpression>),
@@ -3316,7 +3316,7 @@ pub enum SpecExpression {
     Divide(Box<SpecExpression>, Box<SpecExpression>),
     Remainder(Box<SpecExpression>, Box<SpecExpression>),
     ShiftLeft(Box<SpecExpression>, Box<SpecExpression>),
-    /// A shift written in a Rust sidecar; retain its source-language identity.
+    /// Rust shifts preserve the operand width and owe only count bounds.
     RustShiftLeft(Box<SpecExpression>, Box<SpecExpression>),
     RustShiftRight(Box<SpecExpression>, Box<SpecExpression>),
     ShiftRight(Box<SpecExpression>, Box<SpecExpression>),
@@ -6575,6 +6575,8 @@ pub struct CVerifiedFunctionContractClaim {
 /// the claim it closed and matches it to the path it was completed on.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CCheckedFunctionProposition {
+    /// Exact checked execution path that produced this completion.
+    pub(super) path_origin: Option<Theorem>,
     pub(super) function: CFunction,
     pub(super) specification: CFunctionSpecification,
     pub(super) proposition: Proposition,
@@ -12781,6 +12783,8 @@ impl ReasoningPolicy {
     /// with an opaque extent states what the extent covers, so it is not
     /// checked against it (`design/pointer-subobject-extents.md`, Phase C).
     pub(super) const ASSUME_ENTRY_CLAUSE_EXTENTS: Self = Self(1 << 8);
+    /// A held resource carries the arithmetic domains established by its fold.
+    pub(super) const ASSUME_HELD_RESOURCE_DOMAINS: Self = Self(1 << 9);
 
     pub(super) fn contains(self, choice: Self) -> bool {
         self.0 & choice.0 != 0
@@ -13153,6 +13157,10 @@ pub struct ProofObligation {
     pub(super) proposition: Proposition,
     pub(super) context: Option<String>,
     pub(super) assumable: bool,
+    /// An expression domain is mandatory at a use site, but travels with
+    /// a contract precondition assumed at function entry. Its caller must
+    /// establish this same obligation before applying the contract.
+    pub(super) evaluation_domain: bool,
     /// Source identity for a required call precondition, when this
     /// obligation was emitted while applying a selected callee contract.
     /// This is planning metadata only and is excluded from obligation
@@ -13179,6 +13187,7 @@ impl PartialEq for ProofObligation {
         self.proposition == other.proposition
             && self.context == other.context
             && self.assumable == other.assumable
+            && self.evaluation_domain == other.evaluation_domain
     }
 }
 
@@ -13189,6 +13198,7 @@ impl Hash for ProofObligation {
         self.proposition.hash(state);
         self.context.hash(state);
         self.assumable.hash(state);
+        self.evaluation_domain.hash(state);
     }
 }
 
@@ -13198,6 +13208,7 @@ impl Ord for ProofObligation {
             .cmp(&other.proposition)
             .then_with(|| self.context.cmp(&other.context))
             .then_with(|| self.assumable.cmp(&other.assumable))
+            .then_with(|| self.evaluation_domain.cmp(&other.evaluation_domain))
     }
 }
 
@@ -13385,6 +13396,8 @@ pub struct SymbolicCExecution {
 /// entry they name, so a claim that holds on every one of them holds.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CContractPathSet {
+    /// Producer path identities, retained across authorized entry rebasing.
+    pub(super) completion_path_origins: Vec<Theorem>,
     pub(super) paths: Vec<SymbolicCExecutionPath>,
     /// Exact resource claims checked for each path.  The vector is parallel
     /// to `paths`; an entry names only claims whose surface proof crossed the

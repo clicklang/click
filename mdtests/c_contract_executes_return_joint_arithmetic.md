@@ -22,7 +22,7 @@ theorem lift(callback: int32 (*)(int32*)) executes callback(int32* cell) {
         have result == 0 by assumption();
         apply(zero_increment_defined(result));
         have to_integer(cell[0]) == to_integer(result + 1) by {
-            extract(to_integer(cell[0]) == to_integer(result + 1)); assumption();
+            assumption();
         }
         apply(zero_successor(cell[0], result));
         fold(Cell(cell)); solve();

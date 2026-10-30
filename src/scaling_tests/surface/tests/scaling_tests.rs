@@ -5961,6 +5961,7 @@ fn resource_reference_entry_setup_has_near_linear_work() {
                     file.function_blocks()[0].requires(),
                     ParameterBinding::default(),
                     &crate::kernel::CState::new(),
+                    &crate::kernel::PureFactContext::new(),
                 )
                 .unwrap()
             })
@@ -6011,6 +6012,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
                 function.requires(),
                 ParameterBinding::new(c_function.parameters(), &arguments),
                 &crate::kernel::CState::new(),
+                &crate::kernel::PureFactContext::new(),
             )
             .unwrap()
         });

@@ -1,6 +1,79 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+/// A specification made from this path's own entry premises. Generic
+/// specifications can add arbitrary premises and carry no such authority.
+pub(crate) struct CheckedPathSpecification {
+    function: CFunction,
+    specification: CFunctionSpecification,
+    theorem: Theorem,
+    path_origin: Theorem,
+}
+
+impl CheckedPathSpecification {
+    pub(crate) fn new(function: &CFunction, path: &SymbolicCExecutionPath) -> Option<Self> {
+        let mut conclusion = path.theorem.proposition();
+        while let Proposition::Implies(_, body) = conclusion {
+            conclusion = body;
+        }
+        let Proposition::CFunctionVerifies {
+            state,
+            function: proved_function,
+            arguments,
+            outcome,
+        } = conclusion
+        else {
+            return None;
+        };
+        if proved_function.as_ref() != function {
+            return None;
+        }
+        let specification = CFunctionSpecification::new(
+            state.as_ref().clone(),
+            arguments.clone(),
+            path.assumptions.pure_facts(),
+            outcome.clone(),
+        );
+        let theorem = prove_c_function_satisfies_specification_from_symbolic_path(
+            function.clone(),
+            specification.clone(),
+            path,
+        )?;
+        Some(Self {
+            function: function.clone(),
+            specification,
+            theorem,
+            path_origin: path.theorem.clone(),
+        })
+    }
+
+    pub(crate) fn specification(&self) -> &CFunctionSpecification {
+        &self.specification
+    }
+    pub(crate) fn theorem(&self) -> &Theorem {
+        &self.theorem
+    }
+
+    pub(crate) fn complete(
+        &self,
+        completion: &crate::kernel::proof::CheckedProposition,
+        path: &SymbolicCExecutionPath,
+    ) -> Result<CCheckedFunctionProposition, String> {
+        if !std::sync::Arc::ptr_eq(&self.path_origin.proposition, &path.theorem.proposition) {
+            return Err("the specification belongs to a different checked path".to_string());
+        }
+        let mut checked = c_checked_function_proposition_with_reason(
+            &self.function,
+            &self.specification,
+            &self.theorem,
+            completion,
+            path,
+        )?;
+        checked.path_origin = Some(self.path_origin.clone());
+        Ok(checked)
+    }
+}
+
 pub(crate) fn c_checked_function_proposition_with_reason(
     function: &CFunction,
     specification: &CFunctionSpecification,
@@ -97,8 +170,8 @@ pub(crate) fn c_checked_function_proposition_with_reason(
     // completion can also retain the body's sparse block layout, while the
     // exit rule restores the caller's layout. Only the producer's checked
     // correspondence admits that difference; memory contents are never erased
-    // or matched by source spelling. A state-embedded proposition still must
-    // match the exact contract lowering when this evidence is consumed.
+    // or matched by source spelling. The completion remains tied to this
+    // checked program outcome when its claim judgment is consumed.
     if !matches_program_state(specification.outcome())
         && !path
             .completion_origin
@@ -110,6 +183,7 @@ pub(crate) fn c_checked_function_proposition_with_reason(
         );
     }
     Ok(CCheckedFunctionProposition {
+        path_origin: None,
         function: function.clone(),
         specification: specification.clone(),
         proposition: completion.proposition().clone(),
@@ -247,13 +321,54 @@ mod cached_read_completion_tests {
         let closed = proof
             .apply_assumption(PropositionAssumptionContext::Exact)
             .unwrap_or_else(|_| panic!("the stated proposition must close"));
-        c_checked_function_proposition_with_reason(
+        let completion = closed.completed_proposition().unwrap();
+        let checked = c_checked_function_proposition_with_reason(
             &function,
             &specification,
             &theorem,
-            &closed.completed_proposition().unwrap(),
+            &completion,
+            &path,
+        )?;
+        assert!(
+            checked.path_origin.is_none(),
+            "generic specifications retain premise checks"
+        );
+        let strengthened = CFunctionSpecification::new(
+            specification.state().clone(),
+            specification.arguments().to_vec(),
+            vec![Proposition::ConditionIs(
+                ConditionTerm::Constant(false),
+                true,
+            )],
+            specification.outcome().clone(),
+        );
+        let conditional = prove_c_function_satisfies_specification_from_symbolic_path(
+            function.clone(),
+            strengthened.clone(),
             &path,
         )
+        .unwrap();
+        let conditional_completion = c_checked_function_proposition_with_reason(
+            &function,
+            &strengthened,
+            &conditional,
+            &completion,
+            &path,
+        )?;
+        assert!(
+            conditional_completion.path_origin.is_none(),
+            "extra specification premises must never acquire direct path authority"
+        );
+        let owned = CheckedPathSpecification::new(&function, &path).unwrap();
+        assert!(owned.complete(&completion, &path)?.path_origin.is_some());
+        let mut reconstructed = path.clone();
+        reconstructed.theorem = Theorem::new(path.theorem.proposition().clone());
+        assert_eq!(reconstructed.theorem, path.theorem);
+        assert!(
+            owned.complete(&completion, &reconstructed).is_err(),
+            "equal propositions from independent producers are not the same path receipt"
+        );
+        Ok(checked)
     }
 
     #[test]
@@ -925,6 +1040,7 @@ fn materialized_load_is_unchanged(
 }
 
 struct CertifiedFunctionClaimPath {
+    completion_path_origin: Option<Theorem>,
     caller_state: CState,
     arguments: Vec<CExpression>,
     outcome: CFunctionOutcome,
@@ -1236,6 +1352,7 @@ fn prepare_function_claim_path(
             });
         }
         return Ok(CertifiedFunctionClaimPath {
+            completion_path_origin: None,
             caller_state: caller_state.clone(),
             arguments: arguments.to_vec(),
             outcome: outcome.clone(),
@@ -1442,6 +1559,7 @@ fn prepare_function_claim_path(
         .synchronize_memory_equalities(&assumptions);
 
     Ok(CertifiedFunctionClaimPath {
+        completion_path_origin: None,
         caller_state: caller_state.clone(),
         arguments: arguments.to_vec(),
         outcome: outcome.clone(),
@@ -1528,6 +1646,7 @@ fn function_claim_holds_on_prepared_path(
     completion_origin_state: Option<&CState>,
 ) -> bool {
     let CertifiedFunctionClaimPath {
+        completion_path_origin,
         caller_state,
         arguments,
         outcome,
@@ -1667,6 +1786,20 @@ fn function_claim_holds_on_prepared_path(
             // its completion is found by the claim, not by re-deriving and
             // comparing the proposition.
             let claim_completion_certifies = || {
+                // The path-set constructor authorized the artifact's entry
+                // premises and retained this exact producer association, even
+                // across entry rebasing. Index by identity so neither premises
+                // nor other paths need scanning for each claim.
+                if completion_path_origin.as_ref().is_some_and(|origin| {
+                    checked_propositions
+                        .by_path
+                        .get(claim.target())
+                        .is_some_and(|paths| {
+                            paths.contains(&(std::sync::Arc::as_ptr(&origin.proposition) as usize))
+                        })
+                }) {
+                    return true;
+                }
                 if let Some(key) = literal_completion_key(outcome)
                     && checked_propositions
                         .by_literal_outcome
@@ -1683,6 +1816,13 @@ fn function_claim_holds_on_prepared_path(
                     .get(claim.target())
                     .is_some_and(|proofs| proofs.iter().any(certifies))
             };
+            // A completed kernel claim includes the evaluation requirements
+            // discharged when its proof goal was opened. Consume that checked
+            // judgment; do not lower and prove its requirements a second time
+            // in a reconstructed C execution context.
+            if claim_completion_certifies() {
+                return true;
+            }
             let registered_predicate_ensure_holds = function
                 .predicate_unfoldings()
                 .iter()
@@ -1709,7 +1849,7 @@ fn function_claim_holds_on_prepared_path(
                                 obligation,
                                 assumptions,
                             )
-                    }) && (claim_completion_certifies() || assumptions.proves_exact(&predicate))
+                    }) && assumptions.proves_exact(&predicate)
                 });
             if registered_predicate_ensure_holds {
                 return true;
@@ -1753,17 +1893,10 @@ fn function_claim_holds_on_prepared_path(
                     path.obligations.iter().all(obligation_holds)
                 },
             );
-            // A lowering that folded the ensure to a constant truth decided
-            // the claim on this path by evaluation alone. Otherwise the
-            // claim holds here because the proof completed it on this path.
-            let proposition_holds = lowered_goal_is_constant_true(&path.proposition)
-                || crate::instrumentation::measure_operation(
-                    function.name(),
-                    "contract claim",
-                    "completion match",
-                    claim_completion_certifies,
-                );
-            obligations_hold && proposition_holds
+            // Legacy execution-only callers have no completed claim proof.
+            // Their lowered claim must evaluate to truth and its requirements
+            // must hold directly; checked proof completions returned above.
+            obligations_hold && lowered_goal_is_constant_true(&path.proposition)
         }
         CFunctionContractClaimTarget::EnsureResource(index) => {
             if !matches!(outcome, CFunctionOutcome::Return { .. }) {
@@ -2593,6 +2726,13 @@ fn checked_proposition_index(
     let mut index = CheckedPropositionIndex::default();
     for checked in checked_propositions {
         if let Some(claim) = &checked.claim {
+            if let Some(origin) = &checked.path_origin {
+                index
+                    .by_path
+                    .entry(claim.clone())
+                    .or_default()
+                    .insert(std::sync::Arc::as_ptr(&origin.proposition) as usize);
+            }
             if let Some(key) = literal_completion_key(checked.specification.outcome()) {
                 index
                     .by_literal_outcome
@@ -2615,6 +2755,9 @@ fn checked_proposition_index(
 /// The proof's completed propositions, by the contract claim each closed.
 #[derive(Default)]
 struct CheckedPropositionIndex<'a> {
+    // The borrowed completions retain each Arc throughout this index's life;
+    // addresses cannot be recycled while they serve as producer identity keys.
+    by_path: BTreeMap<CFunctionContractClaimTarget, BTreeSet<usize>>,
     by_claim: BTreeMap<CFunctionContractClaimTarget, Vec<&'a CCheckedFunctionProposition>>,
     by_literal_outcome: BTreeMap<
         CFunctionContractClaimTarget,
@@ -2818,6 +2961,11 @@ impl ContractPathSetView<'_> {
                                     .get(index)
                                     .and_then(Option::as_deref),
                             )
+                            .map(|mut prepared| {
+                                prepared.completion_path_origin =
+                                    self.set.completion_path_origins.get(index).cloned();
+                                prepared
+                            })
                             .map_err(|mut failure| {
                                 failure.reason = format!(
                                     "execution path {index} is invalid: {}",
@@ -3342,6 +3490,7 @@ mod checked_proposition_index_tests {
                 },
             );
             CCheckedFunctionProposition {
+                path_origin: None,
                 function,
                 specification,
                 proposition: truth.clone(),

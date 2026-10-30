@@ -11113,7 +11113,23 @@ impl<'a> Proof<'a> {
                     context.fixed_state.state,
                 ),
             ),
-            ProofContext::Execution(_) => None,
+            ProofContext::Execution(_) => self.outcome_fixed_state_view().map(|view| {
+                let post = view.fixed_state.result.map_or_else(
+                    || view.fixed_state.state.clone(),
+                    |result| {
+                        view.fixed_state
+                            .state
+                            .clone()
+                            .with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone())
+                    },
+                );
+                super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
+                    &requirement.proposition,
+                    view.parameter_binding,
+                    view.fixed_state.pre_state,
+                    &post,
+                )
+            }),
         };
         if let Some(surface) = non_execution_surface {
             let surface = surface.ok_or_else(|| self.step_error(
@@ -11137,6 +11153,9 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let execution_view = execution.view(context);
+        let _recorded_points = super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+            execution_view.recorded_snapshots,
+        );
         let _qualified_sources = super::surface_synthesis::QualifiedSynthesisScope::enter(
             execution_view.surface_propositions,
         );

@@ -47,6 +47,25 @@ impl ScopedExistentialBranch {
     }
 
     pub(super) fn into_checked_body(self) -> Proposition {
+        // Raising a coupled existential writes its domain conjuncts explicitly.
+        // Retain each mandatory domain once when that spelling is lowered again.
+        // Index only this written body's conjuncts, never ambient facts.
+        let mut written = std::collections::BTreeSet::new();
+        let mut pending = if self.obligations.is_empty() {
+            Vec::new()
+        } else {
+            vec![&self.proposition]
+        };
+        while let Some(proposition) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            if let Proposition::And(left, right) = proposition {
+                pending.extend([left.as_ref(), right.as_ref()]);
+            } else {
+                if let Some(key) = crate::kernel::proof::proposition_identity_key(proposition) {
+                    written.insert(key);
+                }
+            }
+        }
         proposition_and_all(
             self.facts
                 .iter()
@@ -54,7 +73,11 @@ impl ScopedExistentialBranch {
                 .chain(
                     self.obligations
                         .into_iter()
-                        .map(|obligation| obligation.proposition),
+                        .map(|obligation| obligation.proposition)
+                        .filter(|proposition| {
+                            !crate::kernel::proof::proposition_identity_key(proposition)
+                                .is_some_and(|key| written.contains(&key))
+                        }),
                 )
                 .chain(std::iter::once(self.proposition))
                 .collect(),

@@ -204,16 +204,26 @@ premise set it consulted was empty, it says so rather than implying a premise
 was read and rejected. A `.click` clause carries no source span, so the refusal
 says that too instead of leaving a reader hunting for a line number.
 
-Capturing an Integer expression as one symbolic term follows the same rule.
-A partial machine operation inside the expression -- the `hi - 1` of a fold
-range `(lo..(hi - 1))`, for instance -- makes the captured value the value of
-only one evaluation path, guarded by that operation's definedness condition.
-The capture is accepted when the proof context already states that condition
-by an exact route, because then the guarded path is the only live one and
-admitting the condition adds nothing to what the captured term asserts. It is
-refused when the condition is not available, and the refusal names the
-offending subterm -- the fold's range endpoint, initializer, or body -- along
-with the condition that is missing. A missing condition is never dropped.
+Logical machine `+`, `-`, `*`, `/`, and `%` at 32 or 64 bits produce one
+structural term, with mandatory evaluation-domain obligations beside it.
+Known overflow or a zero divisor does not erase the term; it leaves an
+unprovable obligation. Facts discharge these obligations without changing the
+term. Operand promotion and unsigned wrapping retain their C meanings.
+Logical shifts also retain a structural value and separate count obligations.
+C left shifts retain their signed-value and overflow conditions; Rust shifts
+use the original operand width and Rust bit semantics, including wrapping
+signed left shifts. Negative counts and counts at least the operand width
+remain invalid. The supported 128-bit cases follow the same separation:
+signed multiplication, and matching signed or unsigned division and remainder,
+retain their range and divisor obligations without replacing terms from facts.
+
+Capturing such a term as an Integer value retains its domain obligations.
+Proof steps discharge them through the ordinary implicit solver and retain
+explicit `have` proofs in expansion. A precondition includes its evaluation
+domain: callers must prove it, and the callee assumes it on entry. A range
+footprint likewise retains the domains of its endpoints. A missing condition
+is never dropped. `to_integer(x + 1)` observes a machine sum; mathematical
+`to_integer(x) + 1` is total and needs no machine-overflow condition.
 
 ## Specification coverage
 
@@ -251,6 +261,14 @@ requirements with its body under one binder. The native conversion regressions
 `native_witness_conversion_keeps_its_domain.md` and
 `native_witness_conversion_rejects_an_out_of_range_witness.md` check this for
 an accepted and an out-of-range selected witness.
+
+Negation selects the dual quantified evidence. `not exists k { P(k) }`
+requires every candidate's body to be defined and false; `not forall k { P(k) }`
+requires one defined, false counterexample. Undefinedness cannot establish
+that a quantified claim is false. Quantifier/negation prefixes select this
+binder before lowering the body, preserving obligations at that binder.
+The `quantifier_definedness_*.md` tests cover positive, negative, nested, and
+undefined-counterexample cases.
 
 ## Arithmetic automation and trust boundary
 

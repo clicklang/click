@@ -571,12 +571,14 @@ pub(super) fn materialize_folded_composite_resource_cells(
     state: CState,
     claim_label: &str,
     spec_definitions: SpecDefinitions<'_>,
+    assumptions: &PureFactContext,
 ) -> Result<CState, ClickError> {
     let memory = materialize_folded_composite_resource_memory(
         resource_environment,
         parameter_binding,
         &state,
         spec_definitions,
+        assumptions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}` setup failed: {message}")))?;
     Ok(state.with_memory(memory))
@@ -587,6 +589,7 @@ fn materialize_folded_composite_resource_memory(
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
     spec_definitions: SpecDefinitions<'_>,
+    assumptions: &PureFactContext,
 ) -> Result<CMemory, String> {
     let mut memory = state.memory().clone();
     for resource in state.resources().facts() {
@@ -618,7 +621,7 @@ fn materialize_folded_composite_resource_memory(
             resource_arguments,
             state.memory(),
             state.resources(),
-            &PureFactContext::new(),
+            assumptions,
             resource_environment,
             spec_definitions,
             None,
@@ -632,6 +635,7 @@ fn materialize_folded_composite_resource_memory(
             &substitutions,
             parameter_binding,
             memory,
+            assumptions,
         )?;
     }
     Ok(memory)
@@ -1201,7 +1205,8 @@ pub(super) fn project_initial_composite_resource_cores(
             &substitutions,
             parameter_binding,
             state.memory().clone(),
-        )
+            &assumptions.clone().assume_entry_clause_extents().assume_held_resource_domains(),
+    )
         .map_err(|message| {
             ClickError::new(format!(
                 "`{claim_label}` setup failed: could not project composite resource core `{name}`: {message}"
@@ -1294,6 +1299,10 @@ fn project_selected_instance_arm_cells(
         &substitutions,
         parameter_binding,
         state.memory().clone(),
+        &assumptions
+            .clone()
+            .assume_entry_clause_extents()
+            .assume_held_resource_domains(),
     ) else {
         return state;
     };
@@ -2049,8 +2058,14 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
     if !active {
         return Ok(());
     }
-    let parent = lower_resource_clause_at_state(resource, parameter_binding, fact_state)
-        .map_err(|error| error.raw_summary().to_string())?;
+    let parent = lower_resource_clause_at_state_with_assumptions(
+        resource,
+        parameter_binding,
+        fact_state,
+        None,
+        available_pure_facts.assumptions(),
+    )
+    .map_err(|error| error.raw_summary().to_string())?;
     let parent_subject = resource_clause_subject(resource);
     let mut owned_children = Vec::new();
     for contained in composite_body.contains() {
@@ -2066,8 +2081,14 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
                     definition.name()
                 )
             })?;
-        let lowered = lower_resource_clause_at_state(&contained, parameter_binding, fact_state)
-            .map_err(|error| error.raw_summary().to_string())?;
+        let lowered = lower_resource_clause_at_state_with_assumptions(
+            &contained,
+            parameter_binding,
+            fact_state,
+            None,
+            available_pure_facts.assumptions(),
+        )
+        .map_err(|error| error.raw_summary().to_string())?;
         if let Some(child) = lowered.owned_resource() {
             let child_subject = resource_clause_subject(&contained);
             surface_propositions
@@ -2088,10 +2109,11 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         else {
             continue;
         };
-        if let Some(kernel) =
-            resource_clause_loadable_prop_at_state(&contained, parameter_binding, fact_state)
-                .map_err(|error| error.raw_summary().to_string())?
+        if let Some(range) = lowered
+            .memory_view_range()
+            .or_else(|| lowered.memory_own_range())
         {
+            let kernel = memory_range_loadable_atom_prop(fact_state.memory(), range);
             surface_propositions
                 .record_lowering(
                     &ClickProposition::Loadable {
@@ -2494,6 +2516,11 @@ fn apply_composite_observation_law_with_facts<F: ResourcePureFacts>(
         &substitutions,
         parameter_binding,
         state.memory().clone(),
+        &available_pure_facts
+            .assumptions()
+            .clone()
+            .assume_entry_clause_extents()
+            .assume_held_resource_domains(),
     )?;
     let owned_body_resources = contained_resources
         .facts()
@@ -2809,14 +2836,45 @@ fn materialize_composite_resource_memory(
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
     memory: CMemory,
+    assumptions: &PureFactContext,
 ) -> Result<CMemory, String> {
-    let (memory, _) = instantiate_composite_resource_body_resources(
-        name,
-        composite_body,
-        substitutions,
-        parameter_binding,
-        memory,
-    )?;
+    // This pass names cells only. Tokens and nested resource heads cannot
+    // materialize a cell, and their formation belongs to resource admission,
+    // not to preparing the memory in which that admission will be checked.
+    let naming_memory = memory.clone();
+    let mut memory = memory;
+    for contained in composite_body.contains() {
+        if !matches!(
+            contained,
+            ResourceClause::OwnMemory(_) | ResourceClause::ViewMemory(_)
+        ) {
+            continue;
+        }
+        let contained =
+            instantiate_resource_clause(contained, substitutions).map_err(|message| {
+                format!("could not instantiate composite resource `{name}` body: {message}")
+            })?;
+        let lowered = lower_resource_clause_at_state_with_assumptions(
+            &contained,
+            parameter_binding,
+            &CState::new().with_memory(memory.clone()),
+            None,
+            assumptions,
+        )
+        .map_err(|error| {
+            format!(
+                "could not name resource `{name}` cells: {}",
+                error.raw_summary()
+            )
+        })?;
+        memory = materialize_composite_resource_cells_from_snapshot(
+            memory,
+            &naming_memory,
+            &contained,
+            &lowered,
+            parameter_binding.parameters,
+        );
+    }
     Ok(memory)
 }
 
@@ -2829,6 +2887,7 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
     substitutions: &BTreeMap<String, ContractExpression>,
     parameter_binding: ParameterBinding<'_>,
     mut memory: CMemory,
+    assumptions: &PureFactContext,
 ) -> Result<(CMemory, ResourceContext), String> {
     let mut resources = ResourceContext::new();
     // Every cell exposed by this one body expansion names the value it had
@@ -2844,15 +2903,21 @@ pub(in crate::surface) fn instantiate_composite_resource_body_resources(
             instantiate_resource_clause(contained, substitutions).map_err(|message| {
                 format!("could not instantiate composite resource `{name}` body: {message}")
             })?;
-        let lowered =
-            lower_resource_clause(&contained, parameter_binding, &memory).map_err(|error| {
-                format!(
-                    "could not lower resource `{name}` contained `{}`: {}\n  {}",
-                    describe_resource_clause(&contained),
-                    error.raw_summary(),
-                    describe_available_facts(&[], resources.facts(), parameter_binding, &[])
-                )
-            })?;
+        let lowered = lower_resource_clause_at_state_with_assumptions(
+            &contained,
+            parameter_binding,
+            &CState::new().with_memory(memory.clone()),
+            None,
+            assumptions,
+        )
+        .map_err(|error| {
+            format!(
+                "could not lower resource `{name}` contained `{}`: {}\n  {}",
+                describe_resource_clause(&contained),
+                error.raw_summary(),
+                describe_available_facts(&[], resources.facts(), parameter_binding, &[])
+            )
+        })?;
         memory = materialize_composite_resource_cells_from_snapshot(
             memory,
             &naming_memory,
@@ -3186,8 +3251,13 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     } else {
         &[]
     };
-    let mut abstract_resource =
-        lower_resource_clause_at_state(resource, parameter_binding, &state)?;
+    let mut abstract_resource = lower_resource_clause_at_state_with_assumptions(
+        resource,
+        parameter_binding,
+        &state,
+        None,
+        available_pure_facts.assumptions(),
+    )?;
     let requested_quantity = abstract_resource
         .owned_quantity_term()
         .cloned()
@@ -3381,7 +3451,13 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                         describe_resource_clause(resource)
                     ))
                 })?;
-            let lowered = lower_resource_clause_at_state(&contained, parameter_binding, &state)?;
+            let lowered = lower_resource_clause_at_state_with_assumptions(
+                &contained,
+                parameter_binding,
+                &state,
+                None,
+                &assumptions,
+            )?;
             let Some(next) = remaining.without_fact(&lowered, &assumptions) else {
                 return Err(ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `unfold({})` failed: {}",
@@ -3415,6 +3491,17 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         )));
     }
 
+    // Only a held head supplies the domains established when its body was
+    // folded. The canonical already-unfolded path must still establish them
+    // from its facts; matching wrapped child arguments is not sufficient.
+    let body_assumptions = if already_unfolded {
+        assumptions.clone()
+    } else {
+        assumptions
+            .clone()
+            .assume_entry_clause_extents()
+            .assume_held_resource_domains()
+    };
     let mut unfolded_facts = Vec::new();
     // Lower later selectors through earlier cached fields, but name every
     // exposed cell at this one rewrite's input snapshot. Caching a read is
@@ -3427,7 +3514,13 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 describe_resource_clause(resource)
             ))
         })?;
-        let mut lowered = lower_resource_clause_at_state(&contained, parameter_binding, &state)?;
+        let mut lowered = lower_resource_clause_at_state_with_assumptions(
+            &contained,
+            parameter_binding,
+            &state,
+            None,
+            &body_assumptions,
+        )?;
         if opening_view {
             lowered = CResourceFact::View(lowered.resource().clone());
         }
@@ -4967,6 +5060,7 @@ pub(super) fn iterated_template_for_resource(
     state: &CState,
     claim_label: &str,
     tactic_index: usize,
+    assumptions: &PureFactContext,
 ) -> Result<crate::kernel::CIteratedMemory, ClickError> {
     let definition = composite_resource_law_definition(
         resource_environment,
@@ -4996,7 +5090,13 @@ pub(super) fn iterated_template_for_resource(
                 definition.name()
             ))
         })?;
-    let lowered = lower_resource_clause_at_current_locals(&clause, parameter_binding, state, None)?;
+    let lowered = lower_resource_clause_at_current_locals_with_assumptions(
+        &clause,
+        parameter_binding,
+        state,
+        None,
+        assumptions,
+    )?;
     match lowered {
         CResourceFact::Own(CResource::Iterated(iterated), _) => Ok(iterated.as_ref().clone()),
         _ => Err(ClickError::new(format!(

@@ -12,6 +12,115 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Current arithmetic checkpoint (2026-10-30)
+
+The pointer migration has moved on to arithmetic definedness. The current
+integration branch is `codex/arithmetic-landing`; `codex/arithmetic-definedness`
+is its preserved earlier checkpoint. The pointer checkpoint below is historical.
+The core arithmetic increment is not yet landed; its preparation is landing
+separately.
+
+- Machine arithmetic lowers structurally and retains its domain as ordinary
+  scoped proof obligations. Context can discharge those obligations but cannot
+  change the term. Quantified domains follow the chosen polarity: an existential
+  needs a defined true witness, a negated existential excludes every candidate
+  with a defined false body, and universal/negated-universal claims are dual.
+- Claim goals now retain their evaluation obligations. Ordinary proof checking
+  discharges them in the actual branch context and retains generated proof steps
+  for expansion. Final certification consumes the checked path's completion;
+  it does not lower and prove the same claim again. Producer-owned path receipts
+  and identity indexes avoid repeated premise and path scans. The certification
+  increment passed 61 focused tests and all 1,060 scaling tests before integration.
+- Signed/unsigned 32/64-bit arithmetic, shifts, and supported 128-bit
+  multiplication/division/remainder use structural terms with separate domains.
+  Integration exposed a Rust-specific shift distinction: Rust permits signed
+  wrapping left shifts, whereas C requires a nonnegative representable result.
+  Rust shifts now retain their own semantics through logical expressions and
+  resource operands; C's domain remains unchanged. Count obligations are
+  discharged only by established facts, never by pending obligations themselves.
+- Global-array loads now use the same declaration and address indexes as static
+  arrays when spelling values. This fixes the original alias-load fixture's
+  `old(g[0])` requirement. Both its generated proofs expanded and rechecked
+  without implicit solving; all 58 synthesis tests passed, including an exact
+  round-trip test for an overwritten multidimensional global element. The
+  standalone fix is [PR #2152](https://github.com/clicklang/click/pull/2152),
+  merged and verified in upstream. Its full gate passed (6,833 unit tests, 58 examples,
+  4,895 mdtests), taking 10m33s, 33 seconds over the target.
+- The lexicographic recursive-measure example needs explicit links for the
+  machine subtraction's integer observation and the first component's strict
+  decrease. The original C and contract pass with those proof links.
+
+The integrated `scripts/check.sh --no-fail-fast` gate passed: 6,862 unit/API/
+import/scaling tests and all four fixture aggregates (58 example projects and
+4,916 mdtests), with both pinned frontends required. It took 10m07s, seven seconds over the ten-minute target. No nightly
+suite ran. The previous five fixture failures are repaired: the recursive proof
+has explicit links, and the four negative controls retain their actual domain
+and checked context. Rust resource shift controls also pass, including unknown
+and invalid count rejection.
+
+A fresh combined census/fact-stability audit of the ordinary mdtest corpus also
+passed (231s), using that exact binary. It recorded 23,038 census observations:
+8,853 written and 14,185 smart. There are 2,081 written spelling misses and 6,885
+smart misses; these are observations, not distinct defects. The largest written
+categories include int32 equalities (375), loadability (228), Integer ordering
+goals (228), and algebraic equalities (193). Acceptance is not complete.
+
+The stability audit recorded 199 differences across five fixtures: 98 each in
+`an_unsigned_loop_counter_store_is_bounded_by_its_guard` and
+`an_unsigned_loop_counter_store_is_bounded_by_a_variable_guard`, whose terms
+currently differ only in variable IDs (cause still under investigation), plus
+one each in `a_bounded_variable_tag_preserves_an_incoming_word_relationship`,
+`a_checked_low_tag_add_preserves_an_incoming_word_relationship`, and
+`tagged_pointer_explicit_round_trip`. Do not dismiss the variable-ID differences
+or call all 199 distinct semantic bugs. The differing variables are deterministic
+load identities, not fresh binder names. The leading suspect is
+`pointer_index_term`: facts choose a signed index for a bounded uint32 and a
+widened index otherwise, changing the load address. Confirm the exact registered
+load pair before declaring this diagnosis complete; the roadmap already assigns
+this index-conversion family to the integer thread. The pointer-tag cases reach
+`apply_c_bitwise_binary` from logical bitwise lowering, whose uint64 `&` branch
+calls `clear_bounded_uint64_tag`. That helper consults tag bounds and low-bit
+facts to remove the tag from the numeric term. Move this equality reasoning to
+checking while retaining the written bitwise term. Atomic division/shift overflow-domain
+spellings also still need targeted auditing.
+
+An attempted standalone certification extraction on upstream after #2152 is
+**not publishable**: `codex/final-certification-slice` at `6ec3c8a95` failed its
+full gate (6,841 of 6,842 units passed; fixture phase was not reached). The
+unchanged negative test `forward_conversion_requires_symbolic_argument_definedness`
+incorrectly accepts an unbounded `to_integer(x + 1) == to_integer(x + 1)` claim.
+The integrated migration rejects it correctly.
+
+The old arithmetic producer emits `!overflow` as a success-path fact and a
+separate UB path; logical lowering drops the UB path. Claim focus imports that
+success fact, so consuming the completion without final reconstruction is unsafe
+until the producer makes it a mandatory obligation instead. Do not weaken the
+negative test or add a new finalizer recheck. The PR boundary must keep receipt
+consumption after all structural-domain producers, including shifts, wide arithmetic
+and Rust shift corrections. A possible earlier
+slice retains claim obligations, ordinary scoped discharge and diagnostics while
+leaving the existing finalizer unchanged. That safe slice merged as PR #2155
+and its pushed commit was verified in upstream. Its full gate passed (6,841 tests, 58 examples,
+4,895 mdtests; 10m43s). After applying the identical patch to current master,
+1,123 focused/scaling checks passed, including the unchanged overflow rejection.
+The earlier failing extraction is preserved only as evidence.
+
+The refreshed integration in `codex/arithmetic-landing` at `70970d005` includes
+current unsigned-term representation changes and the code from merged PRs
+#2155 and #2156. Its full `scripts/check.sh --no-fail-fast` gate passed:
+6,866 unit/API/import/scaling tests and all four fixture groups, in 9m25s.
+The older `codex/arithmetic-definedness` checkpoint remains preserved.
+
+Refreshing exposed one shared checker omission: 32-bit word equality consulted
+signed bounds only, missing that an unsigned strict predecessor makes a divisor
+nonzero. The integration fixes this using the two indexed domain lookups already
+used for 64-bit equality, with signed-evidence and flat-query-work regressions.
+The unchanged remainder proof now passes. This checker fix is being extracted
+as PR #2157, merged and verified in upstream. Rust shift source identity is
+PR #2158, merged and verified in upstream; its evaluator behavior stays unchanged
+until the core lands. Mathematical certificate intermediates are the next
+preparation. The remaining migration is still unmerged.
+
 ## Arithmetic migration: landing order
 
 The local arithmetic migration separates structural terms from definedness

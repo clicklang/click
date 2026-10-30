@@ -100,10 +100,8 @@ fn a_written_universal_over_a_written_implication_records_both() {
 }
 
 #[test]
-fn a_definedness_guard_is_recorded_before_the_written_implication() {
-    // `k + 1` may overflow for an unconstrained `k`, so lowering keeps
-    // the defined path and folds its no-overflow fact into an implication
-    // that no spec, and therefore no Surface, connective wrote.
+fn arithmetic_debts_do_not_insert_an_introduction_before_the_written_implication() {
+    // The overflow requirement is separate from the written implication.
     let incremented = || {
         SpecExpression::Add(
             Box::new(bound(Variable(41))),
@@ -124,7 +122,6 @@ fn a_definedness_guard_is_recorded_before_the_written_implication() {
                 pointer: false,
                 integer: false,
             },
-            LoweringIntroduction::PathFactGuard,
             LoweringIntroduction::WrittenImplication,
         ]
     );

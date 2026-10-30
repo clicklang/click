@@ -7,5 +7,5 @@ theorem tail_bounds(n: uint64, size: uint64) {
 ```
 
 ```expect
-fail: normalize
+fail: not established: `size != 0u64`
 ```

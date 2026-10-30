@@ -1354,7 +1354,27 @@ pub(super) fn pure_theorem_context(
         .into();
     Ok(PureTheoremContext {
         diagnostic_names,
-        declaration_bindings: BTreeMap::new(),
+        // Synthesized obligations use names too. Retain the declared model
+        // parameters' types and identities for those generated expressions.
+        declaration_bindings: theorem
+            .parameters()
+            .iter()
+            .enumerate()
+            .filter_map(|(binder_index, parameter)| {
+                let ClickType::Algebraic(algebraic_type) = parameter.click_type() else {
+                    return None;
+                };
+                let name = parameter.name().to_owned();
+                Some((
+                    name.clone(),
+                    ContractExpression::AlgebraicVariable {
+                        name,
+                        algebraic_type: algebraic_type.clone(),
+                        binder_index,
+                    },
+                ))
+            })
+            .collect(),
         memory,
         values,
         integer_values,
@@ -1850,9 +1870,19 @@ fn verify_theorem_ensure(
     entry_check.map_err(ClickError::new)?;
 
     if is_kernel_standard_theorem_name(theorem.name()) {
-        if let Some(error) = entry_requirements.refusals.first() {
-            return Err(error.clone());
-        }
+        // A registered axiom supplies the conclusion, not permission to
+        // evaluate partial syntax in its declaration. Check those domains
+        // through the same proof entry operation as ordinary theorems.
+        let root = Proof::for_pure_surface_goal(
+            claim_label,
+            &context.requires,
+            goal.clone(),
+            surface_goal.clone(),
+            context,
+            spec_definitions,
+            theorem_environment,
+        );
+        root.discharge_entry_requirements(surface_goal, &entry_requirements)?;
         return verify_kernel_standard_theorem_axiom(
             theorem,
             ensure_index,
@@ -3136,6 +3166,12 @@ pub(super) fn click_function_applications(
                 expression(right, known_facts, applications);
             }
             ContractExpression::Call { name, arguments } => {
+                for argument in arguments {
+                    expression(argument, known_facts, applications);
+                }
+                if matches!(name.as_str(), "to_integer" | "to_int32") {
+                    return;
+                }
                 let application = ClickFunctionApplication {
                     name: name.clone(),
                     arguments: arguments.clone(),
@@ -4187,27 +4223,13 @@ mod tests {
             .theorem_definitions()
             .first()
             .ok_or_else(|| ClickError::new("test source did not contain a theorem"))?;
-        let context = pure_theorem_context(theorem, spec_definitions)?;
-        let ensure = theorem
-            .ensures()
-            .first()
-            .ok_or_else(|| ClickError::new("test source did not contain an ensures clause"))?;
-        let Ensure::Proposition(surface_goal) = ensure.ensure() else {
-            return Err(ClickError::new("test source did not contain a proposition"));
-        };
-        let (goal, _) = lower_pure_theorem_proposition_recording_introductions(
-            theorem.name(),
-            surface_goal,
-            &assumptions_from_propositions(&context.requires),
-            ContractEnvironment::new(&context.values, &context.array_refs),
-            &BTreeMap::new(),
-            &context.integer_values,
-            &context.memory,
+        verify_concrete_theorem_definition(
+            theorem,
             spec_definitions,
+            &TheoremEnvironment::new(&[]),
+            None,
         )
-        .map_err(ClickError::new)?;
-        verify_kernel_standard_theorem_axiom(theorem, 0, ensure, theorem.name(), &context, goal)
-            .map(|_| ())
+        .map(|_| ())
     }
 
     #[test]
@@ -4806,5 +4828,27 @@ theorem int32_less_equal_to_integer(left: int32, right: int32) {
                 assert!(verify_standard_declaration(&forged).is_err(), "{forged}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod function_candidate_tests {
+    use super::*;
+
+    #[test]
+    fn unfolding_candidates_descend_through_integer_conversions() {
+        let call = ContractExpression::Call {
+            name: "count".into(),
+            arguments: vec![],
+        };
+        let goal = ClickProposition::Defined {
+            expression: ContractExpression::Call {
+                name: "to_integer".into(),
+                arguments: vec![call],
+            },
+        };
+        let applications = click_function_applications(&goal, &[]);
+        assert_eq!(applications.len(), 1);
+        assert_eq!(applications[0].name, "count");
     }
 }

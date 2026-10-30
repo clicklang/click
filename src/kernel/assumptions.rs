@@ -6725,6 +6725,17 @@ impl PureFactContext {
             .contains(ReasoningPolicy::ASSUME_ENTRY_CLAUSE_EXTENTS)
     }
 
+    /// Project a held resource's body using the domains its fold established.
+    /// Ordinary entry requirements and new folds keep their domain obligations.
+    pub(crate) fn assume_held_resource_domains(self) -> Self {
+        self.with_reasoning_policy(ReasoningPolicy::ASSUME_HELD_RESOURCE_DOMAINS)
+    }
+
+    pub(crate) fn should_assume_held_resource_domains(&self) -> bool {
+        self.reasoning_policy
+            .contains(ReasoningPolicy::ASSUME_HELD_RESOURCE_DOMAINS)
+    }
+
     pub(crate) fn require_owned_expression_loads(mut self) -> Self {
         if self.should_allow_symbolic_contract_loads() {
             self.toggle_reasoning_policy(ReasoningPolicy::ALLOW_SYMBOLIC_CONTRACT_LOADS);
@@ -9970,6 +9981,7 @@ impl ProofObligation {
             proposition,
             context: None,
             assumable: true,
+            evaluation_domain: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -9983,9 +9995,16 @@ impl ProofObligation {
             proposition: canonical_observation_form(&proposition),
             context: None,
             assumable: false,
+            evaluation_domain: false,
             call_requirement_site: None,
             introductions: None,
         }
+    }
+
+    pub(in crate::kernel) fn evaluation_domain(proposition: Proposition) -> Self {
+        let mut obligation = Self::verification_condition(proposition);
+        obligation.evaluation_domain = true;
+        obligation
     }
 
     pub fn with_context(mut self, context: impl Into<String>) -> Self {
@@ -10088,6 +10107,7 @@ impl ProofObligation {
             proposition: f(self.proposition),
             context: self.context,
             assumable: self.assumable,
+            evaluation_domain: self.evaluation_domain,
             call_requirement_site: None,
             // The chain describes the head nodes of the proposition it was
             // recorded for. A rewrite adds or removes head nodes, so the

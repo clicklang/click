@@ -1,11 +1,9 @@
-# Equal endpoints give equal range folds
+# Fold endpoint equality still requires defined endpoints
 
-A range fold reads nothing but its endpoints, its initial value, and its body,
-so two folds that agree on all four denote the same `Integer`.  The endpoints
-need only be *equal*, not the same term: an available `a == b`, or the affine
-normal form that makes `(hi - 1) + 1` and `hi` the same endpoint.  The second
-form is the one an induction step needs, to carry the append law's `end + 1`
-back to the goal's `hi`.
+The first theorem compares folds under an explicit endpoint equality. The
+second attempts to use `(hi - 1) + 1 == hi` for every `int32` value. Its
+intermediate subtraction overflows at `INT32_MIN`, so the unchanged second
+claim must now be rejected rather than silently guarded.
 
 ```click
 theorem fold_endpoints_equal_from_an_equality(lo: int32, a: int32, b: int32) {
@@ -25,5 +23,5 @@ theorem fold_endpoint_predecessor_successor(lo: int32, hi: int32) {
 ```
 
 ```expect
-pass
+fail: not established: `hi - 1`
 ```

@@ -82,5 +82,5 @@ int32 bubble_pass3(int32 p[3]) {
 ```
 
 ```expect
-fail: the arms hold the interface fact `p[j] <= p[(j + 1)]`, but the join does not carry what its terms need to denote a value
+fail: could not abstract `branch ensuring` fact
 ```

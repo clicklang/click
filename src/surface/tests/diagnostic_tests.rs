@@ -2915,7 +2915,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             "solve();"
         };
         let source = format!(
-            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; requires defined(value * 2); ensures cell[0] == value; }} by {{ step(); have to_integer(cell[0]) == to_integer(value * 2) by {{ {body} }} step_until(function.exit); solve(); }}"
+            "verifying \"f.c\"; void f(int32 *cell, int32 value) {{ owns cell[0..1]; requires value < 100; requires defined(value * 2); ensures cell[0] == value; }} by {{ step(); have to_integer(cell[0]) < to_integer(value) by {{ {body} }} step_until(function.exit); solve(); }}"
         );
         with_proof_trace("f", || {
             let error = crate::instrumentation::with_tactic_work_limits(
@@ -2949,9 +2949,9 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
             if nested {
                 assert!(trace.contains("have value == value"), "{trace}");
             }
-            assert!(!trace.contains("adds: cell[0] == value * 2"), "{trace}");
+            assert!(!trace.contains("adds: cell[0] < value"), "{trace}");
             assert!(
-                !trace.contains("adds: to_integer(cell[0]) == to_integer(value * 2)"),
+                !trace.contains("adds: to_integer(cell[0]) < to_integer(value)"),
                 "{trace}"
             );
         });

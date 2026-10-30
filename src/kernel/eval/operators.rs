@@ -1,6 +1,9 @@
 use super::*;
 use crate::kernel::binary_term;
 
+mod spec_arithmetic;
+pub(in crate::kernel) use spec_arithmetic::{apply_spec_machine_arithmetic, apply_spec_rust_shift};
+
 type ValidShiftCountEvaluator = fn(
     Bitvector32Term,
     Bitvector32Term,
@@ -3893,6 +3896,73 @@ fn promote_c_shift_count(value: CValue) -> Option<(Bitvector32Term, bool, bool)>
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
     }
+}
+
+/// The C-expression carrier used by Rust resource arguments preserves the
+/// same word and mandatory count debts as logical Rust shift expressions.
+fn apply_rust_shift(
+    op: crate::kernel::MachineBinaryOp,
+    left: CValue,
+    right: CValue,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    let inherited_count = obligations.len();
+    let Some(mut path) = apply_spec_rust_shift(op, &left, &right, &facts, &obligations) else {
+        return vec![c_type_mismatch_expression_path(facts, obligations)];
+    };
+    if path.obligations.len() == inherited_count {
+        return vec![path];
+    }
+    // Structural lowering always produces the same value and count debts.
+    // The execution carrier consumes those already established by its input
+    // context, just as other checked C-expression operators do. Pending
+    // obligations are not hypotheses, and inherited debts remain untouched.
+    let context = assumptions_with_path_context(assumptions, &facts, &[]);
+    let count_requirements = path.obligations.split_off(inherited_count);
+    path.obligations
+        .extend(count_requirements.into_iter().filter(|obligation| {
+            !crate::kernel::reasoning::path_facts::required_obligation_is_exactly_discharged(
+                &context,
+                obligation.proposition(),
+            )
+        }));
+    vec![path]
+}
+
+pub(in crate::kernel) fn apply_rust_shift_left(
+    left: CValue,
+    right: CValue,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    apply_rust_shift(
+        crate::kernel::MachineBinaryOp::ShiftLeft,
+        left,
+        right,
+        facts,
+        obligations,
+        assumptions,
+    )
+}
+
+pub(in crate::kernel) fn apply_rust_shift_right(
+    left: CValue,
+    right: CValue,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+) -> Vec<CExpressionPath> {
+    apply_rust_shift(
+        crate::kernel::MachineBinaryOp::ShiftRight,
+        left,
+        right,
+        facts,
+        obligations,
+        assumptions,
+    )
 }
 
 pub(in crate::kernel) fn apply_c_shift_left(

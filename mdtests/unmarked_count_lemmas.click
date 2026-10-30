@@ -165,6 +165,7 @@ theorem unmarked_point_update(
                     solve() using { 0 <= lo; lo < hi; to_integer(j) == to_integer(hi - 1); };
                 }
                 apply(unmarked_frame(a, b, lo, n, j, hi - 1)) using {
+                    0 <= hi;
                     0 <= lo;
                     0 <= to_integer(hi - 1);
                     to_integer(hi - 1) <= to_integer(j);
@@ -210,12 +211,14 @@ theorem unmarked_point_update(
             } else {
                 have to_integer(j) < to_integer(hi - 1) by {
                     apply(integer::int32_less_equal_and_not_equal_implies_less_than(j, hi - 1)) using {
+                        0 <= hi;
                         to_integer(j) <= to_integer(hi - 1);
                         to_integer(j) != to_integer(hi - 1);
                     };
                     assumption();
                 }
                 apply(ih(hi - 1)) using {
+                    0 <= hi;
                     0 <= to_integer(hi - 1);
                     to_integer(hi - 1) < to_integer(hi);
                     0 <= lo;

@@ -1,13 +1,14 @@
-# An unbounded guarded call postcondition stays guarded
+# An unconditional arithmetic postcondition includes its definedness obligation
 
-`pick` promises `st.live == old(st.live) + result` only where that sum is
-defined: the caller receives `defined(old(st.live) + got) implies st.live ==
-old(st.live) + got`. Here nothing bounds `old(st.live)` or `got` from above,
-so the sum can overflow and the guard cannot be discharged. `solve` must not
-use the consequent, and `old(st.live) <= st.live` does not follow.
+This was formerly a negative fixture: lowering silently guarded the
+callee's equality by the sum's domain. Structural lowering now makes the
+callee prove that domain as part of establishing its unconditional
+postcondition. Its body returns zero, so the obligation holds for every
+entry value. The caller receives both the equality and its definedness and
+can prove monotonicity from the nonnegative result.
 
-With bounds that exclude overflow the same closer does use it:
-[`guarded_postcondition_closes_after_call.md`](guarded_postcondition_closes_after_call.md).
+The explicitly guarded counterpart remains negative in
+[`explicit_guarded_postcondition_unbounded_stays_guarded.md`](explicit_guarded_postcondition_unbounded_stays_guarded.md).
 
 ```c filename=guarded_postcondition_unbounded_stays_guarded.c
 struct box {
@@ -53,5 +54,5 @@ int32 caller(struct box* b) {
 ```
 
 ```expect
-fail: `ensures old(st.live) <= st.live` failed for `caller.ensures_0`
+pass
 ```

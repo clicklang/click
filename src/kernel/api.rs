@@ -7075,6 +7075,12 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             .clone(),
                         checked_returned_resources: checked.checked_returned_resources.clone(),
                         completion_origin_state: Some(checked.state.clone()),
+                        completion_path_origins: checked
+                            .execution
+                            .paths
+                            .iter()
+                            .map(|path| path.theorem.clone())
+                            .collect(),
                     })
                     .collect()
             },
@@ -7117,6 +7123,12 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                                 .clone(),
                             checked_returned_resources: checked.checked_returned_resources.clone(),
                             completion_origin_state: Some(checked.state.clone()),
+                            completion_path_origins: checked
+                                .execution
+                                .paths
+                                .iter()
+                                .map(|path| path.theorem.clone())
+                                .collect(),
                         })
                     })
                     .collect::<Vec<_>>()

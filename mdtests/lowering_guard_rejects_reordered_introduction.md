@@ -1,10 +1,7 @@
-# A citation before its introduction is rejected
+# Reordering introductions cannot repair an undefined quantified claim
 
-The companion of `lowering_guard_before_written_implication`. After the binder
-and the definedness guard the written antecedent is still the goal's
-implication, not a fact, so extracting one of its conjuncts before the third
-`intro` has nothing to extract. Reordering the two introductions relative to
-the citation must fail rather than quietly succeed against the guard.
+This variant also evaluates `k + 1` at `INT32_MAX`. It fails its domain
+obligation before any citation or introduction can hide that requirement.
 
 ```click
 theorem guarded_universal_reordered() {
@@ -21,5 +18,5 @@ theorem guarded_universal_reordered() {
 ```
 
 ```expect
-fail: `extract`
+fail: not established: `forall
 ```

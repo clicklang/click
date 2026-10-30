@@ -7747,7 +7747,8 @@ fn open_unmatched_instance_body<'a>(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // This opens a held body's established footprint, as unfold does.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_extents()
+        .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
         &evaluation,
@@ -14700,7 +14701,10 @@ fn rewrite_resource_instance_selecting_children_unspelled(
     // pointers of unseen formation included (`assume_entry_clause_extents`);
     // folding checks them.
     let body_assumptions = if unfold {
-        assumptions.clone().assume_entry_clause_extents()
+        assumptions
+            .clone()
+            .assume_entry_clause_extents()
+            .assume_held_resource_domains()
     } else {
         assumptions.clone()
     };
@@ -15413,7 +15417,8 @@ pub(super) fn expand_composite_resource_fact_with_children(
         .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
-        .assume_entry_clause_extents();
+        .assume_entry_clause_extents()
+        .assume_held_resource_domains();
     let mut child_facts = Vec::new();
     let Some(body_active) = evaluate_composite_resource_body_condition(
         definition,
@@ -17505,7 +17510,8 @@ fn resource_clause_memory_views(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // These are the established clauses of the held instance.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_extents()
+        .assume_held_resource_domains();
     let mut budget = ExecutionBudget::beside_live_state();
     let Ok(Ok(body_resources)) = evaluate_function_resource_context_with_normalization(
         evaluation,

@@ -1,8 +1,8 @@
-# Symbolic folds ignore binder names
+# Renaming fold binders cannot prove an undefined machine sum
 
-This checks that Kernel Click treats pure `.fold` binder names as local names.
-Two folds with the same bounds, initial value, and body shape should compare
-equal even when one uses `|acc, k|` and the other uses `|total, i|`.
+Both functions sum a range into an `int32` accumulator. For unrestricted
+bounds that sum can overflow. Alpha equivalence does not establish the
+definedness of either side, so the unchanged unbounded equality is refused.
 
 ```c filename=range_fold_alpha_equivalence.c
 int32 range_fold_alpha_equivalence(int32 lo, int32 hi) {
@@ -31,5 +31,5 @@ int32 range_fold_alpha_equivalence(int32 lo, int32 hi) {
 ```
 
 ```expect
-pass
+fail: unclosed goal: sum_range_a
 ```

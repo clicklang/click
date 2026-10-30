@@ -5373,30 +5373,16 @@ pub(super) fn finish_ordered_proof<'a>(
                             || (matches!(specification_outcome, CFunctionOutcome::Return { .. })
                                 && all_resource_claims_checked
                                 && returned_resources_are_jointly_available));
-                    let specification_outcome = specification_outcome.clone();
-                    let specification_requirements = certified_path.assumptions().pure_facts();
-                    let specification = c_function_specification(
-                        pre_state.clone(),
-                        arguments.to_vec(),
-                        specification_requirements,
-                        specification_outcome,
-                    );
-                    let theorem = crate::instrumentation::measure_operation(
-                function_block.signature().name(),
-                &proof_label,
-                "specification certification",
-                || prove_c_function_satisfies_specification_from_symbolic_path(
-                function.clone(),
-                specification.clone(),
-                certified_path,
-            ),
-            )
-            .ok_or_else(|| {
-                ClickError::new(format!(
-                    "execution proof for `{proof_label}` path {path_index} does not certify its exact function specification\n  requirements: {}",
-                    specification.requires().len()
-                ))
-            })?;
+                    let checked_specification = crate::instrumentation::measure_operation(
+                        function_block.signature().name(),
+                        &proof_label,
+                        "specification certification",
+                        || crate::kernel::CheckedPathSpecification::new(function, certified_path),
+                    ).ok_or_else(|| ClickError::new(format!(
+                        "execution proof for `{proof_label}` path {path_index} does not certify its exact function specification"
+                    )))?;
+                    let specification = checked_specification.specification();
+                    let theorem = checked_specification.theorem();
                     // Every theorem of this path shares one copy of the loop
                     // clauses and rules its proof reached.
                     let frontier_loop_clauses: std::sync::Arc<[StructuralClause]> = proof_execution
@@ -5417,13 +5403,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         };
                         let checked_proposition = completion
                             .map(|completion| {
-                                crate::kernel::c_checked_function_proposition_with_reason(
-                                    function,
-                                    &specification,
-                                    &theorem,
-                                    completion,
-                                    certified_path,
-                                )
+                                checked_specification.complete(completion, certified_path)
                                 .map_err(|reason| {
                                     ClickError::new(format!(
                                         "`{proof_label}` claim {:?} on path {path_index} has mismatched proposition completion evidence: {reason}",

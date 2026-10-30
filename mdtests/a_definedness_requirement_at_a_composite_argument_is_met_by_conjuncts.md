@@ -38,7 +38,7 @@ theorem caller(t: int32, r: int32, x: int32) {
   apply(lemma_def(t, r - x));
   have defined(t + (r - x)) by assumption();
   have defined((t + (r - x)) + 4) by assumption();
-  apply(needs_def(t, r - x)) using { defined(t + (r - x)); defined((t + (r - x)) + 4); };
+  apply(needs_def(t, r - x)) using { defined(r - x); defined(t + (r - x)); defined((t + (r - x)) + 4); };
   solve();
  }
 }

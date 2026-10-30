@@ -36,5 +36,5 @@ void touch(int32* data, int32* occupied, int32 capacity, int32 index) {
 ```
 
 ```expect
-fail: the range is not one element of the iterated ownership fact
+fail: not established: `index + 2`
 ```
