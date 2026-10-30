@@ -7523,17 +7523,13 @@ impl<'a> Proof<'a> {
         // reconstructs a proof context.
         if let ProofContext::Pure(context) = self.context.as_ref() {
             let selected = crate::kernel::proposition_variables(kernel);
-            let mut bindings = context
-                .theorem_context
-                .values
+            let mut bindings = selected
                 .iter()
-                .filter_map(|(name, value)| {
-                    let CValue::Int32(Bitvector32Term::Variable(variable)) = value else {
-                        return None;
-                    };
-                    selected
-                        .contains(variable)
-                        .then(|| (*variable, name.clone()))
+                .filter_map(|variable| {
+                    context
+                        .source_names
+                        .get(variable)
+                        .map(|name| (*variable, name.clone()))
                 })
                 .collect::<BTreeMap<_, _>>();
             if let Some(goal) = self.proposition_obligation() {
@@ -7547,11 +7543,10 @@ impl<'a> Proof<'a> {
                     }
                 }
             }
-            let state = CState::new().with_memory(context.theorem_context.memory.clone());
             if let Some(surface) = synthesize_surface_proposition_with_bound_variable_names(
                 kernel,
                 ParameterBinding::default(),
-                &state,
+                &context.source_state,
                 &bindings,
             ) && matches_kernel(&surface, true).is_some()
             {

@@ -197,3 +197,15 @@ fn int32_graph_conditions_do_not_cross_sorts_or_admit_disequality() {
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/proof/term_rewrite/graph_condition_tests.rs");
 }
+
+#[test]
+fn rewriting_a_bool_claim_keeps_the_lowerings_truth_polarity() {
+    let from = ConditionTerm::bool_application("before", vec![]);
+    let after = ConditionTerm::bool_application("after", vec![]);
+    let replacement = ConditionTerm::bool_not(after.clone());
+    for truth in [false, true] {
+        let claim = Proposition::ConditionIs(from.clone(), truth);
+        let rewritten = TermRewrite::for_condition_exact(&from, &replacement).proposition(&claim);
+        assert_eq!(rewritten, Proposition::ConditionIs(after.clone(), !truth));
+    }
+}

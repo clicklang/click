@@ -285,3 +285,55 @@ fn allocation_result_names_use_one_index_as_recorded_history_grows() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
+    let mut costs = Vec::new();
+    for size in [4usize, 16, 64, 256] {
+        let mut names = BTreeMap::new();
+        for i in 0..size {
+            names.insert(Variable(9100 + i as u64), format!("unused_{i}"));
+        }
+        names.insert(Variable(9000), "flag".into());
+        let flag = ConditionTerm::Variable(Variable(9000));
+        let fact = Proposition::ConditionIs(
+            ConditionTerm::bool_application(
+                "choose",
+                vec![crate::kernel::PureFunctionArgument::Value(CValue::of_bool(
+                    flag,
+                ))],
+            ),
+            true,
+        );
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            synthesize_surface_proposition_with_bound_variable_names(
+                &fact,
+                ParameterBinding::default(),
+                &CState::new(),
+                &names,
+            )
+        });
+        assert!(surface.is_some());
+        costs.push(work);
+    }
+    assert!(
+        costs[0] > 0 && costs.iter().all(|cost| *cost <= costs[0] + 64),
+        "{costs:?}"
+    );
+    for size in [4usize, 8, 16, 32] {
+        let mut condition = ConditionTerm::Constant(false);
+        for i in 0..size {
+            condition = ConditionTerm::bool_if(
+                ConditionTerm::bool_application(&format!("p{i}"), vec![]),
+                ConditionTerm::Constant(true),
+                condition,
+            );
+        }
+        let fact = Proposition::ConditionIs(condition, true);
+        let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
+            synthesize_surface_proposition(&fact, ParameterBinding::default(), &CState::new())
+        });
+        assert!(surface.is_some());
+        assert!(work >= size && work <= 20 * size + 64, "{size}: {work}");
+    }
+}

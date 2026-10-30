@@ -3355,3 +3355,47 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
         }
     }
 }
+
+#[test]
+fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
+    let file = parser::parse("function positive(x: int32) -> Bool { x > 0 } function choose(flag: Bool, x: int32) -> Bool { if flag { positive(x) } else { false } }").unwrap();
+    let flag = ConditionTerm::Variable(Variable(9001));
+    let x = Bitvector32Term::Variable(Variable(9002));
+    let state = CState::new()
+        .with_local("flag", CValue::of_bool(flag.clone()))
+        .with_local("x", CValue::Int32(x.clone()));
+    let positive = ConditionTerm::bool_application(
+        "positive",
+        vec![crate::kernel::PureFunctionArgument::Value(CValue::Int32(
+            x.clone(),
+        ))],
+    );
+    let chosen = ConditionTerm::bool_application(
+        "choose",
+        vec![
+            crate::kernel::PureFunctionArgument::Value(CValue::of_bool(flag.clone())),
+            crate::kernel::PureFunctionArgument::Value(CValue::Int32(x)),
+        ],
+    );
+    for condition in [
+        flag.clone(),
+        positive.clone(),
+        chosen,
+        ConditionTerm::bool_if(flag, positive.clone(), ConditionTerm::Constant(false)),
+        ConditionTerm::bool_equal(positive.clone(), ConditionTerm::bool_not(positive)),
+    ] {
+        for truth in [false, true] {
+            let fact = condition.truth_claim(truth);
+            let surface =
+                synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
+                    .expect("Bool fact spelling");
+            let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                &surface, &PureFactContext::new(), ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(file.click_function_definitions())),
+                FixedStateLoweringOptions::default(),
+            ).unwrap().0;
+            assert_eq!(lowered, fact, "{surface:?}");
+        }
+    }
+}

@@ -1988,6 +1988,65 @@ fn synthesize_load_defining_equation(
 
 // Large leaf temporaries must not occupy every recursive connective frame.
 #[inline(never)]
+/// Spell a logical Bool by its structure, including Bool operands of calls.
+fn synthesize_surface_bool(
+    condition: &ConditionTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let _frame = SurfaceSynthesisFrame::enter("bool")?;
+    crate::instrumentation::record_deterministic_work(1);
+    let operand = |condition: &ConditionTerm| {
+        synthesize_surface_bool(condition, parameter_binding, state, bound_variables)
+    };
+    match condition {
+        ConditionTerm::Constant(value) => Some(bool_literal(*value)),
+        ConditionTerm::Variable(variable) => {
+            if let Some(name) = bound_variables.get(variable) {
+                return Some(ContractExpression::Binding(name.clone()));
+            }
+            synthesize_surface_bitvector(
+                &Bitvector32Term::bool_cast(MachineIntegerType::UInt8, condition.clone()),
+                parameter_binding,
+                state,
+                bound_variables,
+            )
+        }
+        ConditionTerm::BoolApplication(application) => synthesize_surface_call(
+            application.name(),
+            application.arguments(),
+            parameter_binding,
+            state,
+            bound_variables,
+        ),
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => Some(ContractExpression::If {
+            condition: Box::new(bool_truth(operand(condition)?)),
+            then_branch: Box::new(operand(then_condition)?),
+            else_branch: Box::new(operand(else_condition)?),
+        }),
+        ConditionTerm::BoolEqual(left, right) => {
+            proposition_bool_value(ClickProposition::Comparison {
+                left: operand(left)?,
+                operator: ComparisonOperator::Equal,
+                right: operand(right)?,
+            })
+            .ok()
+        }
+        _ => proposition_bool_value(synthesize_surface_atomic_proposition(
+            &Proposition::ConditionIs(condition.clone(), true),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?)
+        .ok(),
+    }
+}
+
 fn synthesize_surface_atomic_proposition(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
@@ -2263,6 +2322,25 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    if matches!(
+        condition,
+        ConditionTerm::Variable(_)
+            | ConditionTerm::BoolApplication(_)
+            | ConditionTerm::BoolIf { .. }
+            | ConditionTerm::BoolEqual(..)
+    ) {
+        let claim = bool_truth(synthesize_surface_bool(
+            condition,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?);
+        return Some(if *value {
+            claim
+        } else {
+            ClickProposition::Not(Box::new(claim))
+        });
+    }
     if let ConditionTerm::Overflows {
         format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
         op:
@@ -3813,6 +3891,14 @@ fn synthesize_surface_call(
             return None;
         }
         let expression = match value {
+            crate::kernel::PureFunctionArgument::Value(CValue::Bool(word)) => {
+                synthesize_surface_bool(
+                    &ConditionTerm::truth_of_bool_word(word),
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?
+            }
             // A word argument's term carries its own width; the candidate's
             // round trip confirms the call lowers it at the parameter's type.
             crate::kernel::PureFunctionArgument::Value(
