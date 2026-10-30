@@ -474,8 +474,7 @@ pub(in crate::kernel) fn apply_c_add(
         }
         (CValue::Pointer(pointer), offset @ (crate::kernel::integer64_c_value!(_))) => {
             let mut facts = facts;
-            let Some((offset, unsigned, wide)) = pointer_index_term(offset, &facts, assumptions)
-            else {
+            let Some((offset, unsigned, wide)) = pointer_index_term(offset) else {
                 return Vec::new();
             };
             let Some(byte_width) = pointer_value_step_width(&pointer, left_step_width) else {
@@ -502,8 +501,7 @@ pub(in crate::kernel) fn apply_c_add(
         }
         (offset @ (crate::kernel::integer64_c_value!(_)), CValue::Pointer(pointer)) => {
             let mut facts = facts;
-            let Some((offset, unsigned, wide)) = pointer_index_term(offset, &facts, assumptions)
-            else {
+            let Some((offset, unsigned, wide)) = pointer_index_term(offset) else {
                 return Vec::new();
             };
             let Some(byte_width) = pointer_value_step_width(&pointer, right_step_width) else {
@@ -2377,10 +2375,10 @@ struct PointerFormationGuard {
     value: bool,
 }
 
+/// Observe the completed C integer index exactly. Facts may establish access
+/// bounds, but cannot choose a different address representation.
 pub(in crate::kernel) fn pointer_index_term(
     value: CValue,
-    facts: &(impl ExecutionFactSource + ?Sized),
-    assumptions: &PureFactContext,
 ) -> Option<(Bitvector32Term, bool, bool)> {
     match value.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
@@ -2394,30 +2392,6 @@ pub(in crate::kernel) fn pointer_index_term(
             false,
             false,
         )),
-        // An unsigned word whose sign bit the path has cleared (`x < 4u`
-        // leaves `0 <= x` beside it) names the same element index read as
-        // signed: zero- and sign-extension agree on it. Indexing by its
-        // sign cast σ to `int32` gives the address the shape a signed index
-        // has, so the formation guard and the element and footprint rules
-        // read its range from the same order facts, which read σ(x) as
-        // `x`'s word. Otherwise the index is the exact zero-extended word.
-        CValue::UInt32(value)
-            if decide_with_facts(
-                assumptions,
-                facts,
-                &ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value.clone()),
-            ) == Some(true) =>
-        {
-            Some((
-                Bitvector32Term::sign_cast32(
-                    crate::kernel::MachineIntegerType::UInt32,
-                    crate::kernel::MachineIntegerType::Int32,
-                    value,
-                ),
-                false,
-                false,
-            ))
-        }
         CValue::UInt32(value) => Some((Bitvector32Term::uint64_from_32(value), true, true)),
 
         CValue::Int64(value) => Some((value, false, true)),

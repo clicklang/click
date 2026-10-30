@@ -7242,11 +7242,9 @@ fn evaluate_spec_pointer_offset_paths_in(
             &element_assumptions,
             budget,
         )? {
-            let Some((elements, unsigned, wide)) = crate::kernel::eval::pointer_index_term(
-                element_path.value,
-                &element_path.facts,
-                &element_assumptions,
-            ) else {
+            let Some((elements, unsigned, wide)) =
+                crate::kernel::eval::pointer_index_term(element_path.value)
+            else {
                 continue;
             };
             let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations_under(

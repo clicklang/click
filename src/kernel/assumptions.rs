@@ -7287,8 +7287,7 @@ impl PureFactContext {
         //
         // A sixty-four-bit `x <u c` with `c <= 2^31` files the same pair on
         // the low word `(uint32)x`, which is `x` itself, and the sign-bit
-        // bound `x <=u INT_MAX` an index conversion asks for by key
-        // (`pointer_index_term`).
+        // bound `x <=u INT_MAX` that checked range projection asks for by key.
         if let Some((term, bound, strict)) =
             condition_reasoning::unsigned_upper_bound_below_sign_bit(&condition, value)
         {
