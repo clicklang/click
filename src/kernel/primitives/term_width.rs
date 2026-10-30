@@ -13,8 +13,8 @@
 //! explain why the width stays implied and is checked here instead.
 
 use super::*;
+use crate::kernel::unary_term;
 use crate::kernel::{CompareRelation, MachineBinaryOp, OverflowOperation};
-use crate::kernel::{binary_term, unary_term};
 
 mod narrow;
 pub(crate) use narrow::*;
@@ -219,20 +219,10 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
             Ok(Some(CarrierWidth::of_bits(constant.format().bits())))
         }
         T::Variable(_) | T::PointerAddress(_, _) => Ok(None),
-        binary_term!(Int32, Add, l, r)
-        | binary_term!(Int32, Subtract, l, r)
-        | binary_term!(Int32, Multiply, l, r)
-        | binary_term!(Int32, Divide, l, r)
-        | binary_term!(UInt32, Divide, l, r)
-        | binary_term!(Int32, Remainder, l, r)
-        | binary_term!(UInt32, Remainder, l, r)
-        | binary_term!(Int32, ShiftLeft, l, r)
-        | binary_term!(Int32, ShiftRight, l, r)
-        | binary_term!(UInt32, ShiftRight, l, r)
-        | binary_term!(Int32, BitwiseAnd, l, r)
-        | binary_term!(Int32, BitwiseOr, l, r)
-        | binary_term!(Int32, BitwiseXor, l, r) => operands("32-bit operator", Bits32, &[l, r]),
-        unary_term!(Int32, BitwiseNot, value) => operands("32-bit operator", Bits32, &[value]),
+        crate::kernel::binary_bitvector32_term!(l, r) => {
+            operands("32-bit operator", Bits32, &[l, r])
+        }
+        unary_term!(Bits32, BitwiseNot, value) => operands("32-bit operator", Bits32, &[value]),
         T::If {
             condition,
             then_term,

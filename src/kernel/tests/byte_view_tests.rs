@@ -227,7 +227,7 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
                 UInt32,
                 ShiftRight,
                 Box::new(value.clone()),
-                Box::new(Bitvector32Term::Constant(16)),
+                Box::new(Bitvector32Term::UInt32Constant(16)),
             )),
             Box::new(Bitvector32Term::Constant(0xFF)),
         )))

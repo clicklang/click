@@ -291,17 +291,16 @@ fn order_chains_decide_alike_at_every_width() {
 }
 
 /// Only the 32- and 64-bit formats have format-carrying operator nodes
-/// (`design/machine-integers.md`, "Stage 3"), and a 32-bit sign-free
-/// operator is filed at `int32`: the width audit refuses a `Binary` or
-/// `Unary` node at any other format, and a `uint32` `+` or `~`, whatever its
-/// operands.
+/// (`design/machine-integers.md`, "Stage 3"; every operator of either
+/// 32-bit format since "Every format its own nodes", step 4): the width
+/// audit refuses a `Binary` or `Unary` node at any other format, whatever
+/// its operands.
 #[test]
 fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
     let x = boxed(Bitvector32Term::Variable(Variable(1)));
     for format in [
         MachineIntegerType::Int8,
         MachineIntegerType::UInt16,
-        MachineIntegerType::UInt32,
         MachineIntegerType::Int128,
         MachineIntegerType::UInt128,
     ] {
@@ -363,11 +362,19 @@ fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
         };
         assert_eq!(term_width(&binary), Ok(Some(CarrierWidth::Bits32)));
     }
-    let word_add = Bitvector32Term::Binary {
-        format: MachineIntegerType::Int32,
-        op: MachineBinaryOp::Add,
-        left: x.clone(),
-        right: x.clone(),
-    };
-    assert_eq!(term_width(&word_add), Ok(Some(CarrierWidth::Bits32)));
+    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+        let sum = Bitvector32Term::Binary {
+            format,
+            op: MachineBinaryOp::Add,
+            left: x.clone(),
+            right: x.clone(),
+        };
+        assert_eq!(term_width(&sum), Ok(Some(CarrierWidth::Bits32)));
+        let complement = Bitvector32Term::Unary {
+            format,
+            op: MachineUnaryOp::BitwiseNot,
+            operand: x.clone(),
+        };
+        assert_eq!(term_width(&complement), Ok(Some(CarrierWidth::Bits32)));
+    }
 }

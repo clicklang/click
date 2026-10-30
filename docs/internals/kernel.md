@@ -510,10 +510,15 @@ In `src/kernel/`:
   `Binary { op, format, .. }` or `Unary { format, op, .. }` node
   (`MachineBinaryOp`, `MachineUnaryOp`; signed and unsigned division,
   remainder and right shift are told apart by the format) at a 32- or
-  64-bit format. A 32-bit operator reads words (rule K1), so the sign-free
-  ones (`+ - * << & | ^ ~`) are filed at `int32` and only division,
-  remainder and right shift at `uint32`; the width check refuses any other
-  format. Code that compares nodes by variant also compares
+  64-bit format. Every operator of a `uint32` value is built at `uint32`
+  over operands and constants in that format (`UInt32Constant`), through
+  the format-parametric constructors (`add_at`, `subtract_at`, ...,
+  `machine_binary`); the width check refuses any other format. The
+  operands are still words: σ and a narrow widening are peeled from them
+  (rules K1 and K8), and the e-graph, the difference graph, the signed
+  interval rules and the representation map read a 32-bit sign-free
+  operator by its bits at either format. Code that compares nodes by
+  variant also compares
   `machine_operator()`, since one variant spells every operator. This word
   identity is being removed (`design/machine-integers.md`, "Every format
   its own nodes"); a debug build with `CLICK_FORMAT_AUDIT=<path>` records

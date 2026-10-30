@@ -27,5 +27,5 @@ int32 read_previous(uint32 x) {
 ```
 
 ```expect
-fail: the read of `values[x - 1]` may read outside `values`
+fail: the read of `values[x - 1u32]` may read outside `values`
 ```

@@ -238,7 +238,7 @@ pub(in crate::kernel) fn fold_arithmetic(
         };
     }
     match term {
-        unary_term!(Int32, BitwiseNot, value) => operand(value).map(|value| {
+        unary_term!(Bits32, BitwiseNot, value) => operand(value).map(|value| {
             Bitvector32Term::bitwise_not(Bitvector32Term::Constant(value as i32 as u32))
         }),
         // The conversion's own constant fold: a byte constant `c` in

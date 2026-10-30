@@ -78,7 +78,7 @@ fn machine_operator_chains_cost_the_same_per_node_at_every_format() {
         })
         .1
     };
-    let sizes = [4u32, 8, 16, 32];
+    let sizes = [4u32, 8, 16, 32, 64, 128, 256];
     let mut work_by_format = Vec::new();
     for format in [
         MachineIntegerType::Int32,

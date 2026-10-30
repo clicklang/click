@@ -7677,8 +7677,10 @@ fn uint32_add_bridge_agrees_with_boundary_model() {
         match term {
             Bitvector32Term::Variable(variable) if *variable == Variable(910) => u64::from(a),
             Bitvector32Term::Variable(variable) if *variable == Variable(911) => u64::from(b),
-            Bitvector32Term::Constant(value) => u64::from(*value),
-            binary_term!(Int32, Add, left, right) => {
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                u64::from(*value)
+            }
+            binary_term!(Bits32, Add, left, right) => {
                 u64::from((machine(left, a, b) as u32).wrapping_add(machine(right, a, b) as u32))
             }
             _ => panic!("unexpected term {term:?}"),
@@ -7738,11 +7740,11 @@ fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
         match term {
             Bitvector32Term::Variable(v) if *v == Variable(910) => a,
             Bitvector32Term::Variable(v) if *v == Variable(911) => b,
-            Bitvector32Term::Constant(value) => *value,
-            binary_term!(Int32, Subtract, left, right) => {
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => *value,
+            binary_term!(Bits32, Subtract, left, right) => {
                 machine(left, a, b).wrapping_sub(machine(right, a, b))
             }
-            binary_term!(Int32, BitwiseXor, left, right) => {
+            binary_term!(Bits32, BitwiseXor, left, right) => {
                 machine(left, a, b) ^ machine(right, a, b)
             }
             _ => panic!("unexpected subtraction term {term:?}"),
@@ -7902,12 +7904,12 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
         match term {
             Bitvector32Term::Variable(v) if *v == Variable(910) => a,
             Bitvector32Term::Variable(v) if *v == Variable(911) => b,
-            Bitvector32Term::Constant(v) => *v,
-            binary_term!(Int32, Multiply, left, right) => {
+            Bitvector32Term::Constant(v) | Bitvector32Term::UInt32Constant(v) => *v,
+            binary_term!(Bits32, Multiply, left, right) => {
                 machine(left, a, b).wrapping_mul(machine(right, a, b))
             }
             binary_term!(UInt32, Divide, left, right) => machine(left, a, b) / machine(right, a, b),
-            binary_term!(Int32, BitwiseXor, left, right) => {
+            binary_term!(Bits32, BitwiseXor, left, right) => {
                 machine(left, a, b) ^ machine(right, a, b)
             }
             _ => panic!("unexpected unsigned multiplication term {term:?}"),
@@ -9122,17 +9124,19 @@ fn unsigned_u16_packing_bridges_match_disjoint_fields_and_retain_both_bounds() {
     use num_bigint::BigInt;
     fn word(term: &Bitvector32Term) -> u64 {
         match term {
-            Bitvector32Term::Constant(value) => u64::from(*value),
+            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+                u64::from(*value)
+            }
             Bitvector32Term::UInt64Constant(value) => *value,
             Bitvector32Term::Int64Constant(value) => *value as u64,
-            binary_term!(Int32, BitwiseOr, a, b)
+            binary_term!(Bits32, BitwiseOr, a, b)
             | Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::BitwiseOr,
                 left: a,
                 right: b,
             } => word(a) | word(b),
-            binary_term!(Int32, ShiftLeft, a, b) => {
+            binary_term!(Bits32, ShiftLeft, a, b) => {
                 u64::from((word(a) as u32).wrapping_shl(word(b) as u32))
             }
             Bitvector32Term::Binary {

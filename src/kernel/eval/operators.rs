@@ -447,7 +447,11 @@ pub(in crate::kernel) fn apply_c_add(
                 return Vec::new();
             };
             vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(uint32(Bitvector32Term::add(left, right))),
+                outcome: CExpressionOutcome::Value(uint32(Bitvector32Term::add_at(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    left,
+                    right,
+                ))),
                 facts,
                 obligations,
             }]
@@ -891,7 +895,11 @@ pub(in crate::kernel) fn apply_c_multiply(
     };
     if matches!(width, ScalarWidth::UInt32) {
         vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(uint32(Bitvector32Term::multiply(left, right))),
+            outcome: CExpressionOutcome::Value(uint32(Bitvector32Term::multiply_at(
+                crate::kernel::MachineIntegerType::UInt32,
+                left,
+                right,
+            ))),
             facts,
             obligations,
         }]
@@ -1606,9 +1614,21 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
     vec![CExpressionPath {
         outcome: CExpressionOutcome::Value(if matches!(width, ScalarWidth::UInt32) {
             uint32(match operation {
-                CBitwiseOperation::And => Bitvector32Term::bitwise_and(left, right),
-                CBitwiseOperation::Or => Bitvector32Term::bitwise_or(left, right),
-                CBitwiseOperation::Xor => Bitvector32Term::bitwise_xor(left, right),
+                CBitwiseOperation::And => Bitvector32Term::bitwise_and_at(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    left,
+                    right,
+                ),
+                CBitwiseOperation::Or => Bitvector32Term::bitwise_or_at(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    left,
+                    right,
+                ),
+                CBitwiseOperation::Xor => Bitvector32Term::bitwise_xor_at(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    left,
+                    right,
+                ),
             })
         } else {
             int32(match operation {
@@ -1634,7 +1654,10 @@ pub(in crate::kernel) fn apply_c_bitwise_not(
             obligations,
         }],
         CValue::UInt32(value) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(uint32(Bitvector32Term::bitwise_not(value))),
+            outcome: CExpressionOutcome::Value(uint32(Bitvector32Term::bitwise_not_at(
+                crate::kernel::MachineIntegerType::UInt32,
+                value,
+            ))),
             facts,
             obligations,
         }],
@@ -2202,7 +2225,11 @@ pub(in crate::kernel) fn apply_c_subtract(
                 return Vec::new();
             };
             vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(uint32(Bitvector32Term::subtract(left, right))),
+                outcome: CExpressionOutcome::Value(uint32(Bitvector32Term::subtract_at(
+                    crate::kernel::MachineIntegerType::UInt32,
+                    left,
+                    right,
+                ))),
                 facts,
                 obligations,
             }]
@@ -3911,9 +3938,9 @@ pub(in crate::kernel) fn apply_c_shift_left(
             right_is_64_bit,
             |left, right, facts, obligations, _| {
                 vec![CExpressionPath {
-                    outcome: CExpressionOutcome::Value(uint32(
-                        Bitvector32Term::unsigned_shift_left(left, right),
-                    )),
+                    outcome: CExpressionOutcome::Value(uint32(Bitvector32Term::uint32_shift_left(
+                        left, right,
+                    ))),
                     facts,
                     obligations,
                 }]

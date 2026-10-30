@@ -3442,7 +3442,10 @@ impl PureFactContext {
                 }
             }
             match (pattern, target) {
-                (unary_term!(Int32, BitwiseNot, left), unary_term!(Int32, BitwiseNot, right)) => {
+                (
+                    unary_term!(Bits32 @ left_format, BitwiseNot, left),
+                    unary_term!(Bits32 @ right_format, BitwiseNot, right),
+                ) if left_format == right_format => {
                     collect_term_candidates(left, right, bound, candidates);
                 }
                 (
@@ -4078,7 +4081,10 @@ impl PureFactContext {
                 && self.bitvector_terms_equal_for_transport(left_b, right_b);
         }
         match (left, right) {
-            (unary_term!(Int32, BitwiseNot, left), unary_term!(Int32, BitwiseNot, right)) => {
+            (
+                unary_term!(Bits32 @ left_format, BitwiseNot, left),
+                unary_term!(Bits32 @ right_format, BitwiseNot, right),
+            ) if left_format == right_format => {
                 self.bitvector_terms_equal_for_transport(left, right)
             }
             _ => false,
@@ -4197,17 +4203,17 @@ impl PureFactContext {
                 memory_load_terms_equal_for_fact_transport(left, right, self)
             }
             (
-                binary_term!(Int32, Add, left_a, left_b),
-                binary_term!(Int32, Add, right_a, right_b),
+                binary_term!(Bits32 @ left_format, Add, left_a, left_b),
+                binary_term!(Bits32 @ right_format, Add, right_a, right_b),
             )
             | (
-                binary_term!(Int32, Subtract, left_a, left_b),
-                binary_term!(Int32, Subtract, right_a, right_b),
+                binary_term!(Bits32 @ left_format, Subtract, left_a, left_b),
+                binary_term!(Bits32 @ right_format, Subtract, right_a, right_b),
             )
             | (
-                binary_term!(Int32, Multiply, left_a, left_b),
-                binary_term!(Int32, Multiply, right_a, right_b),
-            ) => {
+                binary_term!(Bits32 @ left_format, Multiply, left_a, left_b),
+                binary_term!(Bits32 @ right_format, Multiply, right_a, right_b),
+            ) if left_format == right_format => {
                 self.bitvector_terms_snapshot_equivalent(left_a, right_a)
                     && self.bitvector_terms_snapshot_equivalent(left_b, right_b)
             }
@@ -4248,19 +4254,30 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        if !matches!(left, binary_term!(Int32, Add, _, _))
-            && !matches!(right, binary_term!(Int32, Add, _, _))
-        {
-            return false;
-        }
+        // Two sums, or a sum and a term, of one 32-bit format: the format
+        // of whichever side is a sum.
+        let format = match (left, right) {
+            (
+                binary_term!(Bits32 @ left_format, Add, _, _),
+                binary_term!(Bits32 @ right_format, Add, _, _),
+            ) => {
+                if left_format != right_format {
+                    return false;
+                }
+                *left_format
+            }
+            (binary_term!(Bits32 @ format, Add, _, _), _)
+            | (_, binary_term!(Bits32 @ format, Add, _, _)) => *format,
+            _ => return false,
+        };
 
         let mut left_terms = Vec::new();
         let mut left_constant = 0u32;
-        collect_bitvector_add_terms(left, &mut left_terms, &mut left_constant);
+        collect_bitvector_add_terms(format, left, &mut left_terms, &mut left_constant);
 
         let mut right_terms = Vec::new();
         let mut right_constant = 0u32;
-        collect_bitvector_add_terms(right, &mut right_terms, &mut right_constant);
+        collect_bitvector_add_terms(format, right, &mut right_terms, &mut right_constant);
 
         if left_constant != right_constant || left_terms.len() != right_terms.len() {
             return false;
@@ -4651,8 +4668,11 @@ impl PureFactContext {
     }
 }
 
-/// Flatten one additive form without using the Rust call stack.
+/// Flatten one additive form of the 32-bit `format` without using the Rust
+/// call stack: the addends of `format`'s `+` and the sum of its constants.
+/// A sum of the other 32-bit format is an addend of its own.
 pub(super) fn collect_order_index_add_terms(
+    format: crate::kernel::MachineIntegerType,
     term: &Bitvector32Term,
     terms: &mut Vec<Bitvector32Term>,
     constant: &mut u32,
@@ -4661,7 +4681,7 @@ pub(super) fn collect_order_index_add_terms(
     while let Some(term) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
         match term {
-            binary_term!(Int32, Add, left, right) => {
+            binary_term!(Bits32 @ found, Add, left, right) if *found == format => {
                 pending.push(right);
                 pending.push(left);
             }
@@ -4685,7 +4705,11 @@ pub(super) fn collect_order_index_add_terms(
 pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
     enum Task {
         Visit(Bitvector32Term),
-        RebuildAdd { count: usize, constant: u32 },
+        RebuildAdd {
+            format: crate::kernel::MachineIntegerType,
+            count: usize,
+            constant: u32,
+        },
         RebuildIf(ConditionTerm),
     }
 
@@ -4699,11 +4723,15 @@ pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
                     term @ Bitvector32Term::MemoryLoad(_, _, _) => {
                         results.push(equality_graph_term_key(&term));
                     }
-                    term @ binary_term!(Int32, Add, _, _) => {
+                    // A sum keys at its own format: an `int32` and a
+                    // `uint32` sum of the same words are different values of
+                    // different formats and never share a key.
+                    term @ binary_term!(Bits32 @ format, Add, _, _) => {
                         let mut raw = Vec::new();
                         let mut constant = 0u32;
-                        collect_order_index_add_terms(&term, &mut raw, &mut constant);
+                        collect_order_index_add_terms(format, &term, &mut raw, &mut constant);
                         tasks.push(Task::RebuildAdd {
+                            format,
                             count: raw.len(),
                             constant,
                         });
@@ -4722,6 +4750,7 @@ pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
                 }
             }
             Task::RebuildAdd {
+                format,
                 count,
                 mut constant,
             } => {
@@ -4729,17 +4758,17 @@ pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
                 let normalized = results.split_off(split);
                 let mut addends = Vec::new();
                 for addend in normalized {
-                    collect_order_index_add_terms(&addend, &mut addends, &mut constant);
+                    collect_order_index_add_terms(format, &addend, &mut addends, &mut constant);
                 }
                 addends.sort();
                 let mut written = if constant == 0 && !addends.is_empty() {
                     None
                 } else {
-                    Some(Bitvector32Term::Constant(constant))
+                    Some(Bitvector32Term::constant_at32(format, constant))
                 };
                 for addend in addends.into_iter().rev() {
                     written = Some(match written {
-                        Some(rest) => Bitvector32Term::add(addend, rest),
+                        Some(rest) => Bitvector32Term::add_at(format, addend, rest),
                         None => addend,
                     });
                 }
@@ -5050,5 +5079,45 @@ mod comparison_operand_order_tests {
         include!(
             "../../scaling_tests/kernel/assumptions/proposition_reasoning/comparison_operand_order_tests.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod order_endpoint_key_format_tests {
+    use super::*;
+    use crate::kernel::{Variable, binary_node};
+
+    fn var(id: u64) -> Box<Bitvector32Term> {
+        Box::new(Bitvector32Term::Variable(Variable(id)))
+    }
+
+    /// A sum keys at its own format: two `uint32` sums that differ only in
+    /// addend order or in how their constants are split share a key, as two
+    /// `int32` sums do, and an `int32` and a `uint32` sum of the same words
+    /// never share one.
+    #[test]
+    fn a_sum_keys_by_its_addends_and_constants_at_its_own_format() {
+        let (x, y) = (|| var(187_001), || var(187_002));
+        let constant = |format: crate::kernel::MachineIntegerType, value: u32| {
+            Box::new(Bitvector32Term::constant_at32(format, value))
+        };
+        let mut keys = Vec::new();
+        for format in [
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineIntegerType::UInt32,
+        ] {
+            let sum = |left, right| Box::new(binary_node!(@ format, Add, left, right));
+            let forms = [
+                *sum(sum(x(), constant(format, 3)), y()),
+                *sum(y(), sum(constant(format, 3), x())),
+                *sum(sum(x(), constant(format, 1)), sum(y(), constant(format, 2))),
+            ];
+            let key = order_endpoint_key(&forms[0]);
+            for form in &forms[1..] {
+                assert_eq!(order_endpoint_key(form), key, "{format:?}: {form:?}");
+            }
+            keys.push(key);
+        }
+        assert_ne!(keys[0], keys[1]);
     }
 }
