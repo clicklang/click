@@ -758,7 +758,9 @@ fn contains_scoped_expression_shape(
         | ContractExpression::Divide(left, right)
         | ContractExpression::Remainder(left, right)
         | ContractExpression::ShiftLeft(left, right)
+        | ContractExpression::RustShiftLeft(left, right)
         | ContractExpression::ShiftRight(left, right)
+        | ContractExpression::RustShiftRight(left, right)
         | ContractExpression::BitwiseAnd(left, right)
         | ContractExpression::BitwiseOr(left, right)
         | ContractExpression::BitwiseXor(left, right)
@@ -1064,7 +1066,9 @@ pub(super) fn infer_scoped_spec_value_type(
         | ContractExpression::BitwiseOr(left, right)
         | ContractExpression::BitwiseXor(left, right)
         | ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right) => {
+        | ContractExpression::RustShiftLeft(left, right)
+        | ContractExpression::ShiftRight(left, right)
+        | ContractExpression::RustShiftRight(left, right) => {
             let (left, right) = infer_scoped_arithmetic_operands(
                 left,
                 right,
@@ -3071,7 +3075,9 @@ pub(super) fn infer_contract_expression_type(
             })
         }
         ContractExpression::ShiftLeft(left, right)
-        | ContractExpression::ShiftRight(left, right) => {
+        | ContractExpression::RustShiftLeft(left, right)
+        | ContractExpression::ShiftRight(left, right)
+        | ContractExpression::RustShiftRight(left, right) => {
             infer_contract_shift_type(left, right, variables, click_functions, context)
         }
         ContractExpression::BitwiseNot(expression) => {
@@ -3493,9 +3499,10 @@ pub(in crate::surface) fn infer_c_expression_type(
                 _ => None,
             }
         }
-        CExpression::ShiftLeft(left, right) | CExpression::ShiftRight(left, right) => {
-            infer_c_shift_type(left, right, variables)
-        }
+        CExpression::ShiftLeft(left, right)
+        | CExpression::ShiftRight(left, right)
+        | CExpression::RustShiftLeft(left, right)
+        | CExpression::RustShiftRight(left, right) => infer_c_shift_type(left, right, variables),
         CExpression::BitwiseNot(expression) => infer_c_expression_type(expression, variables)
             .filter(|c_type| type_is_scalar(*c_type))
             .map(|c_type| scalar_arithmetic_result_type(c_type, c_type)),

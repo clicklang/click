@@ -4728,7 +4728,23 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
                 right, from, to,
             )),
         ),
+        CExpression::RustShiftLeft(left, right) => CExpression::RustShiftLeft(
+            Box::new(substitute_bitvector_variable_in_c_expression(
+                left, from, to,
+            )),
+            Box::new(substitute_bitvector_variable_in_c_expression(
+                right, from, to,
+            )),
+        ),
         CExpression::ShiftRight(left, right) => CExpression::ShiftRight(
+            Box::new(substitute_bitvector_variable_in_c_expression(
+                left, from, to,
+            )),
+            Box::new(substitute_bitvector_variable_in_c_expression(
+                right, from, to,
+            )),
+        ),
+        CExpression::RustShiftRight(left, right) => CExpression::RustShiftRight(
             Box::new(substitute_bitvector_variable_in_c_expression(
                 left, from, to,
             )),
@@ -6345,7 +6361,9 @@ fn substitute_pointer_variable_in_c_expression(
                 CExpression::Divide(_, _) => CExpression::Divide(left, right),
                 CExpression::Remainder(_, _) => CExpression::Remainder(left, right),
                 CExpression::ShiftLeft(_, _) => CExpression::ShiftLeft(left, right),
+                CExpression::RustShiftLeft(_, _) => CExpression::RustShiftLeft(left, right),
                 CExpression::ShiftRight(_, _) => CExpression::ShiftRight(left, right),
+                CExpression::RustShiftRight(_, _) => CExpression::RustShiftRight(left, right),
                 CExpression::BitwiseAnd(_, _) => CExpression::BitwiseAnd(left, right),
                 CExpression::BitwiseOr(_, _) => CExpression::BitwiseOr(left, right),
                 CExpression::BitwiseXor(_, _) => CExpression::BitwiseXor(left, right),
@@ -6754,7 +6772,9 @@ fn substitute_pointer_variable_in_spec_expression(
                 SpecExpression::Divide(_, _) => SpecExpression::Divide(left, right),
                 SpecExpression::Remainder(_, _) => SpecExpression::Remainder(left, right),
                 SpecExpression::ShiftLeft(_, _) => SpecExpression::ShiftLeft(left, right),
+                SpecExpression::RustShiftLeft(_, _) => SpecExpression::RustShiftLeft(left, right),
                 SpecExpression::ShiftRight(_, _) => SpecExpression::ShiftRight(left, right),
+                SpecExpression::RustShiftRight(_, _) => SpecExpression::RustShiftRight(left, right),
                 SpecExpression::BitwiseAnd(_, _) => SpecExpression::BitwiseAnd(left, right),
                 SpecExpression::BitwiseOr(_, _) => SpecExpression::BitwiseOr(left, right),
                 SpecExpression::BitwiseXor(_, _) => SpecExpression::BitwiseXor(left, right),

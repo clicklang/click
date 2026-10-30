@@ -1522,7 +1522,9 @@ macro_rules! binary_c_operation {
             | $crate::kernel::CExpression::BitwiseOr($left, $right)
             | $crate::kernel::CExpression::BitwiseXor($left, $right)
             | $crate::kernel::CExpression::ShiftLeft($left, $right)
+            | $crate::kernel::CExpression::RustShiftLeft($left, $right)
             | $crate::kernel::CExpression::ShiftRight($left, $right)
+            | $crate::kernel::CExpression::RustShiftRight($left, $right)
             | $crate::kernel::CExpression::Equal($left, $right)
             | $crate::kernel::CExpression::NotEqual($left, $right)
             | $crate::kernel::CExpression::LessThan($left, $right)
@@ -1558,7 +1560,9 @@ macro_rules! binary_spec_expression {
             | $crate::kernel::SpecExpression::BitwiseOr($left, $right)
             | $crate::kernel::SpecExpression::BitwiseXor($left, $right)
             | $crate::kernel::SpecExpression::ShiftLeft($left, $right)
+            | $crate::kernel::SpecExpression::RustShiftLeft($left, $right)
             | $crate::kernel::SpecExpression::ShiftRight($left, $right)
+            | $crate::kernel::SpecExpression::RustShiftRight($left, $right)
     };
 }
 pub(crate) use binary_spec_expression;
@@ -3055,6 +3059,9 @@ pub enum CExpression {
     Divide(Box<CExpression>, Box<CExpression>),
     Remainder(Box<CExpression>, Box<CExpression>),
     ShiftLeft(Box<CExpression>, Box<CExpression>),
+    /// Rust-source shifts retained through resource argument expressions.
+    RustShiftLeft(Box<CExpression>, Box<CExpression>),
+    RustShiftRight(Box<CExpression>, Box<CExpression>),
     ShiftRight(Box<CExpression>, Box<CExpression>),
     BitwiseAnd(Box<CExpression>, Box<CExpression>),
     BitwiseOr(Box<CExpression>, Box<CExpression>),
@@ -3309,6 +3316,9 @@ pub enum SpecExpression {
     Divide(Box<SpecExpression>, Box<SpecExpression>),
     Remainder(Box<SpecExpression>, Box<SpecExpression>),
     ShiftLeft(Box<SpecExpression>, Box<SpecExpression>),
+    /// A shift written in a Rust sidecar; retain its source-language identity.
+    RustShiftLeft(Box<SpecExpression>, Box<SpecExpression>),
+    RustShiftRight(Box<SpecExpression>, Box<SpecExpression>),
     ShiftRight(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseAnd(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseOr(Box<SpecExpression>, Box<SpecExpression>),

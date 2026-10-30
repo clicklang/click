@@ -11559,6 +11559,19 @@ impl Parser {
                 reduce_contract_binary_expression(&mut values, pending);
             }
             self.position += 1;
+            let constructor = if self.verifies_rust() {
+                match self.tokens.get(self.position - 1) {
+                    Some(Token::ShiftLeft) => {
+                        ContractExpression::RustShiftLeft as ContractBinaryConstructor
+                    }
+                    Some(Token::ShiftRight) => {
+                        ContractExpression::RustShiftRight as ContractBinaryConstructor
+                    }
+                    _ => constructor,
+                }
+            } else {
+                constructor
+            };
             operators.push((precedence, constructor));
             values.push(self.parse_binary_operand()?);
         }

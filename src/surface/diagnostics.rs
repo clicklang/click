@@ -3355,7 +3355,9 @@ fn unheld_model_field_access<'a>(
             | ContractExpression::Divide(left, right)
             | ContractExpression::Remainder(left, right)
             | ContractExpression::ShiftLeft(left, right)
+            | ContractExpression::RustShiftLeft(left, right)
             | ContractExpression::ShiftRight(left, right)
+            | ContractExpression::RustShiftRight(left, right)
             | ContractExpression::BitwiseAnd(left, right)
             | ContractExpression::BitwiseOr(left, right)
             | ContractExpression::BitwiseXor(left, right)
@@ -5719,7 +5721,9 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
         CExpression::Divide(left, right) => describe_binary_c_expression(left, "/", right),
         CExpression::Remainder(left, right) => describe_binary_c_expression(left, "%", right),
         CExpression::ShiftLeft(left, right) => describe_binary_c_expression(left, "<<", right),
+        CExpression::RustShiftLeft(left, right) => describe_binary_c_expression(left, "<<", right),
         CExpression::ShiftRight(left, right) => describe_binary_c_expression(left, ">>", right),
+        CExpression::RustShiftRight(left, right) => describe_binary_c_expression(left, ">>", right),
         CExpression::BitwiseAnd(left, right) => describe_binary_c_expression(left, "&", right),
         CExpression::BitwiseOr(left, right) => describe_binary_c_expression(left, "|", right),
         CExpression::BitwiseXor(left, right) => describe_binary_c_expression(left, "^", right),
@@ -6769,7 +6773,13 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         ContractExpression::ShiftLeft(left, right) => {
             describe_binary_contract_expression(left, "<<", right)
         }
+        ContractExpression::RustShiftLeft(left, right) => {
+            describe_binary_contract_expression(left, "<<", right)
+        }
         ContractExpression::ShiftRight(left, right) => {
+            describe_binary_contract_expression(left, ">>", right)
+        }
+        ContractExpression::RustShiftRight(left, right) => {
             describe_binary_contract_expression(left, ">>", right)
         }
         ContractExpression::BitwiseAnd(left, right) => {

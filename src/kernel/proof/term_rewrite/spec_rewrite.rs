@@ -1144,7 +1144,15 @@ impl<'a> TermRewrite<'a> {
                 Box::new(self.rewrite_spec_expression(left)?),
                 Box::new(self.rewrite_spec_expression(right)?),
             ),
+            SpecExpression::RustShiftLeft(left, right) => SpecExpression::RustShiftLeft(
+                Box::new(self.rewrite_spec_expression(left)?),
+                Box::new(self.rewrite_spec_expression(right)?),
+            ),
             SpecExpression::ShiftRight(left, right) => SpecExpression::ShiftRight(
+                Box::new(self.rewrite_spec_expression(left)?),
+                Box::new(self.rewrite_spec_expression(right)?),
+            ),
+            SpecExpression::RustShiftRight(left, right) => SpecExpression::RustShiftRight(
                 Box::new(self.rewrite_spec_expression(left)?),
                 Box::new(self.rewrite_spec_expression(right)?),
             ),
@@ -1803,7 +1811,15 @@ impl<'a> TermRewrite<'a> {
                 Box::new(self.rewrite_c_expression(left)?),
                 Box::new(self.rewrite_c_expression(right)?),
             ),
+            CExpression::RustShiftLeft(left, right) => CExpression::RustShiftLeft(
+                Box::new(self.rewrite_c_expression(left)?),
+                Box::new(self.rewrite_c_expression(right)?),
+            ),
             CExpression::ShiftRight(left, right) => CExpression::ShiftRight(
+                Box::new(self.rewrite_c_expression(left)?),
+                Box::new(self.rewrite_c_expression(right)?),
+            ),
+            CExpression::RustShiftRight(left, right) => CExpression::RustShiftRight(
                 Box::new(self.rewrite_c_expression(left)?),
                 Box::new(self.rewrite_c_expression(right)?),
             ),
