@@ -174,6 +174,11 @@ Boolean function applications, equalities, conditionals, and Boolean call
 arguments spell structurally through their existing Surface syntax. Pure-theorem
 premise spelling uses the retained typed source state and looks up names for the
 selected fact's variables, rather than rebuilding an int32-only environment.
+Generic calls spell the declared source name rather than the kernel's
+`::<...>` instance suffix. Typed arguments (including explicit algebraic
+constructors) reconstruct the same instance when lowered. Name selection must
+include variables inside opaque call arguments and both goal binders and
+proof-local witnesses, respecting `intro` shadowing.
 A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.

@@ -162,6 +162,56 @@ mod tests {
     use crate::kernel::{Bitvector32Term, Sort, Variable};
 
     #[test]
+    fn generic_list_calls_keep_exact_spellings_after_unfold_and_intro() {
+        for fixture in [
+            include_str!("../../../mdtests/constructor_type_arguments_are_inferred.md"),
+            include_str!(
+                "../../../mdtests/a_proof_binder_has_its_type_for_constructor_inference.md"
+            ),
+        ] {
+            let source = fixture
+                .split("```click\n")
+                .nth(1)
+                .unwrap()
+                .split("```")
+                .next()
+                .unwrap();
+            let lines = capture(|| {
+                crate::surface::verify_click_theorems(source).unwrap();
+            });
+            let facts = lines
+                .iter()
+                .filter(|line| line.split('\t').nth(1) == Some("fact"))
+                .collect::<Vec<_>>();
+            assert!(!facts.is_empty());
+            assert!(
+                facts.iter().all(|line| line.starts_with("spelled\t")),
+                "{facts:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn generic_list_proof_expands_and_rechecks_without_implicit_search() {
+        let source = r#"
+import click::list;
+theorem only_element(v: int32, x: int32) {
+    requires list::contains(List<int32>::Cons(v, List<int32>::Nil), x);
+    ensures v == x;
+}
+"#;
+        let expanded = crate::surface::expansion::expand_c0_claim_source_by_label(
+            source,
+            &[],
+            "only_element.ensures_0",
+        )
+        .unwrap();
+        crate::surface::proof::without_implicit_auto(|| {
+            crate::surface::verify_click_theorems(&expanded).unwrap();
+        });
+    }
+
+    #[test]
     fn boolean_function_unfold_facts_and_goals_have_exact_spellings() {
         let fixture = include_str!("../../../mdtests/a_bool_pure_function_states_a_claim.md");
         let source = fixture

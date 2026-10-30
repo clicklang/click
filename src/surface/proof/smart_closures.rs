@@ -7522,7 +7522,14 @@ impl<'a> Proof<'a> {
         // This is candidate presentation only; it neither adds facts nor
         // reconstructs a proof context.
         if let ProofContext::Pure(context) = self.context.as_ref() {
-            let selected = crate::kernel::proposition_variables(kernel);
+            // Include arguments of opaque applications: their variables still
+            // need names even though the bitvector collector treats the call
+            // as an atom.
+            let mut selected = BTreeSet::new();
+            crate::kernel::planning_api::collect_proposition_connection_variables(
+                kernel,
+                &mut selected,
+            );
             let mut bindings = selected
                 .iter()
                 .filter_map(|variable| {
@@ -7532,23 +7539,20 @@ impl<'a> Proof<'a> {
                         .map(|name| (*variable, name.clone()))
                 })
                 .collect::<BTreeMap<_, _>>();
-            if let Some(goal) = self.proposition_obligation() {
-                for (name, value) in goal.surface_bindings.iter() {
-                    if let ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                        Bitvector32Term::Variable(variable),
-                    ))) = value
-                        && selected.contains(variable)
-                    {
-                        bindings.insert(*variable, name.clone());
-                    }
+            let (intro_names, local_names) = self.binder_variable_names();
+            for (variable, name) in local_names.into_iter().chain(intro_names) {
+                if selected.contains(&variable) {
+                    bindings.insert(variable, name);
                 }
             }
-            if let Some(surface) = synthesize_surface_proposition_with_bound_variable_names(
+            let synthesized = synthesize_surface_proposition_with_bound_variable_names(
                 kernel,
                 ParameterBinding::default(),
                 &context.source_state,
                 &bindings,
-            ) && matches_kernel(&surface, true).is_some()
+            );
+            if let Some(surface) = synthesized
+                && matches_kernel(&surface, true).is_some()
             {
                 return Some(surface);
             }
