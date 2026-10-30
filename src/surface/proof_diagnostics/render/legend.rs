@@ -116,7 +116,7 @@ impl SnapshotLabels {
         }
     }
 
-    fn legend_pointer(&mut self, pointer: &Pointer) -> String {
+    pub(super) fn legend_pointer(&mut self, pointer: &Pointer) -> String {
         if pointer == &Pointer::null() {
             return "null pointer (0)".into();
         }
