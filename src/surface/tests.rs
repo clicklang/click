@@ -3077,3 +3077,5 @@ fn named_contract_output_patterns_round_trip_and_check_binders() {
 }
 
 mod resource_parameters;
+
+mod transport_certificates;

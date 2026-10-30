@@ -51,6 +51,8 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
     active: &mut BTreeSet<String>,
 ) -> Result<ClickProposition, String> {
     match proposition {
+        ClickProposition::ChangesOnly { .. } => Ok(proposition.clone()),
+
         ClickProposition::PredicateCall { name, arguments } if selected(name) => {
             if !active.insert(name.clone()) {
                 return Err(format!("recursive unfold of predicate `{name}`"));
@@ -352,6 +354,19 @@ fn substitute_click_proposition_nonlogical(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ClickProposition, String> {
     match proposition {
+        ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => Ok(ClickProposition::ChangesOnly {
+            before: before.clone(),
+            after: after.clone(),
+            resources: resources
+                .iter()
+                .map(|r| substitute_resource_subject(r, substitutions))
+                .collect::<Result<_, _>>()?,
+        }),
+
         ClickProposition::Comparison {
             left,
             operator,
@@ -744,6 +759,12 @@ fn collect_click_proposition_binding_names(
     names: &mut BTreeSet<String>,
 ) {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                collect_resource_subject_binding_names(r, names);
+            }
+        }
+
         ClickProposition::Comparison { left, right, .. } => {
             collect_contract_expression_binding_names(left, names);
             collect_contract_expression_binding_names(right, names);
@@ -1070,6 +1091,8 @@ fn rewrite_click_proposition_expression(
         rewrite_click_proposition_expression(value, source, target, preserve_snapshots)
     };
     match proposition {
+        ClickProposition::ChangesOnly { .. } => (proposition.clone(), false),
+
         ClickProposition::Comparison {
             left,
             operator,
@@ -2139,6 +2162,19 @@ fn apply_contract_let_expressions_inner(
     capture_names: &BTreeSet<String>,
 ) -> Result<ClickProposition, String> {
     match proposition {
+        ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => Ok(ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources: resources
+                .into_iter()
+                .map(|r| apply_contract_lets_to_resource_subject(r, bindings))
+                .collect::<Result<_, _>>()?,
+        }),
+
         ClickProposition::Comparison {
             left,
             operator,
@@ -2721,6 +2757,12 @@ fn collect_click_proposition_referenced_names_one(
     names: &mut BTreeSet<String>,
 ) {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                collect_resource_subject_referenced_names(r, names);
+            }
+        }
+
         ClickProposition::Comparison { left, right, .. } => {
             collect_contract_expression_referenced_names(left, names);
             collect_contract_expression_referenced_names(right, names);

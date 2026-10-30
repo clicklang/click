@@ -3261,6 +3261,14 @@ theorem three_is_in_range() {
 
 ## Propositions
 
+`changes_only(before, after, A)` describes the recorded transition between two
+named snapshots, restricted to the byte footprint of resource `A`. The resource
+is interpreted at `before`. Naming this proposition does not establish it:
+a certificate premise must match an existing execution fact. The initial
+implementation supports constant-size memory resources. See
+[transport certificates](../tactics/index.md#transport-certificates).
+
+
 Click proposition connectives are words:
 
 <!-- verified-example: mdtests/proposition_connectives_quantifiers_and_old.md -->

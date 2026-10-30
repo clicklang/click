@@ -1277,6 +1277,7 @@ fn annotate_surface_at_snapshot(
     if matches!(
         surface,
         ClickProposition::Loadable { .. }
+            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
     ) {
@@ -1402,7 +1403,8 @@ fn annotate_surface_at_snapshot(
                     arguments: arguments.iter().map(expression_at_snapshot).collect(),
                 }
             }
-            ClickProposition::Separate { .. }
+            ClickProposition::ChangesOnly { .. }
+            | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => proposition.clone(),
         }
@@ -1487,7 +1489,8 @@ pub(in crate::surface) fn surface_snapshot_selector(
         ClickProposition::PredicateCall { arguments, .. } => {
             arguments.iter().find_map(expression_site)
         }
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => None,

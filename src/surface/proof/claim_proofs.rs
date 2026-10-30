@@ -3807,6 +3807,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     | ProofTactic::Normalize
                                     | ProofTactic::NormalizeUsing(_)
                                     | ProofTactic::ArithmeticUsing(_)
+                                    | ProofTactic::TransportCertificate(_)
                                     | ProofTactic::ArithmeticCertificate(_)
                             ) | PostExecutionTactic::Both(_)
                         ) {
@@ -4307,6 +4308,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | ProofTactic::Normalize
                                 | ProofTactic::NormalizeUsing(_)
                                 | ProofTactic::ArithmeticUsing(_)
+                                | ProofTactic::TransportCertificate(_)
                                 | ProofTactic::ArithmeticCertificate(_),
                             )
                             | PostExecutionTactic::Both(_) => {

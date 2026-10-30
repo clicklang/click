@@ -1641,6 +1641,7 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
             | ClickProposition::Exists { .. }
             | ClickProposition::RangeAll { .. }
             | ClickProposition::RangeAny { .. }
+            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }

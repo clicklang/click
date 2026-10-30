@@ -110,6 +110,11 @@ fn old_collect_spec_proposition_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match proposition {
+        SpecProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                old_collect_spec_resource_bitvector_variables(r, variables);
+            }
+        }
         SpecProposition::IntegerComparison { left, right, .. } => {
             old_collect_spec_integer_variables(left, variables);
             old_collect_spec_integer_variables(right, variables);
@@ -584,6 +589,11 @@ fn old_collect_spec_proposition_bound_identities(
     integer_seen: &mut SeenTerms,
 ) {
     match proposition {
+        SpecProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                old_collect_spec_resource_bound_identities(r, variables, integer_seen);
+            }
+        }
         SpecProposition::IntegerComparison { left, right, .. } => {
             old_collect_spec_integer_bound_variables_inner(left, variables, integer_seen);
             old_collect_spec_integer_bound_variables_inner(right, variables, integer_seen);

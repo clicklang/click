@@ -3263,7 +3263,8 @@ pub(super) fn click_function_applications(
                     expression(argument, known_facts, applications);
                 }
             }
-            ClickProposition::Separate { .. }
+            ClickProposition::ChangesOnly { .. }
+            | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}
         }

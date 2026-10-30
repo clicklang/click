@@ -958,7 +958,8 @@ pub(in crate::surface) fn walk_written_expressions_in_proposition(
                 walk_written_expressions(argument, visit);
             }
         }
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => {}
     }

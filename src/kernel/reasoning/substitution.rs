@@ -7325,6 +7325,18 @@ fn substitute_pointer_variable_in_spec_proposition(
                 })
                 .collect(),
         },
+        SpecProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => SpecProposition::ChangesOnly {
+            before: substitute_pointer_variable_in_spec_memory(before, from, to),
+            after: substitute_pointer_variable_in_spec_memory(after, from, to),
+            resources: resources
+                .iter()
+                .map(|r| substitute_pointer_variable_in_spec_resource(r, from, to))
+                .collect(),
+        },
         SpecProposition::ResourceSeparate { left, right } => SpecProposition::ResourceSeparate {
             left: substitute_pointer_variable_in_spec_resource(left, from, to),
             right: substitute_pointer_variable_in_spec_resource(right, from, to),

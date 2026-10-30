@@ -13,5 +13,5 @@ theorem unused(x: int32) {
 ```
 
 ```expect
-fail: unknown Click library module `click::strings`; the library has click::primitives, click::nat
+fail: unknown Click library module `click::strings`; the library has click::separation, click::primitives, click::nat
 ```

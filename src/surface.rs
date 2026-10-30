@@ -244,6 +244,8 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "constructs",
     "consumes",
     "contains",
+    "changes_only",
+    "transitive",
     "contract",
     "contradiction",
     "conclusion",
@@ -280,6 +282,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "import",
     "implies",
     "arithmetic_certificate",
+    "transport_certificate",
     "peel",
     "signed_int32",
     "rules",
@@ -372,6 +375,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "by",
     "c-fragment",
     "contains-proposition",
+    "changes-only",
     "contract",
     "decreases",
     "defined",
@@ -1971,6 +1975,11 @@ pub enum ResourceKind {
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum ClickProposition {
+    ChangesOnly {
+        before: SnapshotSelector,
+        after: SnapshotSelector,
+        resources: Vec<ResourceSubject>,
+    },
     Comparison {
         left: ContractExpression,
         operator: ComparisonOperator,
@@ -2050,6 +2059,16 @@ impl Clone for ClickProposition {
 
 fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposition {
     match proposition {
+        ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => ClickProposition::ChangesOnly {
+            before: before.clone(),
+            after: after.clone(),
+            resources: resources.clone(),
+        },
+
         ClickProposition::Comparison {
             left,
             operator,
@@ -2735,6 +2754,8 @@ fn collect_current_proposition_variables(
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
+            ClickProposition::ChangesOnly { .. } => {}
+
             ClickProposition::Comparison { left, right, .. } => {
                 collect_current_contract_expression_variables(left, names);
                 collect_current_contract_expression_variables(right, names);
@@ -4645,6 +4666,7 @@ pub enum ProofTactic {
     AutoClose,
     SolveUsing(ProofSolveUsing),
     ArithmeticCertificate(ArithmeticCertificate),
+    TransportCertificate(TransportCertificate),
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
     /// anything. Parses only while `verification::with_allow_sorry` is active
     /// (set solely by `click verify --allow-sorry`); every other use is
@@ -5045,6 +5067,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "transport-certificate",
+        syntax: "transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "arithmetic-certificate",
         syntax: "arithmetic_certificate { premise ...; conclusion N; }",
         class: "simple",
@@ -5263,6 +5290,7 @@ impl ProofTactic {
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
             Self::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
+            Self::TransportCertificate(_) => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
             Self::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
@@ -6779,7 +6807,8 @@ fn click_proposition_reads_memory(
         }
         // Resource separation, containment, loadability, snapshots, and
         // predicates all observe the C state.
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::At { .. }
@@ -9955,3 +9984,76 @@ impl Eq for ClickError {}
 
 #[cfg(test)]
 mod tests;
+
+/// Explicit resource transport proof. All references name earlier nodes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransportCertificate {
+    pub nodes: Vec<TransportCertificateNode>,
+    pub conclusion: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TransportCertificateNode {
+    Premise {
+        index: usize,
+        proposition: ClickProposition,
+        result: ClickProposition,
+    },
+    Preserve {
+        effect: usize,
+        separation: usize,
+        result: ClickProposition,
+    },
+    Transitive {
+        left: usize,
+        right: usize,
+        result: ClickProposition,
+    },
+}
+
+impl TransportCertificate {
+    pub(crate) fn map_propositions<E>(
+        &self,
+        mut f: impl FnMut(&ClickProposition) -> Result<ClickProposition, E>,
+    ) -> Result<Self, E> {
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|node| {
+                Ok(match node {
+                    TransportCertificateNode::Premise {
+                        index,
+                        proposition,
+                        result,
+                    } => TransportCertificateNode::Premise {
+                        index: *index,
+                        proposition: f(proposition)?,
+                        result: f(result)?,
+                    },
+                    TransportCertificateNode::Preserve {
+                        effect,
+                        separation,
+                        result,
+                    } => TransportCertificateNode::Preserve {
+                        effect: *effect,
+                        separation: *separation,
+                        result: f(result)?,
+                    },
+                    TransportCertificateNode::Transitive {
+                        left,
+                        right,
+                        result,
+                    } => TransportCertificateNode::Transitive {
+                        left: *left,
+                        right: *right,
+                        result: f(result)?,
+                    },
+                })
+            })
+            .collect::<Result<_, E>>()?;
+        Ok(Self {
+            nodes,
+            conclusion: self.conclusion,
+        })
+    }
+}

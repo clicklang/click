@@ -530,6 +530,12 @@ impl Names {
         self.visit();
         use SpecProposition::*;
         match proposition {
+            ChangesOnly { resources, .. } => {
+                for r in resources {
+                    self.resource(r);
+                }
+            }
+
             IntegerComparison { left, right, .. } => {
                 self.integer(left);
                 self.integer(right);

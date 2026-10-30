@@ -2799,7 +2799,8 @@ pub(in crate::surface) fn function_contract_summary(
 
 fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> bool {
     match proposition {
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => true,
@@ -4099,6 +4100,7 @@ impl AnnotationLowerer<'_> {
             }
             ClickProposition::Comparison { .. }
             | ClickProposition::FloatClassification { .. }
+            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
@@ -4867,6 +4869,26 @@ impl AnnotationLowerer<'_> {
                     syntax::C0FloatClassification::Nan => CFloatClassification::Nan,
                 },
             }),
+            ClickProposition::ChangesOnly {
+                before,
+                after,
+                resources,
+            } => {
+                let before = self
+                    .snapshot_environment(before, environment)?
+                    .ok_or("changes_only requires a recorded before snapshot")?;
+                let after = self
+                    .snapshot_environment(after, environment)?
+                    .ok_or("changes_only requires a recorded after snapshot")?;
+                Ok(SpecProposition::ChangesOnly {
+                    before: before.current_memory.clone(),
+                    after: after.current_memory.clone(),
+                    resources: resources
+                        .iter()
+                        .map(|r| self.lower_resource_subject_to_spec(r, &before))
+                        .collect::<Result<_, _>>()?,
+                })
+            }
             ClickProposition::Separate { left, right } => Ok(SpecProposition::ResourceSeparate {
                 left: self.lower_resource_subject_to_spec(left, environment)?,
                 right: self.lower_resource_subject_to_spec(right, environment)?,

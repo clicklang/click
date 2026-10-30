@@ -1005,6 +1005,7 @@ step is still checked.
 | `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
+| `transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }` | simple | Specialized | Check explicit preservation and equality composition. | [Reference](#transport-certificates) |
 | `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }` | simple | Expansion output | Check explicit arithmetic evidence. | [Reference](#arithmetic-certificates) |
 | `rewrite(P)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -1814,6 +1815,38 @@ emits a flat certificate; expansion directly rechecks that certificate without
 planning again.
 
 **Checked examples:** [`pure_arithmetic_affine.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_affine.md), [`pure_arithmetic_bounded_operations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_bounded_operations.md), [`c_pointer_local_loop_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/c_pointer_local_loop_invariant.md), [`arithmetic_plans_a_greater_bound_on_an_operation.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_plans_a_greater_bound_on_an_operation.md), [`arithmetic_sharpens_a_bound_with_a_disequality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_sharpens_a_bound_with_a_disequality.md), [`arithmetic_bounds_a_strict_lower_side_below_int32_max.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_bounds_a_strict_lower_side_below_int32_max.md), [`arithmetic_eliminates_integer_equalities.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_eliminates_integer_equalities.md), [`arithmetic_refuses_an_unchained_integer_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_refuses_an_unchained_integer_equality.md), [`a_size_t_loop_stepping_by_two_closes_with_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/a_size_t_loop_stepping_by_two_closes_with_arithmetic.md), [`a_uint64_sum_that_may_wrap_is_not_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/a_uint64_sum_that_may_wrap_is_not_arithmetic.md), [`arithmetic_proves_int64_order_goals.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_proves_int64_order_goals.md), [`an_int64_sum_that_may_overflow_is_not_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/an_int64_sum_that_may_overflow_is_not_arithmetic.md), [`arithmetic_reduces_order_premises_under_an_untouched_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_reduces_order_premises_under_an_untouched_goal.md), [`arithmetic_compound_premise_and_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_compound_premise_and_goal.md), [`arithmetic_compound_wrapping_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_compound_wrapping_premise.md)
+
+### Transport certificates
+
+**Form:** `transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }`
+
+A simple checker for an explicit transport proof. Nodes are numbered from zero
+in written order; references must point backward. It does not search memory
+history, discover separation, or find intermediate equalities.
+
+- `premise i: P => P;` imports an exactly available fact. The stated result
+  must be the same proposition; `i` must equal this node's position.
+- `preserve i, j => R;` uses node `i`'s `changes_only(before, after, A)` and
+  node `j`'s separation of `A` and `B` to establish equality of a read of `B`
+  after and before that transition. Either separation orientation is accepted.
+- `transitive i, j => R;` composes `x == y` and `y == z` into `x == z`.
+- `conclusion N;` must be last and unique; node `N` must equal the goal.
+
+The initial `preserve` rule supports exactly one recorded memory write with
+an exact constant byte footprint, disjoint from a complete pointer or 32/64-bit
+integer cell. The result is oriented after-to-before. Reads use the exact cell
+index or the symbolic read of that snapshot. Registered scalar load names are
+read through their indexed definitions; no alias or history fallback runs.
+`transitive` supports pointer-value and native machine-integer equalities.
+Resource descriptions are used in the syntax, but non-memory resource effects,
+symbolic extents, and multiple write footprints are not yet supported.
+An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
+
+The certificate can be handwritten and is retained by expansion. Automatic
+expansion of general `transport` searches into these certificates is not yet
+implemented.
+
+**Checked example:** [`transport_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_certificate.md).
 
 ### Arithmetic certificates
 

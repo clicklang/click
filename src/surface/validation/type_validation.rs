@@ -90,6 +90,13 @@ fn validate_proposition_expression_types_one(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                validate_resource_subject_expression_types(r, variables, click_functions, context)?;
+            }
+            Ok(())
+        }
+
         ClickProposition::Comparison {
             left,
             operator,
@@ -2386,7 +2393,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Extract(_)
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
-            | ProofTactic::ArithmeticCertificate(_)
+            | ProofTactic::TransportCertificate(_) | ProofTactic::ArithmeticCertificate(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -2528,6 +2535,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Solve => "solve",
         ProofTactic::AutoClose => "implicit tail",
         ProofTactic::SolveUsing(_) => "solve",
+        ProofTactic::TransportCertificate(_) => "transport_certificate",
         ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",
     }
 }
@@ -4015,6 +4023,13 @@ fn validate_predicate_calls_in_proposition_one(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                validate_resource_subject_calls(r, click_functions, context)?;
+            }
+            Ok(())
+        }
+
         ClickProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
             validate_contract_expression_calls(right, click_functions, context)
@@ -4334,6 +4349,13 @@ fn validate_if_condition_proposition(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                validate_resource_subject_calls(r, click_functions, context)?;
+            }
+            Ok(())
+        }
+
         ClickProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
             validate_contract_expression_calls(right, click_functions, context)

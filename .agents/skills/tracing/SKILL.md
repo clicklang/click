@@ -76,6 +76,12 @@ write one of the intermediate facts in Click, it is `inexpressible-fact`.
 
 The first link that fails becomes the new `G`; go back to step 2.
 
+For a single recorded memory write, `transport_certificate` can cite
+`changes_only(before, after, A)` and separation as `premise` nodes, then apply
+`preserve`. Compose explicit equalities with `transitive`. Read the limits in
+`docs/reference/tactics/index.md#transport-certificates`; unsupported resource
+effects are not grounds for silently falling back to a history search.
+
 Before refining, use the primitive-rule map in
 `docs/concepts/tracing.md#identify-the-primitive-rule` and the full **Accepts**
 list of the referenced tactic. State the rule, its instantiated premises, and

@@ -3496,6 +3496,7 @@ fn proof_step_source_name(step: &ProofStep) -> &'static str {
         ProofStep::Assumption => "assumption()",
         ProofStep::Normalize | ProofStep::NormalizeUsing(_) => "normalize()",
         ProofStep::ArithmeticUsing(_) => "solve() using",
+        ProofStep::TransportCertificate(_) => "transport_certificate",
         ProofStep::ArithmeticCertificate(_) => "arithmetic_certificate",
         ProofStep::Intro | ProofStep::IntroAs(_) => "intro()",
         ProofStep::Enumerate => "enumerate()",

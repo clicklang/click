@@ -3423,6 +3423,7 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
             ClickProposition::PredicateCall { arguments, .. } => expressions.extend(arguments),
             // A snapshot proposition reads its own state.
             ClickProposition::At { .. }
+            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}

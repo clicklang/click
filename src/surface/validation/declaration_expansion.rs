@@ -1640,6 +1640,11 @@ fn expand_declared_resource_tactic(
             record_produced_instances(&application, resource_definitions);
             Ok(ProofTactic::UserTactic(application))
         }
+        ProofTactic::TransportCertificate(certificate) => Ok(ProofTactic::TransportCertificate(
+            certificate.map_propositions(|p| {
+                expand_declared_resource_proposition(p.clone(), resource_definitions)
+            })?,
+        )),
         ProofTactic::ArithmeticCertificate(certificate) => Ok(ProofTactic::ArithmeticCertificate(
             expand_declared_resource_certificate(certificate, resource_definitions)?,
         )),
@@ -3253,6 +3258,19 @@ fn expand_declared_resource_proposition_one(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ClickProposition, ClickError> {
     match proposition {
+        ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => Ok(ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources: resources
+                .into_iter()
+                .map(|r| expand_declared_resource_subject(r, resource_definitions))
+                .collect::<Result<_, _>>()?,
+        }),
+
         ClickProposition::Comparison {
             left,
             operator,

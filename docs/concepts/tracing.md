@@ -101,7 +101,7 @@ that every current implementation meets the checking-cost contract.
 | Apply a mathematical or separation law | [Theorem application with selected premises](../reference/tactics/index.md#theorem-application-with-selected-premises), [library laws](../reference/library/index.md) | The named theorem, typed arguments, and each instantiated requirement |
 | Establish arithmetic | [Arithmetic certificates](../reference/tactics/index.md#arithmetic-certificates) | The family, cited premises, and checked certificate nodes |
 | Execute one program statement | [Single statements](../reference/tactics/index.md#single-statements), [one statement obligation](../reference/tactics/index.md#one-statement-obligation) | The statement, its preconditions, and resulting state/effect |
-| Preserve a fact across a state transition | [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
+| Preserve a fact across a state transition | [Transport certificates](../reference/tactics/index.md#transport-certificates), [Transport with selected premises](../reference/tactics/index.md#transport-with-selected-premises) | The source fact, before/after states, checked effect, and separation or other frame premises |
 | Manipulate ownership or open a resource definition | [Scoped resource opening](../reference/tactics/index.md#scoped-resource-opening), [tactic reference](../reference/tactics/index.md) | The selected resource instance, its definition, and required ownership quantities |
 
 When adding a primitive, document its premises, conclusion, explicit Click
@@ -121,6 +121,14 @@ If a documented rule already covers the link and refuses it, use
 `unclear-goal`; a failed search alone is not evidence of a missing rule.
 
 ### One-step preservation must be fast
+
+The explicit `transport_certificate` implements the single-memory-write case
+with `premise`, `preserve`, `transitive`, and `conclusion`. Cite the checked
+`changes_only(before, after, A)` fact and the exact separation fact;
+`preserve` establishes the after-to-before read equality. Its current scope is
+complete pointer or 32/64-bit integer cells and a single constant-size write.
+Use the [certificate reference](../reference/tactics/index.md#transport-certificates)
+for exact syntax and limits. General resource effects remain a design boundary.
 
 The required primitive for a separated store has this logical shape:
 
