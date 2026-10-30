@@ -162,6 +162,82 @@ mod tests {
     use crate::kernel::{Bitvector32Term, Sort, Variable};
 
     #[test]
+    fn algebraic_match_arm_values_name_unfold_facts() {
+        let source = r#"
+verifying "keep.c";
+function is_cons(xs: List<int32>) -> Bool {
+    match xs { List::Nil => false, List::Cons(value, tail) => true, }
+}
+resource modeled(p: int32*) { field items: List<int32>; owns *p; }
+void keep(int32* p) {
+    owns before: modeled(p);
+} by {
+    match before.items {
+        List::Nil => { step_until(function.exit); solve(); },
+        List::Cons(value, tail_items) => {
+            unfold(is_cons(List::Cons(value, tail_items)));
+            step_until(function.exit);
+            solve();
+        },
+    }
+}
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c0_sources(source, &[("keep.c", "void keep(int32 *p) {}")])
+                .unwrap();
+        });
+        let facts = lines
+            .iter()
+            .filter(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields.get(1) == Some(&"fact")
+                    && fields.get(2) == Some(&"condition:BoolApplication")
+            })
+            .collect::<Vec<_>>();
+        assert!(!facts.is_empty(), "{lines:#?}");
+        assert!(
+            facts.iter().all(|line| line.starts_with("spelled\t")),
+            "{facts:#?}"
+        );
+    }
+
+    fn check_algebraic_condition_fixture(fixture: &str) {
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_click_theorems(source).unwrap();
+        });
+        let equalities = lines
+            .iter()
+            .filter(|line| line.split('\t').nth(2) == Some("condition:BoolEqual"))
+            .collect::<Vec<_>>();
+        assert!(!equalities.is_empty(), "{lines:#?}");
+        assert!(
+            equalities.iter().all(|line| line.starts_with("spelled\t")),
+            "{equalities:#?}"
+        );
+    }
+
+    #[test]
+    fn nested_algebraic_conditions_in_list_facts_are_spelled() {
+        check_algebraic_condition_fixture(include_str!(
+            "../../../mdtests/stdlib_list_compositionality.md"
+        ));
+    }
+
+    #[test]
+    fn rigid_algebraic_conditions_in_list_facts_are_spelled() {
+        check_algebraic_condition_fixture(include_str!(
+            "../../../mdtests/algebraic_parametric_theorems.md"
+        ));
+    }
+
+    #[test]
     fn generic_list_calls_keep_exact_spellings_after_unfold_and_intro() {
         for fixture in [
             include_str!("../../../mdtests/constructor_type_arguments_are_inferred.md"),

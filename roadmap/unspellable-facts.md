@@ -189,6 +189,33 @@ list tails in C++ stack `pop` proofs and two `contains_cons` equalities at rigid
 `T` and `List<int32>`. These are the next reproduced spelling cases; counts
 remain observations, not distinct defects.
 
+The next spelling increment addresses those five written Boolean observations.
+The two `contains_cons` cases lacked synthesis for `AlgebraicEqual` inside a
+Boolean expression. The three stack observations already had match-arm source
+names, but premise synthesis ignored `AlgebraicVariable` bindings and algebraic
+synthesis did not consult proof-local names. Generic constructors additionally
+omitted C type-parameter fields. These paths now use the existing comparisons
+and bindings without changing lowering or consulting facts. Focused census
+regressions cover the original rigid/nested list fixtures and an execution
+match arm. The unchanged generic-resource and concrete negative-stack fixtures
+have no written Boolean misses in focused audits.
+The full `scripts/check.sh --no-fail-fast` gate passed with both frontends
+required: 6,890 unit/API/import/scaling tests, 58 examples, and 4,916 mdtests.
+It took 12m49s, exceeding the ten-minute target, including a 3m32s rebuild after
+a baseline comparison. Unit and fixture phases took 251s and 289s respectively.
+No limits were raised and the nightly suite was not run.
+The fresh combined audit passed all 4,916 ordinary mdtests in 225s with zero
+fact-stability differences. Written Boolean misses are now zero; two smart
+Boolean equalities involving returned values remain. There are 22,961 census
+observations, with 1,783 written and 6,792 smart misses (previously 1,822 and
+6,788 over 22,858 observations). Better premise spellings change some proof
+routes, so counts are observations rather than a fixed set of defects. The
+additional misses are rewritten algebraic/Integer goals in stack proofs.
+A separately selected off-corpus `cpp_class_object_state_named_in_a_proof`
+fixture still fails at `push` tactic 7's child-resource argument equality; the
+same failure was reproduced at the preceding commit `fcb89b37d`.
+
+
 An attempted standalone certification extraction on upstream after #2152 is
 **not publishable**: `codex/final-certification-slice` at `6ec3c8a95` failed its
 full gate (6,841 of 6,842 units passed; fixture phase was not reached). The
