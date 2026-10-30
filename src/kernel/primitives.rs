@@ -493,9 +493,9 @@ impl Sort {
 ///
 /// Four- and eight-byte integer reads keep their two's-complement bit pattern
 /// in the term. A four-byte read keeps the reader's signedness (`Int32`,
-/// `UInt32`), but both read one word: one load variable names it
-/// ([`Self::word_kind`]), and a typed read of a cell stored at the other
-/// signedness is the sign cast σ of the stored word (rule K5,
+/// `UInt32`) and is its own load; the two reads of one cell are related by
+/// σ (R-mem), and a typed read of a cell stored at the other signedness is
+/// the sign cast σ of the stored word (rule K5,
 /// `design/machine-integers.md`). Eight-byte reads are one kind (`Bits64`)
 /// and let the `CValue` wrapper choose the interpretation. Narrower reads
 /// store the extended value, which signedness changes, so they keep it. Wide 128-bit reads also keep signedness: their
@@ -583,12 +583,19 @@ impl LoadKind {
     /// Whether a read of this kind returns `value`'s term, where `value` is
     /// what a cell holds. This is the one test every route that answers a
     /// load term from a cell or a store applies. A 32-bit read of either
-    /// signedness reads a 32-bit cell's word: the two reads name one word
-    /// (rule K5 read through K1), so a term-level answer is the stored
-    /// word whichever signedness stored it. The value a read returns, with
-    /// its signedness, is [`Self::read_cell`].
+    /// signedness reads a 32-bit cell's word: each is its own load, but a
+    /// term-level answer is the stored word whichever signedness stored it,
+    /// because σ is the word identity (rules K5 and K1). The value a read
+    /// returns, with its signedness, is [`CType::read_cell`].
     pub fn reads_value(self, value: &CValue) -> bool {
-        Self::of_value(value).map(Self::word_kind) == Some(self.word_kind())
+        Self::of_value(value).is_some_and(|stored| stored.reads_word_of(self))
+    }
+
+    /// Whether a read of this kind reads the same word as a read of
+    /// `other`: the same kind, or either 32-bit signedness (σ is the word
+    /// identity, rule K1).
+    pub fn reads_word_of(self, other: Self) -> bool {
+        self == other || (self.is_word32() && other.is_word32())
     }
 
     /// The value a read of this kind returns from a cell holding `value`:
@@ -613,24 +620,9 @@ impl LoadKind {
     }
 
     /// Whether this is a 32-bit integer read of either signedness: the two
-    /// read the same four bytes, so they name one word (rules K1, K5).
+    /// read the same four bytes, related by σ (R-mem).
     pub fn is_word32(self) -> bool {
         matches!(self, Self::Int32 | Self::UInt32)
-    }
-
-    /// The kind that names this read's word: a 32-bit read of either
-    /// signedness names its `Int32` read's word (rule K5, read through K1);
-    /// every other kind is its own word.
-    pub fn word_kind(self) -> Self {
-        if self == Self::UInt32 {
-            crate::kernel::machine_integer::format_audit::record(
-                crate::kernel::machine_integer::format_audit::WordIdentity::UInt32ReadNamedByInt32,
-                std::panic::Location::caller(),
-            );
-            Self::Int32
-        } else {
-            self
-        }
     }
 
     /// Width when the kind is known but no typed producer recorded an access.

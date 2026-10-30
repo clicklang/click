@@ -618,11 +618,12 @@ an `int32` read at the same address returns all four bytes. A
 `Int16`, `UInt16`, `Int32`, `UInt32`, `Bits64`, `Float32` or `Float64`.
 Four- and eight-byte integer reads keep their bit pattern in the term;
 two-byte reads hold the extended value, which signedness changes. A 32-bit
-read keeps its signedness in its kind, but both 32-bit kinds read one word
-(`LoadKind::word_kind`, `LoadKind::is_word32`): a load variable is named by
-the word's `Int32` read, and a route that answers a load term from a cell
-reads the stored word whichever signedness stored it, while a typed read of
-the other signedness returns the sign cast σ of it (rule K5,
+read keeps its signedness in its kind and is its own load, and both 32-bit
+kinds read one word (`LoadKind::reads_word_of`, `LoadKind::is_word32`): the
+equality graph relates the two reads of one cell by σ (R-mem), and a route
+that answers a load term from a cell reads the stored word whichever
+signedness stored it, while a typed read of the other signedness returns
+the sign cast σ of it (rule K5,
 [mathematical integers](mathematical-integers.md#the-32-bit-sign-cast)).
 Eight-byte reads are one kind, `Bits64`, and let the `CValue` wrapper choose
 signed or unsigned. A pointer read is an `Int32` read, because Click names a

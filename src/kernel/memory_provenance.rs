@@ -4597,9 +4597,8 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             | CValue::UInt32(term) => term.clone(),
             _ => continue,
         };
-        // The store's value is the read of its own kind at its own address,
-        // as a word: a 32-bit read's word is its `Int32` read's (rule K5).
-        let Some(kind) = LoadKind::of_value(&store.value).map(LoadKind::word_kind) else {
+        // The store's value is the read of its own kind at its own address.
+        let Some(kind) = LoadKind::of_value(&store.value) else {
             continue;
         };
         equations.push((
@@ -5960,9 +5959,8 @@ pub(crate) fn certified_store_equations(
                     return None;
                 }
             };
-            // What the store wrote is the read of its own kind there, as a
-            // word (rule K5).
-            let kind = LoadKind::of_value(&store.value)?.word_kind();
+            // What the store wrote is the read of its own kind there.
+            let kind = LoadKind::of_value(&store.value)?;
             Some(Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
@@ -6722,10 +6720,12 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                         };
                         // The snapshot's own cell answers only a read of its
                         // kind: an `int32` cell is not a byte read's value.
-                        let resolved = match memory.known_value(pointer) {
-                            Some(CValue::Int32(value))
-                                if *kind == LoadKind::Int32 && value != load =>
-                            {
+                        let resolved = match memory
+                            .known_value(pointer)
+                            .filter(|_| kind.is_word32())
+                            .and_then(|value| kind.read_cell(&value))
+                        {
+                            Some(CValue::Int32(value) | CValue::UInt32(value)) if value != load => {
                                 Some(value)
                             }
                             _ => assumptions.resolve_memory_load_term(&load),

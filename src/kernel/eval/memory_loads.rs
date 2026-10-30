@@ -4277,11 +4277,9 @@ pub(crate) mod duplicate_read_names {
 /// load keeps the slot it had when every load of its address agreed on one
 /// kind, and a second kind probes past it like any other collision.
 ///
-/// One word, one name: a load variable is a variable, which has no format,
-/// and a 32-bit read of either signedness reads the same four bytes (rule
-/// K5), so both reads are named by their `Int32` word kind
-/// ([`LoadKind::word_kind`]). The reader's `CValue` tag gives the name its
-/// signedness, as it gives any variable's.
+/// Each read is its own load: a 32-bit read of either signedness has a name
+/// of its own, and the two reads of one cell are related by σ (R-mem, in
+/// the equality graph's cell reads; `design/machine-integers.md`, G5).
 fn mint_load_variable_identity(
     memory: &SharedCMemory,
     pointer: &Pointer,
@@ -4289,7 +4287,6 @@ fn mint_load_variable_identity(
     origin: &SharedCMemory,
     bytes: u32,
 ) -> Variable {
-    let kind = kind.word_kind();
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     memory.hash(&mut hasher);
@@ -4458,22 +4455,6 @@ pub(crate) fn load_variable_for_term(
     if *kind == LoadKind::Int8 {
         return None;
     }
-    // One word, one name: an unsigned 32-bit read is named, and defined, by
-    // its word's `Int32` read (rule K5; [`mint_load_variable_identity`]).
-    if *kind == LoadKind::UInt32 {
-        crate::kernel::machine_integer::format_audit::record(
-            crate::kernel::machine_integer::format_audit::WordIdentity::UInt32ReadNamedByInt32,
-            std::panic::Location::caller(),
-        );
-        let Bitvector32Term::MemoryLoad(memory, pointer, _) = bits else {
-            unreachable!("matched a memory load above");
-        };
-        return load_variable_for_term(&Bitvector32Term::MemoryLoad(
-            memory.clone(),
-            pointer.clone(),
-            LoadKind::Int32,
-        ));
-    }
     // Naming is deterministic per term, and callers ask per fact atom per
     // comparison; the version walk and canonicalization behind a cold call
     // are not free, so cache by term. Term hashing is cheap: embedded
@@ -4546,7 +4527,7 @@ fn load_variable_for_term_uncached(bits: &Bitvector32Term) -> Option<(Variable, 
     // approximation of its own.
     if let Bitvector32Term::Variable(variable) = &canonical
         && let Bitvector32Term::MemoryLoad(_, _, kind) = bits
-        && registered_load_kind_for_variable(variable) == Some(kind.word_kind())
+        && registered_load_kind_for_variable(variable) == Some(*kind)
     {
         return Some((*variable, bits.clone()));
     }

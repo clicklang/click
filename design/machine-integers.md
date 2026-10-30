@@ -493,7 +493,8 @@ Progress:
   word, is the stored word (`LoadKind::reads_value` compares word kinds).
   One word, one name: a load variable is a variable, which has no format,
   so a `UInt32` read is named and defined by its word's `Int32` read
-  (`LoadKind::word_kind`), as a signed byte read is the conversion of the
+  (`LoadKind::word_kind`; superseded by step 4's item 5, 2026-10-30, where
+  each read is its own load), as a signed byte read is the conversion of the
   byte's unsigned read. Kernel-internal reads stay `Int32`. A trace prints
   either 32-bit kind as `read<Bits32>`, as before. No verdict changed.
 - Step 2, constants with a format, is done (2026-10-25). `Bitvector32Term`
@@ -642,6 +643,20 @@ Progress:
      removes K1, K2 and K6, with R0 at 32 bits and the difference graph's
      σ links.
   5. Reads by their own kind, with R-mem; typed index coordinates (G1).
+     Steps 5 and 6 land before step 4b removes K1 and K6 (maintainer
+     direction, 2026-10-30), so 4b removes no rule a read or a widening
+     still needs. Step 5 is done (2026-10-30): a `UInt32` read is its own
+     load, minted and defined at its own kind (`mint_load_variable_identity`
+     no longer maps it to `Int32`, and `LoadKind::word_kind` is gone), and
+     the stores and cells that name a read name one of their own kind. R-mem
+     relates the two reads of one cell: the equality graph registers a read
+     of either 32-bit kind as the cell's one word load application, which
+     is σ while K1 holds and becomes σ's own relation with step 4b. A route
+     that answers a load term from a cell still reads the stored word at
+     either signedness (`LoadKind::reads_value`), as K1 allows; step 4b
+     reads it through σ. Index coordinates stay words: the named
+     address-only exception G1 allows. Every gate verdict and the verify
+     and audit outputs of the integer corpus are unchanged.
   6. Widenings are nodes: K8 and the word helpers go.
   7. Native narrow operators, specification narrow arithmetic native (G2).
   8. Rust native narrow `+ - * & | ^ ! <<` (G4).
