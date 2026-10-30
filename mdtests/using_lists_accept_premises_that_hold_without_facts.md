@@ -52,8 +52,8 @@ theorem start_below(lo: int32, n: int32) {
 theorem last_cell(a: int32[], n: int32) {
     requires forall (k: int32) { 0 <= k and k <= n implies a[k] == 0 };
     requires 0 <= n;
-    views a[0..n + 1];
     requires n < 100;
+    views a[0..n + 1];
     ensures a[n] == 0 by {
         instantiate(forall (k: int32) { 0 <= k and k <= n implies a[k] == 0 }, n) using {
             0 <= n;

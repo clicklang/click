@@ -24,6 +24,7 @@ pub(in crate::surface) use fixed_state_proofs::{
 };
 mod cursor_execution;
 mod execution_planning;
+pub(in crate::surface) use execution_planning::probe_open_obligations;
 pub(in crate::surface) mod fact_reasoning;
 pub(in crate::surface) mod fixed_state_proofs;
 mod implicit_auto_scope;
@@ -1903,7 +1904,9 @@ pub(super) fn initial_claim_context_with_caller_owner(
     claim_label: &str,
     caller_owner: Option<&CallerSourceOwnerId>,
 ) -> Result<InitialClaimContext, ClickError> {
-    let (mut state, arguments) = if let Some(startup) = &parsed_function.program_entry_state {
+    let (mut state, arguments, entry_assumptions) = if let Some(startup) =
+        &parsed_function.program_entry_state
+    {
         if !function_block.requires().is_empty() || !parsed_function.parameters().is_empty() {
             return Err(ClickError::new(
                 "program-entry main currently requires no parameters or preconditions; static ownership comes from startup",
@@ -1915,6 +1918,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
                 &parsed_function.to_kernel_function(),
             ),
             vec![],
+            PureFactContext::new(),
         )
     } else {
         let authority_definitions = crate::surface::verification::composite_resource_definitions(
@@ -1937,6 +1941,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
             parsed_function.parameters(),
             &declared,
             &authority_definitions,
+            spec_definitions,
         )?
     };
     // The entry lowers its requirements one at a time; the index lets each
@@ -2006,6 +2011,7 @@ pub(super) fn initial_claim_context_with_caller_owner(
         state,
         claim_label,
         spec_definitions,
+        &entry_assumptions,
     )?;
     let include_owned_composite_cores = Some(resources::OwnedCores::AttachedToOwner);
     let mut projection_state = state.clone();
@@ -2885,7 +2891,7 @@ fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
     }
 }
 
-fn available_initial_requirement_propositions(
+pub(in crate::surface) fn available_initial_requirement_propositions(
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
     state: &CState,

@@ -1231,6 +1231,8 @@ impl<'a> Proof<'a> {
             .zip(&application.arguments)
             .filter(|(parameter, argument)| {
                 matches!(parameter.click_type(), ClickType::Algebraic(_))
+                    || matches!(parameter.click_type(), ClickType::C(ty)
+                        if crate::kernel::MachineIntegerType::from_c_type(ty.to_kernel_type()).is_some())
                     || (parameter.click_type() == &ClickType::Integer
                         && crate::surface::lowering::lower_contract_integer_to_spec(
                             argument,
@@ -1254,6 +1256,58 @@ impl<'a> Proof<'a> {
                 .assume_proposition(self.lower_surface_proposition(surface, "theorem premise")?);
         }
         for (argument_type, argument) in arguments {
+            if matches!(argument_type, ClickType::C(_)) {
+                let bindings = contract_expression_referenced_names(argument)
+                    .into_iter()
+                    .filter_map(|name| {
+                        context
+                            .algebraic_values
+                            .get(&name)
+                            .cloned()
+                            .map(|value| (name, value))
+                    })
+                    .collect();
+                let (_, guards) = capture_fixed_state_native_expression_with_guards(
+                    argument,
+                    self.facts().assumptions(),
+                    ContractEnvironment::new(context.values, context.array_refs),
+                    bindings,
+                    context.integer_values,
+                    FixedStateFrame::new(
+                        context.pre_state,
+                        context.post_state,
+                        context.result,
+                        context.recorded_snapshots,
+                    ),
+                    spec_definitions,
+                    &BTreeSet::new(),
+                )
+                .map_err(|message| self.step_error(message))?;
+                for guard in guards {
+                    if normalizes_context_free(&guard) || explicit.settles_exactly(&guard) {
+                        continue;
+                    }
+                    let surface = ClickProposition::Defined {
+                        expression: argument.clone(),
+                    };
+                    let whole =
+                        self.lower_surface_proposition(&surface, "machine argument guard")?;
+                    if self.facts().listed_premise_available(&whole, &[], false) {
+                        explicit = explicit.assume_proposition(whole);
+                        premises.push(surface);
+                    } else {
+                        let (surface, evidence) =
+                            self.argument_guard_source(&guard).ok_or_else(|| {
+                                self.step_error(
+                                    "machine theorem argument needs explicit definedness evidence",
+                                )
+                            })?;
+                        explicit = explicit.assume_proposition(evidence);
+                        premises.push(surface);
+                    }
+                }
+                continue;
+            }
             if matches!(argument_type, ClickType::Algebraic(_)) {
                 let bindings = contract_expression_referenced_names(argument)
                     .into_iter()

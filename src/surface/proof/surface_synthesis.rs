@@ -4952,7 +4952,7 @@ fn synthesize_scalar_model_field(variable: Variable, state: &CState) -> Option<C
         let instance = state.resource_instance_at_path(origin.identity, &[])?;
         matches!(
             instance.fields().get(origin.field_index),
-            Some(AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(held)))) if *held == variable
+            Some(AlgebraicValue::C(crate::kernel::integer_c_value!(Bitvector32Term::Variable(held)))) if *held == variable
         )
         .then_some(())?;
         // The field's declared C type, as the parser's elaboration records it.

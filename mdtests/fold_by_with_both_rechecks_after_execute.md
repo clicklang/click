@@ -43,7 +43,7 @@ void bump(struct holder* h) {
                     interval_atom (1) (1) (1);
                     interval_add_bounded 1, 2 (-2147483647) (100);
                     trivial => -99 <= 0;
-                    add 0, 4 => ((at(function.entry, h->count) + -99) as int32) < ((at(function.entry, 100) + 0) as int32);
+                    add 0, 4 => (at(function.entry, h->count) + -99) < (at(function.entry, 100) + 0);
                     affine_conclusion 5 3 => (h->count as int32) < (200 as int32);
                     conclusion 6;
                 }

@@ -532,6 +532,32 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
     spec_definitions: SpecDefinitions<'_>,
     opaque_click_functions: &std::collections::BTreeSet<String>,
 ) -> Result<CValue, String> {
+    capture_fixed_state_native_expression_with_guards(
+        expression,
+        assumptions,
+        contract_environment,
+        algebraic_values,
+        integer_values,
+        fixed_state,
+        spec_definitions,
+        opaque_click_functions,
+    )
+    .map(|(value, _)| value)
+}
+
+// Argument selection retains exactly the mandatory domains checked by the
+// ordinary evaluator. Logical load observations do not request extra access
+// authority merely because a theorem takes their values as arguments.
+pub(in crate::surface) fn capture_fixed_state_native_expression_with_guards(
+    expression: &ContractExpression,
+    assumptions: &PureFactContext,
+    contract_environment: ContractEnvironment<'_>,
+    algebraic_values: BTreeMap<String, SpecAlgebraicExpression>,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+    fixed_state: FixedStateFrame<'_>,
+    spec_definitions: SpecDefinitions<'_>,
+    opaque_click_functions: &std::collections::BTreeSet<String>,
+) -> Result<(CValue, Vec<Proposition>), String> {
     let mut click_function_calls = BTreeSet::new();
     crate::surface::validation::collect_click_function_calls(expression, &mut click_function_calls);
     let symbolic_load_assumptions =
@@ -573,12 +599,17 @@ pub(in crate::surface) fn evaluate_fixed_state_expression_through_kernel_with_al
             contract_environment.values,
         ),
     )?;
+    let guards = obligations
+        .iter()
+        .filter(|obligation| !obligation.is_assumable())
+        .map(|obligation| obligation.proposition().clone())
+        .collect();
     let obligations = obligations
         .iter()
         .map(|obligation| obligation.proposition().clone())
         .collect::<Vec<_>>();
     refuse_impossible_loads(&obligations, assumptions)?;
-    Ok(value)
+    Ok((value, guards))
 }
 
 /// Capture one proof-side Integer expression as the symbolic term it denotes

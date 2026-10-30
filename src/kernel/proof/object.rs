@@ -1122,6 +1122,33 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     },
                 )
             }
+            // A written `not forall` lowers to a defined counterexample.
+            // Preserve contradiction-style introduction by assuming the exact
+            // complement of that existential, including every domain conjunct.
+            Proposition::Exists {
+                name,
+                var,
+                sort,
+                body,
+            } if written_negation => {
+                let complement = match body.as_ref() {
+                    Proposition::ConditionIs(condition, value) => {
+                        Proposition::ConditionIs(condition.clone(), !value)
+                    }
+                    Proposition::Not(inner) => inner.as_ref().clone(),
+                    body => Proposition::Not(Box::new(body.clone())),
+                };
+                (
+                    Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true),
+                    Some(Proposition::ForAll {
+                        name: crate::kernel::BinderName::written(name),
+                        var: *var,
+                        sort: sort.clone(),
+                        body: Box::new(complement),
+                    }),
+                    PropositionIntroduction::Negation,
+                )
+            }
             Proposition::Not(body) => (
                 Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true),
                 Some(body.as_ref().clone()),
@@ -3140,6 +3167,58 @@ mod tests {
             let wrong_body = Proposition::Implies(Box::new(truth.clone()), Box::new(falsehood));
             assert!(checked.with_implication_prefix(&wrong_body, 1).is_none());
         }
+    }
+
+    #[test]
+    fn negated_universal_intro_keeps_the_counterexample_domain() {
+        let variable = Variable(186);
+        let domain = Proposition::Predicate {
+            name: "defined".into(),
+            arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(variable))],
+        };
+        let truth = Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true);
+        let body = Proposition::And(Box::new(domain), Box::new(truth));
+        let goal = Proposition::Exists {
+            name: "x".into(),
+            var: variable,
+            sort: Sort::CInt32,
+            body: Box::new(body.clone()),
+        };
+        let proof: ProofObject<(), ProofObligation<(), Arc<OutcomeProofState<()>>>, ()> =
+            ProofObject::root(
+                (),
+                ProofBranch::new(
+                    ProofObligation::Proposition(PropositionObligation::new(goal, ())),
+                    ProofBranchState {
+                        facts: ProofFacts::from_ordered(&[]),
+                        unfolded_predicates: PersistentOrderedSet::default(),
+                        execution: None,
+                    },
+                ),
+            );
+        assert!(proof.apply_intro(|_, _, _| ()).is_err());
+        let next = proof
+            .apply_intro_opening(
+                |_, introduction, introduced| {
+                    assert!(matches!(introduction, PropositionIntroduction::Negation));
+                    assert_eq!(
+                        introduced,
+                        Some(&Proposition::ForAll {
+                            name: crate::kernel::BinderName::written("x"),
+                            var: variable,
+                            sort: Sort::CInt32,
+                            body: Box::new(Proposition::Not(Box::new(body.clone()))),
+                        })
+                    );
+                },
+                true,
+            )
+            .unwrap_or_else(|_| panic!("written negation opens by contradiction"));
+        assert_eq!(
+            next.focused_proposition().unwrap().0.proposition(),
+            &Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(false), true)
+        );
+        assert!(next.apply_normalize().is_err());
     }
 
     #[test]

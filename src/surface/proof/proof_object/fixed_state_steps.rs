@@ -660,12 +660,24 @@ impl<'a> Proof<'a> {
             pointer_element_widths: BTreeMap::new(),
         };
         let unfolded_predicates = self.active_unfolded_predicates();
-        let applied = apply_theorem_applications_to_available(
+        let explicit_premises = unfold_available_predicate_facts(
+            context.spec_definitions,
+            &unfolded_predicates,
+            &explicit_premises,
+        )
+        .map_err(|message| self.step_error(message))?;
+        // An explicit `using` list supplies both argument-domain evidence
+        // and the theorem's premises; omitted guards cannot leak in from
+        // the surrounding proof context.
+        let lowering_assumptions = assumptions_from_propositions(&explicit_premises);
+        let applied = instantiate_theorem_application_with_assumptions(
             context.theorem_environment,
-            &[(self.node.depth, application.clone())],
+            application,
             context.claim_label,
             None,
-            explicit_premises,
+            self.node.depth,
+            &explicit_premises,
+            &lowering_assumptions,
             &application_context,
             context.spec_definitions,
             &unfolded_predicates,

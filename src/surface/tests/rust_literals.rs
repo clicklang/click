@@ -131,6 +131,57 @@ fn rust_integer_literal_syntax_does_not_change_c_or_cpp_sidecars() {
 }
 
 #[test]
+fn rust_shift_contracts_wrap_bits_and_preserve_the_operand_width() {
+    for claim in [
+        "(-1i32 << 1u32) == -2i32",
+        "(1073741824i32 << 1u32) == -2147483648i32",
+        "(-1i64 << 1u32) == -2i64",
+        "(4611686018427387904i64 << 1u32) == -9223372036854775808i64",
+        "(64i8 << 1u32) == -128i8",
+        "(16384i16 << 1u32) == -32768i16",
+        "(128u8 << 1u32) == 0u8",
+        "(-128i8 >> 7u32) == -1i8",
+    ] {
+        prove(&format!(
+            "theorem shift() {{ ensures {claim} by {{ normalize(); }} }}"
+        ))
+        .unwrap_or_else(|error| panic!("{claim}: {error:?}"));
+    }
+    for expression in [
+        "1i8 << 8u32",
+        "1i16 << 16u32",
+        "1i32 << 32u32",
+        "1i64 << 64u32",
+        "1u8 >> 8u32",
+        "1i16 >> 16u32",
+        "1i32 << -1i32",
+        "1i32 << 4294967296u64",
+        "1i64 >> -1i32",
+    ] {
+        assert!(prove(&format!("theorem invalid() {{ ensures ({expression}) == ({expression}) by {{ normalize(); }} }}")).is_err(), "{expression}");
+    }
+    for expression in ["-1 << 1", "1073741824 << 1"] {
+        assert!(verify_click_theorems(&format!("theorem c_shift() {{ ensures ({expression}) == ({expression}) by {{ normalize(); }} }}")).is_err(), "C signed shift domain: {expression}");
+    }
+}
+
+#[test]
+fn rust_shift_spelling_survives_expansion_and_rechecking() {
+    let source = r#"verifying "literals.rs";
+        theorem rust_shift(x: i8) {
+            ensures (x << 1u32) == (x << 1u32) by { normalize(); }
+        }
+    "#;
+    let sources = [("literals.rs", "")];
+    verify_c0_sources(source, &sources).unwrap();
+    let expanded =
+        expand_c0_claim_source_by_label(source, &sources, "rust_shift.ensures_0").unwrap();
+    assert!(expanded.contains("<<"), "{expanded}");
+    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap();
+}
+
+#[test]
 fn rust_shift_source_identity_survives_printing_and_resource_arguments() {
     for (operator, left_shift) in [("<<", true), (">>", false)] {
         let source = format!(

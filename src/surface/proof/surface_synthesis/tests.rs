@@ -3,9 +3,8 @@ use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
-/// Lowers a written proposition exactly as a `have` in a fixed-state proof
-/// does, so a synthesized spelling is accepted only when it re-lowers to the
-/// proposition it was synthesized from.
+/// Compare structural lowering separately from proving the use site's debts.
+/// Ordinary proof operations still check those debts before admitting a fact.
 fn relower_written_proposition(
     surface: &ClickProposition,
     state: &CState,
@@ -19,7 +18,7 @@ fn relower_written_proposition_with_snapshots(
     state: &CState,
     recorded_snapshots: &RecordedSnapshots,
 ) -> Result<Proposition, String> {
-    crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_through_kernel_with(
+    crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
         surface,
         &PureFactContext::new(),
         ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
@@ -30,6 +29,7 @@ fn relower_written_proposition_with_snapshots(
         ),
         FixedStateLoweringOptions::default(),
     )
+    .map(|(proposition, _, _, _)| proposition)
 }
 
 /// One cell of a foreign static or file-scope object, spelled the way a
