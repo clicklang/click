@@ -766,6 +766,13 @@ impl TermClasses {
                     if inverse {
                         self.register_byte_inverse(node, value);
                     }
+                    // Rule K8, a relation: the 32-bit widening of a narrow
+                    // value is that value's word, its canonical carrier.
+                    if let Int32Unary::Cast(source, destination) = op
+                        && crate::kernel::is_narrow_widening32(source, destination)
+                    {
+                        self.close(vec![(node, value)]);
+                    }
                     values.push(node);
                     continue;
                 }

@@ -249,11 +249,21 @@ pub(crate) fn c_narrow_integer_range_facts(value: &CValue) -> Option<Vec<Proposi
     ];
     // An unsigned type's range is also an unsigned bound. The closers do
     // not yet bridge the signed pair to it, and a widening to `uint32` is
-    // read in that order, so it is stated beside them.
+    // read in that order, so it is stated beside them, of the widening (a
+    // node of its own, rule K8 a relation).
     if lower == 0 {
+        let narrow = if matches!(value, CValue::UInt8(_)) {
+            MachineIntegerType::UInt8
+        } else {
+            MachineIntegerType::UInt16
+        };
         facts.push(Proposition::ConditionIs(
             ConditionTerm::unsigned_less_equal(
-                term.clone(),
+                Bitvector32Term::machine_integer_cast(
+                    narrow,
+                    MachineIntegerType::UInt32,
+                    term.clone(),
+                ),
                 Bitvector32Term::Constant(upper as u32),
             ),
             true,

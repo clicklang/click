@@ -657,7 +657,18 @@ Progress:
      reads it through σ. Index coordinates stay words: the named
      address-only exception G1 allows. Every gate verdict and the verify
      and audit outputs of the integer corpus are unchanged.
-  6. Widenings are nodes: K8 and the word helpers go.
+  6. Widenings are nodes: K8 and the word helpers go. K8 is restated as a
+     relation (maintainer direction, 2026-10-30; Decisions, K8). Step 6a
+     (2026-10-30) adds the relation and its readers while the peel stays:
+     the equality graph merges a widening node with its operand's class,
+     including one a composed conversion interns; the difference graph
+     links and bounds a widening by its operand; a certificate's widening
+     identity, the cast-range spelling and the diagnostics'
+     promoted-word naming read the widening node; a known
+     32-bit order is found in its mirrored direction through the graph; the
+     narrow binder's unsigned range is stated of its `uint32` widening, and
+     the signed pair it implies is filed on the operand. Step 6b removes
+     the peel.
   7. Native narrow operators, specification narrow arithmetic native (G2).
   8. Rust native narrow `+ - * & | ^ ! <<` (G4).
   9. The 64-bit relations and the legacy conversions merged into `Cast`.
@@ -1000,6 +1011,13 @@ Maintainer direction, 2026-10-26:
   as σ is; a 64-bit `F` keeps the legacy extension over that word.
   Soundness: by the Stage 0 invariant `v`'s word is `n`'s 32-bit sign or
   zero extension, which is `n`'s word in `F`.
+  Restated as a relation (maintainer direction, 2026-10-30, step 6): the
+  widening is a node of its own, and the equality graph merges it with its
+  operand's class (one node and one union per widening) while the
+  difference graph links either 32-bit reading of it to the same reading of
+  the operand. Its soundness is the same Stage 0 invariant. K7′ covers a
+  widening of a narrow cast. The syntactic peel (`word32`) goes once the
+  readers read the relation.
 - **Printing.** C++ and Rust print a narrow conversion as `x as uint8` or
   `x as int8` where they printed its mask arithmetic, and show the narrow
   range facts C shows. After K8 a promoted narrow value prints as

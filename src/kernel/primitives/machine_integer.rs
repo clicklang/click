@@ -557,6 +557,20 @@ impl Bitvector32Term {
     }
 
     /// The source format and operand of a σ, if this term is one.
+    /// The source format and operand of a 32-bit widening of an 8- or
+    /// 16-bit value, if this term is one: a node of its own, whose word is
+    /// its operand's (rule K8, a relation). One match on the root.
+    pub(crate) fn narrow_widening32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
+        match self {
+            Self::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } if is_narrow_widening32(*source, *destination) => Some((*source, value)),
+            _ => None,
+        }
+    }
+
     pub(crate) fn sign_cast32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
         match self {
             Self::MachineIntegerCast {
@@ -699,8 +713,21 @@ impl Bitvector32Term {
 /// whose word for `n` is `n mod 2^32`: the same 32 bits. A widening into 64
 /// bits keeps its legacy extension node over that word.
 pub(crate) fn is_word_cast32(source: MachineIntegerType, destination: MachineIntegerType) -> bool {
-    is_sign_cast32(source, destination)
-        || (source.format().bits() < 32 && destination.format().bits() == 32)
+    is_sign_cast32(source, destination) || is_narrow_widening32(source, destination)
+}
+
+/// Whether a conversion from `source` to `destination` widens an 8- or
+/// 16-bit value into `int32` or `uint32`. Where the widening is a node (a
+/// value at rest; the constructors still peel it inside an operator,
+/// comparison or observation until K8's peel goes), the equality graph and
+/// the difference graph relate it to its operand's word (rule K8, a
+/// relation: the operand's word is the canonical carrier of its value, the
+/// Stage 0 invariant). One comparison.
+pub(crate) fn is_narrow_widening32(
+    source: MachineIntegerType,
+    destination: MachineIntegerType,
+) -> bool {
+    source.format().bits() < 32 && destination.format().bits() == 32
 }
 
 /// Records a peeled word cast for the signedness audit: σ, or a narrow

@@ -3179,13 +3179,13 @@ fn describe_load_kind(kind: crate::kernel::LoadKind) -> &'static str {
     }
 }
 
-/// The word a narrow value widened into 32 bits names (rule K8): a promoted
+/// The word a narrow value widened into 32 bits has (rule K8, a relation): a promoted
 /// read is still that read. Only the widening is read through; a σ keeps
 /// its own node here, as a reinterpretation of the read.
 fn widened_word(term: &Bitvector32Term) -> &Bitvector32Term {
-    match term.word_cast32_operand() {
-        Some((source, word)) if source.format().bits() < 32 => word,
-        _ => term,
+    match term.narrow_widening32_operand() {
+        Some((_, word)) => word,
+        None => term,
     }
 }
 

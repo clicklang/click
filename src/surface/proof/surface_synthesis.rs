@@ -3149,6 +3149,11 @@ fn bitvector_spells_uint32(
         | binary_term!(Int32, Divide, left, right)
         | binary_term!(Int32, Remainder, left, right) => either(left, right),
         binary_term!(UInt32, Divide, ..) | binary_term!(UInt32, Remainder, ..) => true,
+        // A conversion to `uint32`, spelled `x as uint32`.
+        Bitvector32Term::MachineIntegerCast {
+            destination: MachineIntegerType::UInt32,
+            ..
+        } => true,
         _ => false,
     }
 }
@@ -3323,6 +3328,21 @@ fn synthesize_surface_bitvector(
         ))
     };
     match term {
+        // The 32-bit widening of a narrow value is written as the
+        // conversion it is (`c as int32`, `c as uint32`).
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination,
+        } if crate::kernel::is_narrow_widening32(*source, *destination) => {
+            let operand =
+                synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
+            if *destination == MachineIntegerType::UInt32 {
+                synthesize_uint32_operand(operand)
+            } else {
+                synthesize_int32_operand(operand)
+            }
+        }
         Bitvector32Term::MachineIntegerCast { .. } => None,
         // TODO(stage5): synthesize `b as int32`.
         Bitvector32Term::BoolCast { .. } => None,

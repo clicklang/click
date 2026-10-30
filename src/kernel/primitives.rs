@@ -66,6 +66,7 @@ pub(crate) use contracts::{
 };
 mod integer;
 mod machine_integer;
+pub(crate) use machine_integer::is_narrow_widening32;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
 };
