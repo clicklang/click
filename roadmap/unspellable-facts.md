@@ -99,12 +99,27 @@ in 233s on the same binary and recorded exactly three differences, one in each
 of the pointer-tag fixtures named above. No index-related differences remain
 in this corpus.
 
-The pointer-tag cases remain a separate next increment. They reach
-`apply_c_bitwise_binary` from logical bitwise lowering, whose uint64 `&` branch
-calls `clear_bounded_uint64_tag`. That helper consults tag bounds and low-bit
-facts to remove the tag from the numeric term. Move this equality reasoning to
-checking while retaining the written bitwise term. Atomic division/shift
-overflow-domain spellings also still need targeted auditing.
+The pointer-tag increment on `codex/structural-pointer-tags` keeps the numeric
+uint64 `&` term structural. `bounded_uint64_tag_equation` uses the previous
+fixed-size exact bound lookups to emit a separate equality instead of removing
+the tag from the result. Addition still requires the low-bit prefix clear;
+missing bounds, incomplete masks, and possible carries produce no equality.
+The explicit round-trip fixture now rewrites `color == 1` and certifies the
+full tagged-and-masked expression. Its old certificate relied on lowering
+silently removing the tag. The C and contracts are unchanged.
+
+All 27 tag-related fixtures pass with zero observed stability differences.
+Regression coverage checks structural lowering with and without bounds,
+equality refusal when premises are missing, and deterministic work with
+4/16/64/256 unrelated facts and additional bounds on the same tag. All 1,227
+focused tests passed, including every scaling test. The full
+`scripts/check.sh --no-fail-fast` gate passed with both frontends required:
+6,877 unit/API/import/scaling tests, 58 example projects, and 4,916 mdtests.
+It took 10m48s, above the ten-minute target; no limits were raised and no
+nightly suite ran. A fresh ordinary-mdtest stability audit on the same binary
+passed all 4,916 fixtures in 218s and recorded zero differences, down from
+the three pointer-tag observations. This does not settle the spelling census.
+Atomic division/shift overflow-domain spellings also still need targeted auditing.
 
 An attempted standalone certification extraction on upstream after #2152 is
 **not publishable**: `codex/final-certification-slice` at `6ec3c8a95` failed its
