@@ -22,6 +22,12 @@ pub(crate) use narrow::*;
 /// The width of the carrier a term's value occupies.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum CarrierWidth {
+    /// An 8-bit value of its own, a native narrow node. A narrow `CValue`
+    /// still rides in a 32-bit carrier word ([`Self::of_value`]) until
+    /// narrow values are native.
+    Bits8,
+    /// A 16-bit value of its own, a native narrow node.
+    Bits16,
     Bits32,
     Bits64,
     Bits128,
@@ -38,6 +44,17 @@ impl CarrierWidth {
 
     pub(crate) fn of_machine_type(integer_type: MachineIntegerType) -> Self {
         Self::of_bits(integer_type.format().bits())
+    }
+
+    /// The width of a native node of `format`: its own width for an 8- or
+    /// 16-bit format ([`Self::Bits8`], [`Self::Bits16`]), otherwise the
+    /// carrier's ([`Self::of_machine_type`]).
+    pub(crate) fn native(format: MachineIntegerType) -> Self {
+        match format.format().bits() {
+            8 => Self::Bits8,
+            16 => Self::Bits16,
+            _ => Self::of_machine_type(format),
+        }
     }
 
     fn of_load(kind: LoadKind) -> Self {
@@ -170,23 +187,49 @@ fn operands(site: &'static str, width: CarrierWidth, terms: &[&Bitvector32Term])
     Ok(Some(width))
 }
 
-/// The carrier of a format-carrying operator ([`Bitvector32Term::Binary`],
-/// [`Bitvector32Term::Unary`]). Only the 64-bit formats have such operators
-/// so far (`design/machine-integers.md`, "Stage 3"); a node at any other
-/// format is malformed, and is reported as a 64-bit operator meeting the
-/// format's carrier.
+/// The width of a format-carrying operator ([`Bitvector32Term::Binary`],
+/// [`Bitvector32Term::Unary`]) other than a 32-bit one: the 64-bit formats,
+/// and the 8- and 16-bit formats' native sign-free operators
+/// (`+ - * & | ^ <<` and `~`, [`is_native_narrow_operator`]). A node at any
+/// other format, or a narrow node of another operator, is malformed, and is
+/// reported as a 64-bit operator meeting the format's width.
 fn machine_operator_width(
     site: &'static str,
     format: MachineIntegerType,
+    narrow_operator: bool,
 ) -> Result<CarrierWidth, WidthMismatch> {
     match format {
         MachineIntegerType::Int64 | MachineIntegerType::UInt64 => Ok(CarrierWidth::Bits64),
+        MachineIntegerType::Int8
+        | MachineIntegerType::UInt8
+        | MachineIntegerType::Int16
+        | MachineIntegerType::UInt16
+            if narrow_operator =>
+        {
+            Ok(CarrierWidth::native(format))
+        }
         _ => Err(WidthMismatch {
             site,
             expected: CarrierWidth::Bits64,
-            found: CarrierWidth::of_machine_type(format),
+            found: CarrierWidth::native(format),
         }),
     }
+}
+
+/// Whether an 8- or 16-bit format has a native node for `op`: the sign-free
+/// operators `+ - * & | ^ <<` (decision G4). Division, remainder and right
+/// shifts read a sign and stay promoted for now.
+pub(crate) fn is_native_narrow_operator(op: MachineBinaryOp) -> bool {
+    matches!(
+        op,
+        MachineBinaryOp::Add
+            | MachineBinaryOp::Subtract
+            | MachineBinaryOp::Multiply
+            | MachineBinaryOp::BitwiseAnd
+            | MachineBinaryOp::BitwiseOr
+            | MachineBinaryOp::BitwiseXor
+            | MachineBinaryOp::ShiftLeft
+    )
 }
 
 /// Unifies two widths that must agree, such as the arms of an `If`.
@@ -215,9 +258,11 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
     match term {
         T::Constant(_) | T::UInt32Constant(_) => Ok(Some(Bits32)),
         T::Int64Constant(_) | T::UInt64Constant(_) => Ok(Some(Bits64)),
-        T::MachineIntegerConstant(constant) => {
-            Ok(Some(CarrierWidth::of_bits(constant.format().bits())))
-        }
+        T::MachineIntegerConstant(constant) => Ok(Some(match constant.format().bits() {
+            8 => CarrierWidth::Bits8,
+            16 => CarrierWidth::Bits16,
+            bits => CarrierWidth::of_bits(bits),
+        })),
         T::Variable(_) | T::PointerAddress(_, _) => Ok(None),
         crate::kernel::binary_bitvector32_term!(l, r) => {
             operands("32-bit operator", Bits32, &[l, r])
@@ -293,20 +338,40 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
             left,
             right,
         } => {
-            let width = machine_operator_width("format-carrying binary operator", *format)?;
+            let width = machine_operator_width(
+                "format-carrying binary operator",
+                *format,
+                is_native_narrow_operator(*op),
+            )?;
+            let (site, shift_site) = if width == Bits64 {
+                ("64-bit operator", "64-bit shift")
+            } else {
+                ("narrow operator", "narrow shift")
+            };
             // A shift count is its own operand: C promotes it separately.
             if matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight) {
                 term_width(right)?;
-                operands("64-bit shift", width, &[left])
+                operands(shift_site, width, &[left])
             } else {
-                operands("64-bit operator", width, &[left, right])
+                operands(site, width, &[left, right])
             }
         }
         T::Unary {
-            format, operand, ..
+            format,
+            op,
+            operand,
         } => {
-            let width = machine_operator_width("format-carrying unary operator", *format)?;
-            operands("64-bit operator", width, &[operand])
+            let width = machine_operator_width(
+                "format-carrying unary operator",
+                *format,
+                *op == crate::kernel::MachineUnaryOp::BitwiseNot,
+            )?;
+            let site = if width == Bits64 {
+                "64-bit operator"
+            } else {
+                "narrow operator"
+            };
+            operands(site, width, &[operand])
         }
         T::Float32Negate(value) => operands("float32 operator", Bits32, &[value]),
         T::Float32Binary { left, right, .. } => {
@@ -464,6 +529,9 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
         Bits32 => (Bits32, "32-bit comparison", "32-bit shift overflow"),
         Bits64 => (Bits64, "64-bit comparison", "64-bit shift overflow"),
         Bits128 => (Bits128, "128-bit comparison", "128-bit shift overflow"),
+        CarrierWidth::Bits8 | CarrierWidth::Bits16 => {
+            unreachable!("a carrier is at least 32 bits wide")
+        }
     };
     // A shift count may have any width; the shifted operand has the
     // format's.

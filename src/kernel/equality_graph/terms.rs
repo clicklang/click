@@ -328,6 +328,8 @@ enum Node {
     ),
     IntegerToMachine(crate::kernel::MachineIntegerType),
     Machine128(MachineAtom),
+    /// An 8- or 16-bit native value's atom, by its bits.
+    MachineNarrow(MachineAtom),
     IntegerOperation(IntegerOperation),
     IntegerFunction(crate::kernel::SharedPureApplication, usize),
     PointerFunction(crate::kernel::SharedPureApplication, usize),

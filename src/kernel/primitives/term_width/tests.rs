@@ -298,16 +298,18 @@ fn order_chains_decide_alike_at_every_width() {
 #[test]
 fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
     let x = boxed(Bitvector32Term::Variable(Variable(1)));
-    for format in [
-        MachineIntegerType::Int8,
-        MachineIntegerType::UInt16,
-        MachineIntegerType::Int128,
-        MachineIntegerType::UInt128,
+    // A narrow format has native sign-free operators (`narrow_tests`), but
+    // no division; the 128-bit formats have no operators yet.
+    for (format, op) in [
+        (MachineIntegerType::Int8, MachineBinaryOp::Divide),
+        (MachineIntegerType::UInt16, MachineBinaryOp::Remainder),
+        (MachineIntegerType::Int128, MachineBinaryOp::Add),
+        (MachineIntegerType::UInt128, MachineBinaryOp::Add),
     ] {
-        let found = CarrierWidth::of_machine_type(format);
+        let found = CarrierWidth::native(format);
         let binary = Bitvector32Term::Binary {
             format,
-            op: MachineBinaryOp::Add,
+            op,
             left: x.clone(),
             right: x.clone(),
         };
@@ -325,15 +327,20 @@ fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
             op: MachineUnaryOp::BitwiseNot,
             operand: x.clone(),
         };
-        assert_eq!(
-            term_width(&unary),
-            Err(WidthMismatch {
-                site: "format-carrying unary operator",
-                expected: CarrierWidth::Bits64,
-                found,
-            }),
-            "{format:?}"
-        );
+        if format.format().bits() > 64 {
+            assert_eq!(
+                term_width(&unary),
+                Err(WidthMismatch {
+                    site: "format-carrying unary operator",
+                    expected: CarrierWidth::Bits64,
+                    found,
+                }),
+                "{format:?}"
+            );
+        } else {
+            // A narrow complement is a native node of its width.
+            assert_eq!(term_width(&unary), Ok(Some(found)), "{format:?}");
+        }
         // The refusal reaches a condition that reads the node, so the
         // per-context audit of an assumed fact rejects it too.
         let condition = ConditionTerm::Compare {
