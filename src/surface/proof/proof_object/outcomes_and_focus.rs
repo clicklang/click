@@ -609,8 +609,8 @@ impl<'a> Proof<'a> {
         goal: &crate::kernel::CClaimGoal,
         surface: &ClickProposition,
     ) -> Result<Self, ClickError> {
-        let focused = self.focus_bare_kernel_claim_goal(goal, surface)?;
-        focused.with_claim_lowering_facts(self, goal.facts())
+        let root = self.clone().with_claim_lowering_facts(self, goal.facts())?;
+        root.focus_bare_kernel_claim_goal(goal, surface)
     }
 
     /// [`Self::focus_kernel_claim_goal`] without the goal's lowering facts.
@@ -619,11 +619,46 @@ impl<'a> Proof<'a> {
         goal: &crate::kernel::CClaimGoal,
         surface: &ClickProposition,
     ) -> Result<Self, ClickError> {
-        self.focus_fixed_state_goal_for_claim(
+        let checkpoint = self.checkpoint();
+        let mut root = self.clone();
+        let pending = goal.unproved_requirements(root.facts().assumptions());
+        if !pending.is_empty() {
+            let mut requirements = super::super::execution_planning::OpenObligationProbe::default();
+            for obligation in pending {
+                let error = root
+                    .step_error_with_requirement(
+                        "contract claim has an outstanding evaluation requirement",
+                        None,
+                        Some((
+                            "evaluation requirement",
+                            Box::new(obligation.proposition().clone()),
+                            None,
+                        )),
+                    )
+                    .with_unresolved_requirement(&obligation);
+                requirements.recorded.push(
+                    error
+                        .unresolved_requirement()
+                        .expect("evaluation requirement")
+                        .clone(),
+                );
+                requirements.refusals.push(error);
+            }
+            root = root.discharge_entry_requirements(surface, &requirements)?;
+        }
+        let mut focused = root.focus_fixed_state_goal_for_claim(
             goal.proposition().clone(),
             Some(surface.clone()),
             Some(goal),
-        )
+        )?;
+        // Focusing creates a semantic root. Keep only the prerequisite proofs
+        // just produced for it, so expansion writes those haves before the
+        // claim's own steps without copying the enclosing execution history.
+        for step in root.certificate_since(&checkpoint)?.steps() {
+            focused.node =
+                ProofNode::step_child(&focused.node, BranchId::ROOT, Arc::new(step.clone()));
+        }
+        Ok(focused)
     }
 
     pub(in crate::surface::proof) fn focus_lowered_outcome_claim(

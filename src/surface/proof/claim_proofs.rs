@@ -1422,10 +1422,17 @@ fn close_claim_directly_from_outcome<'a>(
             Ok(proof) => proof,
             Err(error) => {
                 check_verification_deadline()?;
-                return failure(format!(
-                    "could not lower the claim goal: {}",
-                    error.raw_summary()
-                ));
+                // A missed domain is an ordinary open proof obligation. Keep
+                // its exact goal and checked context through the claim wrapper;
+                // converting it to a summary string loses both in the report.
+                let reason = if error.unresolved_requirement().is_some() {
+                    format!("unclosed goal: {surface}")
+                } else {
+                    "could not lower the claim goal".to_string()
+                };
+                return Ok(Err(error.with_context(format!(
+                    "`ensures {surface}` failed for `{claim_label}` path {path_index}: {reason}"
+                ))));
             }
         }
     };

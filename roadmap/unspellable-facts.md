@@ -12,6 +12,30 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Arithmetic migration: landing order
+
+The local arithmetic migration separates structural terms from definedness
+obligations. The complete integration passed the ordinary gate, but it must
+land in dependency order:
+
+1. Retain claim evaluation obligations and discharge them during ordinary
+   proof checking, preserving their certificates and diagnostics. Keep the
+   existing final certification behavior in this increment.
+2. Migrate partial arithmetic producers to structural terms with mandatory
+   obligations, including quantified domains, shifts, wide arithmetic, and
+   Rust's distinct shift semantics.
+3. Consume the already-checked claim completion during final certification,
+   removing its repeated lowering and proof attempt.
+
+The third step cannot land first: legacy arithmetic success paths can carry
+"no overflow" as a path fact. Early completion consumption with those old
+producers incorrectly accepts an unbounded `to_integer(x + 1) ==
+to_integer(x + 1)` claim. The existing negative test
+`forward_conversion_requires_symbolic_argument_definedness` caught this in an
+experimental extraction; that extraction was not published. The complete
+migration rejects the claim. Preserve this control throughout the staged
+landing, and do not add a new finalizer recheck as a compatibility workaround.
+
 ## The goal
 
 For every kernel term a proof state holds, `lower(raise(x)) == x`. That needs

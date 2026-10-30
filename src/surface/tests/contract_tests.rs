@@ -2893,3 +2893,119 @@ fn casts_of_resource_fields_keep_their_declared_scalar_types() {
     verify_c0_sources(&mathematical, &[("field.c", c)])
         .expect_err("a C cast cannot replace an explicit Integer conversion");
 }
+
+#[test]
+fn contract_claims_cannot_hide_overflow_or_zero_division_behind_reflexivity() {
+    let c = "int32 identity(int32 x) { return x; }";
+    for expression in [
+        "result + 1",
+        "result / 0",
+        "result % 0",
+        "to_uint8(to_integer(result))",
+    ] {
+        let source = format!(
+            r#"verifying "domain.c";
+            int32 identity(int32 x) {{
+                ensures to_integer({expression}) == to_integer({expression});
+            }} by {{ step(); solve(); }}
+        "#
+        );
+        assert!(
+            verify_c0_sources(&source, &[("domain.c", c)]).is_err(),
+            "{expression} must have a domain"
+        );
+    }
+}
+
+#[test]
+fn contract_logical_read_facts_do_not_grant_access() {
+    let c = "int32 identity(int32* p) { return 0; }";
+    let source = r#"verifying "domain.c";
+        int32 identity(int32* p) { ensures p[0] == p[0]; }
+    "#;
+    verify_c0_sources(source, &[("domain.c", c)]).expect("logical reflexivity is total");
+    let source = source.replace("p[0] == p[0]", "defined(p[0])");
+    verify_c0_sources(&source, &[("domain.c", c)])
+        .expect_err("logical read naming grants no access");
+}
+
+#[test]
+fn opaque_contract_predicate_proof_still_owes_its_body_domain() {
+    let c = "int32 identity(int32 x) { return x; }";
+    let source = r#"verifying "domain.c";
+        predicate reflexive(x: int32) { to_integer(x + 1) == to_integer(x + 1) }
+        int32 identity(int32 x) { ensures reflexive(result); }
+    "#;
+    verify_c0_sources(source, &[("domain.c", c)])
+        .expect_err("an opaque predicate cannot conceal overflow");
+    let bounded = source.replace(
+        "ensures reflexive",
+        "requires x < 2147483647; ensures reflexive",
+    );
+    verify_c0_sources(&bounded, &[("domain.c", c)])
+        .expect("the predicate is defined under the required bound");
+}
+
+#[test]
+fn exceptional_contract_claims_discharge_their_own_domains() {
+    let c = "int32 helper(int32 x) { return x; } int32 caller(int32 x) { return helper(x); }";
+    for (exception, claim, passes) in [
+        ("7", "to_integer(exception + 1) == 8", true),
+        (
+            "2147483647",
+            "to_integer(exception + 1) == to_integer(exception + 1)",
+            false,
+        ),
+        (
+            "7",
+            "to_integer(exception / 0) == to_integer(exception / 0)",
+            false,
+        ),
+    ] {
+        let source = format!(
+            r#"verifying "domain.c";
+            int32 helper(int32 x) throws int32 {{
+                ensures result == x;
+                exceptional ensures exception == {exception};
+            }}
+            int32 caller(int32 x) throws int32 {{
+                ensures result == x;
+                exceptional ensures {claim};
+            }}
+        "#
+        );
+        let result = verify_c0_sources(&source, &[("domain.c", c)]);
+        assert_eq!(result.is_ok(), passes, "{claim}: {result:?}");
+    }
+}
+
+#[test]
+fn contract_domain_refusal_retains_the_actual_goal_and_checked_context() {
+    let source = r#"verifying "claim_domain.c";
+        int32 identity(int32 x) {
+            ensures to_uint8(to_integer(result)) == to_uint8(to_integer(result));
+        }
+    "#;
+    let error = verify_c0_sources(
+        source,
+        &[("claim_domain.c", "int32 identity(int32 x) { return x; }")],
+    )
+    .expect_err("the claim still owes its integer conversion domain");
+    assert!(error.to_string().contains("unclosed goal:"), "{error}");
+    let requirement = error
+        .unresolved_requirement()
+        .expect("claim wrappers retain the actual debt");
+    // Conversion bounds have no optional producer description. Their actual
+    // proposition and the checked diagnostic scope must still survive.
+    assert!(matches!(
+        requirement.proposition,
+        Proposition::ConditionIs(_, true)
+    ));
+    assert!(
+        error.diagnostic().is_some(),
+        "checked scope must survive the wrapper"
+    );
+    let report = error.report();
+    assert!(report.contains("goal:"), "{report}");
+    assert!(report.contains("evaluation requirement"), "{report}");
+}

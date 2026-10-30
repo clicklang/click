@@ -2902,40 +2902,64 @@ impl<'a> Proof<'a> {
                 "a proposition obligation can be focused only from a fixed-state proof context",
             ));
         }
-        // Resource compositions retain same-block separation compactly in
-        // `PureFactContext`; materialize only the selected external
-        // separation goal. This keeps the proof state proportional to its
-        // checked inputs while making the kernel-certified, goal-indexed
-        // projection an exact fact for the ordinary `Assumption` step.
-        let facts = self.facts().with_selected_resource_separation(&goal);
         let focused = Self {
             site: self.site.clone(),
             context: self.context.clone(),
-            state: KernelProofObject::root(self.state().locals().clone(), {
-                let context = BranchState {
-                    facts,
-                    unfolded_predicates: self.focused_branch_unfolds().clone(),
-                    execution: match &outcome {
-                        Some(_) => self.branch_execution().cloned(),
-                        None => None,
-                    },
-                };
-                let presentation = PropositionPresentation {
-                    surface: surface_goal.map(Arc::new),
-                    surface_bindings: PersistentMap::default(),
-                    ..PropositionPresentation::default()
-                };
-                let obligation = match (claim_goal, outcome.clone()) {
-                    (Some(claim_goal), outcome) => {
-                        PropositionObligation::for_claim_goal(claim_goal, presentation, outcome)
-                    }
-                    (None, Some(outcome)) => {
-                        PropositionObligation::at_outcome(goal, presentation, outcome)
-                    }
-                    (None, None) => PropositionObligation::new(goal, presentation),
-                };
-                OpenBranch::new(Obligation::Proposition(obligation), context)
-            }),
+            state: if let Some(claim_goal) = claim_goal {
+                self.state
+                    .focus_contract_claim(
+                        claim_goal,
+                        PropositionPresentation {
+                            surface: surface_goal.clone().map(Arc::new),
+                            surface_bindings: PersistentMap::default(),
+                            ..PropositionPresentation::default()
+                        },
+                    )
+                    .map_err(|pending| match pending.first() {
+                        Some(obligation) => self
+                            .step_error_with_requirement(
+                                "contract claim has an outstanding evaluation requirement",
+                                None,
+                                Some((
+                                    "evaluation requirement",
+                                    Box::new(obligation.proposition().clone()),
+                                    None,
+                                )),
+                            )
+                            .with_unresolved_requirement(obligation),
+                        None => self
+                            .step_error("contract claim has an outstanding evaluation requirement"),
+                    })?
+            } else {
+                // Resource compositions retain same-block separation compactly in
+                // `PureFactContext`; materialize only the selected external
+                // separation goal. This keeps the proof state proportional to its
+                // checked inputs while making the kernel-certified, goal-indexed
+                // projection an exact fact for the ordinary `Assumption` step.
+                let facts = self.facts().with_selected_resource_separation(&goal);
+                KernelProofObject::root(self.state().locals().clone(), {
+                    let context = BranchState {
+                        facts,
+                        unfolded_predicates: self.focused_branch_unfolds().clone(),
+                        execution: match &outcome {
+                            Some(_) => self.branch_execution().cloned(),
+                            None => None,
+                        },
+                    };
+                    let presentation = PropositionPresentation {
+                        surface: surface_goal.map(Arc::new),
+                        surface_bindings: PersistentMap::default(),
+                        ..PropositionPresentation::default()
+                    };
+                    let obligation = match outcome.clone() {
+                        Some(outcome) => {
+                            PropositionObligation::at_outcome(goal, presentation, outcome)
+                        }
+                        None => PropositionObligation::new(goal, presentation),
+                    };
+                    OpenBranch::new(Obligation::Proposition(obligation), context)
+                })
+            },
             node: Arc::new(ProofNode {
                 path_memo: Default::default(),
                 parent: None,

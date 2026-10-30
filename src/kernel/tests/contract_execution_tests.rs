@@ -5913,10 +5913,8 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                     ProofObject::root(
                         (),
                         ProofBranch::new(
-                            ProofObligation::Proposition(PropositionObligation::for_claim_goal(
-                                goal,
-                                (),
-                                Some(outcome),
+                            ProofObligation::FunctionOutcome(FunctionOutcomeObligation::new(
+                                0, outcome,
                             )),
                             ProofBranchState {
                                 facts: ProofFacts::from_ordered(&goal_facts),
@@ -5925,6 +5923,9 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
                             },
                         ),
                     );
+                let proof = proof
+                    .focus_contract_claim(goal, ())
+                    .expect("forwarded claim requirements");
                 let closed = proof
                     .apply_assumption(PropositionAssumptionContext::Exact)
                     .unwrap_or_else(|_| {
