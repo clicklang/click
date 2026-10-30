@@ -15,8 +15,10 @@ read that first.
 ## Current arithmetic checkpoint (2026-10-30)
 
 The pointer migration has moved on to arithmetic definedness. This source tree
-contains the core arithmetic migration, prepared on
-`codex/structural-arithmetic-definedness`. The integration history remains in
+contains the core arithmetic migration, merged as
+[PR #2160](https://github.com/clicklang/click/pull/2160), with its pushed commit
+verified upstream. It was prepared on `codex/structural-arithmetic-definedness`.
+The integration history remains in
 `codex/arithmetic-landing`; `codex/arithmetic-definedness` is its preserved earlier
 checkpoint. The pointer checkpoint below is historical. The preparatory PRs
 #2155 through #2159 are merged and their pushed commits were verified upstream.
@@ -66,24 +68,43 @@ smart misses; these are observations, not distinct defects. The largest written
 categories include int32 equalities (375), loadability (228), Integer ordering
 goals (228), and algebraic equalities (193). Acceptance is not complete.
 
-The stability audit recorded 199 differences across five fixtures: 98 each in
-`an_unsigned_loop_counter_store_is_bounded_by_its_guard` and
-`an_unsigned_loop_counter_store_is_bounded_by_a_variable_guard`, whose terms
-currently differ only in variable IDs (cause still under investigation), plus
-one each in `a_bounded_variable_tag_preserves_an_incoming_word_relationship`,
+The earlier stability audit recorded 199 differences across five fixtures: 98
+each in the two unsigned-loop-counter fixtures, plus one each in
+`a_bounded_variable_tag_preserves_an_incoming_word_relationship`,
 `a_checked_low_tag_add_preserves_an_incoming_word_relationship`, and
-`tagged_pointer_explicit_round_trip`. Do not dismiss the variable-ID differences
-or call all 199 distinct semantic bugs. The differing variables are deterministic
-load identities, not fresh binder names. The leading suspect is
-`pointer_index_term`: facts choose a signed index for a bounded uint32 and a
-widened index otherwise, changing the load address. Confirm the exact registered
-load pair before declaring this diagnosis complete; the roadmap already assigns
-this index-conversion family to the integer thread. The pointer-tag cases reach
+`tagged_pointer_explicit_round_trip`. These are observations, not distinct bugs.
+
+The index-conversion cause is confirmed: `pointer_index_term` chose a signed
+index for a bounded uint32 and a widened index otherwise, changing the address
+and hence the deterministic load identity. The fresh baseline on merged #2160
+recorded 72 differences across the two loop fixtures. The indexing fix on
+`codex/stable-array-indices` always observes the completed unsigned expression
+by exact zero extension, independent of facts. Its structural inverse spells
+ordinary `a[i]` for narrow and native wide indices, including Rust `usize`.
+The common range checker uses maintained unsigned order bounds for that widened
+value; it does not ask the general solver or scan unrelated bounds. Both
+original loop proofs pass unchanged and now record zero stability differences.
+Masked pointer-table cases also need intrinsic bounds retained at graph-node
+creation and wide-offset equalities translated to full-width index equalities.
+The next table-read case inherits the one new address disequality; it does not
+replay the earlier case facts. The positive table examples and false-first-entry
+control retain their original C, contracts, and expectations.
+
+This indexing increment passed `scripts/check.sh --no-fail-fast` with both
+frontends required: 6,874 unit/API/import/scaling tests, 58 example projects,
+and 4,916 mdtests. The gate took 11m55s, above its ten-minute target. No limits
+were raised and no nightly suite ran. The focused selection passed all 1,284
+checks before the final gate. The fresh ordinary-mdtest stability audit passed
+in 233s on the same binary and recorded exactly three differences, one in each
+of the pointer-tag fixtures named above. No index-related differences remain
+in this corpus.
+
+The pointer-tag cases remain a separate next increment. They reach
 `apply_c_bitwise_binary` from logical bitwise lowering, whose uint64 `&` branch
 calls `clear_bounded_uint64_tag`. That helper consults tag bounds and low-bit
 facts to remove the tag from the numeric term. Move this equality reasoning to
-checking while retaining the written bitwise term. Atomic division/shift overflow-domain
-spellings also still need targeted auditing.
+checking while retaining the written bitwise term. Atomic division/shift
+overflow-domain spellings also still need targeted auditing.
 
 An attempted standalone certification extraction on upstream after #2152 is
 **not publishable**: `codex/final-certification-slice` at `6ec3c8a95` failed its

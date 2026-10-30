@@ -673,6 +673,15 @@ impl DifferenceGraph {
         self.next += 1;
         self.nodes.insert((domain, term.clone()), node);
         self.domains.insert(node, domain);
+        // Intrinsic mask bounds belong to the node when it is introduced,
+        // so excluding one endpoint can tighten the maintained interval.
+        // Inspect only the selected term and its literal mask.
+        if matches!(domain, Domain::Int32 | Domain::UInt32)
+            && let Some((mask, _)) = word_constant_mask(term)
+            && (domain == Domain::UInt32 || mask <= i128::from(i32::MAX))
+        {
+            self.tighten(node, Some(0), Some(mask));
+        }
         if let Some((value, source, destination, modulus)) = narrow_cast_parts(domain, term) {
             // A cast's value is always in its destination's range.
             self.tighten(node, Some(destination.0), Some(destination.1));
@@ -1281,6 +1290,17 @@ impl DifferenceGraph {
         use crate::kernel::MachineIntegerType as M;
         use Bitvector32Term as T;
         if domain == Domain::UInt32 {
+            // Masking a word bounds its unsigned value even when no fact
+            // has named the compound term. Inspect only its operands.
+            if let Some((mask, value)) = word_constant_mask(term) {
+                charge();
+                let (low, high) = self.term_interval(domain, value);
+                return if low == high {
+                    (low & mask, low & mask)
+                } else {
+                    (0, high.min(mask))
+                };
+            }
             // A word read as unsigned is its signed reading modulo 2^32:
             // the same value when that reading is non-negative, 2^32 more
             // when it is negative.
@@ -1537,6 +1557,7 @@ impl DifferenceGraph {
                 }
             },
             (Domain::Int64, T::Int64From32(inner)) => self.term_interval(Domain::Int32, inner),
+            (Domain::UInt64, T::UInt64From32(inner)) => self.term_interval(Domain::UInt32, inner),
             // Unsigned division by a divisor known to be positive.
             (
                 Domain::UInt64,
@@ -2011,6 +2032,16 @@ fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32
     }
 }
 
+/// A word AND a literal mask, in either operand order.
+fn word_constant_mask(term: &Bitvector32Term) -> Option<(i128, &Bitvector32Term)> {
+    let binary_term!(Bits32, BitwiseAnd, a, b) = term else {
+        return None;
+    };
+    constant(Domain::UInt32, b)
+        .map(|mask| (mask, a.as_ref()))
+        .or_else(|| constant(Domain::UInt32, a).map(|mask| (mask, b.as_ref())))
+}
+
 /// The interval `[low, high]` of mathematical values taken modulo `domain`'s
 /// width: shifted by the multiple of the modulus that lands its low end in
 /// `domain`, or all of `domain` when it then does not fit.
@@ -2082,7 +2113,7 @@ fn scaled_offset(offset: &crate::kernel::PointerOffsetTerm) -> Option<ScaledOffs
     }
 }
 
-/// `a == b` for two pointer offsets as an `int32` equality: equal widths
+/// `a == b` for two pointer offsets as an index-domain equality: equal widths
 /// compare their values, and a constant byte offset that is a whole
 /// number of elements compares the value with that count.
 fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
@@ -2096,6 +2127,52 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
             Box::new(a.clone()),
             Box::new(b.clone()),
         ));
+    }
+    // Wide scaled offsets also denote exact products, so cancelling their
+    // common nonzero stride preserves equality and disequality. Keep the
+    // full index domain; no low-word projection is involved.
+    use crate::kernel::PointerOffsetTerm as O;
+    let wide = match (a.as_ref(), b.as_ref()) {
+        (
+            O::Int64Scaled {
+                value: a,
+                byte_width: wa,
+                unsigned: ua,
+            },
+            O::Int64Scaled {
+                value: b,
+                byte_width: wb,
+                unsigned: ub,
+            },
+        ) if wa == wb && *wa != 0 && ua == ub => Some((a.as_ref().clone(), b.as_ref().clone())),
+        (
+            O::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            },
+            O::Constant(bytes),
+        )
+        | (
+            O::Constant(bytes),
+            O::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            },
+        ) if bytes.checked_rem(*byte_width) == Some(0) => {
+            let count = bytes.checked_div(*byte_width)?;
+            let count = if *unsigned {
+                Bitvector32Term::UInt64Constant(u64::try_from(count).ok()?)
+            } else {
+                Bitvector32Term::Int64Constant(count)
+            };
+            Some((value.as_ref().clone(), count))
+        }
+        _ => None,
+    };
+    if let Some((a, b)) = wide {
+        return Some(ConditionTerm::int64_equal(a, b));
     }
     let (a, b) = match (scaled_offset(a)?, scaled_offset(b)?) {
         (ScaledOffset::Scaled(a, wa), ScaledOffset::Scaled(b, wb)) if wa == wb => {
@@ -2659,8 +2736,9 @@ fn link_parts(
         ) => constant(domain, right).map(|k| (domain, left.as_ref(), -k, false)),
         // Sign extension keeps every value.
         (Domain::Int64, T::Int64From32(inner)) => Some((Domain::Int32, inner, 0, false)),
-        // Reinterpreting as unsigned keeps a non-negative value.
-        (Domain::UInt64, T::UInt64From32(inner)) => Some((Domain::Int32, inner, 0, true)),
+        // Zero extension keeps the full unsigned word, including its high bit.
+        (Domain::UInt64, T::UInt64From32(inner)) => Some((Domain::UInt32, inner, 0, false)),
+        // Reinterpreting a signed 64-bit value keeps a non-negative value.
         (Domain::UInt64, T::UInt64FromInt64(inner)) => Some((Domain::Int64, inner, 0, true)),
         // Zero extension of an `int32` bit pattern keeps a non-negative
         // value; so does sign extension read as unsigned.

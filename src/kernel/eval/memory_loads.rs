@@ -610,10 +610,10 @@ fn evaluate_c_memory_load_paths_with_alias_cache(
             memory,
             facts,
             obligations,
-            assumptions: transported,
+            assumptions: prepared,
         } = case;
-        if transported.is_some() {
-            case_assumptions = transported;
+        if prepared.is_some() {
+            case_assumptions = prepared;
         }
         let _case_assumptions_id_scope = case_assumptions
             .as_ref()
@@ -1301,7 +1301,16 @@ fn evaluate_c_memory_load_case(
                     memory: memory.without_cell(&stored_pointer),
                     facts: distinct_facts,
                     obligations,
-                    assumptions: load_assumptions.clone(),
+                    // The next case is checked under this branch's new
+                    // disequality. Extend the current context by that one
+                    // condition; do not replay all earlier case facts.
+                    assumptions: Some(assumptions.clone().assume_condition(
+                        ConditionTerm::pointer_offset_equal(
+                            pointer.offset.clone(),
+                            stored_pointer.offset.clone(),
+                        ),
+                        false,
+                    )),
                 });
             } else {
                 // The cell may still hold some of the loaded bytes, so the

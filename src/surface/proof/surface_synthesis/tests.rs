@@ -2450,8 +2450,9 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         Box::new(scaled(index)),
     ));
     assert_eq!(
-        synthesize_local_indexed_int32_load(
+        synthesize_local_indexed_load(
             &unrelated_cell,
+            crate::kernel::LoadKind::Int32,
             ParameterBinding::default(),
             &state,
             &BTreeMap::new()
@@ -2464,9 +2465,13 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         Box::new(scaled(index)),
     ));
     let bound = BTreeMap::from([(Variable(index), "k".to_string())]);
-    let Some(ContractExpression::Index(base, _)) =
-        synthesize_local_indexed_int32_load(&own_cell, ParameterBinding::default(), &state, &bound)
-    else {
+    let Some(ContractExpression::Index(base, _)) = synthesize_local_indexed_load(
+        &own_cell,
+        crate::kernel::LoadKind::Int32,
+        ParameterBinding::default(),
+        &state,
+        &bound,
+    ) else {
         panic!("a cell addressed from the local is its index");
     };
     assert_eq!(
@@ -3187,4 +3192,158 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
         FixedStateLoweringOptions::default(),
     ).map(|(proposition, _, _, _)| proposition);
     assert_eq!(lowered, Ok(requirement));
+}
+
+#[test]
+fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let i = Bitvector32Term::Variable(Variable(989_971));
+    for (format, source_type) in [
+        (MachineIntegerType::Int32, "int32"),
+        (MachineIntegerType::UInt32, "uint32"),
+        (MachineIntegerType::UInt64, "usize"),
+    ] {
+        for (pointer_type, element_format, width, load_kind, zero) in [
+            (
+                CType::Int32Pointer,
+                MachineIntegerType::Int32,
+                4,
+                crate::kernel::LoadKind::Int32,
+                Bitvector32Term::Constant(0),
+            ),
+            (
+                CType::Int64Pointer,
+                MachineIntegerType::Int64,
+                8,
+                crate::kernel::LoadKind::Bits64,
+                Bitvector32Term::Int64Constant(0),
+            ),
+        ] {
+            for increment in [false, true] {
+                let value = match format {
+                    MachineIntegerType::Int32 => CValue::Int32(i.clone()),
+                    MachineIntegerType::UInt32 => CValue::UInt32(i.clone()),
+                    MachineIntegerType::UInt64 => CValue::UInt64(i.clone()),
+                    _ => unreachable!(),
+                };
+                let base = Pointer {
+                    block: PointerBlock::Concrete("indexed-array".into()),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                let state = CState::new()
+                    .with_memory(CMemory::new().with_block("indexed-array", 128))
+                    .with_local("a", CValue::typed_pointer(base.clone(), pointer_type))
+                    .with_local("i", value);
+                let index = if increment {
+                    let one = match format {
+                        MachineIntegerType::Int32 => Bitvector32Term::Constant(1),
+                        MachineIntegerType::UInt32 => Bitvector32Term::UInt32Constant(1),
+                        _ => Bitvector32Term::UInt64Constant(1),
+                    };
+                    Bitvector32Term::Binary {
+                        format,
+                        op: crate::kernel::MachineBinaryOp::Add,
+                        left: Box::new(i.clone()),
+                        right: Box::new(one),
+                    }
+                } else {
+                    i.clone()
+                };
+                let offset = match format {
+                    MachineIntegerType::Int32 => PointerOffsetTerm::Int32Scaled {
+                        value: Box::new(index),
+                        byte_width: width,
+                    },
+                    MachineIntegerType::UInt32 => PointerOffsetTerm::Int64Scaled {
+                        value: Box::new(Bitvector32Term::UInt64From32(Box::new(index))),
+                        byte_width: width,
+                        unsigned: true,
+                    },
+                    _ => PointerOffsetTerm::Int64Scaled {
+                        value: Box::new(index),
+                        byte_width: width,
+                        unsigned: true,
+                    },
+                };
+                let load = Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory_ref(state.memory()),
+                    Box::new(Pointer {
+                        block: base.block.clone(),
+                        offset,
+                    }),
+                    load_kind,
+                );
+                let spelled = synthesize_surface_bitvector(
+                    &load,
+                    ParameterBinding::default(),
+                    &state,
+                    &BTreeMap::new(),
+                )
+                .unwrap();
+                assert!(
+                    matches!(&spelled, ContractExpression::Index(..)),
+                    "{spelled:?}"
+                );
+                let text = crate::surface::diagnostics::describe_contract_expression(&spelled);
+                assert!(!text.contains(" as "), "{text}");
+                if !increment {
+                    assert_eq!(text, "a[i]");
+                }
+                let right = ContractExpression::CFragment(CExpression::Value(if width == 8 {
+                    CValue::Int64(zero.clone())
+                } else {
+                    CValue::Int32(zero.clone())
+                }));
+                let surface = ClickProposition::Comparison {
+                    left: spelled,
+                    operator: ComparisonOperator::Equal,
+                    right: right.clone(),
+                };
+                let expected = Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: element_format,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(load),
+                        right: Box::new(zero.clone()),
+                    },
+                    true,
+                );
+                let lowered = relower_written_proposition(&surface, &state).unwrap();
+                assert_eq!(
+                    crate::kernel::canonical_condition_fact(&lowered),
+                    crate::kernel::canonical_condition_fact(&expected)
+                );
+                // Reparse the written read in the source language as well.
+                let (prefix, pointer_type, result_type) = if source_type == "usize" {
+                    (
+                        "verifying \"indices.rs\";",
+                        if width == 8 {
+                            "*const i64"
+                        } else {
+                            "*const i32"
+                        },
+                        if width == 8 { "i64" } else { "i32" },
+                    )
+                } else {
+                    (
+                        "",
+                        if width == 8 { "int64*" } else { "int32*" },
+                        if width == 8 { "int64" } else { "int32" },
+                    )
+                };
+                let parsed = parser::parse(&format!("{prefix} function indexed(a: {pointer_type}, i: {source_type}) -> {result_type} {{ {text} }}")).unwrap();
+                let reparsed = ClickProposition::Comparison {
+                    left: parsed.click_function_definitions()[0].body().clone(),
+                    operator: ComparisonOperator::Equal,
+                    right,
+                };
+                assert_eq!(
+                    crate::kernel::canonical_condition_fact(
+                        &relower_written_proposition(&reparsed, &state).unwrap()
+                    ),
+                    crate::kernel::canonical_condition_fact(&expected)
+                );
+            }
+        }
+    }
 }

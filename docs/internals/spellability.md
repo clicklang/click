@@ -157,6 +157,19 @@ while owning `a[i]`, which needs `k == i`, stays a read of the region's
 state; the equality graph relates it to the stored value. Facts may still
 prove the read is permitted. A fact an unfold adds is an ordinary fact.
 
+Array indexing observes the completed machine-integer expression exactly.
+A `uint32` index always uses zero extension to the wide unsigned offset;
+proven bounds cannot switch it to a signed offset. Thus `a[i + 1]` preserves
+the index expression's machine arithmetic before observation, including unsigned
+wraparound. The speller structurally removes that implicit widening and writes
+`a[i]` again; supported native wide indices, including Rust `usize`, also retain
+bracket syntax. Range checking uses the maintained order graph to relate the
+unsigned word to its exact widening, without changing the address term.
+Literal-mask bounds are recorded when the graph introduces the index node;
+address equalities over a common exact wide stride retain full-width index
+equalities. A table-read branch extends its context with its one new address
+disequality before considering the next cell.
+
 `CLICK_FACT_STABILITY=<path>` lowers each checked proof proposition again
 under the same policy with no facts (`kernel::fact_stability`) and records
 every lowering whose term differs. `scripts/fact-stability.sh` runs the

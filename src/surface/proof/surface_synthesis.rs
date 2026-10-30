@@ -3497,6 +3497,15 @@ fn synthesize_surface_bitvector(
                         return Some(field);
                     }
                 }
+                if let Some(indexed) = synthesize_local_indexed_load(
+                    kernel_pointer,
+                    *kind,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                ) {
+                    return Some(indexed);
+                }
                 let value_type = parameter_binding
                     .parameters
                     .iter()
@@ -3558,8 +3567,9 @@ fn synthesize_surface_bitvector(
                 bound_variables,
             ) {
                 Some(element)
-            } else if let Some(indexed_local) = synthesize_local_indexed_int32_load(
+            } else if let Some(indexed_local) = synthesize_local_indexed_load(
                 kernel_pointer,
+                *kind,
                 parameter_binding,
                 state,
                 bound_variables,
@@ -4231,8 +4241,9 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
     true
 }
 
-fn synthesize_local_indexed_int32_load(
+fn synthesize_local_indexed_load(
     pointer: &Pointer,
+    kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
@@ -4256,8 +4267,12 @@ fn synthesize_local_indexed_int32_load(
         {
             return None;
         }
-        let element_width = base.c_type().pointee_type()?.byte_width();
-        let index = pointer.element_index_from_base_with_width(base, element_width)?;
+        let element_type = base.c_type().pointee_type()?;
+        if crate::kernel::LoadKind::of_type(element_type) != Some(kind) {
+            return None;
+        }
+        let element_width = element_type.byte_width();
+        let index = synthesis_element_index(pointer, base, element_width)?;
         // This candidate is for ordinary `local[index]` forms. If the
         // derived index itself reads memory, trying to synthesize that load
         // can rediscover another local-relative form with a still larger
@@ -4577,8 +4592,18 @@ fn synthesis_element_index(
     };
     match displacement {
         PointerOffsetTerm::Int64Scaled {
-            value, byte_width, ..
-        } if *byte_width == i64::from(element_width) => Some(value.as_ref().clone()),
+            value,
+            byte_width,
+            unsigned,
+        } if *byte_width == i64::from(element_width) => {
+            // uint32 indexing observes the value by exact unsigned widening.
+            // Recover the original expression, whose re-lowering restores it.
+            // This is a structural inverse, never a fact-based narrowing.
+            match (unsigned, value.as_ref()) {
+                (true, Bitvector32Term::UInt64From32(index)) => Some(index.as_ref().clone()),
+                _ => Some(value.as_ref().clone()),
+            }
+        }
         _ => None,
     }
 }

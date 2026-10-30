@@ -669,9 +669,12 @@ fn a_sixty_four_bit_displacement_is_exact_only_where_a_fact_pins_it() {
     // An unsigned index read signed is only the unsigned one while it is
     // nonnegative.
     assert_eq!(decide(&pinned(-1), true, -8), None);
-    // Pinned where the product leaves `int32`, there is no rebuilt term that
-    // holds it: `8 * 2^31` is not a thirty-two-bit displacement.
-    assert_eq!(decide(&pinned(i64::from(i32::MAX) + 1), false, 0), None);
+    // The exact wide product remains distinguishable from zero even when
+    // it leaves int32: no truncated displacement participates in this check.
+    assert_eq!(
+        decide(&pinned(i64::from(i32::MAX) + 1), false, 0),
+        Some(false)
+    );
     assert_eq!(decide(&pinned(4_294_967_295), true, -8), None);
 }
 
