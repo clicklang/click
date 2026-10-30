@@ -14,11 +14,12 @@ read that first.
 
 ## Current arithmetic checkpoint (2026-10-30)
 
-The pointer migration has moved on to arithmetic definedness. The current
-integration branch is `codex/arithmetic-landing`; `codex/arithmetic-definedness`
-is its preserved earlier checkpoint. The pointer checkpoint below is historical.
-The core arithmetic increment is not yet landed; its preparation is landing
-separately.
+The pointer migration has moved on to arithmetic definedness. This source tree
+contains the core arithmetic migration, prepared on
+`codex/structural-arithmetic-definedness`. The integration history remains in
+`codex/arithmetic-landing`; `codex/arithmetic-definedness` is its preserved earlier
+checkpoint. The pointer checkpoint below is historical. The preparatory PRs
+#2155 through #2159 are merged and their pushed commits were verified upstream.
 
 - Machine arithmetic lowers structurally and retains its domain as ordinary
   scoped proof obligations. Context can discharge those obligations but cannot
@@ -50,7 +51,7 @@ separately.
   machine subtraction's integer observation and the first component's strict
   decrease. The original C and contract pass with those proof links.
 
-The integrated `scripts/check.sh --no-fail-fast` gate passed: 6,862 unit/API/
+The earlier integrated `scripts/check.sh --no-fail-fast` gate passed: 6,862 unit/API/
 import/scaling tests and all four fixture aggregates (58 example projects and
 4,916 mdtests), with both pinned frontends required. It took 10m07s, seven seconds over the ten-minute target. No nightly
 suite ran. The previous five fixture failures are repaired: the recursive proof
@@ -58,7 +59,7 @@ has explicit links, and the four negative controls retain their actual domain
 and checked context. Rust resource shift controls also pass, including unknown
 and invalid count rejection.
 
-A fresh combined census/fact-stability audit of the ordinary mdtest corpus also
+A combined census/fact-stability audit of that earlier ordinary mdtest corpus also
 passed (231s), using that exact binary. It recorded 23,038 census observations:
 8,853 written and 14,185 smart. There are 2,081 written spelling misses and 6,885
 smart misses; these are observations, not distinct defects. The largest written
@@ -115,17 +116,25 @@ Refreshing exposed one shared checker omission: 32-bit word equality consulted
 signed bounds only, missing that an unsigned strict predecessor makes a divisor
 nonzero. The integration fixes this using the two indexed domain lookups already
 used for 64-bit equality, with signed-evidence and flat-query-work regressions.
-The unchanged remainder proof now passes. This checker fix is being extracted
-as PR #2157, merged and verified in upstream. Rust shift source identity is
-PR #2158, merged and verified in upstream; its evaluator behavior stays unchanged
-until the core lands. Mathematical certificate intermediates are the next
-preparation. The remaining migration is still unmerged.
+The unchanged remainder proof now passes. This checker fix merged as PR #2157.
+Rust shift source identity merged as PR #2158, preserving old evaluator behavior
+until the core migration. Mathematical certificate intermediates and the two
+recursive proof adaptations merged as PR #2159. All pushed commits were
+verified upstream.
+
+Final core validation at `ec2ccbd08` passed the full
+`scripts/check.sh --no-fail-fast` gate: 6,868 unit/API/import/scaling tests and all
+four fixture groups, exit 0. Runtime was 15m21s (3m54s compilation, 306.7s units,
+359.3s fixtures), exceeding the ten-minute budget. No limits were raised and no
+nightly suite ran. The final code tree includes both preparatory PRs; only this
+checkpoint documentation changed afterward. The earlier census and stability
+figures above have not been rerun on this final tree; full spellability acceptance
+remains incomplete.
 
 ## Arithmetic migration: landing order
 
-The local arithmetic migration separates structural terms from definedness
-obligations. The complete integration passed the ordinary gate, but it must
-land in dependency order:
+The arithmetic migration separates structural terms from definedness
+obligations. Its required dependency order is:
 
 1. Retain claim evaluation obligations and discharge them during ordinary
    proof checking, preserving their certificates and diagnostics. Keep the
@@ -136,6 +145,7 @@ land in dependency order:
 3. Consume the already-checked claim completion during final certification,
    removing its repeated lowering and proof attempt.
 
+Step 1 landed separately; this core update combines steps 2 and 3.
 The third step cannot land first: legacy arithmetic success paths can carry
 "no overflow" as a path fact. Early completion consumption with those old
 producers incorrectly accepts an unbounded `to_integer(x + 1) ==
