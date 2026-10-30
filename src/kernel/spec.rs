@@ -6361,26 +6361,30 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 )
             },
         )?,
-        SpecExpression::ShiftLeft(left, right) => evaluate_spec_scalar_binary_paths_in(
-            SpecScope::new(state, loop_entry_state, algebraic_bindings),
-            left,
-            right,
-            assumptions,
-            budget,
-            |left, right, facts, obligations| {
-                apply_c_shift_left(left, right, facts, obligations, assumptions)
-            },
-        )?,
-        SpecExpression::ShiftRight(left, right) => evaluate_spec_scalar_binary_paths_in(
-            SpecScope::new(state, loop_entry_state, algebraic_bindings),
-            left,
-            right,
-            assumptions,
-            budget,
-            |left, right, facts, obligations| {
-                apply_c_shift_right(left, right, facts, obligations, assumptions)
-            },
-        )?,
+        SpecExpression::ShiftLeft(left, right) | SpecExpression::RustShiftLeft(left, right) => {
+            evaluate_spec_scalar_binary_paths_in(
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
+                left,
+                right,
+                assumptions,
+                budget,
+                |left, right, facts, obligations| {
+                    apply_c_shift_left(left, right, facts, obligations, assumptions)
+                },
+            )?
+        }
+        SpecExpression::ShiftRight(left, right) | SpecExpression::RustShiftRight(left, right) => {
+            evaluate_spec_scalar_binary_paths_in(
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
+                left,
+                right,
+                assumptions,
+                budget,
+                |left, right, facts, obligations| {
+                    apply_c_shift_right(left, right, facts, obligations, assumptions)
+                },
+            )?
+        }
         SpecExpression::BitwiseAnd(left, right) => evaluate_spec_scalar_binary_paths_in(
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,

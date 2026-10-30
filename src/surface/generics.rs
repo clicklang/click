@@ -1022,8 +1022,14 @@ fn instantiate_expression(
         ContractExpression::ShiftLeft(left, right) => {
             ContractExpression::ShiftLeft(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
+        ContractExpression::RustShiftLeft(left, right) => {
+            ContractExpression::RustShiftLeft(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        }
         ContractExpression::ShiftRight(left, right) => {
             ContractExpression::ShiftRight(Box::new(recurse(left)?), Box::new(recurse(right)?))
+        }
+        ContractExpression::RustShiftRight(left, right) => {
+            ContractExpression::RustShiftRight(Box::new(recurse(left)?), Box::new(recurse(right)?))
         }
         ContractExpression::BitwiseAnd(left, right) => {
             ContractExpression::BitwiseAnd(Box::new(recurse(left)?), Box::new(recurse(right)?))

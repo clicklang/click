@@ -1716,8 +1716,14 @@ fn rewrite_contract_expression_exact(
                 ContractExpression::ShiftLeft(_, _) => {
                     ContractExpression::ShiftLeft(Box::new(left), Box::new(right))
                 }
+                ContractExpression::RustShiftLeft(_, _) => {
+                    ContractExpression::RustShiftLeft(Box::new(left), Box::new(right))
+                }
                 ContractExpression::ShiftRight(_, _) => {
                     ContractExpression::ShiftRight(Box::new(left), Box::new(right))
+                }
+                ContractExpression::RustShiftRight(_, _) => {
+                    ContractExpression::RustShiftRight(Box::new(left), Box::new(right))
                 }
                 ContractExpression::BitwiseAnd(_, _) => {
                     ContractExpression::BitwiseAnd(Box::new(left), Box::new(right))
@@ -3515,7 +3521,15 @@ pub(in crate::surface) fn substitute_contract_expression_in(
             Box::new(substitute_contract_expression_in(left, substitutions)?),
             Box::new(substitute_contract_expression_in(right, substitutions)?),
         )),
+        ContractExpression::RustShiftLeft(left, right) => Ok(ContractExpression::RustShiftLeft(
+            Box::new(substitute_contract_expression_in(left, substitutions)?),
+            Box::new(substitute_contract_expression_in(right, substitutions)?),
+        )),
         ContractExpression::ShiftRight(left, right) => Ok(ContractExpression::ShiftRight(
+            Box::new(substitute_contract_expression_in(left, substitutions)?),
+            Box::new(substitute_contract_expression_in(right, substitutions)?),
+        )),
+        ContractExpression::RustShiftRight(left, right) => Ok(ContractExpression::RustShiftRight(
             Box::new(substitute_contract_expression_in(left, substitutions)?),
             Box::new(substitute_contract_expression_in(right, substitutions)?),
         )),
@@ -3714,7 +3728,31 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
                 contextual_numerals,
             )?),
         )),
+        CExpression::RustShiftLeft(left, right) => Ok(ContractExpression::RustShiftLeft(
+            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+                left,
+                substitutions,
+                contextual_numerals,
+            )?),
+            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+                right,
+                substitutions,
+                contextual_numerals,
+            )?),
+        )),
         CExpression::ShiftRight(left, right) => Ok(ContractExpression::ShiftRight(
+            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+                left,
+                substitutions,
+                contextual_numerals,
+            )?),
+            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+                right,
+                substitutions,
+                contextual_numerals,
+            )?),
+        )),
+        CExpression::RustShiftRight(left, right) => Ok(ContractExpression::RustShiftRight(
             Box::new(substitute_c_fragment_as_contract_with_numerals_in(
                 left,
                 substitutions,
@@ -3953,7 +3991,15 @@ pub(in crate::surface) fn substitute_c_fragment_in(
             Box::new(substitute_c_fragment_in(left, substitutions)?),
             Box::new(substitute_c_fragment_in(right, substitutions)?),
         )),
+        CExpression::RustShiftLeft(left, right) => Ok(CExpression::RustShiftLeft(
+            Box::new(substitute_c_fragment_in(left, substitutions)?),
+            Box::new(substitute_c_fragment_in(right, substitutions)?),
+        )),
         CExpression::ShiftRight(left, right) => Ok(CExpression::ShiftRight(
+            Box::new(substitute_c_fragment_in(left, substitutions)?),
+            Box::new(substitute_c_fragment_in(right, substitutions)?),
+        )),
+        CExpression::RustShiftRight(left, right) => Ok(CExpression::RustShiftRight(
             Box::new(substitute_c_fragment_in(left, substitutions)?),
             Box::new(substitute_c_fragment_in(right, substitutions)?),
         )),
@@ -4086,7 +4132,15 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
             Box::new(contract_expression_as_c_fragment(left)?),
             Box::new(contract_expression_as_c_fragment(right)?),
         )),
+        ContractExpression::RustShiftLeft(left, right) => Some(CExpression::RustShiftLeft(
+            Box::new(contract_expression_as_c_fragment(left)?),
+            Box::new(contract_expression_as_c_fragment(right)?),
+        )),
         ContractExpression::ShiftRight(left, right) => Some(CExpression::ShiftRight(
+            Box::new(contract_expression_as_c_fragment(left)?),
+            Box::new(contract_expression_as_c_fragment(right)?),
+        )),
+        ContractExpression::RustShiftRight(left, right) => Some(CExpression::RustShiftRight(
             Box::new(contract_expression_as_c_fragment(left)?),
             Box::new(contract_expression_as_c_fragment(right)?),
         )),
@@ -4206,7 +4260,15 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
             Box::new(contract_expression_to_c_fragment(left)?),
             Box::new(contract_expression_to_c_fragment(right)?),
         )),
+        ContractExpression::RustShiftLeft(left, right) => Some(CExpression::RustShiftLeft(
+            Box::new(contract_expression_to_c_fragment(left)?),
+            Box::new(contract_expression_to_c_fragment(right)?),
+        )),
         ContractExpression::ShiftRight(left, right) => Some(CExpression::ShiftRight(
+            Box::new(contract_expression_to_c_fragment(left)?),
+            Box::new(contract_expression_to_c_fragment(right)?),
+        )),
+        ContractExpression::RustShiftRight(left, right) => Some(CExpression::RustShiftRight(
             Box::new(contract_expression_to_c_fragment(left)?),
             Box::new(contract_expression_to_c_fragment(right)?),
         )),

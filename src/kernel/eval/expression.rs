@@ -1823,26 +1823,30 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                 apply_c_remainder(left, right, facts, obligations, assumptions)
             },
         )?,
-        CExpression::ShiftLeft(left, right) => evaluate_c_value_binary_paths(
-            state,
-            left,
-            right,
-            assumptions,
-            budget,
-            |left, right, facts, obligations| {
-                apply_c_shift_left(left, right, facts, obligations, assumptions)
-            },
-        )?,
-        CExpression::ShiftRight(left, right) => evaluate_c_value_binary_paths(
-            state,
-            left,
-            right,
-            assumptions,
-            budget,
-            |left, right, facts, obligations| {
-                apply_c_shift_right(left, right, facts, obligations, assumptions)
-            },
-        )?,
+        CExpression::ShiftLeft(left, right) | CExpression::RustShiftLeft(left, right) => {
+            evaluate_c_value_binary_paths(
+                state,
+                left,
+                right,
+                assumptions,
+                budget,
+                |left, right, facts, obligations| {
+                    apply_c_shift_left(left, right, facts, obligations, assumptions)
+                },
+            )?
+        }
+        CExpression::ShiftRight(left, right) | CExpression::RustShiftRight(left, right) => {
+            evaluate_c_value_binary_paths(
+                state,
+                left,
+                right,
+                assumptions,
+                budget,
+                |left, right, facts, obligations| {
+                    apply_c_shift_right(left, right, facts, obligations, assumptions)
+                },
+            )?
+        }
         CExpression::BitwiseAnd(left, right) => evaluate_c_value_binary_paths(
             state,
             left,

@@ -142,7 +142,9 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         | ContractExpression::Divide(left, right)
         | ContractExpression::Remainder(left, right)
         | ContractExpression::ShiftLeft(left, right)
+        | ContractExpression::RustShiftLeft(left, right)
         | ContractExpression::ShiftRight(left, right)
+        | ContractExpression::RustShiftRight(left, right)
         | ContractExpression::BitwiseAnd(left, right)
         | ContractExpression::BitwiseOr(left, right)
         | ContractExpression::BitwiseXor(left, right)
@@ -6402,7 +6404,15 @@ impl AnnotationLowerer<'_> {
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
+            ContractExpression::RustShiftLeft(left, right) => Ok(SpecExpression::RustShiftLeft(
+                Box::new(self.lower_contract_expression_to_spec(left, environment)?),
+                Box::new(self.lower_contract_expression_to_spec(right, environment)?),
+            )),
             ContractExpression::ShiftRight(left, right) => Ok(SpecExpression::ShiftRight(
+                Box::new(self.lower_contract_expression_to_spec(left, environment)?),
+                Box::new(self.lower_contract_expression_to_spec(right, environment)?),
+            )),
+            ContractExpression::RustShiftRight(left, right) => Ok(SpecExpression::RustShiftRight(
                 Box::new(self.lower_contract_expression_to_spec(left, environment)?),
                 Box::new(self.lower_contract_expression_to_spec(right, environment)?),
             )),
@@ -7912,7 +7922,15 @@ impl AnnotationLowerer<'_> {
                 Box::new(self.lower_c_fragment_to_spec(left, environment)?),
                 Box::new(self.lower_c_fragment_to_spec(right, environment)?),
             )),
+            CExpression::RustShiftLeft(left, right) => Ok(SpecExpression::RustShiftLeft(
+                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
+                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+            )),
             CExpression::ShiftRight(left, right) => Ok(SpecExpression::ShiftRight(
+                Box::new(self.lower_c_fragment_to_spec(left, environment)?),
+                Box::new(self.lower_c_fragment_to_spec(right, environment)?),
+            )),
+            CExpression::RustShiftRight(left, right) => Ok(SpecExpression::RustShiftRight(
                 Box::new(self.lower_c_fragment_to_spec(left, environment)?),
                 Box::new(self.lower_c_fragment_to_spec(right, environment)?),
             )),

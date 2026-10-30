@@ -81,7 +81,9 @@ fn collect_signed_surface_terms<'a>(
             | ContractExpression::Divide(left, right)
             | ContractExpression::Remainder(left, right)
             | ContractExpression::ShiftLeft(left, right)
+            | ContractExpression::RustShiftLeft(left, right)
             | ContractExpression::ShiftRight(left, right)
+            | ContractExpression::RustShiftRight(left, right)
             | ContractExpression::BitwiseAnd(left, right)
             | ContractExpression::BitwiseOr(left, right)
             | ContractExpression::BitwiseXor(left, right)
@@ -1073,11 +1075,13 @@ fn with_operation_operands(written: &[ContractExpression]) -> Vec<ContractExpres
         let operand = match argument {
             ContractExpression::Divide(operand, _)
             | ContractExpression::Remainder(operand, _)
-            | ContractExpression::ShiftRight(operand, _) => operand.as_ref().clone(),
+            | ContractExpression::ShiftRight(operand, _)
+            | ContractExpression::RustShiftRight(operand, _) => operand.as_ref().clone(),
             ContractExpression::CFragment(
                 CExpression::Divide(operand, _)
                 | CExpression::Remainder(operand, _)
-                | CExpression::ShiftRight(operand, _),
+                | CExpression::ShiftRight(operand, _)
+                | CExpression::RustShiftRight(operand, _),
             ) => ContractExpression::CFragment(operand.as_ref().clone()),
             _ => continue,
         };

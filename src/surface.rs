@@ -2867,6 +2867,9 @@ pub enum ContractExpression {
     Divide(Box<ContractExpression>, Box<ContractExpression>),
     Remainder(Box<ContractExpression>, Box<ContractExpression>),
     ShiftLeft(Box<ContractExpression>, Box<ContractExpression>),
+    /// A shift written in a Rust sidecar; retain its source-language identity.
+    RustShiftLeft(Box<ContractExpression>, Box<ContractExpression>),
+    RustShiftRight(Box<ContractExpression>, Box<ContractExpression>),
     ShiftRight(Box<ContractExpression>, Box<ContractExpression>),
     BitwiseAnd(Box<ContractExpression>, Box<ContractExpression>),
     BitwiseOr(Box<ContractExpression>, Box<ContractExpression>),
@@ -2921,7 +2924,9 @@ macro_rules! binary_contract_expression {
             | $crate::surface::ContractExpression::BitwiseOr($left, $right)
             | $crate::surface::ContractExpression::BitwiseXor($left, $right)
             | $crate::surface::ContractExpression::ShiftLeft($left, $right)
+            | $crate::surface::ContractExpression::RustShiftLeft($left, $right)
             | $crate::surface::ContractExpression::ShiftRight($left, $right)
+            | $crate::surface::ContractExpression::RustShiftRight($left, $right)
             | $crate::surface::ContractExpression::Index($left, $right)
     };
 }
@@ -6689,7 +6694,9 @@ fn contract_expression_reads_memory(
         | ContractExpression::Divide(left, right)
         | ContractExpression::Remainder(left, right)
         | ContractExpression::ShiftLeft(left, right)
+        | ContractExpression::RustShiftLeft(left, right)
         | ContractExpression::ShiftRight(left, right)
+        | ContractExpression::RustShiftRight(left, right)
         | ContractExpression::BitwiseAnd(left, right)
         | ContractExpression::BitwiseOr(left, right)
         | ContractExpression::BitwiseXor(left, right) => {

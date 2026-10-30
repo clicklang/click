@@ -1598,7 +1598,9 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
             | ContractExpression::Divide(_, _)
             | ContractExpression::Remainder(_, _)
             | ContractExpression::ShiftLeft(_, _)
-            | ContractExpression::ShiftRight(_, _) => true,
+            | ContractExpression::RustShiftLeft(_, _)
+            | ContractExpression::ShiftRight(_, _)
+            | ContractExpression::RustShiftRight(_, _) => true,
             ContractExpression::BitwiseAnd(left, right)
             | ContractExpression::BitwiseOr(left, right)
             | ContractExpression::BitwiseXor(left, right) => {
@@ -2838,7 +2840,15 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
             Box::new(resource_argument_to_c_expression(left)?),
             Box::new(resource_argument_to_c_expression(right)?),
         )),
+        ContractExpression::RustShiftLeft(left, right) => Ok(CExpression::RustShiftLeft(
+            Box::new(resource_argument_to_c_expression(left)?),
+            Box::new(resource_argument_to_c_expression(right)?),
+        )),
         ContractExpression::ShiftRight(left, right) => Ok(CExpression::ShiftRight(
+            Box::new(resource_argument_to_c_expression(left)?),
+            Box::new(resource_argument_to_c_expression(right)?),
+        )),
+        ContractExpression::RustShiftRight(left, right) => Ok(CExpression::RustShiftRight(
             Box::new(resource_argument_to_c_expression(left)?),
             Box::new(resource_argument_to_c_expression(right)?),
         )),

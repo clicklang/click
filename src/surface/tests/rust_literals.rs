@@ -129,3 +129,39 @@ fn rust_integer_literal_syntax_does_not_change_c_or_cpp_sidecars() {
     )
     .unwrap();
 }
+
+#[test]
+fn rust_shift_source_identity_survives_printing_and_resource_arguments() {
+    for (operator, left_shift) in [("<<", true), (">>", false)] {
+        let source = format!(
+            "verifying \"shift.rs\"; function shifted(x: i32, n: i32) -> i32 {{ x {operator} n }}"
+        );
+        let parsed = parser::parse(&source).unwrap();
+        let expression = parsed.click_function_definitions()[0].body();
+        assert!(matches!(
+            (expression, left_shift),
+            (ContractExpression::RustShiftLeft(..), true)
+                | (ContractExpression::RustShiftRight(..), false)
+        ));
+        let argument = crate::surface::lowering::resource_argument_to_c_expression(expression)
+            .expect("resource arguments retain the source shift");
+        assert!(matches!(
+            (argument, left_shift),
+            (CExpression::RustShiftLeft(..), true) | (CExpression::RustShiftRight(..), false)
+        ));
+        let spelled = crate::surface::diagnostics::describe_contract_expression(expression);
+        let reparsed = parser::parse(&format!(
+            "verifying \"shift.rs\"; function shifted(x: i32, n: i32) -> i32 {{ {spelled} }}"
+        ))
+        .unwrap();
+        assert_eq!(reparsed.click_function_definitions()[0].body(), expression);
+        let c = parser::parse(&format!(
+            "function shifted(x: int32, n: int32) -> int32 {{ x {operator} n }}"
+        ))
+        .unwrap();
+        assert!(matches!(
+            (c.click_function_definitions()[0].body(), left_shift),
+            (ContractExpression::ShiftLeft(..), true) | (ContractExpression::ShiftRight(..), false)
+        ));
+    }
+}

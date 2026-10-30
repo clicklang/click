@@ -198,9 +198,17 @@ fn substitute_c_expression_variables(
             let (left, right) = binary(left, right);
             ShiftLeft(left, right)
         }
+        RustShiftLeft(left, right) => {
+            let (left, right) = binary(left, right);
+            RustShiftLeft(left, right)
+        }
         ShiftRight(left, right) => {
             let (left, right) = binary(left, right);
             ShiftRight(left, right)
+        }
+        RustShiftRight(left, right) => {
+            let (left, right) = binary(left, right);
+            RustShiftRight(left, right)
         }
         BitwiseAnd(left, right) => {
             let (left, right) = binary(left, right);
@@ -1193,6 +1201,8 @@ fn expression_address_taken_locals(expression: &CExpression, names: &mut BTreeSe
         | Divide(left, right)
         | Remainder(left, right)
         | ShiftLeft(left, right)
+        | RustShiftLeft(left, right)
+        | RustShiftRight(left, right)
         | ShiftRight(left, right)
         | BitwiseAnd(left, right)
         | BitwiseOr(left, right)
@@ -1260,6 +1270,8 @@ fn collect_c_expression_variables(expression: &CExpression, names: &mut BTreeSet
         | Divide(left, right)
         | Remainder(left, right)
         | ShiftLeft(left, right)
+        | RustShiftLeft(left, right)
+        | RustShiftRight(left, right)
         | ShiftRight(left, right)
         | BitwiseAnd(left, right)
         | BitwiseOr(left, right)
@@ -2159,7 +2171,9 @@ fn termination_measure_display(measure: &CExpression) -> String {
         Divide(left, right) => binary(left, right, "/"),
         Remainder(left, right) => binary(left, right, "%"),
         ShiftLeft(left, right) => binary(left, right, "<<"),
+        RustShiftLeft(left, right) => binary(left, right, "<<"),
         ShiftRight(left, right) => binary(left, right, ">>"),
+        RustShiftRight(left, right) => binary(left, right, ">>"),
         BitwiseAnd(left, right) => binary(left, right, "&"),
         BitwiseOr(left, right) => binary(left, right, "|"),
         BitwiseXor(left, right) => binary(left, right, "^"),
@@ -2790,14 +2804,14 @@ fn c_ranking_measure_term_unfolded(
                 Bitvector32Term::int64_remainder,
             ),
         ),
-        ShiftLeft(left, right) => shift(
+        ShiftLeft(left, right) | RustShiftLeft(left, right) => shift(
             left,
             right,
             state,
             reader,
             (Bitvector32Term::shift_left, Bitvector32Term::shift_left),
         ),
-        ShiftRight(left, right) => shift(
+        ShiftRight(left, right) | RustShiftRight(left, right) => shift(
             left,
             right,
             state,
@@ -4127,6 +4141,8 @@ fn expression_function_addresses(expression: &CExpression, taken: &mut BTreeSet<
         | Divide(left, right)
         | Remainder(left, right)
         | ShiftLeft(left, right)
+        | RustShiftLeft(left, right)
+        | RustShiftRight(left, right)
         | ShiftRight(left, right)
         | BitwiseAnd(left, right)
         | BitwiseOr(left, right)

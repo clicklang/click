@@ -2375,7 +2375,9 @@ fn collect_resource_fact_reads_from_contract_expression(
         | ContractExpression::Divide(left, right)
         | ContractExpression::Remainder(left, right)
         | ContractExpression::ShiftLeft(left, right)
+        | ContractExpression::RustShiftLeft(left, right)
         | ContractExpression::ShiftRight(left, right)
+        | ContractExpression::RustShiftRight(left, right)
         | ContractExpression::BitwiseAnd(left, right)
         | ContractExpression::BitwiseOr(left, right)
         | ContractExpression::BitwiseXor(left, right) => {
