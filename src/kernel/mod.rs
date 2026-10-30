@@ -30,6 +30,7 @@ mod difference_graph;
 pub(crate) mod effective_type;
 mod equality_graph;
 mod eval;
+pub(crate) use eval::typed_reads::ReadScope as TransportReadScope;
 pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
 mod fold_read_summary;

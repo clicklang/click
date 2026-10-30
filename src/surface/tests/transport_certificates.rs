@@ -61,3 +61,51 @@ fn transport_certificate_transitive_and_bad_indices() {
         assert!(verify_click_theorems(&source.replace(from, to)).is_err());
     }
 }
+
+#[test]
+fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
+    for (c_type, click_type) in [("long", "int64"), ("unsigned long", "uint64")] {
+        let c = format!("void write(int *dest, {c_type} *kept) {{ *dest = 1; *dest = 2; }}");
+        let source = format!(
+            r#"
+            verifying "wide.c";
+            void write(int32 *dest, {click_type} *kept) {{
+                owns dest[0..1];
+                views kept[0..1];
+                requires separate(memory(dest[0..1]), memory(kept[0..1]));
+            }} by {{
+                mark before;
+                step();
+                mark after;
+                have *kept == at(before, *kept) by {{
+                    transport_certificate {{
+                        premise 0: changes_only(before, after, memory(dest[0..1]))
+                            => changes_only(before, after, memory(dest[0..1]));
+                        premise 1: at(before, separate(memory(dest[0..1]), memory(kept[0..1])))
+                            => at(before, separate(memory(dest[0..1]), memory(kept[0..1])));
+                        preserve 0, 1 => *kept == at(before, *kept);
+                        conclusion 2;
+                    }}
+                }}
+                step();
+                mark final;
+                have *kept == at(before, *kept) by {{
+                    transport_certificate {{
+                        premise 0: changes_only(after, final, memory(dest[0..1]))
+                            => changes_only(after, final, memory(dest[0..1]));
+                        premise 1: at(before, separate(memory(dest[0..1]), memory(kept[0..1])))
+                            => at(before, separate(memory(dest[0..1]), memory(kept[0..1])));
+                        preserve 0, 1 => *kept == at(after, *kept);
+                        premise 3: at(after, *kept) == at(before, *kept)
+                            => at(after, *kept) == at(before, *kept);
+                        transitive 2, 3 => *kept == at(before, *kept);
+                        conclusion 4;
+                    }}
+                }}
+                step();
+            }}
+        "#
+        );
+        without_implicit_auto(|| verify_c0_sources(&source, &[("wide.c", &c)])).unwrap();
+    }
+}

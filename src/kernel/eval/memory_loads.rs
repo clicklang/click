@@ -226,6 +226,11 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
         assumptions,
     );
     retain_call_read_aliases(memory, &pointer, value_type, assumptions, &mut paths);
+    if let [path] = paths.as_slice()
+        && let CExpressionOutcome::Value(value) = &path.outcome
+    {
+        super::typed_reads::record(memory, &pointer, value);
+    }
     paths
 }
 

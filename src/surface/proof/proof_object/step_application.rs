@@ -1923,6 +1923,7 @@ impl<'a> Proof<'a> {
         use crate::kernel::proof::transport_certificate::{
             TransportCertificate as Checked, TransportNode,
         };
+        let _reads = crate::kernel::TransportReadScope::enter();
         let lower =
             |p| self.lower_surface_proposition_direct(p, "transport certificate proposition");
         let nodes = certificate

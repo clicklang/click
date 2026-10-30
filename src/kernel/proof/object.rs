@@ -964,7 +964,10 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let (goal, facts) = self
             .focused_proposition()
             .ok_or("transport certificate requires a proposition goal")?;
-        certificate.check(goal.proposition(), |p| facts.contains(p))?;
+        let result = certificate.apply(|p| facts.contains(p))?;
+        if &result != goal.proposition() {
+            return Err("transport conclusion does not match the goal".into());
+        }
         Ok(self.closed_focused())
     }
 
