@@ -167,6 +167,28 @@ unnamed values in stack resource cases. They remain open; this increment does
 not establish complete Boolean or algebraic spelling coverage. Counts are
 observations, not distinct defects. No nightly suite ran and no limits changed.
 
+The following increment, `codex/generic-fact-spellings`, fixes two reproduced
+causes of generic-call misses. Calls now spell their declared name, without the
+kernel's `::<...>` instance suffix; typed arguments reconstruct the instance.
+Pure premise synthesis includes variables inside opaque applications and reuses
+the existing goal/proof-local binder names, including `obtain` witnesses and
+shadowing. The original constructor-inference and proof-binder fixtures have
+no fact spelling misses in focused checks. Concrete and nested instances survive
+printing, parsing, and exact re-lowering; a generic-list proof expands and
+rechecks with implicit search disabled. This does not name previously unnamed
+resource fields or add pointer/rigid-parameter call-argument synthesis. The full
+`scripts/check.sh --no-fail-fast` gate passed in 9m18s with both frontends
+required: 6,887 unit/API/import/scaling tests, 58 examples, and 4,916 mdtests.
+No nightly suite ran and no limits changed.
+
+The combined ordinary-mdtest audit passed all 4,916 fixtures in 228s with zero
+fact-stability differences. Its 22,858 census observations contain 1,822 written
+and 6,788 smart misses, down from 1,923 and 6,798. Written Boolean misses fall
+from 23 to 5 (smart Boolean misses from 8 to 2): three observations of unnamed
+list tails in C++ stack `pop` proofs and two `contains_cons` equalities at rigid
+`T` and `List<int32>`. These are the next reproduced spelling cases; counts
+remain observations, not distinct defects.
+
 An attempted standalone certification extraction on upstream after #2152 is
 **not publishable**: `codex/final-certification-slice` at `6ec3c8a95` failed its
 full gate (6,841 of 6,842 units passed; fixture phase was not reached). The

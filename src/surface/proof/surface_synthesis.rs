@@ -3971,7 +3971,9 @@ fn synthesize_surface_call(
         result.push(expression);
     }
     Some(ContractExpression::Call {
-        name: name.into(),
+        // Instance names are kernel identities, not declared Surface names.
+        // The typed arguments reconstruct the same generic instance.
+        name: generic_instance_source_name(name).into(),
         arguments: result,
     })
 }

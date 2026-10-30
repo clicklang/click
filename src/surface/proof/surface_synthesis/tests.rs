@@ -3399,3 +3399,52 @@ fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
         }
     }
 }
+
+#[test]
+fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
+    let declarations = "spec enum Wrapped<T> { Value(T) } function holds<T>(wrapped: Wrapped<T>, value: T) -> Bool { true }";
+    for arguments in [
+        "Wrapped<int32>::Value(x), x",
+        "Wrapped<Wrapped<int32>>::Value(Wrapped<int32>::Value(x)), Wrapped<int32>::Value(x)",
+    ] {
+        let source = format!(
+            "{declarations} theorem probe(x: int32) {{ requires holds({arguments}); ensures true; }}"
+        );
+        let file = parser::parse(&source).unwrap();
+        let state = CState::new().with_local(
+            "x",
+            CValue::Int32(Bitvector32Term::Variable(Variable(99001))),
+        );
+        let values = BTreeMap::from([(
+            "x".to_string(),
+            CValue::Int32(Bitvector32Term::Variable(Variable(99001))),
+        )]);
+        let lower = |proposition: &ClickProposition| {
+            crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::with_algebraic_types(file.click_function_definitions(), file.algebraic_type_definitions())),
+                FixedStateLoweringOptions::default(),
+            ).unwrap().0
+        };
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("requirement");
+        };
+        let original = lower(written);
+        let spelled =
+            synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+                .expect("generic instance spelling");
+        let text = crate::surface::printing::source_click_proposition(&spelled);
+        assert!(!text.contains("::<"), "{text}");
+        let reparsed = parser::parse(&format!(
+            "{declarations} theorem probe(x: int32) {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(written_again) =
+            &reparsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("requirement");
+        };
+        assert_eq!(lower(written_again), original, "{text}");
+    }
+}
