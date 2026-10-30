@@ -796,6 +796,7 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    resource_parameters: BTreeMap<String, usize>,
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
@@ -1192,6 +1193,7 @@ fn algebraic_parameter_types(
         .iter()
         .enumerate()
         .filter_map(|(index, parameter)| match parameter.click_type() {
+            ClickType::Resource => None,
             ClickType::Algebraic(application) => {
                 Some((parameter.name().to_string(), (application.clone(), index)))
             }
@@ -1588,6 +1590,7 @@ impl Parser {
             closure_captures: BTreeMap::new(),
             contract_value_parameter_names: BTreeMap::new(),
             in_function_block: false,
+            resource_parameters: BTreeMap::new(),
             integer_literal_context: false,
             proof_block_spans: Vec::new(),
             proof_clause_spans: Vec::new(),
@@ -3674,6 +3677,16 @@ impl Parser {
         self.expect(Token::LParen)?;
         let parsed_parameters = self.parse_click_parameters()?;
         self.expect(Token::RParen)?;
+        let previous_resource_parameters = std::mem::replace(
+            &mut self.resource_parameters,
+            parsed_parameters
+                .parameters
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.click_type() == &ClickType::Resource)
+                .map(|(i, p)| (p.name().to_string(), i))
+                .collect(),
+        );
         let previous_integer_params = self.names.replace(
             NameKind::IntegerParameter,
             parsed_parameters
@@ -3955,6 +3968,7 @@ impl Parser {
             .replace(NameKind::TheoremParameter, previous_theorem_param_names);
         self.spec_parameter_types = previous_spec_parameter_types;
         self.theorem_pointer_params = previous_theorem_pointer_params;
+        self.resource_parameters = previous_resource_parameters;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
         self.names
@@ -5807,6 +5821,10 @@ impl Parser {
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
         };
+        if name == "Resource" {
+            self.position += 1;
+            return Ok((ClickType::Resource, None));
+        }
         if name == "Integer" {
             self.position += 1;
             return Ok((ClickType::Integer, None));
@@ -6322,6 +6340,13 @@ impl Parser {
     }
 
     fn parse_resource_subject(&mut self) -> Result<ResourceSubject, ClickError> {
+        if let Some(name) = self.peek_ident()
+            && let Some(index) = self.resource_parameters.get(name).copied()
+        {
+            let name = name.to_string();
+            self.position += 1;
+            return Ok(ResourceSubject::Parameter { name, index });
+        }
         if self.peek_ident() == Some("memory") && self.peek_next() == Some(&Token::LParen) {
             self.position += 1;
             self.expect(Token::LParen)?;
@@ -7999,6 +8024,11 @@ impl Parser {
                         self.names.hide_for_proof_binder(&name, false);
                         self.names.hide_resource_field(&name);
                         match &click_type {
+                            ClickType::Resource => {
+                                return Err(self.error(
+                                    "Resource is currently supported only for theorem parameters",
+                                ));
+                            }
                             ClickType::Integer => {
                                 self.names
                                     .set_scoped(NameKind::ContractBinding, &name, false);
@@ -8342,6 +8372,11 @@ impl Parser {
     /// the program's variable, so a proof binder of its name would change
     /// what the proof's propositions mean without changing what runs.
     fn bind_proof_name(&mut self, name: &str, resource: bool) -> Result<(), ClickError> {
+        if self.resource_parameters.contains_key(name) {
+            return Err(self.error(format!(
+                "`{name}` names a Resource theorem parameter; choose another proof binder name"
+            )));
+        }
         if resource
             && self.names.is_c_variable(name)
             && self.names.resource_bindings.contains_key(name)
@@ -8972,6 +9007,11 @@ impl Parser {
         for (name, click_type) in &bindings {
             self.bind_proof_name(name, false)?;
             match click_type {
+                ClickType::Resource => {
+                    return Err(
+                        self.error("Resource is currently supported only for theorem parameters")
+                    );
+                }
                 ClickType::Integer => {
                     self.names
                         .set_scoped(NameKind::ContractBinding, name, false);
@@ -11523,6 +11563,15 @@ impl Parser {
     }
 
     fn parse_contract_expression(&mut self) -> Result<ContractExpression, ClickError> {
+        if self
+            .peek_ident()
+            .is_some_and(|name| self.resource_parameters.contains_key(name))
+            || (self.peek_ident() == Some("memory") && self.peek_next() == Some(&Token::LParen))
+        {
+            return self
+                .parse_resource_subject()
+                .map(|r| ContractExpression::Resource(Box::new(r)));
+        }
         let first = self.parse_contract_unary()?;
         self.parse_contract_binary_suffix(first)
     }

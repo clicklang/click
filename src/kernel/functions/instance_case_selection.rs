@@ -571,6 +571,7 @@ pub(super) fn instance_body_clauses_are_exchangeable(contains: &[CResourceSpec])
     contains.iter().all(|body| {
         !body.is_view()
             && match body.family() {
+                ResourceFamily::Parameter => false,
                 ResourceFamily::Memory
                 | ResourceFamily::Iterated
                 | ResourceFamily::MutexGuard

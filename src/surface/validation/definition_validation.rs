@@ -868,6 +868,9 @@ fn validate_contract_applications_in_proposition_one(
         } => {
             let mut variables = variables.clone();
             match c_type {
+                ClickType::Resource => {
+                    variables.remove(name);
+                }
                 ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     variables.insert(name.clone(), *c_type);
                 }
@@ -2203,6 +2206,7 @@ fn collect_resource_fact_reads_from_resource_subject(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => collect_resource_fact_reads_from_contract_segment(
             segment,
             predicate_definitions,
@@ -2239,6 +2243,7 @@ fn collect_resource_fact_reads_from_contract_expression(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match expression {
+        ContractExpression::Resource(_) => Ok(()),
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(()),
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {

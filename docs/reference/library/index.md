@@ -4032,3 +4032,24 @@ theorem int32_remainder_to_integer(left: int32, right: int32) {
 ```
 
 Connects a defined signed machine remainder to mathematical truncation. Native definedness excludes both a zero divisor and `INT32_MIN % -1`; a nonzero mathematical divisor alone does not establish that the C operation is defined.
+
+## Separation
+
+### `separation::restrict`
+
+```click
+theorem restrict(A: Resource, B: Resource, a: Resource, b: Resource) {
+    requires separate(A, B);
+    requires contains(A, a);
+    requires contains(B, b);
+    ensures separate(a, b);
+}
+```
+
+**Meaning:** Contained parts of separate parents are separate. Import
+`click::separation` and apply the theorem with the three explicit premises.
+`Resource` arguments are descriptors and grant no ownership. This named axiom
+is backed by a trusted kernel constructor; application does not search memory
+history or discover containment facts.
+
+**Verified use:** [`mdtests/resource_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_theorem_parameters.md).

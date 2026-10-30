@@ -444,6 +444,10 @@ fn library_module_path(identity: &str) -> String {
 /// with the declarations of the modules before it.
 const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
+        "library/separation.click",
+        include_str!("../library/separation.click"),
+    ),
+    (
         "library/primitives.click",
         include_str!("../library/primitives.click"),
     ),
@@ -792,6 +796,8 @@ impl AlgebraicFieldType {
 /// of Click types; specification-only algebraic datatypes are another.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ClickType {
+    /// A specification-only resource descriptor; it carries no ownership.
+    Resource,
     /// A declaration-scoped type parameter. Generic logical declarations are
     /// instantiated to concrete types at applications, or rigid arbitrary
     /// types when checking theorem declarations, before crossing into Kernel Click.
@@ -810,6 +816,7 @@ pub enum ClickType {
 impl ClickType {
     pub fn c_type(&self) -> Option<C0Type> {
         match self {
+            Self::Resource => None,
             Self::Parameter(_) => None,
             Self::C(c_type) | Self::CObjectPointer { c_type, .. } => Some(*c_type),
             Self::Integer => None,
@@ -1933,6 +1940,14 @@ pub struct ResourceFieldAccess {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceSubject {
+    Parameter {
+        name: String,
+        index: usize,
+    },
+    Captured {
+        value: crate::kernel::CResource,
+        source: Box<ResourceSubject>,
+    },
     Memory(ContractSegment),
     Declared {
         kind: ResourceKind,
@@ -2587,6 +2602,10 @@ fn collect_current_resource_subject_variables(
     names: &mut BTreeSet<String>,
 ) {
     match subject {
+        ResourceSubject::Parameter { name, .. } => {
+            names.insert(name.clone());
+        }
+        ResourceSubject::Captured { .. } => {}
         ResourceSubject::Memory(segment) => collect_current_segment_variables(segment, names),
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
@@ -2601,6 +2620,9 @@ pub(crate) fn collect_current_contract_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::Resource(subject) => {
+            collect_current_resource_subject_variables(subject, names)
+        }
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
@@ -2769,6 +2791,7 @@ fn collect_current_proposition_variables(
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ContractExpression {
+    Resource(Box<ResourceSubject>),
     /// An unsuffixed decimal retained until specification type checking. The
     /// same source spelling can denote a C literal or an exact Integer when
     /// its surrounding expression supplies that context.
@@ -6630,6 +6653,7 @@ fn contract_expression_reads_memory(
     callees: &mut Vec<String>,
 ) -> bool {
     match expression {
+        ContractExpression::Resource(_) => false,
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
@@ -8315,6 +8339,7 @@ impl FunctionSignature {
 impl FunctionParameter {
     pub fn c_type(&self) -> C0Type {
         match &self.click_type {
+            ClickType::Resource => panic!("a Resource parameter has no C type"),
             ClickType::Parameter(_) => {
                 panic!("a generic Click parameter has no concrete C type")
             }

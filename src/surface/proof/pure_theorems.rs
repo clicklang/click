@@ -1345,7 +1345,7 @@ pub(super) fn pure_theorem_context(
                 ClickType::Algebraic(_) => {
                     crate::surface::lowering::algebraic_binder_variable(index).ok()?
                 }
-                ClickType::Integer => Variable(index as u64),
+                ClickType::Integer | ClickType::Resource => Variable(index as u64),
                 _ => return None,
             };
             Some((variable, parameter.name().to_owned()))
@@ -2514,7 +2514,8 @@ fn is_nat_integer_law_name(name: &str) -> bool {
 }
 
 pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
-    integer_round_trip_destination(name).is_some()
+    name == "click::separation::restrict"
+        || integer_round_trip_destination(name).is_some()
         || crate::kernel::integer_truncation_law_requirements(name).is_some()
         || is_nat_integer_law_name(name)
         || matches!(
@@ -2594,6 +2595,7 @@ fn verify_kernel_standard_theorem_axiom(
     goal: Proposition,
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let (parameter_count, requirement_count) = match theorem.name() {
+        "click::separation::restrict" => (4, 3),
         "click::nat::to_integer_zero" | "click::nat::to_nat_zero" => (0, 0),
         "click::nat::to_integer_succ"
         | "click::nat::to_integer_nonnegative"
@@ -2678,7 +2680,23 @@ fn verify_kernel_standard_theorem_axiom(
             "`{claim_label}` does not have the declaration shape required by its kernel axiom",
         )));
     }
-    let axiom = if crate::kernel::integer_truncation_law_requirements(theorem.name()).is_some() {
+    let axiom = if theorem.name() == "click::separation::restrict" {
+        if theorem
+            .parameters()
+            .iter()
+            .any(|p| p.click_type() != &ClickType::Resource)
+        {
+            return Err(ClickError::new(
+                "separation::restrict parameters must be Resource",
+            ));
+        }
+        crate::kernel::prove_separation_restrict(
+            crate::kernel::CResource::Parameter(Variable(0)),
+            crate::kernel::CResource::Parameter(Variable(1)),
+            crate::kernel::CResource::Parameter(Variable(2)),
+            crate::kernel::CResource::Parameter(Variable(3)),
+        )
+    } else if crate::kernel::integer_truncation_law_requirements(theorem.name()).is_some() {
         let parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.integer_values.get(parameter.name()) {
@@ -3108,6 +3126,7 @@ pub(super) fn click_function_applications(
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
+            ContractExpression::Resource(_) => {}
             ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }

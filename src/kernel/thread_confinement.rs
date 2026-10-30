@@ -142,6 +142,8 @@ pub(super) fn confined_resource_name<'a>(
     definitions: &[CCompositeResourceDefinition],
 ) -> Option<&'a str> {
     let name = match fact {
+        CResourceFact::Own(CResource::Parameter(_), _)
+        | CResourceFact::View(CResource::Parameter(_)) => return None,
         // Moving the atom alone does not transfer its loan share/hold custody.
         CResourceFact::Own(CResource::PopulationAuthority(description), _)
         | CResourceFact::View(CResource::PopulationAuthority(description)) => {

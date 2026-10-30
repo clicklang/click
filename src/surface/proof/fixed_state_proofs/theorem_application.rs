@@ -197,6 +197,13 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
         assumptions,
         spec_definitions,
     )?;
+    let resource_bindings = super::super::theorem_application::theorem_resource_argument_bindings(
+        &theorem,
+        application,
+        context,
+        assumptions,
+        spec_definitions,
+    )?;
     // The theorem's parameters shadow any C local of the same name: the
     // application binds them, not the state.
     let bind = |state: &CState| {
@@ -216,6 +223,7 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
         .map_err(|error| error.message)?
         .iter()
         .map(|requirement| {
+            let requirement = substitute_click_proposition(requirement, &resource_bindings)?;
             let pointer_element_widths =
                 super::super::theorem_application::theorem_application_pointer_element_widths(
                     &theorem,
@@ -223,7 +231,7 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
                     context,
                 );
             let lowered = lower_fixed_state_proposition_through_kernel_with(
-                requirement,
+                &requirement,
                 assumptions,
                 ContractEnvironment::new(&values, &array_refs),
                 FixedStateFrame::new(&pre_state, &post_state, None, context.recorded_snapshots),

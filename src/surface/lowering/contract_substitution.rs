@@ -811,6 +811,9 @@ fn collect_contract_expression_binding_names(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::Resource(subject) => {
+            collect_resource_subject_binding_names(subject, names)
+        }
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
@@ -903,6 +906,10 @@ fn collect_resource_subject_binding_names(
     names: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceSubject::Parameter { name, .. } => {
+            names.insert(name.clone());
+        }
+        ResourceSubject::Captured { .. } => {}
         ResourceSubject::Memory(segment) => collect_contract_segment_binding_names(segment, names),
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
@@ -1276,6 +1283,9 @@ fn rewrite_resource_subject_exact(
     preserve_snapshots: bool,
 ) -> (ResourceSubject, bool) {
     match subject {
+        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => {
+            (subject.clone(), false)
+        }
         ResourceSubject::Memory(segment) => (ResourceSubject::Memory(segment.clone()), false),
         ResourceSubject::Declared {
             kind,
@@ -1438,6 +1448,7 @@ fn rewrite_contract_expression_exact(
         (left, right, left_changed || right_changed)
     };
     match expression {
+        ContractExpression::Resource(_) => (expression.clone(), false),
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {
             (expression.clone(), false)
         }
@@ -1864,6 +1875,14 @@ fn substitute_resource_subject(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ResourceSubject, String> {
     match resource {
+        ResourceSubject::Parameter { name, .. } => match substitutions.values.get(name) {
+            Some(ContractExpression::Resource(subject)) => Ok(subject.as_ref().clone()),
+            Some(_) => Err(format!(
+                "resource parameter `{name}` requires a Resource argument"
+            )),
+            None => Ok(resource.clone()),
+        },
+        ResourceSubject::Captured { .. } => Ok(resource.clone()),
         ResourceSubject::Memory(segment) => Ok(ResourceSubject::Memory(
             substitute_contract_segment(segment, substitutions)?,
         )),
@@ -2013,6 +2032,7 @@ fn apply_contract_lets_to_resource_subject(
     bindings: &[ContractLetBinding],
 ) -> Result<ResourceSubject, String> {
     match resource {
+        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => Ok(resource),
         ResourceSubject::Memory(segment) => Ok(ResourceSubject::Memory(
             apply_contract_lets_to_segment(segment, bindings)?,
         )),
@@ -2519,6 +2539,9 @@ fn collect_contract_expression_referenced_names_one(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::Resource(subject) => {
+            collect_resource_subject_referenced_names(subject, names)
+        }
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::Negate(inner) => {
@@ -2635,6 +2658,41 @@ fn collect_contract_expression_referenced_names_one(
         ContractExpression::Call { arguments, .. } => {
             for argument in arguments {
                 collect_contract_expression_referenced_names(argument, names);
+            }
+        }
+    }
+}
+
+fn collect_resource_subject_referenced_names(
+    subject: &ResourceSubject,
+    names: &mut BTreeSet<String>,
+) {
+    match subject {
+        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => {}
+        ResourceSubject::Declared { arguments, .. } => {
+            for argument in arguments {
+                collect_contract_expression_referenced_names(argument, names);
+            }
+        }
+        ResourceSubject::Memory(segment) => {
+            collect_c_expression_referenced_names(&segment.base, names);
+            collect_c_expression_referenced_names(&segment.start, names);
+            collect_c_expression_referenced_names(&segment.end, names);
+            match &segment.surface {
+                ContractSegmentSurface::Range { base, start, end }
+                | ContractSegmentSurface::StructRange {
+                    base, start, end, ..
+                } => {
+                    for expression in [base, start, end] {
+                        collect_contract_expression_referenced_names(expression, names);
+                    }
+                }
+                ContractSegmentSurface::Field {
+                    base: Some(base), ..
+                } => {
+                    collect_contract_expression_referenced_names(base, names);
+                }
+                _ => {}
             }
         }
     }
@@ -3286,6 +3344,9 @@ pub(in crate::surface) fn substitute_contract_expression_in(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ContractExpression, String> {
     match expression {
+        ContractExpression::Resource(subject) => Ok(ContractExpression::Resource(Box::new(
+            substitute_resource_subject(subject, substitutions)?,
+        ))),
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {
             Ok(expression.clone())
         }
@@ -4063,6 +4124,7 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
         contract_expression_as_c_fragment_resolving_fields(expression, field)
     };
     match expression {
+        ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
         ContractExpression::ResourceField(access) => field(access),
         ContractExpression::IntegerLiteral(value) => {
@@ -4210,6 +4272,7 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
     expression: &ContractExpression,
 ) -> Option<CExpression> {
     match expression {
+        ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
         ContractExpression::ResourceField(_) => None,
         ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {

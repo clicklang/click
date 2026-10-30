@@ -560,6 +560,9 @@ fn old_collect_spec_resource_bound_identities(
     integer_seen: &mut SeenTerms,
 ) {
     match resource {
+        SpecResource::Value(resource) => {
+            collect_c_resource_bitvector_variables(resource, variables)
+        }
         SpecResource::Memory {
             base, start, end, ..
         } => {
@@ -761,6 +764,9 @@ fn old_collect_spec_resource_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
+        SpecResource::Value(resource) => {
+            collect_c_resource_bitvector_variables(resource, variables)
+        }
         SpecResource::Memory {
             base, start, end, ..
         } => {

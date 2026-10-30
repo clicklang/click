@@ -2169,6 +2169,9 @@ impl Printer<'_> {
             .map_or((&[][..], &[][..]), |(p, a)| (p.as_slice(), a.as_slice()));
         let binding = ParameterBinding::new(parameters, arguments);
         match resource {
+            CResource::Parameter(v) => self
+                .variable_name(*v)
+                .unwrap_or_else(|| self.unnamed_variable(*v)),
             CResource::Memory(range) => {
                 let text = crate::surface::diagnostics::describe_memory_range(range, binding);
                 if !text.starts_with('…') {

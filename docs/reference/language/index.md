@@ -1195,6 +1195,16 @@ proposition `requires` clauses, and proposition `ensures` clauses with proof
 clauses. A theorem-only `.click` file does not need a `verifying "file.c";`
 declaration.
 
+`Resource` is a theorem-parameter type for resource descriptors. For example,
+`theorem transport(A: Resource, B: Resource) { requires separate(A, B);
+ensures separate(A, B); }` accepts `memory(...)`, a declared resource
+application, or another resource parameter as an argument. A descriptor carries
+no ownership. Arguments are evaluated in the caller before substitution, so
+callee parameter names cannot capture names inside them. This type is currently
+limited to theorem parameters; it is not a C type or an ownership clause.
+See [`separation::restrict`](../library/index.md#separationrestrict) for an
+explicit separation axiom and its checked field-separation example.
+
 Theorems are intentionally pure. They do not support `owns`, `consumes`,
 `produces`, region proof blocks, `old(...)`, `at(...)`, or
 `result`: applying a theorem lends, consumes, creates and separates nothing.

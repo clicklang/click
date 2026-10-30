@@ -3529,6 +3529,25 @@ fn expand_declared_resource_expression_node(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ContractExpression, ClickError> {
     match expression {
+        ContractExpression::Resource(subject) => Ok(ContractExpression::Resource(Box::new(
+            expand_declared_resource_subject(*subject, resource_definitions)?,
+        ))),
+        ContractExpression::Call { name, arguments }
+            if resource_definitions.definitions.contains_key(&name) =>
+        {
+            Ok(ContractExpression::Resource(Box::new(
+                expand_declared_resource_subject(
+                    ResourceSubject::Declared {
+                        kind: ResourceKind::Token,
+                        name,
+                        arguments,
+                        parameter_types: vec![],
+                    },
+                    resource_definitions,
+                )?,
+            )))
+        }
+
         ContractExpression::ResourceField(mut access) => {
             if let Some(name) = resource_definitions
                 .unowned_resource_parameters

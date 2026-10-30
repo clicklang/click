@@ -78,6 +78,8 @@ pub use loans::{
     LoanRefusalOperation, LoanRefusalSubject,
 };
 mod integer_truncation_laws;
+mod separation_laws;
+pub(crate) use separation_laws::prove_separation_restrict;
 mod loops;
 pub(crate) mod machine_integer;
 mod memory_provenance;

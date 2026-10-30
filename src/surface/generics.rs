@@ -62,6 +62,8 @@ pub(super) fn unify_click_type(
     substitution: &mut TypeSubstitution,
 ) -> Result<(), String> {
     match pattern {
+        ClickType::Resource if actual == &ClickType::Resource => Ok(()),
+        ClickType::Resource => Err("expected Resource argument".into()),
         ClickType::Parameter(name) if allowed.contains(name.as_str()) => {
             if let Some(previous) = substitution.get(name) {
                 if previous != actual {
@@ -144,6 +146,7 @@ pub(super) fn instantiate_click_type(
     substitution: &TypeSubstitution,
 ) -> Result<ClickType, String> {
     match click_type {
+        ClickType::Resource => Ok(ClickType::Resource),
         ClickType::Parameter(name) => substitution
             .get(name)
             .cloned()
@@ -341,6 +344,7 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
+            ClickType::Resource => syntactic_expression_type(argument, variables),
             ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }
@@ -414,6 +418,7 @@ pub(super) fn syntactic_expression_type(
         return Some(cast_type);
     }
     match expression {
+        ContractExpression::Resource(_) => Some(ClickType::Resource),
         ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {
             default_numeral_click_type(expression)
         }
@@ -486,6 +491,7 @@ pub(super) fn instantiate_predicate_for_surface_call(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
+            ClickType::Resource => syntactic_expression_type(argument, variables),
             ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }

@@ -230,6 +230,9 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
             }
             let ty = instantiate_field_type(datatype, application, field)?;
             match &ty {
+                ClickType::Resource => {
+                    return Err(ClickError::new("Resource is not an algebraic field type"));
+                }
                 ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                     parameters.push(FunctionParameter {
                         name: name.clone(),
@@ -1170,6 +1173,11 @@ pub(super) fn validate_algebraic_type_uses(
             )?;
         }
         match (definition.return_type(), body_type) {
+            (ClickType::Resource, _) => {
+                return Err(ClickError::new(
+                    "Resource function results are not supported",
+                ));
+            }
             (ClickType::Parameter(_), _) => {}
             (ClickType::Algebraic(expected), Some(actual)) if expected == &actual => {}
             (ClickType::Algebraic(expected), Some(actual)) => {
@@ -1490,6 +1498,9 @@ fn validate_algebraic_proposition_one(
             }
             let scope = variables.scope();
             match c_type {
+                ClickType::Resource => {
+                    return Err(ClickError::new("Resource quantifiers are not supported"));
+                }
                 ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                     variables.bind(name, c_type.clone());
                 }
@@ -1607,6 +1618,11 @@ fn validate_algebraic_proposition_one(
                     continue;
                 };
                 match (expected.click_type(), actual) {
+                    (ClickType::Resource, _) => {
+                        return Err(ClickError::new(
+                            "Resource is supported only as a theorem parameter",
+                        ));
+                    }
                     (ClickType::Parameter(_), _) => {}
                     (ClickType::Algebraic(expected), Some(ClickType::Algebraic(actual)))
                         if expected == &actual => {}
@@ -1842,6 +1858,9 @@ fn expression_is_integer_match_result(
                     arm.bindings.iter().zip(variant.fields()).enumerate()
                 {
                     match instantiate_field_type(definition, &algebraic_type, field)? {
+                        ClickType::Resource => {
+                            return Err(ClickError::new("Resource is not an algebraic field type"));
+                        }
                         ClickType::C(_) | ClickType::CObjectPointer { .. } => {}
                         ClickType::Algebraic(algebraic_type) => {
                             algebraic_bindings.insert(
@@ -1941,6 +1960,7 @@ fn validate_algebraic_expression_node(
     context: &str,
 ) -> Result<Option<AlgebraicTypeApplication>, ClickError> {
     match expression {
+        ContractExpression::Resource(_) => Ok(None),
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(None),
         ContractExpression::IntegerLiteral(_) => Ok(None),
         ContractExpression::Negate(inner) => validate_algebraic_expression(
@@ -2024,6 +2044,11 @@ fn validate_algebraic_expression_node(
                 let expected = instantiate_field_type(definition, algebraic_type, field)?;
                 let field_type = &expected;
                 match (&expected, actual_algebraic) {
+                    (ClickType::Resource, _) => {
+                        return Err(ClickError::new(
+                            "Resource is supported only as a theorem parameter",
+                        ));
+                    }
                     (ClickType::Parameter(_), _) => {}
                     (ClickType::Algebraic(expected), Some(actual)) if expected == &actual => {}
                     (ClickType::Algebraic(expected), Some(actual)) => {
@@ -2191,6 +2216,9 @@ fn validate_algebraic_expression_node(
                         )));
                     }
                     match instantiate_field_type(definition, &algebraic_type, field)? {
+                        ClickType::Resource => {
+                            return Err(ClickError::new("Resource is not an algebraic field type"));
+                        }
                         ClickType::Parameter(_) => {}
                         field_type @ (ClickType::C(_) | ClickType::CObjectPointer { .. }) => {
                             variables.bind(binding, field_type);
@@ -2631,6 +2659,11 @@ fn validate_algebraic_expression_node(
                     .transpose()?
                     .unwrap_or_else(|| expected.click_type().clone());
                 match (&expected, actual) {
+                    (ClickType::Resource, _) => {
+                        return Err(ClickError::new(
+                            "Resource is supported only as a theorem parameter",
+                        ));
+                    }
                     (ClickType::Parameter(_), _) => {}
                     // The C null pointer constant types as any pointer
                     // parameter, in a pure function exactly as in a resource
@@ -2742,6 +2775,7 @@ fn validate_algebraic_expression_node(
                 })
                 .transpose()?;
             Ok(return_type.and_then(|return_type| match return_type {
+                ClickType::Resource => None,
                 ClickType::Parameter(_) => None,
                 ClickType::Algebraic(application) => Some(application),
                 ClickType::C(_) | ClickType::CObjectPointer { .. } => None,
@@ -3180,6 +3214,7 @@ fn infer_generic_expression_type(
         return Ok(Some(cast_type));
     }
     match expression {
+        ContractExpression::Resource(_) => Ok(Some(ClickType::Resource)),
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(None),
         ContractExpression::IntegerLiteral(_) => {
             Ok(generics::default_numeral_click_type(expression))
@@ -3743,6 +3778,9 @@ fn validate_type_application(
     }
     for argument in &application.arguments {
         match argument {
+            ClickType::Resource => {
+                return Err(ClickError::new("Resource is not an algebraic field type"));
+            }
             ClickType::Parameter(_) => {}
             ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. }
                 if algebraic_field_c_type_supported(*c_type) => {}

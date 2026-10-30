@@ -4553,6 +4553,10 @@ fn evaluate_spec_resource_at_state_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<EvaluatedSpecResource>> {
     let (expressions, build): (Vec<SpecExpression>, SpecResourceBuilder) = match resource {
+        SpecResource::Value(value) => {
+            let value = value.clone();
+            (vec![], Box::new(move |_| Some(value.clone())))
+        }
         SpecResource::Memory {
             base,
             start,

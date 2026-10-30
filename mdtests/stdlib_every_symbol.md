@@ -9,6 +9,10 @@ The `authority` resource's restricted empty-population source use is verified
 by `authority_establishes_and_retires_empty_stack_population` in
 `src/surface/tests/execution_tests.rs`.
 
+The separation axiom `separation::restrict` is verified in
+[`resource_theorem_parameters.md`](resource_theorem_parameters.md), including
+forwarding through a user theorem and application to C struct fields.
+
 The external catalog symbols `memcmp` and `strlen` are verified in
 [`strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md),
 `memcpy` in

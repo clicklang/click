@@ -383,6 +383,7 @@ impl Analysis<'_> {
     ) -> Result<(), String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
+            ContractExpression::Resource(_) => {}
             ContractExpression::AlgebraicConstructor {
                 algebraic_type,
                 variant,

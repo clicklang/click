@@ -273,6 +273,7 @@ impl<'a> SpecNode<'a> {
                 }
             },
             N::Resource(resource) => match resource {
+                SpecResource::Value(_) => {}
                 SpecResource::Memory {
                     base, start, end, ..
                 } => {

@@ -2081,6 +2081,8 @@ pub(in crate::surface) fn describe_iterated_memory(
 
 pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
     match resource {
+        ResourceSubject::Parameter { name, .. } => name.clone(),
+        ResourceSubject::Captured { source, .. } => describe_resource_subject(source),
         ResourceSubject::Memory(segment) => {
             format!("memory({})", describe_contract_segment(segment))
         }
@@ -6581,6 +6583,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         return describe_add_contract_expression(expression);
     }
     match expression {
+        ContractExpression::Resource(subject) => describe_resource_subject(subject),
         ContractExpression::RegionAllocation(region) => {
             format!("{}.allocation", describe_code_region_ref(region))
         }

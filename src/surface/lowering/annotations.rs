@@ -104,6 +104,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         fixed_measure_state(left).or_else(|| fixed_measure_state(right))
     };
     match expression {
+        ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
         ContractExpression::Old(_) => Some(FixedMeasureState::Old),
         ContractExpression::At { selector, .. } => Some(FixedMeasureState::At(selector.clone())),
@@ -180,6 +181,11 @@ pub(in crate::surface) fn resolve_resource_field_schema(
         .iter()
         .map(|field| {
             let ty = match field.click_type() {
+                ClickType::Resource => {
+                    return Err(ClickError::new(
+                        "Resource values are supported as theorem parameters only",
+                    ));
+                }
                 ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
                     crate::kernel::ResourceFieldType::C(ty.to_kernel_type())
                 }
@@ -4621,6 +4627,11 @@ impl AnnotationLowerer<'_> {
                     );
                     for (parameter, argument) in definition.parameters().iter().zip(arguments) {
                         match parameter.click_type() {
+                            ClickType::Resource => {
+                                return Err(
+                                    "Resource predicate parameters are not supported".into()
+                                );
+                            }
                             ClickType::Parameter(name) => {
                                 return Err(format!(
                                     "predicate `{}` has unresolved type parameter `{name}`",
@@ -5873,6 +5884,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         match expression {
+            ContractExpression::Resource(_) => Err("a Resource descriptor is not a C value".into()),
             ContractExpression::CUnary { operand, lowered } => {
                 let value = self.lower_contract_expression_to_spec(operand, environment)?;
                 match lowered {
@@ -7156,6 +7168,9 @@ impl AnnotationLowerer<'_> {
             .zip(arguments)
             .map(|(parameter, argument)| {
                 let lowered = match parameter.click_type() {
+                    ClickType::Resource => {
+                        Err("Resource function parameters are not supported".into())
+                    }
                     ClickType::Parameter(name) => Err(format!(
                         "function `{}` has unresolved type parameter `{name}`",
                         definition.name()
@@ -7306,6 +7321,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<Option<ClickType>, String> {
         match expected {
+            ClickType::Resource => Ok(Some(ClickType::Resource)),
             ClickType::Algebraic(_) => {
                 let value = self.lower_contract_algebraic_to_spec(argument, environment)?;
                 Ok(Some(generics::click_type_from_algebraic_value_type(
@@ -7468,6 +7484,11 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecResource, String> {
         match resource {
+            ResourceSubject::Parameter { index, .. } => Ok(SpecResource::Value(
+                crate::kernel::CResource::Parameter(crate::kernel::Variable(*index as u64)),
+            )),
+            ResourceSubject::Captured { value, .. } => Ok(SpecResource::Value(value.clone())),
+
             ResourceSubject::Memory(segment) => {
                 let environment = self.spec_segment_environment(segment, environment)?;
                 Ok(SpecResource::Memory {
@@ -8688,6 +8709,7 @@ fn click_type_to_algebraic_value_type(
     click_type: &ClickType,
 ) -> Result<AlgebraicValueType, String> {
     match click_type {
+        ClickType::Resource => Err("Resource is not an algebraic field type".into()),
         ClickType::Parameter(name) => Err(format!("unresolved type parameter `{name}`")),
         ClickType::C(c_type) => Ok(AlgebraicValueType::C(c_type.to_kernel_type())),
         ClickType::CObjectPointer { c_type, .. } => Ok(AlgebraicValueType::ObjectPointer(

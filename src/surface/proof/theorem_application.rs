@@ -309,9 +309,18 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         theorem_application_pointer_element_widths(&theorem, application, context);
     let bound_array_memories =
         theorem_application_bound_array_memories(&theorem, application, &array_refs);
+    let resource_bindings = theorem_resource_argument_bindings(
+        &theorem,
+        application,
+        context,
+        lowering_assumptions,
+        spec_definitions,
+    )
+    .map_err(|message| theorem_application_error(claim_label, path_index, tactic_index, message))?;
     let lower = |proposition: &ClickProposition| {
+        let proposition = substitute_click_proposition(proposition, &resource_bindings)?;
         lower_fixed_state_proposition_through_kernel_with(
-            proposition,
+            &proposition,
             lowering_assumptions,
             ContractEnvironment::new(&values, &array_refs),
             FixedStateFrame::new(&pre_state, &post_state, None, context.recorded_snapshots),
@@ -1021,6 +1030,23 @@ pub(super) fn theorem_application_bindings(
     // parameter can capture a later argument with the same spelling.
     let mut integer_values = crate::persistent::PersistentMap::default();
     for (parameter, argument) in theorem.parameters().iter().zip(&application.arguments) {
+        if parameter.click_type() == &ClickType::Resource {
+            if !matches!(argument, ContractExpression::Resource(_)) {
+                return Err(format!(
+                    "theorem `{}` parameter `{}` expects Resource",
+                    theorem.name(),
+                    parameter.name()
+                ));
+            }
+            continue;
+        }
+        if matches!(argument, ContractExpression::Resource(_)) {
+            return Err(format!(
+                "theorem `{}` parameter `{}` does not accept Resource",
+                theorem.name(),
+                parameter.name()
+            ));
+        }
         if parameter.click_type() == &ClickType::Integer {
             let value = match crate::surface::lowering::lower_contract_integer_to_spec(
                 argument,
@@ -1826,4 +1852,57 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
         })
     };
     walk(proposition, &rewrite)
+}
+
+/// Capture descriptors in the caller before substituting any callee name.
+/// A descriptor carries no ownership, and later stores cannot change its value.
+pub(super) fn theorem_resource_argument_bindings(
+    theorem: &TheoremDefinition,
+    application: &TheoremApplication,
+    context: &TheoremApplicationContext<'_>,
+    assumptions: &PureFactContext,
+    spec_definitions: SpecDefinitions<'_>,
+) -> Result<BTreeMap<String, ContractExpression>, String> {
+    let mut bindings = BTreeMap::new();
+    for (parameter, argument) in theorem.parameters().iter().zip(&application.arguments) {
+        if parameter.click_type() != &ClickType::Resource {
+            continue;
+        }
+        let ContractExpression::Resource(subject) = argument else {
+            return Err(format!("parameter `{}` expects Resource", parameter.name()));
+        };
+        let descriptor = ClickProposition::Contains {
+            parent: subject.as_ref().clone(),
+            child: subject.as_ref().clone(),
+        };
+        let lowered = lower_fixed_state_proposition_through_kernel_with(
+            &descriptor,
+            assumptions,
+            ContractEnvironment::new(context.values, context.array_refs),
+            FixedStateFrame::new(
+                context.pre_state,
+                context.post_state,
+                context.result,
+                context.recorded_snapshots,
+            ),
+            spec_definitions,
+            FixedStateLoweringOptions {
+                integer_values: Some(context.integer_values),
+                algebraic_values: Some(context.algebraic_values),
+                pointer_element_widths: context.pointer_element_widths.clone(),
+                ..Default::default()
+            },
+        )?;
+        let Proposition::CResourceContains { parent, .. } = lowered else {
+            return Err("resource argument has unresolved extent requirements".into());
+        };
+        bindings.insert(
+            parameter.name().to_string(),
+            ContractExpression::Resource(Box::new(ResourceSubject::Captured {
+                value: *parent,
+                source: subject.clone(),
+            })),
+        );
+    }
+    Ok(bindings)
 }

@@ -6,6 +6,7 @@ imports with `import click::...;`, and the modules those import:
 
 | Module | Seen | Contents |
 | --- | --- | --- |
+| `separation.click` | `import click::separation;` | Explicit separation-under-containment axiom over `Resource` descriptors |
 | `primitives.click` | implicit | Verifier primitives: the abstract resources the kernel interprets (`mutex_guard`, `mutex_live`, `mutex_use`, `publisher`, `subscriber`, `authority`, `allocation`) |
 | `nat.click` | implicit | `Nat`, `to_nat`, `nat::add` and their laws |
 | `list.click` | implicit | `List<T>`, `list::append`, `list::contains`, `list::length` and their laws |
@@ -35,8 +36,10 @@ library module's own proofs are checked against the whole library.
 
 Each module is parsed with the declarations of the modules before it, and
 its diagnostics name its own file and line. Types, pure functions, and
-theorems use ordinary Click declarations; library theorems are checked, not
-trusted axioms. The `extern` contracts are assumptions, listed in
+theorems use ordinary Click declarations. Most library theorems have checked
+proofs; selected numeric laws and `separation::restrict` are backed by trusted
+kernel constructors. Their declarations must match the corresponding kernel
+axioms exactly. The `extern` contracts are assumptions, listed in
 [trust](../docs/concepts/trust.md).
 
 A module is named by a `click::` path that mirrors its file:
