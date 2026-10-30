@@ -850,47 +850,58 @@ pub(in crate::kernel) fn bitvector_equality_after_additive_cancellation(
     left: &Bitvector32Term,
     right: &Bitvector32Term,
 ) -> Option<(Bitvector32Term, Bitvector32Term)> {
-    match (left, right) {
-        (
-            binary_term!(Int32, Add, left_base, left_addend),
-            binary_term!(Int32, Add, right_base, right_addend),
-        ) if left_base == right_base => {
-            Some((left_addend.as_ref().clone(), right_addend.as_ref().clone()))
+    // `a + b == a + c` exactly when `b == c` for sums of one 32-bit format,
+    // and `a + b == a` exactly when `b == 0`. A sum of each format cancels
+    // only against a sum, or an addend, of its own format.
+    fn sum(
+        term: &Bitvector32Term,
+    ) -> Option<(
+        crate::kernel::MachineIntegerType,
+        &Bitvector32Term,
+        &Bitvector32Term,
+    )> {
+        match term {
+            binary_term!(Bits32 @ format, Add, base, addend) => {
+                Some((*format, base.as_ref(), addend.as_ref()))
+            }
+            _ => None,
         }
-        (
-            binary_term!(Int32, Add, left_base, left_addend),
-            binary_term!(Int32, Add, right_base, right_addend),
-        ) if left_base == right_addend => {
-            Some((left_addend.as_ref().clone(), right_base.as_ref().clone()))
-        }
-        (
-            binary_term!(Int32, Add, left_base, left_addend),
-            binary_term!(Int32, Add, right_base, right_addend),
-        ) if left_addend == right_base => {
-            Some((left_base.as_ref().clone(), right_addend.as_ref().clone()))
-        }
-        (
-            binary_term!(Int32, Add, left_base, left_addend),
-            binary_term!(Int32, Add, right_base, right_addend),
-        ) if left_addend == right_addend => {
-            Some((left_base.as_ref().clone(), right_base.as_ref().clone()))
-        }
-        (binary_term!(Int32, Add, left_base, left_addend), _) if left_base.as_ref() == right => {
-            Some((left_addend.as_ref().clone(), Bitvector32Term::Constant(0)))
-        }
-        (binary_term!(Int32, Add, left_base, left_addend), _) if left_addend.as_ref() == right => {
-            Some((left_base.as_ref().clone(), Bitvector32Term::Constant(0)))
-        }
-        (_, binary_term!(Int32, Add, right_base, right_addend)) if left == right_base.as_ref() => {
-            Some((Bitvector32Term::Constant(0), right_addend.as_ref().clone()))
-        }
-        (_, binary_term!(Int32, Add, right_base, right_addend))
-            if left == right_addend.as_ref() =>
-        {
-            Some((Bitvector32Term::Constant(0), right_base.as_ref().clone()))
-        }
-        _ => None,
     }
+    let zero = |format| Bitvector32Term::constant_at32(format, 0);
+    if let (
+        Some((left_format, left_base, left_addend)),
+        Some((right_format, right_base, right_addend)),
+    ) = (sum(left), sum(right))
+        && left_format == right_format
+    {
+        for ((left_kept, left_other), (right_kept, right_other)) in [
+            ((left_base, left_addend), (right_base, right_addend)),
+            ((left_base, left_addend), (right_addend, right_base)),
+            ((left_addend, left_base), (right_base, right_addend)),
+            ((left_addend, left_base), (right_addend, right_base)),
+        ] {
+            if left_kept == right_kept {
+                return Some((left_other.clone(), right_other.clone()));
+            }
+        }
+    }
+    if let Some((format, base, addend)) = sum(left) {
+        if base == right {
+            return Some((addend.clone(), zero(format)));
+        }
+        if addend == right {
+            return Some((base.clone(), zero(format)));
+        }
+    }
+    if let Some((format, base, addend)) = sum(right) {
+        if left == base {
+            return Some((zero(format), addend.clone()));
+        }
+        if left == addend {
+            return Some((zero(format), base.clone()));
+        }
+    }
+    None
 }
 
 #[derive(Clone, Debug)]
@@ -902,15 +913,18 @@ pub(in crate::kernel) struct CountFoldParts {
     pub(in crate::kernel) contribution: Bitvector32Term,
 }
 
+/// The addends of a sum of the 32-bit `format`, and the sum of its
+/// constants; a sum of the other format is an addend of its own.
 pub(in crate::kernel) fn collect_bitvector_add_terms(
+    format: crate::kernel::MachineIntegerType,
     term: &Bitvector32Term,
     terms: &mut Vec<Bitvector32Term>,
     constant: &mut u32,
 ) {
     match term {
-        binary_term!(Int32, Add, left, right) => {
-            collect_bitvector_add_terms(left, terms, constant);
-            collect_bitvector_add_terms(right, terms, constant);
+        binary_term!(Bits32 @ found, Add, left, right) if *found == format => {
+            collect_bitvector_add_terms(format, left, terms, constant);
+            collect_bitvector_add_terms(format, right, terms, constant);
         }
         Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
             *constant = constant.wrapping_add(*value);

@@ -631,7 +631,12 @@ Progress:
      accepts them. σ, narrow widenings and K6 stay: operands are still
      words, and the e-graph, the difference graph, the signed intervals
      and the representation map read a 32-bit sign-free operator by its
-     bits at either format. Rust's checked `u8`/`u16` arithmetic converts
+     bits at either format; the contradiction index's endpoint keys, the
+     additive cancellation and sum comparison, and the structural equality
+     walkers of transport and memory resolution read a sum, difference,
+     product or complement at its own format, flattening and comparing only
+     same-format operands, so an `int32` and a `uint32` sum never share a
+     key. Rust's checked `u8`/`u16` arithmetic converts
      from its `uint32` result rather than through `int32`, so its
      identities read at one format. Step 4b makes σ a node of its own and
      removes K1, K2 and K6, with R0 at 32 bits and the difference graph's

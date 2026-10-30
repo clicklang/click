@@ -2112,15 +2112,18 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     }
 
     match (left, right) {
-        (binary_term!(Int32, Add, left_a, left_b), binary_term!(Int32, Add, right_a, right_b))
-        | (
-            binary_term!(Int32, Subtract, left_a, left_b),
-            binary_term!(Int32, Subtract, right_a, right_b),
+        (
+            binary_term!(Bits32 @ left_format, Add, left_a, left_b),
+            binary_term!(Bits32 @ right_format, Add, right_a, right_b),
         )
         | (
-            binary_term!(Int32, Multiply, left_a, left_b),
-            binary_term!(Int32, Multiply, right_a, right_b),
-        ) => {
+            binary_term!(Bits32 @ left_format, Subtract, left_a, left_b),
+            binary_term!(Bits32 @ right_format, Subtract, right_a, right_b),
+        )
+        | (
+            binary_term!(Bits32 @ left_format, Multiply, left_a, left_b),
+            binary_term!(Bits32 @ right_format, Multiply, right_a, right_b),
+        ) if left_format == right_format => {
             bitvector_terms_proven_equal_for_memory_resolution(left_a, right_a, assumptions)
                 && bitvector_terms_proven_equal_for_memory_resolution(left_b, right_b, assumptions)
         }
