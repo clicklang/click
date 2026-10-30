@@ -7069,6 +7069,14 @@ impl PureFactContext {
 
     fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {
         self.equality_graph.knows_condition(condition, value)
+            // A 32-bit order claim in its mirrored direction (`255 >= x` for
+            // `x <= 255`): the graph keeps each order condition in the
+            // direction it was stated, and a widening's class holds its
+            // operand (rule K8, a relation), so the stated direction over
+            // the operand answers the mirrored one over the widening. One
+            // more lookup.
+            || mirrored_order32(condition)
+                .is_some_and(|mirrored| self.equality_graph.knows_condition(&mirrored, value))
             // A signedness conversion's sign test is known when its
             // operand's half-range test is, and the reverse
             // (`condition_reasoning::sign_bit`).
@@ -7291,6 +7299,11 @@ impl PureFactContext {
         if let Some((term, bound, strict)) =
             condition_reasoning::unsigned_upper_bound_below_sign_bit(&condition, value)
         {
+            // A 32-bit widening of a narrow value has its operand's word
+            // (rule K8, a relation), so the range is filed on the operand.
+            let term = term
+                .narrow_widening32_operand()
+                .map_or(term, |(_, operand)| operand);
             self = self.assume_unsigned_word_range(term.clone(), bound, strict);
         } else if let Some((term, bound, strict)) =
             condition_reasoning::uint64_upper_bound_below_sign_bit(&condition, value)
@@ -12155,4 +12168,31 @@ mod resource_alias_scaling_tests {
 mod condition_bucket_scaling_tests {
     use super::*;
     include!("../scaling_tests/kernel/assumptions/condition_buckets.rs");
+}
+
+/// A 32-bit order comparison stated in the other direction: `b > a` for
+/// `a < b`, `b >= a` for `a <= b`, and back. One match on the root.
+fn mirrored_order32(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::Compare {
+        format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    let relation = match relation {
+        CompareRelation::LessThan => CompareRelation::GreaterThan,
+        CompareRelation::LessEqual => CompareRelation::GreaterEqual,
+        CompareRelation::GreaterThan => CompareRelation::LessThan,
+        CompareRelation::GreaterEqual => CompareRelation::LessEqual,
+        CompareRelation::Equal => return None,
+    };
+    Some(ConditionTerm::Compare {
+        format: *format,
+        relation,
+        left: right.clone(),
+        right: left.clone(),
+    })
 }

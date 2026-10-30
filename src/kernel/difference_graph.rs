@@ -1317,6 +1317,13 @@ impl DifferenceGraph {
         }
         charge();
         let (low, high) = match (domain, term) {
+            // A 32-bit widening of a narrow value has its operand's word
+            // (rule K8, a relation).
+            (Domain::Int32, T::MachineIntegerCast { value, .. })
+                if term.narrow_widening32_operand().is_some() =>
+            {
+                self.term_interval(domain, value)
+            }
             (Domain::Int32, binary_term!(Bits32, Add, a, b))
             | (
                 Domain::Int64,
@@ -2690,6 +2697,19 @@ fn link_parts(
 ) -> Option<(Domain, &Bitvector32Term, i128, bool)> {
     use Bitvector32Term as T;
     match (domain, term) {
+        // A 32-bit widening of a narrow value keeps its operand's word
+        // (rule K8, a relation), so either 32-bit reading of it is the same
+        // reading of the operand.
+        (
+            Domain::Int32 | Domain::UInt32,
+            T::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            },
+        ) if crate::kernel::is_narrow_widening32(*source, *destination) => {
+            Some((domain, value.as_ref(), 0, false))
+        }
         (Domain::Int32, binary_term!(Bits32, Add, left, right))
         | (
             Domain::Int64,

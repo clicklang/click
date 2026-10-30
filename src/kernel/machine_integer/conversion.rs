@@ -262,8 +262,14 @@ pub(crate) fn widened_narrow_word(observed: &IntegerTerm) -> Option<&Bitvector32
         return None;
     };
     match machine.ty().format().bits() {
-        // A 32-bit widening of a narrow value names its word (rule K8).
-        16 | 32 => Some(machine.value().word32()),
+        // A 32-bit widening of a narrow value has its operand's word (rule
+        // K8, a relation).
+        16 | 32 => Some(
+            machine
+                .value()
+                .narrow_widening32_operand()
+                .map_or(machine.value().word32(), |(_, operand)| operand),
+        ),
         64 => match machine.value() {
             Bitvector32Term::Int64From32(word)
             | Bitvector32Term::UInt64FromInt32(word)
@@ -306,8 +312,14 @@ pub(crate) fn narrow_widening(observed: &IntegerTerm, original: &IntegerTerm) ->
         return false;
     }
     match machine.value() {
-        // The widening node, or the bare word, names the word (rule K8).
-        value if destination.bits() <= 32 => value.word32() == word,
+        // The widening node, whose word is its operand's (rule K8, a
+        // relation), or the bare word.
+        value if destination.bits() <= 32 => {
+            value.word32() == word
+                || value
+                    .narrow_widening32_operand()
+                    .is_some_and(|(_, operand)| operand == word)
+        }
         Bitvector32Term::Int64From32(inner) | Bitvector32Term::UInt64FromInt32(inner) => {
             inner.as_ref() == word
         }

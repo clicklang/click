@@ -413,3 +413,49 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
         "{samples:?}"
     );
 }
+
+/// Rule K8 as a relation: a sum of the 32-bit widenings of `n` narrow
+/// loads is interned with constant work per widening (one node and one
+/// union each), and equals the sum of the loads' words, at every size.
+#[test]
+fn widening_chains_are_related_with_constant_work_per_widening() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = memory();
+    let read = |index: u64| {
+        Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+            &memory,
+            &address(10_000 + index),
+            crate::kernel::LoadKind::UInt8,
+            1,
+        ))
+    };
+    let widen = |value: Bitvector32Term| Bitvector32Term::MachineIntegerCast {
+        value: Box::new(value),
+        source: MachineIntegerType::UInt8,
+        destination: MachineIntegerType::Int32,
+    };
+    let sizes = [8_u64, 32, 128, 512];
+    let mut samples = Vec::new();
+    for size in sizes {
+        let mut widened = widen(read(0));
+        let mut words = read(0);
+        for index in 1..size {
+            widened = binary_node!(Int32, Add, Box::new(widened), Box::new(widen(read(index))));
+            words = binary_node!(Int32, Add, Box::new(words), Box::new(read(index)));
+        }
+        let mut graph = EqualityGraph::default();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            graph.add_int32_equality(&widened, &var(900_000 + size));
+        });
+        assert!(
+            graph.are_int32_equal(&var(900_000 + size), &words),
+            "size {size}"
+        );
+        samples.push(work);
+    }
+    let per_widening =
+        |i: usize| (samples[i + 1] - samples[i]) as f64 / (sizes[i + 1] - sizes[i]) as f64;
+    for i in 1..sizes.len() - 1 {
+        assert_eq!(per_widening(i), per_widening(0), "{samples:?}");
+    }
+}
