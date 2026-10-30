@@ -162,6 +162,55 @@ mod tests {
     use crate::kernel::{Bitvector32Term, Sort, Variable};
 
     #[test]
+    fn boolean_function_unfold_facts_and_goals_have_exact_spellings() {
+        let fixture = include_str!("../../../mdtests/a_bool_pure_function_states_a_claim.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_click_theorems(source).unwrap();
+        });
+        let bool_lines = lines
+            .iter()
+            .filter(|line| {
+                line.split('\t')
+                    .nth(2)
+                    .is_some_and(|kind| kind.contains("Bool"))
+            })
+            .collect::<Vec<_>>();
+        assert!(!bool_lines.is_empty(), "{lines:#?}");
+        assert!(
+            bool_lines.iter().all(|line| line.starts_with("spelled\t")),
+            "{bool_lines:#?}"
+        );
+    }
+
+    #[test]
+    fn boolean_function_proof_expands_and_rechecks_without_implicit_search() {
+        let fixture = include_str!("../../../mdtests/a_bool_pure_function_states_a_claim.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let expanded = crate::surface::expansion::expand_c0_claim_source_by_label(
+            source,
+            &[],
+            "chosen_positive.ensures_0",
+        )
+        .unwrap();
+        crate::surface::proof::without_implicit_auto(|| {
+            crate::surface::verify_click_theorems(&expanded).unwrap();
+        });
+    }
+
+    #[test]
     fn introduced_narrow_binder_bounds_have_checked_spellings() {
         for ty in ["int8", "uint8", "int16", "uint16"] {
             let source = format!(

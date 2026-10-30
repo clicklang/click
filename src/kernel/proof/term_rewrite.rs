@@ -2736,7 +2736,9 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                Proposition::ConditionIs(condition, *value)
+                // Keep the truth polarity form used by ordinary lowering.
+                // A rewrite can introduce an outer Bool negation.
+                condition.truth_claim(*value)
             }
             Proposition::CMemoryLoadable {
                 memory,

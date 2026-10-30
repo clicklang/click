@@ -170,6 +170,14 @@ address equalities over a common exact wide stride retain full-width index
 equalities. A table-read branch extends its context with its one new address
 disequality before considering the next cell.
 
+Boolean function applications, equalities, conditionals, and Boolean call
+arguments spell structurally through their existing Surface syntax. Pure-theorem
+premise spelling uses the retained typed source state and looks up names for the
+selected fact's variables, rather than rebuilding an int32-only environment.
+A rewrite that introduces an outer Boolean negation retains lowering's truth
+polarity: a false claim of `not p` is stored as a true claim of `p`. This does
+not consult facts or change the Boolean term inside a larger expression.
+
 Signed add/subtract/multiply overflow facts retain their polarity when spelled:
 no overflow is `defined(expression)`, and overflow is `not defined(expression)`.
 The spelling names the operation rather than a local holding its result.

@@ -141,6 +141,32 @@ requirements. Substituting those compound propositions for an atomic fact is
 not a round-trip. Their reproductions are retained for the next spelling design
 step; no syntax or domain semantics have been changed for them.
 
+The next increment, `codex/bool-fact-spellings`, reconstructs Boolean calls,
+equalities, conditionals, and Boolean call arguments through their existing
+Surface forms. The original `a_bool_pure_function_states_a_claim` fixture
+reproduced missing unfold facts and a goal before the fix. Pure-theorem premise
+synthesis now uses the retained source state and selected source-name lookups;
+it no longer reconstructs an int32-only parameter environment. Rewriting also
+keeps a condition claim in lowering's truth-polarity form: rewriting to
+`not even(0)` at false polarity produces `even(0)` at true polarity.
+
+Five focused checks pass: the original fixture has no Boolean spelling misses,
+both polarities round-trip exactly, expansion rechecks without implicit search,
+the rewrite produces the exact polarity, and synthesis work grows with the
+Boolean expression rather than unrelated names. The full
+`scripts/check.sh --no-fail-fast` gate passed with both frontends required:
+6,883 unit/API/import/scaling tests, 58 examples, and 4,916 mdtests, in 9m09s.
+The combined ordinary-mdtest census/stability audit passed on the same binary
+in 219s with zero fact-stability differences. Original fixture proofs are unchanged.
+
+The fresh census records 22,858 observations: 1,923 written and 6,798 smart
+misses. Written Boolean misses are 23, versus 35 at the preceding census
+checkpoint; the original Boolean fixture goes from 10 misses to zero. Remaining
+Boolean misses involve generic list calls and algebraic arguments, including
+unnamed values in stack resource cases. They remain open; this increment does
+not establish complete Boolean or algebraic spelling coverage. Counts are
+observations, not distinct defects. No nightly suite ran and no limits changed.
+
 An attempted standalone certification extraction on upstream after #2152 is
 **not publishable**: `codex/final-certification-slice` at `6ec3c8a95` failed its
 full gate (6,841 of 6,842 units passed; fixture phase was not reached). The
