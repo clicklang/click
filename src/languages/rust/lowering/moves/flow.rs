@@ -90,6 +90,7 @@ pub(super) fn header_condition(
             } => substitute(place, definitions, scalar, remaining)?,
             E::ChunkHasNext { .. }
             | E::SharedArrayHasNext { .. }
+            | E::RangeHasNext { .. }
             | E::Integer { .. }
             | E::UnsignedInteger { .. }
             | E::SignedInteger { .. }

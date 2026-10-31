@@ -8,6 +8,7 @@ mod move_regressions;
 mod moves;
 #[cfg(test)]
 mod owned_parameter_regressions;
+mod ranges;
 #[cfg(test)]
 mod record_pointer_fields_tests;
 mod scalar_leases;
@@ -570,6 +571,7 @@ fn lower_function(
     }
     let mut cx = Context {
         shared_array_iterators: BTreeMap::new(),
+        ranges: BTreeMap::new(),
         shared_array_options: BTreeMap::new(),
         shared_scalar_slices,
         chunk_iterators: BTreeSet::new(),
@@ -635,6 +637,8 @@ fn lower_function(
 }
 struct Context<'a> {
     shared_array_iterators: BTreeMap<String, CType>,
+    /// The range locals, with their element type.
+    ranges: BTreeMap<String, Type>,
     shared_array_options: BTreeMap<String, CType>,
     shared_scalar_slices: BTreeMap<String, (String, CType)>,
     chunk_iterators: BTreeSet<String>,
@@ -1879,6 +1883,7 @@ impl Context<'_> {
     fn expr(&mut self, e: &E) -> Result<CExpression, String> {
         match e {
             E::SharedArrayHasNext { iterator } => self.shared_array_has_next(iterator),
+            E::RangeHasNext { iterator } => self.range_has_next(iterator),
             E::SharedArrayOptionTag { option } => {
                 if !self.shared_array_options.contains_key(option) {
                     return Err("unknown shared iterator Option".into());

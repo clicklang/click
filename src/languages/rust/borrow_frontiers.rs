@@ -510,6 +510,7 @@ fn alias_effect(expr: &E, aliases: &BTreeSet<&str>) -> Result<(bool, bool), Fron
         | E::Boolean { .. }
         | E::NoneBox => return Ok((false, false)),
         E::SharedArrayHasNext { .. }
+        | E::RangeHasNext { .. }
         | E::SharedArrayOptionElement { .. }
         | E::SharedArrayOptionTag { .. }
         | E::ChunkHasNext { .. }

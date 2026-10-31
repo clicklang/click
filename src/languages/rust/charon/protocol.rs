@@ -21,7 +21,9 @@ impl Adapter<'_> {
         }
     }
     fn protocol_type(&self, ty: &a::Ty) -> bool {
-        self.chunk_type(ty) || self.shared_iterator_element(ty, false).is_some()
+        self.chunk_type(ty)
+            || self.shared_iterator_element(ty, false).is_some()
+            || self.range_element(ty, false).is_some()
     }
     pub(super) fn protocol_option(&self, ty: &a::Ty) -> bool {
         self.chunk_option_type(ty) || self.shared_option_element(ty, false).is_some()
@@ -343,14 +345,25 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
     let mut predecessors = vec![Vec::new(); original_len];
     for (index, block) in blocks.iter().enumerate() {
         crate::instrumentation::record_deterministic_work(1);
-        let targets = match block.terminator {
-            T::Goto { target } | T::Call { target, .. } | T::Drop { target, .. } => vec![target],
+        let targets = match &block.terminator {
+            T::Goto { target }
+            | T::Call { target, .. }
+            | T::Drop { target, .. }
+            | T::BoxNew { target, .. }
+            | T::BoxFree { target, .. } => vec![*target],
             T::If {
                 then_target,
                 else_target,
                 ..
-            } => vec![then_target, else_target],
-            _ => Vec::new(),
+            } => vec![*then_target, *else_target],
+            T::Switch {
+                cases, otherwise, ..
+            } => cases
+                .iter()
+                .map(|case| case.target)
+                .chain(*otherwise)
+                .collect(),
+            T::Return | T::Unreachable => Vec::new(),
         };
         for target in targets {
             crate::instrumentation::record_deterministic_work(1);
@@ -368,6 +381,12 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
         let (iterator, option, shared) = match &next {
             S::ChunkNext { iterator, option } => (iterator.clone(), option.clone(), false),
             S::SharedArrayNext { iterator, option } => (iterator.clone(), option.clone(), true),
+            S::RangeNext {
+                iterator, option, ..
+            } => {
+                split_range_next(blocks, &predecessors, header, iterator, option, &next)?;
+                continue;
+            }
             _ => continue,
         };
         let T::Goto { target: dispatch } = blocks[header].terminator else {
@@ -410,6 +429,62 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
             else_target: first + 1,
         };
     }
+    Ok(())
+}
+
+/// [`split_next_branches`] for a range's `next`, whose `Option` is an
+/// ordinary enum value its `match` reads: the dispatch is that `match` of
+/// `Some` and `None`, and the guard is the range's `start < end`.
+fn split_range_next(
+    blocks: &mut Vec<out::MirBlock>,
+    predecessors: &[Vec<usize>],
+    header: usize,
+    iterator: &str,
+    option: &str,
+    next: &S,
+) -> Result<(), String> {
+    let T::Goto { target: dispatch } = blocks[header].terminator else {
+        return Err(unsupported("range next continuation"));
+    };
+    let T::Switch {
+        scrutinee: E::Local { name },
+        cases,
+        otherwise: None,
+    } = &blocks[dispatch].terminator
+    else {
+        return Err(unsupported("range next requires an Option match"));
+    };
+    let target = |variant: &str| {
+        cases.iter().find_map(|case| match &case.label {
+            out::SwitchLabel::Variant { name } if name == variant => Some(case.target),
+            _ => None,
+        })
+    };
+    let (Some(then_target), Some(else_target)) = (target("Some"), target("None")) else {
+        return Err(unsupported("range next Option match"));
+    };
+    if name != option || cases.len() != 2 || !blocks[dispatch].statements.is_empty() {
+        return Err(unsupported("range next dispatch effects"));
+    }
+    // Reject external entry into the dispatch; it must denote this call.
+    if predecessors[dispatch].as_slice() != [header] {
+        return Err(unsupported("range next dispatch"));
+    }
+    let first = blocks.len();
+    for target in [then_target, else_target] {
+        blocks.push(out::MirBlock {
+            statements: vec![next.clone()],
+            terminator: T::Goto { target },
+        });
+    }
+    blocks[header].statements.pop();
+    blocks[header].terminator = T::If {
+        condition: E::RangeHasNext {
+            iterator: iterator.into(),
+        },
+        then_target: first,
+        else_target: first + 1,
+    };
     Ok(())
 }
 
