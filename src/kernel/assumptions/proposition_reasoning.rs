@@ -424,14 +424,14 @@ impl PureFactContext {
                     // the load, which makes it exactly the kind of structural
                     // route that cannot see a store the snapshots no longer
                     // record. It answers to the recorded history like the
-                    // others; see `load_equality_refuted_by_history`.
+                    // others; see `load_equality_lacks_recorded_evidence`.
                     || *value
                         && matches!(
                             condition,
                             ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if crate::kernel::api::canonicalize_atomic_loads(left)
                                         == crate::kernel::api::canonicalize_atomic_loads(right)
-                                    && !crate::kernel::reasoning::load_equality_refuted_by_history(
+                                    && !crate::kernel::reasoning::load_equality_lacks_recorded_evidence(
                                         left, right, self,
                                     )
                         )

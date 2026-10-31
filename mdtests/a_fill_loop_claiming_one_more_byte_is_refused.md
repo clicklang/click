@@ -14,6 +14,7 @@ void fill(unsigned char *bytes, unsigned long length, unsigned char value) {
 
 ```click
 import click::integer;
+import click::separation;
 
 verifying "a_fill_loop_claiming_one_more_byte_is_refused.c";
 void fill(uint8* bytes, uint64 length, uint8 value) {
@@ -38,10 +39,37 @@ void fill(uint8* bytes, uint64 length, uint8 value) {
                     instantiate(forall (k: uint64) { k < at(before, i) implies at(before, bytes[k]) == at(before, value) }, k) using {
                         k < at(before, i);
                     };
-                    transport(at(before, bytes[k]) == at(before, value), bytes[k] == value) using {
-                        at(before, bytes[k]) == at(before, value);
-                        k < at(before, i);
-                    };
+                    have at(before, i) != k by {
+                        solve() using { k < at(before, i); };
+                    }
+                    have at(before, separate(memory(bytes[i]), memory(bytes[k]))) by {
+                        apply(separation::elements(bytes, at(before, i), k)) using {
+                            at(before, i) != k;
+                        };
+                    }
+                    have separate(loop(0).statement(0).footprint, memory(bytes[k])) by {
+                        normalize() using {
+                            at(before, separate(memory(bytes[i]), memory(bytes[k])));
+                        };
+                    }
+                    have at(loop(0).statement(0).exit, bytes[k]) == at(before, bytes[k]) by {
+                        transport_certificate {
+                            premise 0: separate(loop(0).statement(0).footprint, memory(bytes[k]))
+                                => separate(loop(0).statement(0).footprint, memory(bytes[k]));
+                            preserve 0 => at(loop(0).statement(0).exit, bytes[k]) == at(before, bytes[k]);
+                            conclusion 1;
+                        }
+                    }
+                    have bytes[k] == at(loop(0).statement(0).exit, bytes[k]) by { normalize(); }
+                    have bytes[k] == at(before, bytes[k]) by {
+                        rewrite(bytes[k] == at(loop(0).statement(0).exit, bytes[k]));
+                        assumption();
+                    }
+                    have bytes[k] == value by {
+                        rewrite(bytes[k] == at(before, bytes[k]));
+                        assumption();
+                    }
+                    assumption();
                 } else {
                     have k < at(before, i) + 1;
                     have k <= at(before, i) by {

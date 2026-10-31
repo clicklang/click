@@ -1557,15 +1557,8 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
 ) -> Option<(MemoryDagCell, CellWalkStop)> {
-    // The version walk takes this lookup's guard at its first step, so it is
-    // asked before the guard is: a walk starting here jumps as one that
-    // reaches here does.
-    let first = (resumes_version_walk()
-        && !has_retained_value_before_forgetting(memory, pointer, bytes))
-    .then(|| super::cell_last_same_point(memory, pointer, bytes))
-    .flatten();
-    // A lookup of a cell already being looked up is a cycle and has no
-    // answer; see `CELL_LOOKUPS_IN_PROGRESS`.
+    // Inspect the selected snapshot and one immediate transition only.
+    // Longer preservation arguments must be written as certificate links.
     let _lookup = CellLookupGuard::enter(memory, pointer)?;
     Some(memory_dag_cell_source_walk(
         memory,
@@ -1573,8 +1566,8 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
         bytes,
         assumptions,
         cross_loop_havoc,
+        Some(1),
         None,
-        first,
     ))
 }
 
@@ -1643,21 +1636,6 @@ fn memory_dag_cell_source_walk(
 /// reads by version removes (`roadmap/fact-aware-frame-walks.md`).
 fn resumes_version_walk() -> bool {
     !crate::kernel::memory_provenance::explicit_dag_check_active()
-}
-
-/// Test the exact cache-forgetting input before starting a version walk.
-/// The cold walk itself may otherwise visit history older than this value.
-fn has_retained_value_before_forgetting(
-    memory: &SharedCMemory,
-    pointer: &Pointer,
-    bytes: u32,
-) -> bool {
-    crate::kernel::memory_provenance::extended_dag_bridging_active()
-        && memory.derivation().is_some_and(|step| {
-            matches!(step.as_ref(), CMemoryDerivation::CellsForgotten { base }
-                if base.cells.concrete().get(pointer).is_some_and(|value|
-                    matches!(value, crate::kernel::integer32_c_value!(_)) && value.byte_width() == bytes))
-        })
 }
 
 fn memory_dag_cell_source_walk_inner(

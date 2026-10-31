@@ -1231,7 +1231,11 @@ impl CheckedLoadEquality {
         } else if allow_canonical_fallback
             && crate::kernel::eval::canonical_term(left)
                 == crate::kernel::eval::canonical_term(right)
-            && !crate::kernel::reasoning::load_equality_refuted_by_history(left, right, assumptions)
+            && !crate::kernel::reasoning::load_equality_lacks_recorded_evidence(
+                left,
+                right,
+                assumptions,
+            )
         {
             CheckedLoadEqualityEvidence::Canonical
         } else {
@@ -1750,7 +1754,7 @@ pub(crate) fn checked_origin_load_equality(
     // map does not record the stores it dropped. Ask the history about the
     // endpoints this comparison is about to take as equal.
     if left_endpoint.pointer == right_endpoint.pointer
-        && crate::kernel::reasoning::loads_separated_by_recorded_history(
+        && crate::kernel::reasoning::loads_lack_recorded_equality(
             &left_endpoint.memory,
             &right_endpoint.memory,
             &left_endpoint.pointer,
@@ -3851,7 +3855,8 @@ pub(in crate::kernel) enum LoadHistory {
     /// No structural route may call the two loads equal; a stated or assumed
     /// equality fact still can, and is consulted before this ever is.
     DifferentVersions,
-    /// The recorded history decides neither. Every other route may speak.
+    /// The bounded history query decides neither. Explicit facts can still
+    /// establish equality; matching snapshot representations cannot.
     Undecided,
 }
 
@@ -5014,7 +5019,11 @@ pub(crate) fn wide_loads_have_same_canonical_value(
         return false;
     }
     crate::kernel::canonical_term(&left) == crate::kernel::canonical_term(&right)
-        && !crate::kernel::reasoning::load_equality_refuted_by_history(&left, &right, assumptions)
+        && !crate::kernel::reasoning::load_equality_lacks_recorded_evidence(
+            &left,
+            &right,
+            assumptions,
+        )
 }
 
 /// Check a wide read against its recorded value under explicitly selected

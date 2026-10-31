@@ -48,8 +48,26 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
         preserve by {
             let { child: c } = unfold(s);
             unfold(c);
+            have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
+            have gparent->rb_left == parent by { solve() using { parent == gparent->rb_left; }; }
+            have separate(memory(gparent->rb_left), memory(gparent->rb_left->__rb_parent_color)) by {
+                rewrite(gparent->rb_left == parent);
+                assumption();
+            }
             mark before_store;
             step();
+            mark after_store;
+            have gparent->rb_left == at(before_store, gparent->rb_left) by {
+                transport_certificate {
+                    premise 0: changes_only(before_store, after_store, memory(gparent->rb_left->__rb_parent_color))
+                        => changes_only(before_store, after_store, memory(gparent->rb_left->__rb_parent_color));
+                    premise 1: at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->__rb_parent_color)))
+                        => at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->__rb_parent_color)));
+                    preserve 0, 1 => gparent->rb_left == at(before_store, gparent->rb_left);
+                    conclusion 2;
+                }
+            }
+            have parent == at(before_store, gparent->rb_left) by { assumption(); }
             have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
                 transport(at(before_store, parent->__rb_parent_color) == at(before_store, parent->__rb_parent_color),
                           parent->__rb_parent_color == at(before_store, parent->__rb_parent_color)) using {

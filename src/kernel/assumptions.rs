@@ -1409,7 +1409,7 @@ fn loads_equal_by_bounded_snapshot_match(left: &Bitvector32Term, right: &Bitvect
     };
     left_pointer == right_pointer
         && left_kind == right_kind
-        && !crate::kernel::reasoning::loads_separated_by_recorded_history(
+        && !crate::kernel::reasoning::loads_lack_recorded_equality(
             left_memory,
             right_memory,
             left_pointer,
