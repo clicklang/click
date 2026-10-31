@@ -18,6 +18,7 @@ imports with `import click::...;`, and the modules those import:
 | `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
 | `integer.click` | `import click::integer;` | `integer::` order, increment and definedness lemmas over native integer widths, `to_integer` bridges for native arithmetic, unsigned wrapping operations, and `Integer` division laws |
 | `format.click` | `import click::format;`; the C front end's `snprintf` contracts name it by path | `format::decimal_length`, `format::decimal_digit` and the other decimal rendering functions `printf` writes, with evaluation theorems |
+| `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the Rust importer's core-method contracts name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies |
 
 `integer::uint64_product_bound_from_division` turns the native nonzero-divisor bound
 `x <= 18446744073709551615u64 / y` into an exact Integer product bound. Combine

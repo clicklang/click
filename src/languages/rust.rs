@@ -8,6 +8,7 @@ pub mod names;
 mod profile;
 mod runtime;
 pub mod schema;
+mod standard_library;
 pub(crate) use crate_inputs::CrateConfig;
 pub use import::PreparedRustImport;
 pub(crate) use import::{UnitConfig, load_unit, prepare_unit};
@@ -21,7 +22,8 @@ pub(crate) fn prepare_execution(
     Ok(std::sync::Arc::new(crate::languages::PreparedExecution {
         functions,
         layouts,
-        library_contracts: enum_declarations(import.export()),
+        library_contracts: enum_declarations(import.export())
+            + &standard_library::contracts(import.export()),
         record_spellings: Default::default(),
     }))
 }

@@ -849,6 +849,32 @@ refused, as their calls need `unsafe`. Functions of other crates are not
 imported
 ([`design/charon-trial/extern-functions`](https://github.com/clicklang/click/blob/master/design/charon-trial/extern-functions/ffi.click)).
 
+### Core library methods
+
+A call of a Rust core integer method, `a.min(b)`, `x.checked_add(y)` or
+`n.unsigned_abs()`, calls an external function whose contract Click supplies:
+`u32::min` has `ensures result == click::rust::u32::min(a, b);`. The library
+defines that function, and the others of each integer type, in
+`library/rust/` ([Rust core methods](library/index.md#rust-core-methods)), so
+a sidecar writes the same function after importing its module: after
+`import click::rust::u32;`, `fn smaller(a: u32, b: u32) -> u32` calling
+`a.min(b)` verifies `ensures result == u32::min(a, b);`.
+
+The importer recognizes `min` and `max` of `Ord` and the inherent
+`wrapping_add`, `wrapping_sub`, `wrapping_mul`, `saturating_add`,
+`saturating_sub`, `checked_add`, `checked_sub` and `abs_diff` of every
+integer type, and `unsigned_abs` of a signed one, by the callee's identity and
+signature. A `checked_*` result is the library's `Option`. The library
+function is opaque until `unfold` gives its definition, so a claim that needs
+the value, `result <= a`, unfolds it, and a proof of one arm states the value
+there: `have u32::min(a, b) == a by { unfold(u32::min(a, b)); solve(); }`.
+Each contract is an assumption, listed in [trust](../concepts/trust.md); each
+library function is checked at the edge of its type in
+`mdtests/stdlib_every_symbol.md`.
+[`design/charon-trial/core-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.click)
+verifies calls at several widths. Other core methods, such as `pow`, remain
+unmodeled calls, refused with the callee's name.
+
 ## Supported semantics
 
 The scalar slice supports every integer width but 128 bits, `i8`, `i16`,

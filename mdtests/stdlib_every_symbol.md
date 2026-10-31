@@ -62,6 +62,16 @@ import click::permutation;
 import click::cstr;
 import click::bytes;
 import click::format;
+import click::rust::i8;
+import click::rust::i16;
+import click::rust::i32;
+import click::rust::i64;
+import click::rust::isize;
+import click::rust::u8;
+import click::rust::u16;
+import click::rust::u32;
+import click::rust::u64;
+import click::rust::usize;
 
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
@@ -1025,6 +1035,740 @@ theorem use_format_signed_length(v: int32) {
     requires 0 <= v;
     ensures format::signed_length(v) == format::decimal_length(format::magnitude(v)) by {
         unfold(format::signed_length(v));
+        solve();
+    }
+}
+theorem use_rust_i8_min() {
+    ensures i8::min((127i64 as int8), (-128i64 as int8)) == (-128i64 as int8) by {
+        unfold(i8::min((127i64 as int8), (-128i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_max() {
+    ensures i8::max((127i64 as int8), (-128i64 as int8)) == (127i64 as int8) by {
+        unfold(i8::max((127i64 as int8), (-128i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_wrapping_add() {
+    ensures i8::wrapping_add((127i64 as int8), (1i64 as int8)) == (-128i64 as int8) by {
+        unfold(i8::wrapping_add((127i64 as int8), (1i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_wrapping_sub() {
+    ensures i8::wrapping_sub((-128i64 as int8), (1i64 as int8)) == (127i64 as int8) by {
+        unfold(i8::wrapping_sub((-128i64 as int8), (1i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_wrapping_mul() {
+    ensures i8::wrapping_mul((127i64 as int8), (2i64 as int8)) == (-2i64 as int8) by {
+        unfold(i8::wrapping_mul((127i64 as int8), (2i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_saturating_add() {
+    ensures i8::saturating_add((127i64 as int8), (1i64 as int8)) == (127i64 as int8) by {
+        unfold(i8::saturating_add((127i64 as int8), (1i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_saturating_sub() {
+    ensures i8::saturating_sub((-128i64 as int8), (1i64 as int8)) == (-128i64 as int8) by {
+        unfold(i8::saturating_sub((-128i64 as int8), (1i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_checked_add() {
+    ensures i8::checked_add((127i64 as int8), (1i64 as int8)) == Option<int8>::None by {
+        unfold(i8::checked_add((127i64 as int8), (1i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_checked_sub() {
+    ensures i8::checked_sub((-128i64 as int8), (1i64 as int8)) == Option<int8>::None by {
+        unfold(i8::checked_sub((-128i64 as int8), (1i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_abs_diff() {
+    ensures i8::abs_diff((-128i64 as int8), (127i64 as int8)) == (255u32 as uint8) by {
+        unfold(i8::abs_diff((-128i64 as int8), (127i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i8_unsigned_abs() {
+    ensures i8::unsigned_abs((-128i64 as int8)) == (128u32 as uint8) by {
+        unfold(i8::unsigned_abs((-128i64 as int8)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_min() {
+    ensures i16::min((32767i64 as int16), (-32768i64 as int16)) == (-32768i64 as int16) by {
+        unfold(i16::min((32767i64 as int16), (-32768i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_max() {
+    ensures i16::max((32767i64 as int16), (-32768i64 as int16)) == (32767i64 as int16) by {
+        unfold(i16::max((32767i64 as int16), (-32768i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_wrapping_add() {
+    ensures i16::wrapping_add((32767i64 as int16), (1i64 as int16)) == (-32768i64 as int16) by {
+        unfold(i16::wrapping_add((32767i64 as int16), (1i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_wrapping_sub() {
+    ensures i16::wrapping_sub((-32768i64 as int16), (1i64 as int16)) == (32767i64 as int16) by {
+        unfold(i16::wrapping_sub((-32768i64 as int16), (1i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_wrapping_mul() {
+    ensures i16::wrapping_mul((32767i64 as int16), (2i64 as int16)) == (-2i64 as int16) by {
+        unfold(i16::wrapping_mul((32767i64 as int16), (2i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_saturating_add() {
+    ensures i16::saturating_add((32767i64 as int16), (1i64 as int16)) == (32767i64 as int16) by {
+        unfold(i16::saturating_add((32767i64 as int16), (1i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_saturating_sub() {
+    ensures i16::saturating_sub((-32768i64 as int16), (1i64 as int16)) == (-32768i64 as int16) by {
+        unfold(i16::saturating_sub((-32768i64 as int16), (1i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_checked_add() {
+    ensures i16::checked_add((32767i64 as int16), (1i64 as int16)) == Option<int16>::None by {
+        unfold(i16::checked_add((32767i64 as int16), (1i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_checked_sub() {
+    ensures i16::checked_sub((-32768i64 as int16), (1i64 as int16)) == Option<int16>::None by {
+        unfold(i16::checked_sub((-32768i64 as int16), (1i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_abs_diff() {
+    ensures i16::abs_diff((-32768i64 as int16), (32767i64 as int16)) == (65535u32 as uint16) by {
+        unfold(i16::abs_diff((-32768i64 as int16), (32767i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i16_unsigned_abs() {
+    ensures i16::unsigned_abs((-32768i64 as int16)) == (32768u32 as uint16) by {
+        unfold(i16::unsigned_abs((-32768i64 as int16)));
+        solve();
+    }
+}
+
+theorem use_rust_i32_min() {
+    ensures i32::min(2147483647, (-2147483648i64 as int32)) == (-2147483648i64 as int32) by {
+        unfold(i32::min(2147483647, (-2147483648i64 as int32)));
+        solve();
+    }
+}
+
+theorem use_rust_i32_max() {
+    ensures i32::max(2147483647, (-2147483648i64 as int32)) == 2147483647 by {
+        unfold(i32::max(2147483647, (-2147483648i64 as int32)));
+        solve();
+    }
+}
+
+theorem use_rust_i32_wrapping_add() {
+    ensures i32::wrapping_add(2147483647, 1) == (-2147483648i64 as int32) by {
+        unfold(i32::wrapping_add(2147483647, 1));
+        solve();
+    }
+}
+
+theorem use_rust_i32_wrapping_sub() {
+    ensures i32::wrapping_sub((-2147483648i64 as int32), 1) == 2147483647 by {
+        unfold(i32::wrapping_sub((-2147483648i64 as int32), 1));
+        solve();
+    }
+}
+
+theorem use_rust_i32_wrapping_mul() {
+    ensures i32::wrapping_mul(2147483647, 2) == (-2i64 as int32) by {
+        unfold(i32::wrapping_mul(2147483647, 2));
+        solve();
+    }
+}
+
+theorem use_rust_i32_saturating_add() {
+    ensures i32::saturating_add(2147483647, 1) == 2147483647 by {
+        unfold(i32::saturating_add(2147483647, 1));
+        solve();
+    }
+}
+
+theorem use_rust_i32_saturating_sub() {
+    ensures i32::saturating_sub((-2147483648i64 as int32), 1) == (-2147483648i64 as int32) by {
+        unfold(i32::saturating_sub((-2147483648i64 as int32), 1));
+        solve();
+    }
+}
+
+theorem use_rust_i32_checked_add() {
+    ensures i32::checked_add(2147483647, 1) == Option<int32>::None by {
+        unfold(i32::checked_add(2147483647, 1));
+        solve();
+    }
+}
+
+theorem use_rust_i32_checked_sub() {
+    ensures i32::checked_sub((-2147483648i64 as int32), 1) == Option<int32>::None by {
+        unfold(i32::checked_sub((-2147483648i64 as int32), 1));
+        solve();
+    }
+}
+
+theorem use_rust_i32_abs_diff() {
+    ensures i32::abs_diff((-2147483648i64 as int32), 2147483647) == 4294967295u32 by {
+        unfold(i32::abs_diff((-2147483648i64 as int32), 2147483647));
+        solve();
+    }
+}
+
+theorem use_rust_i32_unsigned_abs() {
+    ensures i32::unsigned_abs((-2147483648i64 as int32)) == 2147483648u32 by {
+        unfold(i32::unsigned_abs((-2147483648i64 as int32)));
+        solve();
+    }
+}
+
+theorem use_rust_i64_min() {
+    ensures i64::min(9223372036854775807i64, -9223372036854775808i64) == -9223372036854775808i64 by {
+        unfold(i64::min(9223372036854775807i64, -9223372036854775808i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_max() {
+    ensures i64::max(9223372036854775807i64, -9223372036854775808i64) == 9223372036854775807i64 by {
+        unfold(i64::max(9223372036854775807i64, -9223372036854775808i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_wrapping_add() {
+    ensures i64::wrapping_add(9223372036854775807i64, 1i64) == -9223372036854775808i64 by {
+        unfold(i64::wrapping_add(9223372036854775807i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_wrapping_sub() {
+    ensures i64::wrapping_sub(-9223372036854775808i64, 1i64) == 9223372036854775807i64 by {
+        unfold(i64::wrapping_sub(-9223372036854775808i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_wrapping_mul() {
+    ensures i64::wrapping_mul(9223372036854775807i64, 2i64) == -2i64 by {
+        unfold(i64::wrapping_mul(9223372036854775807i64, 2i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_saturating_add() {
+    ensures i64::saturating_add(9223372036854775807i64, 1i64) == 9223372036854775807i64 by {
+        unfold(i64::saturating_add(9223372036854775807i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_saturating_sub() {
+    ensures i64::saturating_sub(-9223372036854775808i64, 1i64) == -9223372036854775808i64 by {
+        unfold(i64::saturating_sub(-9223372036854775808i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_checked_add() {
+    ensures i64::checked_add(9223372036854775807i64, 1i64) == Option<int64>::None by {
+        unfold(i64::checked_add(9223372036854775807i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_checked_sub() {
+    ensures i64::checked_sub(-9223372036854775808i64, 1i64) == Option<int64>::None by {
+        unfold(i64::checked_sub(-9223372036854775808i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_abs_diff() {
+    ensures i64::abs_diff(-9223372036854775808i64, 9223372036854775807i64) == 18446744073709551615u64 by {
+        unfold(i64::abs_diff(-9223372036854775808i64, 9223372036854775807i64));
+        solve();
+    }
+}
+
+theorem use_rust_i64_unsigned_abs() {
+    ensures i64::unsigned_abs(-9223372036854775808i64) == 9223372036854775808u64 by {
+        unfold(i64::unsigned_abs(-9223372036854775808i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_min() {
+    ensures isize::min(9223372036854775807i64, -9223372036854775808i64) == -9223372036854775808i64 by {
+        unfold(isize::min(9223372036854775807i64, -9223372036854775808i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_max() {
+    ensures isize::max(9223372036854775807i64, -9223372036854775808i64) == 9223372036854775807i64 by {
+        unfold(isize::max(9223372036854775807i64, -9223372036854775808i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_wrapping_add() {
+    ensures isize::wrapping_add(9223372036854775807i64, 1i64) == -9223372036854775808i64 by {
+        unfold(isize::wrapping_add(9223372036854775807i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_wrapping_sub() {
+    ensures isize::wrapping_sub(-9223372036854775808i64, 1i64) == 9223372036854775807i64 by {
+        unfold(isize::wrapping_sub(-9223372036854775808i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_wrapping_mul() {
+    ensures isize::wrapping_mul(9223372036854775807i64, 2i64) == -2i64 by {
+        unfold(isize::wrapping_mul(9223372036854775807i64, 2i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_saturating_add() {
+    ensures isize::saturating_add(9223372036854775807i64, 1i64) == 9223372036854775807i64 by {
+        unfold(isize::saturating_add(9223372036854775807i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_saturating_sub() {
+    ensures isize::saturating_sub(-9223372036854775808i64, 1i64) == -9223372036854775808i64 by {
+        unfold(isize::saturating_sub(-9223372036854775808i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_checked_add() {
+    ensures isize::checked_add(9223372036854775807i64, 1i64) == Option<int64>::None by {
+        unfold(isize::checked_add(9223372036854775807i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_checked_sub() {
+    ensures isize::checked_sub(-9223372036854775808i64, 1i64) == Option<int64>::None by {
+        unfold(isize::checked_sub(-9223372036854775808i64, 1i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_abs_diff() {
+    ensures isize::abs_diff(-9223372036854775808i64, 9223372036854775807i64) == 18446744073709551615u64 by {
+        unfold(isize::abs_diff(-9223372036854775808i64, 9223372036854775807i64));
+        solve();
+    }
+}
+
+theorem use_rust_isize_unsigned_abs() {
+    ensures isize::unsigned_abs(-9223372036854775808i64) == 9223372036854775808u64 by {
+        unfold(isize::unsigned_abs(-9223372036854775808i64));
+        solve();
+    }
+}
+
+theorem use_rust_u8_min() {
+    ensures u8::min((255u32 as uint8), (0u32 as uint8)) == (0u32 as uint8) by {
+        unfold(u8::min((255u32 as uint8), (0u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u8_max() {
+    ensures u8::max((255u32 as uint8), (0u32 as uint8)) == (255u32 as uint8) by {
+        unfold(u8::max((255u32 as uint8), (0u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u8_wrapping_add() {
+    ensures u8::wrapping_add((255u32 as uint8), (1u32 as uint8)) == (0u32 as uint8) by {
+        unfold(u8::wrapping_add((255u32 as uint8), (1u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u8_wrapping_sub() {
+    ensures u8::wrapping_sub((0u32 as uint8), (1u32 as uint8)) == (255u32 as uint8) by {
+        unfold(u8::wrapping_sub((0u32 as uint8), (1u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u8_wrapping_mul() {
+    ensures u8::wrapping_mul((255u32 as uint8), (2u32 as uint8)) == (254u32 as uint8) by {
+        unfold(u8::wrapping_mul((255u32 as uint8), (2u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u8_saturating_add() {
+    ensures u8::saturating_add((255u32 as uint8), (1u32 as uint8)) == (255u32 as uint8) by {
+        unfold(u8::saturating_add((255u32 as uint8), (1u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u8_saturating_sub() {
+    ensures u8::saturating_sub((0u32 as uint8), (1u32 as uint8)) == (0u32 as uint8) by {
+        unfold(u8::saturating_sub((0u32 as uint8), (1u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u8_checked_add() {
+    ensures u8::checked_add((255u32 as uint8), (1u32 as uint8)) == Option<uint8>::None by {
+        unfold(u8::checked_add((255u32 as uint8), (1u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u8_checked_sub() {
+    ensures u8::checked_sub((0u32 as uint8), (1u32 as uint8)) == Option<uint8>::None by {
+        unfold(u8::checked_sub((0u32 as uint8), (1u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u8_abs_diff() {
+    ensures u8::abs_diff((0u32 as uint8), (255u32 as uint8)) == (255u32 as uint8) by {
+        unfold(u8::abs_diff((0u32 as uint8), (255u32 as uint8)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_min() {
+    ensures u16::min((65535u32 as uint16), (0u32 as uint16)) == (0u32 as uint16) by {
+        unfold(u16::min((65535u32 as uint16), (0u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_max() {
+    ensures u16::max((65535u32 as uint16), (0u32 as uint16)) == (65535u32 as uint16) by {
+        unfold(u16::max((65535u32 as uint16), (0u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_wrapping_add() {
+    ensures u16::wrapping_add((65535u32 as uint16), (1u32 as uint16)) == (0u32 as uint16) by {
+        unfold(u16::wrapping_add((65535u32 as uint16), (1u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_wrapping_sub() {
+    ensures u16::wrapping_sub((0u32 as uint16), (1u32 as uint16)) == (65535u32 as uint16) by {
+        unfold(u16::wrapping_sub((0u32 as uint16), (1u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_wrapping_mul() {
+    ensures u16::wrapping_mul((65535u32 as uint16), (2u32 as uint16)) == (65534u32 as uint16) by {
+        unfold(u16::wrapping_mul((65535u32 as uint16), (2u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_saturating_add() {
+    ensures u16::saturating_add((65535u32 as uint16), (1u32 as uint16)) == (65535u32 as uint16) by {
+        unfold(u16::saturating_add((65535u32 as uint16), (1u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_saturating_sub() {
+    ensures u16::saturating_sub((0u32 as uint16), (1u32 as uint16)) == (0u32 as uint16) by {
+        unfold(u16::saturating_sub((0u32 as uint16), (1u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_checked_add() {
+    ensures u16::checked_add((65535u32 as uint16), (1u32 as uint16)) == Option<uint16>::None by {
+        unfold(u16::checked_add((65535u32 as uint16), (1u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_checked_sub() {
+    ensures u16::checked_sub((0u32 as uint16), (1u32 as uint16)) == Option<uint16>::None by {
+        unfold(u16::checked_sub((0u32 as uint16), (1u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u16_abs_diff() {
+    ensures u16::abs_diff((0u32 as uint16), (65535u32 as uint16)) == (65535u32 as uint16) by {
+        unfold(u16::abs_diff((0u32 as uint16), (65535u32 as uint16)));
+        solve();
+    }
+}
+
+theorem use_rust_u32_min() {
+    ensures u32::min(4294967295u32, 0u32) == 0u32 by {
+        unfold(u32::min(4294967295u32, 0u32));
+        solve();
+    }
+}
+
+theorem use_rust_u32_max() {
+    ensures u32::max(4294967295u32, 0u32) == 4294967295u32 by {
+        unfold(u32::max(4294967295u32, 0u32));
+        solve();
+    }
+}
+
+theorem use_rust_u32_wrapping_add() {
+    ensures u32::wrapping_add(4294967295u32, 1u32) == 0u32 by {
+        unfold(u32::wrapping_add(4294967295u32, 1u32));
+        solve();
+    }
+}
+
+theorem use_rust_u32_wrapping_sub() {
+    ensures u32::wrapping_sub(0u32, 1u32) == 4294967295u32 by {
+        unfold(u32::wrapping_sub(0u32, 1u32));
+        solve();
+    }
+}
+
+theorem use_rust_u32_wrapping_mul() {
+    ensures u32::wrapping_mul(4294967295u32, 2u32) == 4294967294u32 by {
+        unfold(u32::wrapping_mul(4294967295u32, 2u32));
+        solve();
+    }
+}
+
+theorem use_rust_u32_saturating_add() {
+    ensures u32::saturating_add(4294967295u32, 1u32) == 4294967295u32 by {
+        unfold(u32::saturating_add(4294967295u32, 1u32));
+        solve();
+    }
+}
+
+theorem use_rust_u32_saturating_sub() {
+    ensures u32::saturating_sub(0u32, 1u32) == 0u32 by {
+        unfold(u32::saturating_sub(0u32, 1u32));
+        solve();
+    }
+}
+
+theorem use_rust_u32_checked_add() {
+    ensures u32::checked_add(4294967295u32, 1u32) == Option<uint32>::None by {
+        unfold(u32::checked_add(4294967295u32, 1u32));
+        solve();
+    }
+}
+
+theorem use_rust_u32_checked_sub() {
+    ensures u32::checked_sub(0u32, 1u32) == Option<uint32>::None by {
+        unfold(u32::checked_sub(0u32, 1u32));
+        solve();
+    }
+}
+
+theorem use_rust_u32_abs_diff() {
+    ensures u32::abs_diff(0u32, 4294967295u32) == 4294967295u32 by {
+        unfold(u32::abs_diff(0u32, 4294967295u32));
+        solve();
+    }
+}
+
+theorem use_rust_u64_min() {
+    ensures u64::min(18446744073709551615u64, 0u64) == 0u64 by {
+        unfold(u64::min(18446744073709551615u64, 0u64));
+        solve();
+    }
+}
+
+theorem use_rust_u64_max() {
+    ensures u64::max(18446744073709551615u64, 0u64) == 18446744073709551615u64 by {
+        unfold(u64::max(18446744073709551615u64, 0u64));
+        solve();
+    }
+}
+
+theorem use_rust_u64_wrapping_add() {
+    ensures u64::wrapping_add(18446744073709551615u64, 1u64) == 0u64 by {
+        unfold(u64::wrapping_add(18446744073709551615u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_u64_wrapping_sub() {
+    ensures u64::wrapping_sub(0u64, 1u64) == 18446744073709551615u64 by {
+        unfold(u64::wrapping_sub(0u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_u64_wrapping_mul() {
+    ensures u64::wrapping_mul(18446744073709551615u64, 2u64) == 18446744073709551614u64 by {
+        unfold(u64::wrapping_mul(18446744073709551615u64, 2u64));
+        solve();
+    }
+}
+
+theorem use_rust_u64_saturating_add() {
+    ensures u64::saturating_add(18446744073709551615u64, 1u64) == 18446744073709551615u64 by {
+        unfold(u64::saturating_add(18446744073709551615u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_u64_saturating_sub() {
+    ensures u64::saturating_sub(0u64, 1u64) == 0u64 by {
+        unfold(u64::saturating_sub(0u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_u64_checked_add() {
+    ensures u64::checked_add(18446744073709551615u64, 1u64) == Option<uint64>::None by {
+        unfold(u64::checked_add(18446744073709551615u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_u64_checked_sub() {
+    ensures u64::checked_sub(0u64, 1u64) == Option<uint64>::None by {
+        unfold(u64::checked_sub(0u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_u64_abs_diff() {
+    ensures u64::abs_diff(0u64, 18446744073709551615u64) == 18446744073709551615u64 by {
+        unfold(u64::abs_diff(0u64, 18446744073709551615u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_min() {
+    ensures usize::min(18446744073709551615u64, 0u64) == 0u64 by {
+        unfold(usize::min(18446744073709551615u64, 0u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_max() {
+    ensures usize::max(18446744073709551615u64, 0u64) == 18446744073709551615u64 by {
+        unfold(usize::max(18446744073709551615u64, 0u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_wrapping_add() {
+    ensures usize::wrapping_add(18446744073709551615u64, 1u64) == 0u64 by {
+        unfold(usize::wrapping_add(18446744073709551615u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_wrapping_sub() {
+    ensures usize::wrapping_sub(0u64, 1u64) == 18446744073709551615u64 by {
+        unfold(usize::wrapping_sub(0u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_wrapping_mul() {
+    ensures usize::wrapping_mul(18446744073709551615u64, 2u64) == 18446744073709551614u64 by {
+        unfold(usize::wrapping_mul(18446744073709551615u64, 2u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_saturating_add() {
+    ensures usize::saturating_add(18446744073709551615u64, 1u64) == 18446744073709551615u64 by {
+        unfold(usize::saturating_add(18446744073709551615u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_saturating_sub() {
+    ensures usize::saturating_sub(0u64, 1u64) == 0u64 by {
+        unfold(usize::saturating_sub(0u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_checked_add() {
+    ensures usize::checked_add(18446744073709551615u64, 1u64) == Option<uint64>::None by {
+        unfold(usize::checked_add(18446744073709551615u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_checked_sub() {
+    ensures usize::checked_sub(0u64, 1u64) == Option<uint64>::None by {
+        unfold(usize::checked_sub(0u64, 1u64));
+        solve();
+    }
+}
+
+theorem use_rust_usize_abs_diff() {
+    ensures usize::abs_diff(0u64, 18446744073709551615u64) == 18446744073709551615u64 by {
+        unfold(usize::abs_diff(0u64, 18446744073709551615u64));
         solve();
     }
 }

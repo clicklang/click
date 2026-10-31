@@ -5453,6 +5453,8 @@ mod array_values;
 mod capturing_closures;
 #[path = "rust_import/closures.rs"]
 mod closures;
+#[path = "rust_import/core_methods.rs"]
+mod core_methods;
 #[path = "rust_import/early_exits.rs"]
 mod early_exits;
 #[path = "rust_import/enumerate.rs"]
