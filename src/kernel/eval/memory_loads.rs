@@ -2220,13 +2220,14 @@ pub(crate) fn is_load_variable(variable: &Variable) -> bool {
 }
 
 /// Whether a proposition is a load-variable defining equation
-/// (`v == load(snapshot, ptr)` for a reserved load variable). Such
+/// (a reserved read handle equated to its own structural read). Raw
+/// descriptors remain recognized for retained internal equations. These
 /// equations are true by construction, so path wrapping treats them as
 /// ambient truths rather than premises.
 pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: _,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -2236,13 +2237,15 @@ pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool 
     else {
         return false;
     };
-    matches!(
-        (left.as_ref(), right.as_ref()),
-        (
-            Bitvector32Term::Variable(variable),
-            Bitvector32Term::MemoryLoad(_, _, _)
-        ) if is_load_variable(variable)
-    )
+    match (left.as_ref(), right.as_ref()) {
+        (Bitvector32Term::Variable(variable), Bitvector32Term::MemoryLoad(_, _, _)) => {
+            is_load_variable(variable)
+        }
+        (Bitvector32Term::Variable(variable), Bitvector32Term::Variable(read)) => {
+            variable == read && is_load_variable(variable)
+        }
+        _ => false,
+    }
 }
 
 /// One load variable's registry entry: the load it names, and what the
@@ -4440,7 +4443,7 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Bitvec
 /// cells and snapshot representation differences. The same cell loaded at
 /// different symbolic states therefore shares one load variable whenever
 /// the difference is representational. The second return value is the form
-/// used by the variable's defining equation.
+/// retained in the producer binding, exactly as registered under the name.
 pub(crate) fn load_variable_for_term(
     bits: &Bitvector32Term,
 ) -> Option<(Variable, Bitvector32Term)> {
@@ -4464,7 +4467,14 @@ pub(crate) fn load_variable_for_term(
         return Some(hit);
     }
     crate::instrumentation::record_deterministic_work(1);
-    let computed = load_variable_for_term_uncached(bits)?;
+    let (variable, _) = load_variable_for_term_uncached(bits)?;
+    // Naming may cross a cache-only snapshot or project away unrelated cells.
+    // Its defining equation must retain the exact structural read registered
+    // under this name, rather than a second representation of that read.
+    // This does not resolve the read to a stored value or consult facts.
+    let defining_load = registered_load_term_for_variable(&variable)
+        .expect("a minted load variable retains its structural read");
+    let computed = (variable, defining_load);
     record_wide_load_observation(bits, computed.0);
     LOAD_VARIABLE_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -4581,7 +4591,7 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
     source: Option<&LoadSourceId>,
     typed_pointer_value: Option<&Pointer>,
 ) {
-    let Bitvector32Term::MemoryLoad(memory, pointer, _) = &load else {
+    let Bitvector32Term::MemoryLoad(memory, pointer, kind) = &load else {
         // `load_variable_for_term` currently returns a memory load's
         // canonical operand.  Keep this guard explicit so future changes
         // cannot attach producer metadata to an unrelated term.
@@ -4590,10 +4600,25 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
     let defining_load = load.clone();
     let defining_proposition = Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            // The raw-load form historically used a 32-bit equality with
+            // a width-check exception. Registered read terms use the actual
+            // carrier width. Narrow load kinds still have 32-bit carriers.
+            format: match kind {
+                LoadKind::Bits64 | LoadKind::Float64 => MachineIntegerType::Int64,
+                LoadKind::Int128 => MachineIntegerType::Int128,
+                LoadKind::UInt128 => MachineIntegerType::UInt128,
+                _ => MachineIntegerType::Int32,
+            },
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(variable)),
-            right: Box::new(load.clone()),
+            // The registered variable is the structural read term used by
+            // logical lowering. Keep the raw descriptor in the producer
+            // binding below, not as a second term form in a citable fact.
+            right: Box::new(canonical_form_of_load(
+                memory.clone(),
+                pointer.as_ref().clone(),
+                *kind,
+            )),
         },
         true,
     );
@@ -5786,6 +5811,115 @@ mod tests {
     }
 
     #[test]
+    fn structural_read_definitions_keep_the_read_carrier_width() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = intern_c_memory(CMemory::new());
+        let pointer = Pointer::symbolic(Variable(299_301));
+        for (kind, format) in [
+            (LoadKind::UInt8, MachineIntegerType::Int32),
+            (LoadKind::Int16, MachineIntegerType::Int32),
+            (LoadKind::UInt16, MachineIntegerType::Int32),
+            (LoadKind::Int32, MachineIntegerType::Int32),
+            (LoadKind::UInt32, MachineIntegerType::Int32),
+            (LoadKind::Bits64, MachineIntegerType::Int64),
+            (LoadKind::Int128, MachineIntegerType::Int128),
+            (LoadKind::UInt128, MachineIntegerType::UInt128),
+        ] {
+            let raw = Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind);
+            let (variable, descriptor) = load_variable_for_term(&raw).unwrap();
+            let mut facts = ExecutionFacts::new();
+            record_load_variable_defining_fact(variable, descriptor, &mut facts);
+            let expected = Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(Bitvector32Term::Variable(variable)),
+                    right: Box::new(Bitvector32Term::Variable(variable)),
+                },
+                true,
+            );
+            assert_eq!(facts[0].proposition(), &expected, "{kind:?}");
+            assert!(is_load_variable_defining_fact(facts[0].proposition()));
+            assert!(crate::kernel::is_verified_load_variable_defining_fact(
+                facts[0].proposition()
+            ));
+            assert!(
+                facts[0]
+                    .clone()
+                    .with_proposition(expected.clone())
+                    .generated_load_binding()
+                    .is_some()
+            );
+            PureFactContext::new()
+                .assume_proposition(expected)
+                .assume_execution_pure_fact(&facts[0]);
+        }
+    }
+
+    #[test]
+    fn structural_read_binding_rejects_changed_width_address_and_epoch() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = intern_c_memory(CMemory::new());
+        let address = Pointer::symbolic(Variable(299_201));
+        let raw =
+            |pointer, kind| Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer), kind);
+        let (variable, definition) =
+            load_variable_for_term(&raw(address.clone(), LoadKind::Int32)).unwrap();
+        let mut facts = ExecutionFacts::new();
+        record_load_variable_defining_fact(variable, definition, &mut facts);
+        let fact = &facts[0];
+        assert!(
+            fact.clone()
+                .with_proposition(fact.proposition().clone())
+                .generated_load_binding()
+                .is_some()
+        );
+        for (pointer, kind) in [
+            (address.clone(), LoadKind::UInt32),
+            (address.clone(), LoadKind::Bits64),
+            (address.offset_by_bytes(4), LoadKind::Int32),
+        ] {
+            let other = load_variable_for_term(&raw(pointer, kind)).unwrap().0;
+            let changed = Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(variable),
+                    Bitvector32Term::Variable(other),
+                ),
+                true,
+            );
+            assert!(!crate::kernel::is_verified_load_variable_defining_fact(
+                &changed
+            ));
+            assert!(
+                fact.clone()
+                    .with_proposition(changed)
+                    .generated_load_binding()
+                    .is_none()
+            );
+        }
+        crate::kernel::primitives::start_fresh_c_memory_arena();
+        // Keeping the old handle still names the old descriptor. Replacing
+        // it with an equal-content descriptor from this new arena does not.
+        let replacement = Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(variable),
+                Bitvector32Term::MemoryLoad(
+                    intern_c_memory(CMemory::new()),
+                    Box::new(Pointer::symbolic(Variable(299_201))),
+                    LoadKind::Int32,
+                ),
+            ),
+            true,
+        );
+        assert!(
+            fact.clone()
+                .with_proposition(replacement)
+                .generated_load_binding()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn repeated_mint_keeps_each_exact_source_observation_on_one_fact() {
         let memory = crate::kernel::intern_c_memory(CMemory::new());
         let pointer = Pointer {
@@ -5839,9 +5973,17 @@ mod tests {
         )
         .expect("load identity");
         assert_eq!(facts.len(), 1);
-        let fact = &facts[0];
-        assert!(fact.generated_load_binding().is_some());
-        assert_eq!(fact.generated_load_source_events().len(), 1);
+        let produced = &facts[0];
+        assert!(produced.generated_load_binding().is_some());
+        assert_eq!(produced.generated_load_source_events().len(), 1);
+        // Exercise the raw descriptor form too: structural snapshot equality
+        // can hold across epochs, but it must not carry producer authority.
+        let fact = ExecutionPureFact::certified(Proposition::ConditionIs(
+            ConditionTerm::equal(Bitvector32Term::Variable(variable), first_load),
+            true,
+        ))
+        .with_generated_load_binding(produced.generated_load_binding().unwrap().clone())
+        .with_generated_load_source_event(produced.generated_load_source_events()[0].clone());
 
         // A fresh arena represents a new epoch. Its empty CMemory is
         // structurally equal to the first one, but its embedded snapshot

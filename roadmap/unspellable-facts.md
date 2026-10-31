@@ -12,6 +12,39 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Structural read definitions (2026-10-31)
+
+The `CellsForgotten` miss in
+`a_join_forgets_a_cell_the_arms_disagree_on` is a representation mismatch,
+not an unnamed new program time. The branch join keeps the untouched right
+field and makes the written left field unknown. Reading the latter emits a
+load-definition equation whose raw RHS drops the unrelated cached right field;
+its canonical read handle already names the joined memory. Lowering that RHS
+therefore produces the handle, not the raw representation retained in the fact.
+
+Read producers now retain the exact registered descriptor and emit their
+citable equations using the structural read handles that source lowering uses.
+The descriptor stays in producer metadata. Typed-read consumers preserve its
+exact epoch, address and kind through indexed lookups. Stored values are never
+substituted into these terms; read-over-write remains checking authority.
+The census regression checks that the equation round-trips while the original
+false return claim is still rejected. Cache-chain scaling and changed
+width/address/epoch controls accompany the change. The first full run exposed
+five wide-read fixture failures: the old raw definition had a width-check
+exception for its hard-coded 32-bit comparison. The producer now emits the
+read's actual carrier width, with a 32/64/128-bit regression. The shared
+verified-definition classifier also recognizes this structural form, preserving
+its existing exclusion from pointless smart equality rewrites.
+
+All 85 focused tests pass. The final `scripts/check.sh --no-fail-fast` gate
+passed in 9m24s: 6,900 unit/API/import/scaling tests, 58 example projects, and
+4,918 mdtests, with both pinned frontends required. No limits were raised and
+no nightly suite ran. The fresh combined census and fact-stability audit
+passed in 220.64s: 22,970 observations, 1,621 written misses (down from 1,721),
+6,610 smart misses (down from 6,772), zero Boolean misses, and zero
+fact-stability differences. Census observations are not distinct defects;
+other fact families remain to be repaired.
+
 ## Discarded call results and historical model fields (2026-10-31)
 
 The two remaining smart Boolean misses in

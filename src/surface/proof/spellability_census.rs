@@ -162,6 +162,54 @@ mod tests {
     use crate::kernel::{Bitvector32Term, Sort, Variable};
 
     #[test]
+    fn a_joined_read_definition_keeps_a_spellable_memory_version() {
+        let fixture =
+            include_str!("../../../mdtests/a_join_forgets_a_cell_the_arms_disagree_on.md");
+        let c = fixture
+            .split("```c filename=")
+            .nth(1)
+            .unwrap()
+            .split_once('\n')
+            .unwrap()
+            .1
+            .split("```")
+            .next()
+            .unwrap();
+        let click = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            let error = crate::surface::verify_c0_sources(
+                click,
+                &[("a_join_forgets_a_cell_the_arms_disagree_on.c", c)],
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("`ensures result == 0` failed"),
+                "{error}"
+            );
+        });
+        let reads = lines
+            .iter()
+            .filter(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields.get(1) == Some(&"fact")
+                    && fields.get(2) == Some(&"condition:Compare(int32 ==)")
+                    && fields.get(4) == Some(&"step")
+            })
+            .collect::<Vec<_>>();
+        assert!(!reads.is_empty(), "{lines:#?}");
+        assert!(
+            reads.iter().all(|line| line.starts_with("spelled\t")),
+            "{reads:#?}"
+        );
+    }
+
+    #[test]
     fn algebraic_match_arm_values_name_unfold_facts() {
         let source = r#"
 verifying "keep.c";

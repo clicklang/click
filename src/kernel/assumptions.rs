@@ -3779,19 +3779,8 @@ impl PureFactContext {
         {
             return self;
         }
-        let condition = ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(*variable)),
-            right: Box::new(Bitvector32Term::MemoryLoad(
-                memory.clone(),
-                Box::new(address.clone()),
-                *kind,
-            )),
-        };
-        if self.condition_facts.get(&condition) != Some(&true) {
-            return self;
-        }
+        // The exact proposition was admitted above. The retained producer
+        // binding supplies the read descriptor independently of its spelling.
         self.file_typed_pointer_read(*variable, memory, address, value);
         self
     }
@@ -10404,9 +10393,9 @@ impl ExecutionPureFact {
 }
 
 /// A generated-load binding is valid only while its exact defining equation
-/// still embeds the producer's memory snapshot and pointer.  Structural
-/// proposition equality intentionally ignores this distinction for some
-/// memory values, so it cannot be the authority for retaining the binding.
+/// names the producer's memory snapshot, pointer, and kind, either through
+/// its registered read handle or an exact raw descriptor. Structural equality
+/// alone does not retain the memory epoch, so it cannot retain the binding.
 fn generated_load_binding_matches_proposition(
     binding: &GeneratedLoadBinding,
     proposition: &Proposition,
@@ -10423,7 +10412,7 @@ fn generated_load_binding_matches_proposition(
     };
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: _,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -10433,17 +10422,33 @@ fn generated_load_binding_matches_proposition(
     else {
         return false;
     };
-    let (
-        Bitvector32Term::Variable(proposition_variable),
-        Bitvector32Term::MemoryLoad(memory, proposition_pointer, _),
-    ) = (left.as_ref(), right.as_ref())
-    else {
+    let Bitvector32Term::Variable(proposition_variable) = left.as_ref() else {
         return false;
     };
-    proposition_variable == variable
-        && snapshot == &CMemorySnapshotIdentity::of(memory.memory())
-        && proposition_pointer.as_ref() == pointer
-        && load == right.as_ref()
+    if proposition_variable != variable {
+        return false;
+    }
+    match right.as_ref() {
+        Bitvector32Term::MemoryLoad(memory, proposition_pointer, _) => {
+            snapshot == &CMemorySnapshotIdentity::of(memory.memory())
+                && proposition_pointer.as_ref() == pointer
+                && load == right.as_ref()
+        }
+        Bitvector32Term::Variable(read) => {
+            // The source-level read uses its registered handle. Compare its
+            // descriptor by indexed lookup, retaining exact epoch and width;
+            // no equality facts can authorize this producer metadata.
+            let Some(Bitvector32Term::MemoryLoad(memory, address, kind)) =
+                crate::kernel::registered_load_term_for_variable(read)
+            else {
+                return false;
+            };
+            snapshot == &CMemorySnapshotIdentity::of(memory.memory())
+                && address.as_ref() == pointer
+                && matches!(load, Bitvector32Term::MemoryLoad(_, _, expected) if *expected == kind)
+        }
+        _ => false,
+    }
 }
 
 impl SymbolicCExecution {

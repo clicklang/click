@@ -229,6 +229,15 @@ cell holding its own read (a materialization), which reads as that read. C
 evaluation still computes with stored values: a function's `result` is the
 value its statements produced.
 
+A scalar read handle retains its structural descriptor (memory version,
+address, and read kind) in the load registry. A generated read-definition fact
+uses that same handle representation as source lowering; its producer binding
+retains the exact registered descriptor. A reduced cache snapshot must not
+introduce a second raw-load form into the citable equation. Cache-only records
+share the unchanged-bytes identity, while actual writes still create distinct
+read versions. Retaining typed read evidence checks the descriptor's epoch,
+address and kind by indexed lookup, independently of the spelling.
+
 The read-over-write authority relates a read to the stored value:
 `kernel::eval::read_over_write_value` returns, for a load variable whose
 snapshot records a value at exactly its address, that value. It reads the
