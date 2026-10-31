@@ -501,6 +501,7 @@ mod tests {
             captures: 0,
             implements: None,
             instance_of: None,
+            core_method: None,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {

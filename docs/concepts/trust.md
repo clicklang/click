@@ -28,7 +28,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
 | Click library theorems | Checked by the gate, then applied without re-checking | 162 theorems in 1,651 lines | `library/` |
-| `extern` contracts | Yes: assumptions | 5 in the library, one per `snprintf` format a program uses, plus any you declare | `library/c/`, `src/languages/c/formatted_output.rs`, your sidecars |
+| `extern` contracts | Yes: assumptions | 5 in the library, one per `snprintf` format a program uses, one per Rust core method an import calls, plus any you declare | `library/c/`, `src/languages/c/formatted_output.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
 Line counts exclude test files and inline `#[cfg(test)]` modules, and are
@@ -125,6 +125,13 @@ and the internal `__click_constant_p_unknown` in `library/c/builtins.click`.
 The C front end also writes one `extern` contract for each `snprintf` format
 a program uses, from the format string, and it is assumed the same way
 ([formatted output](../reference/language/c.md#formatted-output)).
+The Rust importer writes one `extern` contract for each Rust core integer
+method an import calls, `u32::min` or `i8::wrapping_add`, stating its result
+with the library function of the same path in `library/rust/`
+([core library methods](../reference/rust.md#core-library-methods)). The
+contract is assumed: it trusts that the library function is the method Rust
+runs. The functions themselves are ordinary Click definitions, and
+`mdtests/stdlib_every_symbol.md` checks each at the edge of its type.
 
 ## Your assumptions
 

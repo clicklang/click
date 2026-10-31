@@ -262,6 +262,11 @@ pub struct Function {
     /// is its contract at these types.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_of: Option<String>,
+    /// A Rust core method, `u32::min`, declared with no body: its contract
+    /// is the library's, stating its result with the specification
+    /// function of this path, `click::rust::u32::min`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub core_method: Option<String>,
     pub span: Span,
 }
 

@@ -9,6 +9,7 @@ mod chunks;
 mod closures;
 mod constants;
 mod constructors;
+mod core_methods;
 mod enumerate;
 mod option_take;
 #[cfg(test)]
@@ -289,6 +290,7 @@ impl Adapter<'_> {
             captures: 0,
             implements: None,
             instance_of: None,
+            core_method: None,
             span: span(f.item_meta.span),
         })
     }
@@ -603,6 +605,9 @@ struct Adapter<'a> {
     /// Each instance of a generic library enum the functions named, by the
     /// name of its type: `Option<u32>`, with the arguments it is at.
     enum_instances: std::cell::RefCell<BTreeMap<String, (String, Vec<Type>)>>,
+    /// The external function of each Rust core method a call names, by its
+    /// name: `u32::min`, declared once per method and type.
+    core_methods: std::cell::RefCell<BTreeMap<String, out::Function>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -2453,6 +2458,25 @@ impl BodyAdapter<'_, '_> {
                         target: target.index(),
                     });
                 }
+                // A Rust core method the library specifies calls its
+                // external function, whose contract is the library's.
+                if let Some(function) = self.adapter.core_method_call(callee, ptr, call)? {
+                    let a::PlaceKind::Local(destination) = call.dest.kind else {
+                        return Err(unsupported("projected call destination"));
+                    };
+                    return Ok(T::Call {
+                        function,
+                        arguments: call
+                            .args
+                            .iter()
+                            .map(|argument| self.operand(argument))
+                            .collect::<Result<_, _>>()?,
+                        owned_arguments: Vec::new(),
+                        destination: self.local(destination)?,
+                        target: target.index(),
+                        through_pointer: false,
+                    });
+                }
                 self.adapter.assignment_operator_call(callee, ptr, call)?;
                 self.adapter.default_constructor_call(callee, ptr, call)?;
                 if callee.item_meta.diagnostic_item.as_deref() == Some("mem_drop") {
@@ -2763,6 +2787,7 @@ pub(super) fn decode_crate(
         generic_records: BTreeMap::new(),
         record_instances: std::cell::RefCell::default(),
         enum_instances: std::cell::RefCell::default(),
+        core_methods: std::cell::RefCell::default(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -3461,6 +3486,7 @@ pub(super) fn decode_crate(
             captures: captures.as_ref().map_or(0, Vec::len),
             implements: adapter.trait_impl_methods.get(id).cloned(),
             instance_of: None,
+            core_method: None,
             span: span(f.item_meta.span),
         });
     }
@@ -3519,9 +3545,16 @@ pub(super) fn decode_crate(
             captures: 0,
             implements: None,
             instance_of: Some(generic_name.clone()),
+            core_method: None,
             span: generic.span.clone(),
         };
         functions.push(instance);
+    }
+    for (name, function) in adapter.core_methods.borrow().iter() {
+        if used_names.contains(name) {
+            return Err(unsupported("colliding proof function names"));
+        }
+        functions.push(function.clone());
     }
     for imp in krate.trait_impls.iter() {
         let id = imp.impl_trait.id;

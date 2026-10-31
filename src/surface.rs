@@ -485,6 +485,46 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         "library/format.click",
         include_str!("../library/format.click"),
     ),
+    (
+        "library/rust/i8.click",
+        include_str!("../library/rust/i8.click"),
+    ),
+    (
+        "library/rust/i16.click",
+        include_str!("../library/rust/i16.click"),
+    ),
+    (
+        "library/rust/i32.click",
+        include_str!("../library/rust/i32.click"),
+    ),
+    (
+        "library/rust/i64.click",
+        include_str!("../library/rust/i64.click"),
+    ),
+    (
+        "library/rust/isize.click",
+        include_str!("../library/rust/isize.click"),
+    ),
+    (
+        "library/rust/u8.click",
+        include_str!("../library/rust/u8.click"),
+    ),
+    (
+        "library/rust/u16.click",
+        include_str!("../library/rust/u16.click"),
+    ),
+    (
+        "library/rust/u32.click",
+        include_str!("../library/rust/u32.click"),
+    ),
+    (
+        "library/rust/u64.click",
+        include_str!("../library/rust/u64.click"),
+    ),
+    (
+        "library/rust/usize.click",
+        include_str!("../library/rust/usize.click"),
+    ),
 ];
 
 /// Emits one non-overlapping verifier phase on every exit path, including an

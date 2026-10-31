@@ -196,11 +196,12 @@ Each step is a separate PR that leaves every example verifying:
 4. Done: attach the C library models to the code. `click::c::string` comes
    with a C declaration of, or call to, one of its functions, whether from
    `<string.h>` or the program's own prototype, since a C call binds to the
-   library by name. The C++ catalog and Rust core contracts are already
-   generated per use, for the element types a call instantiates, so they
-   stay generated rather than becoming `library/cpp/` and `library/rust/`
-   files; a templated library file needs a generic mechanism Click does not
-   have yet.
+   library by name. The C++ catalog and Rust core contracts are
+   generated per use, for the element types a call instantiates. Rust's
+   core integer methods state their results with specification functions
+   in `library/rust/`, one module per integer type, since a templated
+   library file needs a generic mechanism Click does not have yet; the
+   per-use `extern` contract only names them.
 5. Qualified names, as described above, in small PRs:
    - Done: `click::m::name` and in-scope `m::name` resolve to the library
      declaration before parsing, and a full path brings its module.
