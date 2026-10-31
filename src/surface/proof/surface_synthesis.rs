@@ -4560,9 +4560,12 @@ fn synthesize_parameter_field_load(
         .iter()
         .zip(parameter_binding.arguments)
     {
-        let (Some(layout), CExpression::Value(CValue::Pointer(base))) =
-            (parameter.struct_layout(), argument)
-        else {
+        let (Some(layout), CExpression::Value(CValue::Pointer(base))) = (
+            parameter
+                .pointee_struct_layout()
+                .or_else(|| parameter.struct_layout()),
+            argument,
+        ) else {
             continue;
         };
         let Some(element_offset) = pointer
