@@ -5329,6 +5329,9 @@ impl Parser {
     fn refuse_unknown_loop_value(&self, name: &str) -> Result<(), ClickError> {
         if let Some(context) = &self.loop_name_context
             && self.names.c_object_names.is_some()
+            // A loop's returning arm may close the function's postcondition.
+            // Execution checking decides when this built-in value exists.
+            && name != "result"
             && !self.names.is_bound(name)
             && !self.quantifier_binders.iter().any(|bound| bound == name)
             && !self.loop_proof_value_names.contains(name)
