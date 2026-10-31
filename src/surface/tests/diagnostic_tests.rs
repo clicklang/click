@@ -3841,28 +3841,37 @@ mod scaling_tests {
 #[test]
 #[ignore = "nightly: repeated-retain source diagnostic took 0.63s in parallel"]
 fn a_failed_retain_names_the_population_count_requirement() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/repeated_child_retains_require_enough_count_capacity.md");
-    let markdown = std::fs::read_to_string(&path).unwrap();
-    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
-    let sources = fixture
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
-        .expect_err("the caller does not establish the helper's stricter count bound");
-    let (report, _) = error.concise_report_parts();
-    assert!(
-        report.contains("precondition clause 1 of `child_retain`"),
-        "{report}"
-    );
-    // The callee's precondition refers to the population before the call.
-    assert!(
-        report.contains("old(count(child_ref(obj))) < 8"),
-        "{report}"
-    );
-    assert!(!report.contains("*obj"), "{report}");
+    for (name, requirement) in [
+        (
+            "repeated_child_retains_require_enough_count_capacity.md",
+            "old(count(child_ref(obj))) < 8",
+        ),
+        (
+            "repeated_child_retains_grown_count_requirement.md",
+            "to_integer(old(count(child_ref(obj))) + 1) < 8",
+        ),
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests")
+            .join(name);
+        let markdown = std::fs::read_to_string(&path).unwrap();
+        let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
+            .expect_err("the caller does not establish the helper's stricter count bound");
+        let (report, _) = error.concise_report_parts();
+        assert!(
+            report.contains("precondition clause 1 of `child_retain`"),
+            "{report}"
+        );
+        // The second call observes the machine sum, not the exact Integer sum.
+        assert!(report.contains(requirement), "{report}");
+        assert!(!report.contains("*obj"), "{report}");
+    }
 }
 
 /// A `have` miss keeps the same checked prefix as other have failures.

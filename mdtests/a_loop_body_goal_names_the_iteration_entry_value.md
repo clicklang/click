@@ -43,5 +43,5 @@ int32 walk(int32 n) {
 ```
 
 ```expect
-fail: goal: at(statement(2).statement(0).entry, i) + 1 <= n
+fail: goal: to_integer(at(statement(2).statement(0).entry, i) + 1) <= n
 ```

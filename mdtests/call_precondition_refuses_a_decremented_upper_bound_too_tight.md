@@ -30,5 +30,5 @@ int32 caller(int32 n) {
 ```
 
 ```expect
-fail: did not derive `n - 1 <= 98`
+fail: did not derive `to_integer(n - 1) <= 98`
 ```
