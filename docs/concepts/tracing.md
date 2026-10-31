@@ -129,21 +129,26 @@ footprint includes writes, call effects and allocation release. Establish its
 separation with `normalize() using` and explicitly listed separations and bounds.
 For a region containing several transitions, spell the individual preservation
 nodes and compose their equalities: simple normalization does not walk a region.
-The observation rule currently covers complete pointer or 32/64-bit integer cells.
+The observation rule covers complete pointer, byte, 32/64-bit integer and abstract
+typed cells, plus explicitly selected fields of named owned resources. For a
+resource field, separate the footprint from the instance and write the field
+equality across the exact entry/exit states; no unfolding or field search is
+part of this primitive.
 Use the [certificate reference](../reference/tactics/index.md#transport-certificates)
 for exact syntax and current producer/observation limits.
 
 The required primitive for one recorded transition has this logical shape:
 
 ```text
-read(before, B) = value
+observe(before, B, selector) = value
 checked region before -> after has effect footprint A
 separate(A, B)
 -----------------------------------------------------
-read(after, B) = value
+observe(after, B, selector) = value
 ```
 
-Here B covers the complete typed read, and the source read is valid. The effect
+Here B supports the complete selected observation (a typed memory cell or a
+named resource field), and the source observation is valid. The effect
 must include invalidation and allocation lifetime changes, as well as ordinary
 writes. The transition/effect comes from checked execution;
 separation comes from an explicit proof. Neither is an assumption the user may

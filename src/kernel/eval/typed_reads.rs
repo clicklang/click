@@ -5,6 +5,7 @@ use super::*;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(in crate::kernel) enum ReadType {
     Pointer(CType),
+    Abstract,
     PointerAddress,
     Integer(MachineIntegerType),
 }
@@ -22,6 +23,7 @@ impl ReadType {
     pub(in crate::kernel) fn bytes(self) -> u32 {
         match self {
             Self::Pointer(_) | Self::PointerAddress => C_POINTER_BYTE_WIDTH,
+            Self::Abstract => ABSTRACT_VALUE_WIDTH,
             Self::Integer(format) => format.c_type().byte_width(),
         }
     }
@@ -53,6 +55,7 @@ pub(super) fn record(memory: &CMemory, address: &Pointer, value: &CValue) {
     let value = value.numeric_value();
     let kind = match value {
         CValue::Pointer(p) => ReadType::Pointer(p.c_type()),
+        CValue::Parameter(_) => ReadType::Abstract,
         CValue::Int32(_) => ReadType::Integer(MachineIntegerType::Int32),
         CValue::UInt32(_) => ReadType::Integer(MachineIntegerType::UInt32),
         CValue::UInt8(_) => ReadType::Integer(MachineIntegerType::UInt8),
@@ -96,4 +99,49 @@ pub(in crate::kernel) fn get(
             ))
             .cloned()
     })
+}
+
+/// A selected field, supplied by the resource-field evaluator. No ambient
+/// resource or field search is needed to apply the preservation primitive.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct FieldSelection {
+    pub(crate) identity: Variable,
+    pub(crate) index: usize,
+}
+thread_local! {
+    static FIELD_SELECTION: std::cell::RefCell<Option<Result<Option<FieldSelection>, ()>>> = const { std::cell::RefCell::new(None) };
+}
+
+pub(crate) struct FieldScope(Option<Result<Option<FieldSelection>, ()>>);
+impl FieldScope {
+    pub(crate) fn enter() -> Self {
+        Self(FIELD_SELECTION.with(|slot| slot.replace(Some(Ok(None)))))
+    }
+    pub(crate) fn selected(&self) -> Result<Option<FieldSelection>, &'static str> {
+        FIELD_SELECTION.with(|slot| *slot.borrow().as_ref().unwrap())
+            .map_err(|_| "preserve must select one resource field; split compound observations into explicit links")
+    }
+}
+impl Drop for FieldScope {
+    fn drop(&mut self) {
+        FIELD_SELECTION.with(|slot| *slot.borrow_mut() = self.0.take());
+    }
+}
+pub(crate) fn record_field(instance: &ResourceInstance, index: usize) {
+    FIELD_SELECTION.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let Some(selection) = slot.as_mut() else {
+            return;
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        let current = FieldSelection {
+            identity: instance.identity(),
+            index,
+        };
+        match selection {
+            Ok(None) => *selection = Ok(Some(current)),
+            Ok(Some(previous)) if previous == &current => {}
+            _ => *selection = Err(()),
+        }
+    });
 }

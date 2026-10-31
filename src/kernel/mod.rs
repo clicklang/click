@@ -32,7 +32,10 @@ mod difference_graph;
 pub(crate) mod effective_type;
 mod equality_graph;
 mod eval;
-pub(crate) use eval::typed_reads::ReadScope as TransportReadScope;
+pub(crate) use eval::typed_reads::{
+    FieldScope as TransportFieldScope, ReadScope as TransportReadScope,
+    record_field as record_transport_field,
+};
 pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
 mod fold_read_summary;

@@ -1326,7 +1326,7 @@ pub(in crate::surface) fn collect_resource_subject_referenced_names(
 ) {
     match resource {
         ResourceSubject::Footprint(_) => {}
-        ResourceSubject::Parameter { name, .. } => {
+        ResourceSubject::Parameter { name, .. } | ResourceSubject::Instance { name, .. } => {
             names.insert(name.clone());
         }
         ResourceSubject::Captured { .. } => {}

@@ -7392,7 +7392,7 @@ fn substitute_pointer_variable_in_spec_resource(
     to: &Pointer,
 ) -> SpecResource {
     match resource {
-        SpecResource::Value(_) => resource.clone(),
+        SpecResource::Instance { .. } | SpecResource::Value(_) => resource.clone(),
         SpecResource::Memory {
             base,
             start,

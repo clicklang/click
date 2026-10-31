@@ -610,7 +610,7 @@ fn collect_spec_resource_carriers(
         return;
     }
     let arguments = match resource {
-        SpecResource::Value(_) => return,
+        SpecResource::Instance { .. } | SpecResource::Value(_) => return,
         SpecResource::Memory {
             base, start, end, ..
         } => {
@@ -1660,7 +1660,7 @@ impl<'a> TermRewrite<'a> {
         resource: &SpecResource,
     ) -> Result<SpecResource, SpecRewriteError> {
         Ok(match resource {
-            SpecResource::Value(_) => resource.clone(),
+            SpecResource::Instance { .. } | SpecResource::Value(_) => resource.clone(),
             SpecResource::Memory {
                 base,
                 start,
