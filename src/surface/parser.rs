@@ -4987,6 +4987,7 @@ impl Parser {
             requires,
             requirement_source_clauses,
             decreases,
+            call_ranked_numeric_recursion: self.verifies_rust(),
             structural_clauses: StructuralClauses::default(),
             constructs,
             ensures,

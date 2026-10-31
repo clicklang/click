@@ -1637,3 +1637,17 @@ and its translator. The lock detects stale or changed inputs; it is not an
 attestation against somebody deliberately replacing the artifact and its lock.
 Tests distinguish invalid Rust rejected by rustc from false functional claims
 rejected by Click, and check the ordinary CLI and proof expansion path.
+
+### Scalar recursion
+
+A scalar recursive function can declare `decreases n;` for an integer
+parameter. The measure is checked at each recursive call, using the value
+of the argument even when checked Rust arithmetic introduces a MIR temporary.
+The next measure must be nonnegative and strictly smaller. An unchanged
+argument is refused. This uses the same call-ranked expression measure for
+`i32` and `i64` parameters.
+
+`tests/fixtures/rust-verification/recursive-countdown/r.click` verifies the
+unchanged `countdown(n - 1)` functions at both widths;
+`tests/rust_import.rs::rust_recursive_countdown_refuses_unchanged_argument`
+keeps the negative control.

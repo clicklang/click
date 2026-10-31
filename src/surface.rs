@@ -1392,6 +1392,10 @@ pub struct FunctionBlock {
     /// case each requirement counts as its own clause.
     requirement_source_clauses: Vec<usize>,
     decreases: Option<CFunctionDecrease>,
+    /// Rust arguments pass through MIR temporaries. Rank numeric recursion
+    /// at the checked call rather than by the C body's direct `n - K` shape.
+    /// This is selected by the source language, not signature presentation.
+    call_ranked_numeric_recursion: bool,
     /// The other members of this function's recursive C component, supplied
     /// by the source frontend; empty outside a component of two or more.
     recursion_peers: Vec<String>,

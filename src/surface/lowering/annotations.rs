@@ -3847,8 +3847,8 @@ impl AnnotationLowerer<'_> {
     /// carries it, or `None` when the clause is one of the two measures the
     /// termination checker resolves by itself.
     ///
-    /// `decreases n` for a parameter `n`, and a structural resource measure,
-    /// keep naming exactly what they named before: those clauses are read by
+    /// `decreases n` for a C int32 parameter `n`, and a structural resource
+    /// measure, keep naming exactly what they named before: those clauses are read by
     /// `c_function_termination_plans` and analysed by the checker, and nothing
     /// about them reaches the interface. Anything else is a pure expression,
     /// lowered here the way a `requires` is, in this same function-contract
@@ -3861,17 +3861,19 @@ impl AnnotationLowerer<'_> {
     ) -> Result<Vec<crate::kernel::CRankingComponent>, ClickError> {
         let components = match function_block.decreases() {
             Some(CFunctionDecrease::Numeric(expression)) => {
-                // A bare name of an int32 parameter is today's numeric
+                // A bare name of a C int32 parameter is today's numeric
                 // measure, resolved against the parameter list by the
                 // termination plan, which is also what refuses a name that
                 // is no parameter of this function. Leave it there: a bare
                 // `decreases` name has always meant a parameter, and lowering
                 // it here would answer a misspelling with an evaluation
                 // failure. A parameter of another type has no body analysis,
-                // so it is lowered as the expression it is.
+                // so it is lowered as the expression it is. Rust also uses
+                // the call-ranked form, where MIR temporary values are known.
                 if let ContractExpression::Binding(name)
                 | ContractExpression::CBinding(name)
                 | ContractExpression::CFragment(CExpression::Variable(name)) = expression
+                    && !function_block.call_ranked_numeric_recursion
                     && function_block
                         .signature()
                         .parameters()
