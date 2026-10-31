@@ -73,64 +73,87 @@ fn transport_certificate_work_is_linear_in_explicit_nodes() {
 
 #[test]
 fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
-    let costs = [4, 16, 64, 256].map(|history| {
-        let _session = crate::kernel::VerificationSession::enter();
-        let _reads = typed_reads::ReadScope::enter();
-        let (mut certificate, _) = tests::fixture(history, false);
-        let TransportNode::Premise {
-            proposition: Proposition::CMemoryMutatesOnly { before, after, .. },
-            ..
-        } = &certificate.nodes[0]
-        else {
-            unreachable!()
-        };
-        let before = intern_c_memory(before.clone());
-        let after = intern_c_memory(after.clone());
-        let TransportNode::Premise {
-            proposition,
-            result,
-        } = &mut certificate.nodes[1]
-        else {
-            unreachable!()
-        };
-        let Proposition::CResourceSeparate { right, .. } = proposition else {
-            unreachable!()
-        };
-        let CResource::Memory(range) = right.as_ref() else {
-            unreachable!()
-        };
-        let (address, _) = range.byte_footprint();
-        *right = Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
-            address.clone(),
-            0u32.into(),
-            1u32.into(),
-            4,
-        )));
-        *result = proposition.clone();
-        let read = |memory: &SharedCMemory| {
-            Box::new(integer_bits(tests::observe(memory.memory(), &address, CType::Int32)).unwrap())
-        };
-        let goal = Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: read(&after),
-                right: read(&before),
-            },
-            true,
-        );
-        certificate.nodes[2] = TransportNode::Preserve {
-            effect: Some(0),
-            separation: 1,
-            result: goal.clone(),
-        };
-        let (result, cost) =
-            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
-        assert_eq!(result.unwrap(), goal);
-        cost
-    });
-    assert!(costs[0] > 0);
-    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+    for value_type in [CType::Int32, CType::UInt8] {
+        let costs = [4, 16, 64, 256].map(|history| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let _reads = typed_reads::ReadScope::enter();
+            let (mut certificate, _) = tests::fixture(history, false);
+            let TransportNode::Premise {
+                proposition: Proposition::CMemoryMutatesOnly { before, after, .. },
+                ..
+            } = &certificate.nodes[0]
+            else {
+                unreachable!()
+            };
+            let before = intern_c_memory(before.clone());
+            let after = intern_c_memory(after.clone());
+            let TransportNode::Premise {
+                proposition,
+                result,
+            } = &mut certificate.nodes[1]
+            else {
+                unreachable!()
+            };
+            let Proposition::CResourceSeparate { right, .. } = proposition else {
+                unreachable!()
+            };
+            let CResource::Memory(range) = right.as_ref() else {
+                unreachable!()
+            };
+            let (address, _) = range.byte_footprint();
+            *right = Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                address.clone(),
+                0u32.into(),
+                1u32.into(),
+                value_type.byte_width(),
+            )));
+            *result = proposition.clone();
+            let read = |memory: &SharedCMemory| {
+                Box::new(
+                    integer_bits(tests::observe(memory.memory(), &address, value_type)).unwrap(),
+                )
+            };
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: read(&after),
+                    right: read(&before),
+                },
+                true,
+            );
+            certificate.nodes[2] = TransportNode::Preserve {
+                effect: Some(0),
+                separation: 1,
+                result: goal.clone(),
+            };
+            let (result, cost) =
+                crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+            assert_eq!(result.unwrap(), goal);
+            if value_type == CType::UInt8 {
+                // A one-byte separation must not preserve a four-byte read,
+                // even when both read types are present at the same address.
+                let wider = Proposition::ConditionIs(
+                    ConditionTerm::equal(
+                        integer_bits(tests::observe(after.memory(), &address, CType::Int32))
+                            .unwrap(),
+                        integer_bits(tests::observe(before.memory(), &address, CType::Int32))
+                            .unwrap(),
+                    ),
+                    true,
+                );
+                certificate.nodes[2] = TransportNode::Preserve {
+                    effect: Some(0),
+                    separation: 1,
+                    result: wider,
+                };
+                assert!(certificate.apply(|_| true).is_err());
+            }
+            cost
+        });
+        assert!(costs[0] > 0);
+        assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+    }
 }
 
 #[test]

@@ -2577,7 +2577,10 @@ fn is_nat_integer_law_name(name: &str) -> bool {
 
 pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
     name == "click::separation::restrict"
-        || name.split("::<").next() == Some("click::separation::subrange")
+        || matches!(
+            name.split("::<").next(),
+            Some("click::separation::subrange" | "click::separation::elements")
+        )
         || integer_round_trip_destination(name).is_some()
         || crate::kernel::integer_truncation_law_requirements(name).is_some()
         || is_nat_integer_law_name(name)
@@ -2661,6 +2664,7 @@ fn verify_kernel_standard_theorem_axiom(
     let (parameter_count, requirement_count) = match theorem.name() {
         "click::separation::restrict" => (4, 3),
         name if name.split("::<").next() == Some("click::separation::subrange") => (5, 3),
+        name if name.split("::<").next() == Some("click::separation::elements") => (3, 1),
         "click::nat::to_integer_zero" | "click::nat::to_nat_zero" => (0, 0),
         "click::nat::to_integer_succ"
         | "click::nat::to_integer_nonnegative"
@@ -2745,7 +2749,29 @@ fn verify_kernel_standard_theorem_axiom(
             "`{claim_label}` does not have the declaration shape required by its kernel axiom",
         )));
     }
-    let axiom = if theorem.name().split("::<").next() == Some("click::separation::subrange") {
+    let axiom = if theorem.name().split("::<").next() == Some("click::separation::elements") {
+        let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
+        {
+            Some(CValue::UInt64(value)) => Ok(value.clone()),
+            _ => Err(ClickError::new("elements indices must be uint64")),
+        };
+        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        else {
+            return Err(ClickError::new("elements base must be a typed pointer"));
+        };
+        let width = spec_definitions
+            .pointer_element_width(pointer)
+            .map_err(ClickError::new)?;
+        if width == 0 {
+            return Err(ClickError::new("elements requires a nonzero element width"));
+        }
+        crate::kernel::prove_separation_elements(
+            pointer.clone(),
+            width,
+            parameter(1)?,
+            parameter(2)?,
+        )
+    } else if theorem.name().split("::<").next() == Some("click::separation::subrange") {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
             Some(CValue::Int32(value)) => Ok(value.clone()),
