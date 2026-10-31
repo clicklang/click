@@ -108,3 +108,48 @@ fn resource_parameters_do_not_grant_ownership_or_numeric_values() {
         assert!(verify_click_theorems(source).is_err(), "{source}");
     }
 }
+
+#[test]
+fn generic_pointer_parameters_subrange_and_expansion() {
+    let (source, sources) = mdtest_sources("mdtests/generic_pointer_theorem_parameters.md");
+    assert!(sources.is_empty());
+    without_implicit_auto(|| verify_click_theorems(&source)).unwrap();
+    for label in [
+        "integers.ensures_0",
+        "bytes.ensures_0",
+        "pointers.ensures_0",
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
+        without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+    }
+    for premise in ["lo <= a;", "a <= b;", "b <= hi;"] {
+        let missing = source.replace(
+            "using { lo <= a; a <= b; b <= hi; }",
+            &format!(
+                "using {{ {} }}",
+                "lo <= a; a <= b; b <= hi;".replace(premise, "")
+            ),
+        );
+        assert!(without_implicit_auto(|| verify_click_theorems(&missing)).is_err());
+    }
+}
+
+#[test]
+fn generic_pointer_parameters_require_consistent_element_types() {
+    let source = r#"
+        theorem same<T>(p: T*, q: T*) {
+            ensures true by { normalize(); }
+        }
+        theorem wrong(p: int32*, q: uint8*) {
+            ensures true by {
+                apply(same(p, q)) using {};
+            }
+        }
+    "#;
+    let error = verify_click_theorems(source).unwrap_err();
+    assert!(
+        error.report().contains("type parameter"),
+        "{}",
+        error.report()
+    );
+}

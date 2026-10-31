@@ -1195,6 +1195,13 @@ proposition `requires` clauses, and proposition `ensures` clauses with proof
 clauses. A theorem-only `.click` file does not need a `verifying "file.c";`
 declaration.
 
+A generic theorem can declare `p: T*`. Applications infer `T` from the
+argument's pointee type and require repeated occurrences to agree. Native
+scalar and pointer element types retain their actual widths when instantiated;
+this does not erase the pointer to a byte pointer. Struct-value element types
+are currently refused rather than losing their nominal type or layout.
+See [`separation::subrange`](../library/index.md#separationsubrange).
+
 `Resource` is a theorem-parameter type for resource descriptors. For example,
 `theorem transport(A: Resource, B: Resource) { requires separate(A, B);
 ensures separate(A, B); }` accepts `memory(...)`, a declared resource

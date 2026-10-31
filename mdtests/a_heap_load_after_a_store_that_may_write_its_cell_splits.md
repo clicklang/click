@@ -1,28 +1,13 @@
-# A heap load after a store that may write its cell splits after the null check
+# A heap load after a possibly overlapping store uses explicit preservation
 
-`malloc` may fail, so the implicit tail of `read_back`'s omitted proof first
-splits on `buf == 0`. On the allocated path, `buf[u] = 7` may or may not write `buf[0]`, so the load
-`r = buf[0]` has two cases, and the `free` and `return` after it run once in
-each. In the case `u == 0` the load reads the stored `7`; otherwise it reads
-the `3` stored first. The stepped proof writes both splits as proof `if`s.
+The proof splits allocation failure and the two store-alias cases. When `u`
+is nonzero, it establishes separation of `buf[u]` from `buf[0]`, then uses
+`statement(5).footprint` and a transport certificate to preserve the earlier
+`3`. No memory-history recovery is needed.
 
-Two things refused this before. Planning certified each case's transition
-against the ambient facts alone, so the case's own condition `u == 0` was
-asked to follow from facts that only bound `u`; it is the case's assumption,
-which the split supplies. And the store forgot that `buf[0]` was initialized
-when it forgot the cell's value, so the case `u != 0` read "uninitialized
-storage" although `buf[0] = 3` wrote it: a store initializes the bytes it may
-write and leaves the others as they were.
-
-The case `u != 0` then read an unknown value instead of the `3`. The store
-`buf[u] = 7` dropped the cached `buf[0]`, and the name a load gets is decided
-without any path's facts, so it stopped at that store. The same program over
-a file-scope array read the `3` only because its reduced memory happened to
-equal the snapshot before the store; a heap store also records the bytes it
-initialized, which kept the two apart. A C read whose cell no cached value
-answers now reads it from the recorded history under its own path's facts:
-`u != 0` places the store off `buf[0]`, and the cell's value before the store
-is the `3`.
+The `separation::subrange` law derives containment in `buf[1..4]` from
+explicit arithmetic bounds, without enumerating the possible indices.
+Both original functions and contracts are unchanged.
 
 ```c filename=a_heap_load_after_a_store_that_may_write_its_cell_splits.c
 int32 read_back(int32 u) {
@@ -55,6 +40,7 @@ int32 read_back_stepped(int32 u) {
 ```
 
 ```click
+import click::separation;
 verifying "a_heap_load_after_a_store_that_may_write_its_cell_splits.c";
 
 int32 read_back(int32 u) {
@@ -62,6 +48,60 @@ int32 read_back(int32 u) {
     requires u < 4;
     ensures result == 0 or u != 0 or result == 7;
     ensures result == 0 or u == 0 or result == 3;
+} by {
+    step(); step(); step();
+    if buf == 0 {
+    } else {
+        step_until(statement(5));
+        have buf[0] == 3 by solve();
+        mark before_store;
+        step();
+        if u == 0 {
+            step_until(function.exit);
+        } else {
+            have 1 <= u by { solve() using { 0 <= u; u != 0; }; }
+            have separate(memory(buf[1..4]), memory(buf[0..1])) by assumption();
+            have u <= ((u + 1) as int32) by { solve() using { 1 <= u; u < 4; }; }
+            have ((u + 1) as int32) <= 4 by { solve() using { 1 <= u; u < 4; }; }
+            have contains(memory(buf[1..4]), memory(buf[u..u + 1])) by {
+                apply(separation::subrange(buf, 1, 4, u, u + 1)) using {
+                    1 <= u; u <= ((u + 1) as int32); ((u + 1) as int32) <= 4;
+                };
+            }
+            have contains(memory(buf[0..1]), memory(buf[0])) by { normalize(); }
+            have separate(memory(buf[u..u + 1]), memory(buf[0])) by {
+                apply(separation::restrict(memory(buf[1..4]), memory(buf[0..1]),
+                    memory(buf[u..u + 1]), memory(buf[0]))) using {
+                    separate(memory(buf[1..4]), memory(buf[0..1]));
+                    contains(memory(buf[1..4]), memory(buf[u..u + 1]));
+                    contains(memory(buf[0..1]), memory(buf[0]));
+                };
+            }
+            have contains(memory(buf[u..u + 1]), memory(buf[u])) by { normalize(); }
+            have contains(memory(buf[0]), memory(buf[0])) by { normalize(); }
+            have separate(memory(buf[u]), memory(buf[0])) by {
+                apply(separation::restrict(memory(buf[u..u + 1]), memory(buf[0]),
+                    memory(buf[u]), memory(buf[0]))) using {
+                    separate(memory(buf[u..u + 1]), memory(buf[0]));
+                    contains(memory(buf[u..u + 1]), memory(buf[u]));
+                    contains(memory(buf[0]), memory(buf[0]));
+                };
+            }
+            have separate(statement(5).footprint, memory(buf[0])) by {
+                normalize() using { separate(memory(buf[u]), memory(buf[0])); };
+            }
+            have buf[0] == at(before_store, buf[0]) by {
+                transport_certificate {
+                    premise 0: separate(statement(5).footprint, memory(buf[0]))
+                        => separate(statement(5).footprint, memory(buf[0]));
+                    preserve 0 => buf[0] == at(before_store, buf[0]);
+                    conclusion 1;
+                }
+            }
+            have buf[0] == 3 by solve();
+            step_until(function.exit);
+        }
+    }
 }
 
 int32 read_back_stepped(int32 u) {
@@ -70,28 +110,61 @@ int32 read_back_stepped(int32 u) {
     ensures result == 0 or u != 0 or result == 7;
     ensures result == 0 or u == 0 or result == 3;
 } by {
-    step();
-    step();
-    step();
+    step(); step(); step();
     if buf == 0 {
     } else {
-        step();
-        step();
-        step();
+        step_until(statement(5));
+        have buf[0] == 3 by solve();
+        mark before_store;
         step();
         if u == 0 {
-            step();
-            step();
-            step();
-            solve();
+            step_until(function.exit);
         } else {
-            step();
-            step();
-            step();
-            solve();
+            have 1 <= u by { solve() using { 0 <= u; u != 0; }; }
+            have separate(memory(buf[1..4]), memory(buf[0..1])) by assumption();
+            have u <= ((u + 1) as int32) by { solve() using { 1 <= u; u < 4; }; }
+            have ((u + 1) as int32) <= 4 by { solve() using { 1 <= u; u < 4; }; }
+            have contains(memory(buf[1..4]), memory(buf[u..u + 1])) by {
+                apply(separation::subrange(buf, 1, 4, u, u + 1)) using {
+                    1 <= u; u <= ((u + 1) as int32); ((u + 1) as int32) <= 4;
+                };
+            }
+            have contains(memory(buf[0..1]), memory(buf[0])) by { normalize(); }
+            have separate(memory(buf[u..u + 1]), memory(buf[0])) by {
+                apply(separation::restrict(memory(buf[1..4]), memory(buf[0..1]),
+                    memory(buf[u..u + 1]), memory(buf[0]))) using {
+                    separate(memory(buf[1..4]), memory(buf[0..1]));
+                    contains(memory(buf[1..4]), memory(buf[u..u + 1]));
+                    contains(memory(buf[0..1]), memory(buf[0]));
+                };
+            }
+            have contains(memory(buf[u..u + 1]), memory(buf[u])) by { normalize(); }
+            have contains(memory(buf[0]), memory(buf[0])) by { normalize(); }
+            have separate(memory(buf[u]), memory(buf[0])) by {
+                apply(separation::restrict(memory(buf[u..u + 1]), memory(buf[0]),
+                    memory(buf[u]), memory(buf[0]))) using {
+                    separate(memory(buf[u..u + 1]), memory(buf[0]));
+                    contains(memory(buf[u..u + 1]), memory(buf[u]));
+                    contains(memory(buf[0]), memory(buf[0]));
+                };
+            }
+            have separate(statement(5).footprint, memory(buf[0])) by {
+                normalize() using { separate(memory(buf[u]), memory(buf[0])); };
+            }
+            have buf[0] == at(before_store, buf[0]) by {
+                transport_certificate {
+                    premise 0: separate(statement(5).footprint, memory(buf[0]))
+                        => separate(statement(5).footprint, memory(buf[0]));
+                    preserve 0 => buf[0] == at(before_store, buf[0]);
+                    conclusion 1;
+                }
+            }
+            have buf[0] == 3 by solve();
+            step_until(function.exit);
         }
     }
 }
+
 ```
 
 ```expect

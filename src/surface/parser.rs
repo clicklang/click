@@ -5832,6 +5832,15 @@ impl Parser {
         if self.names.contains(NameKind::TypeParameter, name) {
             let name = name.to_string();
             self.position += 1;
+            if self.peek() == Some(&Token::Star) {
+                self.position += 1;
+                return Ok((
+                    ClickType::C(C0Type::ParameterPointer(
+                        crate::kernel::TypeParameterName::intern(&name),
+                    )),
+                    None,
+                ));
+            }
             return Ok((ClickType::Parameter(name), None));
         }
         let application = self.parse_algebraic_type_application()?;

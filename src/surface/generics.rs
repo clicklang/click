@@ -85,6 +85,38 @@ pub(super) fn unify_click_type(
             validation::describe_click_type(pattern),
             validation::describe_click_type(actual)
         )),
+        ClickType::C(C0Type::ParameterPointer(name)) if allowed.contains(name.name()) => {
+            let pointee = actual
+                .c_type()
+                .and_then(|ty| ty.pointee_type())
+                .ok_or_else(|| {
+                    format!(
+                        "expected a typed pointer argument, got {}",
+                        validation::describe_click_type(actual)
+                    )
+                })?;
+            let element = match actual {
+                ClickType::CObjectPointer { struct_name, .. } if pointee.is_pointer() => {
+                    ClickType::CObjectPointer {
+                        c_type: pointee,
+                        struct_name: struct_name.clone(),
+                    }
+                }
+                ClickType::CObjectPointer { .. } => {
+                    return Err(
+                        "generic pointer elements that are struct values are not yet supported"
+                            .into(),
+                    );
+                }
+                _ => ClickType::C(pointee),
+            };
+            unify_click_type(
+                &ClickType::Parameter(name.name().to_owned()),
+                &element,
+                allowed,
+                substitution,
+            )
+        }
         ClickType::C(expected) => match actual {
             ClickType::C(actual) if validation::click_types_compatible(*actual, *expected) => {
                 Ok(())
@@ -151,6 +183,27 @@ pub(super) fn instantiate_click_type(
             .get(name)
             .cloned()
             .ok_or_else(|| format!("unresolved type parameter `{name}`")),
+        ClickType::C(C0Type::ParameterPointer(name)) if substitution.contains_key(name.name()) => {
+            let element = substitution
+                .get(name.name())
+                .ok_or_else(|| format!("unresolved pointer element type `{}`", name.name()))?;
+            let pointer = element
+                .c_type()
+                .and_then(|ty| ty.pointer_type())
+                .ok_or_else(|| {
+                    format!(
+                        "pointer element type `{}` must have a C representation",
+                        validation::describe_click_type(element)
+                    )
+                })?;
+            Ok(match element {
+                ClickType::CObjectPointer { struct_name, .. } => ClickType::CObjectPointer {
+                    c_type: pointer,
+                    struct_name: struct_name.clone(),
+                },
+                _ => ClickType::C(pointer),
+            })
+        }
         ClickType::C(_) | ClickType::CObjectPointer { .. } => Ok(click_type.clone()),
         ClickType::Integer => Ok(ClickType::Integer),
         ClickType::Algebraic(application) => Ok(ClickType::Algebraic(instantiate_algebraic_type(
@@ -344,7 +397,9 @@ pub(super) fn instantiate_function_for_surface_call_with_variables(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::Resource => syntactic_expression_type(argument, variables),
+            ClickType::Resource | ClickType::C(C0Type::ParameterPointer(_)) => {
+                syntactic_expression_type(argument, variables)
+            }
             ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }
@@ -491,7 +546,9 @@ pub(super) fn instantiate_predicate_for_surface_call(
         .iter()
         .zip(arguments)
         .map(|(parameter, argument)| match parameter.click_type() {
-            ClickType::Resource => syntactic_expression_type(argument, variables),
+            ClickType::Resource | ClickType::C(C0Type::ParameterPointer(_)) => {
+                syntactic_expression_type(argument, variables)
+            }
             ClickType::C(_) | ClickType::CObjectPointer { .. } => {
                 Some(parameter.click_type().clone())
             }
@@ -941,10 +998,15 @@ fn instantiate_parameter(
     parameter: &FunctionParameter,
     substitution: &TypeSubstitution,
 ) -> Result<FunctionParameter, String> {
+    let click_type = instantiate_click_type(parameter.click_type(), substitution)?;
+    let struct_name = match &click_type {
+        ClickType::CObjectPointer { struct_name, .. } => Some(struct_name.clone()),
+        _ => parameter.struct_name.clone(),
+    };
     Ok(FunctionParameter {
-        click_type: instantiate_click_type(parameter.click_type(), substitution)?,
+        click_type,
         name: parameter.name.clone(),
-        struct_name: parameter.struct_name.clone(),
+        struct_name,
         function_pointer_signature: parameter.function_pointer_signature.clone(),
         constant: parameter.constant,
         pointee_constant: parameter.pointee_constant,

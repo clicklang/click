@@ -3644,3 +3644,7 @@ path = "reference/tactics/index.md#transport-certificates"
 [[item]]
 id = "language.region-footprint"
 path = "reference/language/index.md#at"
+
+[[item]]
+id = "library.theorem.separation::subrange"
+path = "reference/library/index.md#separationsubrange"

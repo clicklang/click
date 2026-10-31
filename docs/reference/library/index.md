@@ -4053,3 +4053,25 @@ is backed by a trusted kernel constructor; application does not search memory
 history or discover containment facts.
 
 **Verified use:** [`mdtests/resource_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_theorem_parameters.md).
+
+### `separation::subrange`
+
+```click
+theorem subrange<T>(p: T*, lo: int32, hi: int32, inner_lo: int32, inner_hi: int32) {
+    requires lo <= inner_lo;
+    requires inner_lo <= inner_hi;
+    requires inner_hi <= hi;
+    ensures contains(memory(p[lo..hi]), memory(p[inner_lo..inner_hi]));
+}
+```
+
+**Meaning:** Nested element intervals describe contained resources. Bounds are
+in elements of the inferred type `T`, not bytes. Both descriptors retain the
+same pointer origin and element width. The law grants no ownership or read
+permission. It constructs the containment implication directly, without
+searching facts, enumerating elements, or traversing memory history.
+Applications supply all three bound premises explicitly. Empty inner intervals
+are permitted. Memory access and separation still require their usual validity
+conditions.
+
+**Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md).

@@ -82,7 +82,7 @@ pub use loans::{
 };
 mod integer_truncation_laws;
 mod separation_laws;
-pub(crate) use separation_laws::prove_separation_restrict;
+pub(crate) use separation_laws::{prove_separation_restrict, prove_separation_subrange};
 mod loops;
 pub(crate) mod machine_integer;
 mod memory_provenance;

@@ -113,17 +113,31 @@ pub(in crate::surface) fn verify_theorem_definition(
             function_environment,
         );
     }
+    let pointer_elements = theorem
+        .parameters()
+        .iter()
+        .filter_map(|parameter| match parameter.click_type() {
+            ClickType::C(C0Type::ParameterPointer(element)) => Some(element.name()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
     let substitution = theorem
         .type_parameters()
         .iter()
         .map(|name| {
             (
                 name.clone(),
-                ClickType::Algebraic(AlgebraicTypeApplication {
-                    rigid: true,
-                    name: name.clone(),
-                    arguments: Vec::new(),
-                }),
+                if pointer_elements.contains(name.as_str()) {
+                    ClickType::C(C0Type::Parameter(crate::kernel::TypeParameterName::intern(
+                        name,
+                    )))
+                } else {
+                    ClickType::Algebraic(AlgebraicTypeApplication {
+                        rigid: true,
+                        name: name.clone(),
+                        arguments: Vec::new(),
+                    })
+                },
             )
         })
         .collect();
@@ -2515,6 +2529,7 @@ fn is_nat_integer_law_name(name: &str) -> bool {
 
 pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
     name == "click::separation::restrict"
+        || name.split("::<").next() == Some("click::separation::subrange")
         || integer_round_trip_destination(name).is_some()
         || crate::kernel::integer_truncation_law_requirements(name).is_some()
         || is_nat_integer_law_name(name)
@@ -2596,6 +2611,7 @@ fn verify_kernel_standard_theorem_axiom(
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let (parameter_count, requirement_count) = match theorem.name() {
         "click::separation::restrict" => (4, 3),
+        name if name.split("::<").next() == Some("click::separation::subrange") => (5, 3),
         "click::nat::to_integer_zero" | "click::nat::to_nat_zero" => (0, 0),
         "click::nat::to_integer_succ"
         | "click::nat::to_integer_nonnegative"
@@ -2680,7 +2696,33 @@ fn verify_kernel_standard_theorem_axiom(
             "`{claim_label}` does not have the declaration shape required by its kernel axiom",
         )));
     }
-    let axiom = if theorem.name() == "click::separation::restrict" {
+    let axiom = if theorem.name().split("::<").next() == Some("click::separation::subrange") {
+        let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
+        {
+            Some(CValue::Int32(value)) => Ok(value.clone()),
+            _ => Err(ClickError::new("subrange bounds must be int32")),
+        };
+        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        else {
+            return Err(ClickError::new("subrange base must be a typed pointer"));
+        };
+        let width = pointer
+            .c_type()
+            .pointee_type()
+            .ok_or_else(|| ClickError::new("subrange requires a sized element type"))?
+            .byte_width();
+        if width == 0 {
+            return Err(ClickError::new("subrange requires a nonzero element width"));
+        }
+        crate::kernel::prove_separation_subrange(
+            pointer.clone(),
+            width,
+            parameter(1)?,
+            parameter(2)?,
+            parameter(3)?,
+            parameter(4)?,
+        )
+    } else if theorem.name() == "click::separation::restrict" {
         if theorem
             .parameters()
             .iter()
