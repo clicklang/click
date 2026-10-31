@@ -359,8 +359,12 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
         // from the requirements checked above. Instantiating that conclusion
         // reconstructs its term; it must not demand a second proof during
         // lowering. Argument evaluation retains its own use-site checks.
+        let conclusion =
+            substitute_click_proposition(conclusion, &resource_bindings).map_err(|message| {
+                theorem_application_error(claim_label, path_index, tactic_index, message)
+            })?;
         let conclusion = lower_fixed_state_proposition_retaining_requirements(
-            conclusion,
+            &conclusion,
             lowering_assumptions,
             ContractEnvironment::new(&values, &array_refs),
             FixedStateFrame::new(&pre_state, &post_state, None, context.recorded_snapshots),
