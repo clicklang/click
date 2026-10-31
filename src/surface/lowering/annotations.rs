@@ -399,7 +399,9 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         .requires
         .iter()
         .filter_map(|requirement| match requirement {
-            Requirement::Resource(ResourceClause::Named { binding, .. }) => Some(binding),
+            Requirement::Resource(ResourceClause::Named { binding, resource }) => {
+                Some((binding, resource))
+            }
             _ => None,
         })
         .chain(
@@ -407,11 +409,13 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
                 .ensures
                 .iter()
                 .filter_map(|ensure| match &ensure.ensure {
-                    Ensure::Resource(ResourceClause::Named { binding, .. }) => Some(binding),
+                    Ensure::Resource(ResourceClause::Named { binding, resource }) => {
+                        Some((binding, resource))
+                    }
                     _ => None,
                 }),
         );
-    for binding in bindings {
+    for (binding, resource) in bindings {
         let (Some(schema), Some(fields)) = (&binding.schema, &binding.fields) else {
             continue;
         };
@@ -431,7 +435,21 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
                 },
             );
         }
-        crate::kernel::model_fields::register_instance_spelling(binding.identity, &binding.name);
+        let spelling = if binding.name.starts_with('#') {
+            let ResourceClause::Declared {
+                name, arguments, ..
+            } = resource.as_ref()
+            else {
+                continue;
+            };
+            crate::surface::diagnostics::describe_contract_expression(&ContractExpression::Call {
+                name: name.clone(),
+                arguments: arguments.clone(),
+            })
+        } else {
+            binding.name.clone()
+        };
+        crate::kernel::model_fields::register_instance_spelling(binding.identity, &spelling);
     }
 }
 

@@ -2362,13 +2362,28 @@ resource pair(p: struct pair*) {
 
 It keeps the child's fields in a record the author does not write, so their
 values survive a fold as a declared field's do. The child must be declared
-before it. Because it has no field a contract could name, it is held without
-a name, `owns pair(p);`, unfolded with `let { first: c } = unfold(pair(p));`,
+before it. It may be held without an instance name, `owns pair(p);`, unfolded with `let { first: c } = unfold(pair(p));`,
 and folded with `fold(pair(p), { first: c });`, which takes only the child
 map; with the child bound to `first`, `fold(pair(p));` takes it by name
 (`mdtests/a_hidden_record_folds_its_child_by_name.md`). Holding it by name, `owns x: pair(p);`, is also accepted.
 
-The record has no source syntax, but diagnostics and expansion show it. A
+The retained child fields have structural paths. `pair(p).first.v` selects
+`first.v` in the one in-scope instance with the exact written target `pair(p)`.
+No equality or alias search selects the instance. If several instances have
+that target, use a named instance, such as `whole.first.v`. Selecting the field
+does not unfold the parent or grant ownership of the child's memory.
+`old(pair(p).first.v)` names its entry value after unfolding; the current path
+requires the parent to be held at the selected state. The call form currently
+selects ordinary resource applications without type or resource arguments.
+
+<!-- verified-example: mdtests/nested_resource_fields_have_a_call_spelling.md -->
+```click
+have pair(p).first.v == old(pair(p).first.v);
+let { first: c } = unfold(pair(p));
+have c.v == old(pair(p).first.v);
+```
+
+The record initializer has no source syntax, but diagnostics and expansion show it. A
 refusal lists a held instance with its record,
 `owns pair(p) record { first.v: <unnamed A> }`, using the same placeholders
 as the pure facts beside it
