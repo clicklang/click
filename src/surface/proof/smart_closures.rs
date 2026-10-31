@@ -1856,6 +1856,48 @@ impl<'a> Proof<'a> {
                 _ => {}
             }
         }
+        // Preserve native typing at the output boundary. Keep the planning
+        // surfaces unchanged so transitive chains still match their endpoints.
+        let native_result = |value: ClickProposition, claim: &SignedArithmeticClaim| match value {
+            ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } if !claim.terms.is_empty() => {
+                // An exact observation's native operand is the value it
+                // observes: `x as int32`, not `to_integer(x) as int32`.
+                let native = |operand| ContractExpression::CUnary {
+                    operand: Box::new(match operand {
+                        ContractExpression::Call {
+                            name,
+                            mut arguments,
+                        } if name == "to_integer" && arguments.len() == 1 => arguments.remove(0),
+                        operand => operand,
+                    }),
+                    lowered: CExpression::Cast {
+                        expression: Box::new(CExpression::Value(crate::kernel::int32(0))),
+                        target_type: crate::kernel::CType::Int32,
+                        integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                        pointee_struct: None,
+                        pointee_volatile: false,
+                        pointee_constant: false,
+                        explicit_qualification: false,
+                    },
+                };
+                ClickProposition::Comparison {
+                    left: native(left),
+                    operator,
+                    right: native(right),
+                }
+            }
+            value => value,
+        };
+        let native_conclusion = |value, proposition| {
+            match crate::kernel::proof::signed_arithmetic::signed_arithmetic_claim(proposition) {
+                Some(claim) => native_result(value, &claim),
+                None => value,
+            }
+        };
         let mut source_indices = BTreeMap::new();
         let mut generated = Vec::new();
         for original in used {
@@ -1864,7 +1906,10 @@ impl<'a> Proof<'a> {
             if plan.nodes.iter().any(|node| {
                 matches!(node, SignedArithmeticNode::Premise { index, .. } if *index == original)
             }) {
-                let surface = premise_pairs.get(original)?.1.clone();
+                let (kernel, surface) = premise_pairs.get(original)?;
+                let surface = native_conclusion(
+                    surface_comparison_with_anchored_operands(surface), kernel,
+                );
                 generated.push(SignedArithmeticStep::Premise {
                     index: local,
                     proposition: surface.clone(),
@@ -2082,48 +2127,6 @@ impl<'a> Proof<'a> {
             };
             surfaces.push(value);
         }
-        // Preserve native typing at the output boundary. Keep the planning
-        // surfaces unchanged so transitive chains still match their endpoints.
-        let native_result = |value: ClickProposition, claim: &SignedArithmeticClaim| match value {
-            ClickProposition::Comparison {
-                left,
-                operator,
-                right,
-            } if !claim.terms.is_empty() => {
-                // An exact observation's native operand is the value it
-                // observes: `x as int32`, not `to_integer(x) as int32`.
-                let native = |operand| ContractExpression::CUnary {
-                    operand: Box::new(match operand {
-                        ContractExpression::Call {
-                            name,
-                            mut arguments,
-                        } if name == "to_integer" && arguments.len() == 1 => arguments.remove(0),
-                        operand => operand,
-                    }),
-                    lowered: CExpression::Cast {
-                        expression: Box::new(CExpression::Value(crate::kernel::int32(0))),
-                        target_type: crate::kernel::CType::Int32,
-                        integer_mode: crate::kernel::CIntegerCastMode::CConversion,
-                        pointee_struct: None,
-                        pointee_volatile: false,
-                        pointee_constant: false,
-                        explicit_qualification: false,
-                    },
-                };
-                ClickProposition::Comparison {
-                    left: native(left),
-                    operator,
-                    right: native(right),
-                }
-            }
-            value => value,
-        };
-        let native_conclusion = |value, proposition| {
-            match crate::kernel::proof::signed_arithmetic::signed_arithmetic_claim(proposition) {
-                Some(claim) => native_result(value, &claim),
-                None => value,
-            }
-        };
         for (node_index, node) in plan.nodes.iter().enumerate() {
             let r = |index: usize| mapped[index];
             let result = || surfaces.get(node_index)?.as_ref().cloned();

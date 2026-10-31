@@ -14246,3 +14246,87 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         "internal captured values must not replace authored proof names"
     );
 }
+
+#[test]
+fn signed_certificate_premise_keeps_native_addition_when_printed() {
+    use crate::kernel::proof::signed_arithmetic::{
+        SignedArithmeticCertificate, SignedArithmeticNode, signed_arithmetic_claim,
+    };
+    let x = Bitvector32Term::Variable(Variable(985_600));
+    let y = Bitvector32Term::Variable(Variable(985_601));
+    let z = Bitvector32Term::Variable(Variable(985_602));
+    let compare = |relation, left, right| {
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
+            true,
+        )
+    };
+    let sum = Bitvector32Term::add_at(MachineIntegerType::Int32, y.clone(), z.clone());
+    let premise = compare(CompareRelation::Equal, x.clone(), sum);
+    let mut facts = vec![premise.clone()];
+    for term in [y.clone(), z.clone()] {
+        facts.push(compare(
+            CompareRelation::LessEqual,
+            Bitvector32Term::Constant(0),
+            term.clone(),
+        ));
+        facts.push(compare(
+            CompareRelation::LessEqual,
+            term,
+            Bitvector32Term::Constant(100),
+        ));
+    }
+    let mut context = pure_identity_fixture();
+    context.values = BTreeMap::from([
+        ("x".into(), CValue::Int32(x)),
+        ("y".into(), CValue::Int32(y)),
+        ("z".into(), CValue::Int32(z)),
+    ]);
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let root = Proof::for_pure_goal(
+        "native premise",
+        &facts,
+        premise.clone(),
+        &context,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+    );
+    let variable = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+    let surface = ClickProposition::Comparison {
+        left: variable("x"),
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::Add(Box::new(variable("y")), Box::new(variable("z"))),
+    };
+    let plan = SignedArithmeticCertificate {
+        nodes: vec![SignedArithmeticNode::Premise {
+            index: 0,
+            result: signed_arithmetic_claim(&premise).unwrap(),
+        }],
+        conclusion: 0,
+    };
+    let certificate = root
+        .signed_plan_to_surface_certificate(&plan, &[(premise.clone(), surface.clone())], &surface)
+        .unwrap();
+    let SignedArithmeticStep::Premise { proposition, .. } = &certificate.nodes[0] else {
+        panic!("expected premise");
+    };
+    let printed = crate::surface::printing::source_click_proposition(proposition);
+    let file = crate::surface::parser::parse_file_items(&format!(
+        "theorem t() {{ requires {printed}; ensures true; }}"
+    ))
+    .unwrap();
+    let reparsed = file.theorem_definitions()[0].requires()[0]
+        .theorem_proposition()
+        .unwrap();
+    let lowered = root
+        .lower_surface_proposition_direct(&reparsed, "printed premise")
+        .unwrap();
+    assert_eq!(lowered, premise, "{printed}");
+}
