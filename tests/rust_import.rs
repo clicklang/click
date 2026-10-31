@@ -2732,6 +2732,67 @@ fn rust_enum_claims_are_checked_and_step_names_the_match_split() {
     );
 }
 
+const SIGNED_MATCH_SIDECAR: &str =
+    include_str!("fixtures/rust-verification/enum-signed-match/e.click");
+
+fn signed_match_project() -> Project {
+    let p = Project::from_fixture("tests/fixtures/rust-verification/enum-signed-match");
+    fs::write(p.root.join("borrow.click"), SIGNED_MATCH_SIDECAR).unwrap();
+    p
+}
+
+#[test]
+fn rust_enum_signed_match_arithmetic_verifies() {
+    let p = signed_match_project();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(SIGNED_MATCH_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn rust_enum_signed_match_wrong_arm_is_an_unproved_goal() {
+    let p = signed_match_project();
+    let prepared = p.prepared().unwrap();
+    let invalid = SIGNED_MATCH_SIDECAR.replace("0i32 - x", "1i32 - x");
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("the wrong arm must fail")
+        .to_string();
+    assert!(!error.contains("could not lower"), "{error}");
+    assert!(error.contains("goal:"), "{error}");
+}
+
+#[test]
+fn rust_enum_signed_match_explicit_split_verifies() {
+    let p = signed_match_project();
+    let prepared = p.prepared().unwrap();
+    let explicit = format!(
+        "{} by {{ match amount {{ Amount::Credit(x) => {{ step_until(function.exit); solve(); }}, Amount::Debit(x) => {{ step_until(function.exit); have result == -1i32 * x by {{ solve(); }} have match amount {{ Amount::Credit(y) => y as i32, Amount::Debit(y) => 0i32 - y }} == 0i32 - x by {{ rewrite(amount == Amount::Debit(x)); normalize(); }} solve(); }} }} }}",
+        SIGNED_MATCH_SIDECAR.trim()
+    );
+    C0VerificationSession::new_program_prepared(&explicit, &prepared)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+#[ignore = "nightly: checked proof expansion"]
+fn rust_enum_signed_match_expansion_checks_without_search() {
+    let p = signed_match_project();
+    let prepared = p.prepared().unwrap();
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        SIGNED_MATCH_SIDECAR,
+        &prepared,
+        "value.ensures_0",
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    click::surface::without_implicit_auto_for_claim("value.ensures_0", || {
+        C0VerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
 #[cfg(not(feature = "fast-gate"))]
 /// The implicit tail's proof `match`, expanded, verifies as written: its arms
 /// cite the requirement each arm instantiates at its constructor.

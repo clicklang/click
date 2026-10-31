@@ -95,3 +95,44 @@ fn algebraic_integer_match_scales_with_nested_depth() {
         previous = Some(work);
     }
 }
+
+#[test]
+fn signed_match_definedness_does_not_scan_constructor_facts() {
+    for related in [false, true] {
+        let mut work = Vec::new();
+        for size in [8u64, 16, 32, 64] {
+            let mut context = PureFactContext::new();
+            let constructor = maybe_constructor(Some(int32(7)));
+            for index in 0..size {
+                let right = if related && index > 0 {
+                    maybe_variable(Variable(1_000 + index - 1))
+                } else {
+                    constructor.clone()
+                };
+                context = context.assume_proposition(Proposition::Equal(
+                    Term::Algebraic(maybe_variable(Variable(1_000 + index))),
+                    Term::Algebraic(right),
+                ));
+            }
+            let expression = signed_value_or_match(Variable(1_000 + size - 1));
+            let (paths, measured) = crate::instrumentation::measure_deterministic_work(|| {
+                evaluate_spec_expression_paths_with_loop_entry_in(
+                    &CState::new(),
+                    &expression,
+                    None,
+                    &context,
+                    &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+                )
+                .unwrap()
+            });
+            assert_eq!(paths.len(), 1);
+            assert!(!paths[0].obligations.is_empty());
+            work.push(measured);
+        }
+        assert!(
+            work.windows(2)
+                .all(|pair| pair[1] <= pair[0] + pair[0] / 4 + 16),
+            "related={related}, work={work:?}"
+        );
+    }
+}

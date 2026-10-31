@@ -796,6 +796,15 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    /// The loop clause currently being read, including its phase proofs.
+    /// Source-aware parsing can reject unbound values before proof execution.
+    loop_name_context: Option<String>,
+    /// Binders declared in quantified goals and range bodies. This set only
+    /// recognizes their spelling; lowering and proof checking still enforce
+    /// their availability at the point of use.
+    loop_proof_value_names: crate::persistent::PersistentSet<String>,
+    /// A predicate goal may introduce its declared quantifiers when unfolded.
+    loop_predicate_bodies: BTreeMap<String, ClickProposition>,
     resource_parameters: BTreeMap<String, usize>,
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
@@ -1557,6 +1566,9 @@ impl Parser {
             struct_layouts,
             rust_enum_types: BTreeMap::new(),
             union_layouts,
+            loop_name_context: None,
+            loop_proof_value_names: Default::default(),
+            loop_predicate_bodies: BTreeMap::new(),
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
@@ -2773,6 +2785,8 @@ impl Parser {
         self.names
             .replace(NameKind::TypeParameter, previous_type_parameters);
         self.expect(Token::RBrace)?;
+        self.loop_predicate_bodies
+            .insert(name.clone(), body.clone());
         Ok(PredicateDefinition {
             name,
             type_parameters,
@@ -5315,12 +5329,31 @@ impl Parser {
         Ok(())
     }
 
-    /// A C variable named in a contract, or the length a slice parameter's
-    /// `name.len()` denotes.
+    /// Refuse an unbound loop value only when the frontend supplied the
+    /// function's complete object-name table.
+    fn refuse_unknown_loop_value(&self, name: &str) -> Result<(), ClickError> {
+        if let Some(context) = &self.loop_name_context
+            && self.names.c_object_names.is_some()
+            // A loop's returning arm may close the function's postcondition.
+            // Execution checking decides when this built-in value exists.
+            && name != "result"
+            && !self.names.is_bound(name)
+            && !self.quantifier_binders.iter().any(|bound| bound == name)
+            && !self.loop_proof_value_names.contains(name)
+        {
+            return Err(self
+                .error(format!("unknown name `{name}` in {context}"))
+                .with_kind(ClickErrorKind::Type));
+        }
+        Ok(())
+    }
+
+    /// A C variable, or the length a slice parameter's `name.len()` denotes.
     #[inline(never)]
-    fn c_variable_expression(&mut self, name: String) -> ContractExpression {
+    fn c_variable_expression(&mut self, name: String) -> Result<ContractExpression, ClickError> {
+        self.refuse_unknown_loop_value(&name)?;
         let name = self.take_rust_slice_len(&name).unwrap_or(name);
-        ContractExpression::CFragment(CExpression::Variable(name))
+        Ok(ContractExpression::CFragment(CExpression::Variable(name)))
     }
 
     fn parse_parameters(&mut self) -> Result<ParsedParameters, ClickError> {
@@ -8229,6 +8262,8 @@ impl Parser {
         self.expect(Token::Pipe)?;
         let item = self.expect_ident("range item name")?;
         self.expect(Token::Pipe)?;
+        let binder_scope = self.loop_proof_value_names.clone();
+        self.loop_proof_value_names = self.loop_proof_value_names.with_value(item.clone());
         let body = if self.peek() == Some(&Token::LBrace) {
             self.position += 1;
             let body = self.parse_proposition()?;
@@ -8239,6 +8274,7 @@ impl Parser {
         };
         self.expect(Token::RParen)?;
 
+        self.loop_proof_value_names = binder_scope;
         match method.as_str() {
             "all" => Ok(ClickProposition::RangeAll {
                 start,
@@ -8374,10 +8410,12 @@ impl Parser {
         self.expect_ident_spelling("by")?;
         let scope = self.names.scope();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
+        let value_scope = self.loop_proof_value_names.clone();
         let result = self.parse_by_clause_body();
         self.names.end(scope);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
+        self.loop_proof_value_names = value_scope;
         // A `;` after a closing brace ends nothing; accept it after a block
         // proof as everywhere else, though it is never required.
         if result.is_ok()
@@ -8439,6 +8477,7 @@ impl Parser {
             )));
         }
         self.names.hide_for_proof_binder(name, resource);
+        self.loop_proof_value_names = self.loop_proof_value_names.with_value(name.to_string());
         Ok(())
     }
 
@@ -8510,8 +8549,79 @@ impl Parser {
         }
     }
 
-    fn parse_loop_phase_proof(&mut self) -> Result<SourceProof, ClickError> {
-        let proof = self.parse_by_clause()?;
+    fn remember_loop_goal_binders(&mut self, proposition: &ClickProposition) {
+        if self.loop_name_context.is_none() {
+            return;
+        }
+        let mut pending = vec![proposition];
+        let mut predicates = BTreeSet::new();
+        while let Some(proposition) = pending.pop() {
+            match proposition {
+                ClickProposition::PredicateCall { name, .. } => {
+                    if predicates.insert(name)
+                        && let Some(body) = self.loop_predicate_bodies.get(name)
+                    {
+                        pending.push(body);
+                    }
+                }
+                ClickProposition::ForAll {
+                    name,
+                    written_name,
+                    body,
+                    ..
+                }
+                | ClickProposition::Exists {
+                    name,
+                    written_name,
+                    body,
+                    ..
+                } => {
+                    self.loop_proof_value_names = self
+                        .loop_proof_value_names
+                        .with_value(written_name.as_ref().unwrap_or(name).clone());
+                    pending.push(body);
+                }
+                ClickProposition::RangeAll {
+                    item,
+                    written_item,
+                    body,
+                    ..
+                }
+                | ClickProposition::RangeAny {
+                    item,
+                    written_item,
+                    body,
+                    ..
+                } => {
+                    self.loop_proof_value_names = self
+                        .loop_proof_value_names
+                        .with_value(written_item.as_ref().unwrap_or(item).clone());
+                    pending.push(body);
+                }
+                ClickProposition::And(left, right)
+                | ClickProposition::Or(left, right)
+                | ClickProposition::Implies(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                ClickProposition::Not(body) => pending.push(body),
+                ClickProposition::At { proposition, .. } => pending.push(proposition),
+                _ => {}
+            }
+        }
+    }
+
+    fn parse_loop_phase_proof(
+        &mut self,
+        items: &[StructuralItem],
+    ) -> Result<SourceProof, ClickError> {
+        let binder_scope = self.loop_proof_value_names.clone();
+        for item in items {
+            self.remember_loop_goal_binders(&item.claim);
+        }
+        let proof = self.parse_by_clause();
+        self.loop_proof_value_names = binder_scope;
+        let proof = proof?;
         // A lone phase `solve()` owns the generated execution and closure steps,
         // with either brace spelling. Keep it out of per-step source capture.
         if matches!(&proof, SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::Solve]))
@@ -9248,7 +9358,11 @@ impl Parser {
         }
         // `have P by auto();` proves the fact where it is stated: with no C
         // to run toward the fact, `auto` is `solve`.
-        let proof = self.parse_by_clause()?;
+        let binder_scope = self.loop_proof_value_names.clone();
+        self.remember_loop_goal_binders(&proposition);
+        let proof = self.parse_by_clause();
+        self.loop_proof_value_names = binder_scope;
+        let proof = proof?;
         self.skip_redundant_semicolon();
         // `have P;`, `have P by solve();` and `have P by { solve(); }` are
         // one proof step. They are one syntax tree too, so every
@@ -9354,6 +9468,7 @@ impl Parser {
                 // from the `p->word` the same arm's `fact p == id` identifies
                 // it with.
                 let saved_arm_binding_types = std::mem::take(&mut self.names.arm_binding_types);
+                let value_scope = self.loop_proof_value_names.clone();
                 for binding in &bindings {
                     self.bind_proof_name(binding, false)?;
                 }
@@ -9361,6 +9476,7 @@ impl Parser {
                 let tactics = self.parse_possibly_empty_tactic_block();
                 self.names.end(scope);
                 self.names.arm_binding_types = saved_arm_binding_types;
+                self.loop_proof_value_names = value_scope;
                 arms.push(ProofInductionArm {
                     type_name,
                     variant,
@@ -9451,7 +9567,12 @@ impl Parser {
             let mut decreases = None;
             let mut initialize_proof = None;
             let mut preserve_proof = None;
+            let enclosing_name_context = self.loop_name_context.take();
             while self.peek() != Some(&Token::RBrace) {
+                self.loop_name_context = Some(format!(
+                    "loop {} clause",
+                    self.peek_ident().unwrap_or("specification")
+                ));
                 // A loop declares resources exactly as a contract does. They
                 // bound the body's authority and the loop's write footprint,
                 // so they are region declarations rather than proof items.
@@ -9530,7 +9651,7 @@ impl Parser {
                     if initialize_proof.is_some() {
                         return Err(self.error("duplicate `initialize` proof"));
                     }
-                    initialize_proof = Some(self.parse_loop_phase_proof()?);
+                    initialize_proof = Some(self.parse_loop_phase_proof(&items)?);
                     continue;
                 }
                 if self.peek_ident() == Some("preserve") {
@@ -9539,7 +9660,7 @@ impl Parser {
                     if preserve_proof.is_some() {
                         return Err(self.error("duplicate `preserve` proof"));
                     }
-                    preserve_proof = Some(self.parse_loop_phase_proof()?);
+                    preserve_proof = Some(self.parse_loop_phase_proof(&items)?);
                     continue;
                 }
                 items.extend(self.parse_region_proof_items()?);
@@ -9550,6 +9671,7 @@ impl Parser {
                 return Err(self
                     .error("`loop` block must contain at least one item or a `decreases` clause"));
             }
+            self.loop_name_context = enclosing_name_context;
             return Ok(ProofTactic::Loop(StructuralClause::from(
                 StructuralClauseData {
                     // The actual loop identity is bound from the execution
@@ -10202,7 +10324,10 @@ impl Parser {
                 self.expect(Token::LBrace)?;
                 let else_open = self.positions[self.position - 1].clone();
                 let mut else_starts = Vec::new();
-                scopes.push((self.names.scope(), self.names.take(NameKind::ProofBinder)));
+                let scope = self.names.scope();
+                let names = self.names.take(NameKind::ProofBinder);
+                let value_scope = self.loop_proof_value_names.clone();
+                scopes.push((scope, names, value_scope));
                 let mut else_tactics = Vec::new();
                 while self.peek() != Some(&Token::RBrace) && self.peek_ident() != Some("if") {
                     else_starts.push(self.positions[self.position].clone());
@@ -10244,9 +10369,10 @@ impl Parser {
                 }
                 self.record_proof_block(else_open, else_starts);
                 self.expect(Token::RBrace)?;
-                let (scope, names) = scopes.pop().expect("an else block owns a scope");
+                let (scope, names, value_scope) = scopes.pop().expect("an else block owns a scope");
                 self.names.end(scope);
                 self.names.replace(NameKind::ProofBinder, names);
+                self.loop_proof_value_names = value_scope;
                 self.skip_redundant_semicolon();
                 nested = Some(ProofTactic::If(ProofIf {
                     condition,
@@ -10258,9 +10384,10 @@ impl Parser {
             Ok(nested.expect("an if spine has a root"))
         })();
         // Error exits restore exactly the same bindings as a recursive block.
-        while let Some((scope, names)) = scopes.pop() {
+        while let Some((scope, names, value_scope)) = scopes.pop() {
             self.names.end(scope);
             self.names.replace(NameKind::ProofBinder, names);
+            self.loop_proof_value_names = value_scope;
         }
         result
     }
@@ -10437,10 +10564,12 @@ impl Parser {
     fn parse_tactics_until_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         let scope = self.names.scope();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
+        let value_scope = self.loop_proof_value_names.clone();
         let result = self.parse_tactic_list_to_rbrace();
         self.names.end(scope);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
+        self.loop_proof_value_names = value_scope;
         result
     }
 
@@ -14422,6 +14551,7 @@ impl Parser {
         {
             self.position += 2;
             let name = self.expect_ident("C binding name")?;
+            self.refuse_unknown_loop_value(&name)?;
             self.expect(Token::RParen)?;
             return Ok(ContractExpression::CBinding(name));
         }
@@ -14603,7 +14733,7 @@ impl Parser {
                         }
                         None => match self.bool_literal_spelling(&name) {
                             Some(value) => Ok(bool_literal(value)),
-                            None => Ok(self.c_variable_expression(name)),
+                            None => self.c_variable_expression(name),
                         },
                     }
                 }
@@ -15059,6 +15189,9 @@ impl Parser {
         self.expect(Token::Comma)?;
         let item = self.expect_ident("fold item name")?;
         self.expect(Token::Pipe)?;
+        let binder_scope = self.loop_proof_value_names.clone();
+        self.loop_proof_value_names = self.loop_proof_value_names.with_value(accumulator.clone());
+        self.loop_proof_value_names = self.loop_proof_value_names.with_value(item.clone());
         let body = if self.peek() == Some(&Token::LBrace) {
             self.position += 1;
             let body = self.parse_contract_expression()?;
@@ -15069,6 +15202,7 @@ impl Parser {
         };
         self.expect(Token::RParen)?;
 
+        self.loop_proof_value_names = binder_scope;
         Ok(ContractExpression::RangeFold {
             start: Box::new(start),
             end: Box::new(end),
@@ -15290,6 +15424,7 @@ impl Parser {
                 })
             }
             Some(Token::Ident(name)) => {
+                self.refuse_unknown_loop_value(&name)?;
                 let name = self.take_rust_slice_len(&name).unwrap_or(name);
                 Ok(C0Expression::Variable(name))
             }
@@ -16668,5 +16803,96 @@ mod tactic_classification_tests {
             }
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod loop_name_tests {
+    use super::*;
+
+    fn parse_loop(body: &str) -> Result<ClickFile, ClickError> {
+        let source = format!(
+            "predicate reflexive() {{ forall (introduced: int32) {{ introduced == introduced }} }} predicate alias() {{ reflexive() }} int32 lp(int32 n, int32* p) {{ ensures result == n; }} by {{ loop {{ {body} }} }}"
+        );
+        let mut layouts = ProgramLayouts::default();
+        layouts.c_object_names.insert(
+            "lp".to_string(),
+            std::sync::Arc::new(["n", "p", "i"].map(str::to_string).into()),
+        );
+        Parser::with_program_layouts(&source, layouts, None)?.parse_file_items()
+    }
+
+    #[test]
+    fn loop_unknown_names_are_type_errors_before_proof_execution() {
+        for (body, clause) in [
+            ("invariant bogus <= n;", "invariant"),
+            ("invariant bogus == bogus;", "invariant"),
+            ("invariant c(bogus) == n;", "invariant"),
+            (
+                "invariant (0..n).all(|bogus| { bogus == bogus }); invariant bogus == 0;",
+                "invariant",
+            ),
+            ("decreases bogus;", "decreases"),
+            ("views p[0..bogus];", "views"),
+            ("views bogus[0..1];", "views"),
+            ("owns p[0..bogus];", "owns"),
+            ("owns bogus[0..1];", "owns"),
+            (
+                "invariant i <= n; preserve by { have bogus == i; }",
+                "preserve",
+            ),
+            (
+                "invariant i <= n; initialize by { have bogus == i; }",
+                "initialize",
+            ),
+            ("if bogus == 0 { views p[0..1]; }", "if"),
+            (
+                "invariant i <= n; preserve by { if i == 0 { let { result: bogus } = step(); } else { step(); } have bogus == n; }",
+                "preserve",
+            ),
+        ] {
+            let error = parse_loop(body).unwrap_err();
+            assert_eq!(error.kind(), ClickErrorKind::Type, "{body}: {error}");
+            assert!(
+                error
+                    .message()
+                    .contains(&format!("unknown name `bogus` in loop {clause} clause")),
+                "{body}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn loop_names_keep_c_locals_quantifiers_and_phase_binders() {
+        parse_loop("decreases n - i; invariant forall (k: int32) { k == k }; invariant i <= n; views p[0..n]; preserve by { have forall (saved: int32) { saved == saved } by { intro(); have saved == saved; } }").unwrap();
+    }
+
+    #[test]
+    fn loop_range_binders_and_invariant_proof_binders_are_recognized() {
+        parse_loop("invariant (0..n).all(|k| { k >= 0 }); invariant (0..n).fold(0, |acc, k| { acc + k }) >= 0; invariant forall (v: int32) { v == v }; preserve by { intro(); have v == v; }").unwrap();
+    }
+
+    #[test]
+    fn loop_phase_proofs_recognize_binders_from_predicate_goals() {
+        parse_loop("invariant alias(); initialize by { intro(); have introduced == introduced; } preserve by { have alias() by { intro(); have introduced == introduced; } }").unwrap();
+    }
+
+    #[test]
+    fn loop_proof_values_remain_visible_in_nested_blocks() {
+        parse_loop("invariant i <= n; preserve by { let { result: saved } = step(); if i == 0 { have forall (k: int32) { saved == saved } by { intro(); have saved == saved; } } else { have saved == n; } }").unwrap();
+    }
+
+    #[test]
+    fn nested_loop_restores_the_enclosing_phase_name_context() {
+        let error = parse_loop(
+            "invariant i <= n; preserve by { loop { invariant i <= n; } have bogus == i; }",
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .message()
+                .contains("unknown name `bogus` in loop preserve clause"),
+            "{error}"
+        );
     }
 }
