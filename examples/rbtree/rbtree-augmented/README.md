@@ -458,6 +458,13 @@ then proves the result count-valid given the two recomputed child counts.
 The caller no longer needs to supply the expanded whole-tree sum separately.
 These lemmas do not establish the C callbacks’ count equations or memory effects.
 
+`rbtree_size_double_context_model.click` lifts both double-rotation results
+through an arbitrary `SizedContext`. Four theorems preserve whole-tree cached
+count validity and in-order contents. The count proofs use the unchanged
+subtree root count to retain every ancestor cache; the order proofs compose
+the local result with the existing context transport theorem. These remain
+pure model guarantees, independent of the pending C pointer proof.
+
 `rbtree_size_valid_value.click` supplies explicit cached-count lemmas: valid
 children and the root sum establish a valid node, and a recursively valid
 cached count equals its abstract subtree size and is nonnegative. These pure
