@@ -1562,7 +1562,11 @@ that matches on `s`, reduced at that constructor, so a requirement
 `match s { Shape::Circle(r) => r, ... } < 4294967295u32` becomes the citable
 `s_circle_0 < 4294967295u32` for the `+ 1` panic check. A written proof
 `match s { Shape::Circle(r) => { ... }, ... }` placed before the C does the
-same with its own binders.
+same with its own binders. A scalar spec `match` retains its symbolic term
+while its scrutinee is symbolic, even when the facts identify a constructor.
+Signed arithmetic in an arm contributes a definedness obligation guarded by
+that constructor, universally quantified over its payloads. Only a selected
+arm owes that obligation; checking reduces the term using the branch facts.
 
 Not yet supported: generic crate enums and options other than the
 [scalar options](#option-values) and the `Option<Box<R>>` above, enums declared in

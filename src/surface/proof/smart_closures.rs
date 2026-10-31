@@ -2827,10 +2827,12 @@ impl<'a> Proof<'a> {
         self.try_solve_closure()
     }
 
-    /// A `solve` nested inside the connected-fact search, closing a goal it
-    /// rewrote, skips them too: that search runs once arithmetic has missed.
+    /// Arithmetic subgoals do not recursively select the same premises.
+    /// Connected rewrites only retry arithmetic when the original comparison
+    /// has a scalar match operand: selecting its arm exposes new arithmetic.
     fn try_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
-        if SolveFallbackScope::active(SolveFallback::ConnectedFacts)
+        if (SolveFallbackScope::active(SolveFallback::ConnectedFacts)
+            && !SolveFallbackScope::active(SolveFallback::MatchArithmetic))
             || SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal)
         {
             return Ok(None);
@@ -2858,7 +2860,8 @@ impl<'a> Proof<'a> {
     /// is known only after the reading is proved, and a native comparison
     /// through its `Integer` reading.
     fn try_late_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
-        if SolveFallbackScope::active(SolveFallback::ConnectedFacts)
+        if (SolveFallbackScope::active(SolveFallback::ConnectedFacts)
+            && !SolveFallbackScope::active(SolveFallback::MatchArithmetic))
             || SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal)
         {
             return Ok(None);
@@ -4096,6 +4099,25 @@ impl<'a> Proof<'a> {
         let Some(_scope) = SolveFallbackScope::enter(SolveFallback::ConnectedFacts) else {
             return Ok(None);
         };
+        // A scalar match was opaque to arithmetic before its constructor
+        // rewrite. Only that shape permits arithmetic to restart inside the
+        // connected search; general equality chains must not repeat all its
+        // failed planners at every rewritten goal.
+        let scalar_match = match self.goal() {
+            Some(Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), _)) => {
+                matches!(
+                    left.as_ref(),
+                    crate::kernel::IntegerTerm::AlgebraicMatch { .. }
+                ) || matches!(
+                    right.as_ref(),
+                    crate::kernel::IntegerTerm::AlgebraicMatch { .. }
+                )
+            }
+            _ => false,
+        };
+        let _match_arithmetic = scalar_match
+            .then(|| SolveFallbackScope::enter(SolveFallback::MatchArithmetic))
+            .flatten();
         // First: it costs little when it does not apply.
         if let Some(closed) = self.try_definition_condition_closure()? {
             return Ok(Some(closed));
@@ -11773,6 +11795,7 @@ enum SolveFallback {
     ConnectedFacts = 4,
     ArithmeticSubgoal = 8,
     StoredValue = 16,
+    MatchArithmetic = 32,
 }
 
 /// A candidate can try the other fallback and descend through logical
