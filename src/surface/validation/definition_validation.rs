@@ -2224,7 +2224,9 @@ fn collect_resource_fact_reads_from_resource_subject(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match resource {
-        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => Ok(()),
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => collect_resource_fact_reads_from_contract_segment(
             segment,
             predicate_definitions,

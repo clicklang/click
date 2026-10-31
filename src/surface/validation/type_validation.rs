@@ -2330,7 +2330,9 @@ fn validate_resource_subject_expression_types(
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
-        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => Ok(()),
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => {
             validate_contract_segment_expression_types(segment, variables, click_functions, context)
         }
@@ -4330,7 +4332,9 @@ fn validate_resource_subject_calls(
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
-        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => Ok(()),
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => {
             validate_contract_segment_calls(segment, click_functions, context)
         }

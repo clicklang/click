@@ -30,29 +30,31 @@ void copy_pos(struct cursor *target, struct cursor *source) {
     mark before;
     step();
     mark after;
+    have separate(statement(0).footprint, memory(source->data)) by {
+        normalize() using { separate(memory(target->pos), memory(source->data)); };
+    }
     have source->data == at(before, source->data) by {
         transport_certificate {
-            premise 0: changes_only(before, after, memory(target->pos))
-                => changes_only(before, after, memory(target->pos));
-            premise 1: at(before, separate(memory(target->pos), memory(source->data)))
-                => at(before, separate(memory(target->pos), memory(source->data)));
-            preserve 0, 1 => source->data == at(before, source->data);
-            conclusion 2;
+            premise 0: separate(statement(0).footprint, memory(source->data))
+                => separate(statement(0).footprint, memory(source->data));
+            preserve 0 => source->data == at(before, source->data);
+            conclusion 1;
         }
     }
     step();
     mark final;
+    have separate(statement(1).footprint, memory(source->data)) by {
+        normalize() using { separate(memory(target->pos), memory(source->data)); };
+    }
     have source->data == at(before, source->data) by {
         transport_certificate {
-            premise 0: changes_only(after, final, memory(target->pos))
-                => changes_only(after, final, memory(target->pos));
-            premise 1: at(before, separate(memory(target->pos), memory(source->data)))
-                => at(before, separate(memory(target->pos), memory(source->data)));
-            preserve 0, 1 => source->data == at(after, source->data);
-            premise 3: at(after, source->data) == at(before, source->data)
+            premise 0: separate(statement(1).footprint, memory(source->data))
+                => separate(statement(1).footprint, memory(source->data));
+            preserve 0 => source->data == at(after, source->data);
+            premise 2: at(after, source->data) == at(before, source->data)
                 => at(after, source->data) == at(before, source->data);
-            transitive 2, 3 => source->data == at(before, source->data);
-            conclusion 4;
+            transitive 1, 2 => source->data == at(before, source->data);
+            conclusion 3;
         }
     }
     step();

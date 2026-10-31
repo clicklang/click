@@ -27,6 +27,21 @@ void dispose_beside(int32* data, int32 n, int32* r) {
     ensures r[0] == old(r[0]);
 } by {
     unfold(cell(data, n));
+    step();
+    have separate(statement(0).footprint, memory(r[0])) by {
+        normalize() using {
+            separate(memory(data[0..n]), memory(r[0..1]));
+        };
+    }
+    have r[0] == at(statement(0).entry, r[0]) by {
+        transport_certificate {
+            premise 0: separate(statement(0).footprint, memory(r[0]))
+                => separate(statement(0).footprint, memory(r[0]));
+            preserve 0 => r[0] == at(statement(0).entry, r[0]);
+            conclusion 1;
+        }
+    }
+    step();
 }
 ```
 

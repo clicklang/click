@@ -25,8 +25,8 @@ fn transport_certificate_preserves_pointer_read() {
     without_implicit_auto(|| verify_c0_sources(&scalar_source, &sources)).unwrap();
     for (from, to) in [
         ("memory(target->pos))", "memory(target->len))"),
-        ("preserve 0, 1", "preserve 1, 0"),
-        ("conclusion 2", "conclusion 1"),
+        ("preserve 0 =>", "preserve 1 =>"),
+        ("conclusion 1", "conclusion 0"),
     ] {
         let invalid = source.replace(from, to);
         assert_ne!(invalid, source);
@@ -107,5 +107,93 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
         "#
         );
         without_implicit_auto(|| verify_c0_sources(&source, &[("wide.c", &c)])).unwrap();
+    }
+}
+
+#[test]
+fn region_footprint_refuses_unrecorded_memory_changes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let before = CState::new();
+    let after = before.clone().with_memory(before.memory().clone().store(
+        crate::kernel::Pointer::symbolic(Variable(8_390_200)),
+        CValue::Int32(7u32.into()),
+    ));
+    let mut snapshots = RecordedSnapshots::new();
+    snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Region(0),
+            kind: ProgramPointKind::Entry,
+        },
+        before,
+    );
+    snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Region(0),
+            kind: ProgramPointKind::Exit,
+        },
+        after,
+    );
+    assert!(snapshots.footprint(&CodeRegionRef::Region(0)).is_err());
+}
+
+#[test]
+fn region_footprint_identity_survives_unrelated_snapshots() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = CState::new();
+    let mut snapshots = RecordedSnapshots::new();
+    snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Region(0),
+            kind: ProgramPointKind::Entry,
+        },
+        state.clone(),
+    );
+    snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Region(0),
+            kind: ProgramPointKind::Exit,
+        },
+        state.clone(),
+    );
+    let first = snapshots.footprint(&CodeRegionRef::Region(0)).unwrap();
+    snapshots.insert(
+        ProgramPointRef {
+            region: CodeRegionRef::Region(1),
+            kind: ProgramPointKind::Entry,
+        },
+        state,
+    );
+    assert_eq!(
+        first,
+        snapshots.footprint(&CodeRegionRef::Region(0)).unwrap()
+    );
+}
+
+#[test]
+fn region_footprint_free_and_call_certificates_expand_without_search() {
+    for (fixture, claim) in [
+        (
+            "mdtests/a_cell_beside_a_freed_allocation_is_framed.md",
+            "dispose_beside",
+        ),
+        ("mdtests/region_footprint_call.md", "beside_call"),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+        let expanded =
+            expand_c0_claim_source(&source, &sources, claim, CProofClaim::Grouped).unwrap();
+        assert!(expanded.contains("transport_certificate"));
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        if claim == "beside_call" {
+            // The contract still supplies this separation. A selected proof
+            // must not silently find it in the ambient context.
+            let missing = source.replace("            separate(memory(*q), memory(*r));\n", "");
+            assert_ne!(missing, source);
+            assert!(verify_c0_sources(&missing, &sources).is_err());
+        }
     }
 }

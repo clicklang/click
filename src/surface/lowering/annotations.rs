@@ -7506,6 +7506,11 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecResource, String> {
         match resource {
+            ResourceSubject::Footprint(region) => Ok(SpecResource::Value(
+                self.snapshots
+                    .ok_or("region footprint requires execution snapshots")?
+                    .footprint(region)?,
+            )),
             ResourceSubject::Parameter { index, .. } => Ok(SpecResource::Value(
                 crate::kernel::CResource::Parameter(crate::kernel::Variable(*index as u64)),
             )),

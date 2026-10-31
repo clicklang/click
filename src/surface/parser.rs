@@ -6355,6 +6355,15 @@ impl Parser {
             return Ok(ResourceSubject::Memory(segment));
         }
 
+        let saved = self.position;
+        if let Ok(region) = self.parse_code_region_ref()
+            && self.peek() == Some(&Token::Dot)
+            && self.peek_next() == Some(&Token::Ident("footprint".into()))
+        {
+            self.position += 2;
+            return Ok(ResourceSubject::Footprint(region));
+        }
+        self.position = saved;
         let (name, arguments) = self.parse_call_arguments("resource subject name")?;
         Ok(ResourceSubject::Declared {
             kind: ResourceKind::Token,
@@ -10603,6 +10612,17 @@ impl Parser {
                         result,
                     }
                 }
+                "preserve" if self.peek() == Some(&Token::FatArrow) => {
+                    if first >= nodes.len() {
+                        return Err(self.error("transport references must name earlier nodes"));
+                    }
+                    self.position += 1;
+                    TransportCertificateNode::Preserve {
+                        effect: None,
+                        separation: first,
+                        result: self.parse_proposition()?,
+                    }
+                }
                 "preserve" | "transitive" => {
                     self.expect(Token::Comma)?;
                     let second = self.expect_index("transport node reference")?;
@@ -10613,7 +10633,7 @@ impl Parser {
                     let result = self.parse_proposition()?;
                     if keyword == "preserve" {
                         TransportCertificateNode::Preserve {
-                            effect: first,
+                            effect: Some(first),
                             separation: second,
                             result,
                         }
@@ -14161,6 +14181,18 @@ impl Parser {
     }
 
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        let start = self.position;
+        if let Ok(region) = self.parse_code_region_ref() {
+            if self.peek() == Some(&Token::Dot)
+                && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "footprint")
+            {
+                self.position += 2;
+                return Ok(ContractExpression::Resource(Box::new(
+                    ResourceSubject::Footprint(region),
+                )));
+            }
+        }
+        self.position = start;
         // A proof may need the previous binding of a name shadowed by an
         // introduced quantifier. Keep the qualification on the variable name
         // until the proof scope substitutes its checked binder identity.

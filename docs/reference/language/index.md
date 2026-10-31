@@ -3607,6 +3607,15 @@ name is available after the allocation step and survives reassignment and
 to freed memory (`mdtests/an_allocation_result_keeps_its_name_after_reassignment.md`,
 `mdtests/an_allocation_name_does_not_keep_freed_memory_readable.md`).
 
+A recorded region exposes `R.footprint`, a resource descriptor for its effects:
+writes, mutable call resources, and allocation lifetime changes. It grants no
+ownership. `separate(R.footprint, B)` is the preservation premise consumed by
+[`transport_certificate`](../tactics/index.md#transport-certificates). Effects
+are recorded during execution; this property does not reconstruct history.
+The current simple separation rule handles one checked transition. Longer
+transports use individual transition footprints and explicit equality composition;
+not every branch/loop boundary currently has a complete recorded footprint.
+
 Click writes points the same way. A diagnostic, a suggested premise or an
 expansion names a recorded point by its statement: `.entry` or `.exit` when
 the point is one, and the statement's `.call(f, j)` or `.region(j)` otherwise.

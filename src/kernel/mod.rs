@@ -6,6 +6,8 @@
 //! directly.
 //!
 pub(crate) mod api;
+mod region_footprint;
+pub use region_footprint::RegionFootprint;
 mod source_access;
 mod source_loans;
 pub use source_access::{CStatementAssignSource, CStatementStoreSource};

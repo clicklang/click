@@ -2081,6 +2081,9 @@ pub(in crate::surface) fn describe_iterated_memory(
 
 pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
     match resource {
+        ResourceSubject::Footprint(region) => {
+            format!("{}.footprint", describe_code_region_ref(region))
+        }
         ResourceSubject::Parameter { name, .. } => name.clone(),
         ResourceSubject::Captured { source, .. } => describe_resource_subject(source),
         ResourceSubject::Memory(segment) => {

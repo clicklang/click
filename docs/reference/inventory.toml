@@ -3640,3 +3640,7 @@ path = "reference/tactics/index.md#transport-certificates"
 [[item]]
 id = "tactic-form.transport-certificate"
 path = "reference/tactics/index.md#transport-certificates"
+
+[[item]]
+id = "language.region-footprint"
+path = "reference/language/index.md#at"

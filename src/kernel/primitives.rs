@@ -9835,6 +9835,7 @@ pub type ResourceArguments = std::sync::Arc<[AlgebraicValue]>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResource {
+    Footprint(Arc<super::RegionFootprint>),
     /// Rigid descriptor for a resource-valued theorem parameter.
     Parameter(Variable),
     Memory(CMemoryRange),
@@ -9972,7 +9973,7 @@ impl CResource {
     /// spelling: the kernel has no source names for those.
     pub(crate) fn diagnostic_name(&self) -> &str {
         match self {
-            CResource::Parameter(_) => "resource parameter",
+            CResource::Footprint(_) | CResource::Parameter(_) => "resource parameter",
             CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
             CResource::Memory(_) => "memory",
             CResource::PopulationAuthority(_) => "population authority",

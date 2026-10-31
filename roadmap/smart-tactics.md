@@ -2,10 +2,10 @@
 
 Priority: P1.
 
-Soundness: not soundness. This item concerns checking cost and separation of
-search from checking. No false acceptance is known. Proof repairs must preserve
-the original C and claims; preserving all automatic proof coverage is not a
-requirement.
+This item concerns checking cost and separation of search from checking.
+Removing a walk must preserve safety refusals: an inconclusive bounded query
+is not evidence of preservation. Proof repairs must preserve the original C
+and claims; preserving all automatic proof coverage is not a requirement.
 
 ## Scope
 
@@ -60,11 +60,27 @@ Memory-history traversal and frame-query consolidation are tracked in
 fixes there. Before removing the pointer-history and cell-source fallback
 walks, complete the explicit-certificate proof repairs. The removal experiment
 still affects ordinary fixtures, including negative fixtures that refuse
-earlier. Remaining proof repairs include establishing explicit separation for
-distinct indexed cells of one array. Use the producer's recorded typed reads in
-explicit certificates; do not rebuild pointer values or search memory history
-to apply a preservation node. Keep these separate from the compact-run experiment above. Rerun the
-ordinary corpus with the walks actually disabled before landing removal.
+earlier. Structural read equality must require positive preservation evidence:
+an undecided bounded history query must not authorize equality merely because
+snapshot representations match. Keep the freed-pointee rejection regression
+when changing this boundary.
+
+Complete the `.footprint` extension before landing the removal. A recorded
+statement footprint and explicit separation feed a single `preserve` node;
+retain the free-positive and freed-cell-negative fixtures. Finish producer
+integration for joined branches and loops without deriving effects from history,
+and add explicit composition before supporting whole-region separation checks.
+Simple normalization must not scan a region's transition sequence. Extend the
+observation rule beyond memory only with a concrete proof need and an explicit
+primitive design.
+
+Use the producer's recorded typed reads in explicit certificates; do not rebuild
+pointer values or search memory history to apply a preservation node. Keep these
+repairs separate from the compact-run experiment above. Rerun the ordinary
+corpus, scaling controls, and affected expansion checks with the walks actually
+disabled before landing removal. Existing scaling controls that require implicit
+copied/seeded-read framing or resuming the old cell-source walk need explicit
+certificate counterparts, retaining their width, aliasing, and overlap coverage.
 This item does not require a general audit of all history upkeep, diagnostics,
 or verifier code before closure.
 

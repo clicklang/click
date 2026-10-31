@@ -10,7 +10,7 @@ pub(crate) enum TransportNode {
         result: Proposition,
     },
     Preserve {
-        effect: usize,
+        effect: Option<usize>,
         separation: usize,
         result: Proposition,
     },
@@ -54,8 +54,26 @@ impl TransportCertificate {
                     separation,
                     result,
                 } => {
-                    let effect = prior(*effect)?;
                     let separation = prior(*separation)?;
+                    if effect.is_none() {
+                        let derived = if matches!(
+                            result,
+                            Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+                        ) {
+                            result.clone()
+                        } else {
+                            preserve_footprint(separation, read_type(result).ok_or("unsupported footprint observation")?)
+                                .ok_or("preserve requires a region footprint separated from the selected complete observation")?
+                        };
+                        if &derived != result {
+                            return Err(format!(
+                                "node {index}'s constructed result does not match its written result"
+                            ));
+                        }
+                        results.push(derived);
+                        continue;
+                    }
+                    let effect = prior(effect.unwrap())?;
                     let derived = match result {
                         // Lowering a reflexive 64-bit equality erases the
                         // observation to true. Introduce that constant fact;
@@ -173,6 +191,34 @@ fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> O
     if bytes.as_const() != Some(kind.bytes()) {
         return None;
     }
+    observation_equality(before, after, address, kind)
+}
+
+fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Proposition> {
+    let Proposition::CResourceSeparate { left, right } = separation else {
+        return None;
+    };
+    let (footprint, kept) = match (left.as_ref(), right.as_ref()) {
+        (CResource::Footprint(fp), CResource::Memory(kept))
+        | (CResource::Memory(kept), CResource::Footprint(fp)) => (fp, kept),
+        _ => return None,
+    };
+    if kept.wide_bounds().is_some() {
+        return None;
+    }
+    let (address, bytes) = kept.byte_footprint();
+    if bytes.as_const() != Some(kind.bytes()) {
+        return None;
+    }
+    observation_equality(&footprint.before, &footprint.after, address, kind)
+}
+
+fn observation_equality(
+    before: &CMemory,
+    after: &CMemory,
+    address: Pointer,
+    kind: ReadType,
+) -> Option<Proposition> {
     let after = typed_reads::get(after, &address, kind)?;
     let before = typed_reads::get(before, &address, kind)?;
     let condition = match (kind, after, before) {
@@ -335,7 +381,7 @@ mod tests {
                     premise(effect),
                     premise(separation),
                     TransportNode::Preserve {
-                        effect: 0,
+                        effect: Some(0),
                         separation: 1,
                         result: result.clone(),
                     },

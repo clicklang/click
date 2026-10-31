@@ -370,6 +370,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "at",
     "at-expression",
     "region-allocation",
+    "region-footprint",
     "auto",
     "bool",
     "by",
@@ -1944,6 +1945,7 @@ pub struct ResourceFieldAccess {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceSubject {
+    Footprint(CodeRegionRef),
     Parameter {
         name: String,
         index: usize,
@@ -2621,6 +2623,7 @@ fn collect_current_resource_subject_variables(
     names: &mut BTreeSet<String>,
 ) {
     match subject {
+        ResourceSubject::Footprint(_) => {}
         ResourceSubject::Parameter { name, .. } => {
             names.insert(name.clone());
         }
@@ -3032,6 +3035,25 @@ const POINTER_POINTS_OFFERED: usize = 4;
 
 #[derive(Clone)]
 struct RecordedSnapshots {
+    effect_log: imbl::Vector<crate::kernel::CResource>,
+    effect_gaps: imbl::Vector<usize>,
+    effect_offsets: imbl::OrdMap<SnapshotSelector, usize>,
+    footprint_values: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                (
+                    SnapshotSelector,
+                    SnapshotSelector,
+                    usize,
+                    usize,
+                    Option<crate::kernel::CResource>,
+                    crate::kernel::SharedCMemory,
+                    crate::kernel::SharedCMemory,
+                ),
+                crate::kernel::CResource,
+            >,
+        >,
+    >,
     version: std::sync::Arc<RecordedSnapshotVersion>,
     /// The labels the proof gave loops on this path. A program point is
     /// recorded once, under its loop's first label when it has one and as
@@ -3106,6 +3128,12 @@ struct RecordedSnapshotVersion {
 impl Default for RecordedSnapshots {
     fn default() -> Self {
         Self {
+            effect_log: imbl::Vector::new(),
+            effect_gaps: imbl::Vector::new(),
+            effect_offsets: imbl::OrdMap::new(),
+            footprint_values: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             version: std::sync::Arc::new(RecordedSnapshotVersion {
                 root: None,
                 history: None,
@@ -3253,6 +3281,126 @@ impl<'a> Iterator for RecordedSnapshotRange<'a> {
 }
 
 impl RecordedSnapshots {
+    fn record_effect(&mut self, effect: Option<&std::sync::Arc<crate::kernel::RegionFootprint>>) {
+        if let Some(effect) = effect {
+            let gap = self.effect_log.back().is_some_and(|previous| {
+                let crate::kernel::CResource::Footprint(previous) = previous else {
+                    unreachable!()
+                };
+                crate::kernel::intern_c_memory_ref(&previous.after)
+                    != crate::kernel::intern_c_memory_ref(&effect.before)
+                    || !previous
+                        .after_resources
+                        .shares_storage_with(&effect.before_resources)
+            });
+            self.effect_gaps
+                .push_back(self.effect_gaps.back().copied().unwrap_or(0) + usize::from(gap));
+            self.effect_log
+                .push_back(crate::kernel::CResource::Footprint(effect.clone()));
+        }
+    }
+
+    fn footprint(&self, region: &CodeRegionRef) -> Result<crate::kernel::CResource, String> {
+        let before = self.recorded_spelling(SnapshotSelector::ProgramPoint(ProgramPointRef {
+            region: region.clone(),
+            kind: ProgramPointKind::Entry,
+        }));
+        let after = self.recorded_spelling(SnapshotSelector::ProgramPoint(ProgramPointRef {
+            region: region.clone(),
+            kind: ProgramPointKind::Exit,
+        }));
+        let start = *self
+            .effect_offsets
+            .get(&before)
+            .ok_or("region footprint requires a recorded entry")?;
+        let end = *self
+            .effect_offsets
+            .get(&after)
+            .ok_or("region footprint requires a recorded exit")?;
+        if start > end {
+            return Err("region footprint endpoints belong to different executions".into());
+        }
+        let before_state = self.get(&before).ok_or("missing footprint entry")?;
+        let after_state = self.get(&after).ok_or("missing footprint exit")?;
+        let memory_is = |a: &crate::kernel::CMemory, b: &crate::kernel::CMemory| {
+            crate::kernel::intern_c_memory_ref(a) == crate::kernel::intern_c_memory_ref(b)
+        };
+        let covered = if start == end {
+            memory_is(before_state.memory(), after_state.memory())
+                && before_state
+                    .resources()
+                    .shares_storage_with(after_state.resources())
+        } else {
+            match (self.effect_log.get(start), self.effect_log.get(end - 1)) {
+                (
+                    Some(crate::kernel::CResource::Footprint(first)),
+                    Some(crate::kernel::CResource::Footprint(last)),
+                ) => {
+                    memory_is(before_state.memory(), &first.before)
+                        && memory_is(after_state.memory(), &last.after)
+                        && before_state
+                            .resources()
+                            .shares_storage_with(&first.before_resources)
+                        && after_state
+                            .resources()
+                            .shares_storage_with(&last.after_resources)
+                        && self.effect_gaps.get(start) == self.effect_gaps.get(end - 1)
+                }
+                _ => false,
+            }
+        };
+        if !covered {
+            return Err("region footprint is not recorded across this execution boundary".into());
+        }
+        let key = (
+            before.clone(),
+            after.clone(),
+            start,
+            end,
+            end.checked_sub(1)
+                .and_then(|i| self.effect_log.get(i).cloned()),
+            crate::kernel::intern_c_memory_ref(before_state.memory()),
+            crate::kernel::intern_c_memory_ref(after_state.memory()),
+        );
+        if let Some(value) = self.footprint_values.lock().unwrap().get(&key) {
+            return Ok(value.clone());
+        }
+        let mut members = self.effect_log.clone().split_off(start);
+        members.truncate(end - start);
+        // A state comparison cannot establish that an unrecorded region had
+        // no effects: a write may restore the same value. Only the matching
+        // producer's atomic region is currently a complete footprint.
+        let complete = match (&before, &after, members.front()) {
+            (
+                SnapshotSelector::ProgramPoint(ProgramPointRef {
+                    region: CodeRegionRef::Region(a),
+                    ..
+                }),
+                SnapshotSelector::ProgramPoint(ProgramPointRef {
+                    region: CodeRegionRef::Region(b),
+                    ..
+                }),
+                Some(crate::kernel::CResource::Footprint(effect)),
+            ) => a == b && members.len() == 1 && effect.source == format!("region({a}).footprint"),
+            _ => false,
+        };
+        let value = crate::kernel::CResource::Footprint(crate::kernel::RegionFootprint::sequence(
+            format!(
+                "{}.footprint",
+                diagnostics::describe_code_region_ref(region)
+            ),
+            self.get(&before).ok_or("missing footprint entry")?,
+            self.get(&after).ok_or("missing footprint exit")?,
+            members,
+            complete,
+        ));
+        self.footprint_values
+            .lock()
+            .unwrap()
+            .insert(key, value.clone());
+        Ok(value)
+    }
+
     fn new() -> Self {
         Self::default()
     }
@@ -3722,6 +3870,8 @@ impl RecordedSnapshots {
 
     fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
         let selector = self.recorded_spelling(selector.into());
+        self.effect_offsets
+            .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
@@ -10000,7 +10150,7 @@ pub enum TransportCertificateNode {
         result: ClickProposition,
     },
     Preserve {
-        effect: usize,
+        effect: Option<usize>,
         separation: usize,
         result: ClickProposition,
     },

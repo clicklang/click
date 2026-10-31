@@ -6306,7 +6306,7 @@ pub fn checked_owned_resource_count_lower_bound(
     }
     let quantity = owned.owned_quantity_term()?.clone();
     let (name, arguments) = match owned.resource() {
-        CResource::Parameter(_) => return None,
+        CResource::Footprint(_) | CResource::Parameter(_) => return None,
         CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
             (name, arguments)
         }

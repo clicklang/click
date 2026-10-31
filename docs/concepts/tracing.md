@@ -122,27 +122,30 @@ If a documented rule already covers the link and refuses it, use
 
 ### One-step preservation must be fast
 
-The explicit `transport_certificate` implements the single-memory-write case
-with `premise`, `preserve`, `transitive`, and `conclusion`. Cite the checked
-`changes_only(before, after, A)` fact and the exact separation fact;
-`preserve` establishes the after-to-before read equality. Its current scope is
-complete pointer or 32/64-bit integer cells and a single constant-size write.
+The explicit `transport_certificate` uses `premise`, `preserve`, `transitive`,
+and `conclusion`. Cite `separate(region.footprint, B)` as a premise;
+`preserve` establishes the after-to-before read equality. The execution-produced
+footprint includes writes, call effects and allocation release. Establish its
+separation with `normalize() using` and explicitly listed separations and bounds.
+For a region containing several transitions, spell the individual preservation
+nodes and compose their equalities: simple normalization does not walk a region.
+The observation rule currently covers complete pointer or 32/64-bit integer cells.
 Use the [certificate reference](../reference/tactics/index.md#transport-certificates)
-for exact syntax and limits. General resource effects remain a design boundary.
+for exact syntax and current producer/observation limits.
 
-The required primitive for a separated store has this logical shape:
+The required primitive for one recorded transition has this logical shape:
 
 ```text
 read(before, B) = value
-checked store transition before -> after writes only A
+checked region before -> after has effect footprint A
 separate(A, B)
 -----------------------------------------------------
 read(after, B) = value
 ```
 
-Here B covers the complete typed read, and the source read is valid. This is a
-store-preservation rule, not permission to ignore lifetime changes at arbitrary
-calls or deallocations. The transition/effect comes from checked execution;
+Here B covers the complete typed read, and the source read is valid. The effect
+must include invalidation and allocation lifetime changes, as well as ordinary
+writes. The transition/effect comes from checked execution;
 separation comes from an explicit proof. Neither is an assumption the user may
 invent. Its cost must be proportional to the selected read, supplied premises,
 and explicit transition effect, up to indexing factors, independent of the

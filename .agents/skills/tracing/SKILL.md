@@ -76,9 +76,12 @@ write one of the intermediate facts in Click, it is `inexpressible-fact`.
 
 The first link that fails becomes the new `G`; go back to step 2.
 
-For a single recorded memory write, `transport_certificate` can cite
-`changes_only(before, after, A)` and separation as `premise` nodes, then apply
-`preserve`. Compose explicit equalities with `transitive`. Read the limits in
+For one recorded transition, `transport_certificate` cites
+`separate(region.footprint, B)` as a `premise`, then applies `preserve`.
+The execution-produced footprint includes stores, call effects and releases;
+no free-specific rule is needed. Establish footprint separation with explicitly
+selected premises in `normalize() using`. Compose transitions with `transitive`;
+do not replace the explicit sequence with a walk over a whole region. Read the limits in
 `docs/reference/tactics/index.md#transport-certificates`; unsupported resource
 effects are not grounds for silently falling back to a history search.
 

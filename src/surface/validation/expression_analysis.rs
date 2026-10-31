@@ -495,7 +495,9 @@ fn contract_segment_contains_old_expression(segment: &ContractSegment) -> bool {
 
 fn resource_subject_contains_old_expression(resource: &ResourceSubject) -> bool {
     match resource {
-        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => false,
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => false,
         ResourceSubject::Memory(segment) => contract_segment_contains_old_expression(segment),
         ResourceSubject::Declared { arguments, .. } => {
             arguments.iter().any(contains_old_expression)
@@ -635,6 +637,7 @@ fn contract_segment_contains_at_expression(segment: &ContractSegment) -> bool {
 
 fn resource_subject_contains_at_expression(resource: &ResourceSubject) -> bool {
     match resource {
+        ResourceSubject::Footprint(_) => true,
         ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => false,
         ResourceSubject::Memory(segment) => contract_segment_contains_at_expression(segment),
         ResourceSubject::Declared { arguments, .. } => arguments.iter().any(contains_at_expression),
@@ -822,7 +825,9 @@ fn collect_click_function_calls_in_resource_subject(
     calls: &mut BTreeSet<String>,
 ) {
     match resource {
-        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => {}
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => {}
         ResourceSubject::Memory(segment) => collect_click_function_calls_in_segment(segment, calls),
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
@@ -1514,7 +1519,9 @@ fn validate_recursive_calls_in_resource_subject(
     algebraic_definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
 ) -> Result<(), ClickError> {
     match subject {
-        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => Ok(()),
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => validate_recursive_calls_in_segment(
             caller,
             segment,

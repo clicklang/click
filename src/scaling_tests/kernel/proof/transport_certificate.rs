@@ -120,7 +120,7 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
             true,
         );
         certificate.nodes[2] = TransportNode::Preserve {
-            effect: 0,
+            effect: Some(0),
             separation: 1,
             result: goal.clone(),
         };
@@ -150,6 +150,212 @@ fn transport_certificate_uses_selected_observations_without_scanning_the_registr
         let (result, cost) =
             crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
         assert_eq!(result.unwrap(), goal);
+        cost
+    });
+    assert!(costs[0] > 0);
+    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+}
+
+#[test]
+fn region_footprint_preservation_does_not_walk_prior_memory_history() {
+    let costs = [4, 16, 64, 256].map(|history| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let _reads = typed_reads::ReadScope::enter();
+        let (original, goal) = tests::fixture(history, false);
+        let TransportNode::Premise {
+            proposition: effect,
+            ..
+        } = &original.nodes[0]
+        else {
+            unreachable!()
+        };
+        let Proposition::CMemoryMutatesOnly { before, after, .. } = effect else {
+            unreachable!()
+        };
+        let entry = CState::new().with_memory(before.clone());
+        let exit = entry.clone().with_memory(after.clone());
+        let effects = vec![ExecutionPureFact::certified(effect.clone())];
+        let (footprint, recording_cost) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::RegionFootprint::transition(
+                    "statement(0).footprint".into(),
+                    &entry,
+                    &exit,
+                    &effects,
+                )
+            });
+        let TransportNode::Premise {
+            proposition: Proposition::CResourceSeparate { right, .. },
+            ..
+        } = &original.nodes[1]
+        else {
+            unreachable!()
+        };
+        let separation = Proposition::CResourceSeparate {
+            left: Box::new(CResource::Footprint(footprint)),
+            right: right.clone(),
+        };
+        let certificate = TransportCertificate {
+            nodes: vec![
+                TransportNode::Premise {
+                    proposition: separation.clone(),
+                    result: separation,
+                },
+                TransportNode::Preserve {
+                    effect: None,
+                    separation: 0,
+                    result: goal.clone(),
+                },
+            ],
+            conclusion: 1,
+        };
+        let (result, application_cost) =
+            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+        assert_eq!(result.unwrap(), goal);
+        (recording_cost, application_cost)
+    });
+    assert!(costs.windows(2).all(|pair| pair[0] == pair[1]), "{costs:?}");
+}
+
+#[test]
+fn simple_footprint_separation_does_not_walk_a_region_sequence() {
+    let costs = [4, 16, 64, 256].map(|length| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = CState::new();
+        let leaf = crate::kernel::RegionFootprint::transition(
+            "statement(0).footprint".into(),
+            &state,
+            &state,
+            &crate::kernel::ExecutionFacts::new(),
+        );
+        let members = (0..length)
+            .map(|_| CResource::Footprint(leaf.clone()))
+            .collect();
+        let region = CResource::Footprint(crate::kernel::RegionFootprint::sequence(
+            "function.footprint".into(),
+            &state,
+            &state,
+            members,
+            true,
+        ));
+        let kept = CResource::Memory(CMemoryRange::new_with_element_width(
+            Pointer::symbolic(Variable(8_390_100)),
+            0u32.into(),
+            1u32.into(),
+            4,
+        ));
+        let (result, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::region_footprint::separate_using(&region, &kept, &PureFactContext::new())
+        });
+        assert!(
+            !result,
+            "a multi-transition region needs explicit composition"
+        );
+        cost
+    });
+    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+}
+
+#[test]
+fn selected_footprint_separations_are_linear_with_one_shared_address_bucket() {
+    let costs = [4u64, 16, 64, 256].map(|count| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = CState::new();
+        let range = |index: u64| {
+            CMemoryRange::new_with_element_width(
+                Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::Variable(Variable(8_391_000 + index)),
+                },
+                0u32.into(),
+                4u32.into(),
+                1,
+            )
+        };
+        let kept = CResource::Memory(range(1000));
+        let ranges = (0..count).map(range).collect::<Vec<_>>();
+        let facts = ranges.iter().fold(PureFactContext::new(), |facts, range| {
+            facts.assume_proposition(Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(range.clone())),
+                right: Box::new(kept.clone()),
+            })
+        });
+        let effects = vec![ExecutionPureFact::certified(
+            Proposition::CMemoryEffectSummary {
+                before: state.memory().clone(),
+                after: state.memory().clone(),
+                mutable_ranges: ranges,
+            },
+        )];
+        let footprint = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+            "region(0).footprint".into(),
+            &state,
+            &state,
+            &effects,
+        ));
+        let (separate, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::region_footprint::separate_using(&footprint, &kept, &facts)
+        });
+        assert!(separate);
+        assert!(cost > 0);
+        (count, cost)
+    });
+    for pair in costs.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 5, "{costs:?}");
+    }
+}
+
+#[test]
+fn two_footprints_do_not_expand_into_a_cartesian_product() {
+    let costs = [4u64, 16, 64, 256].map(|count| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let state = CState::new();
+        let resources = (0..count).fold(state.resources().clone(), |resources, index| {
+            resources.unchecked_with_fact(CResourceFact::own_token(
+                format!("changed_{index}"),
+                Vec::new(),
+            ))
+        });
+        let after = state.clone().with_resource_context(resources);
+        let tokens = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+            "region(0).footprint".into(),
+            &state,
+            &after,
+            &crate::kernel::ExecutionFacts::new(),
+        ));
+        let effects = vec![ExecutionPureFact::certified(
+            Proposition::CMemoryEffectSummary {
+                before: state.memory().clone(),
+                after: state.memory().clone(),
+                mutable_ranges: (0..count)
+                    .map(|index| {
+                        CMemoryRange::new_with_element_width(
+                            Pointer::symbolic(Variable(8_392_000 + index)),
+                            0u32.into(),
+                            4u32.into(),
+                            1,
+                        )
+                    })
+                    .collect(),
+            },
+        )];
+        let memory = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+            "region(1).footprint".into(),
+            &state,
+            &state,
+            &effects,
+        ));
+        let (result, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::region_footprint::separate_using(
+                &tokens,
+                &memory,
+                &PureFactContext::new(),
+            )
+        });
+        assert!(
+            !result,
+            "a simple step must not compare every pair of effects"
+        );
         cost
     });
     assert!(costs[0] > 0);

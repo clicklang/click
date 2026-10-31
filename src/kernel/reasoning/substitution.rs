@@ -660,7 +660,7 @@ fn walk_c_ranking_component<S: VariableSubstitution + ?Sized>(
 
 fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S) -> CResource {
     match resource {
-        CResource::Parameter(_) => resource.clone(),
+        CResource::Footprint(_) | CResource::Parameter(_) => resource.clone(),
         CResource::PopulationAuthority(description) => CResource::PopulationAuthority(
             description.map_values(|value| walk_algebraic_value(value, s)),
         ),
@@ -3074,6 +3074,7 @@ fn collect_memory_bound_variables_entering(
 
 fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeSet<Variable>) {
     match resource {
+        CResource::Footprint(_) => {}
         CResource::Parameter(v) => {
             variables.insert(*v);
         }

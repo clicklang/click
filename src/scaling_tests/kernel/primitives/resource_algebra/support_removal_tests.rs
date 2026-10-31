@@ -89,3 +89,26 @@ fn constructed_exchange_preserves_support_and_scales_with_delta() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn a_resource_delta_refusal_does_not_walk_the_shared_past() {
+    let costs = [4, 16, 64, 256].map(|history| {
+        let mut shared = ResourceContext::new();
+        for index in 0..history {
+            shared = shared.unchecked_with_fact(CResourceFact::own_token(
+                format!("past_{index}"),
+                Vec::new(),
+            ));
+        }
+        let left = shared
+            .clone()
+            .unchecked_with_fact(CResourceFact::own_token("left".into(), Vec::new()));
+        let right =
+            shared.unchecked_with_fact(CResourceFact::own_token("right".into(), Vec::new()));
+        let (changed, cost) =
+            crate::instrumentation::measure_deterministic_work(|| right.changed_facts_since(&left));
+        assert!(changed.is_none());
+        cost
+    });
+    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+}

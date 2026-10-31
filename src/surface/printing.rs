@@ -1028,7 +1028,8 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
                         separation,
                         result,
                     } => format!(
-                        "preserve {effect}, {separation} => {};",
+                        "preserve {}{separation} => {};",
+                        effect.map(|i| format!("{i}, ")).unwrap_or_default(),
                         source_click_proposition(result)
                     ),
                     TransportCertificateNode::Transitive {
