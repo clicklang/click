@@ -115,6 +115,11 @@ without reinterpreting it from the result's signedness. Widening spellings expli
 interpretation: zero-extending signed `x` prints as `(x as uint32) as uint64`,
 so lowering cannot replace zero extension with sign extension. Pointer-carrying
 integers retain their complete metadata, even though their C type is numeric.
+The six specialized 32/64-bit extensions and low-word conversions also use
+shared cast nodes. A transitional encoding tag distinguishes their exact
+legacy constructors from a generic cast with the same formats; import/export
+never silently normalizes one into another. Low-word extraction interprets
+its operand as unsigned bits, independent of the source C signedness.
 Machine raising currently uses one exact export to the existing speller.
 Wide symbolic cast chains retain their intermediate nodes. Collapsing
 `(x as int128) as int64` used to create a generic `int32`-to-`int64` cast,

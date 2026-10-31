@@ -3,7 +3,7 @@
 //! No constructor consults facts, evaluates arithmetic, or unfolds a call.
 use super::*;
 mod machine;
-pub use machine::KernelMachineLiteral;
+pub use machine::{KernelMachineCastEncoding, KernelMachineLiteral};
 use num_bigint::BigInt;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
@@ -41,6 +41,7 @@ pub enum KernelTermNode {
         operand: KernelTerm,
     },
     MachineCast {
+        encoding: KernelMachineCastEncoding,
         source: MachineIntegerType,
         destination: MachineIntegerType,
         operand: KernelTerm,

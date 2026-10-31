@@ -13,6 +13,20 @@ pub enum KernelMachineLiteral {
     Wide(MachineIntegerConstant),
 }
 
+/// Transitional checker encoding, kept distinct from cast semantics so an
+/// import/export round trip preserves the exact old constructor. Remove this
+/// distinction when checker consumers no longer require the old tree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum KernelMachineCastEncoding {
+    Generic,
+    Int64From32,
+    UInt64From32,
+    UInt32From64,
+    Int64FromUInt32,
+    UInt64FromInt32,
+    UInt64FromInt64,
+}
+
 pub(super) fn wrap_exact(format: MachineIntegerType, term: Bitvector32Term) -> CValue {
     // value_from_term applies the word-format convention. This adapter must
     // preserve the payload exactly, including constants inside operations.
@@ -74,10 +88,37 @@ impl KernelTermImport {
                 destination,
                 value,
             } => Node::MachineCast {
+                encoding: KernelMachineCastEncoding::Generic,
                 source: *source,
                 destination: *destination,
                 operand: self.machine(*source, value),
             },
+            Old::Int64From32(value)
+            | Old::UInt64From32(value)
+            | Old::UInt32From64(value)
+            | Old::Int64FromUInt32(value)
+            | Old::UInt64FromInt32(value)
+            | Old::UInt64FromInt64(value) => {
+                use KernelMachineCastEncoding as Encoding;
+                use MachineIntegerType as Ty;
+                let (encoding, source, destination) = match term {
+                    Old::Int64From32(_) => (Encoding::Int64From32, Ty::Int32, Ty::Int64),
+                    Old::UInt64From32(_) => (Encoding::UInt64From32, Ty::UInt32, Ty::UInt64),
+                    // Low bits do not depend on signedness. UInt64 is the
+                    // operand's bit interpretation, not its source C type.
+                    Old::UInt32From64(_) => (Encoding::UInt32From64, Ty::UInt64, Ty::UInt32),
+                    Old::Int64FromUInt32(_) => (Encoding::Int64FromUInt32, Ty::UInt32, Ty::Int64),
+                    Old::UInt64FromInt32(_) => (Encoding::UInt64FromInt32, Ty::Int32, Ty::UInt64),
+                    Old::UInt64FromInt64(_) => (Encoding::UInt64FromInt64, Ty::Int64, Ty::UInt64),
+                    _ => unreachable!(),
+                };
+                Node::MachineCast {
+                    encoding,
+                    source,
+                    destination,
+                    operand: self.machine(source, value),
+                }
+            }
             // Loads, binders and pointer observations retain their complete
             // legacy payload.
             _ => {
@@ -126,14 +167,27 @@ impl KernelTermExport {
                 operand: Box::new(Self::machine(operand)?),
             },
             Node::MachineCast {
+                encoding,
                 source,
                 destination,
                 operand,
-            } => Old::MachineIntegerCast {
-                source: *source,
-                destination: *destination,
-                value: Box::new(Self::machine(operand)?),
-            },
+            } => {
+                use KernelMachineCastEncoding as Encoding;
+                let value = Box::new(Self::machine(operand)?);
+                match encoding {
+                    Encoding::Generic => Old::MachineIntegerCast {
+                        source: *source,
+                        destination: *destination,
+                        value,
+                    },
+                    Encoding::Int64From32 => Old::Int64From32(value),
+                    Encoding::UInt64From32 => Old::UInt64From32(value),
+                    Encoding::UInt32From64 => Old::UInt32From64(value),
+                    Encoding::Int64FromUInt32 => Old::Int64FromUInt32(value),
+                    Encoding::UInt64FromInt32 => Old::UInt64FromInt32(value),
+                    Encoding::UInt64FromInt64 => Old::UInt64FromInt64(value),
+                }
+            }
             Node::Legacy(value) => {
                 let PureFunctionArgument::Value(value) = value.value() else {
                     return Err("expected a machine value legacy payload");
@@ -206,6 +260,49 @@ mod tests {
         let term = KernelTermImport::default().argument(&source);
         assert_ne!(term.children()[0], term.children()[1]);
         assert_eq!(KernelTermExport::default().argument(&term).unwrap(), source);
+    }
+
+    #[test]
+    fn specialized_casts_share_typed_nodes_without_losing_their_encoding() {
+        use Bitvector32Term as Old;
+        use MachineIntegerType as Ty;
+        let casts: [(fn(Box<Old>) -> Old, Ty, Ty); 6] = [
+            (Old::Int64From32, Ty::Int32, Ty::Int64),
+            (Old::UInt64From32, Ty::UInt32, Ty::UInt64),
+            (Old::UInt32From64, Ty::UInt64, Ty::UInt32),
+            (Old::Int64FromUInt32, Ty::UInt32, Ty::Int64),
+            (Old::UInt64FromInt32, Ty::Int32, Ty::UInt64),
+            (Old::UInt64FromInt64, Ty::Int64, Ty::UInt64),
+        ];
+        for (constructor, source, destination) in casts {
+            let operand = Old::Variable(Variable(991103));
+            let value = PureFunctionArgument::Value(wrap_exact(
+                destination,
+                constructor(Box::new(operand.clone())),
+            ));
+            let common = KernelTermImport::default().argument(&value);
+            assert!(matches!(common.node(), KernelTermNode::MachineCast { .. }));
+            assert_eq!(common.children()[0].ty(), &KernelType::C(source.c_type()));
+            assert!(matches!(
+                common.children()[0].node(),
+                KernelTermNode::Variable(_)
+            ));
+            assert_eq!(common.ty(), &KernelType::C(destination.c_type()));
+            assert_eq!(
+                KernelTermExport::default().argument(&common).unwrap(),
+                value
+            );
+            assert_eq!(KernelTermImport::default().argument(&value), common);
+            let generic = PureFunctionArgument::Value(wrap_exact(
+                destination,
+                Old::MachineIntegerCast {
+                    source,
+                    destination,
+                    value: Box::new(operand),
+                },
+            ));
+            assert_ne!(KernelTermImport::default().argument(&generic), common);
+        }
     }
 
     #[test]

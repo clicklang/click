@@ -12,28 +12,52 @@ fn charon_scalar_slices_verify_with_their_index_checks() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
+}
+
+// The positive suite and the false swap's bounded proof search are independent
+// workloads. Give each its own normal test budget rather than aggregating both
+// under one 30-second process bound. Every original case remains in the gate.
+#[test]
+fn charon_scalar_slices_reject_bad_indices_and_swap_claim() {
+    let p = Project::from_fixture("design/charon-trial/scalar-slices");
+    fs::write(p.root.join("borrow.click"), SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    for (function, before, after, expected) in [
         // A write past the end of a `&mut [i64]`.
         (
+            "set_at",
             "    owns *xs;\n    requires k < xs.len();\n    ensures xs[k] == v;",
             "    owns *xs;\n    ensures xs[k] == v;",
             "Rust slice index panic check",
         ),
         // A read past the end of a `&[u16]`.
         (
+            "get",
             "    views *xs;\n    requires k < xs.len();\n    ensures result == xs[k];",
             "    views *xs;\n    ensures result == xs[k];",
             "Rust slice index panic check",
         ),
         // The swap moves the last element to the front, not the first.
         (
+            "swap_ends",
             "    ensures xs.len() >= 2 implies xs[0] == old(xs[xs.len() - 1]);",
             "    ensures xs.len() >= 2 implies xs[0] == old(xs[0]);",
             "swap_ends",
         ),
     ] {
         assert!(SIDECAR.contains(before), "{before}");
-        let invalid = SIDECAR.replacen(before, after, 1);
+        // The positive test above covers every function. A mutation
+        // needs only its affected, independent function: rechecking unrelated
+        // iteration proofs three times made this test hit CI's time bound.
+        let start = SIDECAR.find(&format!("fn {function}(")).unwrap();
+        let rest = &SIDECAR[start..];
+        let end = rest.find("\nfn ").unwrap_or(rest.len());
+        let selected = &rest[..end];
+        assert!(selected.contains(before), "mutation must target {function}");
+        let invalid = format!(
+            "verifying \"slices.rs\";\n{}",
+            selected.replacen(before, after, 1)
+        );
         let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));

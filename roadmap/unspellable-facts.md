@@ -91,8 +91,18 @@ now explicitly retain the source `int32`/`uint32` interpretation before the
 64-bit cast. Validation: 76 focused tests passed; shift-fixture fact-stability
 audit passed with zero differences; full gate passed in 9m50s (6,981 unit/import/
 scaling tests, 58 examples, 4,936 mdtests). PR #2202 entered the merge queue
-while this follow-up was validating; keep this commit local until its queued
-head merges, then carry the follow-up onto current master in a new PR.
+while this follow-up was validating, then left it after the Rust scalar-slice
+integration test hit its 30-second limit. Its three negative mutations had
+reverified every unrelated function. Keep the full positive check, but check
+each mutation against its affected independent function; no limits or cases
+are removed. The follow-ups can now update the same PR.
+
+The next local increment migrates all six specialized 32/64-bit conversions
+to shared cast nodes. Their source/destination formats and operands are explicit;
+a transitional encoding tag preserves the exact old constructor, distinct from
+a generic cast. Tests cover all six encodings, repeated import identity, typed
+children, and linear cast-chain work beside unrelated terms. All 78 focused
+bridge/spelling tests passed. Integrated gate validation pending.
 
 Next: migrate the remaining ordinary expression producers and machine arithmetic onto the
 shared tree, then replace checker adapters with typed views. Algebraic values,
