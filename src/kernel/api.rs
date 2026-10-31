@@ -464,6 +464,8 @@ pub fn prove_c_condition_fact_target_transport(
 #[derive(Clone, Debug)]
 pub struct CLoopPreservationContext {
     state: CState,
+    /// Guard facts for this entry path, retained before publishing the entry join.
+    entry_guard: Vec<Proposition>,
     /// Retain the exact frame paired with this persistent body checkpoint.
     /// Rebuilding an equal loop head gives a different mutation history.
     exit_frame: Option<ResourceContext>,
@@ -793,6 +795,10 @@ impl CLoopPreservationContext {
         &self.loop_entry_state
     }
 
+    pub(crate) fn entry_guard(&self) -> &[Proposition] {
+        &self.entry_guard
+    }
+
     pub fn pure_facts(&self) -> &[Proposition] {
         &self.pure_facts
     }
@@ -1041,24 +1047,24 @@ fn c_loop_preservation_contexts_with_mode(
         // disjunction of what each entry path states alone, so one written
         // proof can reason by cases over the ways the guard was true instead
         // of needing a different certificate per entry path.
-        let entry_disjunction = crate::kernel::loops::guard_path_disjunction(
-            &condition_contexts
-                .iter()
-                .map(|assumption| {
-                    assumption
-                        .facts
-                        .iter()
-                        .map(|fact| fact.proposition().clone())
-                        .filter(|proposition| {
-                            !invariant_facts
-                                .iter()
-                                .any(|fact| fact.proposition() == proposition)
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>(),
-        );
-        for assumption in condition_contexts {
+        let entry_guards = condition_contexts
+            .iter()
+            .map(|assumption| {
+                assumption
+                    .facts
+                    .iter()
+                    .map(|fact| fact.proposition().clone())
+                    .filter(|proposition| {
+                        !invariant_facts
+                            .iter()
+                            .any(|fact| fact.proposition() == proposition)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        let entry_disjunction = crate::kernel::loops::guard_path_disjunction(&entry_guards);
+        for (assumption, guard) in condition_contexts.into_iter().zip(entry_guards) {
+            let entry_guard = guard;
             // A guard operand this function may not read leaves the head's
             // premises undefined; there is no iteration to describe here.
             if let Some(outcome) = assumption.undecided_outcome() {
@@ -1106,6 +1112,7 @@ fn c_loop_preservation_contexts_with_mode(
             pure_facts.sort();
             pure_facts.dedup();
             contexts.push(CLoopPreservationContext {
+                entry_guard,
                 state: top_state.clone(),
                 exit_frame: exit_frame.clone(),
                 loop_entry_state: loop_entry_state.clone(),

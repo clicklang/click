@@ -3,6 +3,62 @@ use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
+fn implicit_tail_retains_unspellable_statement_cases() {
+    let c = r#"int32 unsigned_index(uint32 x) {
+        int32 values[4] = {1, 2, 3, 4};
+        int32 r;
+        r = 1;
+        if (x < 4u) { r = values[x]; }
+        return r;
+    }"#;
+    let source = r#"verifying "unsigned.c";
+        int32 unsigned_index(uint32 x) { ensures result == result; }"#;
+    let sources = [("unsigned.c", c)];
+    let check_report = |report: &str| {
+        for expected in [
+            "the implicit tail could not split the cases",
+            "r = values[x]",
+            "got 4",
+            "undecided condition",
+            "could not express a case condition",
+            "Use explicit cases and `step()`",
+            "tooling limitation",
+        ] {
+            assert!(report.contains(expected), "missing {expected}: {report}");
+        }
+        assert!(!report.contains("no checked path"), "{report}");
+        assert!(
+            !report.contains("The implicit tail makes this split"),
+            "{report}"
+        );
+    };
+    check_report(&verify_c0_sources(source, &sources).unwrap_err().message());
+    with_proof_trace("unsigned_index", || {
+        let error = verify_c0_sources(source, &sources).unwrap_err();
+        check_report(&error.message());
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("r = values[x]"), "{trace}");
+    });
+    // Explicit index cases discharge this operation without changing the C.
+    let explicit = format!(
+        "{source} by {{
+            step(); step(); step(); step(); step(); step(); step();
+            if x < 4u32 {{
+                step();
+                if x == 0u32 {{ step(); step(); solve(); }} else {{
+                    if x == 1u32 {{ step(); step(); solve(); }} else {{
+                        if x == 2u32 {{ step(); step(); solve(); }} else {{
+                            step(); step(); solve();
+                        }}
+                    }}
+                }}
+            }} else {{ step(); step(); step(); solve(); }}
+        }}"
+    );
+    verify_c0_sources(&explicit, &sources).unwrap();
+}
+
+#[test]
 fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
     let source = r#"verifying "f.c";
         int32 f(int32 x) { ensures result == x; } by {

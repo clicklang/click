@@ -5473,6 +5473,8 @@ mod loop_control;
 mod parameterized_contracts;
 #[path = "rust_import/ranges.rs"]
 mod ranges;
+#[path = "rust_import/refusals.rs"]
+mod refusals;
 #[path = "rust_import/scalar_slices.rs"]
 mod scalar_slices;
 #[path = "rust_import/signed_arithmetic.rs"]
@@ -5839,3 +5841,51 @@ fn charon_project_crate_unit_serves_every_sidecar_of_the_crate() {
 #[cfg(not(feature = "fast-gate"))]
 #[path = "rust_import/frontend.rs"]
 mod installed_frontend;
+
+const COUNTDOWN_SIDECAR: &str =
+    include_str!("fixtures/rust-verification/recursive-countdown/r.click");
+
+fn countdown_project() -> Project {
+    let p = Project::from_fixture("tests/fixtures/rust-verification/recursive-countdown");
+    fs::write(p.root.join("borrow.click"), COUNTDOWN_SIDECAR).unwrap();
+    p
+}
+
+#[test]
+fn rust_recursive_countdown_ranks_checked_temporaries() {
+    let p = countdown_project();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(COUNTDOWN_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn rust_recursive_countdown_refuses_unchanged_argument() {
+    let p = countdown_project();
+    let prepared = p.prepared().unwrap();
+    let invalid = COUNTDOWN_SIDECAR.replace("fn countdown(", "fn unchanged(");
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("unchanged recursion must not certify termination")
+        .to_string();
+    assert!(error.contains("decreas"), "{error}");
+}
+
+#[test]
+#[ignore = "nightly: checked proof expansion"]
+fn rust_recursive_countdown_expansion_checks_without_search() {
+    let p = countdown_project();
+    let prepared = p.prepared().unwrap();
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        COUNTDOWN_SIDECAR,
+        &prepared,
+        "countdown.ensures_0",
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    click::surface::without_implicit_auto_for_claim("countdown.ensures_0", || {
+        C0VerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}

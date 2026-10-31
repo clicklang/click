@@ -5,6 +5,11 @@ proof consumes them before a resource fold. Retain those transport derivations
 and the scope's original assumptions, including when its checked premise
 selection derives the requested separation. The C is the original arena write.
 
+The rewritten sum's domain is established before the `have` that observes it:
+that claim must lower before its proof body can rewrite the field to `s`.
+The lower-bound proof also states the observation `to_integer(s + index)`,
+rather than the default Integer sum, and explicitly closes the rewritten goal.
+
 ```c filename=arena_write.c
 struct arena {
     int32* data;
@@ -106,13 +111,19 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have to_integer(s) <= to_integer(s + index);
     have to_integer(s + index + 1) <= to_integer(e);
     have region->start == s;
+    have defined(s + index + 1);
+    have defined(region->start + index + 1) by {
+        rewrite(region->start == s);
+        assumption();
+    }
     have to_integer(region->start + index + 1) <= to_integer(e) by {
         rewrite(region->start == s);
         assumption();
     }
     have 0 <= to_integer(region->start + index) by {
         rewrite(region->start == s);
-        have 0 <= (s + index);
+        have 0 <= to_integer(s + index) by { solve(); }
+        assumption();
     }
     have region->arena->capacity == c by {
         solve();
