@@ -40,6 +40,15 @@ pub enum Type {
     SharedArrayOption {
         element: Box<Type>,
     },
+    /// `Enumerate<Iter<T>>` over a slice of integers: the slice iterator's
+    /// state and the count of values it has yielded.
+    EnumerateIterator {
+        element: Box<Type>,
+    },
+    /// The `Option<(usize, &T)>` an enumerated slice iterator yields.
+    EnumerateOption {
+        element: Box<Type>,
+    },
     /// A `core::ops::Range` of an integer, `start..end`, held as its two
     /// bounds; the state of a `for` over it.
     Range {
@@ -270,6 +279,10 @@ pub enum Expression {
     SharedArrayHasNext {
         iterator: String,
     },
+    /// The index of the element an enumerated iterator's `Some` holds.
+    EnumerateOptionIndex {
+        option: String,
+    },
     /// Whether range `iterator` has a next value, `start < end`.
     RangeHasNext {
         iterator: String,
@@ -482,6 +495,19 @@ pub enum MirStatement {
         source: String,
     },
     SharedArrayNext {
+        iterator: String,
+        option: String,
+    },
+    /// `target = source.enumerate()` of a slice iterator.
+    EnumerateInitialize {
+        target: String,
+        source: String,
+    },
+    EnumerateMove {
+        target: String,
+        source: String,
+    },
+    EnumerateNext {
         iterator: String,
         option: String,
     },

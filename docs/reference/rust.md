@@ -1171,6 +1171,17 @@ including borrowed arrays, local arrays, explicit `.iter()` calls, stored
 `Iter` locals, and moves of the remaining iterator. See the locked
 [array iteration example](https://github.com/clicklang/click/tree/master/design/charon-trial/array-iteration).
 Moving an iterator retires its source; repeated exhaustion yields no element.
+`for (i, x) in xs.iter().enumerate()` over a slice of any integer width adds
+`iter_count`, the number of values the iterator has yielded, to the slice
+iterator's `iter_cursor`, `iter_remaining` and `iter_live`. The exporter checks
+that `enumerate` is the core `Iterator::enumerate` default method and that
+`next` is the core `impl<I: Iterator> Iterator for Enumerate<I>`. Each
+iteration yields index `iter_count` and the element at `iter_cursor`, then
+advances both; a reference pattern `(i, x)` binds the element's address and a
+copied pattern `(i, &x)` reads it.
+[`design/charon-trial/enumerate`](https://github.com/clicklang/click/blob/master/design/charon-trial/enumerate/enumerate.click)
+proves the last index a loop yields and bounds the elements it reads; its
+cursor invariant needs the same explicit `u64` steps as the sum example.
 `.iter_mut()`, by-value array iteration, custom iterators, labels, `break`, and
 `continue` remain outside this subset.
 
