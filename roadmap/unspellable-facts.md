@@ -12,6 +12,57 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Shared SurfaceTerm and KernelTerm migration (2026-10-31)
+
+The user approved a staged unification of source expressions and kernel
+expression trees, rather than implementing round-tripping independently for
+each term family. The first slice is on `codex/unified-terms`:
+
+- `SurfaceTerm` is the source expression enum; `ContractExpression` is a
+  compatibility alias.
+- `KernelTerm` is a typed immutable DAG. Integer arithmetic and calls have
+  `KernelTerm` children. Construction preserves operations and does not read
+  assumed equalities or prove definedness.
+- Integer certificate arithmetic and ordinary Integer arithmetic on existing
+  values construct this tree; Integer and pure-call raising consume it. The current checker still receives the old terms
+  through lossless bridges. Converted shared nodes cache the bridge, with
+  weak reverse links, so repeated steps do not rewalk growing expressions.
+- Explicit legacy leaves retain unmigrated values, including complete pointer
+  payloads and their auxiliary qualifiers. These leaves and their adapters
+  are temporary, not completion of the unification.
+
+The first slice merged as PR #2192 (`710258f93`). The ordinary-Integer
+follow-up is on `codex/unified-terms-ordinary`, integrated onto that master.
+
+The updated full gate passed: 6,957 unit/API/import/scaling tests, 58 examples, and
+4,935 mdtests. It took 10m15s, exceeding the ten-minute target by 15 seconds;
+no limits changed and no nightly suite ran. The first slice's full mdtest
+fact-stability audit passed with zero differences. The ordinary-Integer
+follow-up's focused `integer` audit found a pre-existing failure in
+`integer_sum_range_fold`: its entry proof used `assumption()` for a bound
+containing `-1000 * 0`, relying on the old lowering-time simplification.
+The same failure reproduced at the first slice's commit `fc5dc0d81`.
+The fixture now proves each initial multiplication equals zero and combines
+that equality with its existing bound using an arithmetic certificate. Its
+termination certificates also now prove mathematical Integer differences,
+rather than the former machine subtraction. The focused `integer` rerun
+passed all 248 selected fixtures with zero fact-dependent lowerings.
+The rewrite scaling regression now uses fresh selected variables at each size
+so all samples start cold; its exact work-equality assertion remains intact.
+
+The follow-up increment migrates ordinary Integer negation, addition,
+subtraction, multiplication and constant-nonzero-divisor quotient/remainder.
+Deferred operands and symbolic-divisor obligations retain their evaluation
+forms. The repeated-squares scaling test now covers ordinary lowering too.
+
+Next: migrate the remaining ordinary expression producers and machine arithmetic onto the
+shared tree, then replace checker adapters with typed views. Algebraic values,
+binders, full pointers and loads follow; facts and goals should ultimately
+have common term operands. Keep definedness as separately scoped obligations.
+The proposed three-field `CPointer` representation is not settled. This first
+slice changes no pointer semantics and does not claim to resolve #2179 or the
+remaining census misses. See [the migration boundary](../docs/internals/spellability.md#shared-term-migration).
+
 ## Structural mathematical arithmetic (2026-10-31)
 
 The next two Integer defects are constant folding during lowering and missing

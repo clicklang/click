@@ -225,6 +225,7 @@ pub(in crate::kernel) fn evaluate_logical_memory_load_paths(
         obligations,
         assumptions,
     );
+    retain_indexed_scalar_cell_value(memory, &pointer, value_type, assumptions, &mut paths);
     retain_call_read_aliases(memory, &pointer, value_type, assumptions, &mut paths);
     if let [path] = paths.as_slice()
         && let CExpressionOutcome::Value(value) = &path.outcome
@@ -439,6 +440,47 @@ fn canonical_integer_read(
         },
         _ => value,
     })
+}
+
+/// A selected footprint supplies an equal address, not a replacement read
+/// term or access permission. Retain its stored word as a path-local equation.
+fn retain_indexed_scalar_cell_value(
+    memory: &CMemory,
+    pointer: &Pointer,
+    value_type: CType,
+    assumptions: &PureFactContext,
+    paths: &mut [CExpressionPath],
+) {
+    if !matches!(value_type, CType::Int32 | CType::UInt32) {
+        return;
+    }
+    let [path] = paths else { return };
+    let CExpressionOutcome::Value(value) = &path.outcome else {
+        return;
+    };
+    let Some(read) = crate::kernel::spec::c_value_bitvector_term(value) else {
+        return;
+    };
+    let address = logical_memory_load_address(memory, pointer.clone(), value_type, assumptions);
+    if address == *pointer {
+        return;
+    }
+    let Some(stored) = memory
+        .known_value(&address)
+        .and_then(|value| value_type.read_cell(&value))
+        .and_then(|value| crate::kernel::spec::c_value_bitvector_term(&value))
+    else {
+        return;
+    };
+    if read != stored {
+        path.facts.push(ExecutionPureFact {
+            logical_read_equation: true,
+            ..ExecutionPureFact::certified(Proposition::ConditionIs(
+                ConditionTerm::equal(read, stored),
+                true,
+            ))
+        });
+    }
 }
 
 fn retain_call_read_aliases(

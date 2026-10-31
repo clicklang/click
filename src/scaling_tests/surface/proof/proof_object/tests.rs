@@ -1032,19 +1032,6 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
     let theorems = TheoremEnvironment::new(&[]);
-    let x = IntegerTerm::var(Variable(9_103_000));
-    let y = IntegerTerm::var(Variable(9_103_001));
-    let equality = Proposition::ConditionIs(
-        ConditionTerm::IntegerEqual(x.clone().into(), y.clone().into()),
-        true,
-    );
-    let goal = Proposition::ConditionIs(
-        ConditionTerm::IntegerEqual(
-            IntegerTerm::multiply(x.clone(), x.clone()).into(),
-            y.clone().into(),
-        ),
-        true,
-    );
     let surface = ClickProposition::Comparison {
         left: ContractExpression::Binding("x".into()),
         operator: ComparisonOperator::Equal,
@@ -1052,6 +1039,22 @@ fn integer_equality_rewrite_builds_names_only_on_refusal_and_scales() {
     };
     let mut baseline = None;
     for size in [4usize, 16, 64, 256] {
+        // Keep every measurement cold. Reusing the same variables across
+        // sizes would warm the new shared-term bridge only after size 4.
+        let x = IntegerTerm::var(Variable(9_103_000 + 2 * size as u64));
+        let y = IntegerTerm::var(Variable(9_103_001 + 2 * size as u64));
+        let equality = Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(x.clone().into(), y.clone().into()),
+            true,
+        );
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                IntegerTerm::multiply(x.clone(), x.clone()).into(),
+                y.clone().into(),
+            ),
+            true,
+        );
+
         let context = PureTheoremContext {
             diagnostic_names: Default::default(),
             declaration_bindings: BTreeMap::new(),

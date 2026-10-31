@@ -594,9 +594,30 @@ struct SharedIntegerNode {
     id: u64,
     term: IntegerTerm,
     literal_arithmetic: bool,
+    kernel_term: OnceLock<KernelTerm>,
+}
+
+/// Weak reverse migration link: the common tree must not keep its source
+/// alive when that source already owns the converted tree.
+#[derive(Clone, Default)]
+pub(crate) struct WeakIntegerTerm(Weak<SharedIntegerNode>);
+impl WeakIntegerTerm {
+    pub(crate) fn upgrade(&self) -> Option<SharedIntegerTerm> {
+        self.0.upgrade().map(SharedIntegerTerm)
+    }
 }
 
 impl SharedIntegerTerm {
+    pub(crate) fn kernel_term(&self) -> Option<&KernelTerm> {
+        self.0.kernel_term.get()
+    }
+    pub(crate) fn remember_kernel_term(&self, term: KernelTerm) {
+        let _ = self.0.kernel_term.set(term);
+    }
+    pub(crate) fn downgrade(&self) -> WeakIntegerTerm {
+        WeakIntegerTerm(Arc::downgrade(&self.0))
+    }
+
     /// Cached from immediate children when the node is introduced. Numeric
     /// checking can leave symbolic nonlinear operands opaque without a walk.
     pub(crate) fn is_literal_arithmetic(&self) -> bool {
@@ -1069,6 +1090,7 @@ impl IntegerInterner {
             id,
             term,
             literal_arithmetic,
+            kernel_term: OnceLock::new(),
         });
         self.nodes
             .entry(fingerprint)

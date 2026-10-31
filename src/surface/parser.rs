@@ -4986,6 +4986,7 @@ impl Parser {
             tactic_procedure: false,
             requires,
             requirement_source_clauses,
+            call_ranked_numeric_recursion: self.verifies_rust() && decreases.is_some(),
             decreases,
             structural_clauses: StructuralClauses::default(),
             constructs,

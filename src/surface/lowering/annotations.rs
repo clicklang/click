@@ -3261,75 +3261,120 @@ fn integer_literal_spelling(expression: &ContractExpression) -> Option<String> {
 }
 
 pub(in crate::surface) fn lower_contract_integer_to_spec(
-    expression: &ContractExpression,
+    expression: &SurfaceTerm,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
 ) -> Result<crate::kernel::SpecIntegerExpression, String> {
-    use crate::kernel::{IntegerTerm, SpecIntegerExpression};
-    check_integer_lowering_work(1)?;
-    match expression {
-        ContractExpression::IntegerLiteral(value) => {
-            check_integer_lowering_work(value.len().saturating_mul(value.len().saturating_add(4)))?;
-            let value = value
-                .parse::<num_bigint::BigInt>()
-                .map_err(|_| format!("invalid Integer literal `{value}`"))?;
-            Ok(SpecIntegerExpression::Term(IntegerTerm::constant(value)))
-        }
-        ContractExpression::Binding(name) => {
-            let value = integer_values
-                .get(name)
-                .ok_or_else(|| format!("`{name}` is not an Integer binding"))?;
-            let SpecIntegerExpression::Term(term) = value else {
-                return Err("machine-backed Integer bindings are not yet certificate atoms".into());
-            };
-            check_integer_lowering_work(integer_root_work(term))?;
-            Ok(value.clone())
-        }
-        ContractExpression::Negate(inner) => {
-            if let Some(literal) = integer_literal_spelling(expression) {
-                return lower_contract_integer_to_spec(
-                    &ContractExpression::IntegerLiteral(literal),
-                    integer_values,
-                );
+    let term = lower_surface_integer_term(expression, integer_values)?;
+    let value = crate::kernel::KernelTermExport::default().integer(&term)?;
+    Ok(crate::kernel::SpecIntegerExpression::Term(
+        value.as_ref().clone(),
+    ))
+}
+
+/// The first migrated lowering boundary: arithmetic certificate operands.
+/// Bindings are looked up by name; neither facts nor unrelated bindings are
+/// traversed. The checker bridge above is removed as certificates migrate.
+pub(in crate::surface) fn lower_surface_integer_term(
+    expression: &SurfaceTerm,
+    integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
+) -> Result<crate::kernel::KernelTerm, String> {
+    fn lower(
+        expression: &SurfaceTerm,
+        integer_values: &crate::persistent::PersistentMap<
+            String,
+            crate::kernel::SpecIntegerExpression,
+        >,
+        locals: &crate::persistent::PersistentMap<String, crate::kernel::KernelTerm>,
+        importer: &mut crate::kernel::KernelTermImport,
+    ) -> Result<crate::kernel::KernelTerm, String> {
+        use crate::kernel::{
+            KernelIntegerOperator as Op, KernelTerm, KernelTermNode, SpecIntegerExpression,
+        };
+        check_integer_lowering_work(1)?;
+        let root_work = |term: &KernelTerm| match term.node() {
+            KernelTermNode::IntegerLiteral(value) => value.bits() as usize + 1,
+            _ => 1,
+        };
+        match expression {
+            SurfaceTerm::IntegerLiteral(value) => {
+                check_integer_lowering_work(
+                    value.len().saturating_mul(value.len().saturating_add(4)),
+                )?;
+                let value = value
+                    .parse::<num_bigint::BigInt>()
+                    .map_err(|_| format!("invalid Integer literal `{value}`"))?;
+                Ok(KernelTerm::integer_literal(value))
             }
-            let SpecIntegerExpression::Term(term) =
-                lower_contract_integer_to_spec(inner, integer_values)?
-            else {
-                return Err(
-                    "machine-backed Integer expressions are not yet certificate atoms".into(),
-                );
-            };
-            check_integer_lowering_work(integer_root_work(&term))?;
-            Ok(SpecIntegerExpression::Term(IntegerTerm::Negate(
-                term.into(),
-            )))
+            SurfaceTerm::Binding(name) => {
+                if let Some(value) = locals.get(name) {
+                    check_integer_lowering_work(root_work(value))?;
+                    return Ok(value.clone());
+                }
+                let value = integer_values
+                    .get(name)
+                    .ok_or_else(|| format!("`{name}` is not an Integer binding"))?;
+                let SpecIntegerExpression::Term(term) = value else {
+                    return Err(
+                        "machine-backed Integer bindings are not yet certificate atoms".into(),
+                    );
+                };
+                check_integer_lowering_work(integer_root_work(term))?;
+                Ok(importer.integer(&term.clone().into()))
+            }
+            SurfaceTerm::Negate(inner) => {
+                if let Some(literal) = integer_literal_spelling(expression) {
+                    return lower(
+                        &SurfaceTerm::IntegerLiteral(literal),
+                        integer_values,
+                        locals,
+                        importer,
+                    );
+                }
+                let value = lower(inner, integer_values, locals, importer)?;
+                check_integer_lowering_work(root_work(&value))?;
+                KernelTerm::integer_operation(Op::Negate, vec![value]).map_err(Into::into)
+            }
+            SurfaceTerm::Add(left, right)
+            | SurfaceTerm::Subtract(left, right)
+            | SurfaceTerm::Multiply(left, right) => {
+                let left = lower(left, integer_values, locals, importer)?;
+                let right = lower(right, integer_values, locals, importer)?;
+                let operator = match expression {
+                    SurfaceTerm::Add(..) => Op::Add,
+                    SurfaceTerm::Subtract(..) => Op::Subtract,
+                    _ => Op::Multiply,
+                };
+                let work = if operator == Op::Multiply {
+                    root_work(&left).saturating_mul(root_work(&right))
+                } else {
+                    root_work(&left).saturating_add(root_work(&right))
+                };
+                check_integer_lowering_work(work)?;
+                KernelTerm::integer_operation(operator, vec![left, right]).map_err(Into::into)
+            }
+            SurfaceTerm::Let {
+                name,
+                click_type: Some(ClickType::Integer),
+                value,
+                body,
+            } => {
+                let value = lower(value, integer_values, locals, importer)?;
+                lower(
+                    body,
+                    integer_values,
+                    &locals.with_inserted(name.clone(), value),
+                    importer,
+                )
+            }
+            _ => Err("expected a specification-side Integer expression".into()),
         }
-        ContractExpression::Add(left, right) => {
-            let left = lower_contract_integer_to_spec(left, integer_values)?;
-            let right = lower_contract_integer_to_spec(right, integer_values)?;
-            lower_integer_operation(left, right, IntegerOperation::Add)
-        }
-        ContractExpression::Subtract(left, right) => {
-            let left = lower_contract_integer_to_spec(left, integer_values)?;
-            let right = lower_contract_integer_to_spec(right, integer_values)?;
-            lower_integer_operation(left, right, IntegerOperation::Subtract)
-        }
-        ContractExpression::Multiply(left, right) => {
-            let left = lower_contract_integer_to_spec(left, integer_values)?;
-            let right = lower_contract_integer_to_spec(right, integer_values)?;
-            lower_integer_operation(left, right, IntegerOperation::Multiply)
-        }
-        ContractExpression::Let {
-            name,
-            click_type: Some(ClickType::Integer),
-            value,
-            body,
-        } => {
-            let value = lower_contract_integer_to_spec(value, integer_values)?;
-            let integer_values = integer_values.with_inserted(name.clone(), value);
-            lower_contract_integer_to_spec(body, &integer_values)
-        }
-        _ => Err("expected a specification-side Integer expression".to_string()),
     }
+    lower(
+        expression,
+        integer_values,
+        &Default::default(),
+        &mut Default::default(),
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -3363,7 +3408,7 @@ fn lower_integer_operation(
     right: crate::kernel::SpecIntegerExpression,
     operation: IntegerOperation,
 ) -> Result<crate::kernel::SpecIntegerExpression, String> {
-    use crate::kernel::{IntegerTerm, SpecIntegerExpression};
+    use crate::kernel::{KernelIntegerOperator as Op, SpecIntegerExpression};
     let SpecIntegerExpression::Term(left) = left else {
         return Err("machine-backed Integer expressions are not yet certificate atoms".into());
     };
@@ -3377,12 +3422,30 @@ fn lower_integer_operation(
         _ => integer_root_work(&left).saturating_add(integer_root_work(&right)),
     };
     check_integer_lowering_work(work)?;
-    let term = match operation {
-        IntegerOperation::Add => IntegerTerm::Add(left.into(), right.into()),
-        IntegerOperation::Subtract => IntegerTerm::Subtract(left.into(), right.into()),
-        IntegerOperation::Multiply => IntegerTerm::Multiply(left.into(), right.into()),
+    let operator = match operation {
+        IntegerOperation::Add => Op::Add,
+        IntegerOperation::Subtract => Op::Subtract,
+        IntegerOperation::Multiply => Op::Multiply,
     };
-    Ok(SpecIntegerExpression::Term(term))
+    construct_integer_operation(operator, vec![left, right])
+}
+
+/// Ordinary specification arithmetic shares the certificate term constructor.
+/// Deferred evaluation remains in SpecIntegerExpression until its operands
+/// become values; this bridge neither evaluates them nor discharges obligations.
+fn construct_integer_operation(
+    operator: crate::kernel::KernelIntegerOperator,
+    operands: Vec<crate::kernel::IntegerTerm>,
+) -> Result<crate::kernel::SpecIntegerExpression, String> {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelTermImport, SpecIntegerExpression};
+    let mut importer = KernelTermImport::default();
+    let arguments = operands
+        .into_iter()
+        .map(|operand| importer.integer(&operand.into()))
+        .collect();
+    let term = KernelTerm::integer_operation(operator, arguments)?;
+    let value = KernelTermExport::default().integer(&term)?;
+    Ok(SpecIntegerExpression::Term(value.as_ref().clone()))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3847,8 +3910,8 @@ impl AnnotationLowerer<'_> {
     /// carries it, or `None` when the clause is one of the two measures the
     /// termination checker resolves by itself.
     ///
-    /// `decreases n` for a parameter `n`, and a structural resource measure,
-    /// keep naming exactly what they named before: those clauses are read by
+    /// `decreases n` for a C int32 parameter `n`, and a structural resource
+    /// measure, keep naming exactly what they named before: those clauses are read by
     /// `c_function_termination_plans` and analysed by the checker, and nothing
     /// about them reaches the interface. Anything else is a pure expression,
     /// lowered here the way a `requires` is, in this same function-contract
@@ -3861,17 +3924,19 @@ impl AnnotationLowerer<'_> {
     ) -> Result<Vec<crate::kernel::CRankingComponent>, ClickError> {
         let components = match function_block.decreases() {
             Some(CFunctionDecrease::Numeric(expression)) => {
-                // A bare name of an int32 parameter is today's numeric
+                // A bare name of a C int32 parameter is today's numeric
                 // measure, resolved against the parameter list by the
                 // termination plan, which is also what refuses a name that
                 // is no parameter of this function. Leave it there: a bare
                 // `decreases` name has always meant a parameter, and lowering
                 // it here would answer a misspelling with an evaluation
                 // failure. A parameter of another type has no body analysis,
-                // so it is lowered as the expression it is.
+                // so it is lowered as the expression it is. Rust also uses
+                // the call-ranked form, where MIR temporary values are known.
                 if let ContractExpression::Binding(name)
                 | ContractExpression::CBinding(name)
                 | ContractExpression::CFragment(CExpression::Variable(name)) = expression
+                    && !function_block.call_ranked_numeric_recursion
                     && function_block
                         .signature()
                         .parameters()
@@ -5568,19 +5633,14 @@ impl AnnotationLowerer<'_> {
                     check_integer_lowering_work(
                         integer_root_work(a).saturating_mul(integer_root_work(b)),
                     )?;
-                    return Ok(SpecIntegerExpression::Term(
+                    return construct_integer_operation(
                         if name == "truncating_quotient" {
-                            crate::kernel::IntegerTerm::TruncatingQuotient(
-                                a.clone().into(),
-                                b.clone().into(),
-                            )
+                            crate::kernel::KernelIntegerOperator::TruncatingQuotient
                         } else {
-                            crate::kernel::IntegerTerm::TruncatingRemainder(
-                                a.clone().into(),
-                                b.clone().into(),
-                            )
+                            crate::kernel::KernelIntegerOperator::TruncatingRemainder
                         },
-                    ));
+                        vec![a.clone(), b.clone()],
+                    );
                 }
                 Ok(if name == "truncating_quotient" {
                     SpecIntegerExpression::TruncatingQuotient(Box::new(left), Box::new(right))
@@ -5683,9 +5743,10 @@ impl AnnotationLowerer<'_> {
                 match inner {
                     SpecIntegerExpression::Term(term) => {
                         check_integer_lowering_work(integer_root_work(&term))?;
-                        Ok(SpecIntegerExpression::Term(
-                            crate::kernel::IntegerTerm::Negate(term.into()),
-                        ))
+                        construct_integer_operation(
+                            crate::kernel::KernelIntegerOperator::Negate,
+                            vec![term],
+                        )
                     }
                     inner => Ok(SpecIntegerExpression::Negate(Box::new(inner))),
                 }

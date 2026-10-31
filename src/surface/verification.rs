@@ -5110,8 +5110,8 @@ pub(in crate::surface) fn c_function_termination_plans(
                     Ok(crate::kernel::CFunctionTerminationMeasure::ResourceRequirement(index))
                 }
                 CFunctionDecrease::Numeric(measure) => {
-                    // A bare name stays the measure it has always been: an
-                    // int32 parameter, resolved to an index the termination
+                    // A bare C int32 parameter keeps its body-checked measure,
+                    // resolved to an index the termination
                     // checker analyses the body for, and refused by the same
                     // message when it names nothing this function has. A
                     // compound expression is ranked by obligations at the
@@ -5138,12 +5138,16 @@ pub(in crate::surface) fn c_function_termination_plans(
                                 function.signature().name()
                             ))
                         })?;
+                    // Rust call arguments use MIR temporaries, so check the
+                    // measure at the call, as for other expression measures.
                     // A parameter of another numeric type has no body
                     // analysis; it is an expression measure, ranked by
                     // obligations at the self-calls as `decreases b + 0`
                     // would be. Lowering decides whether its type is one a
                     // measure may have.
-                    if function.signature().parameters()[index].c_type() != C0Type::Int32 {
+                    if function.call_ranked_numeric_recursion
+                        || function.signature().parameters()[index].c_type() != C0Type::Int32
+                    {
                         return Ok(crate::kernel::CFunctionTerminationMeasure::Expression(
                             termination_measure_source(measure),
                         ));

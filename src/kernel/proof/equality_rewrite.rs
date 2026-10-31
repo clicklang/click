@@ -628,6 +628,12 @@ fn rewrite_through_load_variable(
     if rewritten == pointer {
         return None;
     }
+    // Address substitution preserves this observation's byte dependency.
+    // Without recording it at the new address, naming an otherwise unseen
+    // int32 read defaults to the eight-byte legacy pointer footprint. That
+    // makes rewrite/replay depend on which reads smart search tried first.
+    let bytes = crate::kernel::registered_load_bytes_for_variable(variable)?;
+    crate::kernel::eval::record_load_access_width(memory.memory(), &rewritten, bytes);
     // The read at the rewritten address is named as lowering names it: by
     // its version, never by a value its cell holds, so the rewritten goal
     // is the one writing the new address gives (`a[j]` to `a[i]`, not to
@@ -2268,6 +2274,38 @@ fn rewrite_atomic_proposition_by_exact_equality(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn address_rewrite_preserves_the_registered_read_width_without_prior_target_reads() {
+        for bytes in [4, 8] {
+            let _session = VerificationSession::enter();
+            let memory = intern_c_memory(CMemory::new());
+            let index = Bitvector32Term::Variable(Variable(73_001));
+            let base = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::scale_int32(
+                    Bitvector32Term::Variable(Variable(73_002)),
+                    4,
+                ),
+            };
+            let address = base.offset_by_int32_elements(index.clone());
+            crate::kernel::eval::record_load_access_width(memory.memory(), &address, bytes);
+            let read = canonical_form_of_load(memory.clone(), address, LoadKind::Int32);
+            let goal =
+                Proposition::ConditionIs(ConditionTerm::signed_less_equal(read, 7u32.into()), true);
+            let equality = Proposition::ConditionIs(ConditionTerm::equal(index, 0u32.into()), true);
+            let rewritten = rewrite_with_admitted_equality(&goal, &equality).unwrap();
+            let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = rewritten
+            else {
+                panic!("rewritten scalar comparison");
+            };
+            let Bitvector32Term::Variable(variable) = *left else {
+                panic!("rewritten read retains its name");
+            };
+            assert_eq!(registered_load_bytes_for_variable(&variable), Some(bytes));
+            assert_eq!(registered_load_for_variable(&variable).unwrap().1, base);
+        }
+    }
 
     #[test]
     fn address_rewrite_reaches_legacy_pointer_reads_beyond_eight_levels() {

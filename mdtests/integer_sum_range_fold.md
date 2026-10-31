@@ -98,10 +98,28 @@ int32 sum(int32 a[], int32 n) {
                 assumption();
             }
             have (-1000 * to_integer(i)) <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) by {
-                assumption();
+                have (-1000 * to_integer(i)) == 0 by {
+                    normalize();
+                }
+                arithmetic_certificate {
+                    premise 0: (-1000 * to_integer(i)) == 0 => (-1000 * to_integer(i)) == 0;
+                    less_equal_from_equal 0 => (-1000 * to_integer(i)) <= 0;
+                    premise 1: 0 <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) => 0 <= (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) });
+                    add 1, 2 => ((-1000 * to_integer(i)) + 0) <= (0 + (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }));
+                    conclusion 3;
+                }
             }
             have (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= (1000 * to_integer(i)) by {
-                assumption();
+                have (1000 * to_integer(i)) == 0 by {
+                    normalize();
+                }
+                arithmetic_certificate {
+                    premise 0: (1000 * to_integer(i)) == 0 => (1000 * to_integer(i)) == 0;
+                    less_equal_from_equal 0 reverse => 0 <= (1000 * to_integer(i));
+                    premise 1: (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0 => (0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) <= 0;
+                    add 2, 1 => ((0..i).fold(0, |acc, k| { (acc + to_integer(a[k])) }) + 0) <= (0 + (1000 * to_integer(i)));
+                    conclusion 3;
+                }
             }
         }
         preserve by {
@@ -313,6 +331,13 @@ int32 sum(int32 a[], int32 n) {
                     k < n;
                 };
             }
+            have to_integer(i) <= to_integer(n);
+            have to_integer(i) == (to_integer(at(region(5).entry, i)) + 1) by {
+                normalize() using {
+                    to_integer(i) == to_integer((at(region(5).entry, i) + 1));
+                    to_integer((at(region(5).entry, i) + 1)) == (to_integer(at(region(5).entry, i)) + to_integer(1));
+                };
+            }
             close_invariants() by {
                 both {
                     assumption();
@@ -327,43 +352,17 @@ int32 sum(int32 a[], int32 n) {
                             assumption();
                         } and {
                             both {
-                                arithmetic_certificate signed_int32 {
-                                    premise 0: at(region(5).entry, 0) <= at(region(5).entry, i) => at(region(5).entry, 0) <= at(region(5).entry, i);
-                                    premise 1: at(region(5).entry, i) < at(region(5).entry, n) => at(region(5).entry, i) < at(region(5).entry, n);
-                                    premise 2: 0 <= n => 0 <= n;
-                                    premise 3: n <= 1000 => n <= 1000;
-                                    interval_from_affine 2 (n) (0) (2147483647);
-                                    interval_from_affine 3 (n) (-2147483648) (1000);
-                                    interval_intersect 4, 5 (0) (1000);
-                                    add 1, 3 => to_integer((at(region(5).entry, i) + n)) < to_integer((at(region(5).entry, n) + 1000));
-                                    interval_from_affine 0 (at(region(5).entry, i)) (0) (2147483647);
-                                    interval_from_affine 7 (at(region(5).entry, i)) (-2147483648) (999);
-                                    interval_intersect 8, 9 (0) (999);
-                                    interval_subtract 6, 10 6 (-999) (1000);
-                                    interval_atom (1) (1) (1);
-                                    interval_subtract 11, 12 11 (-1000) (999);
-                                    affine_conclusion 1 13 => 0 <= to_integer(((n - at(region(5).entry, i)) - 1));
-                                    conclusion 14;
+                                arithmetic_certificate {
+                                    premise 0: to_integer(i) <= to_integer(n) => to_integer(i) <= to_integer(n);
+                                    conclusion 0;
                                 }
                             } and {
-                                arithmetic_certificate signed_int32 {
-                                    premise 0: at(region(5).entry, 0) <= at(region(5).entry, i) => at(region(5).entry, 0) <= at(region(5).entry, i);
-                                    premise 1: at(region(5).entry, i) < at(region(5).entry, n) => at(region(5).entry, i) < at(region(5).entry, n);
-                                    premise 2: 0 <= n => 0 <= n;
-                                    premise 3: n <= 1000 => n <= 1000;
-                                    interval_from_affine 2 (n) (0) (2147483647);
-                                    interval_from_affine 3 (n) (-2147483648) (1000);
-                                    interval_intersect 4, 5 (0) (1000);
-                                    add 1, 3 => to_integer((at(region(5).entry, i) + n)) < to_integer((at(region(5).entry, n) + 1000));
-                                    interval_from_affine 0 (at(region(5).entry, i)) (0) (2147483647);
-                                    interval_from_affine 7 (at(region(5).entry, i)) (-2147483648) (999);
-                                    interval_intersect 8, 9 (0) (999);
-                                    interval_subtract 6, 10 6 (-999) (1000);
-                                    interval_atom (1) (1) (1);
-                                    interval_subtract 11, 12 11 (-1000) (999);
-                                    trivial => 0 <= 0;
-                                    affine_conclusion_pair 14 13 11 => to_integer(((n - at(region(5).entry, i)) - 1)) < to_integer((n - at(region(5).entry, i)));
-                                    conclusion 15;
+                                arithmetic_certificate {
+                                    premise 0: to_integer(i) == (to_integer(at(region(5).entry, i)) + 1) => to_integer(i) == (to_integer(at(region(5).entry, i)) + 1);
+                                    less_equal_from_equal 0 reverse => (to_integer(at(region(5).entry, i)) + 1) <= to_integer(i);
+                                    trivial => 0 < 1;
+                                    add 1, 2 => ((to_integer(at(region(5).entry, i)) + 1) + 0) < (to_integer(i) + 1);
+                                    conclusion 3;
                                 }
                             }
                         }

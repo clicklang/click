@@ -83,6 +83,43 @@ checked. Each one costs completeness, expansion, or a readable report.
 A fact that exists only inside one kernel step, and never becomes a proof
 state's fact or goal, needs no spelling.
 
+## Shared term migration
+
+`SurfaceTerm` is the source expression AST; `ContractExpression` remains a
+compatibility alias. `KernelTerm` is an immutable typed expression DAG whose
+arithmetic and call operands are themselves `KernelTerm`s. Its structural
+identity is independent of equality-graph classes: constructing `1 + 1`
+does not construct `2`. Nodes retain their result type, and checked arithmetic
+constructors reject the wrong operand type or arity.
+
+Specification-side Integer certificate arithmetic (`lower_surface_integer_term`)
+and ordinary Integer arithmetic on existing values construct the shared tree.
+Ordinary negation, addition, subtraction, multiplication, and constant-nonzero-
+divisor quotient/remainder use the same constructor. Expressions still requiring
+evaluation retain their `SpecIntegerExpression` forms and scoped obligations;
+a symbolic divisor still needs its nonzero check. Integer arithmetic and
+pure-call raising consume the shared tree through `raise_kernel_term`. The existing
+checker still receives `IntegerTerm` through a lossless, memoized export;
+other producers enter through the memoized import. Neither bridge reads facts
+or simplifies terms. These are migration boundaries, not a second semantics.
+The `Legacy` leaf retains complete unmigrated values, including pointer
+metadata, machine observations, array snapshots, and scoped binders. Those
+families do not yet have unified constructors or total raising. Legacy call
+arguments retain their producer identity and exact payload: semantic pointer
+equality must not select a different auxiliary qualifier or evidence record.
+This change
+does not settle the C pointer field design or close the remaining census misses.
+
+Shared nodes use shallow child identities, cached key hashes, and bounded
+interner cleanup. Converted Integer nodes cache their common term; reverse
+links are weak to avoid reference cycles. Repeated lowering reuses those
+links rather than revisiting the growing expression behind a binding.
+Bridge tests grow shared DAGs and unrelated nodes separately; surface tests
+check arithmetic and nested calls through raising, printing, parsing, and
+ordinary structural lowering. The certificate operand test compares the
+resulting `KernelTerm` identity directly. Subsequent migrations should remove
+legacy leaves and adapters family by family rather than adding parallel trees.
+
 ## Kernel authority
 
 Some kernel propositions are checked context, not proof-state facts: a
@@ -233,6 +270,15 @@ spelling of its own: no Click text lowers back to it there, so `lower(raise(x))
 cell holding its own read (a materialization), which reads as that read. C
 evaluation still computes with stored values: a function's `result` is the
 value its statements produced.
+
+A logical 32-bit read through a model-pointer alias keeps that same read
+term. When the published footprint index selects an equal address with a
+stored word, the read returns a path-local equation to that word. The
+selection uses the address-class index and one exact cell lookup; it grants
+no access permission and does not search other aliases or snapshots.
+`logical_read_through_an_alias_retains_the_stored_word` checks the equation,
+missing-alias and changed-cell controls; its nightly scaling companion keeps
+the work bounds as aliases and unrelated frames grow.
 
 A scalar read handle retains its structural descriptor (memory version,
 address, and read kind) in the load registry. A generated read-definition fact

@@ -1084,8 +1084,8 @@ support.
 
 ## While loops and invariants
 
-Unlabeled `while` loops, including nested loops, use the shared checked loop
-rules. Sidecars can declare `invariant`, memory/resource clauses, and numeric
+`while` loops, including nested and labeled loops, use the shared checked
+loop rules. Sidecars can declare `invariant`, memory/resource clauses, and numeric
 `decreases` measures. Entry and preservation are separate obligations;
 arithmetic and indexing in the body retain Rust's panic-freedom checks.
 A decreasing measure proves termination through the existing loop checker.
@@ -1101,9 +1101,18 @@ A loop whose body breaks lowers to `while (1)` whose test also exits by
 `break`, so each exit runs its own path, including its storage ends, to the
 code after the loop
 ([`design/charon-trial/loop-control`](https://github.com/clicklang/click/blob/master/design/charon-trial/loop-control/control.click)).
-Every exit must reach one join through straight blocks; labeled `break` or
-`continue` out of an inner loop, and general iterators, remain unsupported.
-The copied-byte slice `for` form described below is supported.
+Every exit of a loop reaches one join through straight blocks, or returns.
+A `return` from a loop body, from any depth, runs straight to the function's
+exit as a C `return` does, so the loop's invariants are not owed on that path
+and the contract is checked there. A labeled `break 'outer` or `continue
+'outer` from an inner loop leaves each loop it crosses: the inner loop exits
+with the escape recorded in a flag, `__rust_loop_escape_ID`, that the enclosing
+loop tests to `break` or `continue` itself. In a written `preserve`, a body
+branch that returns is a proof-level `if` whose returning arm steps to
+`function.exit`
+([`design/charon-trial/early-exits`](https://github.com/clicklang/click/blob/master/design/charon-trial/early-exits/exits.click)).
+General iterators remain unsupported; the slice, array, range and `enumerate`
+`for` forms described below are supported.
 
 [`examples/rust-loops/loops.rs`](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.rs)
 and its [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.click)
@@ -1182,8 +1191,8 @@ copied pattern `(i, &x)` reads it.
 [`design/charon-trial/enumerate`](https://github.com/clicklang/click/blob/master/design/charon-trial/enumerate/enumerate.click)
 proves the last index a loop yields and bounds the elements it reads; its
 cursor invariant needs the same explicit `u64` steps as the sum example.
-`.iter_mut()`, by-value array iteration, custom iterators, labels, `break`, and
-`continue` remain outside this subset.
+`.iter_mut()`, by-value array iteration and custom iterators remain outside
+this subset.
 
 ## Range loops
 
@@ -1202,9 +1211,8 @@ so the body reads the yielded value as a `match` arm does.
 Invariants are written over the bounds: `decreases iter_end - iter_start`
 ranks the loop, and after it the exit guard gives `iter_start >= iter_end`.
 [`design/charon-trial/ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/ranges/ranges.click)
-verifies counts over `u32`, `i32` `a..b`, `u64` and `i64` ranges, the last
-value a loop yields, a slice read at each index of `0..bytes.len()`, and
-nested ranges. Inclusive ranges `a..=b`, `.rev()`, `.step_by()` and other
+verifies counts over `u32`, `i32` `a..b` and `i64` ranges, the last byte a
+loop over `0..bytes.len()` reads, and nested ranges. Inclusive ranges `a..=b`, `.rev()`, `.step_by()` and other
 range adapters remain later work.
 
 ## Primitive unsigned conversions
@@ -1637,3 +1645,17 @@ and its translator. The lock detects stale or changed inputs; it is not an
 attestation against somebody deliberately replacing the artifact and its lock.
 Tests distinguish invalid Rust rejected by rustc from false functional claims
 rejected by Click, and check the ordinary CLI and proof expansion path.
+
+### Scalar recursion
+
+A scalar recursive function can declare `decreases n;` for an integer
+parameter. The measure is checked at each recursive call, using the value
+of the argument even when checked Rust arithmetic introduces a MIR temporary.
+The next measure must be nonnegative and strictly smaller. An unchanged
+argument is refused. This uses the same call-ranked expression measure for
+`i32` and `i64` parameters.
+
+`tests/fixtures/rust-verification/recursive-countdown/r.click` verifies the
+unchanged `countdown(n - 1)` functions at both widths;
+`tests/rust_import.rs::rust_recursive_countdown_refuses_unchanged_argument`
+keeps the negative control.
