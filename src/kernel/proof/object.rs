@@ -1431,10 +1431,19 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         } else {
             return Err(PropositionCloseError::InstantiateQuantifiedUnavailable);
         };
+        // A listed mathematical comparison may spell an in-range machine
+        // guard. Check only its operation's exact range keys in the retained
+        // context, then pass that checked consequence beside the listed fact.
+        let mut premises_with_readings = explicit_premises.to_vec();
+        for premise in explicit_premises {
+            if let Some(native) = facts.native_operation_reading(premise) {
+                premises_with_readings.push(native);
+            }
+        }
         let conclusion = super::fact_reasoning::check_forall_instantiation(
             &quantified,
             &argument,
-            explicit_premises,
+            &premises_with_readings,
         )
         .map_err(PropositionCloseError::InstantiateInvalid)?;
         let added_facts = (!facts.contains_top_level(&conclusion))

@@ -1489,6 +1489,26 @@ impl ProofFacts {
         self.available(required)
     }
 
+    /// The native reading of this selected Integer fact, only when exact
+    /// indexed range premises establish that its operations cannot wrap.
+    /// This produces a consequence of the supplied fact; it does not choose
+    /// a different ambient premise to discharge the caller's guard.
+    pub(crate) fn native_operation_reading(&self, fact: &Proposition) -> Option<Proposition> {
+        let Proposition::ConditionIs(condition, truth) = fact else {
+            return None;
+        };
+        let (native, truth, bounds) = crate::kernel::machine_integer::comparison::native_comparison_through_integer_operations(condition, *truth)?;
+        if !bounds.iter().all(|bound| {
+            bound
+                .stating_facts()
+                .iter()
+                .any(|bound| self.assumptions().contains_known(bound))
+        }) {
+            return None;
+        }
+        Some(Proposition::ConditionIs(native, truth))
+    }
+
     /// Availability of a proposition to the explicit pure `assumption`
     /// judgment used inside fixed-state proofs. This deliberately excludes
     /// cross-effect snapshot transport: such a transport needs its own

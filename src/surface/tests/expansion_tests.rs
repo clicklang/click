@@ -19754,3 +19754,22 @@ fn loop_guard_paths_expand_distinct_nested_proofs() {
         assert!(verify_c0_sources(&invalid, &sources).is_err());
     }
 }
+
+#[test]
+#[ignore = "nightly: verifies, expands and rechecks three arithmetic proof fixtures"]
+fn machine_subtraction_fact_bridges_expand_without_implicit_search() {
+    for (fixture, function) in [
+        ("machine_subtraction_equality_rewrites_an_index", "pick"),
+        ("machine_subtraction_guard_is_selected_exactly", "at"),
+        ("machine_subtraction_guard_without_using", "at"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}

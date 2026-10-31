@@ -2087,6 +2087,11 @@ the current goal. The goal becomes the rewritten proposition; no fact changes.
   `x < n` give `y < n`. It substitutes exact occurrences inside products,
   sums, negations, differences, truncating quotient/remainder terms and
   pure-function arguments; an exact whole-fold occurrence is replaced.
+- A mathematical equality over observations of one 32- or 64-bit width and
+  `+`, `-`, `*`, or negation also rewrites the corresponding machine terms:
+  equality implies equality modulo that width. This direction requires no
+  range premise and does not turn a machine equality into an Integer one.
+  The conversion is bounded to 64 nodes in the cited equality.
 - A pointer equality rewrites the base of an explicit `viewable(...)` claim
   while preserving its memory snapshot and byte extent. A cited shifted view
   whose extent is `(i + 4) - i` also covers the same address with a literal
@@ -2385,7 +2390,8 @@ profiling charges the guards and result.
 
 **Expansion output.** `click expand` writes it; by hand, prefer the bare form,
 which finds its guards. Specialize universal fact `F` at `value`, discharge its
-guards from only the listed premises, and add the conclusion.
+guards from the listed premises and their checked machine readings, and add
+the conclusion.
 
 **Accepts** what the bare form accepts for `F`, `value`, and the conclusion,
 with the guards discharged differently:
@@ -2397,13 +2403,21 @@ with the guards discharged differently:
   from the listed premises alone by the checker's order and equality rules:
   `1 <= x` gives `0 <= x`; `x < y` and `y <= n` give `x < n`; `x == y` and
   `0 <= y` give `0 <= x`.
+- A listed Integer comparison over a machine addition or subtraction can
+  supply its native guard when exact indexed range facts in the proof context
+  establish that the operation does not wrap. These facts justify the reading
+  of the listed premise; they do not supply an omitted guard. For example,
+  `n - r < n` supplies the uint64 guard at `n - r` when `r <= n` is held.
+  A non-strict bound does not supply a strict guard, and a wrapping subtraction
+  is refused even if its mathematical comparison is true.
 - Unused premises are allowed; an unguarded `F` takes `using { }`.
 
 **Outside it**, with what to write instead:
 
 - A premise that is not available: prove it first with `have`.
-- A guard that needs a fact you did not list: list it; ambient facts are not
-  read.
+- A guard that needs a fact you did not list: list it. The context is read
+  only for the exact range facts establishing a listed comparison's machine
+  reading, not to search for other guard premises.
 - A guard that needs arithmetic beyond order and equality chaining: prove it
   with `have ... by solve() using { ... };` and list it.
 
