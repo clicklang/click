@@ -2211,7 +2211,12 @@ fn describe_struct_place_range(
         let CExpression::Value(CValue::Pointer(base)) = argument else {
             continue;
         };
-        if parameter.is_struct_value() {
+        if parameter.is_struct_value()
+            || parameter
+                .c_type()
+                .pointee_type()
+                .is_some_and(|ty| ty.is_pointer())
+        {
             continue;
         }
         let Some(layout) = parameter
@@ -2303,7 +2308,12 @@ fn struct_byte_bounds(
             let CExpression::Value(CValue::Pointer(base)) = argument else {
                 return None;
             };
-            if parameter.is_struct_value() {
+            if parameter.is_struct_value()
+                || parameter
+                    .c_type()
+                    .pointee_type()
+                    .is_some_and(|ty| ty.is_pointer())
+            {
                 return None;
             }
             let layout = parameter
@@ -5133,6 +5143,13 @@ fn diagnostic_c0_type_byte_width(c_type: C0Type, pointer_width: u32) -> i64 {
 pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter) -> i64 {
     if let Some(width) = parameter.array_element_width() {
         return i64::from(width);
+    }
+    if let Some(pointee) = parameter
+        .c_type()
+        .pointee_type()
+        .filter(|ty| ty.is_pointer())
+    {
+        return i64::from(pointee.to_kernel_type().byte_width());
     }
     if let Some(layout) = parameter.pointee_struct_layout() {
         return i64::from(layout.size_bytes());
