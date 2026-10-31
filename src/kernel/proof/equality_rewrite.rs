@@ -290,6 +290,21 @@ fn rewrite_with_admitted_equality(
     if exact.is_ok() {
         return exact;
     }
+    // Equality of mathematical integers implies equality of their residues.
+    // This direction needs no in-range premise (unlike an order comparison).
+    // Only the cited expression is visited, under the modular rule's bound.
+    if let Proposition::ConditionIs(condition, truth) = equality {
+        for width in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
+            if let Some(wrapped) = crate::kernel::machine_integer::modular::wrapped_equality_at(
+                width, condition, *truth,
+            ) && let Ok(rewritten) = rewrite_with_admitted_equality_as_written(
+                goal,
+                &Proposition::ConditionIs(wrapped, true),
+            ) {
+                return Ok(rewritten);
+            }
+        }
+    }
     for reading in
         crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(goal)
     {
