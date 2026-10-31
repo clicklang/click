@@ -5473,6 +5473,8 @@ mod loop_control;
 mod parameterized_contracts;
 #[path = "rust_import/ranges.rs"]
 mod ranges;
+#[path = "rust_import/refusals.rs"]
+mod refusals;
 #[path = "rust_import/scalar_slices.rs"]
 mod scalar_slices;
 #[path = "rust_import/signed_arithmetic.rs"]

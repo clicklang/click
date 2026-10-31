@@ -346,18 +346,31 @@ pub(crate) fn lower_with_identity(
         if !names.insert(f.name.clone()) {
             return Err("duplicate Rust function name".into());
         }
-        functions.push(lower_function(
-            export,
-            identity,
-            f,
-            &fields,
-            &layouts,
-            &record_index,
-            &function_index,
-        )?);
+        functions.push(
+            lower_function(
+                export,
+                identity,
+                f,
+                &fields,
+                &layouts,
+                &record_index,
+                &function_index,
+            )
+            .map_err(|error| located(&export.logical_source, f, error))?,
+        );
     }
     Ok((functions, layouts))
 }
+/// `error`, refusing to lower `f`, with the function's source location
+/// unless it already names one.
+fn located(source: &str, f: &Function, error: String) -> String {
+    if error.starts_with(&format!("{source}:")) {
+        return error;
+    }
+    let name = super::names::rust_display_name(&f.name).unwrap_or_else(|| f.name.clone());
+    format!("{source}:{} in {name}: {error}", f.span.line)
+}
+
 fn lower_function(
     export: &RustExport,
     identity: Option<&str>,
