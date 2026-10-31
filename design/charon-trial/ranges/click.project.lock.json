@@ -18,18 +18,18 @@
             "profile": "38b817cc5760845d2e37b8f72a333f6d36a3ccdbfbf19e8c22da436e67a79ab1"
           },
           "schema": 9,
-          "source": "d386993c8a9855543be0f384906f0aebe2ef68fefa5585261f969d1070387080"
+          "source": "7c2a35df217d03a5254dac726f10d28a852221c1e293c987c61e4bb5002ccb82"
         },
         "sources": {
           "ranges.rs": {
             "artifact": {
-              "bytes": 601148,
+              "bytes": 554595,
               "path": ".click/ranges/ranges.rs.ullbc",
-              "sha256": "a6517cf9d7813ef306c6e42580e8f2177f5d3db45e62c2800f7f0a00b1aef710"
+              "sha256": "9639670d40df0f5c072b74607ca1a6377aeb459e7d42c849ea2c5520415eb82e"
             },
-            "identity": "c6f9369feb3e159cecb1cd38edee40e2b2931d44f58442f41e3bfdda5430b720",
+            "identity": "1ca123ad5ef826fc45bffc5a469f7360496766ea0dc34f732b9ca83fe80c3bee",
             "inputs": {
-              "ranges.rs": "d386993c8a9855543be0f384906f0aebe2ef68fefa5585261f969d1070387080"
+              "ranges.rs": "7c2a35df217d03a5254dac726f10d28a852221c1e293c987c61e4bb5002ccb82"
             }
           }
         },

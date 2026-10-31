@@ -6,25 +6,9 @@ pub fn count_to(n: u32) -> u32 {
     total
 }
 
-pub fn last_index(n: u32) -> u32 {
-    let mut last = 0;
-    for i in 0..n {
-        last = i;
-    }
-    last
-}
-
 pub fn span(a: i32, b: i32) -> i32 {
     let mut count = 0;
     for _k in a..b {
-        count += 1;
-    }
-    count
-}
-
-pub fn count_wide(n: u64) -> u64 {
-    let mut count = 0;
-    for _i in 0..n {
         count += 1;
     }
     count
