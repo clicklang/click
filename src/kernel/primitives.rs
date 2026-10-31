@@ -68,7 +68,8 @@ mod integer;
 pub(crate) use integer::WeakIntegerTerm;
 mod kernel_term;
 pub use kernel_term::{
-    KernelIntegerOperator, KernelLegacyTerm, KernelTerm, KernelTermNode, KernelType,
+    KernelIntegerOperator, KernelLegacyTerm, KernelMachineCastEncoding, KernelMachineLiteral,
+    KernelTerm, KernelTermNode, KernelType,
 };
 pub(crate) use kernel_term::{KernelTermExport, KernelTermImport};
 mod machine_integer;

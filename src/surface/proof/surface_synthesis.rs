@@ -2782,7 +2782,28 @@ fn raise_kernel_term(
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
         },
-        Node::Variable(_) => return None,
+        Node::MachineLiteral(_) => {
+            let crate::kernel::PureFunctionArgument::Value(value) =
+                crate::kernel::KernelTermExport::default()
+                    .argument(term)
+                    .ok()?
+            else {
+                return None;
+            };
+            SurfaceTerm::CFragment(CExpression::Value(value))
+        }
+        Node::MachineBinary { .. }
+        | Node::MachineUnary { .. }
+        | Node::MachineCast { .. }
+        | Node::Variable(_) => {
+            // Machine producers still use the old checker representation.
+            // One exact export preserves its established typed spelling;
+            // there is no fact-aware alternative or normalization here.
+            let value = crate::kernel::KernelTermExport::default()
+                .argument(term)
+                .ok()?;
+            synthesize_legacy_call_argument(&value, parameter_binding, state, bound_variables)?
+        }
     })
 }
 
@@ -3521,11 +3542,34 @@ fn synthesize_surface_bitvector(
                 synthesize_int32_operand(operand)
             }
         }
-        Bitvector32Term::MachineIntegerCast { .. } => None,
+        Bitvector32Term::MachineIntegerCast {
+            value, destination, ..
+        } => {
+            let operand =
+                synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
+            Some(ContractExpression::CFragment(CExpression::Cast {
+                expression: Box::new(contract_expression_to_c_fragment(&operand)?),
+                target_type: destination.c_type(),
+                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            }))
+        }
         // TODO(stage5): synthesize `b as int32`.
         Bitvector32Term::BoolCast { .. } => None,
 
-        Bitvector32Term::MachineIntegerConstant(_) => None,
+        Bitvector32Term::MachineIntegerConstant(value) => {
+            let value = if value.format() == MachineIntegerType::Int128.format() {
+                CValue::Int128(term.clone())
+            } else if value.format() == MachineIntegerType::UInt128.format() {
+                CValue::UInt128(term.clone())
+            } else {
+                return None;
+            };
+            Some(ContractExpression::CFragment(CExpression::Value(value)))
+        }
         Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
             unreachable!("constants returned above")
         }
@@ -3888,37 +3932,37 @@ fn synthesize_surface_bitvector(
         Bitvector32Term::UInt64Constant(value) => Some(ContractExpression::CFragment(
             CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(*value))),
         )),
-        Bitvector32Term::Int64From32(value) | Bitvector32Term::Int64FromUInt32(value) => {
-            Some(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(contract_expression_to_c_fragment(
-                    &synthesize_surface_bitvector(
-                        value,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?,
-                )?),
-                target_type: CType::Int64,
-                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
-                pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
-                explicit_qualification: false,
-            }))
-        }
-        Bitvector32Term::UInt64From32(value)
+        Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::Int64FromUInt32(value)
+        | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value) => {
+            let mut operand =
+                synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
+            // Widening interprets the source word's signedness. Its name
+            // alone may have a different type (e.g. zero-extending int32 x
+            // after `x as uint32`). Preserve that interpretation explicitly.
+            if !matches!(term, Bitvector32Term::UInt64FromInt64(_)) {
+                let unsigned_source = matches!(
+                    term,
+                    Bitvector32Term::Int64FromUInt32(_) | Bitvector32Term::UInt64From32(_)
+                );
+                if unsigned_source {
+                    operand = synthesize_uint32_operand(operand)?;
+                } else {
+                    operand = synthesize_int32_operand(operand)?;
+                }
+            }
             Some(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(contract_expression_to_c_fragment(
-                    &synthesize_surface_bitvector(
-                        value,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?,
-                )?),
-                target_type: CType::UInt64,
+                expression: Box::new(contract_expression_to_c_fragment(&operand)?),
+                target_type: if matches!(
+                    term,
+                    Bitvector32Term::Int64From32(_) | Bitvector32Term::Int64FromUInt32(_)
+                ) {
+                    CType::Int64
+                } else {
+                    CType::UInt64
+                },
                 integer_mode: crate::kernel::CIntegerCastMode::CConversion,
                 pointee_struct: None,
                 pointee_volatile: false,

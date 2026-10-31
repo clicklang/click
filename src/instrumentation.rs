@@ -1075,6 +1075,13 @@ pub(crate) fn numeric_operation_work_exceeded(units: usize) -> bool {
 /// must consume its allowance before multiplication, not just count a unit
 /// after the result has already been allocated.
 pub(crate) fn deadline_exceeded_with_work(units: usize) -> bool {
+    // Audit scopes suppress checkpoint charges as well as explicit records.
+    // Keep checking existing limits and wall-clock containment below.
+    let units = if UNCHARGED_WORK.with(Cell::get) {
+        0
+    } else {
+        units
+    };
     // A debug-build self-check's checkpoints charge nothing, exactly as its
     // direct records do not (`uncharged_debug_check`).
     #[cfg(debug_assertions)]
@@ -2063,6 +2070,25 @@ mod tests {
             });
             assert_eq!(run_work_used(), Some(56));
             assert!(!deadline_exceeded(), "the outer budget still has room");
+        });
+    }
+
+    #[test]
+    fn uncharged_scopes_suppress_checkpoint_work_and_restore_accounting() {
+        with_run_work_limit(3, || {
+            let ((), work) = measure_deterministic_work(|| {
+                record_deterministic_work(1);
+                without_charging(|| {
+                    record_deterministic_work(100);
+                    assert!(!deadline_exceeded_with_work(100));
+                    without_charging(|| assert!(!deadline_exceeded()));
+                });
+                assert_eq!(run_work_used(), Some(1));
+                assert!(!deadline_exceeded());
+            });
+            assert_eq!(work, 2);
+            assert!(deadline_exceeded_with_work(2));
+            without_charging(|| assert!(deadline_exceeded()));
         });
     }
 

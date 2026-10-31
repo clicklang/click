@@ -2,6 +2,8 @@
 //! explicitly named Legacy leaf is a lossless boundary for unmigrated sorts.
 //! No constructor consults facts, evaluates arithmetic, or unfolds a call.
 use super::*;
+mod machine;
+pub use machine::{KernelMachineCastEncoding, KernelMachineLiteral};
 use num_bigint::BigInt;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
@@ -27,6 +29,23 @@ pub enum KernelIntegerOperator {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum KernelTermNode {
     IntegerLiteral(BigInt),
+    MachineLiteral(KernelMachineLiteral),
+    MachineBinary {
+        format: MachineIntegerType,
+        operator: MachineBinaryOp,
+        arguments: [KernelTerm; 2],
+    },
+    MachineUnary {
+        format: MachineIntegerType,
+        operator: MachineUnaryOp,
+        operand: KernelTerm,
+    },
+    MachineCast {
+        encoding: KernelMachineCastEncoding,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+        operand: KernelTerm,
+    },
     Variable(Variable),
     IntegerOperation {
         operator: KernelIntegerOperator,
@@ -215,6 +234,9 @@ impl KernelTerm {
         match self.node() {
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
+            KernelTermNode::MachineBinary { arguments, .. } => arguments,
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => std::slice::from_ref(operand),
             _ => &[],
         }
     }
@@ -293,6 +315,13 @@ impl KernelTermImport {
     pub(crate) fn argument(&mut self, value: &PureFunctionArgument) -> KernelTerm {
         match value {
             PureFunctionArgument::Integer(value) => self.integer(value),
+            PureFunctionArgument::Value(value) if matches!(value, integer_c_value!(_)) => {
+                let format = MachineIntegerType::from_c_type(value.c_type()).unwrap();
+                let (integer_c_value!(bits)) = value else {
+                    unreachable!()
+                };
+                self.machine(format, bits)
+            }
             _ => KernelTerm::legacy(value.clone()),
         }
     }
@@ -333,6 +362,11 @@ impl KernelTermImport {
                     .enumerate()
                     .map(|(index, arg)| match arg {
                         PureFunctionArgument::Integer(value) => self.integer(value),
+                        PureFunctionArgument::Value(value)
+                            if matches!(value, integer_c_value!(_)) =>
+                        {
+                            self.argument(arg)
+                        }
                         _ => KernelTerm::legacy_at(
                             arg.clone(),
                             LegacyIdentity::ApplicationArgument(application.clone(), index),
@@ -500,6 +534,17 @@ impl KernelTermExport {
     ) -> Result<PureFunctionArgument, &'static str> {
         if let Some(value) = term.legacy_integer() {
             return Ok(PureFunctionArgument::Integer(value));
+        }
+        if let KernelType::C(c_type) = term.ty()
+            && let Some(format) = MachineIntegerType::from_c_type(*c_type)
+            && !matches!(term.node(), KernelTermNode::Legacy(_))
+        {
+            // Export the explicit boxed output once. Caching and then cloning
+            // every intermediate boxed subtree would make a chain quadratic.
+            return Ok(PureFunctionArgument::Value(machine::wrap_exact(
+                format,
+                Self::machine(term)?,
+            )));
         }
         if let Some(value) = self.values.get(term) {
             return Ok(value.clone());

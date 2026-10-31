@@ -672,15 +672,20 @@ impl Bitvector32Term {
                 .constant_term(constant.convert_modulo(destination.format()))
                 .expect("matching destination format");
         }
-        // The outer conversion keeps only bits the intermediate preserved.
-        // If it widens again, retain the intermediate signed interpretation.
+        // The established 32-bit word rules identify chains of sign casts
+        // and narrow promotions. Keep that representation convention local
+        // to the word carrier; it must not erase a wide intermediate cast.
         if let Self::MachineIntegerCast {
             source: original,
             destination: intermediate,
             value: operand,
         } = value
         {
-            if intermediate == source && destination.format().bits() <= intermediate.format().bits()
+            if original.carrier_bytes() == 4
+                && source.carrier_bytes() == 4
+                && destination.carrier_bytes() == 4
+                && intermediate == source
+                && destination.format().bits() <= intermediate.format().bits()
             {
                 return Self::machine_integer_cast(original, destination, *operand);
             }
@@ -694,6 +699,10 @@ impl Bitvector32Term {
                 destination,
             };
         }
+        // Keep symbolic cast composition structural. Collapsing a wide
+        // intermediate can manufacture a generic 32-to-64 cast, although
+        // direct surface conversion uses the legacy 32-to-64 node instead.
+        // Retaining both nodes lets their ordinary cast spelling round-trip.
         Self::MachineIntegerCast {
             value: Box::new(value),
             source,
@@ -912,10 +921,16 @@ mod tests {
                     );
                     let term =
                         Bitvector32Term::machine_integer_cast(intermediate, destination, inner);
-                    if destination == source
-                        && intermediate.format().bits() >= source.format().bits()
+                    if source != intermediate
+                        && intermediate != destination
+                        && (source.carrier_bytes() > 4
+                            || intermediate.carrier_bytes() > 4
+                            || destination.carrier_bytes() > 4)
                     {
-                        assert_eq!(term, Bitvector32Term::Variable(variable));
+                        assert!(matches!(&term, Bitvector32Term::MachineIntegerCast {
+                            value, source: outer_source, destination: outer_destination,
+                        } if *outer_source == intermediate && *outer_destination == destination
+                            && matches!(value.as_ref(), Bitvector32Term::MachineIntegerCast { .. })));
                     }
                     for input in [min.clone(), max.clone(), 0.into(), 1.into()] {
                         let constant =

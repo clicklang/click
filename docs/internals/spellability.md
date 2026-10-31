@@ -102,6 +102,35 @@ pure-call raising consume the shared tree through `raise_kernel_term`. The exist
 checker still receives `IntegerTerm` through a lossless, memoized export;
 other producers enter through the memoized import. Neither bridge reads facts
 or simplifies terms. These are migration boundaries, not a second semantics.
+Machine-integer arguments now import into typed shared literal, variable,
+binary, complement and explicit-cast nodes. The result type and operator
+format are distinct: a `uint32` result may contain a sign-free `int32` word
+operation. Literal payload tags survive exactly. Export builds the explicit
+boxed checker output once, without cloning every intermediate subtree.
+This is a bridge migration for argument spelling; machine execution and
+lowering producers still construct the old representation. Shifts use the
+same shared binary nodes: lowering has already converted a count to the
+left operand's carrier width, and the bridge preserves that explicit conversion
+without reinterpreting it from the result's signedness. Widening spellings explicitly retain the source `int32`/`uint32`
+interpretation: zero-extending signed `x` prints as `(x as uint32) as uint64`,
+so lowering cannot replace zero extension with sign extension. Pointer-carrying
+integers retain their complete metadata, even though their C type is numeric.
+The six specialized 32/64-bit extensions and low-word conversions also use
+shared cast nodes. A transitional encoding tag distinguishes their exact
+legacy constructors from a generic cast with the same formats; import/export
+never silently normalizes one into another. Low-word extraction interprets
+its operand as unsigned bits, independent of the source C signedness.
+Machine raising currently uses one exact export to the existing speller.
+Wide symbolic cast chains retain their intermediate nodes. Collapsing
+`(x as int128) as int64` used to create a generic `int32`-to-`int64` cast,
+while its direct spelling lowered to `Int64From32`. Retaining the chain
+restores the round trip. The existing 32-bit word-cast conventions remain.
+The speller now handles explicit wide casts and wide literal payloads.
+Cast-composition equalities, including 128-bit intermediates, are maintained
+by the equality graph's indexed machine relations. A full-width source's
+conversion through a no-narrower intermediate can be related to its direct
+modular conversion; a lossy intermediate does not restore the original value.
+No stored cast node is replaced by that equality.
 The `Legacy` leaf retains complete unmigrated values, including pointer
 metadata, machine observations, array snapshots, and scoped binders. Those
 families do not yet have unified constructors or total raising. Legacy call
