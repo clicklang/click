@@ -37,6 +37,7 @@ fn nested_case_partition_reuses_decisions_without_relowering_or_forking() {
             });
         }
         let provenance = OutcomeProvenance {
+            terminal_statement_case: None,
             checked_leaf_facts: None,
             loop_return: None,
             call_routes: Vec::new(),

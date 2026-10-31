@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn short_circuit_boolean_returns_expand_distinct_outcome_proofs() {
+    for (expression, proposition) in [("a && b", "a and b"), ("a || b", "a or b")] {
+        let c = format!("bool f(bool a, bool b) {{ return {expression}; }}");
+        let source = format!(
+            r#"verifying "bool.c";
+            bool f(bool a, bool b) {{
+                ensures result implies {proposition};
+                ensures ({proposition}) implies result;
+            }}"#
+        );
+        let sources = [("bool.c", c.as_str())];
+        let verified = verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_checked_grouped_claim(&source, &verified, "f").unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+        let wrong = source.replace("ensures result implies", "ensures not result implies");
+        assert!(verify_c0_sources(&wrong, &sources).is_err());
+    }
+}
+
+#[test]
 #[ignore = "nightly: original branching alias proofs and expansion take one second"]
 fn alias_load_outcome_requirements_keep_recorded_value_names_in_expansion() {
     let (mut source, sources) =
