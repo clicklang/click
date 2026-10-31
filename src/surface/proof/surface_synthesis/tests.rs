@@ -3450,6 +3450,66 @@ fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
 }
 
 #[test]
+fn pointee_layout_spells_a_field_load_at_its_byte_offset() {
+    // A C++ receiver uses a byte pointer internally, with its 16-byte
+    // nominal object layout retained separately. `p + 8` is not its field.
+    let layout = syntax::C0StructLayout::from_explicit_fields(
+        vec![
+            (
+                "header".into(),
+                C0Type::UInt64(crate::languages::c::target::LongRank::LongLong),
+                0,
+                8,
+            ),
+            ("side".into(), C0Type::Int32, 8, 4),
+        ],
+        16,
+        8,
+    )
+    .unwrap();
+    let parameter = syntax::C0Parameter::new(C0Type::UInt8Pointer, "p".into(), None)
+        .with_pointee_struct_layout("Square".into(), layout);
+    assert!(parameter.struct_layout().is_none());
+    let pointer = Pointer {
+        block: PointerBlock::Concrete("square".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let value = CValue::typed_pointer(pointer.clone(), CType::UInt8Pointer);
+    let state = CState::new().with_local("p", value.clone());
+    let arguments = [CExpression::Value(value)];
+    let parameters = [parameter];
+    let load = synthesize_parameter_field_load(
+        &pointer.offset_by_bytes(8),
+        CType::Int32,
+        ParameterBinding::new(&parameters, &arguments),
+    )
+    .expect("a pointer parameter's nominal layout names its field");
+    let expected = ClickProposition::Defined {
+        expression: ContractExpression::CFragment(CExpression::TypedLoad {
+            pointer: Box::new(CExpression::PointerOffsetBytes {
+                pointer: Box::new(CExpression::Variable("p".into())),
+                bytes: 8,
+            }),
+            value_type: CType::Int32,
+            volatile: false,
+            pointee_constant: false,
+            access_class: None,
+            source: Default::default(),
+        }),
+    };
+    let surface = ClickProposition::Defined { expression: load };
+    assert_eq!(
+        crate::surface::printing::source_click_proposition(&surface),
+        "defined(p->side)"
+    );
+    assert_eq!(
+        relower_written_proposition(&surface, &state),
+        relower_written_proposition(&expected, &state)
+    );
+    assert!(relower_written_proposition(&surface, &state).is_ok());
+}
+
+#[test]
 fn mathematical_constant_goals_keep_structure_and_type() {
     use crate::kernel::IntegerTerm;
     let c = IntegerTerm::constant_i64;
