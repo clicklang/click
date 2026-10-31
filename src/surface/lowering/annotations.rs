@@ -7973,6 +7973,20 @@ impl AnnotationLowerer<'_> {
                 byte_width: element_type.byte_width(),
             });
         }
+        if !environment.checking_definedness
+            && let CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) =
+                expression
+            && let CExpression::Index(base, index) = target.as_ref()
+            && let Some(byte_width) = self.c_expression_array_element_width(base, environment)
+        {
+            // Taking an element's address retains its physical stride,
+            // including the concrete layout of a generic struct pointee.
+            return Ok(SpecExpression::PointerOffset {
+                pointer: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
+                elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
+                byte_width,
+            });
+        }
         match expression {
             CExpression::Value(value) => Ok(SpecExpression::Value(value.clone())),
             CExpression::Variable(name) => self.lower_c_binding_to_spec(
@@ -8651,6 +8665,14 @@ impl AnnotationLowerer<'_> {
             );
         }
         match expression {
+            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target)
+                if matches!(target.as_ref(), CExpression::Index(..)) =>
+            {
+                let CExpression::Index(base, _) = target.as_ref() else {
+                    unreachable!()
+                };
+                self.c_expression_array_element_width(base, environment)
+            }
             CExpression::Value(CValue::Pointer(pointer)) => {
                 pointer.c_type().pointee_type().map(CType::byte_width)
             }

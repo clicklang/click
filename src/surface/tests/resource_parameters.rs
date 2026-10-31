@@ -208,3 +208,43 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
         error.report()
     );
 }
+
+#[test]
+fn elements_separation_applies_and_expands_without_implicit_search() {
+    for (fixture, labels) in [
+        ("mdtests/separation_elements.md", vec!["keep.contract"]),
+        (
+            "mdtests/separation_elements_types.md",
+            vec!["words.ensures_0", "pointers.ensures_0", "inspect.contract"],
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+        for label in labels {
+            let expanded = expand_c0_claim_source_by_label(&source, &sources, label).unwrap();
+            without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        }
+    }
+}
+
+#[test]
+fn elements_separation_requires_distinct_indices() {
+    for (requirement, arguments) in [("", "i, j"), ("requires i != j;", "i, i")] {
+        let source = format!(
+            r#"
+            import click::separation;
+            theorem invalid(p: uint8*, i: uint64, j: uint64) {{
+                {requirement}
+                ensures separate(memory(p[i]), memory(p[j])) by {{
+                    apply(separation::elements(p, {arguments})) using {{}};
+                }}
+            }}
+        "#
+        );
+        assert!(without_implicit_auto(|| verify_click_theorems(&source)).is_err());
+    }
+}

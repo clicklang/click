@@ -22,7 +22,7 @@ impl ReadType {
     pub(in crate::kernel) fn bytes(self) -> u32 {
         match self {
             Self::Pointer(_) | Self::PointerAddress => C_POINTER_BYTE_WIDTH,
-            Self::Integer(format) => format.carrier_bytes(),
+            Self::Integer(format) => format.c_type().byte_width(),
         }
     }
 }
@@ -55,6 +55,7 @@ pub(super) fn record(memory: &CMemory, address: &Pointer, value: &CValue) {
         CValue::Pointer(p) => ReadType::Pointer(p.c_type()),
         CValue::Int32(_) => ReadType::Integer(MachineIntegerType::Int32),
         CValue::UInt32(_) => ReadType::Integer(MachineIntegerType::UInt32),
+        CValue::UInt8(_) => ReadType::Integer(MachineIntegerType::UInt8),
         CValue::Int64(_) => ReadType::Integer(MachineIntegerType::Int64),
         CValue::UInt64(_) => ReadType::Integer(MachineIntegerType::UInt64),
         _ => return,

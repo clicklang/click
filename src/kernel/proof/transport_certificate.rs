@@ -188,9 +188,7 @@ fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> O
     } else {
         return None;
     };
-    if bytes.as_const() != Some(kind.bytes()) {
-        return None;
-    }
+    let kind = observation_type(kind, bytes.as_const()?)?;
     observation_equality(before, after, address, kind)
 }
 
@@ -207,10 +205,21 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
         return None;
     }
     let (address, bytes) = kept.byte_footprint();
-    if bytes.as_const() != Some(kind.bytes()) {
-        return None;
-    }
+    let kind = observation_type(kind, bytes.as_const()?)?;
     observation_equality(&footprint.before, &footprint.after, address, kind)
+}
+
+// C promotes an unsigned byte comparison to int32, but the selected resource
+// still describes one byte. Select that exact producer record, not a four-byte
+// read or a search for an alternative observation.
+fn observation_type(comparison: ReadType, bytes: u32) -> Option<ReadType> {
+    match (comparison, bytes) {
+        (ReadType::Integer(MachineIntegerType::Int32), 1) => {
+            Some(ReadType::Integer(MachineIntegerType::UInt8))
+        }
+        (kind, bytes) if kind.bytes() == bytes => Some(kind),
+        _ => None,
+    }
 }
 
 fn observation_equality(
@@ -238,7 +247,11 @@ fn observation_equality(
 
 fn integer_bits(value: CValue) -> Option<Bitvector32Term> {
     match value {
-        CValue::Int32(t) | CValue::UInt32(t) | CValue::Int64(t) | CValue::UInt64(t) => Some(t),
+        CValue::UInt8(t)
+        | CValue::Int32(t)
+        | CValue::UInt32(t)
+        | CValue::Int64(t)
+        | CValue::UInt64(t) => Some(t),
         _ => None,
     }
 }
@@ -249,7 +262,7 @@ fn integer_equality(
     right: Bitvector32Term,
 ) -> Option<ConditionTerm> {
     Some(match format {
-        MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
+        MachineIntegerType::UInt8 | MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
         MachineIntegerType::UInt32 => ConditionTerm::uint32_equal(left, right),
         MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
             ConditionTerm::int64_equal(left, right)

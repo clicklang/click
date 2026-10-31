@@ -6,6 +6,12 @@ theorem restrict(A: Resource, B: Resource, a: Resource, b: Resource) {
     ensures separate(a, b);
 }
 
+// Unequal indices describe disjoint complete elements, including padding.
+theorem elements<T>(p: T*, i: uint64, j: uint64) {
+    requires i != j;
+    ensures separate(memory(p[i]), memory(p[j]));
+}
+
 // Bounds are in elements of T, not bytes. Descriptors grant no ownership.
 theorem subrange<T>(p: T*, lo: int32, hi: int32, inner_lo: int32, inner_hi: int32) {
     requires lo <= inner_lo;

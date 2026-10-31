@@ -2,6 +2,39 @@
 //! they do not search the fact store or inspect memory history.
 use super::prelude::*;
 
+/// Distinct indices of one typed array describe disjoint complete elements.
+/// Pointer offsets use exact scaled coordinates, not modular byte arithmetic.
+pub(crate) fn prove_separation_elements(
+    base: CPointerValue,
+    width: u32,
+    i: Bitvector32Term,
+    j: Bitvector32Term,
+) -> Theorem {
+    assert!(width > 0, "elements require a nonzero storage width");
+    crate::instrumentation::record_deterministic_work(1);
+    let element = |index: Bitvector32Term| {
+        let address = base
+            .pointer()
+            .offset_by_typed_elements(index, width, true, true);
+        CResource::Memory(CMemoryRange::from_pointer_value(
+            &base.clone().with_address(address),
+            0u32.into(),
+            1u32.into(),
+            width,
+        ))
+    };
+    Theorem::new(Proposition::Implies(
+        Box::new(Proposition::ConditionIs(
+            ConditionTerm::int64_equal(i.clone(), j.clone()),
+            false,
+        )),
+        Box::new(Proposition::CResourceSeparate {
+            left: Box::new(element(i)),
+            right: Box::new(element(j)),
+        }),
+    ))
+}
+
 pub(crate) fn prove_separation_restrict(
     left: CResource,
     right: CResource,

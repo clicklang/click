@@ -3652,3 +3652,7 @@ path = "reference/library/index.md#separationsubrange"
 [[item]]
 id = "resource.hidden-child-field-selector"
 path = "reference/language/index.md#composite-resources"
+
+[[item]]
+id = "library.theorem.separation::elements"
+path = "reference/library/index.md#separationelements"
