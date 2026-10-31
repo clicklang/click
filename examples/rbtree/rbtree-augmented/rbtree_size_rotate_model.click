@@ -173,7 +173,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_left); assumption(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have metadata.value == 1 + l.value + r.value by { assumption(); }
+                                        have l.value == at(before_rotate, l.value) by { assumption(); }
+                                        have r.value == at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + l.value + r.value by {
+                                            rewrite(l.value == at(before_rotate, l.value));
+                                            rewrite(r.value == at(before_rotate, r.value));
+                                            assumption();
+                                        }
                                         have l.value == 0 by { assumption(); }
                                         have r.value == 0 by { assumption(); }
                                         have metadata.value == 1 by {
@@ -200,7 +207,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             normalize();
                                         }
                                         have rb_old == rb_new->rb_left by { assumption(); }
-                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { rewrite(rb_old == rb_new->rb_left); assumption(); }
+                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
                                         have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
                                         have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
@@ -282,7 +289,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
                                         have l.value == 0 by { assumption(); }
                                         have r.value == rv by { assumption(); }
-                                        have metadata.value == 1 + l.value + r.value by { assumption(); }
+                                        have l.value == at(before_rotate, l.value) by { assumption(); }
+                                        have r.value == at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + l.value + r.value by {
+                                            rewrite(l.value == at(before_rotate, l.value));
+                                            rewrite(r.value == at(before_rotate, r.value));
+                                            assumption();
+                                        }
                                         have metadata.value == 1 + rv by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
                                             rewrite(l.value == 0);
@@ -519,7 +533,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
                                         have l.value == lv by { assumption(); }
                                         have r.value == rv by { assumption(); }
-                                        have metadata.value == 1 + l.value + r.value by { assumption(); }
+                                        have l.value == at(before_rotate, l.value) by { assumption(); }
+                                        have r.value == at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + l.value + r.value by {
+                                            rewrite(l.value == at(before_rotate, l.value));
+                                            rewrite(r.value == at(before_rotate, r.value));
+                                            assumption();
+                                        }
                                         have metadata.value == 1 + lv + rv by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
                                             rewrite(l.value == lv);
@@ -776,7 +797,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         have ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent by { rewrite(rb_old == rb_new->rb_right); assumption(); }
                                         mark before_rotate;
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
-                                        have metadata.value == 1 + l.value + r.value by { assumption(); }
+                                        have l.value == at(before_rotate, l.value) by { assumption(); }
+                                        have r.value == at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + l.value + r.value by {
+                                            rewrite(l.value == at(before_rotate, l.value));
+                                            rewrite(r.value == at(before_rotate, r.value));
+                                            assumption();
+                                        }
                                         have l.value == 0 by { assumption(); }
                                         have r.value == 0 by { assumption(); }
                                         have metadata.value == 1 by {
@@ -803,7 +831,7 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                             normalize();
                                         }
                                         have rb_old == rb_new->rb_right by { assumption(); }
-                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { rewrite(rb_old == rb_new->rb_right); assumption(); }
+                                        have rb_old->__rb_parent_color == old(rb_old->__rb_parent_color) by { normalize(); }
                                         have old(rb_old->__rb_parent_color) == address(parent) + (old(rb_old->__rb_parent_color) & 1) by { assumption(); }
                                         have rb_old->__rb_parent_color == address(parent) + (rb_old->__rb_parent_color & 1) by { assumption(); }
                                         transport(at(before_rotate, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *))) == parent, ((rb_old->__rb_parent_color & ~3) as (struct rb_node *)) == parent) using {
@@ -885,7 +913,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
                                         have l.value == 0 by { assumption(); }
                                         have r.value == rv by { assumption(); }
-                                        have metadata.value == 1 + l.value + r.value by { assumption(); }
+                                        have l.value == at(before_rotate, l.value) by { assumption(); }
+                                        have r.value == at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + l.value + r.value by {
+                                            rewrite(l.value == at(before_rotate, l.value));
+                                            rewrite(r.value == at(before_rotate, r.value));
+                                            assumption();
+                                        }
                                         have metadata.value == 1 + rv by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
                                             rewrite(l.value == 0);
@@ -1122,7 +1157,14 @@ executes sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
                                         step(sized_rotate, { source: metadata, target: promoted_metadata, left: l, right: r });
                                         have l.value == lv by { assumption(); }
                                         have r.value == rv by { assumption(); }
-                                        have metadata.value == 1 + l.value + r.value by { assumption(); }
+                                        have l.value == at(before_rotate, l.value) by { assumption(); }
+                                        have r.value == at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + at(before_rotate, l.value) + at(before_rotate, r.value) by { assumption(); }
+                                        have metadata.value == 1 + l.value + r.value by {
+                                            rewrite(l.value == at(before_rotate, l.value));
+                                            rewrite(r.value == at(before_rotate, r.value));
+                                            assumption();
+                                        }
                                         have metadata.value == 1 + lv + rv by {
                                             rewrite(metadata.value == 1 + l.value + r.value);
                                             rewrite(l.value == lv);
