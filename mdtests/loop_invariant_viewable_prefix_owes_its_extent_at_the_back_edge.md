@@ -42,5 +42,5 @@ int32 walk(int32 *a, int32 n) {
 ```
 
 ```expect
-fail: goal: at(statement(2).statement(0).entry, i) + 1 <= 1073741823 and ((at(statement(2).statement(0).entry, i) + 1 <= 1073741823 implies viewable(a[0..at(statement(2).statement(0).entry, i) + 1]))
+fail: goal: to_integer(at(statement(2).statement(0).entry, i) + 1) <= 1073741823 and ((to_integer(at(statement(2).statement(0).entry, i) + 1) <= 1073741823 implies viewable(a[0..at(statement(2).statement(0).entry, i) + 1]))
 ```

@@ -31,5 +31,5 @@ theorem t(n: int32) {
 ```
 
 ```expect
-fail: induction premise is not exactly available: n - 2 < n
+fail: induction premise is not exactly available: to_integer(n - 2) < n
 ```

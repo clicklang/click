@@ -1062,7 +1062,8 @@ and a floating-point value has no Integer observation
 (`mdtests/floating_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md`).
 A population count is a quantity, so a comparison with a `count(...)`
 operand also compares Integers. Expansions and diagnostics print the
-inserted `to_integer`. See
+inserted `to_integer`, including when a native comparison observes a grown
+population count (`mdtests/repeated_child_retains_grown_count_requirement.md`). See
 `mdtests/integer_arithmetic_makes_specification_addition_exact.md` and its
 C-arithmetic twin
 `mdtests/machine_specification_addition_needs_its_overflow_bound.md`. The

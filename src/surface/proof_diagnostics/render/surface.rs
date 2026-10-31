@@ -71,6 +71,23 @@ fn spelled(text: String, precedence: u8) -> Spelled {
     Spelled { text, precedence }
 }
 
+/// A machine arithmetic result must be observed before it participates in
+/// a specification comparison. Otherwise `+`, `-`, and `*` are read as
+/// exact Integer arithmetic and the printed comparison changes meaning.
+fn comparison_operand(term: &Bitvector32Term, value: Spelled) -> Spelled {
+    if matches!(
+        term,
+        Bitvector32Term::Binary {
+            op: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
+            ..
+        }
+    ) {
+        atom(format!("to_integer({})", value.text))
+    } else {
+        value
+    }
+}
+
 /// `value` as an operand that needs at least `minimum` precedence.
 fn operand(value: Spelled, minimum: u8) -> String {
     if value.precedence >= minimum {
@@ -919,8 +936,8 @@ impl Printer<'_> {
                     self.exact_operand(right, Some(false), depth)?
                 )));
             }
-            let left = self.as_type(left, Hint::Unsigned32, depth)?;
-            let right = self.as_type(right, Hint::Unsigned32, depth)?;
+            let left = comparison_operand(left, self.as_type(left, Hint::Unsigned32, depth)?);
+            let right = comparison_operand(right, self.as_type(right, Hint::Unsigned32, depth)?);
             return Some(atom(format!(
                 "{} {operator_text} {}",
                 operand(left, SHIFT),
@@ -953,7 +970,7 @@ impl Printer<'_> {
                 self.exact_operand(right, signed, depth)?
             )));
         }
-        let (left, right) = match operand_type {
+        let (left_spelling, right_spelling) = match operand_type {
             "int64" => (
                 self.as_type(left, Hint::Int64, depth)?,
                 self.as_type(right, Hint::Int64, depth)?,
@@ -985,8 +1002,8 @@ impl Printer<'_> {
         };
         Some(atom(format!(
             "{} {operator_text} {}",
-            operand(left, SHIFT),
-            operand(right, SHIFT)
+            operand(comparison_operand(left, left_spelling), SHIFT),
+            operand(comparison_operand(right, right_spelling), SHIFT)
         )))
     }
 
@@ -1099,7 +1116,7 @@ impl Printer<'_> {
             };
         }
         self.bitvector(value, None, depth)
-            .map(|value| operand(value, SHIFT))
+            .map(|spelling| operand(comparison_operand(value, spelling), SHIFT))
     }
 
     /// `value` read as `hint`: a constant written in that type and any
@@ -2904,6 +2921,52 @@ mod tests {
     }
 
     #[test]
+    fn machine_arithmetic_comparisons_preserve_their_observations() {
+        for (format, source_type) in [
+            (MachineIntegerType::Int32, CType::Int32),
+            (MachineIntegerType::UInt32, CType::UInt32),
+            (MachineIntegerType::Int64, CType::Int64),
+            (MachineIntegerType::UInt64, CType::UInt64),
+        ] {
+            let mut labels = SnapshotLabels::default();
+            labels.source_name(Variable(7), "a".into());
+            labels.source_name(Variable(8), "b".into());
+            labels.source_types.insert(Variable(7), source_type);
+            labels.source_types.insert(Variable(8), source_type);
+            for (op, symbol) in [
+                (MachineBinaryOp::Add, "+"),
+                (MachineBinaryOp::Subtract, "-"),
+                (MachineBinaryOp::Multiply, "*"),
+            ] {
+                let arithmetic = Bitvector32Term::Binary {
+                    format: if format == MachineIntegerType::UInt32 {
+                        MachineIntegerType::Int32
+                    } else {
+                        format
+                    },
+                    op,
+                    left: Box::new(Bitvector32Term::Variable(Variable(7))),
+                    right: Box::new(Bitvector32Term::Variable(Variable(8))),
+                };
+                let fact = Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format,
+                        relation: CompareRelation::LessThan,
+                        left: Box::new(arithmetic.clone()),
+                        right: Box::new(arithmetic),
+                    },
+                    false,
+                );
+                let expected = format!("to_integer(a {symbol} b) >= to_integer(a {symbol} b)");
+                assert_eq!(source(&fact, &mut labels), expected);
+                if format == MachineIntegerType::Int32 {
+                    assert_eq!(render(&fact, &mut labels).unwrap(), expected);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn source_spelling_uses_minimal_parentheses_and_click_connectives() {
         let mut labels = SnapshotLabels::default();
         labels.source_name(Variable(7), "a".into());
@@ -2940,7 +3003,7 @@ mod tests {
         );
         assert_eq!(
             source(&fact, &mut labels),
-            "(a + b) * (a - b) >= a and (a & b) == 0 implies not ((a & b) == 0)"
+            "to_integer((a + b) * (a - b)) >= a and (a & b) == 0 implies not ((a & b) == 0)"
         );
     }
 

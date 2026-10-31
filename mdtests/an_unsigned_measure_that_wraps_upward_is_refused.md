@@ -32,5 +32,5 @@ int32 fill(uint32 x) {
 ```
 
 ```expect
-fail: 3u32 - (at(statement(0).statement(0).entry, x) + 1u32) < 3u32 - at(statement(0).statement(0).entry, x)
+fail: to_integer(3u32 - (at(statement(0).statement(0).entry, x) + 1u32)) < to_integer(3u32 - at(statement(0).statement(0).entry, x))
 ```

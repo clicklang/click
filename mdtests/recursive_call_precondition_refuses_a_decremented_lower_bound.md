@@ -30,5 +30,5 @@ int32 count(int32 n) {
 ```
 
 ```expect
-fail: condition-certificate premise search did not derive `1 <= n - 1`
+fail: condition-certificate premise search did not derive `1 <= to_integer(n - 1)`
 ```

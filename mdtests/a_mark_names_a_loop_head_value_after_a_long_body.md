@@ -77,5 +77,5 @@ int32 count_down(int32 n) {
 ```
 
 ```expect
-fail: at(iteration, k) - 1 == n
+fail: to_integer(at(iteration, k) - 1) == n
 ```
