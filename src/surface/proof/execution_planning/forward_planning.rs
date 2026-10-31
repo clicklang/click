@@ -377,13 +377,13 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                 } else {
                     loop_entry_branches(&preservation_contexts, environment, loop_index)?
                 };
-                if let Some(capture) = expansion_capture.as_deref_mut() {
-                    if !entry_captures.is_empty() {
-                        capture.merge_loop_entries(
-                            &entry_captures.iter().collect::<Vec<_>>(),
-                            &entry_branches,
-                        );
-                    }
+                if let Some(capture) = expansion_capture.as_deref_mut()
+                    && !entry_captures.is_empty()
+                {
+                    capture.merge_loop_entries(
+                        &entry_captures.iter().collect::<Vec<_>>(),
+                        &entry_branches,
+                    );
                 }
                 if !entry_certificates.is_empty() {
                     preservation_path_certificates.push(PathCertificate {
