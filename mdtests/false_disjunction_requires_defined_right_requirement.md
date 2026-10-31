@@ -16,5 +16,5 @@ theorem invalid_zero_instance() {
 ```
 
 ```expect
-fail: the right side of `or` is undefined wherever its left side is false
+fail: not established: `x != 0 or x != 0`
 ```

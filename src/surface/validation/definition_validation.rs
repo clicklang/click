@@ -1587,13 +1587,19 @@ fn validate_resource_fact_memory_read_authority(
             syntax::C0Parameter::new(*c_type, name.clone(), struct_name.clone())
         })
         .collect::<Vec<_>>();
-    let (memory, _) = instantiate_composite_resource_body_resources(
-        definition.name(),
-        composite_body,
-        &substitutions,
-        ParameterBinding::new(&validation_parameters, &arguments),
-        CMemory::new(),
-    )
+    // A contained resource's formation domains are part of the assumed body
+    // while checking its fact declarations. Actual fold/use still owes them.
+    let (materialized, formation) = crate::surface::proof::probe_open_obligations(|| {
+        instantiate_composite_resource_body_resources(
+            definition.name(),
+            composite_body,
+            &substitutions,
+            ParameterBinding::new(&validation_parameters, &arguments),
+            CMemory::new(),
+            &PureFactContext::new(),
+        )
+    });
+    let (memory, _) = materialized
     .map_err(|message| {
         ClickError::new(format!(
             "resource `{}` could not materialize contained memory while validating facts: {message}",
@@ -1601,7 +1607,14 @@ fn validate_resource_fact_memory_read_authority(
         ))
     })?;
     let array_refs = pure_theorem_array_refs(definition.parameters(), &values, &memory);
-    let mut scalar_assumptions = Vec::new();
+    let mut scalar_assumptions = formation
+        .recorded
+        .into_iter()
+        .map(|debt| ResourceFactScalarAssumption {
+            source: format!("resource `{}` body formation", definition.name()),
+            proposition: debt.proposition,
+        })
+        .collect::<Vec<_>>();
     for body_fact in prior_facts {
         collect_resource_fact_scalar_assumptions_from_proposition(
             body_fact,

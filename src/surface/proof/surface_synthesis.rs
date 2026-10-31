@@ -1988,6 +1988,83 @@ fn synthesize_load_defining_equation(
 
 // Large leaf temporaries must not occupy every recursive connective frame.
 #[inline(never)]
+/// Spell a logical Bool by its structure, including Bool operands of calls.
+fn synthesize_surface_bool(
+    condition: &ConditionTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let _frame = SurfaceSynthesisFrame::enter("bool")?;
+    crate::instrumentation::record_deterministic_work(1);
+    let operand = |condition: &ConditionTerm| {
+        synthesize_surface_bool(condition, parameter_binding, state, bound_variables)
+    };
+    match condition {
+        ConditionTerm::Constant(value) => Some(bool_literal(*value)),
+        ConditionTerm::Variable(variable) => {
+            if let Some(name) = bound_variables.get(variable) {
+                return Some(ContractExpression::Binding(name.clone()));
+            }
+            synthesize_surface_bitvector(
+                &Bitvector32Term::bool_cast(MachineIntegerType::UInt8, condition.clone()),
+                parameter_binding,
+                state,
+                bound_variables,
+            )
+        }
+        ConditionTerm::BoolApplication(application) => synthesize_surface_call(
+            application.name(),
+            application.arguments(),
+            parameter_binding,
+            state,
+            bound_variables,
+        ),
+        ConditionTerm::BoolIf {
+            condition,
+            then_condition,
+            else_condition,
+        } => Some(ContractExpression::If {
+            condition: Box::new(bool_truth(operand(condition)?)),
+            then_branch: Box::new(operand(then_condition)?),
+            else_branch: Box::new(operand(else_condition)?),
+        }),
+        ConditionTerm::AlgebraicEqual(left, right) => {
+            proposition_bool_value(ClickProposition::Comparison {
+                left: synthesize_surface_algebraic(
+                    left,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?,
+                operator: ComparisonOperator::Equal,
+                right: synthesize_surface_algebraic(
+                    right,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?,
+            })
+            .ok()
+        }
+        ConditionTerm::BoolEqual(left, right) => {
+            proposition_bool_value(ClickProposition::Comparison {
+                left: operand(left)?,
+                operator: ComparisonOperator::Equal,
+                right: operand(right)?,
+            })
+            .ok()
+        }
+        _ => proposition_bool_value(synthesize_surface_atomic_proposition(
+            &Proposition::ConditionIs(condition.clone(), true),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?)
+        .ok(),
+    }
+}
+
 fn synthesize_surface_atomic_proposition(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
@@ -2263,6 +2340,25 @@ fn synthesize_surface_atomic_proposition(
     let Proposition::ConditionIs(condition, value) = proposition else {
         return None;
     };
+    if matches!(
+        condition,
+        ConditionTerm::Variable(_)
+            | ConditionTerm::BoolApplication(_)
+            | ConditionTerm::BoolIf { .. }
+            | ConditionTerm::BoolEqual(..)
+    ) {
+        let claim = bool_truth(synthesize_surface_bool(
+            condition,
+            parameter_binding,
+            state,
+            bound_variables,
+        )?);
+        return Some(if *value {
+            claim
+        } else {
+            ClickProposition::Not(Box::new(claim))
+        });
+    }
     if let ConditionTerm::Overflows {
         format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
         op:
@@ -2270,7 +2366,6 @@ fn synthesize_surface_atomic_proposition(
         left,
         right,
     } = condition
-        && !value
     {
         // Definedness names this operation, not a local that already holds
         // its result. `defined(result)` would lose the operation's domain.
@@ -2292,7 +2387,12 @@ fn synthesize_surface_atomic_proposition(
             OverflowOperation::Multiply => ContractExpression::Multiply(left, right),
             _ => unreachable!("arithmetic overflow matched above"),
         };
-        return Some(ClickProposition::Defined { expression });
+        let defined = ClickProposition::Defined { expression };
+        return Some(if *value {
+            ClickProposition::Not(Box::new(defined))
+        } else {
+            defined
+        });
     }
     if let ConditionTerm::Constant(condition) = condition {
         // An exact Integer comparison keeps the condition's constant value.
@@ -3149,6 +3249,11 @@ fn bitvector_spells_uint32(
         | binary_term!(Int32, Divide, left, right)
         | binary_term!(Int32, Remainder, left, right) => either(left, right),
         binary_term!(UInt32, Divide, ..) | binary_term!(UInt32, Remainder, ..) => true,
+        // A conversion to `uint32`, spelled `x as uint32`.
+        Bitvector32Term::MachineIntegerCast {
+            destination: MachineIntegerType::UInt32,
+            ..
+        } => true,
         _ => false,
     }
 }
@@ -3287,6 +3392,11 @@ fn synthesize_surface_bitvector(
     {
         return Some(ContractExpression::CFragment(CExpression::Variable(name)));
     }
+    if let Some(region) = SYNTHESIS_RECORDED_POINTS
+        .with(|slot| slot.borrow().as_ref()?.call_result_naming_integer(term))
+    {
+        return Some(ContractExpression::RegionResult(region));
+    }
     if let Some(field) = synthesize_local_aggregate_field(term, state) {
         return Some(field);
     }
@@ -3323,6 +3433,21 @@ fn synthesize_surface_bitvector(
         ))
     };
     match term {
+        // The 32-bit widening of a narrow value is written as the
+        // conversion it is (`c as int32`, `c as uint32`).
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination,
+        } if crate::kernel::is_narrow_widening32(*source, *destination) => {
+            let operand =
+                synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
+            if *destination == MachineIntegerType::UInt32 {
+                synthesize_uint32_operand(operand)
+            } else {
+                synthesize_int32_operand(operand)
+            }
+        }
         Bitvector32Term::MachineIntegerCast { .. } => None,
         // TODO(stage5): synthesize `b as int32`.
         Bitvector32Term::BoolCast { .. } => None,
@@ -3497,6 +3622,15 @@ fn synthesize_surface_bitvector(
                         return Some(field);
                     }
                 }
+                if let Some(indexed) = synthesize_local_indexed_load(
+                    kernel_pointer,
+                    *kind,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                ) {
+                    return Some(indexed);
+                }
                 let value_type = parameter_binding
                     .parameters
                     .iter()
@@ -3558,8 +3692,9 @@ fn synthesize_surface_bitvector(
                 bound_variables,
             ) {
                 Some(element)
-            } else if let Some(indexed_local) = synthesize_local_indexed_int32_load(
+            } else if let Some(indexed_local) = synthesize_local_indexed_load(
                 kernel_pointer,
+                *kind,
                 parameter_binding,
                 state,
                 bound_variables,
@@ -3799,6 +3934,14 @@ fn synthesize_surface_call(
             return None;
         }
         let expression = match value {
+            crate::kernel::PureFunctionArgument::Value(CValue::Bool(word)) => {
+                synthesize_surface_bool(
+                    &ConditionTerm::truth_of_bool_word(word),
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?
+            }
             // A word argument's term carries its own width; the candidate's
             // round trip confirms the call lowers it at the parameter's type.
             crate::kernel::PureFunctionArgument::Value(
@@ -3851,7 +3994,9 @@ fn synthesize_surface_call(
         result.push(expression);
     }
     Some(ContractExpression::Call {
-        name: name.into(),
+        // Instance names are kernel identities, not declared Surface names.
+        // The typed arguments reconstruct the same generic instance.
+        name: generic_instance_source_name(name).into(),
         arguments: result,
     })
 }
@@ -4231,8 +4376,9 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
     true
 }
 
-fn synthesize_local_indexed_int32_load(
+fn synthesize_local_indexed_load(
     pointer: &Pointer,
+    kind: crate::kernel::LoadKind,
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
@@ -4256,8 +4402,12 @@ fn synthesize_local_indexed_int32_load(
         {
             return None;
         }
-        let element_width = base.c_type().pointee_type()?.byte_width();
-        let index = pointer.element_index_from_base_with_width(base, element_width)?;
+        let element_type = base.c_type().pointee_type()?;
+        if crate::kernel::LoadKind::of_type(element_type) != Some(kind) {
+            return None;
+        }
+        let element_width = element_type.byte_width();
+        let index = synthesis_element_index(pointer, base, element_width)?;
         // This candidate is for ordinary `local[index]` forms. If the
         // derived index itself reads memory, trying to synthesize that load
         // can rediscover another local-relative form with a still larger
@@ -4577,8 +4727,18 @@ fn synthesis_element_index(
     };
     match displacement {
         PointerOffsetTerm::Int64Scaled {
-            value, byte_width, ..
-        } if *byte_width == i64::from(element_width) => Some(value.as_ref().clone()),
+            value,
+            byte_width,
+            unsigned,
+        } if *byte_width == i64::from(element_width) => {
+            // uint32 indexing observes the value by exact unsigned widening.
+            // Recover the original expression, whose re-lowering restores it.
+            // This is a structural inverse, never a fact-based narrowing.
+            match (unsigned, value.as_ref()) {
+                (true, Bitvector32Term::UInt64From32(index)) => Some(index.as_ref().clone()),
+                _ => Some(value.as_ref().clone()),
+            }
+        }
         _ => None,
     }
 }
@@ -4952,7 +5112,7 @@ fn synthesize_scalar_model_field(variable: Variable, state: &CState) -> Option<C
         let instance = state.resource_instance_at_path(origin.identity, &[])?;
         matches!(
             instance.fields().get(origin.field_index),
-            Some(AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(held)))) if *held == variable
+            Some(AlgebraicValue::C(crate::kernel::integer_c_value!(Bitvector32Term::Variable(held)))) if *held == variable
         )
         .then_some(())?;
         // The field's declared C type, as the parser's elaboration records it.
@@ -5029,8 +5189,8 @@ fn synthesize_snapshot_pointer_expression(
 /// The source spelling of an algebraic value: a held instance's model field
 /// as `instance.field`, from the kernel's model-field registry and the
 /// instance the state holds under that identity, and a constructor as
-/// `Type::Variant(fields)`. Only datatypes without type arguments are
-/// spelled; a candidate is still admitted only after it re-lowers exactly.
+/// `Type::Variant(fields)`. Historical fields use their recorded introduction
+/// point; a candidate is admitted only after it re-lowers exactly.
 fn synthesize_surface_algebraic(
     term: &crate::kernel::AlgebraicTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -5048,6 +5208,9 @@ fn synthesize_surface_algebraic(
             synthesize_surface_call(name, arguments, parameter_binding, state, bound_variables)
         }
         crate::kernel::AlgebraicTermNode::Variable(variable) => {
+            if let Some(name) = proof_binder_name(*variable) {
+                return Some(ContractExpression::Binding(name));
+            }
             // A parameter's own algebraic value is spelled by its name.
             if let Some((parameter, _)) = parameter_binding
                 .parameters
@@ -5063,14 +5226,19 @@ fn synthesize_surface_algebraic(
                 )));
             }
             let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
-            if !matches!(
-                origin.minted_by,
-                crate::kernel::model_fields::ModelMint::ContractEntry
-            ) {
-                let owner =
-                    crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+            let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+            let field_at = |state: &CState| {
                 let instance = state.resource_instance_at_path(origin.identity, &[])?;
-                return Some(ContractExpression::ResourceField(ResourceFieldAccess {
+                let held = instance.fields().get(origin.field_index)?;
+                let exact = match held {
+                    crate::kernel::AlgebraicValue::Algebraic(value) => value == term,
+                    crate::kernel::AlgebraicValue::C(CValue::Parameter(value)) => {
+                        value.as_ref() == term
+                    }
+                    _ => false,
+                };
+                exact.then_some(())?;
+                Some(ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: owner.to_string(),
                     resource_name: instance.name().to_string(),
                     identity: origin.identity,
@@ -5080,10 +5248,28 @@ fn synthesize_surface_algebraic(
                     click_type: Some(ClickType::Algebraic(surface_algebraic_type(
                         &term.algebraic_type,
                     )?)),
-                }));
+                }))
+            };
+            if let Some(field) = field_at(state) {
+                return Some(field);
             }
-            None
+            if let Some(field) = SYNTHESIS_ENTRY_STATE.with(|slot| {
+                Some(ContractExpression::Old(Box::new(field_at(
+                    slot.borrow().as_ref()?,
+                )?)))
+            }) {
+                return Some(field);
+            }
+            SYNTHESIS_RECORDED_POINTS.with(|slot| {
+                let points = slot.borrow();
+                let (selector, recorded) = points.as_ref()?.point_holding_field_value(*variable)?;
+                Some(ContractExpression::At {
+                    selector: selector.clone(),
+                    expression: Box::new(field_at(recorded)?),
+                })
+            })
         }
+
         // The value a reference parameter refers to is spelled `*r`.
         crate::kernel::AlgebraicTermNode::MemoryLoad { pointer, .. } => parameter_binding
             .parameters
@@ -5102,6 +5288,14 @@ fn synthesize_surface_algebraic(
             let arguments = fields
                 .iter()
                 .map(|field| match field {
+                    crate::kernel::AlgebraicValue::C(CValue::Parameter(term)) => {
+                        synthesize_surface_algebraic(
+                            term,
+                            parameter_binding,
+                            state,
+                            bound_variables,
+                        )
+                    }
                     crate::kernel::AlgebraicValue::Algebraic(term) => synthesize_surface_algebraic(
                         term,
                         parameter_binding,

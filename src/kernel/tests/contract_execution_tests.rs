@@ -3391,6 +3391,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
     };
     let path = SymbolicCExecutionPath {
         completion_origin: None,
+        call_result: None,
         assumptions: PureFactContext::new(),
         post_assumptions: None,
         facts: Vec::new().into(),
@@ -3408,6 +3409,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
     let execution = CFunctionContractExecution {
         pointer_result: None,
         cases: vec![vec![CContractPathSet {
+            completion_path_origins: Vec::new(),
             paths: vec![path],
             checked_resource_claims: vec![Vec::new()],
             checked_resource_transitions: vec![false],
@@ -3475,6 +3477,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
     ));
     let failing = SymbolicCExecutionPath {
         completion_origin: None,
+        call_result: None,
         assumptions: PureFactContext::new(),
         post_assumptions: Some(PureFactContext::new()),
         facts: Vec::new().into(),
@@ -3491,6 +3494,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
     };
     let clean = SymbolicCExecutionPath {
         completion_origin: None,
+        call_result: None,
         assumptions: PureFactContext::new(),
         post_assumptions: Some(PureFactContext::new()),
         facts: Vec::new().into(),
@@ -3506,6 +3510,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
     };
     let set = |path: &SymbolicCExecutionPath| CContractPathSet {
+        completion_path_origins: Vec::new(),
         paths: vec![path.clone()],
         checked_resource_claims: vec![Vec::new()],
         checked_resource_transitions: vec![false],
@@ -3586,6 +3591,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
     };
     let path = SymbolicCExecutionPath {
         completion_origin: None,
+        call_result: None,
         assumptions: PureFactContext::new(),
         post_assumptions: None,
         facts: vec![fact.clone()].into(),
@@ -3603,6 +3609,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
     let execution = CFunctionContractExecution {
         pointer_result: None,
         cases: vec![vec![CContractPathSet {
+            completion_path_origins: Vec::new(),
             paths: vec![path],
             checked_resource_claims: vec![Vec::new()],
             checked_resource_transitions: vec![false],
@@ -4907,27 +4914,13 @@ fn call_requirement_obligations_carry_their_lowering_record() {
         .introductions()
         .expect("a kernel-built call requirement carries its lowering record");
     assert!(
-        !recorded.is_empty(),
-        "lowering guarded this requirement, so the record names those guards: {:?}",
-        obligation.proposition()
+        recorded.is_empty(),
+        "arithmetic debts do not introduce guards"
     );
-    // Every recorded node is a guard lowering inserted, and each one is an
-    // `Implies` the proposition actually has: the record describes the
-    // proposition it was produced with.
-    let mut proposition = obligation.proposition();
-    for introduction in recorded {
-        assert!(
-            matches!(
-                introduction,
-                LoweringIntroduction::PathFactGuard | LoweringIntroduction::ObligationGuard
-            ),
-            "no Surface connective wrote this requirement's head: {introduction:?}"
-        );
-        let Proposition::Implies(_, body) = proposition else {
-            panic!("the record names more head nodes than the obligation has");
-        };
-        proposition = body;
-    }
+    assert!(path.obligations().iter().any(|debt| matches!(
+        debt.proposition(),
+        Proposition::ConditionIs(ConditionTerm::Overflows { .. }, false)
+    )));
 }
 
 /// A self-recursive function that declares an expression `decreases` measure.

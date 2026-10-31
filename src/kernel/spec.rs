@@ -28,6 +28,7 @@ fn with_integer_comparisons_preserved<T>(preserve: bool, operation: impl FnOnce(
 
 mod existential;
 pub(in crate::kernel) mod predicate_dependencies;
+mod quantifier_polarity;
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (CResource, ExecutionFacts, Vec<ProofObligation>);
@@ -856,6 +857,10 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
+    if let Some(paths) = quantifier_polarity::lower_prefix(scope, proposition, assumptions, budget)?
+    {
+        return Ok(paths);
+    }
     if let Some(paths) = lower_spec_negation_chain_in(scope, proposition, assumptions, budget)? {
         return Ok(paths);
     }
@@ -1935,9 +1940,10 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 proposition_and_all(
                     path.facts
                         .into_iter()
-                        // A cached read equation follows from the selected
-                        // value; it is not a condition for the read to exist.
-                        .filter(|fact| !fact.is_logical_read_equation())
+                        // Certified consequences (including read equations and
+                        // ledger bounds) describe the value; they are not
+                        // additional conditions for evaluating it.
+                        .filter(|fact| !fact.is_certified())
                         .filter_map(|fact| {
                             drop_verified_load_definition_conjuncts(fact.proposition().clone())
                         })
@@ -2081,6 +2087,7 @@ fn evaluate_spec_integer_expression_paths_in(
             // normal-path guards whose complementary paths had undefined behavior.
             // This is a mandatory condition, not an assumption supplied by the
             // conversion's own successful evaluation path.
+            let single_path = paths.len() == 1;
             let domain = paths
                 .iter()
                 .map(|path| {
@@ -2094,6 +2101,9 @@ fn evaluate_spec_integer_expression_paths_in(
                             .chain(
                                 path.obligations
                                     .iter()
+                                    // One path already retains these mandatory debts.
+                                    // Only alternatives need their coupled domains.
+                                    .filter(|_| !single_path)
                                     .map(|obligation| obligation.proposition().clone()),
                             )
                             .collect(),
@@ -2366,34 +2376,39 @@ fn evaluate_spec_integer_expression_paths_in(
     }
 }
 
-/// A load definition is trusted only when its descriptor is the exact
-/// registered snapshot and pointer for the reserved variable. Comparing
+/// A load definition is trusted only when it names the same registered read
+/// on both sides, by handle or exact snapshot/address/kind descriptor. Comparing
 /// interned snapshots uses their O(1) identity equality; arbitrary memory
 /// contents are never traversed here.
 pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
+            ..
         },
         true,
     ) = proposition
     else {
         return false;
     };
-    let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
-        (left.as_ref(), right.as_ref())
-    else {
+    let Bitvector32Term::Variable(variable) = left.as_ref() else {
         return false;
     };
     if !crate::kernel::is_load_variable(variable) {
         return false;
     }
-    // The descriptor is the registered load exactly, kind included: a
-    // definition that names another kind of read at the address is not one.
-    crate::kernel::eval::registered_load_term_for_variable(variable).as_ref() == Some(load)
+    let Some(descriptor) = crate::kernel::eval::registered_load_term_for_variable(variable) else {
+        return false;
+    };
+    // A produced definition uses the registered read handle on both sides.
+    // Retained raw definitions must still name its exact snapshot and kind.
+    match right.as_ref() {
+        Bitvector32Term::Variable(read) => read == variable,
+        raw @ Bitvector32Term::MemoryLoad(_, _, _) => descriptor == *raw,
+        _ => false,
+    }
 }
 
 /// Removes only kernel-certified load definitions from a conjunction. The
@@ -5121,6 +5136,18 @@ fn lower_spec_disjunction_at_state_in(
             let guarded_right_obligations = right_path
                 .obligations
                 .iter()
+                .filter(
+                    |obligation| match (&left_path.proposition, obligation.proposition()) {
+                        (Proposition::ConditionIs(left, a), Proposition::ConditionIs(right, b))
+                            if left == right && a != b =>
+                        {
+                            false
+                        }
+                        (Proposition::Not(left), right) if left.as_ref() == right => false,
+                        (left, Proposition::Not(right)) if left == right.as_ref() => false,
+                        _ => true,
+                    },
+                )
                 .cloned()
                 .map(|obligation| {
                     let left = left_path.proposition.clone();
@@ -5598,6 +5625,7 @@ fn evaluate_spec_add_chain_paths_in(
                 };
                 next.extend(spec_value_paths_in(
                     apply_spec_arithmetic(
+                        crate::kernel::MachineBinaryOp::Add,
                         left_path.value.clone(),
                         right_path.value,
                         facts,
@@ -6308,6 +6336,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 budget,
                 |left, right, facts, obligations| {
                     apply_spec_arithmetic(
+                        crate::kernel::MachineBinaryOp::Add,
                         left,
                         right,
                         facts,
@@ -6340,6 +6369,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 budget,
                 |left, right, facts, obligations| {
                     apply_spec_arithmetic(
+                        crate::kernel::MachineBinaryOp::Subtract,
                         left,
                         right,
                         facts,
@@ -6369,6 +6399,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             budget,
             |left, right, facts, obligations| {
                 apply_spec_arithmetic(
+                    crate::kernel::MachineBinaryOp::Multiply,
                     left,
                     right,
                     facts,
@@ -6385,7 +6416,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             assumptions,
             budget,
             |left, right, facts, obligations| {
-                apply_spec_arithmetic(left, right, facts, obligations, assumptions, apply_c_divide)
+                apply_spec_arithmetic(
+                    crate::kernel::MachineBinaryOp::Divide,
+                    left,
+                    right,
+                    facts,
+                    obligations,
+                    assumptions,
+                    apply_c_divide,
+                )
             },
         )?,
         SpecExpression::Remainder(left, right) => evaluate_spec_scalar_binary_paths_in(
@@ -6396,6 +6435,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             budget,
             |left, right, facts, obligations| {
                 apply_spec_arithmetic(
+                    crate::kernel::MachineBinaryOp::Remainder,
                     left,
                     right,
                     facts,
@@ -6405,30 +6445,77 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 )
             },
         )?,
-        SpecExpression::ShiftLeft(left, right) | SpecExpression::RustShiftLeft(left, right) => {
-            evaluate_spec_scalar_binary_paths_in(
-                SpecScope::new(state, loop_entry_state, algebraic_bindings),
-                left,
-                right,
-                assumptions,
-                budget,
-                |left, right, facts, obligations| {
-                    apply_c_shift_left(left, right, facts, obligations, assumptions)
-                },
-            )?
-        }
-        SpecExpression::ShiftRight(left, right) | SpecExpression::RustShiftRight(left, right) => {
-            evaluate_spec_scalar_binary_paths_in(
-                SpecScope::new(state, loop_entry_state, algebraic_bindings),
-                left,
-                right,
-                assumptions,
-                budget,
-                |left, right, facts, obligations| {
-                    apply_c_shift_right(left, right, facts, obligations, assumptions)
-                },
-            )?
-        }
+        SpecExpression::RustShiftLeft(left, right)
+        | SpecExpression::RustShiftRight(left, right) => evaluate_spec_scalar_binary_paths_in(
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
+            left,
+            right,
+            assumptions,
+            budget,
+            |left, right, facts, obligations| {
+                let op = if matches!(expression, SpecExpression::RustShiftLeft(..)) {
+                    crate::kernel::MachineBinaryOp::ShiftLeft
+                } else {
+                    crate::kernel::MachineBinaryOp::ShiftRight
+                };
+                let mut path = crate::kernel::eval::apply_spec_rust_shift(
+                    op,
+                    &left,
+                    &right,
+                    &facts,
+                    &obligations,
+                )
+                .unwrap_or_else(|| CExpressionPath {
+                    outcome: CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    facts,
+                    obligations: obligations.clone(),
+                });
+                if assumptions.should_assume_held_resource_domains() {
+                    for obligation in path.obligations.iter_mut().skip(obligations.len()) {
+                        if obligation.evaluation_domain {
+                            obligation.assumable = true;
+                        }
+                    }
+                }
+                vec![path]
+            },
+        )?,
+        SpecExpression::ShiftLeft(left, right) => evaluate_spec_scalar_binary_paths_in(
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
+            left,
+            right,
+            assumptions,
+            budget,
+            |left, right, facts, obligations| {
+                apply_spec_arithmetic(
+                    crate::kernel::MachineBinaryOp::ShiftLeft,
+                    left,
+                    right,
+                    facts,
+                    obligations,
+                    assumptions,
+                    apply_c_shift_left,
+                )
+            },
+        )?,
+        SpecExpression::ShiftRight(left, right) => evaluate_spec_scalar_binary_paths_in(
+            SpecScope::new(state, loop_entry_state, algebraic_bindings),
+            left,
+            right,
+            assumptions,
+            budget,
+            |left, right, facts, obligations| {
+                apply_spec_arithmetic(
+                    crate::kernel::MachineBinaryOp::ShiftRight,
+                    left,
+                    right,
+                    facts,
+                    obligations,
+                    assumptions,
+                    apply_c_shift_right,
+                )
+            },
+        )?,
         SpecExpression::BitwiseAnd(left, right) => evaluate_spec_scalar_binary_paths_in(
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             left,
@@ -7204,11 +7291,9 @@ fn evaluate_spec_pointer_offset_paths_in(
             &element_assumptions,
             budget,
         )? {
-            let Some((elements, unsigned, wide)) = crate::kernel::eval::pointer_index_term(
-                element_path.value,
-                &element_path.facts,
-                &element_assumptions,
-            ) else {
+            let Some((elements, unsigned, wide)) =
+                crate::kernel::eval::pointer_index_term(element_path.value)
+            else {
                 continue;
             };
             let Some((mut facts, obligations)) = merge_execution_pure_facts_and_obligations_under(
@@ -7401,11 +7486,10 @@ fn spec_expression_pointer_step_width(state: &CState, expression: &SpecExpressio
     }
 }
 
-/// An impossible specification path still needs the term named by its syntax.
-/// Its recorded falsehood discharges every arithmetic domain guard; do not let
-/// an arbitrary decision in that context select only an undefined C path.
-/// Consistent contexts and pointer operations retain their ordinary lowering.
+/// Logical arithmetic retains its domain independently of the current facts.
+/// Pointer and floating operations keep their type-specific evaluator.
 fn apply_spec_arithmetic(
+    op: crate::kernel::MachineBinaryOp,
     left: CValue,
     right: CValue,
     facts: ExecutionFacts,
@@ -7419,32 +7503,22 @@ fn apply_spec_arithmetic(
         &PureFactContext,
     ) -> Vec<CExpressionPath>,
 ) -> Vec<CExpressionPath> {
-    if !assumptions.contains_assumed_exact(&Proposition::ConditionIs(
-        ConditionTerm::Constant(false),
-        true,
-    )) || matches!(left, CValue::Pointer(_) | CValue::PointerInteger(_))
-        || matches!(right, CValue::Pointer(_) | CValue::PointerInteger(_))
+    if let Some(mut path) =
+        crate::kernel::eval::apply_spec_machine_arithmetic(op, &left, &right, &facts, &obligations)
     {
-        return apply(left, right, facts, obligations, assumptions);
+        // A held body's projection assumes the domain its fold established.
+        // Keep the debt while distinguishing it from a new proof obligation.
+        // Ordinary entry requirements, calls and folds retain mandatory domains.
+        if assumptions.should_assume_held_resource_domains() {
+            for obligation in path.obligations.iter_mut().skip(obligations.len()) {
+                if obligation.evaluation_domain {
+                    obligation.assumable = true;
+                }
+            }
+        }
+        return vec![path];
     }
-    apply(
-        left,
-        right,
-        ExecutionFacts::default(),
-        Vec::new(),
-        &PureFactContext::new(),
-    )
-    .into_iter()
-    .map(|mut path| {
-        // These are the operator's arithmetic guards, all discharged by
-        // the exact false premise. Keep the operands' own facts and debts.
-        path.facts = facts.clone();
-        let mut inherited = obligations.clone();
-        inherited.extend(path.obligations);
-        path.obligations = inherited;
-        path
-    })
-    .collect()
+    apply(left, right, facts, obligations, assumptions)
 }
 
 fn evaluate_spec_scalar_binary_paths_in(
@@ -8755,4 +8829,44 @@ mod certificate_observation_tests {
 mod arithmetic_domain_scaling_tests {
     use super::*;
     include!("../scaling_tests/kernel/spec/arithmetic_domains.rs");
+    include!("../scaling_tests/kernel/spec/rust_shifts.rs");
+}
+
+#[cfg(test)]
+mod assumed_arithmetic_domain_tests {
+    use super::*;
+
+    #[test]
+    fn held_body_arithmetic_assumes_only_its_own_domain_and_preserves_the_value() {
+        let inherited = ProofObligation::evaluation_domain(Proposition::ConditionIs(
+            ConditionTerm::Constant(false),
+            true,
+        ));
+        let evaluate = |assumptions: &PureFactContext| {
+            apply_spec_arithmetic(
+                crate::kernel::MachineBinaryOp::Multiply,
+                CValue::Int32(Bitvector32Term::Variable(Variable(994_020))),
+                CValue::Int32(Bitvector32Term::Constant(4)),
+                ExecutionFacts::default(),
+                vec![inherited.clone()],
+                assumptions,
+                apply_c_multiply,
+            )
+            .pop()
+            .unwrap()
+        };
+        let checked = evaluate(&PureFactContext::new());
+        let assumed = evaluate(&PureFactContext::new().assume_held_resource_domains());
+        let entry = evaluate(&PureFactContext::new().assume_entry_clause_extents());
+        assert!(entry.obligations.iter().all(|debt| !debt.is_assumable()));
+        assert_eq!(checked.outcome, assumed.outcome);
+        assert_eq!(checked.obligations.len(), 2);
+        assert_eq!(assumed.obligations.len(), 2);
+        assert!(!assumed.obligations[0].is_assumable());
+        assert!(assumed.obligations[1].is_assumable());
+        assert!(checked.obligations.iter().all(|debt| !debt.is_assumable()));
+        for (checked, assumed) in checked.obligations.iter().zip(&assumed.obligations) {
+            assert_eq!(checked.proposition(), assumed.proposition());
+        }
+    }
 }

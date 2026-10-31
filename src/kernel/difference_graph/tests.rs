@@ -1948,3 +1948,66 @@ fn word_equality_uses_unsigned_strict_bounds_without_losing_signed_evidence() {
         }
     }
 }
+
+#[test]
+fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
+    use crate::kernel::PointerOffsetTerm as O;
+    let i = variable(989_980);
+    for unsigned in [false, true] {
+        let scaled = |value: Bitvector32Term| O::Int64Scaled {
+            value: Box::new(value),
+            byte_width: 8,
+            unsigned,
+        };
+        let equal = ConditionTerm::pointer_offset_equal(scaled(i.clone()), O::Constant(8));
+        for polarity in [false, true] {
+            let facts = graph(&[(equal.clone(), polarity)]);
+            assert_eq!(
+                facts.decide(&ConditionTerm::int64_equal(
+                    i.clone(),
+                    Bitvector32Term::UInt64Constant(1)
+                )),
+                Some(polarity)
+            );
+        }
+        let high = Bitvector32Term::UInt64Constant((1u64 << 32) + 1);
+        let facts = graph(&[(ConditionTerm::int64_equal(i.clone(), high), true)]);
+        assert_eq!(facts.decide(&equal), Some(false));
+        assert_eq!(
+            graph(&[(equal, true)]).decide(&ConditionTerm::pointer_offset_equal(
+                scaled(i.clone()),
+                O::Constant(16)
+            )),
+            Some(false)
+        );
+    }
+}
+
+#[test]
+fn excluding_one_masked_wide_table_slot_selects_the_other() {
+    use crate::kernel::PointerOffsetTerm as O;
+    let index = Bitvector32Term::uint64_from_32(Bitvector32Term::Binary {
+        format: MachineIntegerType::UInt32,
+        op: MachineBinaryOp::BitwiseAnd,
+        left: Box::new(variable(989_981)),
+        right: Box::new(Bitvector32Term::UInt32Constant(1)),
+    });
+    let offset = O::Int64Scaled {
+        value: Box::new(index),
+        byte_width: 8,
+        unsigned: true,
+    };
+    for first in [0, 8] {
+        let facts = graph(&[(
+            ConditionTerm::pointer_offset_equal(offset.clone(), O::Constant(first)),
+            false,
+        )]);
+        assert_eq!(
+            facts.decide(&ConditionTerm::pointer_offset_equal(
+                offset.clone(),
+                O::Constant(8 - first)
+            )),
+            Some(true)
+        );
+    }
+}

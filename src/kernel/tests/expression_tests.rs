@@ -4109,3 +4109,163 @@ fn checked_term(value: &CValue) -> Bitvector32Term {
         other => panic!("{other:?}"),
     }
 }
+
+#[test]
+fn array_index_conversion_is_independent_of_bounds() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let i = Bitvector32Term::Variable(Variable(989_970));
+    let empty = PureFactContext::new();
+    let bounded = empty.clone().assume_condition(
+        ConditionTerm::unsigned_less_than(i.clone(), Bitvector32Term::UInt32Constant(4)),
+        true,
+    );
+    let base = CValue::typed_pointer(Pointer::symbolic(Variable(989_972)), CType::Int32Pointer);
+    for index in [
+        CValue::Int32(i.clone()),
+        CValue::UInt32(i.clone()),
+        CValue::UInt64(i.clone()),
+    ] {
+        let expression = SpecExpression::PointerOffset {
+            pointer: Box::new(SpecExpression::CExpression(CExpression::Value(
+                base.clone(),
+            ))),
+            elements: Box::new(SpecExpression::CExpression(CExpression::Value(index))),
+            byte_width: 4,
+        };
+        let lower = |facts: &PureFactContext| {
+            crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+                &CState::new(),
+                &expression,
+                facts,
+                &BTreeMap::new(),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap()
+            .into_iter()
+            .map(|path| path.value)
+            .collect::<Vec<_>>()
+        };
+        let plain = lower(&empty);
+        assert_eq!(plain.len(), 1);
+        assert_eq!(plain, lower(&bounded));
+    }
+}
+
+#[test]
+fn widened_index_bounds_use_the_full_unsigned_value() {
+    let x = Bitvector32Term::Variable(Variable(989_973));
+    let wide = Bitvector32Term::uint64_from_32(x.clone());
+    let bounded = PureFactContext::new().assume_condition(
+        ConditionTerm::unsigned_less_than(x.clone(), Bitvector32Term::UInt32Constant(4)),
+        true,
+    );
+    assert!(bounded.uint64_index_fits_int32(&wide));
+    // A bound on a low word is not a bound on an unrelated native wide value.
+    assert!(!bounded.uint64_index_fits_int32(&x));
+    let high = PureFactContext::new().assume_condition(
+        ConditionTerm::unsigned_less_than(
+            Bitvector32Term::UInt32Constant(i32::MAX as u32),
+            x.clone(),
+        ),
+        true,
+    );
+    assert!(!high.uint64_index_fits_int32(&wide));
+    assert_eq!(
+        high.decide(&ConditionTerm::uint64_greater_than(
+            wide,
+            Bitvector32Term::UInt64Constant(i32::MAX as u64)
+        )),
+        Some(true)
+    );
+}
+
+#[test]
+fn index_observation_follows_machine_arithmetic() {
+    let base = Pointer::symbolic(Variable(989_974));
+    let leaf = |value| SpecExpression::CExpression(CExpression::Value(value));
+    for (index, bytes) in [
+        (leaf(CValue::Int32(Bitvector32Term::Constant(u32::MAX))), -4),
+        (
+            leaf(CValue::UInt32(Bitvector32Term::UInt32Constant(u32::MAX))),
+            4 * i64::from(u32::MAX),
+        ),
+        (
+            SpecExpression::Add(
+                Box::new(leaf(CValue::UInt32(Bitvector32Term::UInt32Constant(
+                    u32::MAX,
+                )))),
+                Box::new(leaf(CValue::UInt32(Bitvector32Term::UInt32Constant(1)))),
+            ),
+            0,
+        ),
+    ] {
+        let expression = SpecExpression::PointerOffset {
+            pointer: Box::new(leaf(CValue::typed_pointer(
+                base.clone(),
+                CType::Int32Pointer,
+            ))),
+            elements: Box::new(index),
+            byte_width: 4,
+        };
+        let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+            &CState::new(),
+            &expression,
+            &PureFactContext::new(),
+            &BTreeMap::new(),
+            &mut ExecutionBudget::default(),
+        )
+        .unwrap();
+        assert_eq!(paths.len(), 1);
+        let CValue::Pointer(value) = &paths[0].value else {
+            panic!("pointer result")
+        };
+        assert_eq!(value.pointer().offset, PointerOffsetTerm::Constant(bytes));
+    }
+}
+
+#[test]
+fn tag_clearing_lowering_keeps_the_written_word_under_bounds() {
+    let word = Bitvector32Term::Variable(Variable(989_990));
+    let tag = Bitvector32Term::Variable(Variable(989_991));
+    let mask = Bitvector32Term::UInt64Constant(!3);
+    let bounded = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(0u32.into(), tag.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_equal(tag.clone(), 1u32.into()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::uint64_equal(
+                Bitvector32Term::uint64_bitwise_and(
+                    word.clone(),
+                    Bitvector32Term::UInt64Constant(1),
+                ),
+                Bitvector32Term::UInt64Constant(0),
+            ),
+            true,
+        );
+    for inner in [
+        Bitvector32Term::uint64_bitwise_or(word.clone(), Bitvector32Term::uint64_from_int32(tag)),
+        Bitvector32Term::uint64_add(word, Bitvector32Term::UInt64Constant(1)),
+    ] {
+        let leaf = |term| SpecExpression::CExpression(CExpression::Value(CValue::UInt64(term)));
+        let expression =
+            SpecExpression::BitwiseAnd(Box::new(leaf(inner.clone())), Box::new(leaf(mask.clone())));
+        let expected = CValue::UInt64(Bitvector32Term::uint64_bitwise_and(inner, mask.clone()));
+        for facts in [&PureFactContext::new(), &bounded] {
+            let paths = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
+                &CState::new(),
+                &expression,
+                facts,
+                &BTreeMap::new(),
+                &mut ExecutionBudget::default(),
+            )
+            .unwrap();
+            assert_eq!(paths.len(), 1);
+            assert_eq!(paths[0].value, expected);
+        }
+    }
+}

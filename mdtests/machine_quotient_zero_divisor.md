@@ -8,5 +8,5 @@ theorem missing_divisor_guard(n: int32, d: int32) {
 ```
 
 ```expect
-fail: did not normalize to true
+fail: not established: `d != 0`
 ```

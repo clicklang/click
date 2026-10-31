@@ -1091,6 +1091,12 @@ pub(super) fn infer_scoped_spec_value_type(
                     "C bitwise or remainder operators cannot be applied to mathematical Integer expressions in {context}"
                 )));
             }
+            if matches!(
+                expression,
+                ContractExpression::RustShiftLeft(..) | ContractExpression::RustShiftRight(..)
+            ) {
+                return Ok(left);
+            }
             Ok(SpecValueType::Scalar(arithmetic_result_type(
                 scoped_scalar_type(&left),
                 scoped_scalar_type(&right),
@@ -3104,9 +3110,17 @@ pub(super) fn infer_contract_expression_type(
         ContractExpression::ShiftLeft(left, right)
         | ContractExpression::RustShiftLeft(left, right)
         | ContractExpression::ShiftRight(left, right)
-        | ContractExpression::RustShiftRight(left, right) => {
-            infer_contract_shift_type(left, right, variables, click_functions, context)
-        }
+        | ContractExpression::RustShiftRight(left, right) => infer_contract_shift_type(
+            left,
+            right,
+            variables,
+            click_functions,
+            context,
+            matches!(
+                expression,
+                ContractExpression::RustShiftLeft(..) | ContractExpression::RustShiftRight(..)
+            ),
+        ),
         ContractExpression::BitwiseNot(expression) => {
             let operand = expression.as_ref();
             let expression =
@@ -3526,10 +3540,14 @@ pub(in crate::surface) fn infer_c_expression_type(
                 _ => None,
             }
         }
-        CExpression::ShiftLeft(left, right)
-        | CExpression::ShiftRight(left, right)
-        | CExpression::RustShiftLeft(left, right)
-        | CExpression::RustShiftRight(left, right) => infer_c_shift_type(left, right, variables),
+        CExpression::ShiftLeft(left, right) | CExpression::ShiftRight(left, right) => {
+            infer_c_shift_type(left, right, variables)
+        }
+        CExpression::RustShiftLeft(left, right) | CExpression::RustShiftRight(left, right) => {
+            let left = infer_c_expression_type(left, variables)?;
+            let right = infer_c_expression_type(right, variables)?;
+            (type_is_scalar(left) && type_is_scalar(right)).then_some(left)
+        }
         CExpression::BitwiseNot(expression) => infer_c_expression_type(expression, variables)
             .filter(|c_type| type_is_scalar(*c_type))
             .map(|c_type| scalar_arithmetic_result_type(c_type, c_type)),
@@ -3721,11 +3739,15 @@ fn infer_contract_shift_type(
     variables: &BTreeMap<String, C0Type>,
     click_functions: &BTreeMap<String, ClickFunctionType>,
     context: &str,
+    retain_operand_width: bool,
 ) -> Result<Option<C0Type>, ClickError> {
     let left_type = infer_contract_expression_type(left, variables, click_functions, context)?;
     let right_type = infer_contract_expression_type(right, variables, click_functions, context)?;
     Ok(match (left_type, right_type) {
         (Some(left), Some(right)) if type_is_scalar(left) && type_is_scalar(right) => {
+            if retain_operand_width {
+                return Ok(Some(left));
+            }
             Some(match left {
                 C0Type::UInt64(rank) => C0Type::UInt64(rank),
                 C0Type::Int64(rank) => C0Type::Int64(rank),

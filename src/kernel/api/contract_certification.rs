@@ -1743,7 +1743,7 @@ fn c_function_contract_entry_facts(
         }
         return Err(detail);
     }
-    // An owned declared-resource requirement witnesses its population's
+    // An owned declared resource or authority witnesses its population's
     // count. Expose the count facts the checked ledger derives for it to
     // independent contract certification; the surface `observe` tactic names
     // the same invariant for proof scripts.
@@ -1754,11 +1754,13 @@ fn c_function_contract_entry_facts(
         let (name, arguments) = match required.resource() {
             CResource::Footprint(_) | CResource::Parameter(_) => continue,
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
-                (name, arguments)
+                (name.as_str(), arguments.as_ref())
             }
+            CResource::PopulationAuthority(description) => {
+                (description.family(), description.arguments())
+            }
+            CResource::Instance(instance) => (instance.name(), instance.arguments()),
             CResource::Memory(_)
-            | CResource::PopulationAuthority(_)
-            | CResource::Instance(_)
             | CResource::MutexGuard(_)
             | CResource::MutexLive(_)
             | CResource::MutexUse(_)
@@ -1768,7 +1770,7 @@ fn c_function_contract_entry_facts(
         // Retain the same authenticated population facts as a written
         // count requirement. Owning a member entails its lower bound even
         // when the contract first mentions count in a postcondition.
-        let Some(arguments) = arguments
+        let Some(mut arguments) = arguments
             .iter()
             .map(|argument| {
                 let AlgebraicValue::C(value) = argument else {
@@ -1780,18 +1782,23 @@ fn c_function_contract_entry_facts(
         else {
             continue;
         };
+        if let CResource::PopulationAuthority(description) = required.resource()
+            && let Some(arity) = description.population_arity()
+        {
+            arguments.resize(arity, None);
+        }
         // A concrete member also witnesses the anchored wildcard total.
         // Evaluate both observations through the checked ledger rather than
         // equating either total to the helper's locally owned quantity.
         let mut observations = vec![arguments.clone()];
-        if arguments.len() > 1 {
+        if arguments.len() > 1 && arguments[1..].iter().any(Option::is_some) {
             let mut wildcard = vec![None; arguments.len()];
             wildcard[0] = arguments[0].clone();
             observations.push(wildcard);
         }
         for arguments in observations {
             let expression = SpecExpression::CountedResourceCount {
-                name: name.clone(),
+                name: name.to_owned(),
                 arguments,
             };
             let Ok(paths) = crate::kernel::spec::evaluate_spec_expression_paths_with_bindings(
@@ -1831,9 +1838,11 @@ fn c_function_contract_entry_facts(
         // post-transition conditions are deferred to result-aware surface
         // finalization).
         //
-        // Only assumable obligations — the definedness kind — ride along.
-        // A genuine verification condition still has to be discharged here.
-        if obligation.is_assumable() {
+        // Arithmetic domains are mandatory at the call/use site; unlike a
+        // ranking or conversion certificate they also belong to the stated
+        // precondition being assumed here. The caller's requirement path
+        // retains them as mandatory obligations.
+        if obligation.is_assumable() || obligation.evaluation_domain {
             return true;
         }
 
@@ -2055,6 +2064,7 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
                     ));
                     SymbolicCExecutionPath {
                         completion_origin: None,
+                        call_result: None,
                         assumptions: assumptions.clone(),
                         post_assumptions: None,
                         facts,

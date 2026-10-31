@@ -107,102 +107,6 @@ pub(super) fn missing_theorem_extent_guard(
         })
 }
 
-pub(super) fn apply_theorem_applications_to_available(
-    theorem_environment: &TheoremEnvironment,
-    theorem_applications: &[(usize, TheoremApplication)],
-    claim_label: &str,
-    path_index: Option<usize>,
-    available: Vec<Proposition>,
-    context: &TheoremApplicationContext<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
-) -> Result<Vec<Proposition>, ClickError> {
-    apply_theorem_applications_to_available_with_lowering_context(
-        theorem_environment,
-        theorem_applications,
-        claim_label,
-        path_index,
-        available,
-        None,
-        context,
-        spec_definitions,
-        unfolded_predicates,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn apply_theorem_applications_to_available_with_lowering_context(
-    theorem_environment: &TheoremEnvironment,
-    theorem_applications: &[(usize, TheoremApplication)],
-    claim_label: &str,
-    path_index: Option<usize>,
-    mut available: Vec<Proposition>,
-    lowering_context: Option<&[Proposition]>,
-    context: &TheoremApplicationContext<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
-) -> Result<Vec<Proposition>, ClickError> {
-    for (tactic_index, application) in theorem_applications {
-        available =
-            unfold_available_predicate_facts(spec_definitions, unfolded_predicates, &available)
-                .map_err(|message| {
-                    theorem_application_error(claim_label, path_index, *tactic_index, message)
-                })?;
-        let mut lowering_available = lowering_context.unwrap_or(&available).to_vec();
-        for fact in &available {
-            if !lowering_available.contains(fact) {
-                lowering_available.push(fact.clone());
-            }
-        }
-        let conclusions = instantiate_theorem_application(
-            theorem_environment,
-            application,
-            claim_label,
-            path_index,
-            *tactic_index,
-            &available,
-            &lowering_available,
-            context,
-            spec_definitions,
-            unfolded_predicates,
-        )?;
-        for conclusion in conclusions {
-            if !available.contains(&conclusion) {
-                available.push(conclusion);
-            }
-        }
-    }
-    unfold_available_predicate_facts(spec_definitions, unfolded_predicates, &available)
-        .map_err(|message| theorem_application_error(claim_label, path_index, 0, message))
-}
-
-fn instantiate_theorem_application(
-    theorem_environment: &TheoremEnvironment,
-    application: &TheoremApplication,
-    claim_label: &str,
-    path_index: Option<usize>,
-    tactic_index: usize,
-    available: &[Proposition],
-    lowering_available: &[Proposition],
-    context: &TheoremApplicationContext<'_>,
-    spec_definitions: SpecDefinitions<'_>,
-    unfolded_predicates: &[String],
-) -> Result<Vec<Proposition>, ClickError> {
-    let lowering_assumptions = assumptions_from_propositions(lowering_available);
-    instantiate_theorem_application_with_assumptions(
-        theorem_environment,
-        application,
-        claim_label,
-        path_index,
-        tactic_index,
-        available,
-        &lowering_assumptions,
-        context,
-        spec_definitions,
-        unfolded_predicates,
-    )
-}
-
 /// Instantiates one theorem from explicit evidence and an indexed lowering
 /// context. Index the evidence only when unfolding a requirement or applying
 /// an Integer fold law needs it; ordinary exact requirements read the list.
@@ -451,7 +355,26 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                 ),
             ));
         };
-        let conclusion = lower(conclusion).map_err(|error| {
+        // The verified theorem already proves its conclusion's definedness
+        // from the requirements checked above. Instantiating that conclusion
+        // reconstructs its term; it must not demand a second proof during
+        // lowering. Argument evaluation retains its own use-site checks.
+        let conclusion = lower_fixed_state_proposition_retaining_requirements(
+            conclusion,
+            lowering_assumptions,
+            ContractEnvironment::new(&values, &array_refs),
+            FixedStateFrame::new(&pre_state, &post_state, None, context.recorded_snapshots),
+            spec_definitions,
+            FixedStateLoweringOptions {
+                algebraic_values: Some(&algebraic_values),
+                integer_values: Some(&integer_values),
+                bound_array_memories: Some(&bound_array_memories),
+                pointer_element_widths: pointer_element_widths.clone(),
+                ..Default::default()
+            },
+        )
+        .map(|(proposition, _, _, _)| proposition)
+        .map_err(|error| {
             theorem_application_error(
                 claim_label,
                 path_index,
@@ -1464,6 +1387,30 @@ mod observed_integer_argument_tests {
                 "accepted {before} -> {after}"
             );
         }
+    }
+
+    #[test]
+    fn machine_theorem_arguments_retain_domains_in_selected_expansion() {
+        let source = r#"
+            theorem reflexive(z: int32) { ensures z == z by solve(); }
+            theorem observed(x: int32) {
+                requires defined(x + 1);
+                ensures x == x by { apply(reflexive(x + 1)); solve(); }
+            }
+        "#;
+        verify_c0_sources(source, &[]).unwrap();
+        let expanded = expand_c0_claim_source_by_label(source, &[], "observed.ensures_0").unwrap();
+        crate::surface::without_implicit_auto(|| verify_c0_sources(&expanded, &[])).unwrap();
+        let apply_start = expanded.find("apply(reflexive(").unwrap();
+        let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
+        let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
+        let erased = format!(
+            "{}using {{}}{}",
+            &expanded[..using_start],
+            &expanded[using_end..]
+        );
+        assert!(crate::surface::without_implicit_auto(|| verify_c0_sources(&erased, &[])).is_err());
+        assert!(verify_c0_sources(&source.replace("requires defined(x + 1);", ""), &[]).is_err());
     }
 
     #[test]

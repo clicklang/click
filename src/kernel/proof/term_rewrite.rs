@@ -1023,10 +1023,8 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
 /// pointer is compared, and no fact set is consulted.
 fn materialized_registered_load_value(variable: Variable) -> Option<Bitvector32Term> {
     let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
-    if crate::kernel::eval::registered_load_kind_for_variable(&variable)
-        != Some(crate::kernel::LoadKind::Int32)
-        || !pointer_addresses_four_byte_elements(&pointer)
-    {
+    let kind = crate::kernel::eval::registered_load_kind_for_variable(&variable)?;
+    if !kind.is_word32() || !pointer_addresses_four_byte_elements(&pointer) {
         return None;
     }
     let memory = memory.memory();
@@ -1037,8 +1035,10 @@ fn materialized_registered_load_value(variable: Variable) -> Option<Bitvector32T
     if memory.has_union_overlay_at(&pointer) {
         return None;
     }
-    match memory.known_value(&pointer)? {
-        CValue::Int32(bits) => Some(bits),
+    // The cell's value as this read returns it: σ of a word stored at the
+    // other 32-bit signedness (rule K5).
+    match kind.read_cell(&memory.known_value(&pointer)?)? {
+        CValue::Int32(bits) | CValue::UInt32(bits) => Some(bits),
         _ => None,
     }
 }
@@ -2736,7 +2736,9 @@ impl<'a> TermRewrite<'a> {
                 if self.checked_work_exhausted() {
                     return exhausted_proposition();
                 }
-                Proposition::ConditionIs(condition, *value)
+                // Keep the truth polarity form used by ordinary lowering.
+                // A rewrite can introduce an outer Bool negation.
+                condition.truth_claim(*value)
             }
             Proposition::CMemoryLoadable {
                 memory,

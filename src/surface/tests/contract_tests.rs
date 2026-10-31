@@ -2918,6 +2918,46 @@ fn contract_claims_cannot_hide_overflow_or_zero_division_behind_reflexivity() {
 }
 
 #[test]
+fn contract_quantifier_domains_keep_the_chosen_witness_and_polarity() {
+    let c = "int32 identity(int32 x) { return x; }";
+    for (claim, proof, passes) in [
+        (
+            "exists (k: int32) { to_integer(k + 1) == 0 }",
+            "witness { k: -1 }; solve();",
+            true,
+        ),
+        (
+            "forall (k: int32) { to_integer(k + 1) == to_integer(k + 1) }",
+            "intro(); normalize();",
+            false,
+        ),
+        (
+            "not (exists (k: int32) { to_integer(k + 1) != to_integer(k + 1) })",
+            "intro(); normalize();",
+            false,
+        ),
+        (
+            "not (forall (k: int32) { to_integer(k + 1) != 0 })",
+            "witness { k: -1 }; solve();",
+            true,
+        ),
+        (
+            "not (forall (k: int32) { to_integer(k + 1) != to_integer(k + 1) })",
+            "witness { k: 2147483647 }; solve();",
+            false,
+        ),
+    ] {
+        let source = format!(
+            r#"verifying "domain.c";
+            int32 identity(int32 x) {{ ensures {claim} by {{ step(); {proof} }} }}
+        "#
+        );
+        let result = verify_c0_sources(&source, &[("domain.c", c)]);
+        assert_eq!(result.is_ok(), passes, "{claim}: {result:?}");
+    }
+}
+
+#[test]
 fn contract_logical_read_facts_do_not_grant_access() {
     let c = "int32 identity(int32* p) { return 0; }";
     let source = r#"verifying "domain.c";
@@ -2977,6 +3017,32 @@ fn exceptional_contract_claims_discharge_their_own_domains() {
         let result = verify_c0_sources(&source, &[("domain.c", c)]);
         assert_eq!(result.is_ok(), passes, "{claim}: {result:?}");
     }
+}
+
+#[test]
+fn contract_arithmetic_domain_refusal_retains_the_actual_goal_and_checked_context() {
+    let source = r#"verifying "claim_domain.c";
+        int32 identity(int32 x) {
+            ensures to_integer(result + 1) == to_integer(result + 1);
+        }
+    "#;
+    let error = verify_c0_sources(
+        source,
+        &[("claim_domain.c", "int32 identity(int32 x) { return x; }")],
+    )
+    .expect_err("the claim still owes its signed addition domain");
+    assert!(error.to_string().contains("unclosed goal:"), "{error}");
+    let requirement = error
+        .unresolved_requirement()
+        .expect("claim wrappers retain the actual debt");
+    assert!(requirement.context.is_some());
+    assert!(
+        error.diagnostic().is_some(),
+        "checked scope must survive the wrapper"
+    );
+    let report = error.report();
+    assert!(report.contains("goal:"), "{report}");
+    assert!(report.contains("evaluation requirement"), "{report}");
 }
 
 #[test]

@@ -99,6 +99,32 @@ impl TermClasses {
         self.intern_expression(Some((term, width)), None, None, None, None)
     }
 
+    /// Admits `left == right` between two native values of `width`.
+    #[cfg(test)]
+    pub(in crate::kernel::equality_graph) fn add_typed_equality(
+        &mut self,
+        width: W,
+        left: &T,
+        right: &T,
+    ) -> bool {
+        let left = self.intern_typed_machine(left, width);
+        let right = self.intern_typed_machine(right, width);
+        left != right && self.close(vec![(left, right)])
+    }
+
+    /// Whether two native values of `width` are one class.
+    #[cfg(test)]
+    pub(in crate::kernel::equality_graph) fn are_typed_equal(
+        &mut self,
+        width: W,
+        left: &T,
+        right: &T,
+    ) -> bool {
+        let left = self.intern_typed_machine(left, width);
+        let right = self.intern_typed_machine(right, width);
+        self.root(left) == self.root(right)
+    }
+
     pub(super) fn intern_algebraic(&mut self, term: &crate::kernel::AlgebraicTerm) -> u64 {
         self.intern_expression(None, Some(term), None, None, None)
     }
@@ -523,10 +549,16 @@ impl TermClasses {
                     if let Some((op, a, b)) = term.as_binary()
                         && !op.is_float()
                         && width
-                            == if op.is_bitvector32() {
-                                W::Bits32
-                            } else {
-                                W::Bits64
+                            == match op {
+                                // A native narrow operator is a head of its
+                                // own width.
+                                crate::kernel::BitvectorBinaryOp::Machine(format, _)
+                                    if format.format().bits() < 32 =>
+                                {
+                                    W::native(format)
+                                }
+                                op if op.is_bitvector32() => W::Bits32,
+                                _ => W::Bits64,
                             }
                     {
                         let head = self.intern_node(Node::MachineBinary(op, width));
@@ -537,7 +569,12 @@ impl TermClasses {
                         if matches!(
                             op,
                             crate::kernel::BitvectorBinaryOp::Machine(
-                                MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                                MachineIntegerType::Int64
+                                    | MachineIntegerType::UInt64
+                                    | MachineIntegerType::Int8
+                                    | MachineIntegerType::UInt8
+                                    | MachineIntegerType::Int16
+                                    | MachineIntegerType::UInt16,
                                 MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
                             )
                         ) {
@@ -560,6 +597,9 @@ impl TermClasses {
                                 U::MachineIntegerCast { destination, .. } => {
                                     W::of_machine_type(destination)
                                 }
+                                U::Machine(format, _) if format.format().bits() < 32 => {
+                                    W::native(format)
+                                }
                                 _ => W::Bits64,
                             }
                     {
@@ -573,7 +613,7 @@ impl TermClasses {
                                 crate::kernel::MachineUnaryOp::BitwiseNot,
                             ) => W::Bits32,
                             U::UInt32From64 | U::UInt64FromInt64 => W::Bits64,
-                            U::Machine(format, _) => W::of_machine_type(format),
+                            U::Machine(format, _) => W::native(format),
                             U::MachineIntegerCast { source, .. } => W::of_machine_type(source),
                             U::Float32Negate | U::Float64Negate => unreachable!(),
                         };
@@ -625,6 +665,18 @@ impl TermClasses {
                     if width == W::Bits128 {
                         Node::Machine128(MachineAtom::new(
                             crate::kernel::MachineIntegerType::UInt128,
+                            term.clone(),
+                        ))
+                    } else if matches!(width, W::Bits8 | W::Bits16) {
+                        // A native narrow value, by its bits: both
+                        // signednesses of one width share its classes, as
+                        // the 32-bit words do.
+                        Node::MachineNarrow(MachineAtom::new(
+                            if width == W::Bits8 {
+                                crate::kernel::MachineIntegerType::UInt8
+                            } else {
+                                crate::kernel::MachineIntegerType::UInt16
+                            },
                             term.clone(),
                         ))
                     } else if wide {
@@ -765,6 +817,13 @@ impl TermClasses {
                     let node = self.intern_node(Node::Int32Unary(op, value));
                     if inverse {
                         self.register_byte_inverse(node, value);
+                    }
+                    // Rule K8, a relation: the 32-bit widening of a narrow
+                    // value is that value's word, its canonical carrier.
+                    if let Int32Unary::Cast(source, destination) = op
+                        && crate::kernel::is_narrow_widening32(source, destination)
+                    {
+                        self.close(vec![(node, value)]);
                     }
                     values.push(node);
                     continue;

@@ -213,7 +213,7 @@ fn same_block_offset_rewrite_work(
         assert_eq!(
             lower_fixed_state_proposition_with_assumptions(
                 &relation_surface,
-                &PureFactContext::new(),
+                &assumptions_from_propositions(&facts),
                 ParameterBinding::default(),
                 FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
                 SpecDefinitions::new(&predicates, &functions),

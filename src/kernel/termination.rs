@@ -2804,14 +2804,15 @@ fn c_ranking_measure_term_unfolded(
                 Bitvector32Term::int64_remainder,
             ),
         ),
-        ShiftLeft(left, right) | RustShiftLeft(left, right) => shift(
+        RustShiftLeft(..) | RustShiftRight(..) => c_ranking_measure_read(expression, state, reader),
+        ShiftLeft(left, right) => shift(
             left,
             right,
             state,
             reader,
             (Bitvector32Term::shift_left, Bitvector32Term::shift_left),
         ),
-        ShiftRight(left, right) | RustShiftRight(left, right) => shift(
+        ShiftRight(left, right) => shift(
             left,
             right,
             state,

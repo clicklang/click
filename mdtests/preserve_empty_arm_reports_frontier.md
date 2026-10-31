@@ -3,8 +3,8 @@
 A `preserve` body may open a proof `match` on the loop binder's model and
 finish each arm's path separately. An arm with no tactics reaches the
 region's end at once, with the body's statements still ahead, so the rest of
-the body runs from there. Here it does not run, because `10 / (i - 1)` may
-divide by zero, so that path is unfinished. The frontier report names the
+the body runs from there. Here it does not run, because the division may be by zero or the final addition may
+overflow, so that path is unfinished. The frontier report names the
 arm's emptiness rather than saying "after tactic 0 `match`", which reads as
 if the `match` itself were the last thing that ran.
 
@@ -79,5 +79,5 @@ int spin(struct node* p, int n) {
 ```
 
 ```expect
-fail: after tactic 0 `match, inside an arm with no tactics`; still ahead on this path: the body's end. No path of this `preserve` is complete yet
+fail: after tactic 0 `match, inside an arm with no tactics`; still ahead on this path: the body's end
 ```

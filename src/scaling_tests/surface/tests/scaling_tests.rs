@@ -5961,6 +5961,7 @@ fn resource_reference_entry_setup_has_near_linear_work() {
                     file.function_blocks()[0].requires(),
                     ParameterBinding::default(),
                     &crate::kernel::CState::new(),
+                    &crate::kernel::PureFactContext::new(),
                 )
                 .unwrap()
             })
@@ -6011,6 +6012,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
                 function.requires(),
                 ParameterBinding::new(c_function.parameters(), &arguments),
                 &crate::kernel::CState::new(),
+                &crate::kernel::PureFactContext::new(),
             )
             .unwrap()
         });
@@ -9758,4 +9760,123 @@ fn post_return_function_equations_scale_with_explicit_unfolds() {
         samples.windows(2).all(|pair| pair[1] <= 2 * pair[0] + 64),
         "retained unfold equations rescanned the growing return proof: {samples:?}"
     );
+}
+
+#[test]
+fn recorded_call_results_scale_and_replace_execution_occurrences() {
+    use crate::kernel::{Bitvector32Term, ConditionTerm, MachineIntegerType, Variable};
+    for size in [16usize, 64, 256, 1024] {
+        let mut snapshots = RecordedSnapshots::new();
+        let value = |index| {
+            CValue::Bool(Bitvector32Term::bool_cast(
+                MachineIntegerType::UInt8,
+                ConditionTerm::Variable(Variable(700_000 + index)),
+            ))
+        };
+        for index in 0..size {
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                snapshots.record_call_result(index, Some(value(index as u64)));
+            });
+            assert!(work <= 2, "{size}: insertion {work}");
+        }
+        let CValue::Bool(first) = value(0) else {
+            unreachable!()
+        };
+        let (region, work) = crate::instrumentation::measure_deterministic_work(|| {
+            snapshots.call_result_naming_integer(&first)
+        });
+        assert_eq!(region, Some(CodeRegionRef::Region(0)));
+        assert!(work <= 2, "{size}: lookup {work}");
+        let branch = snapshots.clone();
+        snapshots.record_call_result(0, Some(value(10000)));
+        assert!(snapshots.call_result_naming_integer(&first).is_none());
+        assert_eq!(
+            branch
+                .region_result_value(&CodeRegionRef::Region(0))
+                .unwrap(),
+            value(0)
+        );
+        assert_eq!(
+            snapshots
+                .region_result_value(&CodeRegionRef::Region(0))
+                .unwrap(),
+            value(10000)
+        );
+        snapshots.record_call_result(0, None);
+        assert!(
+            snapshots
+                .region_result_value(&CodeRegionRef::Region(0))
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn recorded_algebraic_field_names_use_changed_instances_and_direct_lookups() {
+    use crate::kernel::model_fields::{ModelFieldOrigin, ModelMint, register_model_field_variable};
+    use crate::kernel::{
+        AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValue, Variable,
+    };
+    let ty = AlgebraicType::parameter("T".into());
+    let schema = crate::kernel::ResourceFieldSchema::new(vec![(
+        "items".into(),
+        crate::kernel::ResourceFieldType::Algebraic(ty.clone()),
+    )])
+    .unwrap();
+    for size in [16usize, 64, 256, 1024] {
+        let mut snapshots = RecordedSnapshots::new();
+        let mut state = CState::new();
+        for index in 0..size {
+            let variable = Variable(900_000 + index as u64);
+            let identity = Variable(800_000 + index as u64);
+            register_model_field_variable(
+                variable,
+                ModelFieldOrigin {
+                    identity,
+                    field: "items".into(),
+                    field_index: 0,
+                    minted_by: ModelMint::CallReturn {
+                        callee: "update".into(),
+                    },
+                },
+            );
+            let instance = crate::kernel::ResourceInstance::new(
+                identity,
+                "object".into(),
+                vec![].into(),
+                schema.clone(),
+                vec![AlgebraicValue::Algebraic(AlgebraicTerm {
+                    algebraic_type: ty.clone(),
+                    node: AlgebraicTermNode::Variable(variable),
+                })]
+                .into(),
+            )
+            .unwrap();
+            let resources =
+                state
+                    .resources()
+                    .clone()
+                    .unchecked_with_fact(crate::kernel::CResourceFact::own(
+                        crate::kernel::CResource::Instance(instance),
+                    ));
+            state = state.with_resource_context(resources);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                snapshots.insert(
+                    ProgramPointRef {
+                        region: CodeRegionRef::Region(index),
+                        kind: ProgramPointKind::Exit,
+                    },
+                    state.clone(),
+                );
+            });
+            assert!(work <= 4, "{size}/{index}: insertion {work}");
+        }
+        let (found, work) = crate::instrumentation::measure_deterministic_work(|| {
+            snapshots
+                .point_holding_field_value(Variable(900_000))
+                .is_some()
+        });
+        assert!(found);
+        assert!(work <= 4, "{size}: lookup {work}");
+    }
 }

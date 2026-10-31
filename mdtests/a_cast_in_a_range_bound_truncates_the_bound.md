@@ -27,5 +27,5 @@ uint8 read(const uint8* bytes, uint64 length, uint64 index) {
 ```
 
 ```expect
-fail: missing resource fact `views bytes[index]`
+fail: pointer arithmetic left the pointed-to object
 ```

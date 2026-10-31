@@ -72,16 +72,15 @@ void spin(struct cell* node, int32 n) {
                                 premise 1: at(region(3).entry, i) < at(region(3).entry, n) => at(region(3).entry, i) <
                                     at(region(3).entry, n);
                                 int32_range => n <= 2147483647;
-                                add 1, 2 => ((at(region(3).entry, i) + n) as int32) < ((at(region(3).entry, n) +
-                                    2147483647) as int32);
+                                add 1, 2 => (at(region(3).entry, i) + n) < (at(region(3).entry, n) +
+                                    2147483647);
                                 interval_from_affine 0 (at(region(3).entry, i)) (0) (2147483647);
                                 interval_from_affine 3 (at(region(3).entry, i)) (-2147483648) (2147483646);
                                 interval_intersect 4, 5 (0) (2147483646);
                                 interval_atom (1) (1) (1);
                                 interval_add_bounded 6, 7 (1) (2147483647);
                                 trivial => -1 <= 0;
-                                add 0, 9 => ((at(region(3).entry, 0) + -1) as int32) <= ((at(region(3).entry, i) + 0) as
-                                    int32);
+                                add 0, 9 => (at(region(3).entry, 0) + -1) <= (at(region(3).entry, i) + 0);
                                 affine_conclusion 10 8 => (i as int32) >= (0 as int32);
                                 conclusion 11;
                             }
@@ -92,8 +91,8 @@ void spin(struct cell* node, int32 n) {
                                     premise 0: at(region(3).entry, i) < at(region(3).entry, n) => at(region(3).entry, i)
                                         < at(region(3).entry, n);
                                     int32_range => n <= 2147483647;
-                                    add 0, 1 => ((at(region(3).entry, i) + n) as int32) < ((at(region(3).entry, n) +
-                                        2147483647) as int32);
+                                    add 0, 1 => (at(region(3).entry, i) + n) < (at(region(3).entry, n) +
+                                        2147483647);
                                     interval_from_affine 2 (at(region(3).entry, i)) (-2147483648) (2147483646);
                                     interval_atom (1) (1) (1);
                                     interval_add_bounded 3, 4 (-2147483647) (2147483647);
@@ -220,16 +219,15 @@ void spin(struct cell* node, int32 n) {
                                 premise 1: at(region(3).entry, i) < at(region(3).entry, n) => at(region(3).entry, i) <
                                     at(region(3).entry, n);
                                 int32_range => n <= 2147483647;
-                                add 1, 2 => ((at(region(3).entry, i) + n) as int32) < ((at(region(3).entry, n) +
-                                    2147483647) as int32);
+                                add 1, 2 => (at(region(3).entry, i) + n) < (at(region(3).entry, n) +
+                                    2147483647);
                                 interval_from_affine 0 (at(region(3).entry, i)) (0) (2147483647);
                                 interval_from_affine 3 (at(region(3).entry, i)) (-2147483648) (2147483646);
                                 interval_intersect 4, 5 (0) (2147483646);
                                 interval_atom (1) (1) (1);
                                 interval_add_bounded 6, 7 (1) (2147483647);
                                 trivial => -1 <= 0;
-                                add 0, 9 => ((at(region(3).entry, 0) + -1) as int32) <= ((at(region(3).entry, i) + 0) as
-                                    int32);
+                                add 0, 9 => (at(region(3).entry, 0) + -1) <= (at(region(3).entry, i) + 0);
                                 affine_conclusion 10 8 => (i as int32) >= (0 as int32);
                                 conclusion 11;
                             }
@@ -240,8 +238,8 @@ void spin(struct cell* node, int32 n) {
                                     premise 0: at(region(3).entry, i) < at(region(3).entry, n) => at(region(3).entry, i)
                                         < at(region(3).entry, n);
                                     int32_range => n <= 2147483647;
-                                    add 0, 1 => ((at(region(3).entry, i) + n) as int32) < ((at(region(3).entry, n) +
-                                        2147483647) as int32);
+                                    add 0, 1 => (at(region(3).entry, i) + n) < (at(region(3).entry, n) +
+                                        2147483647);
                                     interval_from_affine 2 (at(region(3).entry, i)) (-2147483648) (2147483646);
                                     interval_atom (1) (1) (1);
                                     interval_add_bounded 3, 4 (-2147483647) (2147483647);

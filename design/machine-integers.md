@@ -493,7 +493,8 @@ Progress:
   word, is the stored word (`LoadKind::reads_value` compares word kinds).
   One word, one name: a load variable is a variable, which has no format,
   so a `UInt32` read is named and defined by its word's `Int32` read
-  (`LoadKind::word_kind`), as a signed byte read is the conversion of the
+  (`LoadKind::word_kind`; superseded by step 4's item 5, 2026-10-30, where
+  each read is its own load), as a signed byte read is the conversion of the
   byte's unsigned read. Kernel-internal reads stay `Int32`. A trace prints
   either 32-bit kind as `read<Bits32>`, as before. No verdict changed.
 - Step 2, constants with a format, is done (2026-10-25). `Bitvector32Term`
@@ -642,8 +643,50 @@ Progress:
      removes K1, K2 and K6, with R0 at 32 bits and the difference graph's
      σ links.
   5. Reads by their own kind, with R-mem; typed index coordinates (G1).
-  6. Widenings are nodes: K8 and the word helpers go.
-  7. Native narrow operators, specification narrow arithmetic native (G2).
+     Steps 5 and 6 land before step 4b removes K1 and K6 (maintainer
+     direction, 2026-10-30), so 4b removes no rule a read or a widening
+     still needs. Step 5 is done (2026-10-30): a `UInt32` read is its own
+     load, minted and defined at its own kind (`mint_load_variable_identity`
+     no longer maps it to `Int32`, and `LoadKind::word_kind` is gone), and
+     the stores and cells that name a read name one of their own kind. R-mem
+     relates the two reads of one cell: the equality graph registers a read
+     of either 32-bit kind as the cell's one word load application, which
+     is σ while K1 holds and becomes σ's own relation with step 4b. A route
+     that answers a load term from a cell still reads the stored word at
+     either signedness (`LoadKind::reads_value`), as K1 allows; step 4b
+     reads it through σ. Index coordinates stay words: the named
+     address-only exception G1 allows. Every gate verdict and the verify
+     and audit outputs of the integer corpus are unchanged.
+  6. Widenings are nodes: K8 and the word helpers go. K8 is restated as a
+     relation (maintainer direction, 2026-10-30; Decisions, K8). Step 6a
+     (2026-10-30) adds the relation and its readers while the peel stays:
+     the equality graph merges a widening node with its operand's class,
+     including one a composed conversion interns; the difference graph
+     links and bounds a widening by its operand; a certificate's widening
+     identity, the cast-range spelling and the diagnostics'
+     promoted-word naming read the widening node; a known
+     32-bit order is found in its mirrored direction through the graph; the
+     narrow binder's unsigned range is stated of its `uint32` widening, and
+     the signed pair it implies is filed on the operand. Step 6b removes
+     the peel.
+  7. Native narrow values (maintainer direction, 2026-10-30): narrow
+     widths, then narrow values native (constants, binders, loads and
+     bytes with R-mem, K7 and C's promotions and narrowings, together,
+     because a narrow value cannot hold two encodings), native narrow
+     comparisons, the `from_machine` relation, and specification narrow
+     arithmetic native (G2). The first PR is done (2026-10-30): the 8- and
+     16-bit widths exist with no producer. `CarrierWidth` has `Bits8` and
+     `Bits16` (`CarrierWidth::native`; a narrow `CValue` still rides in a
+     32-bit carrier, `CarrierWidth::of_value`), the width check accepts a
+     narrow format's sign-free operators (`is_native_narrow_operator`) over
+     operands of its width and a narrow `MachineIntegerConstant`, the
+     constructors build them (`machine_binary`, `machine_unary`,
+     `narrow_constant`), folding two constants modulo 2^N and a shift by a
+     constant count below N, and the equality graph interns them as heads
+     of their width over narrow atoms keyed by their bits
+     (`Node::MachineNarrow`). The difference graph's narrow domains and the
+     widening and narrowing relations land with the producers that need
+     them. No output changes.
   8. Rust native narrow `+ - * & | ^ ! <<` (G4).
   9. The 64-bit relations and the legacy conversions merged into `Cast`.
   10. Generic `T: intn` / `T: uintn` library theorems.
@@ -985,6 +1028,13 @@ Maintainer direction, 2026-10-26:
   as σ is; a 64-bit `F` keeps the legacy extension over that word.
   Soundness: by the Stage 0 invariant `v`'s word is `n`'s 32-bit sign or
   zero extension, which is `n`'s word in `F`.
+  Restated as a relation (maintainer direction, 2026-10-30, step 6): the
+  widening is a node of its own, and the equality graph merges it with its
+  operand's class (one node and one union per widening) while the
+  difference graph links either 32-bit reading of it to the same reading of
+  the operand. Its soundness is the same Stage 0 invariant. K7′ covers a
+  widening of a narrow cast. The syntactic peel (`word32`) goes once the
+  readers read the relation.
 - **Printing.** C++ and Rust print a narrow conversion as `x as uint8` or
   `x as int8` where they printed its mask arithmetic, and show the narrow
   range facts C shows. After K8 a promoted narrow value prints as
@@ -1121,3 +1171,32 @@ the word identity of K1, K2, K5's naming, K6 and K8 as each step lands:
   - G10: spellings print as written: `((a as int32) + 1) as uint32` raises
     as itself.
   - G11: the Charon-trial proofs are re-pinned when they change.
+
+Maintainer direction, 2026-10-30 (native narrow values):
+
+- **Lowering retains the term structure of the original, whenever
+  possible.** This principle governs every choice below and every later one
+  in this plan: a node is what the source wrote or what its language's
+  semantics insert, and every identity between two structures is a relation
+  the kernel knows, not a rewrite that erases one of them.
+- **Narrow values are 8- and 16-bit values of their own** (step 7, option
+  B), not canonical carriers in a 32-bit word: narrow binders, loads,
+  constants and the sign-free operators `+ - * & | ^ ~ <<` (G4) have native
+  nodes of their width, so a narrow value's range comes from its format,
+  and the binder range facts go. A 32-bit view of a narrow value is its
+  widening, related to it by value (K8, as a relation across widths), and
+  a narrowing is a narrow node (K7 restated).
+- **Comparisons:** native narrow comparisons are in scope, superseding G4's
+  deferral for comparisons. A Rust `a < b` on `u8` is an 8-bit comparison;
+  C keeps its promoted comparisons, which are its structure.
+- **Memory:** every narrow load is its own load at its own type. The
+  `int8` and `uint8` reads of one byte are two loads, neither canonical and
+  neither a conversion of the other, related only by R-mem when they read
+  the same bytes, as step 5 does at 32 bits. This replaces the encoding of
+  a signed byte read as the conversion of the unsigned read. Byte views
+  produce narrow terms.
+- **Integer readings:** `IntegerTerm::from_machine` stops folding
+  conversions: `to_integer(x as int32)` is the observation of the widening,
+  and `to_integer(widen(v)) == to_integer(v)` is a relation the solver
+  knows, O(1) like K8's. Its other normalizations are audited under the
+  same principle.

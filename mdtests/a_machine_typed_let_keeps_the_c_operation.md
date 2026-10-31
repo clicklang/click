@@ -16,5 +16,5 @@ theorem machine_sum(a: int32, b: int32) {
 ```
 
 ```expect
-fail: could not establish
+fail: not established: `a + b`
 ```

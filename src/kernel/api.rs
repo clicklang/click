@@ -249,11 +249,21 @@ pub(crate) fn c_narrow_integer_range_facts(value: &CValue) -> Option<Vec<Proposi
     ];
     // An unsigned type's range is also an unsigned bound. The closers do
     // not yet bridge the signed pair to it, and a widening to `uint32` is
-    // read in that order, so it is stated beside them.
+    // read in that order, so it is stated beside them, of the widening (a
+    // node of its own, rule K8 a relation).
     if lower == 0 {
+        let narrow = if matches!(value, CValue::UInt8(_)) {
+            MachineIntegerType::UInt8
+        } else {
+            MachineIntegerType::UInt16
+        };
         facts.push(Proposition::ConditionIs(
             ConditionTerm::unsigned_less_equal(
-                term.clone(),
+                Bitvector32Term::machine_integer_cast(
+                    narrow,
+                    MachineIntegerType::UInt32,
+                    term.clone(),
+                ),
                 Bitvector32Term::Constant(upper as u32),
             ),
             true,
@@ -4885,6 +4895,7 @@ pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
             ));
             SymbolicCExecutionPath {
                 completion_origin: None,
+                call_result: path.call_result,
                 assumptions: assumptions.clone(),
                 post_assumptions: None,
                 facts,
@@ -5172,6 +5183,7 @@ fn symbolic_c_statement_execution_with_loop_rule(
             ));
             SymbolicCExecutionPath {
                 completion_origin: None,
+                call_result: path.call_result,
                 assumptions: assumptions.clone(),
                 post_assumptions: None,
                 facts,
@@ -5403,6 +5415,7 @@ fn prove_symbolic_c_function_execution_paths_with_contract_resources(
             ));
             SymbolicCExecutionPath {
                 completion_origin: None,
+                call_result: None,
                 assumptions: assumptions.clone(),
                 post_assumptions: None,
                 facts,
@@ -6518,6 +6531,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
         };
         paths.push(SymbolicCExecutionPath {
             completion_origin: None,
+            call_result: None,
             assumptions: path.assumptions.clone(),
             post_assumptions: path.post_assumptions.clone(),
             facts: path.facts.clone(),
@@ -7076,6 +7090,12 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                             .clone(),
                         checked_returned_resources: checked.checked_returned_resources.clone(),
                         completion_origin_state: Some(checked.state.clone()),
+                        completion_path_origins: checked
+                            .execution
+                            .paths
+                            .iter()
+                            .map(|path| path.theorem.clone())
+                            .collect(),
                     })
                     .collect()
             },
@@ -7118,6 +7138,12 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
                                 .clone(),
                             checked_returned_resources: checked.checked_returned_resources.clone(),
                             completion_origin_state: Some(checked.state.clone()),
+                            completion_path_origins: checked
+                                .execution
+                                .paths
+                                .iter()
+                                .map(|path| path.theorem.clone())
+                                .collect(),
                         })
                     })
                     .collect::<Vec<_>>()

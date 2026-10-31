@@ -3779,19 +3779,8 @@ impl PureFactContext {
         {
             return self;
         }
-        let condition = ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(*variable)),
-            right: Box::new(Bitvector32Term::MemoryLoad(
-                memory.clone(),
-                Box::new(address.clone()),
-                *kind,
-            )),
-        };
-        if self.condition_facts.get(&condition) != Some(&true) {
-            return self;
-        }
+        // The exact proposition was admitted above. The retained producer
+        // binding supplies the read descriptor independently of its spelling.
         self.file_typed_pointer_read(*variable, memory, address, value);
         self
     }
@@ -6725,6 +6714,17 @@ impl PureFactContext {
             .contains(ReasoningPolicy::ASSUME_ENTRY_CLAUSE_EXTENTS)
     }
 
+    /// Project a held resource's body using the domains its fold established.
+    /// Ordinary entry requirements and new folds keep their domain obligations.
+    pub(crate) fn assume_held_resource_domains(self) -> Self {
+        self.with_reasoning_policy(ReasoningPolicy::ASSUME_HELD_RESOURCE_DOMAINS)
+    }
+
+    pub(crate) fn should_assume_held_resource_domains(&self) -> bool {
+        self.reasoning_policy
+            .contains(ReasoningPolicy::ASSUME_HELD_RESOURCE_DOMAINS)
+    }
+
     pub(crate) fn require_owned_expression_loads(mut self) -> Self {
         if self.should_allow_symbolic_contract_loads() {
             self.toggle_reasoning_policy(ReasoningPolicy::ALLOW_SYMBOLIC_CONTRACT_LOADS);
@@ -7058,6 +7058,14 @@ impl PureFactContext {
 
     fn knows_condition_or_stated_separation(&self, condition: &ConditionTerm, value: bool) -> bool {
         self.equality_graph.knows_condition(condition, value)
+            // A 32-bit order claim in its mirrored direction (`255 >= x` for
+            // `x <= 255`): the graph keeps each order condition in the
+            // direction it was stated, and a widening's class holds its
+            // operand (rule K8, a relation), so the stated direction over
+            // the operand answers the mirrored one over the widening. One
+            // more lookup.
+            || mirrored_order32(condition)
+                .is_some_and(|mirrored| self.equality_graph.knows_condition(&mirrored, value))
             // A signedness conversion's sign test is known when its
             // operand's half-range test is, and the reverse
             // (`condition_reasoning::sign_bit`).
@@ -7276,11 +7284,15 @@ impl PureFactContext {
         //
         // A sixty-four-bit `x <u c` with `c <= 2^31` files the same pair on
         // the low word `(uint32)x`, which is `x` itself, and the sign-bit
-        // bound `x <=u INT_MAX` an index conversion asks for by key
-        // (`pointer_index_term`).
+        // bound `x <=u INT_MAX` that checked range projection asks for by key.
         if let Some((term, bound, strict)) =
             condition_reasoning::unsigned_upper_bound_below_sign_bit(&condition, value)
         {
+            // A 32-bit widening of a narrow value has its operand's word
+            // (rule K8, a relation), so the range is filed on the operand.
+            let term = term
+                .narrow_widening32_operand()
+                .map_or(term, |(_, operand)| operand);
             self = self.assume_unsigned_word_range(term.clone(), bound, strict);
         } else if let Some((term, bound, strict)) =
             condition_reasoning::uint64_upper_bound_below_sign_bit(&condition, value)
@@ -9970,6 +9982,7 @@ impl ProofObligation {
             proposition,
             context: None,
             assumable: true,
+            evaluation_domain: false,
             call_requirement_site: None,
             introductions: None,
         }
@@ -9983,9 +9996,16 @@ impl ProofObligation {
             proposition: canonical_observation_form(&proposition),
             context: None,
             assumable: false,
+            evaluation_domain: false,
             call_requirement_site: None,
             introductions: None,
         }
+    }
+
+    pub(in crate::kernel) fn evaluation_domain(proposition: Proposition) -> Self {
+        let mut obligation = Self::verification_condition(proposition);
+        obligation.evaluation_domain = true;
+        obligation
     }
 
     pub fn with_context(mut self, context: impl Into<String>) -> Self {
@@ -10088,6 +10108,7 @@ impl ProofObligation {
             proposition: f(self.proposition),
             context: self.context,
             assumable: self.assumable,
+            evaluation_domain: self.evaluation_domain,
             call_requirement_site: None,
             // The chain describes the head nodes of the proposition it was
             // recorded for. A rewrite adds or removes head nodes, so the
@@ -10372,9 +10393,9 @@ impl ExecutionPureFact {
 }
 
 /// A generated-load binding is valid only while its exact defining equation
-/// still embeds the producer's memory snapshot and pointer.  Structural
-/// proposition equality intentionally ignores this distinction for some
-/// memory values, so it cannot be the authority for retaining the binding.
+/// names the producer's memory snapshot, pointer, and kind, either through
+/// its registered read handle or an exact raw descriptor. Structural equality
+/// alone does not retain the memory epoch, so it cannot retain the binding.
 fn generated_load_binding_matches_proposition(
     binding: &GeneratedLoadBinding,
     proposition: &Proposition,
@@ -10391,7 +10412,7 @@ fn generated_load_binding_matches_proposition(
     };
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: _,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -10401,17 +10422,33 @@ fn generated_load_binding_matches_proposition(
     else {
         return false;
     };
-    let (
-        Bitvector32Term::Variable(proposition_variable),
-        Bitvector32Term::MemoryLoad(memory, proposition_pointer, _),
-    ) = (left.as_ref(), right.as_ref())
-    else {
+    let Bitvector32Term::Variable(proposition_variable) = left.as_ref() else {
         return false;
     };
-    proposition_variable == variable
-        && snapshot == &CMemorySnapshotIdentity::of(memory.memory())
-        && proposition_pointer.as_ref() == pointer
-        && load == right.as_ref()
+    if proposition_variable != variable {
+        return false;
+    }
+    match right.as_ref() {
+        Bitvector32Term::MemoryLoad(memory, proposition_pointer, _) => {
+            snapshot == &CMemorySnapshotIdentity::of(memory.memory())
+                && proposition_pointer.as_ref() == pointer
+                && load == right.as_ref()
+        }
+        Bitvector32Term::Variable(read) => {
+            // The source-level read uses its registered handle. Compare its
+            // descriptor by indexed lookup, retaining exact epoch and width;
+            // no equality facts can authorize this producer metadata.
+            let Some(Bitvector32Term::MemoryLoad(memory, address, kind)) =
+                crate::kernel::registered_load_term_for_variable(read)
+            else {
+                return false;
+            };
+            snapshot == &CMemorySnapshotIdentity::of(memory.memory())
+                && address.as_ref() == pointer
+                && matches!(load, Bitvector32Term::MemoryLoad(_, _, expected) if *expected == kind)
+        }
+        _ => false,
+    }
 }
 
 impl SymbolicCExecution {
@@ -10425,6 +10462,10 @@ impl SymbolicCExecution {
 }
 
 impl SymbolicCExecutionPath {
+    pub(crate) fn call_result(&self) -> Option<&CValue> {
+        self.call_result.as_ref()
+    }
+
     /// The entry premises this path was checked under.
     pub fn assumptions(&self) -> &PureFactContext {
         &self.assumptions
@@ -12136,4 +12177,31 @@ mod resource_alias_scaling_tests {
 mod condition_bucket_scaling_tests {
     use super::*;
     include!("../scaling_tests/kernel/assumptions/condition_buckets.rs");
+}
+
+/// A 32-bit order comparison stated in the other direction: `b > a` for
+/// `a < b`, `b >= a` for `a <= b`, and back. One match on the root.
+fn mirrored_order32(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::Compare {
+        format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    let relation = match relation {
+        CompareRelation::LessThan => CompareRelation::GreaterThan,
+        CompareRelation::LessEqual => CompareRelation::GreaterEqual,
+        CompareRelation::GreaterThan => CompareRelation::LessThan,
+        CompareRelation::GreaterEqual => CompareRelation::LessEqual,
+        CompareRelation::Equal => return None,
+    };
+    Some(ConditionTerm::Compare {
+        format: *format,
+        relation,
+        left: right.clone(),
+        right: left.clone(),
+    })
 }

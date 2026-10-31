@@ -1711,13 +1711,11 @@ impl Printer<'_> {
                 .zip(&naming.1)
                 .filter(|(name, _)| name.name().len() <= 256)
                 .filter(|(_, value)| match value {
-                    crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(base)) => {
-                        base.c_type()
-                            .pointee_type()
-                            .and_then(crate::kernel::LoadKind::of_type)
-                            .map(crate::kernel::LoadKind::word_kind)
-                            == Some(kind.word_kind())
-                    }
+                    crate::kernel::CExpression::Value(crate::kernel::CValue::Pointer(base)) => base
+                        .c_type()
+                        .pointee_type()
+                        .and_then(crate::kernel::LoadKind::of_type)
+                        .is_some_and(|read| read.reads_word_of(kind)),
                     _ => true,
                 })
                 .map(|(name, value)| (name.clone(), value.clone()))

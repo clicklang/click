@@ -7524,38 +7524,37 @@ impl<'a> Proof<'a> {
         // This is candidate presentation only; it neither adds facts nor
         // reconstructs a proof context.
         if let ProofContext::Pure(context) = self.context.as_ref() {
-            let selected = crate::kernel::proposition_variables(kernel);
-            let mut bindings = context
-                .theorem_context
-                .values
+            // Include arguments of opaque applications: their variables still
+            // need names even though the bitvector collector treats the call
+            // as an atom.
+            let mut selected = BTreeSet::new();
+            crate::kernel::planning_api::collect_proposition_connection_variables(
+                kernel,
+                &mut selected,
+            );
+            let mut bindings = selected
                 .iter()
-                .filter_map(|(name, value)| {
-                    let CValue::Int32(Bitvector32Term::Variable(variable)) = value else {
-                        return None;
-                    };
-                    selected
-                        .contains(variable)
-                        .then(|| (*variable, name.clone()))
+                .filter_map(|variable| {
+                    context
+                        .source_names
+                        .get(variable)
+                        .map(|name| (*variable, name.clone()))
                 })
                 .collect::<BTreeMap<_, _>>();
-            if let Some(goal) = self.proposition_obligation() {
-                for (name, value) in goal.surface_bindings.iter() {
-                    if let ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                        Bitvector32Term::Variable(variable),
-                    ))) = value
-                        && selected.contains(variable)
-                    {
-                        bindings.insert(*variable, name.clone());
-                    }
+            let (intro_names, local_names) = self.binder_variable_names();
+            for (variable, name) in local_names.into_iter().chain(intro_names) {
+                if selected.contains(&variable) {
+                    bindings.insert(variable, name);
                 }
             }
-            let state = CState::new().with_memory(context.theorem_context.memory.clone());
-            if let Some(surface) = synthesize_surface_proposition_with_bound_variable_names(
+            let synthesized = synthesize_surface_proposition_with_bound_variable_names(
                 kernel,
                 ParameterBinding::default(),
-                &state,
+                &context.source_state,
                 &bindings,
-            ) && matches_kernel(&surface, true).is_some()
+            );
+            if let Some(surface) = synthesized
+                && matches_kernel(&surface, true).is_some()
             {
                 return Some(surface);
             }
@@ -11115,7 +11114,23 @@ impl<'a> Proof<'a> {
                     context.fixed_state.state,
                 ),
             ),
-            ProofContext::Execution(_) => None,
+            ProofContext::Execution(_) => self.outcome_fixed_state_view().map(|view| {
+                let post = view.fixed_state.result.map_or_else(
+                    || view.fixed_state.state.clone(),
+                    |result| {
+                        view.fixed_state
+                            .state
+                            .clone()
+                            .with_local(crate::kernel::C_CONTRACT_RESULT_NAME, result.clone())
+                    },
+                );
+                super::surface_synthesis::synthesize_surface_proposition_at_entry_and_post(
+                    &requirement.proposition,
+                    view.parameter_binding,
+                    view.fixed_state.pre_state,
+                    &post,
+                )
+            }),
         };
         if let Some(surface) = non_execution_surface {
             let surface = surface.ok_or_else(|| self.step_error(
@@ -11139,6 +11154,9 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let execution_view = execution.view(context);
+        let _recorded_points = super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+            execution_view.recorded_snapshots,
+        );
         let _qualified_sources = super::surface_synthesis::QualifiedSynthesisScope::enter(
             execution_view.surface_propositions,
         );

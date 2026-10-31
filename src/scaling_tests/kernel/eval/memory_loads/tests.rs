@@ -1636,10 +1636,11 @@ fn a_call_frame_step_queries_its_kept_range_once() {
     }
 }
 
-/// One word, one name: an unsigned 32-bit read is named by its word's
-/// `Int32` read (rule K5), so naming it costs what naming that read again
-/// costs, and both return one variable, however many unrelated cells the
-/// snapshot holds.
+/// Each read is its own load (R-mem relates the two in the equality
+/// graph): an unsigned 32-bit read has a name of its own, defined by its own
+/// read. Naming it after its word's `Int32` read costs no more than that
+/// naming did, and the same however many unrelated cells the snapshot
+/// holds.
 #[test]
 fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
     let mut samples = Vec::new();
@@ -1652,22 +1653,26 @@ fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
         let memory = crate::kernel::intern_c_memory(memory);
         let cell = Pointer::symbolic(Variable(994_000));
         let load = |kind| Bitvector32Term::MemoryLoad(memory.clone(), Box::new(cell.clone()), kind);
-        let (signed, _) = load_variable_for_term(&load(LoadKind::Int32)).unwrap();
-        let (again, word_units) = crate::instrumentation::measure_deterministic_work(|| {
-            load_variable_for_term(&load(LoadKind::Int32))
-        });
-        let (unsigned, unsigned_units) = crate::instrumentation::measure_deterministic_work(|| {
-            load_variable_for_term(&load(LoadKind::UInt32))
-        });
-        let (unsigned, definition) = unsigned.unwrap();
-        assert_eq!(again.unwrap().0, signed, "size {size}");
-        assert_eq!(unsigned, signed, "size {size}");
-        assert_eq!(definition, load(LoadKind::Int32), "size {size}");
+        let ((signed, _), signed_units) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                load_variable_for_term(&load(LoadKind::Int32)).unwrap()
+            });
+        let ((unsigned, definition), unsigned_units) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                load_variable_for_term(&load(LoadKind::UInt32)).unwrap()
+            });
+        assert_ne!(unsigned, signed, "size {size}");
+        assert_eq!(definition, load(LoadKind::UInt32), "size {size}");
         assert_eq!(
             registered_load_kind_for_variable(&unsigned),
-            Some(LoadKind::Int32)
+            Some(LoadKind::UInt32)
         );
-        assert_eq!(unsigned_units, word_units, "size {size}");
+        assert_eq!(
+            load_variable_for_term(&load(LoadKind::UInt32)).unwrap().0,
+            unsigned,
+            "size {size}"
+        );
+        assert!(unsigned_units <= signed_units, "size {size}");
         samples.push(unsigned_units);
     }
     assert!(
@@ -1949,5 +1954,61 @@ fn symbolic_logical_wide_reads_do_not_scan_ambient_cells_or_facts() {
     assert!(
         samples.iter().all(|work| *work <= samples[0] + 128),
         "fresh reads after startup: {samples:?}"
+    );
+}
+
+#[test]
+fn structural_read_definitions_scale_across_cache_only_records() {
+    let mut samples = Vec::new();
+    for count in [16u64, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(299_101));
+        let mut memory = CMemory::new();
+        let raw = |memory: &CMemory| {
+            Bitvector32Term::MemoryLoad(
+                intern_c_memory_ref(memory),
+                Box::new(address.clone()),
+                LoadKind::Int32,
+            )
+        };
+        let (original, definition) = load_variable_for_term(&raw(&memory)).unwrap();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for i in 1..=count {
+                memory = memory.clone().materialize_symbolic_cell(
+                    address.clone().offset_by_bytes((i * 4) as u32),
+                    CType::Int32,
+                );
+                let (read, descriptor) = load_variable_for_term(&raw(&memory)).unwrap();
+                assert_eq!(read, original);
+                assert_eq!(descriptor, definition);
+                let mut facts = ExecutionFacts::new();
+                record_load_variable_defining_fact(read, descriptor, &mut facts);
+                assert_eq!(
+                    facts[0].proposition(),
+                    &Proposition::ConditionIs(
+                        ConditionTerm::equal(
+                            Bitvector32Term::Variable(read),
+                            Bitvector32Term::Variable(read)
+                        ),
+                        true,
+                    )
+                );
+            }
+        });
+        samples.push((count, work));
+        let written = memory.store(address.clone(), int32(7));
+        let read = canonical_form_of_load(intern_c_memory_ref(&written), address, LoadKind::Int32);
+        assert!(matches!(read, Bitvector32Term::Variable(next) if next != original));
+        assert_ne!(read, Bitvector32Term::Constant(7));
+        assert_eq!(
+            read_over_write_value(&read),
+            Some(Bitvector32Term::Constant(7))
+        );
+    }
+    assert!(
+        samples
+            .windows(2)
+            .all(|pair| pair[1].1 <= pair[0].1 * 6 + 128),
+        "{samples:?}"
     );
 }

@@ -3290,6 +3290,14 @@ fn execute_step_from_frontier_position_selecting_path(
             ProgramPointKind::Exit,
             *statement_exit_state,
         );
+        if matches!(outcome, CStatementOutcome::Normal(_))
+            && let Some(result) = &transition.call_result
+        {
+            execution
+                .presentation
+                .recorded_snapshots
+                .record_call_result(statement_index, Some(result.clone()));
+        }
         if let Some(loop_index) = loop_index
             && !matches!(outcome, CStatementOutcome::Normal(_))
         {

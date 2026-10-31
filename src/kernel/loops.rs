@@ -318,6 +318,10 @@ pub(super) fn execute_c_call_assign_paths(
     )?
     .into_iter()
     .map(|mut path| {
+        let call_result = match &path.outcome {
+            CFunctionOutcome::Return { value, .. } if *value != CValue::Void => Some(value.clone()),
+            _ => None,
+        };
         let outcome = match path.outcome {
             CFunctionOutcome::Return { value, mut state } => {
                 if function.contract_interface().aggregate_return_mode() == CAggregateReturnMode::Construction {
@@ -326,6 +330,7 @@ pub(super) fn execute_c_call_assign_paths(
                     state.aggregate_destination = original_destination.clone();
                     return CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),
+                        call_result: call_result.clone(),
                         outcome: if exact { CStatementOutcome::Normal(state) } else {
                             CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
                                 "construction return changed its destination".into(),
@@ -339,6 +344,7 @@ pub(super) fn execute_c_call_assign_paths(
                 if value == CValue::Void {
                     return CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),
+                        call_result: call_result.clone(),
                         outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                         facts: path.facts,
                         obligations: path.obligations,
@@ -353,6 +359,7 @@ pub(super) fn execute_c_call_assign_paths(
                     ) {
                         return CStatementExecutionPath {
                             loop_invariant_correspondence: Default::default(),
+                            call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                             facts: path.facts,
                             obligations: path.obligations,
@@ -363,6 +370,7 @@ pub(super) fn execute_c_call_assign_paths(
                     let Some(target_layout) = state.locals.aggregate_layout(target) else {
                         return CStatementExecutionPath {
                             loop_invariant_correspondence: Default::default(),
+                            call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                             facts: path.facts,
                             obligations: path.obligations,
@@ -373,6 +381,7 @@ pub(super) fn execute_c_call_assign_paths(
                     if target_layout != layout {
                         return CStatementExecutionPath {
                             loop_invariant_correspondence: Default::default(),
+                            call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                             facts: path.facts,
                             obligations: path.obligations,
@@ -383,6 +392,7 @@ pub(super) fn execute_c_call_assign_paths(
                     let CValue::Pointer(pointer) = &value else {
                         return CStatementExecutionPath {
                             loop_invariant_correspondence: Default::default(),
+                            call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                             facts: path.facts,
                             obligations: path.obligations,
@@ -393,6 +403,7 @@ pub(super) fn execute_c_call_assign_paths(
                     if pointer.is_null() {
                         return CStatementExecutionPath {
                             loop_invariant_correspondence: Default::default(),
+                            call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                             facts: path.facts,
                             obligations: path.obligations,
@@ -403,6 +414,7 @@ pub(super) fn execute_c_call_assign_paths(
                     let Some(slot) = state.locals.slot(target).cloned() else {
                         return CStatementExecutionPath {
                             loop_invariant_correspondence: Default::default(),
+                            call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                             facts: path.facts,
                             obligations: path.obligations,
@@ -422,6 +434,7 @@ pub(super) fn execute_c_call_assign_paths(
                     ) {
                         return CStatementExecutionPath {
                             loop_invariant_correspondence: Default::default(),
+                            call_result: call_result.clone(),
                             outcome,
                             facts: path.facts,
                             obligations: path.obligations,
@@ -439,6 +452,7 @@ pub(super) fn execute_c_call_assign_paths(
                         Err(undefined_behavior) => {
                             return CStatementExecutionPath {
                                 loop_invariant_correspondence: Default::default(),
+                                call_result: call_result.clone(),
                                 outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
                                 facts: path.facts,
                                 obligations: path.obligations,
@@ -450,6 +464,7 @@ pub(super) fn execute_c_call_assign_paths(
                     state.set_memory(next_memory);
                     return CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),
+                        call_result: call_result.clone(),
                         outcome: CStatementOutcome::Normal(state),
                         facts: path.facts,
                         obligations: path.obligations,
@@ -460,6 +475,7 @@ pub(super) fn execute_c_call_assign_paths(
                 if state.locals.is_array_object(target) {
                     return CStatementExecutionPath {
                         loop_invariant_correspondence: Default::default(),
+                        call_result: call_result.clone(),
                         outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                         facts: path.facts,
                         obligations: path.obligations,
@@ -488,6 +504,7 @@ pub(super) fn execute_c_call_assign_paths(
 
         CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
+            call_result,
             outcome,
             facts: path.facts,
             obligations: path.obligations,
@@ -619,6 +636,12 @@ pub(super) fn execute_c_call_paths(
         .into_iter()
         .map(|path| CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
+            call_result: match &path.outcome {
+                CFunctionOutcome::Return { value, .. } if *value != CValue::Void => {
+                    Some(value.clone())
+                }
+                _ => None,
+            },
             outcome: match path.outcome {
                 CFunctionOutcome::Return { state, .. } => CStatementOutcome::Normal(state),
                 CFunctionOutcome::Throw { value, state } => {
@@ -660,6 +683,10 @@ pub(super) fn execute_c_call_paths(
     .into_iter()
     .map(|path| CStatementExecutionPath {
         loop_invariant_correspondence: Default::default(),
+        call_result: match &path.outcome {
+            CFunctionOutcome::Return { value, .. } if *value != CValue::Void => Some(value.clone()),
+            _ => None,
+        },
         outcome: match path.outcome {
             CFunctionOutcome::Return { state, .. } => CStatementOutcome::Normal(state),
             CFunctionOutcome::Throw { value, state } => CStatementOutcome::Throw { value, state },
@@ -1148,6 +1175,8 @@ fn execute_modeled_pthread_mutex_paths(
         };
         paths.push(CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
+            call_result: matches!(outcome, CStatementOutcome::Normal(_))
+                .then(|| CValue::Int32(Bitvector32Term::Constant(0))),
             outcome,
             facts: path.facts,
             obligations: path.obligations,
@@ -1278,6 +1307,7 @@ fn execute_modeled_pthread_create_paths(
         budget,
         Some(environment),
     )? {
+        let mut call_result = None;
         let outcome = if let Some(outcome) = path.outcome {
             match outcome {
                 CFunctionOutcome::UndefinedBehavior(error) => {
@@ -1378,6 +1408,7 @@ fn execute_modeled_pthread_create_paths(
                                 let status =
                                     Bitvector32Term::Variable(budget.allocate_kernel_variable()?);
                                 let result = CValue::Int32(status.clone());
+                                call_result = Some(result.clone());
                                 let target = target.expect("checked assigned call");
                                 if assign_call_result(
                                     &mut success,
@@ -1441,11 +1472,10 @@ fn execute_modeled_pthread_create_paths(
         } else {
             refusal("modeled-pthread create requires a direct worker address")
         };
-        paths.push(CStatementExecutionPath::new(
-            outcome,
-            path.facts,
-            path.obligations,
-        ));
+        paths.push(
+            CStatementExecutionPath::new(outcome, path.facts, path.obligations)
+                .with_call_result(call_result),
+        );
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
@@ -1526,11 +1556,10 @@ fn execute_modeled_pthread_join_paths(
         } else {
             refusal("modeled-pthread join handle does not name a live child")
         };
-        paths.push(CStatementExecutionPath::new(
-            outcome,
-            path.facts,
-            path.obligations,
-        ));
+        paths.push(
+            CStatementExecutionPath::new(outcome, path.facts, path.obligations)
+                .with_call_result(Some(CValue::Int32(Bitvector32Term::Constant(0)))),
+        );
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
@@ -1558,6 +1587,12 @@ fn execute_c_indirect_call_assign_paths(
     Ok(paths
         .into_iter()
         .map(|mut path| {
+            let call_result = match &path.outcome {
+                CFunctionOutcome::Return { value, .. } if *value != CValue::Void => {
+                    Some(value.clone())
+                }
+                _ => None,
+            };
             let outcome = match path.outcome {
                 CFunctionOutcome::Return { value, mut state } => {
                     if value == CValue::Void || state.locals.is_array_object(target) {
@@ -1590,7 +1625,9 @@ fn execute_c_indirect_call_assign_paths(
                 }
                 CFunctionOutcome::RuntimeError(error) => CStatementOutcome::RuntimeError(error),
             };
-            CStatementExecutionPath::new(outcome, path.facts, path.obligations)
+            let mut result = CStatementExecutionPath::new(outcome, path.facts, path.obligations);
+            result.call_result = call_result;
+            result
         })
         .collect())
 }
@@ -2716,6 +2753,7 @@ fn join_loop_exits(
     };
     Some(CStatementExecutionPath {
         loop_invariant_correspondence,
+        call_result: None,
         outcome: CStatementOutcome::Normal(Box::new(exit_state)),
         facts,
         obligations,
@@ -4480,6 +4518,7 @@ fn execute_c_while_exit_paths(
     for exit in return_exits {
         paths.push(CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
+            call_result: None,
             outcome: CStatementOutcome::Return {
                 value: exit.value().clone(),
                 state: Box::new(head.restored_exit_state(exit.state(), assumptions)),
@@ -5514,6 +5553,7 @@ pub(super) fn collect_loop_preservation_summary(
                             );
                             final_exit_paths.push(CStatementExecutionPath {
                                 loop_invariant_correspondence: Default::default(),
+                                call_result: None,
                                 outcome: CStatementOutcome::Normal(Box::new(
                                     head.restored_exit_state(&next_state, assumptions),
                                 )),
@@ -5589,6 +5629,7 @@ pub(super) fn collect_loop_preservation_summary(
                             );
                             final_exit_paths.push(CStatementExecutionPath {
                                 loop_invariant_correspondence: Default::default(),
+                                call_result: None,
                                 outcome: CStatementOutcome::Return {
                                     value,
                                     state: Box::new(head.restored_exit_state(&state, assumptions)),
@@ -5622,6 +5663,7 @@ pub(super) fn collect_loop_preservation_summary(
                             );
                             final_exit_paths.push(CStatementExecutionPath {
                                 loop_invariant_correspondence: Default::default(),
+                                call_result: None,
                                 outcome: CStatementOutcome::Jump {
                                     target,
                                     state: Box::new(head.restored_exit_state(&state, assumptions)),
@@ -7496,7 +7538,7 @@ pub(super) fn collect_loop_effect_check_obligations(
                 .memory()
                 .known_value(pointer)
                 .or_else(|| before_state.memory().known_value(pointer))
-                .and_then(|value| LoadKind::of_value(&value).map(LoadKind::word_kind))
+                .and_then(|value| LoadKind::of_value(&value))
             else {
                 return true;
             };

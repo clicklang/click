@@ -257,7 +257,8 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads()
                 // Opening a held composite assumes the body its fold established.
-                .assume_entry_clause_extents();
+                .assume_entry_clause_extents()
+                .assume_held_resource_domains();
             match evaluate_composite_resource_body_condition(
                 definition,
                 &population_state,
@@ -287,7 +288,8 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
             .allow_symbolic_contract_loads()
             .prefer_symbolic_external_loads()
             // Opening a held composite assumes the body its fold established.
-            .assume_entry_clause_extents();
+            .assume_entry_clause_extents()
+            .assume_held_resource_domains();
         if !body_active {
             continue;
         }
@@ -348,7 +350,8 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
                     .allow_symbolic_contract_loads()
                     .prefer_symbolic_external_loads()
                     // Opening a held composite assumes the body its fold established.
-                    .assume_entry_clause_extents();
+                    .assume_entry_clause_extents()
+                    .assume_held_resource_domains();
                 // Resource-definition loadability facts are symbolic summaries;
                 // their owning range supplies the concrete validity check when
                 // the resource is used. Do not turn an unconstrained summary
@@ -459,7 +462,8 @@ pub(in crate::kernel) fn evaluate_composite_resource_relation_propositions(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // Opening a held composite assumes the body its fold established.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_extents()
+        .assume_held_resource_domains();
     let mut child_facts = Vec::new();
     let mut children = Vec::new();
     let body_active = evaluate_composite_resource_body_condition(
@@ -547,7 +551,8 @@ pub(in crate::kernel) fn evaluate_composite_resource_memory_ranges(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // Opening a held composite assumes the body its fold established.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_extents()
+        .assume_held_resource_domains();
     if !evaluate_composite_resource_body_condition(
         definition,
         &state,
@@ -709,7 +714,8 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // Opening a held composite assumes the body its fold established.
-        .assume_entry_clause_extents();
+        .assume_entry_clause_extents()
+        .assume_held_resource_domains();
     if !evaluate_composite_resource_body_condition(
         definition,
         &state,
@@ -731,7 +737,8 @@ pub(super) fn instantiate_composite_resource_facts_with_state(
                 .allow_symbolic_contract_loads()
                 .prefer_symbolic_external_loads()
                 // Opening a held composite assumes the body its fold established.
-                .assume_entry_clause_extents();
+                .assume_entry_clause_extents()
+                .assume_held_resource_domains();
             // Resource-definition loadability facts are symbolic summaries;
             // their owning range supplies the concrete validity check when
             // the resource is used. Do not turn an unconstrained summary

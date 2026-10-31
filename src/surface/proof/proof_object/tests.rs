@@ -1716,10 +1716,7 @@ fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
     let scope = root.begin_have(surface).unwrap();
     let reported = scope.body().goal().unwrap().clone();
     let adapted = scope
-        .with_reported_goal_introductions(
-            &reported,
-            Some(vec![LoweringIntroduction::WrittenNegation]),
-        )
+        .with_reported_goal_introductions(&reported, Some(vec![]))
         .expect("negation introduction assumes its body and leaves false, not its inner universal");
     let introduced = adapted.apply_step(ProofStep::Intro).unwrap();
     assert_eq!(
@@ -1731,7 +1728,10 @@ fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
     );
     assert!(
         scope
-            .with_reported_goal_introductions(&reported, Some(vec![]))
+            .with_reported_goal_introductions(
+                &reported,
+                Some(vec![LoweringIntroduction::WrittenNegation])
+            )
             .is_err()
     );
     assert!(
@@ -6989,14 +6989,15 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
         right: expression(Bitvector32Term::Constant(5)),
     };
     let lower = |surface: &ClickProposition| {
-        lower_fixed_state_proposition_with_assumptions(
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
             surface,
             &PureFactContext::new(),
-            ParameterBinding::new(parsed_function.parameters(), &arguments),
+            ContractEnvironment::new(&named_values, &BTreeMap::new()),
             FixedStateFrame::new(&state, &state, None, &recorded_snapshots),
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
+            FixedStateLoweringOptions::default(),
         )
-        .expect("the fixed increment proposition should lower")
+        .expect("the fixed increment proposition should lower").0
     };
     let kernel_premise = lower(&premise);
     let kernel_definedness_premise = lower(&definedness_premise);

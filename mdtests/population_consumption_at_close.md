@@ -1132,8 +1132,8 @@ uint32 sequential_early(struct counter* p) {
             interval_atom (3) (3) (3);
             interval_add_bounded 5, 6 (3) (3);
             trivial => -1 <= 0;
-            add 0, 8 => ((at(function.entry, 0) + -1) as int32) <= ((old(count(remaining(p))) +
-                0) as int32);
+            add 0, 8 => (at(function.entry, 0) + -1) <= (old(count(remaining(p))) +
+                0);
             affine_conclusion 9 7 => (count(remaining(p)) as int32) > (1 as int32);
             conclusion 10;
         }

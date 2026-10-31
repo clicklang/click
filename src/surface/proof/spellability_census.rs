@@ -162,6 +162,268 @@ mod tests {
     use crate::kernel::{Bitvector32Term, Sort, Variable};
 
     #[test]
+    fn hidden_child_fields_have_structural_resource_spellings() {
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("a_hidden_record_is_shown_beside_its_resource.md"),
+            include_str!("../../../mdtests/a_hidden_record_is_shown_beside_its_resource.md"),
+        )
+        .unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let lines = capture(|| {
+            let error = crate::surface::verify_c0_sources(
+                fixture.click_source.as_deref().unwrap(),
+                &sources,
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("`ensures result >= 1` failed"),
+                "{error}"
+            );
+        });
+        let fields = lines
+            .iter()
+            .filter(|line| {
+                let parts = line.split('\t').collect::<Vec<_>>();
+                parts.get(1) == Some(&"fact")
+                    && parts.get(2) == Some(&"condition:Compare(int32 ==)")
+                    && parts.get(4) == Some(&"unfold")
+            })
+            .collect::<Vec<_>>();
+        assert!(!fields.is_empty(), "{lines:#?}");
+        assert!(
+            fields.iter().all(|line| line.starts_with("spelled\t")),
+            "{fields:#?}"
+        );
+    }
+
+    #[test]
+    fn a_joined_read_definition_keeps_a_spellable_memory_version() {
+        let fixture =
+            include_str!("../../../mdtests/a_join_forgets_a_cell_the_arms_disagree_on.md");
+        let c = fixture
+            .split("```c filename=")
+            .nth(1)
+            .unwrap()
+            .split_once('\n')
+            .unwrap()
+            .1
+            .split("```")
+            .next()
+            .unwrap();
+        let click = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            let error = crate::surface::verify_c0_sources(
+                click,
+                &[("a_join_forgets_a_cell_the_arms_disagree_on.c", c)],
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("`ensures result == 0` failed"),
+                "{error}"
+            );
+        });
+        let reads = lines
+            .iter()
+            .filter(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields.get(1) == Some(&"fact")
+                    && fields.get(2) == Some(&"condition:Compare(int32 ==)")
+                    && fields.get(4) == Some(&"step")
+            })
+            .collect::<Vec<_>>();
+        assert!(!reads.is_empty(), "{lines:#?}");
+        assert!(
+            reads.iter().all(|line| line.starts_with("spelled\t")),
+            "{reads:#?}"
+        );
+    }
+
+    #[test]
+    fn algebraic_match_arm_values_name_unfold_facts() {
+        let source = r#"
+verifying "keep.c";
+function is_cons(xs: List<int32>) -> Bool {
+    match xs { List::Nil => false, List::Cons(value, tail) => true, }
+}
+resource modeled(p: int32*) { field items: List<int32>; owns *p; }
+void keep(int32* p) {
+    owns before: modeled(p);
+} by {
+    match before.items {
+        List::Nil => { step_until(function.exit); solve(); },
+        List::Cons(value, tail_items) => {
+            unfold(is_cons(List::Cons(value, tail_items)));
+            step_until(function.exit);
+            solve();
+        },
+    }
+}
+"#;
+        let lines = capture(|| {
+            crate::surface::verify_c0_sources(source, &[("keep.c", "void keep(int32 *p) {}")])
+                .unwrap();
+        });
+        let facts = lines
+            .iter()
+            .filter(|line| {
+                let fields = line.split('\t').collect::<Vec<_>>();
+                fields.get(1) == Some(&"fact")
+                    && fields.get(2) == Some(&"condition:BoolApplication")
+            })
+            .collect::<Vec<_>>();
+        assert!(!facts.is_empty(), "{lines:#?}");
+        assert!(
+            facts.iter().all(|line| line.starts_with("spelled\t")),
+            "{facts:#?}"
+        );
+    }
+
+    fn check_algebraic_condition_fixture(fixture: &str) {
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_click_theorems(source).unwrap();
+        });
+        let equalities = lines
+            .iter()
+            .filter(|line| line.split('\t').nth(2) == Some("condition:BoolEqual"))
+            .collect::<Vec<_>>();
+        assert!(!equalities.is_empty(), "{lines:#?}");
+        assert!(
+            equalities.iter().all(|line| line.starts_with("spelled\t")),
+            "{equalities:#?}"
+        );
+    }
+
+    #[test]
+    fn nested_algebraic_conditions_in_list_facts_are_spelled() {
+        check_algebraic_condition_fixture(include_str!(
+            "../../../mdtests/stdlib_list_compositionality.md"
+        ));
+    }
+
+    #[test]
+    fn rigid_algebraic_conditions_in_list_facts_are_spelled() {
+        check_algebraic_condition_fixture(include_str!(
+            "../../../mdtests/algebraic_parametric_theorems.md"
+        ));
+    }
+
+    #[test]
+    fn generic_list_calls_keep_exact_spellings_after_unfold_and_intro() {
+        for fixture in [
+            include_str!("../../../mdtests/constructor_type_arguments_are_inferred.md"),
+            include_str!(
+                "../../../mdtests/a_proof_binder_has_its_type_for_constructor_inference.md"
+            ),
+        ] {
+            let source = fixture
+                .split("```click\n")
+                .nth(1)
+                .unwrap()
+                .split("```")
+                .next()
+                .unwrap();
+            let lines = capture(|| {
+                crate::surface::verify_click_theorems(source).unwrap();
+            });
+            let facts = lines
+                .iter()
+                .filter(|line| line.split('\t').nth(1) == Some("fact"))
+                .collect::<Vec<_>>();
+            assert!(!facts.is_empty());
+            assert!(
+                facts.iter().all(|line| line.starts_with("spelled\t")),
+                "{facts:#?}"
+            );
+        }
+    }
+
+    #[test]
+    fn generic_list_proof_expands_and_rechecks_without_implicit_search() {
+        let source = r#"
+import click::list;
+theorem only_element(v: int32, x: int32) {
+    requires list::contains(List<int32>::Cons(v, List<int32>::Nil), x);
+    ensures v == x;
+}
+"#;
+        let expanded = crate::surface::expansion::expand_c0_claim_source_by_label(
+            source,
+            &[],
+            "only_element.ensures_0",
+        )
+        .unwrap();
+        crate::surface::proof::without_implicit_auto(|| {
+            crate::surface::verify_click_theorems(&expanded).unwrap();
+        });
+    }
+
+    #[test]
+    fn boolean_function_unfold_facts_and_goals_have_exact_spellings() {
+        let fixture = include_str!("../../../mdtests/a_bool_pure_function_states_a_claim.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let lines = capture(|| {
+            crate::surface::verify_click_theorems(source).unwrap();
+        });
+        let bool_lines = lines
+            .iter()
+            .filter(|line| {
+                line.split('\t')
+                    .nth(2)
+                    .is_some_and(|kind| kind.contains("Bool"))
+            })
+            .collect::<Vec<_>>();
+        assert!(!bool_lines.is_empty(), "{lines:#?}");
+        assert!(
+            bool_lines.iter().all(|line| line.starts_with("spelled\t")),
+            "{bool_lines:#?}"
+        );
+    }
+
+    #[test]
+    fn boolean_function_proof_expands_and_rechecks_without_implicit_search() {
+        let fixture = include_str!("../../../mdtests/a_bool_pure_function_states_a_claim.md");
+        let source = fixture
+            .split("```click\n")
+            .nth(1)
+            .unwrap()
+            .split("```")
+            .next()
+            .unwrap();
+        let expanded = crate::surface::expansion::expand_c0_claim_source_by_label(
+            source,
+            &[],
+            "chosen_positive.ensures_0",
+        )
+        .unwrap();
+        crate::surface::proof::without_implicit_auto(|| {
+            crate::surface::verify_click_theorems(&expanded).unwrap();
+        });
+    }
+
+    #[test]
     fn introduced_narrow_binder_bounds_have_checked_spellings() {
         for ty in ["int8", "uint8", "int16", "uint16"] {
             let source = format!(

@@ -33,11 +33,11 @@
 //!
 //! The 32-bit operators are word operators while the term arena files a
 //! `uint32` operation at `int32` (rule K1), so they read either 32-bit
-//! format here; a narrow widening and σ at 32 bits are peeled before the
-//! e-graph sees them (K1, K8). Today the rules therefore act on the 64-bit
-//! conversions (`UInt64FromInt64`, the low word, the extensions) and on
-//! conversions into 8 and 16 bits. They reach σ at 32 bits and narrow
-//! widenings once those are nodes (the plan's steps 4 and 6).
+//! format here; σ at 32 bits is peeled before the e-graph sees it (K1). A
+//! narrow widening into 32 bits is a node in its operand's class (rule K8,
+//! a relation). The rules act on the 64-bit conversions (`UInt64FromInt64`,
+//! the low word, the extensions), on conversions into 8 and 16 bits, and on
+//! narrow widenings; they reach σ at 32 bits once it is a node (step 4b).
 
 use super::*;
 use crate::kernel::machine_integer::representation;
@@ -543,13 +543,16 @@ impl TermClasses {
         self.fired_machine_relations = self.fired_machine_relations.with_value((outer, inner));
         crate::instrumentation::record_deterministic_work(1);
         let operand = self.root(operand);
-        if let Some(result) = self.intern_conversion(source, destination, operand, pending)
-            // A conversion from a narrow format that names its operand
-            // itself (the identity, or a widening into 32 bits) holds only
-            // for a canonical operand; the composed conversions read its
-            // low bits, so leave it (see `invert`).
-            && !(result == operand && source.format().bits() < 32)
+        // A conversion from a narrow format that names its operand itself
+        // (the identity, or a widening into 32 bits, rule K8) holds only for
+        // a canonical operand; the composed conversions read its low bits,
+        // so leave it (see `invert`).
+        if source.format().bits() < 32
+            && (source == destination || crate::kernel::is_narrow_widening32(source, destination))
         {
+            return;
+        }
+        if let Some(result) = self.intern_conversion(source, destination, operand, pending) {
             pending.push((outer, result));
         }
     }
@@ -630,13 +633,21 @@ impl TermClasses {
                 .lowering
             {
                 L::Identity => value,
-                // σ and a narrow widening into 32 bits name their operand's
-                // word (rules K1 and K8).
+                // σ names its operand's word (rule K1).
                 L::SignCast => value,
                 L::Cast if representation::narrow_carrier_mask(destination).is_some() => {
                     self.narrow_cast_parts(source, destination, value, pending)
                 }
-                L::Cast if from.bits() < 32 && to.bits() == 32 => value,
+                // A 32-bit widening of a narrow value: its own node, in its
+                // operand's class (rule K8, a relation).
+                L::Cast if from.bits() < 32 && to.bits() == 32 => {
+                    let node = self.intern_node(Node::Int32Unary(
+                        Int32Unary::Cast(source, destination),
+                        value,
+                    ));
+                    pending.push((node, value));
+                    node
+                }
                 L::Cast => unary(
                     self,
                     U::MachineIntegerCast {

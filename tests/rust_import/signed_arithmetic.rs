@@ -81,3 +81,46 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
         }
     }
 }
+
+#[test]
+fn rust_shift_resource_arguments_retain_width_and_count_obligations() {
+    let p = Project::from_fixture("design/charon-trial/signed-arithmetic");
+    let source = SIDECAR
+        .replace("fn shift_left(x: i32, n: u32) -> i32 {", "abstract resource word(value: i32);\nfn shift_left(x: i32, n: u32) -> i32 {\n    owns word(-1i32 << 1u32);")
+        .replace("fn shift_narrow(x: i8, n: u32) -> i8 {", "abstract resource byte(value: i8);\nfn shift_narrow(x: i8, n: u32) -> i8 {\n    owns byte(x << n);")
+        .replace("    owns *total;", "    owns total[0..(1i32 << 0u32)];");
+    fs::write(p.root.join("borrow.click"), &source).unwrap();
+    let prepared = p.prepared().unwrap();
+    // A UInt32 endpoint is independently unsupported by the existing range
+    // representation, even without a shift. Keep that failure separate from
+    // the Rust count domain this regression exercises.
+    let literal_control = source.replace("total[0..(1i32 << 0u32)]", "total[0..1u32]");
+    let literal_error = C0VerificationSession::new_program_prepared(&literal_control, &prepared)
+        .err()
+        .unwrap_or_else(|| panic!("the direct UInt32 index control unexpectedly verified"));
+    assert!(
+        literal_error.to_string().contains("integer index"),
+        "{literal_error}"
+    );
+    C0VerificationSession::new_program_prepared(&source, &prepared)
+        .unwrap_or_else(|error| panic!("Rust shifts in resource arguments and bounds: {error:?}"));
+    let narrow_extent = source.replace(
+        "total[0..(1i32 << 0u32)]",
+        "total[0..((1i8 << 0u32) as i32)]",
+    );
+    C0VerificationSession::new_program_prepared(&narrow_extent, &prepared)
+        .unwrap_or_else(|error| panic!("a valid narrow shift, widened to an index: {error:?}"));
+    for invalid in [
+        source.replace("owns byte(x << n);", "owns byte(x << 8u32);"),
+        narrow_extent.replace("1i8 << 0u32", "1i8 << 8u32"),
+    ] {
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .unwrap_or_else(|| panic!("an invalid narrow Rust shift count must be rejected"));
+        let message = error.to_string();
+        assert!(
+            !message.contains("integer index"),
+            "the count obligation, rather than an unsupported index type, must fail: {message}"
+        );
+    }
+}

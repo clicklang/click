@@ -2206,12 +2206,15 @@ impl<'a> Proof<'a> {
                 };
                 let resource = ResourceClause::OwnMemory(segment.clone());
                 let lowered = match element {
-                    IteratedElement::Current(_) => lower_resource_clause_at_current_locals(
-                        &resource,
-                        context.parameter_binding(),
-                        state,
-                        None,
-                    ),
+                    IteratedElement::Current(_) => {
+                        lower_resource_clause_at_current_locals_with_assumptions(
+                            &resource,
+                            context.parameter_binding(),
+                            state,
+                            None,
+                            self.facts().assumptions(),
+                        )
+                    }
                     // All three operands are captured values: there are no
                     // C locals or parameters left to populate or resolve.
                     IteratedElement::SavedBase { .. } => lower_resource_clause_at_state(
@@ -2234,6 +2237,7 @@ impl<'a> Proof<'a> {
                 state,
                 context.claim_label,
                 context.tactic_index,
+                self.facts().assumptions(),
             )
         };
         let step = match tactic {

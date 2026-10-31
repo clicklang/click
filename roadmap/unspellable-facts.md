@@ -12,11 +12,367 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Nested resource field selectors (2026-10-30)
+
+The hidden-child equality in `a_hidden_record_is_shown_beside_its_resource`
+now round-trips. `pair(p).first.v` selects the retained hidden field in the
+unique in-scope instance with exactly that written resource target;
+`whole.first.v` also selects the slot through a named parent. `old(...)`
+keeps the entry value accessible after unfolding. The current path requires
+the parent to be held. Selection neither opens the child nor grants memory
+permissions, and it does not use equality facts to resolve arguments.
+Ordinary call selectors currently exclude explicit type/resource arguments;
+ambiguous targets require an instance name.
+
+Parser targets now maintain inverse indexes for written calls and exact
+hidden targets, replacing the old hidden-binder scan. Child bindings that
+retain a parent clause only as a parser placeholder do not enter the call
+index; scoped removal/restoration preserves that distinction. A deterministic
+regression at 16, 64, 256 and 1,024 unrelated and same-call targets checks
+constant selection/refusal work. Entry model-field provenance records a
+source call spelling for unnamed parents. Existing kernel projection and
+ownership rules are unchanged.
+
+The original census regression passes and still rejects the false return
+claim. Four mdtests cover call/named paths, old values across unfold/refold,
+absent current parents and ambiguous selectors. The full
+`scripts/check.sh --no-fail-fast` gate passed in 9m19s: 6,902 unit/API/import/
+scaling tests, 58 examples and 4,922 mdtests, with pinned frontends required.
+An earlier run timed out in the existing Rust scalar-slice import test; it
+passed alone in 17.8s and in the final parallel gate in 18.3s under the same
+30-second limit (preceding checkpoint: 19.4s). No limits were raised and no
+nightly suite ran.
+
+The combined ordinary-corpus audit passed in 216.53s: 22,994 observations,
+1,615 written misses (previously 1,621), 6,620 smart misses (previously 6,610),
+and zero fact-stability differences. The ten additional smart misses are
+rewrite goals from the original false `get` claim: making the hidden-field
+equality citable exposes more rewrite attempts, whose resulting goals still
+have no recorded surface spelling. A focused audit reproduces all ten in
+`a_hidden_record_is_shown_beside_its_resource`; its four written observations
+are now spelled. These counts are observations, not distinct defects, and
+the remaining rewrite-goal spelling gap is not hidden or bypassed.
+
+## Structural read definitions (2026-10-31)
+
+The `CellsForgotten` miss in
+`a_join_forgets_a_cell_the_arms_disagree_on` is a representation mismatch,
+not an unnamed new program time. The branch join keeps the untouched right
+field and makes the written left field unknown. Reading the latter emits a
+load-definition equation whose raw RHS drops the unrelated cached right field;
+its canonical read handle already names the joined memory. Lowering that RHS
+therefore produces the handle, not the raw representation retained in the fact.
+
+Read producers now retain the exact registered descriptor and emit their
+citable equations using the structural read handles that source lowering uses.
+The descriptor stays in producer metadata. Typed-read consumers preserve its
+exact epoch, address and kind through indexed lookups. Stored values are never
+substituted into these terms; read-over-write remains checking authority.
+The census regression checks that the equation round-trips while the original
+false return claim is still rejected. Cache-chain scaling and changed
+width/address/epoch controls accompany the change. The first full run exposed
+five wide-read fixture failures: the old raw definition had a width-check
+exception for its hard-coded 32-bit comparison. The producer now emits the
+read's actual carrier width, with a 32/64/128-bit regression. The shared
+verified-definition classifier also recognizes this structural form, preserving
+its existing exclusion from pointless smart equality rewrites.
+
+All 85 focused tests pass. The final `scripts/check.sh --no-fail-fast` gate
+passed in 9m24s: 6,900 unit/API/import/scaling tests, 58 example projects, and
+4,918 mdtests, with both pinned frontends required. No limits were raised and
+no nightly suite ran. The fresh combined census and fact-stability audit
+passed in 220.64s: 22,970 observations, 1,621 written misses (down from 1,721),
+6,610 smart misses (down from 6,772), zero Boolean misses, and zero
+fact-stability differences. Census observations are not distinct defects;
+other fact families remain to be repaired.
+
+## Discarded call results and historical model fields (2026-10-31)
+
+The two remaining smart Boolean misses in
+`cpp_generic_class_state_in_a_resource` shared a discarded `pop` return value.
+One also needed the list produced by the preceding `push`; the other needed
+its contract-entry list. The code kept execution snapshots, but discarded the
+unassigned return value and indexed only scalar model-field history.
+
+The checked call transition now retains its exact non-void result. Recording
+the call exit gives it `<region>.result` independently of destination locals;
+Boolean and integer synthesis uses an indexed reverse lookup. Resource-field
+history now includes symbolic algebraic values. Synthesis selects the exact
+field in the current state, at entry (`old`), or at its indexed historical
+point (`at`). Neither path recovers names by searching equalities or history.
+The original C++ source and contracts are unchanged.
+
+Focused checks eliminate both Boolean misses in the original fixture and cover
+unassigned integer/Boolean results and void-call rejection. Deterministic tests
+at 16, 64, 256, and 1,024 entries cover result replacement/removal, independent
+snapshot branches, and historical field lookup after unrelated state changes.
+The full `scripts/check.sh --no-fail-fast` gate passed on upstream #2171:
+6,896 unit/API/import/scaling tests and all four fixture aggregates (58 example
+projects and 4,918 mdtests). It took 12m53s, including a 3m12s rebuild, exceeding
+the ten-minute target; test phases took 258s and 300s. No limits were raised and
+no nightly suite ran. A fresh combined ordinary-corpus census and fact-stability
+audit passed in 227s on that same binary: 23,003 observations, 1,721 written
+misses and 6,772 smart misses, versus 1,783 and 6,792 at the preceding checkpoint.
+Both written and smart Boolean misses are zero, as are fact-stability
+differences. These are observation counts, not distinct defects. The largest
+remaining written groups are int32 equalities (357), loadability (228), pointer
+value equalities (136), Integer less-or-equal (133), and algebraic equalities
+(122). Overall spellability acceptance remains incomplete.
+
+## Current arithmetic checkpoint (2026-10-30)
+
+The pointer migration has moved on to arithmetic definedness. This source tree
+contains the core arithmetic migration, merged as
+[PR #2160](https://github.com/clicklang/click/pull/2160), with its pushed commit
+verified upstream. It was prepared on `codex/structural-arithmetic-definedness`.
+The integration history remains in
+`codex/arithmetic-landing`; `codex/arithmetic-definedness` is its preserved earlier
+checkpoint. The pointer checkpoint below is historical. The preparatory PRs
+#2155 through #2159 are merged and their pushed commits were verified upstream.
+
+- Machine arithmetic lowers structurally and retains its domain as ordinary
+  scoped proof obligations. Context can discharge those obligations but cannot
+  change the term. Quantified domains follow the chosen polarity: an existential
+  needs a defined true witness, a negated existential excludes every candidate
+  with a defined false body, and universal/negated-universal claims are dual.
+- Claim goals now retain their evaluation obligations. Ordinary proof checking
+  discharges them in the actual branch context and retains generated proof steps
+  for expansion. Final certification consumes the checked path's completion;
+  it does not lower and prove the same claim again. Producer-owned path receipts
+  and identity indexes avoid repeated premise and path scans. The certification
+  increment passed 61 focused tests and all 1,060 scaling tests before integration.
+- Signed/unsigned 32/64-bit arithmetic, shifts, and supported 128-bit
+  multiplication/division/remainder use structural terms with separate domains.
+  Integration exposed a Rust-specific shift distinction: Rust permits signed
+  wrapping left shifts, whereas C requires a nonnegative representable result.
+  Rust shifts now retain their own semantics through logical expressions and
+  resource operands; C's domain remains unchanged. Count obligations are
+  discharged only by established facts, never by pending obligations themselves.
+- Global-array loads now use the same declaration and address indexes as static
+  arrays when spelling values. This fixes the original alias-load fixture's
+  `old(g[0])` requirement. Both its generated proofs expanded and rechecked
+  without implicit solving; all 58 synthesis tests passed, including an exact
+  round-trip test for an overwritten multidimensional global element. The
+  standalone fix is [PR #2152](https://github.com/clicklang/click/pull/2152),
+  merged and verified in upstream. Its full gate passed (6,833 unit tests, 58 examples,
+  4,895 mdtests), taking 10m33s, 33 seconds over the target.
+- The lexicographic recursive-measure example needs explicit links for the
+  machine subtraction's integer observation and the first component's strict
+  decrease. The original C and contract pass with those proof links.
+
+The earlier integrated `scripts/check.sh --no-fail-fast` gate passed: 6,862 unit/API/
+import/scaling tests and all four fixture aggregates (58 example projects and
+4,916 mdtests), with both pinned frontends required. It took 10m07s, seven seconds over the ten-minute target. No nightly
+suite ran. The previous five fixture failures are repaired: the recursive proof
+has explicit links, and the four negative controls retain their actual domain
+and checked context. Rust resource shift controls also pass, including unknown
+and invalid count rejection.
+
+A combined census/fact-stability audit of that earlier ordinary mdtest corpus also
+passed (231s), using that exact binary. It recorded 23,038 census observations:
+8,853 written and 14,185 smart. There are 2,081 written spelling misses and 6,885
+smart misses; these are observations, not distinct defects. The largest written
+categories include int32 equalities (375), loadability (228), Integer ordering
+goals (228), and algebraic equalities (193). Acceptance is not complete.
+
+The earlier stability audit recorded 199 differences across five fixtures: 98
+each in the two unsigned-loop-counter fixtures, plus one each in
+`a_bounded_variable_tag_preserves_an_incoming_word_relationship`,
+`a_checked_low_tag_add_preserves_an_incoming_word_relationship`, and
+`tagged_pointer_explicit_round_trip`. These are observations, not distinct bugs.
+
+The index-conversion cause is confirmed: `pointer_index_term` chose a signed
+index for a bounded uint32 and a widened index otherwise, changing the address
+and hence the deterministic load identity. The fresh baseline on merged #2160
+recorded 72 differences across the two loop fixtures. The indexing fix on
+`codex/stable-array-indices` always observes the completed unsigned expression
+by exact zero extension, independent of facts. Its structural inverse spells
+ordinary `a[i]` for narrow and native wide indices, including Rust `usize`.
+The common range checker uses maintained unsigned order bounds for that widened
+value; it does not ask the general solver or scan unrelated bounds. Both
+original loop proofs pass unchanged and now record zero stability differences.
+Masked pointer-table cases also need intrinsic bounds retained at graph-node
+creation and wide-offset equalities translated to full-width index equalities.
+The next table-read case inherits the one new address disequality; it does not
+replay the earlier case facts. The positive table examples and false-first-entry
+control retain their original C, contracts, and expectations.
+
+This indexing increment passed `scripts/check.sh --no-fail-fast` with both
+frontends required: 6,874 unit/API/import/scaling tests, 58 example projects,
+and 4,916 mdtests. The gate took 11m55s, above its ten-minute target. No limits
+were raised and no nightly suite ran. The focused selection passed all 1,284
+checks before the final gate. The fresh ordinary-mdtest stability audit passed
+in 233s on the same binary and recorded exactly three differences, one in each
+of the pointer-tag fixtures named above. No index-related differences remain
+in this corpus.
+
+The pointer-tag increment on `codex/structural-pointer-tags` keeps the numeric
+uint64 `&` term structural. `bounded_uint64_tag_equation` uses the previous
+fixed-size exact bound lookups to emit a separate equality instead of removing
+the tag from the result. Addition still requires the low-bit prefix clear;
+missing bounds, incomplete masks, and possible carries produce no equality.
+The explicit round-trip fixture now rewrites `color == 1` and certifies the
+full tagged-and-masked expression. Its old certificate relied on lowering
+silently removing the tag. The C and contracts are unchanged.
+
+All 27 tag-related fixtures pass with zero observed stability differences.
+Regression coverage checks structural lowering with and without bounds,
+equality refusal when premises are missing, and deterministic work with
+4/16/64/256 unrelated facts and additional bounds on the same tag. All 1,227
+focused tests passed, including every scaling test. The full
+`scripts/check.sh --no-fail-fast` gate passed with both frontends required:
+6,877 unit/API/import/scaling tests, 58 example projects, and 4,916 mdtests.
+It took 10m48s, above the ten-minute target; no limits were raised and no
+nightly suite ran. A fresh ordinary-mdtest stability audit on the same binary
+passed all 4,916 fixtures in 218s and recorded zero differences, down from
+the three pointer-tag observations. This does not settle the spelling census.
+Atomic division/shift overflow-domain spellings also still need targeted auditing.
+
+A fresh census after the pointer-tag fix passed all 4,916 ordinary mdtests
+in 229s: 23,042 observations, with 2,040 written and 6,870 smart misses. These
+are observations, not distinct defects. A direct atomic-domain spelling audit
+found six missing positive-overflow spellings (add/subtract/multiply at int32
+and int64), plus both polarities of division and left-shift overflow at both
+widths. The polarity increment on `codex/arithmetic-domain-spellings` spells
+positive add/subtract/multiply overflow as `not defined(expression)` and keeps
+negative overflow as `defined(expression)`. Exact round-trip tests cover both
+polarities and widths. It changes synthesis only, not evaluation or domains.
+The full `scripts/check.sh --no-fail-fast` gate passed with both frontends
+required: 6,877 unit/API/import/scaling tests, 58 examples, and 4,916 mdtests.
+It took 11m05s, above the ten-minute target. No limits were raised and no
+nightly suite ran.
+
+The division/shift atoms remain separate: `defined(a / b)` also includes the
+nonzero-divisor requirement, and `defined(a << b)` also includes count/sign
+requirements. Substituting those compound propositions for an atomic fact is
+not a round-trip. Their reproductions are retained for the next spelling design
+step; no syntax or domain semantics have been changed for them.
+
+The next increment, `codex/bool-fact-spellings`, reconstructs Boolean calls,
+equalities, conditionals, and Boolean call arguments through their existing
+Surface forms. The original `a_bool_pure_function_states_a_claim` fixture
+reproduced missing unfold facts and a goal before the fix. Pure-theorem premise
+synthesis now uses the retained source state and selected source-name lookups;
+it no longer reconstructs an int32-only parameter environment. Rewriting also
+keeps a condition claim in lowering's truth-polarity form: rewriting to
+`not even(0)` at false polarity produces `even(0)` at true polarity.
+
+Five focused checks pass: the original fixture has no Boolean spelling misses,
+both polarities round-trip exactly, expansion rechecks without implicit search,
+the rewrite produces the exact polarity, and synthesis work grows with the
+Boolean expression rather than unrelated names. The full
+`scripts/check.sh --no-fail-fast` gate passed with both frontends required:
+6,883 unit/API/import/scaling tests, 58 examples, and 4,916 mdtests, in 9m09s.
+The combined ordinary-mdtest census/stability audit passed on the same binary
+in 219s with zero fact-stability differences. Original fixture proofs are unchanged.
+
+The fresh census records 22,858 observations: 1,923 written and 6,798 smart
+misses. Written Boolean misses are 23, versus 35 at the preceding census
+checkpoint; the original Boolean fixture goes from 10 misses to zero. Remaining
+Boolean misses involve generic list calls and algebraic arguments, including
+unnamed values in stack resource cases. They remain open; this increment does
+not establish complete Boolean or algebraic spelling coverage. Counts are
+observations, not distinct defects. No nightly suite ran and no limits changed.
+
+The following increment, `codex/generic-fact-spellings`, fixes two reproduced
+causes of generic-call misses. Calls now spell their declared name, without the
+kernel's `::<...>` instance suffix; typed arguments reconstruct the instance.
+Pure premise synthesis includes variables inside opaque applications and reuses
+the existing goal/proof-local binder names, including `obtain` witnesses and
+shadowing. The original constructor-inference and proof-binder fixtures have
+no fact spelling misses in focused checks. Concrete and nested instances survive
+printing, parsing, and exact re-lowering; a generic-list proof expands and
+rechecks with implicit search disabled. This does not name previously unnamed
+resource fields or add pointer/rigid-parameter call-argument synthesis. The full
+`scripts/check.sh --no-fail-fast` gate passed in 9m18s with both frontends
+required: 6,887 unit/API/import/scaling tests, 58 examples, and 4,916 mdtests.
+No nightly suite ran and no limits changed.
+
+The combined ordinary-mdtest audit passed all 4,916 fixtures in 228s with zero
+fact-stability differences. Its 22,858 census observations contain 1,822 written
+and 6,788 smart misses, down from 1,923 and 6,798. Written Boolean misses fall
+from 23 to 5 (smart Boolean misses from 8 to 2): three observations of unnamed
+list tails in C++ stack `pop` proofs and two `contains_cons` equalities at rigid
+`T` and `List<int32>`. These are the next reproduced spelling cases; counts
+remain observations, not distinct defects.
+
+The next spelling increment addresses those five written Boolean observations.
+The two `contains_cons` cases lacked synthesis for `AlgebraicEqual` inside a
+Boolean expression. The three stack observations already had match-arm source
+names, but premise synthesis ignored `AlgebraicVariable` bindings and algebraic
+synthesis did not consult proof-local names. Generic constructors additionally
+omitted C type-parameter fields. These paths now use the existing comparisons
+and bindings without changing lowering or consulting facts. Focused census
+regressions cover the original rigid/nested list fixtures and an execution
+match arm. The unchanged generic-resource and concrete negative-stack fixtures
+have no written Boolean misses in focused audits.
+The full `scripts/check.sh --no-fail-fast` gate passed with both frontends
+required: 6,890 unit/API/import/scaling tests, 58 examples, and 4,916 mdtests.
+It took 12m49s, exceeding the ten-minute target, including a 3m32s rebuild after
+a baseline comparison. Unit and fixture phases took 251s and 289s respectively.
+No limits were raised and the nightly suite was not run.
+The fresh combined audit passed all 4,916 ordinary mdtests in 225s with zero
+fact-stability differences. Written Boolean misses are now zero; two smart
+Boolean equalities involving returned values remain. There are 22,961 census
+observations, with 1,783 written and 6,792 smart misses (previously 1,822 and
+6,788 over 22,858 observations). Better premise spellings change some proof
+routes, so counts are observations rather than a fixed set of defects. The
+additional misses are rewritten algebraic/Integer goals in stack proofs.
+A separately selected off-corpus `cpp_class_object_state_named_in_a_proof`
+fixture still fails at `push` tactic 7's child-resource argument equality; the
+same failure was reproduced at the preceding commit `fcb89b37d`.
+
+
+An attempted standalone certification extraction on upstream after #2152 is
+**not publishable**: `codex/final-certification-slice` at `6ec3c8a95` failed its
+full gate (6,841 of 6,842 units passed; fixture phase was not reached). The
+unchanged negative test `forward_conversion_requires_symbolic_argument_definedness`
+incorrectly accepts an unbounded `to_integer(x + 1) == to_integer(x + 1)` claim.
+The integrated migration rejects it correctly.
+
+The old arithmetic producer emits `!overflow` as a success-path fact and a
+separate UB path; logical lowering drops the UB path. Claim focus imports that
+success fact, so consuming the completion without final reconstruction is unsafe
+until the producer makes it a mandatory obligation instead. Do not weaken the
+negative test or add a new finalizer recheck. The PR boundary must keep receipt
+consumption after all structural-domain producers, including shifts, wide arithmetic
+and Rust shift corrections. A possible earlier
+slice retains claim obligations, ordinary scoped discharge and diagnostics while
+leaving the existing finalizer unchanged. That safe slice merged as PR #2155
+and its pushed commit was verified in upstream. Its full gate passed (6,841 tests, 58 examples,
+4,895 mdtests; 10m43s). After applying the identical patch to current master,
+1,123 focused/scaling checks passed, including the unchanged overflow rejection.
+The earlier failing extraction is preserved only as evidence.
+
+The refreshed integration in `codex/arithmetic-landing` at `70970d005` includes
+current unsigned-term representation changes and the code from merged PRs
+#2155 and #2156. Its full `scripts/check.sh --no-fail-fast` gate passed:
+6,866 unit/API/import/scaling tests and all four fixture groups, in 9m25s.
+The older `codex/arithmetic-definedness` checkpoint remains preserved.
+
+Refreshing exposed one shared checker omission: 32-bit word equality consulted
+signed bounds only, missing that an unsigned strict predecessor makes a divisor
+nonzero. The integration fixes this using the two indexed domain lookups already
+used for 64-bit equality, with signed-evidence and flat-query-work regressions.
+The unchanged remainder proof now passes. This checker fix merged as PR #2157.
+Rust shift source identity merged as PR #2158, preserving old evaluator behavior
+until the core migration. Mathematical certificate intermediates and the two
+recursive proof adaptations merged as PR #2159. All pushed commits were
+verified upstream.
+
+Final core validation at `ec2ccbd08` passed the full
+`scripts/check.sh --no-fail-fast` gate: 6,868 unit/API/import/scaling tests and all
+four fixture groups, exit 0. Runtime was 15m21s (3m54s compilation, 306.7s units,
+359.3s fixtures), exceeding the ten-minute budget. No limits were raised and no
+nightly suite ran. The final code tree includes both preparatory PRs; only this
+checkpoint documentation changed afterward. The earlier census and stability
+figures above have not been rerun on this final tree; full spellability acceptance
+remains incomplete.
+
 ## Arithmetic migration: landing order
 
-The local arithmetic migration separates structural terms from definedness
-obligations. The complete integration passed the ordinary gate, but it must
-land in dependency order:
+The arithmetic migration separates structural terms from definedness
+obligations. Its required dependency order is:
 
 1. Retain claim evaluation obligations and discharge them during ordinary
    proof checking, preserving their certificates and diagnostics. Keep the
@@ -27,6 +383,7 @@ land in dependency order:
 3. Consume the already-checked claim completion during final certification,
    removing its repeated lowering and proof attempt.
 
+Step 1 landed separately; this core update combines steps 2 and 3.
 The third step cannot land first: legacy arithmetic success paths can carry
 "no overflow" as a path fact. Early completion consumption with those old
 producers incorrectly accepts an unbounded `to_integer(x + 1) ==

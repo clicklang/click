@@ -59,8 +59,7 @@ int32 loop_old_count_invariant(int32 p[3]) {
                         interval_atom (1) (1) (1);
                         interval_add_bounded 4, 5 (1) (3);
                         trivial => -1 <= 0;
-                        add 0, 7 => ((at(region(3).entry, 0) + -1) as int32) <= ((at(region(3).entry, i) + 0) as
-                            int32);
+                        add 0, 7 => (at(region(3).entry, 0) + -1) <= (at(region(3).entry, i) + 0);
                         affine_conclusion 8 6 => (i as int32) >= (0 as int32);
                         conclusion 9;
                     }

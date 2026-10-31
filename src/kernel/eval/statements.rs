@@ -3035,6 +3035,7 @@ pub(in crate::kernel) fn paths_after_scope_exit(
             .unwrap_or_else(CStatementOutcome::RuntimeError);
             CStatementExecutionPath {
                 loop_invariant_correspondence: Default::default(),
+                call_result: None,
                 outcome,
                 ..path
             }
@@ -3102,6 +3103,7 @@ pub(in crate::kernel) fn execute_statement_paths(
         )? {
             let CStatementExecutionPath {
                 loop_invariant_correspondence: _,
+                call_result: _,
                 outcome,
                 facts,
                 obligations,
@@ -3132,6 +3134,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                 | CStatementOutcome::UndefinedBehavior(_)
                 | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
                     loop_invariant_correspondence: Default::default(),
+                    call_result: None,
                     outcome,
                     facts,
                     obligations,
@@ -3210,6 +3213,7 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
         )?;
         Some(CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
+            call_result: None,
             outcome: path.outcome,
             facts,
             obligations,
@@ -3897,6 +3901,7 @@ fn execute_c_statement_leaf_paths(
                     if thrown_state.locals.bindings.contains_key(binding) {
                         paths.push(CStatementExecutionPath {
                             loop_invariant_correspondence: Default::default(),
+                            call_result: None,
                             outcome: CStatementOutcome::RuntimeError(
                                 CRuntimeError::FunctionContract(format!(
                                     "int32 handler binding `{binding}` is not fresh"

@@ -271,8 +271,8 @@ pub(super) fn int32_read(
     let crate::kernel::Bitvector32Term::Variable(variable) = term else {
         return None;
     };
-    if crate::kernel::registered_load_kind_for_variable(variable)
-        != Some(crate::kernel::LoadKind::Int32)
+    if !crate::kernel::registered_load_kind_for_variable(variable)
+        .is_some_and(crate::kernel::LoadKind::is_word32)
         || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
     {
         return None;
@@ -328,6 +328,8 @@ enum Node {
     ),
     IntegerToMachine(crate::kernel::MachineIntegerType),
     Machine128(MachineAtom),
+    /// An 8- or 16-bit native value's atom, by its bits.
+    MachineNarrow(MachineAtom),
     IntegerOperation(IntegerOperation),
     IntegerFunction(crate::kernel::SharedPureApplication, usize),
     PointerFunction(crate::kernel::SharedPureApplication, usize),
@@ -1551,14 +1553,17 @@ impl TermClasses {
         let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
             return;
         };
-        // Only a four-byte integer read is an int32 load application: a
+        // Only a four-byte integer read is a word load application: a
         // narrower read named at an address a wider read was recorded at
-        // carries that wider width, and is still another value.
+        // carries that wider width, and is still another value. A read of
+        // either 32-bit signedness reads the cell's word, so the two reads
+        // of one cell are one application (R-mem, with σ the word identity
+        // of rule K1).
         if !crate::kernel::is_load_variable(variable)
             || self.registered_int32_loads.contains(&id)
             || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
-            || crate::kernel::registered_load_kind_for_variable(variable)
-                != Some(crate::kernel::LoadKind::Int32)
+            || !crate::kernel::registered_load_kind_for_variable(variable)
+                .is_some_and(crate::kernel::LoadKind::is_word32)
         {
             return;
         }

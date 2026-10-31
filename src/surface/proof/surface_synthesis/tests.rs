@@ -3,9 +3,8 @@ use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
-/// Lowers a written proposition exactly as a `have` in a fixed-state proof
-/// does, so a synthesized spelling is accepted only when it re-lowers to the
-/// proposition it was synthesized from.
+/// Compare structural lowering separately from proving the use site's debts.
+/// Ordinary proof operations still check those debts before admitting a fact.
 fn relower_written_proposition(
     surface: &ClickProposition,
     state: &CState,
@@ -19,7 +18,7 @@ fn relower_written_proposition_with_snapshots(
     state: &CState,
     recorded_snapshots: &RecordedSnapshots,
 ) -> Result<Proposition, String> {
-    crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_through_kernel_with(
+    crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
         surface,
         &PureFactContext::new(),
         ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
@@ -30,6 +29,7 @@ fn relower_written_proposition_with_snapshots(
         ),
         FixedStateLoweringOptions::default(),
     )
+    .map(|(proposition, _, _, _)| proposition)
 }
 
 /// One cell of a foreign static or file-scope object, spelled the way a
@@ -2139,20 +2139,28 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
                         right.clone(),
                     )),
                 );
-            let requirement = Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format,
-                    op,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                },
-                false,
-            );
-            let surface =
-                synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
-                    .expect("arithmetic definedness must have a spelling");
-            let lowered = relower_written_proposition(&surface, &state).unwrap();
-            assert_eq!(lowered, requirement, "{format:?} {op:?}: {surface:?}");
+            for truth in [false, true] {
+                let requirement = Proposition::ConditionIs(
+                    ConditionTerm::Overflows {
+                        format,
+                        op,
+                        left: Box::new(left.clone()),
+                        right: Box::new(right.clone()),
+                    },
+                    truth,
+                );
+                let surface = synthesize_surface_proposition(
+                    &requirement,
+                    ParameterBinding::default(),
+                    &state,
+                )
+                .expect("arithmetic definedness must have a spelling");
+                let lowered = relower_written_proposition(&surface, &state).unwrap();
+                assert_eq!(
+                    lowered, requirement,
+                    "{format:?} {op:?} {truth}: {surface:?}"
+                );
+            }
         }
     }
 }
@@ -2450,8 +2458,9 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         Box::new(scaled(index)),
     ));
     assert_eq!(
-        synthesize_local_indexed_int32_load(
+        synthesize_local_indexed_load(
             &unrelated_cell,
+            crate::kernel::LoadKind::Int32,
             ParameterBinding::default(),
             &state,
             &BTreeMap::new()
@@ -2464,9 +2473,13 @@ fn a_local_indexes_only_addresses_formed_from_it() {
         Box::new(scaled(index)),
     ));
     let bound = BTreeMap::from([(Variable(index), "k".to_string())]);
-    let Some(ContractExpression::Index(base, _)) =
-        synthesize_local_indexed_int32_load(&own_cell, ParameterBinding::default(), &state, &bound)
-    else {
+    let Some(ContractExpression::Index(base, _)) = synthesize_local_indexed_load(
+        &own_cell,
+        crate::kernel::LoadKind::Int32,
+        ParameterBinding::default(),
+        &state,
+        &bound,
+    ) else {
         panic!("a cell addressed from the local is its index");
     };
     assert_eq!(
@@ -3187,4 +3200,251 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
         FixedStateLoweringOptions::default(),
     ).map(|(proposition, _, _, _)| proposition);
     assert_eq!(lowered, Ok(requirement));
+}
+
+#[test]
+fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let i = Bitvector32Term::Variable(Variable(989_971));
+    for (format, source_type) in [
+        (MachineIntegerType::Int32, "int32"),
+        (MachineIntegerType::UInt32, "uint32"),
+        (MachineIntegerType::UInt64, "usize"),
+    ] {
+        for (pointer_type, element_format, width, load_kind, zero) in [
+            (
+                CType::Int32Pointer,
+                MachineIntegerType::Int32,
+                4,
+                crate::kernel::LoadKind::Int32,
+                Bitvector32Term::Constant(0),
+            ),
+            (
+                CType::Int64Pointer,
+                MachineIntegerType::Int64,
+                8,
+                crate::kernel::LoadKind::Bits64,
+                Bitvector32Term::Int64Constant(0),
+            ),
+        ] {
+            for increment in [false, true] {
+                let value = match format {
+                    MachineIntegerType::Int32 => CValue::Int32(i.clone()),
+                    MachineIntegerType::UInt32 => CValue::UInt32(i.clone()),
+                    MachineIntegerType::UInt64 => CValue::UInt64(i.clone()),
+                    _ => unreachable!(),
+                };
+                let base = Pointer {
+                    block: PointerBlock::Concrete("indexed-array".into()),
+                    offset: PointerOffsetTerm::Constant(0),
+                };
+                let state = CState::new()
+                    .with_memory(CMemory::new().with_block("indexed-array", 128))
+                    .with_local("a", CValue::typed_pointer(base.clone(), pointer_type))
+                    .with_local("i", value);
+                let index = if increment {
+                    let one = match format {
+                        MachineIntegerType::Int32 => Bitvector32Term::Constant(1),
+                        MachineIntegerType::UInt32 => Bitvector32Term::UInt32Constant(1),
+                        _ => Bitvector32Term::UInt64Constant(1),
+                    };
+                    Bitvector32Term::Binary {
+                        format,
+                        op: crate::kernel::MachineBinaryOp::Add,
+                        left: Box::new(i.clone()),
+                        right: Box::new(one),
+                    }
+                } else {
+                    i.clone()
+                };
+                let offset = match format {
+                    MachineIntegerType::Int32 => PointerOffsetTerm::Int32Scaled {
+                        value: Box::new(index),
+                        byte_width: width,
+                    },
+                    MachineIntegerType::UInt32 => PointerOffsetTerm::Int64Scaled {
+                        value: Box::new(Bitvector32Term::UInt64From32(Box::new(index))),
+                        byte_width: width,
+                        unsigned: true,
+                    },
+                    _ => PointerOffsetTerm::Int64Scaled {
+                        value: Box::new(index),
+                        byte_width: width,
+                        unsigned: true,
+                    },
+                };
+                let load = Bitvector32Term::MemoryLoad(
+                    crate::kernel::intern_c_memory_ref(state.memory()),
+                    Box::new(Pointer {
+                        block: base.block.clone(),
+                        offset,
+                    }),
+                    load_kind,
+                );
+                let spelled = synthesize_surface_bitvector(
+                    &load,
+                    ParameterBinding::default(),
+                    &state,
+                    &BTreeMap::new(),
+                )
+                .unwrap();
+                assert!(
+                    matches!(&spelled, ContractExpression::Index(..)),
+                    "{spelled:?}"
+                );
+                let text = crate::surface::diagnostics::describe_contract_expression(&spelled);
+                assert!(!text.contains(" as "), "{text}");
+                if !increment {
+                    assert_eq!(text, "a[i]");
+                }
+                let right = ContractExpression::CFragment(CExpression::Value(if width == 8 {
+                    CValue::Int64(zero.clone())
+                } else {
+                    CValue::Int32(zero.clone())
+                }));
+                let surface = ClickProposition::Comparison {
+                    left: spelled,
+                    operator: ComparisonOperator::Equal,
+                    right: right.clone(),
+                };
+                let expected = Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: element_format,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(load),
+                        right: Box::new(zero.clone()),
+                    },
+                    true,
+                );
+                let lowered = relower_written_proposition(&surface, &state).unwrap();
+                assert_eq!(
+                    crate::kernel::canonical_condition_fact(&lowered),
+                    crate::kernel::canonical_condition_fact(&expected)
+                );
+                // Reparse the written read in the source language as well.
+                let (prefix, pointer_type, result_type) = if source_type == "usize" {
+                    (
+                        "verifying \"indices.rs\";",
+                        if width == 8 {
+                            "*const i64"
+                        } else {
+                            "*const i32"
+                        },
+                        if width == 8 { "i64" } else { "i32" },
+                    )
+                } else {
+                    (
+                        "",
+                        if width == 8 { "int64*" } else { "int32*" },
+                        if width == 8 { "int64" } else { "int32" },
+                    )
+                };
+                let parsed = parser::parse(&format!("{prefix} function indexed(a: {pointer_type}, i: {source_type}) -> {result_type} {{ {text} }}")).unwrap();
+                let reparsed = ClickProposition::Comparison {
+                    left: parsed.click_function_definitions()[0].body().clone(),
+                    operator: ComparisonOperator::Equal,
+                    right,
+                };
+                assert_eq!(
+                    crate::kernel::canonical_condition_fact(
+                        &relower_written_proposition(&reparsed, &state).unwrap()
+                    ),
+                    crate::kernel::canonical_condition_fact(&expected)
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
+    let file = parser::parse("function positive(x: int32) -> Bool { x > 0 } function choose(flag: Bool, x: int32) -> Bool { if flag { positive(x) } else { false } }").unwrap();
+    let flag = ConditionTerm::Variable(Variable(9001));
+    let x = Bitvector32Term::Variable(Variable(9002));
+    let state = CState::new()
+        .with_local("flag", CValue::of_bool(flag.clone()))
+        .with_local("x", CValue::Int32(x.clone()));
+    let positive = ConditionTerm::bool_application(
+        "positive",
+        vec![crate::kernel::PureFunctionArgument::Value(CValue::Int32(
+            x.clone(),
+        ))],
+    );
+    let chosen = ConditionTerm::bool_application(
+        "choose",
+        vec![
+            crate::kernel::PureFunctionArgument::Value(CValue::of_bool(flag.clone())),
+            crate::kernel::PureFunctionArgument::Value(CValue::Int32(x)),
+        ],
+    );
+    for condition in [
+        flag.clone(),
+        positive.clone(),
+        chosen,
+        ConditionTerm::bool_if(flag, positive.clone(), ConditionTerm::Constant(false)),
+        ConditionTerm::bool_equal(positive.clone(), ConditionTerm::bool_not(positive)),
+    ] {
+        for truth in [false, true] {
+            let fact = condition.truth_claim(truth);
+            let surface =
+                synthesize_surface_proposition(&fact, ParameterBinding::default(), &state)
+                    .expect("Bool fact spelling");
+            let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                &surface, &PureFactContext::new(), ContractEnvironment::new(&BTreeMap::new(), &BTreeMap::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(file.click_function_definitions())),
+                FixedStateLoweringOptions::default(),
+            ).unwrap().0;
+            assert_eq!(lowered, fact, "{surface:?}");
+        }
+    }
+}
+
+#[test]
+fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
+    let declarations = "spec enum Wrapped<T> { Value(T) } function holds<T>(wrapped: Wrapped<T>, value: T) -> Bool { true }";
+    for arguments in [
+        "Wrapped<int32>::Value(x), x",
+        "Wrapped<Wrapped<int32>>::Value(Wrapped<int32>::Value(x)), Wrapped<int32>::Value(x)",
+    ] {
+        let source = format!(
+            "{declarations} theorem probe(x: int32) {{ requires holds({arguments}); ensures true; }}"
+        );
+        let file = parser::parse(&source).unwrap();
+        let state = CState::new().with_local(
+            "x",
+            CValue::Int32(Bitvector32Term::Variable(Variable(99001))),
+        );
+        let values = BTreeMap::from([(
+            "x".to_string(),
+            CValue::Int32(Bitvector32Term::Variable(Variable(99001))),
+        )]);
+        let lower = |proposition: &ClickProposition| {
+            crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::with_algebraic_types(file.click_function_definitions(), file.algebraic_type_definitions())),
+                FixedStateLoweringOptions::default(),
+            ).unwrap().0
+        };
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("requirement");
+        };
+        let original = lower(written);
+        let spelled =
+            synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+                .expect("generic instance spelling");
+        let text = crate::surface::printing::source_click_proposition(&spelled);
+        assert!(!text.contains("::<"), "{text}");
+        let reparsed = parser::parse(&format!(
+            "{declarations} theorem probe(x: int32) {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(written_again) =
+            &reparsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("requirement");
+        };
+        assert_eq!(lower(written_again), original, "{text}");
+    }
 }

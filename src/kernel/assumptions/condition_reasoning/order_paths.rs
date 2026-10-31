@@ -1853,30 +1853,16 @@ impl PureFactContext {
             term.clone(),
             Bitvector32Term::UInt64Constant(i32::MAX as u64),
         );
-        if guard.reflexive_value() == Some(true)
+        // A maintained bound keyed by this exact value also handles exact
+        // widening. Do not invoke the general decision fallbacks here: this
+        // query is part of every checked range projection.
+        guard.reflexive_value() == Some(true)
             || self.exact_condition_value(&guard) == Some(true)
-            || self.decide_uint64_constant_order_bounds_inner(&guard, true) == Some(true)
-        {
-            return true;
-        }
-        // `x - c` for a constant `c` fits where `x` does and the
-        // difference does not wrap, `c <= x`. Both are 64-bit facts about
-        // `x` itself.
-        if let Bitvector32Term::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::Subtract,
-            left: minuend,
-            right: subtrahend,
-        } = term
-            && subtrahend.uint64_as_const().is_some()
-        {
-            return self.uint64_index_fits_int32(minuend)
-                && self.decide(&ConditionTerm::uint64_less_equal(
-                    subtrahend.as_ref().clone(),
-                    minuend.as_ref().clone(),
-                )) == Some(true);
-        }
-        false
+            || self
+                .difference_graph
+                .built()
+                .and_then(|graph| graph.decide(&guard))
+                == Some(true)
     }
 
     /// The signed counterpart: the full signed value lies in `0..=INT_MAX`,

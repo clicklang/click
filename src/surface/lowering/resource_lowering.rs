@@ -481,7 +481,8 @@ pub(in crate::surface) fn initial_call_state(
     parameters: &[syntax::C0Parameter],
     function: &CFunction,
     composite_definitions: &[CCompositeResourceDefinition],
-) -> Result<(CState, Vec<CExpression>), ClickError> {
+    spec_definitions: SpecDefinitions<'_>,
+) -> Result<(CState, Vec<CExpression>, PureFactContext), ClickError> {
     if parameters.len() as u64 >= POINTER_ARGUMENT_VARIABLE_BASE {
         return Err(ClickError::new(
             "function parameter variable namespace exhausted",
@@ -616,7 +617,22 @@ pub(in crate::surface) fn initial_call_state(
     let memory = materialize_symbolic_access_resource_cells(memory, requires, parameter_binding)?;
     let memory = mark_uninitialized_resource_memory(memory, requires, parameter_binding)?;
     let state = state.with_memory(memory);
-    let resources = resource_context_from_requirements(requires, parameter_binding, &state)?;
+    // Resource endpoints are named under the entry's declared pure premises.
+    // Calls still discharge these requirements before transferring ownership.
+    let entry_propositions = crate::surface::proof::available_initial_requirement_propositions(
+        requires,
+        parameter_binding,
+        &state,
+        spec_definitions,
+    );
+    let entry_assumptions =
+        crate::surface::verification::assumptions_from_propositions(&entry_propositions);
+    let resources = resource_context_from_requirements(
+        requires,
+        parameter_binding,
+        &state,
+        &entry_assumptions,
+    )?;
     let mut state =
         crate::kernel::c_state_with_assumed_mutex_inputs(state.with_resource_context(resources));
     {
@@ -724,7 +740,7 @@ pub(in crate::surface) fn initial_call_state(
     state
         .memory()
         .prepare_parameter_store_partition(state.resources());
-    Ok((state, arguments))
+    Ok((state, arguments, entry_assumptions))
 }
 
 /// A contract may transfer memory reached through a copied pointer value,
@@ -1699,6 +1715,7 @@ pub(in crate::surface) fn resource_context_from_requirements(
     requires: &[Requirement],
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
+    base_assumptions: &PureFactContext,
 ) -> Result<ResourceContext, ClickError> {
     let mut context = state.resources().clone();
     // One section-local state, moved forward after each owning requirement.
@@ -1712,12 +1729,10 @@ pub(in crate::surface) fn resource_context_from_requirements(
     let clause_parameters =
         ClauseParameters::new(parameter_binding.parameters, &values, state.memory())
             .with_index(parameter_binding.index);
-    let base_assumptions = PureFactContext::new();
     for requirement in requires {
         if let Requirement::Resource(resource) = requirement {
-            // This lowering path has no proposition assumptions yet. It builds
-            // a provisional context; execution paths use checked composition
-            // once assumptions are available.  Resource arguments may contain
+            // This builds a provisional context under declared entry premises.
+            // Resource arguments may contain
             // loads whose authority is supplied by another clause, so keep
             // those arguments symbolic here.  The entry context is checked by
             // the kernel section evaluator once all pure requirements and
@@ -1730,7 +1745,7 @@ pub(in crate::surface) fn resource_context_from_requirements(
                     &lowering_state,
                     None,
                     true,
-                    &base_assumptions,
+                    base_assumptions,
                 )?,
             );
             lowering_state = lowering_state.with_resource_context(context.clone());
@@ -1739,6 +1754,7 @@ pub(in crate::surface) fn resource_context_from_requirements(
     Ok(context)
 }
 
+#[cfg(test)]
 pub(in crate::surface) fn lower_resource_clause(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
@@ -1759,6 +1775,7 @@ pub(in crate::surface) fn lower_resource_clause(
     lower_resource_clause_with_values(resource, parameter_binding, &values, &state, None)
 }
 
+#[cfg(test)]
 pub(in crate::surface) fn lower_resource_clause_facts(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
@@ -1854,35 +1871,8 @@ pub(in crate::surface) fn lower_resource_clause_at_state_with_assumptions(
     )
 }
 
-/// Lowers a proof tactic's resource clause with every C name it mentions read
-/// in the state the proof has reached.
-///
-/// A contract clause speaks about parameters, so its names are the entry
-/// argument values and `lower_resource_clause_at_state` is right for it. A
-/// proof `fold` names the cursor the execution is standing on: inside a loop
-/// body that has reassigned `root`, `fold(ctx_at(root->left), ...)` is the
-/// frame of the current node, not of the node the function was called with.
-/// The fold's own field values are already read this way
-/// ([`contract_environment_at_state`]), so lowering its arguments at entry
-/// split one tactic across two states and built the instance at an address
-/// its fields did not describe.
-pub(in crate::surface) fn lower_resource_clause_at_current_locals(
-    resource: &ResourceClause,
-    parameter_binding: ParameterBinding<'_>,
-    state: &CState,
-    result: Option<&CValue>,
-) -> Result<CResourceFact, ClickError> {
-    let values = resource_clause_parameter_values(resource, parameter_binding)?;
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, state.memory());
-    let (values, _) = contract_environment_at_state(&values, &array_refs, state);
-    lower_resource_clause_with_values(resource, parameter_binding, &values, state, result)
-}
-
-/// [`lower_resource_clause_at_current_locals`] under the facts the proof
-/// holds, for a join interface. An interface names what the proof holds
-/// where its arms end, so a parameter the function has reassigned is read as
-/// it stands there, exactly as the `fold` that built the resource read it.
+/// Lower a join interface at the current C bindings, under the proof's facts.
+/// Its parameter names denote their current values, just as in `fold`.
 pub(in crate::surface) fn lower_interface_resource_clause(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
@@ -2225,6 +2215,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         _ => None,
                     }),
                 ),
+                base_assumptions,
             )?;
             Ok(CResourceFact::view_memory(range))
         }
@@ -2243,6 +2234,7 @@ fn lower_resource_clause_with_values_mode_at_entry(
                         _ => None,
                     }),
                 ),
+                base_assumptions,
             )?;
             Ok(CResourceFact::own_memory(range))
         }
@@ -2902,6 +2894,7 @@ fn lower_resource_segment_with_values(
     state: &CState,
     result: Option<&CValue>,
     element_width: u32,
+    base_assumptions: &PureFactContext,
 ) -> Result<CMemoryRange, ClickError> {
     if segment.state != ContractSegmentState::Current {
         return Err(ClickError::new(format!(
@@ -2911,7 +2904,8 @@ fn lower_resource_segment_with_values(
     // Resource ranges embed field loads symbolically (the canonical
     // `load(arg-memory@...)` forms), so segment evaluation must not
     // demand concrete loadability.
-    let assumptions = PureFactContext::new()
+    let assumptions = base_assumptions
+        .clone()
         .allow_symbolic_contract_loads()
         .prefer_symbolic_external_loads()
         // This pass names a clause; the kernel checks its establishment
@@ -3047,18 +3041,31 @@ fn loadable_requirement_props(
     {
         let state = CState::new().with_memory(memory.clone());
         let values = parameter_values(parameter_binding)?;
-        let range = lower_resource_segment_with_values(
-            "viewable",
-            segment,
-            ContractEnvironment::new(
-                &values,
-                &array_refs_for_parameters(parameter_binding.parameters, &values, memory),
-            ),
-            &state,
-            None,
-            contract_segment_element_width(parameter_binding.parameters, segment),
-        )?;
-        let guards = memory_range_loadable_guards(&range);
+        // A requirement names the footprint and its formation conditions.
+        // Collect these debts once; callers owe them and function entry
+        // assumes them alongside the viewability requirement.
+        let (range, formation) = crate::surface::proof::probe_open_obligations(|| {
+            lower_resource_segment_with_values(
+                "viewable",
+                segment,
+                ContractEnvironment::new(
+                    &values,
+                    &array_refs_for_parameters(parameter_binding.parameters, &values, memory),
+                ),
+                &state,
+                None,
+                contract_segment_element_width(parameter_binding.parameters, segment),
+                assumptions,
+            )
+        });
+        let range = range?;
+        let mut guards = memory_range_loadable_guards(&range);
+        guards.extend(
+            formation
+                .recorded
+                .into_iter()
+                .map(|requirement| requirement.proposition),
+        );
         reject_impossible_range_guards(&guards, assumptions)?;
         let mut propositions = vec![memory_range_loadable_atom_prop(memory, &range)];
         propositions.extend(guards);
@@ -3116,8 +3123,12 @@ pub(in crate::surface) fn resource_clause_loadable_props_at_state(
     state: &CState,
     assumptions: &PureFactContext,
 ) -> Result<Option<Vec<Proposition>>, ClickError> {
-    let Some(ranges) = resource_clause_memory_ranges_at_state(resource, parameter_binding, state)?
-    else {
+    // Naming an ownership requirement retains its endpoint domains alongside
+    // the loadability fact, just as an explicit viewable requirement does.
+    let (ranges, formation) = crate::surface::proof::probe_open_obligations(|| {
+        resource_clause_memory_ranges_at_state(resource, parameter_binding, state)
+    });
+    let Some(ranges) = ranges? else {
         return Ok(None);
     };
     let loadable = ranges
@@ -3137,6 +3148,7 @@ pub(in crate::surface) fn resource_clause_loadable_props_at_state(
         .collect::<Vec<_>>();
     reject_impossible_range_guards(&guards, assumptions)?;
     propositions.extend(guards);
+    propositions.extend(formation.recorded.into_iter().map(|debt| debt.proposition));
     Ok(Some(propositions))
 }
 

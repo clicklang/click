@@ -1324,8 +1324,8 @@ fn goal_binder_c_values(proof: &KernelProofHandle) -> impl Iterator<Item = (&str
 
 impl Proof<'_> {
     /// The kernel variables the proof's binders name, as synthesis reads
-    /// them: a scalar binder's value, and a pointer binder whose value is a
-    /// symbolic block's base. The first map holds the goal's `intro`
+    /// them: scalar and algebraic binder values, and a pointer binder whose
+    /// value is a symbolic block's base. The first map holds the goal's `intro`
     /// binders, which may shadow a C name and so are spelled before one; the
     /// second the proof's other binders, spelled where no C name holds the
     /// value. A proof local an `intro` binder shadows is out of scope.
@@ -1334,6 +1334,10 @@ impl Proof<'_> {
     ) -> (BTreeMap<Variable, String>, BTreeMap<Variable, String>) {
         fn variable(value: &CValue) -> Option<Variable> {
             match value.numeric_value() {
+                CValue::Parameter(term) => match term.node {
+                    crate::kernel::AlgebraicTermNode::Variable(variable) => Some(variable),
+                    _ => None,
+                },
                 crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
                     Some(*variable)
                 }
@@ -1361,9 +1365,24 @@ impl Proof<'_> {
                 .collect::<BTreeMap<_, _>>()
         };
         let intro = named(&mut goal_binder_c_values(&self.state));
-        let locals = named(
-            &mut proof_local_c_values(&self.state).filter(|(name, _)| !shadowing.contains(name)),
-        );
+        let locals = self
+            .state
+            .state()
+            .locals()
+            .values
+            .iter()
+            .filter(|(name, _)| !shadowing.contains(name.as_str()))
+            .filter_map(|(name, expression)| {
+                let variable = match expression {
+                    ContractExpression::CFragment(CExpression::Value(value)) => variable(value)?,
+                    ContractExpression::AlgebraicVariable { binder_index, .. } => {
+                        crate::surface::lowering::algebraic_binder_variable(*binder_index).ok()?
+                    }
+                    _ => return None,
+                };
+                Some((variable, name.clone()))
+            })
+            .collect();
         (intro, locals)
     }
 }

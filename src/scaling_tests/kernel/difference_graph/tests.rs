@@ -73,7 +73,59 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
             ))
         });
         assert_eq!(answer, Some(false));
-        samples.push((insert, unsigned, signed, nonzero));
+        let (answer, widened) = graph_work(|| {
+            graph.decide(&ConditionTerm::uint64_less_than(
+                Bitvector32Term::uint64_from_32(i.clone()),
+                Bitvector32Term::UInt64Constant(1000),
+            ))
+        });
+        assert_eq!(answer, Some(true));
+        let (answer, masked) = graph_work(|| {
+            graph.decide(&ConditionTerm::uint64_less_than(
+                Bitvector32Term::uint64_from_32(Bitvector32Term::Binary {
+                    format: crate::kernel::MachineIntegerType::UInt32,
+                    op: crate::kernel::MachineBinaryOp::BitwiseAnd,
+                    left: Box::new(unbounded_divisor.clone()),
+                    right: Box::new(Bitvector32Term::UInt32Constant(1)),
+                }),
+                Bitvector32Term::UInt64Constant(2),
+            ))
+        });
+        assert_eq!(answer, Some(true));
+        let (answer, selected_slot) = graph_work(|| {
+            let mut selected = graph.clone();
+            let offset = crate::kernel::PointerOffsetTerm::Int64Scaled {
+                value: Box::new(Bitvector32Term::uint64_from_32(Bitvector32Term::Binary {
+                    format: crate::kernel::MachineIntegerType::UInt32,
+                    op: crate::kernel::MachineBinaryOp::BitwiseAnd,
+                    left: Box::new(unbounded_divisor.clone()),
+                    right: Box::new(Bitvector32Term::UInt32Constant(1)),
+                })),
+                byte_width: 8,
+                unsigned: true,
+            };
+            selected.assume_condition(
+                &ConditionTerm::pointer_offset_equal(
+                    offset.clone(),
+                    crate::kernel::PointerOffsetTerm::Constant(0),
+                ),
+                false,
+            );
+            selected.decide(&ConditionTerm::pointer_offset_equal(
+                offset,
+                crate::kernel::PointerOffsetTerm::Constant(8),
+            ))
+        });
+        assert_eq!(answer, Some(true));
+        samples.push((
+            insert,
+            unsigned,
+            signed,
+            nonzero,
+            widened,
+            masked,
+            selected_slot,
+        ));
     }
     assert!(
         samples.windows(2).all(|pair| pair[0] == pair[1]),

@@ -12,6 +12,122 @@
 
 use super::*;
 
+/// Targets retain an inverse index for exact written resource selectors.
+/// Scope restoration uses the same insert/remove operations as binding.
+#[derive(Clone, Debug, Default)]
+pub(super) struct ResourceTargets {
+    names: BTreeMap<String, ResourceClause>,
+    calls: std::collections::HashMap<ContractExpression, BTreeSet<String>>,
+    placeholders: BTreeSet<String>,
+    hidden: std::collections::HashMap<ResourceClause, BTreeSet<String>>,
+}
+
+impl std::ops::Deref for ResourceTargets {
+    type Target = BTreeMap<String, ResourceClause>;
+    fn deref(&self) -> &Self::Target {
+        &self.names
+    }
+}
+
+impl ResourceTargets {
+    fn call(target: &ResourceClause) -> Option<ContractExpression> {
+        let ResourceClause::Named { resource, .. } = target else {
+            return None;
+        };
+        let ResourceClause::Declared {
+            name,
+            arguments,
+            resource_type_arguments,
+            resource_arguments,
+            ..
+        } = resource.as_ref()
+        else {
+            return None;
+        };
+        // Generic resource applications need their explicit type/resource
+        // arguments too; an ordinary call cannot select them.
+        if !resource_type_arguments.is_empty() || !resource_arguments.is_empty() {
+            return None;
+        }
+        Some(ContractExpression::Call {
+            name: name.clone(),
+            arguments: arguments.clone(),
+        })
+    }
+
+    pub(super) fn insert(
+        &mut self,
+        name: String,
+        target: ResourceClause,
+        selectable: bool,
+    ) -> Option<(ResourceClause, bool)> {
+        let previous = self.remove(&name);
+        if selectable {
+            if let Some(call) = Self::call(&target) {
+                self.calls.entry(call).or_default().insert(name.clone());
+            }
+        } else {
+            self.placeholders.insert(name.clone());
+        }
+        if selectable
+            && name.starts_with('#')
+            && let ResourceClause::Named { resource, .. } = &target
+        {
+            self.hidden
+                .entry(resource.as_ref().clone())
+                .or_default()
+                .insert(name.clone());
+        }
+        self.names.insert(name, target);
+        previous
+    }
+
+    pub(super) fn remove(&mut self, name: &str) -> Option<(ResourceClause, bool)> {
+        let target = self.names.remove(name)?;
+        let selectable = !self.placeholders.remove(name);
+        if selectable && let Some(call) = Self::call(&target) {
+            let names = self.calls.get_mut(&call).expect("indexed resource target");
+            names.remove(name);
+            if names.is_empty() {
+                self.calls.remove(&call);
+            }
+        }
+        if selectable
+            && name.starts_with('#')
+            && let ResourceClause::Named { resource, .. } = &target
+        {
+            let names = self
+                .hidden
+                .get_mut(resource.as_ref())
+                .expect("indexed hidden target");
+            names.remove(name);
+            if names.is_empty() {
+                self.hidden.remove(resource.as_ref());
+            }
+        }
+        Some((target, selectable))
+    }
+
+    pub(super) fn select(&self, call: &ContractExpression) -> Result<Option<&ResourceClause>, ()> {
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(names) = self.calls.get(call) else {
+            return Ok(None);
+        };
+        if names.len() != 1 {
+            return Err(());
+        }
+        Ok(self
+            .names
+            .get(names.first().expect("nonempty selector bucket")))
+    }
+
+    pub(super) fn hidden(&self, target: &ResourceClause) -> Option<&ResourceClause> {
+        crate::instrumentation::record_deterministic_work(1);
+        let name = self.hidden.get(target)?.first()?;
+        self.names.get(name)
+    }
+}
+
 /// A point in the name table's undo log; ending it undoes what came after.
 #[derive(Clone, Copy, Debug)]
 #[must_use = "a name scope is ended with `NameTable::end`"]
@@ -31,7 +147,7 @@ pub(super) enum ShadowRestore {
     Resource {
         name: String,
         binding: (Variable, String),
-        target: Option<ResourceClause>,
+        target: Option<(ResourceClause, bool)>,
     },
     /// Whether `name` had a binding of `kind` before a binder changed it.
     Name {
@@ -57,7 +173,7 @@ pub(super) enum ShadowRestore {
     /// The target `name` held before a binder gave it one.
     InstanceTarget {
         name: String,
-        previous: Option<ResourceClause>,
+        previous: Option<(ResourceClause, bool)>,
     },
     /// The hidden parent field `child.field` read before a body bound it.
     HiddenChildField {
@@ -135,7 +251,7 @@ pub(super) struct NameTable {
     names: [BTreeSet<String>; KINDS],
     pub(super) resource_bindings: BTreeMap<String, (Variable, String)>,
     pub(super) resource_fields: BTreeMap<String, ResourceFieldAccess>,
-    pub(super) resource_targets: BTreeMap<String, ResourceClause>,
+    pub(super) resource_targets: ResourceTargets,
     /// In a resource that declares no fields and names a child: the hidden
     /// parent field that holds each `child.field`.
     pub(super) hidden_child_fields: BTreeMap<(String, String), ResourceFieldAccess>,
@@ -272,7 +388,15 @@ impl NameTable {
 
     /// Gives instance `name` its target until the open scope ends.
     pub(super) fn set_instance_target(&mut self, name: String, target: ResourceClause) {
-        let previous = self.resource_targets.insert(name.clone(), target);
+        let previous = self.resource_targets.insert(name.clone(), target, true);
+        self.undo
+            .push(ShadowRestore::InstanceTarget { name, previous });
+    }
+
+    /// An unfolded child's parser target retains the parent's clause only
+    /// as a placeholder. It must not also select that parent by call syntax.
+    pub(super) fn set_child_instance_target(&mut self, name: String, target: ResourceClause) {
+        let previous = self.resource_targets.insert(name.clone(), target, false);
         self.undo
             .push(ShadowRestore::InstanceTarget { name, previous });
     }
@@ -331,8 +455,9 @@ impl NameTable {
                     binding,
                     target,
                 } => {
-                    if let Some(target) = target {
-                        self.resource_targets.insert(name.clone(), target);
+                    if let Some((target, selectable)) = target {
+                        self.resource_targets
+                            .insert(name.clone(), target, selectable);
                     }
                     self.resource_bindings.insert(name, binding);
                 }
@@ -360,8 +485,8 @@ impl NameTable {
                     }
                 },
                 ShadowRestore::InstanceTarget { name, previous } => match previous {
-                    Some(target) => {
-                        self.resource_targets.insert(name, target);
+                    Some((target, selectable)) => {
+                        self.resource_targets.insert(name, target, selectable);
                     }
                     None => {
                         self.resource_targets.remove(&name);
@@ -408,4 +533,9 @@ impl NameTable {
             });
         }
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/parser/name_table/tests.rs");
 }

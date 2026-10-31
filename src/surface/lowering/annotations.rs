@@ -405,7 +405,9 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
         .requires
         .iter()
         .filter_map(|requirement| match requirement {
-            Requirement::Resource(ResourceClause::Named { binding, .. }) => Some(binding),
+            Requirement::Resource(ResourceClause::Named { binding, resource }) => {
+                Some((binding, resource))
+            }
             _ => None,
         })
         .chain(
@@ -413,11 +415,13 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
                 .ensures
                 .iter()
                 .filter_map(|ensure| match &ensure.ensure {
-                    Ensure::Resource(ResourceClause::Named { binding, .. }) => Some(binding),
+                    Ensure::Resource(ResourceClause::Named { binding, resource }) => {
+                        Some((binding, resource))
+                    }
                     _ => None,
                 }),
         );
-    for binding in bindings {
+    for (binding, resource) in bindings {
         let (Some(schema), Some(fields)) = (&binding.schema, &binding.fields) else {
             continue;
         };
@@ -437,7 +441,21 @@ pub(in crate::surface) fn register_entry_model_fields(function: &FunctionBlock) 
                 },
             );
         }
-        crate::kernel::model_fields::register_instance_spelling(binding.identity, &binding.name);
+        let spelling = if binding.name.starts_with('#') {
+            let ResourceClause::Declared {
+                name, arguments, ..
+            } = resource.as_ref()
+            else {
+                continue;
+            };
+            crate::surface::diagnostics::describe_contract_expression(&ContractExpression::Call {
+                name: name.clone(),
+                arguments: arguments.clone(),
+            })
+        } else {
+            binding.name.clone()
+        };
+        crate::kernel::model_fields::register_instance_spelling(binding.identity, &spelling);
     }
 }
 
@@ -6324,23 +6342,11 @@ impl AnnotationLowerer<'_> {
                 let snapshots = self
                     .snapshots
                     .ok_or("`.result` names a region of a function body being executed")?;
-                let (point, local) = snapshots.region_result(region)?;
-                let state = snapshots
-                    .get(&SnapshotSelector::ProgramPoint(point))
-                    .ok_or_else(|| {
-                        format!(
-                            "`{}.result` names a call this proof has not executed yet",
-                            crate::surface::diagnostics::describe_code_region_ref(region)
-                        )
-                    })?;
-                let value = state.locals().get(&local).ok_or_else(|| {
-                    format!(
-                        "`{}.result` was not recorded at the call's exit",
-                        crate::surface::diagnostics::describe_code_region_ref(region)
-                    )
-                })?;
-                Ok(SpecExpression::Value(value.clone()))
+                Ok(SpecExpression::Value(
+                    snapshots.region_result_value(region)?,
+                ))
             }
+
             ContractExpression::Old(expression) => {
                 let old_environment =
                     environment.old_state(&self.entry_values, self.entry_state.memory())?;

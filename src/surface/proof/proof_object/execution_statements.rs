@@ -1361,7 +1361,7 @@ impl<'a> Proof<'a> {
                 let mut proved = Vec::with_capacity(entries.len());
                 for (index, (label, proposition)) in entries.iter().enumerate() {
                     let written = crate::surface::printing::source_click_proposition(proposition);
-                    let lowered = self.lower_surface_goal(proposition, "`requires` entry")?;
+                    let lowered = current.lower_surface_goal(proposition, "`requires` entry")?;
                     let Some(slot) = open.iter().position(|requirement| {
                         self.written_states_requirement(&lowered, requirement)
                     }) else {

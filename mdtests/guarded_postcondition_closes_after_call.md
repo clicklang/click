@@ -1,27 +1,9 @@
-# A guarded call postcondition closes once its operands are bounded
+# An unconditional arithmetic postcondition is available after a call
 
-`pick` states `st.live == old(st.live) + result`. Lowering that sum keeps its
-no-overflow condition as a guard, so after the call the caller holds
-`defined(old(st.live) + got) implies st.live == old(st.live) + got` rather
-than the equality itself. The operands are bounded, `old(st.live)` by the
-precondition and `got` by the finite value set `got == 0 or got == 1`, so the
-guard holds; `solve` used to leave the consequent unused and fail on
-`st.live == 1`.
-
-The smart closer now selects the guarded equalities whose consequent shares
-an operand with the goal from an index keyed by those operands, proves the
-guard with an ordinary nested `solve` (overflow reasoning decides it from the
-operands' bounds), extracts the consequent, and rewrites the goal with it.
-Expansion renders each step: `have defined(1 + ..) by { .. }`,
-`extract(st.live == old(st.live) + ..)`, and `rewrite(..)`
-(`src/surface/tests/expansion_tests.rs`).
-
-`restricted` lists the guarded fact in `solve() using { .. }` without its
-guard: the guard is discharged the same way, from the listed premises when
-they suffice, and the consequent replaces the implication in the list.
-
-When the operands' bounds do not exclude overflow the consequent stays
-unused: [`guarded_postcondition_unbounded_stays_guarded.md`](guarded_postcondition_unbounded_stays_guarded.md).
+The callee proves both the stated equality and the sum's domain. The caller
+can use the equality directly, including in a selected-premise proof.
+The explicitly guarded counterpart is covered in
+[`explicit_guarded_postcondition_closes_after_call.md`](explicit_guarded_postcondition_closes_after_call.md).
 
 ```c filename=guarded_postcondition_closes_after_call.c
 struct box {
@@ -96,7 +78,7 @@ int32 restricted(struct box* b) {
         }
         have st.live == 1 by {
             solve() using {
-                defined(1 + got) implies to_integer(st.live) == to_integer(at(m, st.live) + got);
+                to_integer(st.live) == to_integer(at(m, st.live) + got);
                 got == 0;
                 at(m, st.live) == 1;
             };

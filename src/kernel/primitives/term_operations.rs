@@ -1892,6 +1892,11 @@ impl Bitvector32Term {
             (Ty::UInt64, Op::BitwiseAnd) => Self::uint64_bitwise_and(left, right),
             (Ty::UInt64, Op::BitwiseOr) => Self::uint64_bitwise_or(left, right),
             (Ty::UInt64, Op::BitwiseXor) => Self::uint64_bitwise_xor(left, right),
+            (Ty::Int8 | Ty::UInt8 | Ty::Int16 | Ty::UInt16, op)
+                if crate::kernel::primitives::is_native_narrow_operator(op) =>
+            {
+                Self::narrow_binary(format, op, left, right)
+            }
             _ => panic!("no {format:?} machine binary operator yet"),
         }
     }
@@ -1914,7 +1919,87 @@ impl Bitvector32Term {
             (MachineIntegerType::UInt64, MachineUnaryOp::BitwiseNot) => {
                 Self::uint64_bitwise_not(operand)
             }
+            (
+                MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16,
+                MachineUnaryOp::BitwiseNot,
+            ) => match operand.narrow_constant_bits(format) {
+                Some(bits) => Self::narrow_constant(format, !bits),
+                None => Self::Unary {
+                    format,
+                    op: MachineUnaryOp::BitwiseNot,
+                    operand: Box::new(operand),
+                },
+            },
             _ => panic!("no {format:?} machine unary operator yet"),
+        }
+    }
+
+    /// The native 8- or 16-bit constant of `format` whose bits are `bits`
+    /// reduced modulo 2^N: a value of its own width, not a 32-bit word.
+    pub(crate) fn narrow_constant(format: MachineIntegerType, bits: u128) -> Self {
+        let format = format.format();
+        Self::MachineIntegerConstant(
+            MachineIntegerConstant::from_bits(format, bits & format.mask())
+                .expect("masked bits fit the format"),
+        )
+    }
+
+    /// The bits of a native constant of the 8- or 16-bit `format`, if this
+    /// term is one. One match on the root.
+    pub(crate) fn narrow_constant_bits(&self, format: MachineIntegerType) -> Option<u128> {
+        match self {
+            Self::MachineIntegerConstant(constant) if constant.format() == format.format() => {
+                Some(constant.bits())
+            }
+            _ => None,
+        }
+    }
+
+    /// `left op right` at an 8- or 16-bit `format`, a native node of that
+    /// width (decision G4: `+ - * & | ^ <<`). Two constants fold modulo
+    /// 2^N; a shift folds only by a constant count below N, as the 32-bit
+    /// shifts do. Every other operand pair is the node itself. One match on
+    /// each root.
+    fn narrow_binary(
+        format: MachineIntegerType,
+        op: MachineBinaryOp,
+        left: Self,
+        right: Self,
+    ) -> Self {
+        use MachineBinaryOp as Op;
+        crate::instrumentation::record_deterministic_work(1);
+        let width = format.format().bits();
+        let folded = match (left.narrow_constant_bits(format), op) {
+            (Some(bits), Op::ShiftLeft) => {
+                let count = right
+                    .narrow_constant_bits(format)
+                    .or_else(|| right.as_const().map(u128::from));
+                count
+                    .filter(|count| *count < u128::from(width))
+                    .map(|count| bits << count)
+            }
+            (Some(a), op) => right.narrow_constant_bits(format).and_then(|b| match op {
+                Op::Add => Some(a.wrapping_add(b)),
+                Op::Subtract => Some(a.wrapping_sub(b)),
+                Op::Multiply => Some(a.wrapping_mul(b)),
+                Op::BitwiseAnd => Some(a & b),
+                Op::BitwiseOr => Some(a | b),
+                Op::BitwiseXor => Some(a ^ b),
+                _ => None,
+            }),
+            (None, _) => None,
+        };
+        match folded {
+            Some(bits) => Self::narrow_constant(format, bits),
+            None => Self::Binary {
+                format,
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
         }
     }
 

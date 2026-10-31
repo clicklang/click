@@ -1125,7 +1125,7 @@ fn memory_only_adds_named_cells(
             }
             continue;
         }
-        let Some(kind) = LoadKind::of_value(&value).map(LoadKind::word_kind) else {
+        let Some(kind) = LoadKind::of_value(&value) else {
             return Err("added a cell no load reads".into());
         };
         let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone(), kind);
@@ -11386,6 +11386,7 @@ impl ExecutionProofCore {
             drop(premises);
             paths.push(crate::kernel::SymbolicCExecutionPath {
                 completion_origin: Some(candidate.outcome().clone()),
+                call_result: None,
                 assumptions: assumptions.clone(),
                 post_assumptions: retain_post_context.then_some(post_assumptions),
                 facts,

@@ -39,10 +39,14 @@ checked. Each one costs completeness, expansion, or a readable report.
   value or memory state (a call result, a havoc, an allocation, a state
   between recorded points) gives it a name from its provenance at that
   point. Do not recover a name later from whatever locals happen to hold the
-  value. A call's result is `<region>.result`, its call's region read at that
-  region's exit (`RecordedSnapshots::region_result`): the source layout maps
-  each call region to the local it assigns, and each frontend result
-  temporary back to its call (`SourceExecutionLayout::temporary_call_region`).
+  value. A non-void call's result is `<region>.result`, including calls whose
+  source discards the return value. The checked call transition retains the
+  exact returned value, and its exit records it by region in
+  `RecordedSnapshots::call_results`. Lowering reads that value directly;
+  integer and Boolean synthesis uses a reverse term index. Replacing or removing
+  the recorded exit replaces or removes its result name too. Source-layout
+  result locals preserve allocation naming, and frontend result temporaries
+  map back to their calls (`SourceExecutionLayout::temporary_call_region`).
   A heap allocation keeps its nullable return value as `<region>.result` and
   names its success identity as `<region>.allocation`. The producer reserves
   both identities before the null check. The allocation exit indexes the heap
@@ -54,8 +58,8 @@ checked. Each one costs completeness, expansion, or a readable report.
   Recorded points index each integer value, and each pointer's block, by the
   point and the local it was first given to (`RecordedSnapshots::value_points`
   and `pointer_points`, filled from the locals each recorded state changed),
-  and each scalar model-field value by the point whose resource instance first
-  held it (`field_points`, filled from the instances each state changed), and
+  and each symbolic integer or algebraic model-field value by the point whose
+  resource instance first held it (`field_points`, filled from the instances each state changed), and
   each integer a memory cell came to hold by the point that recorded it there
   (`cell_points`, filled from the cells each memory changed). The structural
   speller writes `at(point, ...)` from these indexes for a value no nearer
@@ -157,6 +161,50 @@ while owning `a[i]`, which needs `k == i`, stays a read of the region's
 state; the equality graph relates it to the stored value. Facts may still
 prove the read is permitted. A fact an unfold adds is an ordinary fact.
 
+Array indexing observes the completed machine-integer expression exactly.
+A `uint32` index always uses zero extension to the wide unsigned offset;
+proven bounds cannot switch it to a signed offset. Thus `a[i + 1]` preserves
+the index expression's machine arithmetic before observation, including unsigned
+wraparound. The speller structurally removes that implicit widening and writes
+`a[i]` again; supported native wide indices, including Rust `usize`, also retain
+bracket syntax. Range checking uses the maintained order graph to relate the
+unsigned word to its exact widening, without changing the address term.
+Literal-mask bounds are recorded when the graph introduces the index node;
+address equalities over a common exact wide stride retain full-width index
+equalities. A table-read branch extends its context with its one new address
+disequality before considering the next cell.
+
+Boolean function applications, equalities, conditionals, and Boolean call
+arguments spell structurally through their existing Surface syntax. Pure-theorem
+premise spelling uses the retained typed source state and looks up names for the
+selected fact's variables, rather than rebuilding an int32-only environment.
+Generic calls spell the declared source name rather than the kernel's
+`::<...>` instance suffix. Typed arguments (including explicit algebraic
+constructors) reconstruct the same instance when lowered. Name selection must
+include variables inside opaque call arguments and both goal binders and
+proof-local witnesses, respecting `intro` shadowing.
+Algebraic equality inside a Boolean expression spells as an ordinary comparison.
+Match-arm algebraic bindings retain their source names for premise synthesis,
+including list tails and C type-parameter values stored in constructors. These
+names are selected from existing proof bindings; no equality search reconstructs
+them.
+A rewrite that introduces an outer Boolean negation retains lowering's truth
+polarity: a false claim of `not p` is stored as a true claim of `p`. This does
+not consult facts or change the Boolean term inside a larger expression.
+
+Signed add/subtract/multiply overflow facts retain their polarity when spelled:
+no overflow is `defined(expression)`, and overflow is `not defined(expression)`.
+The spelling names the operation rather than a local holding its result.
+Division and left-shift atomic overflow conditions are not interchangeable with
+the complete `defined(expression)` domain, which also contains other conditions.
+
+Masked uint64 tag expressions retain their full numeric term. Exact tag-bound
+lookups may produce a separate equality removing the masked tag; addition also
+requires the word's low bits proved clear, so no carry reaches address bits.
+Those facts accompany evaluation instead of replacing its result. Explicit
+arithmetic certificates must conclude the full written goal (after explicit
+rewrites), rather than depend on tag removal during lowering.
+
 `CLICK_FACT_STABILITY=<path>` lowers each checked proof proposition again
 under the same policy with no facts (`kernel::fact_stability`) and records
 every lowering whose term differs. `scripts/fact-stability.sh` runs the
@@ -180,6 +228,15 @@ spelling of its own: no Click text lowers back to it there, so `lower(raise(x))
 cell holding its own read (a materialization), which reads as that read. C
 evaluation still computes with stored values: a function's `result` is the
 value its statements produced.
+
+A scalar read handle retains its structural descriptor (memory version,
+address, and read kind) in the load registry. A generated read-definition fact
+uses that same handle representation as source lowering; its producer binding
+retains the exact registered descriptor. A reduced cache snapshot must not
+introduce a second raw-load form into the citable equation. Cache-only records
+share the unchanged-bytes identity, while actual writes still create distinct
+read versions. Retaining typed read evidence checks the descriptor's epoch,
+address and kind by indexed lookup, independently of the spelling.
 
 The read-over-write authority relates a read to the stored value:
 `kernel::eval::read_over_write_value` returns, for a load variable whose
