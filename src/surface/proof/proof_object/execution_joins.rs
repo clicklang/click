@@ -3332,7 +3332,9 @@ impl<'a> Proof<'a> {
                 }
                 Err(error) if error.is_path_case_split() => {
                     let Some(condition) = error.path_case_condition() else {
-                        return Ok(None);
+                        return Err(error.with_context(
+                            "the implicit tail could not split the cases of this C operation",
+                        ));
                     };
                     let (split, record) = proof.prepare_focused_execute_cases(condition.clone())?;
                     proof = split.focus_execution_if_arm(&record, true)?;
