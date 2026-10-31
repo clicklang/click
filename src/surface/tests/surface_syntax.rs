@@ -5792,3 +5792,59 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
         verify_click_theorems(&source).unwrap_or_else(|error| panic!("{source}\n{error:?}"));
     }
 }
+
+#[test]
+fn synthesized_signed_difference_preserves_its_type_without_literals() {
+    let less_equal = |left, right| ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(left),
+        right: Box::new(right),
+    };
+    let hi = Bitvector32Term::Variable(Variable(984_600));
+    let lo = Bitvector32Term::Variable(Variable(984_601));
+    let difference =
+        Bitvector32Term::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
+    let original =
+        Proposition::ConditionIs(less_equal(Bitvector32Term::Constant(0), difference), true);
+    let state = CState::new()
+        .with_local("hi", CValue::Int32(hi.clone()))
+        .with_local("lo", CValue::Int32(lo.clone()));
+    let surface =
+        synthesize_surface_proposition(&original, ParameterBinding::default(), &state).unwrap();
+    let printed = printing::source_click_proposition(&surface);
+    let file = parser::parse_file_items(&format!(
+        "theorem t() {{ requires {printed}; ensures true; }}"
+    ))
+    .unwrap();
+    let reparsed = file.theorem_definitions()[0].requires()[0]
+        .theorem_proposition()
+        .unwrap();
+    let mut bounds = Vec::new();
+    for term in [hi.clone(), lo.clone()] {
+        bounds.push(Proposition::ConditionIs(
+            less_equal(Bitvector32Term::Constant(0), term.clone()),
+            true,
+        ));
+        bounds.push(Proposition::ConditionIs(
+            less_equal(term, Bitvector32Term::Constant(100)),
+            true,
+        ));
+    }
+    let facts = crate::surface::verification::assumptions_from_propositions(&bounds);
+    let values = BTreeMap::from([
+        ("hi".to_string(), CValue::Int32(hi)),
+        ("lo".to_string(), CValue::Int32(lo)),
+    ]);
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let lowered = crate::surface::proof::lower_fixed_state_proposition_through_kernel(
+        &reparsed,
+        &facts,
+        ContractEnvironment::new(&values, &BTreeMap::new()),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+        SpecDefinitions::new(&predicates, &functions),
+    )
+    .unwrap();
+    assert_eq!(lowered, original, "{printed}");
+}
