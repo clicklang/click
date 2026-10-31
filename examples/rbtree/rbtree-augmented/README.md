@@ -443,6 +443,21 @@ identify the result with the existing inner/outer insertion operations and
 preserve the complete in-order sequence. These model proofs do not yet compose
 the two writable callbacks in the generalized C case.
 
+`rbtree_size_double_cached_model.click` supplies complete cached result models
+for both generalized double rotations. Its six theorems prove recursive count
+validity from the two recomputed child counts and the original whole-tree
+count, identify the result shapes with the existing double-rotation models,
+and preserve the complete in-order sequence. All four surrounding subtrees
+remain arbitrary. These are pure model proofs; checking that the C callbacks
+produce these models remains separate work.
+
+`rbtree_size_double_preserves_counts.click` connects both cached result models
+to the original tree invariant. It derives the retained subtrees’ validity and
+the whole-tree count equation from the original three-node configuration,
+then proves the result count-valid given the two recomputed child counts.
+The caller no longer needs to supply the expanded whole-tree sum separately.
+These lemmas do not establish the C callbacks’ count equations or memory effects.
+
 `rbtree_size_valid_value.click` supplies explicit cached-count lemmas: valid
 children and the root sum establish a valid node, and a recursively valid
 cached count equals its abstract subtree size and is nonnegative. These pure
