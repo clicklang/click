@@ -535,7 +535,7 @@ theorem docs_use_int32_increment_below_max_is_defined(value: int32) {
 
 theorem docs_use_int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32) {
     requires 0 <= amount;
-    requires value <= 2147483647 - amount;
+    requires to_integer(value) <= to_integer(2147483647 - amount);
 
     ensures defined(value + amount) by {
         apply(integer::int32_nonnegative_add_within_max_is_defined(value, amount));
