@@ -2882,6 +2882,94 @@ pub(super) struct BatchExpansionCapture {
 }
 
 impl ExpansionCapture {
+    /// Fork presentation recorders, including nested sites, for one loop-entry path.
+    pub(super) fn fork_loop_entry(&self) -> Self {
+        self.fork_loop_entry_with(&mut BTreeMap::new())
+    }
+
+    fn fork_loop_entry_with(
+        &self,
+        recorders: &mut BTreeMap<Vec<usize>, Arc<NestedTacticCapture>>,
+    ) -> Self {
+        let mut result = self.clone();
+        result.nested = self
+            .nested
+            .as_ref()
+            .map(|nested| nested.fork_loop_entry(recorders));
+        if let Some(batch) = &mut result.batch {
+            batch.targets = batch
+                .targets
+                .iter()
+                .map(|(index, target)| (*index, target.fork_loop_entry_with(recorders)))
+                .collect();
+        }
+        result
+    }
+
+    pub(super) fn merge_loop_entries(&mut self, paths: &[&Self], branches: &LoopEntryBranches) {
+        if self.result.is_none() {
+            self.result = guarded_entry_expansion(
+                branches,
+                &paths
+                    .iter()
+                    .map(|capture| capture.result.clone())
+                    .collect::<Vec<_>>(),
+            );
+            self.active |= paths.iter().any(|capture| capture.active);
+            self.dropped_path_occurrence |=
+                paths.iter().any(|capture| capture.dropped_path_occurrence);
+            let starts = paths
+                .iter()
+                .filter_map(|capture| capture.replaces_from)
+                .collect::<Vec<_>>();
+            if let Some(start) = starts.first() {
+                if starts.iter().all(|other| other == start) {
+                    self.replaces_from = Some(*start);
+                } else {
+                    self.result = Some(Err(
+                        "loop-entry expansions replace different source ranges".into(),
+                    ));
+                }
+            }
+        }
+        if let Some(nested) = &self.nested {
+            let children = paths
+                .iter()
+                .map(|capture| {
+                    capture
+                        .nested
+                        .as_ref()
+                        .expect("forked nested recorder")
+                        .as_ref()
+                })
+                .collect::<Vec<_>>();
+            nested.merge_loop_entries(&children, branches);
+        }
+        if let Some(batch) = &mut self.batch {
+            batch.targets = batch
+                .targets
+                .iter()
+                .map(|(index, target)| {
+                    let mut target = target.clone();
+                    let children = paths
+                        .iter()
+                        .map(|capture| {
+                            capture
+                                .batch
+                                .as_ref()
+                                .expect("forked batch")
+                                .targets
+                                .get(index)
+                                .expect("forked target")
+                        })
+                        .collect::<Vec<_>>();
+                    target.merge_loop_entries(&children, branches);
+                    (*index, target)
+                })
+                .collect();
+        }
+    }
+
     pub(super) fn for_tactic(site: ProofSite, source_index: usize) -> Self {
         Self {
             site,
@@ -3008,6 +3096,90 @@ impl ExpansionCapture {
     }
 }
 
+/// The same checked entry decisions organize retained proofs and selected expansions.
+pub(super) enum LoopEntryBranches {
+    Leaf(Vec<usize>),
+    Split {
+        condition: ClickProposition,
+        yes: Box<Self>,
+        no: Box<Self>,
+    },
+}
+
+impl LoopEntryBranches {
+    pub(super) fn certificate(
+        &self,
+        paths: &[ProofCertificate],
+        claim: &str,
+    ) -> Result<ProofCertificate, ClickError> {
+        crate::instrumentation::record_deterministic_work(1);
+        match self {
+            Self::Leaf(indices) => {
+                let first = indices
+                    .first()
+                    .ok_or_else(|| ClickError::new("loop preservation has no entry paths"))?;
+                for index in &indices[1..] {
+                    crate::instrumentation::record_deterministic_work(paths[*index].steps().len());
+                    if paths[*index] != paths[*first] {
+                        return Err(ClickError::new(format!(
+                            "`{claim}` produced different certificates for the same proof path"
+                        )));
+                    }
+                }
+                Ok(paths[*first].clone())
+            }
+            Self::Split { condition, yes, no } => Ok(ProofCertificate::from_validated_steps(vec![
+                ProofStep::If {
+                    condition: condition.clone(),
+                    ensuring: None,
+                    then_proof: Box::new(yes.certificate(paths, claim)?),
+                    else_proof: Box::new(no.certificate(paths, claim)?),
+                },
+            ])),
+        }
+    }
+}
+
+fn guarded_entry_expansion(
+    branches: &LoopEntryBranches,
+    paths: &[Option<Result<Vec<ProofTactic>, String>>],
+) -> Option<Result<Vec<ProofTactic>, String>> {
+    crate::instrumentation::record_deterministic_work(1);
+    match branches {
+        LoopEntryBranches::Leaf(indices) => {
+            let mut result = None;
+            for index in indices {
+                crate::instrumentation::record_deterministic_work(1);
+                if let Some(next) = &paths[*index] {
+                    if result.as_ref().is_some_and(|previous| previous != next) {
+                        return Some(Err(
+                            "selected tactic expands differently on indistinguishable loop entries"
+                                .into(),
+                        ));
+                    }
+                    result = Some(next.clone());
+                }
+            }
+            result
+        }
+        LoopEntryBranches::Split { condition, yes, no } => {
+            let yes = guarded_entry_expansion(yes, paths);
+            let no = guarded_entry_expansion(no, paths);
+            if yes == no {
+                return yes;
+            }
+            Some((|| {
+                Ok(vec![ProofTactic::If(ProofIf {
+                    condition: condition.clone(),
+                    ensuring: None,
+                    then_tactics: yes.transpose()?.unwrap_or_default(),
+                    else_tactics: no.transpose()?.unwrap_or_default(),
+                })])
+            })())
+        }
+    }
+}
+
 /// The recorder for one selected tactic written inside a `have` body.
 ///
 /// Proofs checking the selected site carry it in their shared constants. The
@@ -3026,7 +3198,7 @@ pub(in crate::surface) struct NestedTacticCapture {
     children: BTreeMap<Vec<usize>, Arc<NestedTacticCapture>>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 struct NestedTacticCaptureState {
     /// The selected tactic is being checked now. A smart closure run inside
     /// it addresses its generated steps by the same block positions, so no
@@ -3036,6 +3208,48 @@ struct NestedTacticCaptureState {
 }
 
 impl NestedTacticCapture {
+    fn fork_loop_entry(&self, recorders: &mut BTreeMap<Vec<usize>, Arc<Self>>) -> Arc<Self> {
+        if self.children.is_empty()
+            && let Some(recorder) = recorders.get(&self.path)
+        {
+            return recorder.clone();
+        }
+        let result = Arc::new(Self {
+            site: self.site.clone(),
+            path: self.path.clone(),
+            state: std::sync::Mutex::new(self.state().clone()),
+            children: self
+                .children
+                .iter()
+                .map(|(key, child)| (key.clone(), child.fork_loop_entry(recorders)))
+                .collect(),
+        });
+        if self.children.is_empty() {
+            recorders.insert(self.path.clone(), result.clone());
+        }
+        result
+    }
+
+    fn merge_loop_entries(&self, paths: &[&Self], branches: &LoopEntryBranches) {
+        if self.result().is_none() {
+            let result = guarded_entry_expansion(
+                branches,
+                &paths
+                    .iter()
+                    .map(|capture| capture.result())
+                    .collect::<Vec<_>>(),
+            );
+            self.state().result = result;
+        }
+        for (key, child) in &self.children {
+            let children = paths
+                .iter()
+                .map(|capture| capture.children.get(key).expect("forked child").as_ref())
+                .collect::<Vec<_>>();
+            child.merge_loop_entries(&children, branches);
+        }
+    }
+
     fn new(site: ProofSite, path: Vec<usize>) -> Self {
         Self {
             site,
@@ -5570,3 +5784,9 @@ fn indent_replacement(source: &str, start: usize, replacement: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod loop_entry_capture_scaling_tests {
+    use super::*;
+    include!("../scaling_tests/surface/expansion/loop_entry_captures.rs");
+}
