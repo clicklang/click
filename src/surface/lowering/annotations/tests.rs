@@ -377,3 +377,80 @@ fn c0_loop_index_agrees_with_the_walk_at_every_loop() {
         );
     }
 }
+
+#[test]
+fn ordinary_integer_arithmetic_retains_structure_and_deferred_domain_checks() {
+    use crate::kernel::{IntegerTerm as Int, SpecIntegerExpression as Spec};
+    let state = CState::new();
+    let snapshots = RecordedSnapshots::new();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let (mut lowerer, mut context) = fixed_state_elaboration(
+        BTreeMap::new(),
+        BTreeMap::new(),
+        &state,
+        BTreeMap::new(),
+        BTreeMap::new(),
+        None,
+        &snapshots,
+        SpecDefinitions::new(&predicates, &functions),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    );
+    let x = Int::Variable(crate::kernel::Variable(914002));
+    context.integer_values = context
+        .integer_values
+        .with_inserted("x".into(), Spec::Term(x.clone()));
+    let binding = || Box::new(ContractExpression::Binding("x".into()));
+    let one = || Box::new(ContractExpression::IntegerLiteral("1".into()));
+    for (expression, expected) in [
+        (
+            ContractExpression::Negate(binding()),
+            Int::Negate(x.clone().into()),
+        ),
+        (
+            ContractExpression::Add(binding(), one()),
+            Int::Add(x.clone().into(), Int::constant_i64(1).into()),
+        ),
+        (
+            ContractExpression::Subtract(binding(), binding()),
+            Int::Subtract(x.clone().into(), x.clone().into()),
+        ),
+        (
+            ContractExpression::Multiply(binding(), one()),
+            Int::Multiply(x.clone().into(), Int::constant_i64(1).into()),
+        ),
+    ] {
+        assert_eq!(
+            lowerer
+                .lower_contract_integer_to_spec(&expression, &context)
+                .unwrap(),
+            Spec::Term(expected)
+        );
+    }
+    for name in ["truncating_quotient", "truncating_remainder"] {
+        let call = |divisor| ContractExpression::Call {
+            name: name.into(),
+            arguments: vec![*binding(), divisor],
+        };
+        let pure = lowerer
+            .lower_contract_integer_to_spec(&call(*one()), &context)
+            .unwrap();
+        assert_eq!(
+            pure,
+            Spec::Term(if name == "truncating_quotient" {
+                Int::TruncatingQuotient(x.clone().into(), Int::constant_i64(1).into())
+            } else {
+                Int::TruncatingRemainder(x.clone().into(), Int::constant_i64(1).into())
+            })
+        );
+        // A symbolic divisor still needs its ordinary nonzero obligation.
+        let deferred = lowerer
+            .lower_contract_integer_to_spec(&call(*binding()), &context)
+            .unwrap();
+        assert!(matches!(
+            deferred,
+            Spec::TruncatingQuotient(..) | Spec::TruncatingRemainder(..)
+        ));
+    }
+}

@@ -92,9 +92,13 @@ identity is independent of equality-graph classes: constructing `1 + 1`
 does not construct `2`. Nodes retain their result type, and checked arithmetic
 constructors reject the wrong operand type or arity.
 
-The first migrated producer is specification-side Integer certificate
-arithmetic (`lower_surface_integer_term`). Integer arithmetic and pure-call
-raising consume the shared tree through `raise_kernel_term`. The existing
+Specification-side Integer certificate arithmetic (`lower_surface_integer_term`)
+and ordinary Integer arithmetic on existing values construct the shared tree.
+Ordinary negation, addition, subtraction, multiplication, and constant-nonzero-
+divisor quotient/remainder use the same constructor. Expressions still requiring
+evaluation retain their `SpecIntegerExpression` forms and scoped obligations;
+a symbolic divisor still needs its nonzero check. Integer arithmetic and
+pure-call raising consume the shared tree through `raise_kernel_term`. The existing
 checker still receives `IntegerTerm` through a lossless, memoized export;
 other producers enter through the memoized import. Neither bridge reads facts
 or simplifies terms. These are migration boundaries, not a second semantics.

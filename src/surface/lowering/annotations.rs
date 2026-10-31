@@ -3408,7 +3408,7 @@ fn lower_integer_operation(
     right: crate::kernel::SpecIntegerExpression,
     operation: IntegerOperation,
 ) -> Result<crate::kernel::SpecIntegerExpression, String> {
-    use crate::kernel::{IntegerTerm, SpecIntegerExpression};
+    use crate::kernel::{KernelIntegerOperator as Op, SpecIntegerExpression};
     let SpecIntegerExpression::Term(left) = left else {
         return Err("machine-backed Integer expressions are not yet certificate atoms".into());
     };
@@ -3422,12 +3422,30 @@ fn lower_integer_operation(
         _ => integer_root_work(&left).saturating_add(integer_root_work(&right)),
     };
     check_integer_lowering_work(work)?;
-    let term = match operation {
-        IntegerOperation::Add => IntegerTerm::Add(left.into(), right.into()),
-        IntegerOperation::Subtract => IntegerTerm::Subtract(left.into(), right.into()),
-        IntegerOperation::Multiply => IntegerTerm::Multiply(left.into(), right.into()),
+    let operator = match operation {
+        IntegerOperation::Add => Op::Add,
+        IntegerOperation::Subtract => Op::Subtract,
+        IntegerOperation::Multiply => Op::Multiply,
     };
-    Ok(SpecIntegerExpression::Term(term))
+    construct_integer_operation(operator, vec![left, right])
+}
+
+/// Ordinary specification arithmetic shares the certificate term constructor.
+/// Deferred evaluation remains in SpecIntegerExpression until its operands
+/// become values; this bridge neither evaluates them nor discharges obligations.
+fn construct_integer_operation(
+    operator: crate::kernel::KernelIntegerOperator,
+    operands: Vec<crate::kernel::IntegerTerm>,
+) -> Result<crate::kernel::SpecIntegerExpression, String> {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelTermImport, SpecIntegerExpression};
+    let mut importer = KernelTermImport::default();
+    let arguments = operands
+        .into_iter()
+        .map(|operand| importer.integer(&operand.into()))
+        .collect();
+    let term = KernelTerm::integer_operation(operator, arguments)?;
+    let value = KernelTermExport::default().integer(&term)?;
+    Ok(SpecIntegerExpression::Term(value.as_ref().clone()))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -5613,19 +5631,14 @@ impl AnnotationLowerer<'_> {
                     check_integer_lowering_work(
                         integer_root_work(a).saturating_mul(integer_root_work(b)),
                     )?;
-                    return Ok(SpecIntegerExpression::Term(
+                    return construct_integer_operation(
                         if name == "truncating_quotient" {
-                            crate::kernel::IntegerTerm::TruncatingQuotient(
-                                a.clone().into(),
-                                b.clone().into(),
-                            )
+                            crate::kernel::KernelIntegerOperator::TruncatingQuotient
                         } else {
-                            crate::kernel::IntegerTerm::TruncatingRemainder(
-                                a.clone().into(),
-                                b.clone().into(),
-                            )
+                            crate::kernel::KernelIntegerOperator::TruncatingRemainder
                         },
-                    ));
+                        vec![a.clone(), b.clone()],
+                    );
                 }
                 Ok(if name == "truncating_quotient" {
                     SpecIntegerExpression::TruncatingQuotient(Box::new(left), Box::new(right))
@@ -5728,9 +5741,10 @@ impl AnnotationLowerer<'_> {
                 match inner {
                     SpecIntegerExpression::Term(term) => {
                         check_integer_lowering_work(integer_root_work(&term))?;
-                        Ok(SpecIntegerExpression::Term(
-                            crate::kernel::IntegerTerm::Negate(term.into()),
-                        ))
+                        construct_integer_operation(
+                            crate::kernel::KernelIntegerOperator::Negate,
+                            vec![term],
+                        )
                     }
                     inner => Ok(SpecIntegerExpression::Negate(Box::new(inner))),
                 }
