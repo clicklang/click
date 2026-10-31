@@ -3552,6 +3552,21 @@ fn expand_declared_resource_expression_node(
                 .ok_or_else(|| {
                     ClickError::new(format!("unknown resource `{}`", access.resource_name))
                 })?;
+            // A hidden record retains child fields under their structural
+            // dotted path. Select that slot without opening the child.
+            if !access.children.is_empty() {
+                let path = access
+                    .children
+                    .iter()
+                    .map(String::as_str)
+                    .chain(std::iter::once(access.field.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(".");
+                if info.fields.contains_key(&path) {
+                    access.field = path;
+                    access.children.clear();
+                }
+            }
             let (index, field) = info.fields.get(&access.field).ok_or_else(|| {
                 ClickError::new(format!(
                     "resource `{}` has no field `{}`",

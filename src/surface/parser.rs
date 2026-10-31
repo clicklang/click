@@ -7222,18 +7222,12 @@ impl Parser {
     /// The binder an unnamed hidden-record resource is held under, if this
     /// exact resource is held.
     fn hidden_binder(&self, resource: &ResourceClause) -> Option<ResourceClause> {
-        self.names.resource_targets
-            .iter()
-            .find(|(name, target)| {
-                name.starts_with('#')
-                    && matches!(target, ResourceClause::Named { resource: held, .. } if held.as_ref() == resource)
-            })
-            .map(|(_, target)| target.clone())
+        self.names.resource_targets.hidden(resource).cloned()
     }
 
-    /// A resource whose every field is hidden has no field a contract could
-    /// name, so it is held without a name: `owns pair(p);`. It is still an
-    /// instance, and is bound under a name the author cannot write. Naming
+    /// A resource whose every field is retained from children may be held
+    /// without an explicit binder: `owns pair(p);`. Its internal instance
+    /// name is unwritable; field paths use the resource call. Naming
     /// the same resource again, in a loop header or a proof step, is the
     /// same binder.
     #[inline(never)]
@@ -7839,6 +7833,7 @@ impl Parser {
                     | Token::Amp
                     | Token::Pipe
                     | Token::Caret
+                    | Token::Dot
                     | Token::LBracket,
                 ) => {
                     self.position = start;
@@ -8551,7 +8546,7 @@ impl Parser {
                     |(_, family)| family,
                 );
                 self.names.bind_instance(name.clone(), (identity, recorded));
-                self.names.set_instance_target(
+                self.names.set_child_instance_target(
                     name.clone(),
                     ResourceClause::Named {
                         binding: ResourceInstanceBinding {
@@ -8776,8 +8771,8 @@ impl Parser {
             self.next_resource_identity += 1;
             identity
         };
-        // A resource whose every field is hidden has no field the proof
-        // could write, so its one brace is the child map, and a map whose
+        // A resource whose every field is retained from children has no
+        // declared field initializer, so its one brace is the child map; a map whose
         // every child defaults by name may be left out with it.
         let declared = self
             .declared_resource_fields
@@ -14317,7 +14312,50 @@ impl Parser {
         if matches!(self.peek(), Some(Token::Ident(_))) && self.peek_next() == Some(&Token::LParen)
         {
             let (name, arguments) = self.parse_call_arguments("function name")?;
-            return Ok(ContractExpression::Call { name, arguments });
+            let call = ContractExpression::Call {
+                name: name.clone(),
+                arguments,
+            };
+            if self.peek() == Some(&Token::Dot) && self.declared_resource_fields.contains_key(&name)
+            {
+                let target = self
+                    .names
+                    .resource_targets
+                    .select(&call)
+                    .map_err(|()| {
+                        self.error(format!(
+                            "resource selector `{}` is ambiguous; use an instance name",
+                            crate::surface::diagnostics::describe_contract_expression(&call)
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        self.error(format!(
+                            "resource selector `{}` has no instance in scope",
+                            crate::surface::diagnostics::describe_contract_expression(&call)
+                        ))
+                    })?;
+                let ResourceClause::Named { binding, .. } = target else {
+                    unreachable!()
+                };
+                let identity = binding.identity;
+                let mut path = Vec::new();
+                while self.peek() == Some(&Token::Dot) {
+                    self.position += 1;
+                    path.push(self.expect_ident("resource child or field name")?);
+                }
+                // Hidden records retain a flat schema key such as first.v.
+                // This selects that exact slot, without opening the child.
+                return Ok(ContractExpression::ResourceField(ResourceFieldAccess {
+                    owner: crate::surface::diagnostics::describe_contract_expression(&call),
+                    resource_name: name,
+                    identity,
+                    children: vec![],
+                    field: path.join("."),
+                    field_index: 0,
+                    click_type: None,
+                }));
+            }
+            return Ok(call);
         }
 
         match self.next() {

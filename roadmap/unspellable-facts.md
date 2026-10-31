@@ -12,6 +12,47 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Nested resource field selectors (2026-10-30)
+
+The hidden-child equality in `a_hidden_record_is_shown_beside_its_resource`
+now round-trips. `pair(p).first.v` selects the retained hidden field in the
+unique in-scope instance with exactly that written resource target;
+`whole.first.v` also selects the slot through a named parent. `old(...)`
+keeps the entry value accessible after unfolding. The current path requires
+the parent to be held. Selection neither opens the child nor grants memory
+permissions, and it does not use equality facts to resolve arguments.
+Ordinary call selectors currently exclude explicit type/resource arguments;
+ambiguous targets require an instance name.
+
+Parser targets now maintain inverse indexes for written calls and exact
+hidden targets, replacing the old hidden-binder scan. Child bindings that
+retain a parent clause only as a parser placeholder do not enter the call
+index; scoped removal/restoration preserves that distinction. A deterministic
+regression at 16, 64, 256 and 1,024 unrelated and same-call targets checks
+constant selection/refusal work. Entry model-field provenance records a
+source call spelling for unnamed parents. Existing kernel projection and
+ownership rules are unchanged.
+
+The original census regression passes and still rejects the false return
+claim. Four mdtests cover call/named paths, old values across unfold/refold,
+absent current parents and ambiguous selectors. The full
+`scripts/check.sh --no-fail-fast` gate passed in 9m19s: 6,902 unit/API/import/
+scaling tests, 58 examples and 4,922 mdtests, with pinned frontends required.
+An earlier run timed out in the existing Rust scalar-slice import test; it
+passed alone in 17.8s and in the final parallel gate in 18.3s under the same
+30-second limit (preceding checkpoint: 19.4s). No limits were raised and no
+nightly suite ran.
+
+The combined ordinary-corpus audit passed in 216.53s: 22,994 observations,
+1,615 written misses (previously 1,621), 6,620 smart misses (previously 6,610),
+and zero fact-stability differences. The ten additional smart misses are
+rewrite goals from the original false `get` claim: making the hidden-field
+equality citable exposes more rewrite attempts, whose resulting goals still
+have no recorded surface spelling. A focused audit reproduces all ten in
+`a_hidden_record_is_shown_beside_its_resource`; its four written observations
+are now spelled. These counts are observations, not distinct defects, and
+the remaining rewrite-goal spelling gap is not hidden or bypassed.
+
 ## Structural read definitions (2026-10-31)
 
 The `CellsForgotten` miss in

@@ -162,6 +162,45 @@ mod tests {
     use crate::kernel::{Bitvector32Term, Sort, Variable};
 
     #[test]
+    fn hidden_child_fields_have_structural_resource_spellings() {
+        let fixture = crate::cli::parse_mdtest(
+            std::path::Path::new("a_hidden_record_is_shown_beside_its_resource.md"),
+            include_str!("../../../mdtests/a_hidden_record_is_shown_beside_its_resource.md"),
+        )
+        .unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let lines = capture(|| {
+            let error = crate::surface::verify_c0_sources(
+                fixture.click_source.as_deref().unwrap(),
+                &sources,
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("`ensures result >= 1` failed"),
+                "{error}"
+            );
+        });
+        let fields = lines
+            .iter()
+            .filter(|line| {
+                let parts = line.split('\t').collect::<Vec<_>>();
+                parts.get(1) == Some(&"fact")
+                    && parts.get(2) == Some(&"condition:Compare(int32 ==)")
+                    && parts.get(4) == Some(&"unfold")
+            })
+            .collect::<Vec<_>>();
+        assert!(!fields.is_empty(), "{lines:#?}");
+        assert!(
+            fields.iter().all(|line| line.starts_with("spelled\t")),
+            "{fields:#?}"
+        );
+    }
+
+    #[test]
     fn a_joined_read_definition_keeps_a_spellable_memory_version() {
         let fixture =
             include_str!("../../../mdtests/a_join_forgets_a_cell_the_arms_disagree_on.md");
