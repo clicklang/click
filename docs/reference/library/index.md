@@ -5051,21 +5051,23 @@ history or discover containment facts.
 ### `separation::elements`
 
 ```click
-theorem elements<T>(p: T*, i: uint64, j: uint64) {
+theorem elements<T, I>(p: T*, i: I, j: I) {
     requires i != j;
     ensures separate(memory(p[i]), memory(p[j]));
 }
 ```
 
 **Meaning:** Unequal indices of one typed array describe separate complete
-elements. Indices are `uint64`; the inferred `T` supplies the physical
+elements. Both indices have the same inferred type `I`: `int32`, `int64`, or
+`uint64`. Signed indices retain signed offsets, including negative offsets;
+no unsigned conversion is inserted. The inferred `T` supplies the physical
 storage width, including struct padding. Apply with the explicit disequality
 premise. The law constructs two element descriptors directly, without enumerating
 an interval or inspecting memory history. These are logical resource descriptors;
 the law grants no ownership or permission to read or write either element.
 Executable pointer arithmetic and accesses retain their normal definedness checks.
 
-**Verified use:** [`mdtests/separation_elements.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements.md) and [`mdtests/separation_elements_types.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_types.md).
+**Verified use:** [`mdtests/separation_elements.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements.md) and [`mdtests/separation_elements_types.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_types.md). Signed indices and preservation are checked by [`mdtests/separation_elements_signed.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_signed.md) and [`mdtests/separation_elements_signed_store.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_signed_store.md).
 
 ### `separation::subrange`
 

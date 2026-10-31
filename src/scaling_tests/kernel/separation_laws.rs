@@ -22,20 +22,34 @@ fn subrange_law_does_not_enumerate_the_interval() {
 
 #[test]
 fn elements_law_does_not_walk_the_index_distance() {
-    for width in [1, 8, 16] {
-        let costs = [4i64, 64, 4096, i64::MAX].map(|distance| {
-            let _session = crate::kernel::VerificationSession::enter();
-            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                crate::kernel::prove_separation_elements(
-                    CPointerValue::new(Pointer::symbolic(Variable(8_390_001)), CType::Int64Pointer),
-                    width,
-                    Bitvector32Term::Int64Constant(0),
-                    Bitvector32Term::Int64Constant(distance),
-                )
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        for width in [1, 8, 16] {
+            let costs = [4i32, 64, 4096, i32::MAX].map(|distance| {
+                let _session = crate::kernel::VerificationSession::enter();
+                let term = |n: i32| match format {
+                    MachineIntegerType::Int32 => Bitvector32Term::Constant(n as u32),
+                    _ => Bitvector32Term::Int64Constant(i64::from(n)),
+                };
+                let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    crate::kernel::prove_separation_elements(
+                        CPointerValue::new(
+                            Pointer::symbolic(Variable(8_390_001)),
+                            CType::Int64Pointer,
+                        ),
+                        width,
+                        format,
+                        term(0),
+                        term(distance),
+                    )
+                });
+                work
             });
-            work
-        });
-        assert!(costs[0] > 0);
-        assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+            assert!(costs[0] > 0);
+            assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+        }
     }
 }

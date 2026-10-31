@@ -2752,8 +2752,12 @@ fn verify_kernel_standard_theorem_axiom(
     let axiom = if theorem.name().split("::<").next() == Some("click::separation::elements") {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
-            Some(CValue::UInt64(value)) => Ok(value.clone()),
-            _ => Err(ClickError::new("elements indices must be uint64")),
+            Some(CValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
+            Some(CValue::Int64(value)) => Ok((MachineIntegerType::Int64, value.clone())),
+            Some(CValue::UInt64(value)) => Ok((MachineIntegerType::UInt64, value.clone())),
+            _ => Err(ClickError::new(
+                "elements indices must be int32, int64, or uint64",
+            )),
         };
         let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
         else {
@@ -2765,12 +2769,12 @@ fn verify_kernel_standard_theorem_axiom(
         if width == 0 {
             return Err(ClickError::new("elements requires a nonzero element width"));
         }
-        crate::kernel::prove_separation_elements(
-            pointer.clone(),
-            width,
-            parameter(1)?,
-            parameter(2)?,
-        )
+        let (format, i) = parameter(1)?;
+        let (other_format, j) = parameter(2)?;
+        if format != other_format {
+            return Err(ClickError::new("elements indices must have the same type"));
+        }
+        crate::kernel::prove_separation_elements(pointer.clone(), width, format, i, j)
     } else if theorem.name().split("::<").next() == Some("click::separation::subrange") {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
