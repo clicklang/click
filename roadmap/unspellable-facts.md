@@ -12,6 +12,54 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Structural mathematical arithmetic (2026-10-31)
+
+The next two Integer defects are constant folding during lowering and missing
+mathematical type context after a rewrite removes the last typed operand.
+For example, the raw fact `IntegerEqual(Add(1, 1), 2)` previously lowered back
+to `true`; a large literal-only addition could instead parse as C arithmetic.
+
+This increment retains Integer operation and comparison nodes in source
+lowering, specification evaluation and generic substitution. Signed numerals
+remain constants, distinguished from negation nodes by a typed operand.
+Generated comparisons spell their left operand as a typed local expression,
+for example `(let integer_value: Integer = 1 + 1; integer_value) == 2`.
+
+Checking evaluates literal arithmetic under the numeric budget, caching shared
+nodes and refusing symbolic nonlinear operand DAGs in constant time. Native
+comparison views recognize arithmetic bounds such as `-2147483647 - 1`
+without rewriting the original fact. Compound views have a maintained index
+with source support counts; zero/unit identities join equality-graph classes.
+No lowering path consults equality facts to choose the produced term.
+
+The full `scripts/check.sh --no-fail-fast` gate passed: 6,909 unit/API/import/
+scaling tests, 58 examples and 4,922 mdtests, with pinned frontends required.
+It took 10m45s including a 52.8s test-binary rebuild; unit and fixture phases
+took 265.6s and 311.0s. This exceeds the ten-minute wall-time target. No limits
+were raised and no nightly suite ran. Earlier failures exposed proof steps
+that depended on implicit folding; they now use arithmetic checking or state
+the required machine observation explicitly, without changing C or contracts.
+Both fresh ordinary-corpus audits passed when run separately: 23,986 census
+observations, 1,596 written misses (previously 1,615), 3,141 smart misses
+(previously 3,167), and zero fact-stability differences. The numeric-only
+Integer goal misses fell from 68 to zero; all Integer goal-miss observations
+fell from 804 to 777. Counts are observations, not distinct defects, and the
+retained structure also changes which proof steps are observed.
+
+Running both flags together still rejects the false claim in
+`solve_false_list_position_is_prompt`, but exhausts its 100,000-unit smart
+budget instead of producing the expected diagnostic. The ordinary full gate,
+individual flag probes and both separate full audits pass. This combined
+audit accounting issue remains; no budget was increased. The separate audits
+ran concurrently (about 483s each), so their timings are not serial benchmarks.
+
+Remaining smart groups include Integer equality rewrite goals (322), int32
+equality rewrite goals (311), loadability step facts (254), pointer-value step
+facts (224), and Integer ordering rewrite goals (180). Representative remaining
+Integer goals include `to_integer(0 + (n + m)) == to_integer(n) + to_integer(m)`;
+trace their exact failing subterm next rather than assuming they are the same
+literal-context defect. Overall spellability acceptance remains incomplete.
+
 ## Smart refined-goal spellings (2026-10-31)
 
 The ten rewrite-goal misses exposed by the nested resource field increment

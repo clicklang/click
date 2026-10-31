@@ -211,6 +211,24 @@ fn integer_affine_comparison(condition: &ConditionTerm) -> Option<bool> {
     })
 }
 
+fn integer_product_identity(term: &IntegerTerm) -> Option<&SharedIntegerTerm> {
+    use num_traits::{One, Zero};
+    let IntegerTerm::Multiply(a, b) = term else {
+        return None;
+    };
+    if matches!(a.as_ref(), IntegerTerm::Constant(n) if n.is_zero())
+        || matches!(b.as_ref(), IntegerTerm::Constant(n) if n.is_one())
+    {
+        Some(a)
+    } else if matches!(b.as_ref(), IntegerTerm::Constant(n) if n.is_zero())
+        || matches!(a.as_ref(), IntegerTerm::Constant(n) if n.is_one())
+    {
+        Some(b)
+    } else {
+        None
+    }
+}
+
 /// The affine form of `left - right`: each atom's coefficient and the
 /// constant. Interned terms share subterms, so a sum such as
 /// `a + a` over `a = b + b` reaches one node along many paths; coefficients
@@ -245,7 +263,11 @@ fn integer_affine_difference(
                 stack.push((left.clone(), false));
             }
             IntegerTerm::Negate(value) => stack.push((value.clone(), false)),
-            _ => {}
+            other => {
+                if let Some(value) = integer_product_identity(other) {
+                    stack.push((value.clone(), false));
+                }
+            }
         }
     }
     let mut coefficients = std::collections::HashMap::<u64, num_bigint::BigInt>::new();
@@ -274,6 +296,10 @@ fn integer_affine_difference(
                 *coefficients.entry(value.id()).or_default() -= &coefficient;
             }
             IntegerTerm::Constant(value) => constant += value * coefficient,
+            other if integer_product_identity(other).is_some() => {
+                let value = integer_product_identity(other).unwrap();
+                *coefficients.entry(value.id()).or_default() += coefficient;
+            }
             _ => {
                 *atoms
                     .entry(term.id())

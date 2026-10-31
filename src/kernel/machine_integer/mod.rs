@@ -89,9 +89,9 @@ impl Operation {
     /// The exact `Integer` result of the operation on `left` and `right`.
     pub(crate) fn exact(self, left: IntegerTerm, right: IntegerTerm) -> IntegerTerm {
         match self {
-            Self::Add => IntegerTerm::add(left, right),
-            Self::Subtract => IntegerTerm::subtract(left, right),
-            Self::Multiply => IntegerTerm::multiply(left, right),
+            Self::Add => IntegerTerm::Add(left.into(), right.into()),
+            Self::Subtract => IntegerTerm::Subtract(left.into(), right.into()),
+            Self::Multiply => IntegerTerm::Multiply(left.into(), right.into()),
         }
     }
 

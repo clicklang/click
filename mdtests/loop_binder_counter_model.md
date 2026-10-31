@@ -101,7 +101,7 @@ void bump_n(struct cell* p, int32 n) {
                             intro();
                             intro();
                             rewrite(at(function.entry, c.count) == at(function.entry, 0));
-                            normalize();
+                            solve();
                         } and {
                             both {
                                 have -2147483648 <= (to_integer(at(region(3).entry, i)) + 1) by {

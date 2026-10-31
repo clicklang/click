@@ -1,7 +1,9 @@
 # Scalar induction keeps fixed Integer parameters
 
 The induction hypothesis varies the native measure and retains the same
-mathematical seed, including requirements on that seed.
+mathematical seed, including requirements on that seed. The step retains
+`previous + 0`, so its last tactic uses arithmetic and the induction
+hypothesis rather than context-free normalization.
 
 ```click
 function carry_seed(n: int32, seed: Integer) -> Integer {
@@ -26,7 +28,7 @@ theorem carry_seed_returns_the_same_integer(n: int32, seed: Integer) {
                 0 <= to_integer(n - 1);
                 to_integer(n - 1) < 2147483647;
             };
-            normalize();
+            solve();
         }
     }
 }

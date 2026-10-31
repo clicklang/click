@@ -1294,32 +1294,32 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                         continue;
                     };
                     let condition = match operator {
-                        IntegerComparisonOperator::Equal => ConditionTerm::integer_equal(
-                            left_path.value.clone(),
-                            right_path.value.clone(),
+                        IntegerComparisonOperator::Equal => ConditionTerm::IntegerEqual(
+                            left_path.value.clone().into(),
+                            right_path.value.clone().into(),
                         ),
-                        IntegerComparisonOperator::NotEqual => ConditionTerm::integer_not_equal(
-                            left_path.value.clone(),
-                            right_path.value.clone(),
+                        IntegerComparisonOperator::NotEqual => ConditionTerm::IntegerNotEqual(
+                            left_path.value.clone().into(),
+                            right_path.value.clone().into(),
                         ),
-                        IntegerComparisonOperator::LessThan => ConditionTerm::integer_less_than(
-                            left_path.value.clone(),
-                            right_path.value.clone(),
+                        IntegerComparisonOperator::LessThan => ConditionTerm::IntegerLessThan(
+                            left_path.value.clone().into(),
+                            right_path.value.clone().into(),
                         ),
-                        IntegerComparisonOperator::LessEqual => ConditionTerm::integer_less_equal(
-                            left_path.value.clone(),
-                            right_path.value.clone(),
+                        IntegerComparisonOperator::LessEqual => ConditionTerm::IntegerLessEqual(
+                            left_path.value.clone().into(),
+                            right_path.value.clone().into(),
                         ),
                         IntegerComparisonOperator::GreaterThan => {
-                            ConditionTerm::integer_greater_than(
-                                left_path.value.clone(),
-                                right_path.value.clone(),
+                            ConditionTerm::IntegerGreaterThan(
+                                left_path.value.clone().into(),
+                                right_path.value.clone().into(),
                             )
                         }
                         IntegerComparisonOperator::GreaterEqual => {
-                            ConditionTerm::integer_greater_equal(
-                                left_path.value.clone(),
-                                right_path.value.clone(),
+                            ConditionTerm::IntegerGreaterEqual(
+                                left_path.value.clone().into(),
+                                right_path.value.clone().into(),
                             )
                         }
                     };
@@ -1334,7 +1334,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                     {
                         (condition, true)
                     } else {
-                        match crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
+                        match crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(
                             &condition, true,
                         ) {
                             Some((ConditionTerm::Constant(_), _)) | None => (condition, true),
@@ -2105,7 +2105,7 @@ fn evaluate_spec_integer_expression_paths_in(
                         ) {
                             return Err(ExecutionLimit::Deadline);
                         }
-                        path.value = IntegerTerm::negate(path.value);
+                        path.value = IntegerTerm::Negate(path.value.into());
                         result.push(path);
                     }
                     Ok(result)
@@ -3325,20 +3325,22 @@ fn evaluate_integer_binary_paths_in(
             }
             let value = match operation {
                 IntegerBinaryOperation::Add => {
-                    IntegerTerm::add(left_path.value.clone(), right_path.value)
+                    IntegerTerm::Add(left_path.value.clone().into(), right_path.value.into())
                 }
                 IntegerBinaryOperation::Subtract => {
-                    IntegerTerm::subtract(left_path.value.clone(), right_path.value)
+                    IntegerTerm::Subtract(left_path.value.clone().into(), right_path.value.into())
                 }
                 IntegerBinaryOperation::Multiply => {
-                    IntegerTerm::multiply(left_path.value.clone(), right_path.value)
+                    IntegerTerm::Multiply(left_path.value.clone().into(), right_path.value.into())
                 }
-                IntegerBinaryOperation::TruncatingQuotient => {
-                    IntegerTerm::truncating_quotient(left_path.value.clone(), right_path.value)
-                }
-                IntegerBinaryOperation::TruncatingRemainder => {
-                    IntegerTerm::truncating_remainder(left_path.value.clone(), right_path.value)
-                }
+                IntegerBinaryOperation::TruncatingQuotient => IntegerTerm::TruncatingQuotient(
+                    left_path.value.clone().into(),
+                    right_path.value.into(),
+                ),
+                IntegerBinaryOperation::TruncatingRemainder => IntegerTerm::TruncatingRemainder(
+                    left_path.value.clone().into(),
+                    right_path.value.into(),
+                ),
             };
             result.push(SpecIntegerPath {
                 value,

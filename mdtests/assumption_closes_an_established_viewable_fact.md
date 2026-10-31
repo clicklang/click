@@ -37,6 +37,8 @@ int32 probe(int32 a[], int32 n, int32 k) {
 } by {
     step();
     have viewable(a[0..n]);
+    have 0 <= n - 0;
+    have n - 0 <= 1073741823;
     have viewable(a[0..k]) by {
         transport(viewable(a[0..n]), viewable(a[0..k])) using {
             viewable(a[0..n]);

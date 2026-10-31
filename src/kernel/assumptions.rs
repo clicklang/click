@@ -4559,6 +4559,7 @@ impl PureFactContext {
         self.adjust_condition_variable_index(condition, value, insert, true);
         self.adjust_condition_side_indexes(condition, value, insert);
         if insert {
+            self.adjust_comparison_view(&proposition, true);
             self.adjust_atomic_connection_fact(&proposition, true);
         }
     }
@@ -5116,6 +5117,8 @@ impl PureFactContext {
 
     fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
         self.prop_facts = Default::default();
+        self.comparison_sources = Default::default();
+        self.comparison_counts = Default::default();
         self.equality_graph.clear_proposition_pointer_facts();
         self.execution_fact_projection = self
             .execution_fact_projection
@@ -5177,6 +5180,15 @@ impl PureFactContext {
             .filter(|proposition| keep(proposition))
             .cloned()
             .collect();
+        let removed: Vec<_> = self
+            .comparison_sources
+            .iter()
+            .filter(|(source, _)| !self.prop_facts.contains(source))
+            .map(|(source, _)| source.clone())
+            .collect();
+        for source in removed {
+            self.adjust_comparison_view(&source, false);
+        }
         self.execution_fact_projection = self
             .execution_fact_projection
             .iter()
@@ -6408,6 +6420,31 @@ impl PureFactContext {
         self
     }
 
+    fn adjust_comparison_view(&mut self, source: &Proposition, insert: bool) {
+        if insert {
+            // Only the newly admitted proposition is visited, never the context.
+            let view = observation_comparison_form(source, true);
+            if &view == source {
+                return;
+            }
+            let count = self.comparison_counts.get(&view).copied().unwrap_or(0);
+            self.comparison_counts.insert(view.clone(), count + 1);
+            self.comparison_sources.insert(source.clone(), view);
+        } else if let Some(view) = self.comparison_sources.get(source).cloned() {
+            self.comparison_sources.remove(source);
+            let count = self
+                .comparison_counts
+                .get(&view)
+                .copied()
+                .expect("comparison source");
+            if count == 1 {
+                self.comparison_counts.remove(&view);
+            } else {
+                self.comparison_counts.insert(view, count - 1);
+            }
+        }
+    }
+
     pub(super) fn insert_proposition_fact(&mut self, proposition: Proposition) {
         self.execution_variable_ceiling
             .file_proposition(&proposition);
@@ -6432,6 +6469,7 @@ impl PureFactContext {
                 ContextFactKey::Proposition(proposition.clone()),
                 std::sync::Arc::new(ExecutionPureFact::new(proposition.clone())),
             );
+            self.adjust_comparison_view(&proposition, true);
             self.adjust_atomic_connection_fact(&proposition, true);
             self.adjust_stated_proposition_index(&proposition, true);
             if matches!(proposition, Proposition::Or(_, _)) {
@@ -6464,6 +6502,7 @@ impl PureFactContext {
     #[cfg(test)]
     pub(super) fn remove_proposition_fact(&mut self, proposition: &Proposition) {
         if self.prop_facts.remove(proposition).is_some() {
+            self.adjust_comparison_view(proposition, false);
             self.adjust_pointer_class_fact(proposition, false);
             self.execution_fact_projection
                 .remove(&ContextFactKey::Proposition(proposition.clone()));
@@ -8138,7 +8177,7 @@ impl PureFactContext {
 
     /// Whether `proposition` is an exact proposition fact of this context.
     pub fn contains_proposition_fact(&self, proposition: &Proposition) -> bool {
-        self.prop_facts.contains(proposition)
+        self.prop_facts.contains(proposition) || self.comparison_counts.get(proposition).is_some()
     }
 
     /// Test-only negative control: remove one premise and repair its indexes.
@@ -10838,25 +10877,36 @@ fn aliased_operands(
 /// constant, such as a type-range bound, keeps its Integer form. The walk
 /// visits each connective once.
 pub(crate) fn canonical_observation_form(proposition: &Proposition) -> Proposition {
+    observation_comparison_form(proposition, false)
+}
+
+fn observation_comparison_form(proposition: &Proposition, evaluate: bool) -> Proposition {
+    crate::instrumentation::record_deterministic_work(1);
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            match native_comparison_of_integer_observation(condition, *value) {
+            match if evaluate {
+                native_comparison_of_integer_observation(condition, *value)
+            } else {
+                super::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition, *value)
+            } {
                 Some((ConditionTerm::Constant(_), _)) | None => proposition.clone(),
                 Some((native, truth)) => Proposition::ConditionIs(native, truth),
             }
         }
-        Proposition::Not(inner) => Proposition::Not(Box::new(canonical_observation_form(inner))),
+        Proposition::Not(inner) => {
+            Proposition::Not(Box::new(observation_comparison_form(inner, evaluate)))
+        }
         Proposition::And(left, right) => Proposition::And(
-            Box::new(canonical_observation_form(left)),
-            Box::new(canonical_observation_form(right)),
+            Box::new(observation_comparison_form(left, evaluate)),
+            Box::new(observation_comparison_form(right, evaluate)),
         ),
         Proposition::Or(left, right) => Proposition::Or(
-            Box::new(canonical_observation_form(left)),
-            Box::new(canonical_observation_form(right)),
+            Box::new(observation_comparison_form(left, evaluate)),
+            Box::new(observation_comparison_form(right, evaluate)),
         ),
         Proposition::Implies(left, right) => Proposition::Implies(
-            Box::new(canonical_observation_form(left)),
-            Box::new(canonical_observation_form(right)),
+            Box::new(observation_comparison_form(left, evaluate)),
+            Box::new(observation_comparison_form(right, evaluate)),
         ),
         other => other.clone(),
     }
@@ -10921,6 +10971,43 @@ mod integer_observation_tests {
 
     fn constant(value: i64) -> SharedIntegerTerm {
         IntegerTerm::Constant(BigInt::from(value)).into()
+    }
+
+    #[test]
+    fn compound_numeric_comparison_views_retain_each_source_and_withdrawal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let make = |n: i64| {
+            Proposition::Or(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::IntegerNotEqual(
+                        observe(MachineIntegerType::Int32, 850),
+                        IntegerTerm::Subtract(constant(n), constant(n + 2147483648)).into(),
+                    ),
+                    true,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(851)),
+                        Bitvector32Term::Constant(u32::MAX),
+                    ),
+                    false,
+                )),
+            )
+        };
+        let first = make(0);
+        let second = make(1);
+        let view = observation_comparison_form(&first, true);
+        assert_ne!(first, view);
+        let mut context = PureFactContext::new();
+        context.insert_proposition_fact(first.clone());
+        context.insert_proposition_fact(second.clone());
+        assert!(context.contains_proposition_fact(&view));
+        assert!(context.prop_facts.contains(&first));
+        assert!(!context.prop_facts.contains(&view));
+        context.remove_proposition_fact(&first);
+        assert!(context.contains_proposition_fact(&view));
+        context.remove_proposition_fact(&second);
+        assert!(!context.contains_proposition_fact(&view));
     }
 
     #[test]

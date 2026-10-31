@@ -9,7 +9,9 @@ local declaration before the call starts a new memory state, so the three
 restate them at the call in the string's own form: the nonterminating prefix,
 the terminator, and the definedness of each byte through the terminator. The
 call step can therefore use only checked, retained facts instead of searching
-the ambient context.
+the ambient context. The readable bound explicitly observes the machine sum
+`2u64 + 1u64`, as the string definition does; a mathematical `2 + 1`
+retains a different expression even when both evaluate to three.
 
 ```c filename=cstr_readable_witness.c
 uint64 fixed_string_length(uint8 bytes[]) {
@@ -37,7 +39,7 @@ uint64 fixed_string_length(uint8 bytes[]) {
     have bytes[2u64] == '\0' by {
         solve();
     }
-    have forall (k: uint64) { 0u64 <= k and k < 2u64 + 1u64 implies defined(bytes[k]) } by {
+    have forall (k: uint64) { 0u64 <= k and to_integer(k) < to_integer(2u64 + 1u64) implies defined(bytes[k]) } by {
         enumerate();
     }
     step(strlen, { n: 2u64 });

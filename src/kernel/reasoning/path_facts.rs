@@ -207,6 +207,10 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
         }
         Proposition::Equal(left, right) => left == right,
         Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) => actual == expected,
+        Proposition::ConditionIs(condition, expected) => {
+            crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition)
+                .is_some_and(|actual| actual == *expected)
+        }
         Proposition::And(left, right) => solve_builtin_prop(left) && solve_builtin_prop(right),
         Proposition::Or(left, right) => solve_builtin_prop(left) || solve_builtin_prop(right),
         Proposition::Not(body) => {
@@ -256,6 +260,10 @@ pub(in crate::kernel) fn conjunction_order_facts_are_inconsistent(
 pub(in crate::kernel) fn disprove_builtin_prop(proposition: &Proposition) -> bool {
     match proposition {
         Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) => actual != expected,
+        Proposition::ConditionIs(condition, expected) => {
+            crate::kernel::proof::integer_arithmetic::literal_integer_comparison_value(condition)
+                .is_some_and(|actual| actual != *expected)
+        }
         Proposition::Equal(Term::Sequence(left), Term::Sequence(right)) => {
             sequence_terms_definitely_distinct(left, right)
         }

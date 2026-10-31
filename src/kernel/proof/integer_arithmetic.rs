@@ -387,9 +387,11 @@ impl IntegerArithmeticCertificate {
         // A contradiction proves any supported goal: either the premises
         // are inconsistent, or they are inconsistent with the negated goal,
         // and then the goal holds.
-        (goal_claims.contains(actual) || claim_is_contradiction(actual))
-            .then_some(())
-            .ok_or(IntegerArithmeticCheckError::DoesNotFollow)
+        (goal_claims.contains(actual)
+            || claim_is_contradiction(actual)
+            || claim_is_trivial(&expected))
+        .then_some(())
+        .ok_or(IntegerArithmeticCheckError::DoesNotFollow)
     }
 }
 
@@ -658,6 +660,7 @@ fn claim_is_trivial(claim: &IntegerAffineClaim) -> bool {
 /// process-wide source-id cache stale.
 #[derive(Default)]
 struct IntegerAffineCollectionContext {
+    constants: HashMap<u64, Option<BigInt>>,
     fold_atoms: HashMap<crate::kernel::SharedIntegerTerm, Arc<IntegerFoldAtomRecord>>,
 }
 
@@ -906,6 +909,149 @@ fn integer_affine_claim_with_context(
     })
 }
 
+/// A constant value for checking, with a shallow refusal for symbolic terms.
+pub(crate) fn literal_integer_value(term: &crate::kernel::SharedIntegerTerm) -> Option<BigInt> {
+    if !term.is_literal_arithmetic() {
+        return None;
+    }
+    let mut cache = HashMap::new();
+    collect_integer_constants(term, &mut cache)?;
+    cache.remove(&term.id())?
+}
+
+/// Literal arithmetic is builtin proof checking, not a lowering rewrite.
+/// Cached shape flags refuse symbolic operands in constant time.
+pub(crate) fn literal_integer_comparison_value(condition: &ConditionTerm) -> Option<bool> {
+    let (left, right) = match condition {
+        ConditionTerm::IntegerEqual(left, right)
+        | ConditionTerm::IntegerNotEqual(left, right)
+        | ConditionTerm::IntegerLessThan(left, right)
+        | ConditionTerm::IntegerLessEqual(left, right)
+        | ConditionTerm::IntegerGreaterThan(left, right)
+        | ConditionTerm::IntegerGreaterEqual(left, right) => (left, right),
+        _ => return None,
+    };
+    if !left.is_literal_arithmetic() || !right.is_literal_arithmetic() {
+        return None;
+    }
+    let mut cache = HashMap::new();
+    collect_integer_constants(left, &mut cache)?;
+    collect_integer_constants(right, &mut cache)?;
+    let left = cache.get(&left.id())?.as_ref()?;
+    let right = cache.get(&right.id())?.as_ref()?;
+    if crate::instrumentation::deadline_exceeded_with_work(
+        left.bits() as usize + right.bits() as usize + 1,
+    ) {
+        return None;
+    }
+    Some(match condition {
+        ConditionTerm::IntegerEqual(..) => left == right,
+        ConditionTerm::IntegerNotEqual(..) => left != right,
+        ConditionTerm::IntegerLessThan(..) => left < right,
+        ConditionTerm::IntegerLessEqual(..) => left <= right,
+        ConditionTerm::IntegerGreaterThan(..) => left > right,
+        ConditionTerm::IntegerGreaterEqual(..) => left >= right,
+        _ => unreachable!(),
+    })
+}
+
+/// Evaluate only the explicit arithmetic DAG, once per node and under the
+/// checker's numeric budget. None in the cache means a symbolic or undefined
+/// value, not zero. Lowering and rewriting never call this evaluator.
+fn collect_integer_constants(
+    root: &crate::kernel::SharedIntegerTerm,
+    cache: &mut HashMap<u64, Option<BigInt>>,
+) -> Option<()> {
+    let mut stack = vec![(root.clone(), false)];
+    while let Some((node, expanded)) = stack.pop() {
+        if cache.contains_key(&node.id()) {
+            continue;
+        }
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return None;
+        }
+        if !node.is_literal_arithmetic() {
+            cache.insert(node.id(), None);
+            continue;
+        }
+        if !expanded {
+            stack.push((node.clone(), true));
+            match node.as_ref() {
+                IntegerTerm::Negate(child) => stack.push((child.clone(), false)),
+                IntegerTerm::Add(left, right)
+                | IntegerTerm::Subtract(left, right)
+                | IntegerTerm::Multiply(left, right)
+                | IntegerTerm::TruncatingQuotient(left, right)
+                | IntegerTerm::TruncatingRemainder(left, right) => {
+                    stack.push((right.clone(), false));
+                    stack.push((left.clone(), false));
+                }
+                _ => {}
+            }
+            continue;
+        }
+        let value = match node.as_ref() {
+            IntegerTerm::Constant(value) => {
+                if crate::instrumentation::deadline_exceeded_with_work(value.bits() as usize + 1) {
+                    return None;
+                }
+                Some(value.clone())
+            }
+            IntegerTerm::Negate(child) => match cache.get(&child.id()).and_then(Option::as_ref) {
+                Some(value) => {
+                    if crate::instrumentation::deadline_exceeded_with_work(
+                        value.bits() as usize + 1,
+                    ) {
+                        return None;
+                    }
+                    Some(-value)
+                }
+                None => None,
+            },
+            IntegerTerm::Add(left, right)
+            | IntegerTerm::Subtract(left, right)
+            | IntegerTerm::Multiply(left, right)
+            | IntegerTerm::TruncatingQuotient(left, right)
+            | IntegerTerm::TruncatingRemainder(left, right) => {
+                match (
+                    cache.get(&left.id()).and_then(Option::as_ref),
+                    cache.get(&right.id()).and_then(Option::as_ref),
+                ) {
+                    (Some(left), Some(right)) => {
+                        let work = if matches!(
+                            node.as_ref(),
+                            IntegerTerm::Add(..) | IntegerTerm::Subtract(..)
+                        ) {
+                            (left.bits() as usize + 1).saturating_add(right.bits() as usize + 1)
+                        } else {
+                            (left.bits() as usize + 1).saturating_mul(right.bits() as usize + 1)
+                        };
+                        if crate::instrumentation::numeric_operation_work_exceeded(work) {
+                            return None;
+                        }
+                        match node.as_ref() {
+                            IntegerTerm::Add(..) => Some(left + right),
+                            IntegerTerm::Subtract(..) => Some(left - right),
+                            IntegerTerm::Multiply(..) => Some(left * right),
+                            IntegerTerm::TruncatingQuotient(..) if !right.is_zero() => {
+                                Some(left / right)
+                            }
+                            IntegerTerm::TruncatingRemainder(..) if !right.is_zero() => {
+                                Some(left % right)
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        cache.insert(node.id(), value);
+    }
+    Some(())
+}
+
 fn collect_integer_affine_terms(
     term: &crate::kernel::SharedIntegerTerm,
     coefficient: &BigInt,
@@ -913,6 +1059,7 @@ fn collect_integer_affine_terms(
     constant: &mut BigInt,
     context: &mut IntegerAffineCollectionContext,
 ) -> Option<()> {
+    collect_integer_constants(term, &mut context.constants)?;
     // First collect the reachable DAG in postorder.  The interner gives each
     // node a stable identity, so this schedules a shared node exactly once.
     let mut scheduled = HashSet::new();
@@ -930,6 +1077,15 @@ fn collect_integer_affine_terms(
             return None;
         }
         stack.push((node.clone(), true));
+        collect_integer_constants(&node, &mut context.constants)?;
+        if context
+            .constants
+            .get(&node.id())
+            .and_then(Option::as_ref)
+            .is_some()
+        {
+            continue;
+        }
         match node.as_ref() {
             IntegerTerm::Negate(child) => stack.push((child.clone(), false)),
             IntegerTerm::Add(left, right) | IntegerTerm::Subtract(left, right) => {
@@ -937,11 +1093,18 @@ fn collect_integer_affine_terms(
                 stack.push((left.clone(), false));
             }
             IntegerTerm::Multiply(left, right) => {
-                // A symbolic product is one opaque atom. Only a literal
-                // coefficient has an affine child to schedule.
-                if left.as_const().is_some() {
+                // A symbolic product is one opaque atom. Cached shape flags
+                // let constant coefficients be checked without walking a
+                // symbolic operand's DAG.
+                if left.is_literal_arithmetic() {
+                    collect_integer_constants(left, &mut context.constants)?;
+                }
+                if right.is_literal_arithmetic() {
+                    collect_integer_constants(right, &mut context.constants)?;
+                }
+                if context.constants.get(&left.id()).and_then(Option::as_ref).is_some() {
                     stack.push((right.clone(), false));
-                } else if right.as_const().is_some() {
+                } else if context.constants.get(&right.id()).and_then(Option::as_ref).is_some() {
                     stack.push((left.clone(), false));
                 }
             }
@@ -976,18 +1139,19 @@ fn collect_integer_affine_terms(
         if weight.is_zero() {
             continue;
         }
-        match node.as_ref() {
-            IntegerTerm::Constant(value) => {
-                if !charge_integer_product(&weight, value) {
-                    return None;
-                }
-                if crate::instrumentation::deadline_exceeded_with_work(
-                    weight.bits() as usize + value.bits() as usize + 1,
-                ) {
-                    return None;
-                }
-                *constant += &weight * value;
+        if let Some(value) = context.constants.get(&node.id()).and_then(Option::as_ref) {
+            if !charge_integer_product(&weight, value)
+                || crate::instrumentation::deadline_exceeded_with_work(
+                    constant.bits() as usize + weight.bits() as usize + value.bits() as usize + 1,
+                )
+            {
+                return None;
             }
+            *constant += &weight * value;
+            continue;
+        }
+        match node.as_ref() {
+            IntegerTerm::Constant(_) => unreachable!("constants were evaluated above"),
             IntegerTerm::Variable(_)
             | IntegerTerm::Machine(_)
             | IntegerTerm::PureFunctionApplication(_)
@@ -1035,9 +1199,13 @@ fn collect_integer_affine_terms(
                 }
             }
             IntegerTerm::Multiply(left, right) => {
-                let (child, factor) = if let Some(value) = left.as_const() {
+                let (child, factor) = if let Some(value) =
+                    context.constants.get(&left.id()).and_then(Option::as_ref)
+                {
                     (right, value)
-                } else if let Some(value) = right.as_const() {
+                } else if let Some(value) =
+                    context.constants.get(&right.id()).and_then(Option::as_ref)
+                {
                     (left, value)
                 } else {
                     add_atom_weight(terms, IntegerAffineAtom::Nonlinear(node.id()), weight)?;

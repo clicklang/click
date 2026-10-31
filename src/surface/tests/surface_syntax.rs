@@ -26,9 +26,9 @@ fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
 }
 
 #[test]
-fn integer_constant_aliases_are_bounded_before_a_tactic_starts() {
-    // Context lowering has no active tactic. Even without an outer deadline,
-    // a tiny repeated-squaring source must fail before a giant multiplication.
+fn integer_constant_aliases_stay_shared_before_a_tactic_starts() {
+    // Setup retains the repeated-squaring DAG instead of allocating an
+    // exponentially large numeral. Reflexivity needs no evaluation.
     for depth in [8, 16, 32, 64] {
         let mut source = String::from("theorem bounded() { let a0: Integer = 2;\n");
         for index in 1..=depth {
@@ -46,15 +46,8 @@ fn integer_constant_aliases_are_bounded_before_a_tactic_starts() {
             smart: 1000,
             control: 1000,
         };
-        let error = crate::instrumentation::with_tactic_work_limits(limits, || {
-            verify_click_theorems(&source)
-        })
-        .expect_err("constant squaring must be bounded during setup");
-        assert!(error.message().contains("numeric operation"), "{error:?}");
-        if depth >= 16 {
-            let error = verify_click_theorems(&source).expect_err("default setup numeric limit");
-            assert!(error.message().contains("numeric operation"), "{error:?}");
-        }
+        crate::instrumentation::with_tactic_work_limits(limits, || verify_click_theorems(&source))
+            .expect("constant aliases stay structural during setup");
     }
 }
 

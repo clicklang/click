@@ -45,6 +45,43 @@ pub(crate) fn native_comparison_of_integer_observation(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(ConditionTerm, bool)> {
+    // Numeric evaluation belongs in the checking comparison form. Surface
+    // lowering uses the structural reading below, retaining arithmetic.
+    let operand = |term: &SharedIntegerTerm| -> Option<SharedIntegerTerm> {
+        if !term.is_literal_arithmetic() || term.as_const().is_some() {
+            return Some(term.clone());
+        }
+        crate::kernel::proof::integer_arithmetic::literal_integer_value(term)
+            .map(|value| IntegerTerm::constant(value).into())
+    };
+    let condition = match condition {
+        ConditionTerm::IntegerLessThan(left, right) => {
+            ConditionTerm::IntegerLessThan(operand(left)?, operand(right)?)
+        }
+        ConditionTerm::IntegerLessEqual(left, right) => {
+            ConditionTerm::IntegerLessEqual(operand(left)?, operand(right)?)
+        }
+        ConditionTerm::IntegerGreaterThan(left, right) => {
+            ConditionTerm::IntegerGreaterThan(operand(left)?, operand(right)?)
+        }
+        ConditionTerm::IntegerGreaterEqual(left, right) => {
+            ConditionTerm::IntegerGreaterEqual(operand(left)?, operand(right)?)
+        }
+        ConditionTerm::IntegerEqual(left, right) => {
+            ConditionTerm::IntegerEqual(operand(left)?, operand(right)?)
+        }
+        ConditionTerm::IntegerNotEqual(left, right) => {
+            ConditionTerm::IntegerNotEqual(operand(left)?, operand(right)?)
+        }
+        _ => return None,
+    };
+    structural_native_comparison_of_integer_observation(&condition, value)
+}
+
+pub(crate) fn structural_native_comparison_of_integer_observation(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(ConditionTerm, bool)> {
     // A 128-bit comparison has a native node, but the kernel's order
     // reasoning (the difference graph, interval bounds) works on its
     // Integer form, so an Integer comparison of 128-bit observations keeps

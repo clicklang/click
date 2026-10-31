@@ -238,3 +238,50 @@ fn repeated_large_premise_references_use_cached_normalization() {
 
     assert!(shared_work.saturating_mul(4) < distinct_work);
 }
+
+#[test]
+fn constant_arithmetic_checking_visits_shared_nodes_once_and_bounds_squaring() {
+    use crate::kernel::SharedIntegerTerm;
+    let mut costs = Vec::new();
+    for depth in [16, 32, 64, 128] {
+        let mut value = SharedIntegerTerm::from(IntegerTerm::constant_i64(1));
+        for _ in 0..depth {
+            value = IntegerTerm::Add(value.clone(), value).into();
+        }
+        let mut cache = HashMap::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            collect_integer_constants(&value, &mut cache).unwrap();
+        });
+        assert_eq!(cache.len(), depth + 1);
+        assert_eq!(
+            cache.get(&value.id()).unwrap().as_ref().unwrap(),
+            &(BigInt::from(1) << depth)
+        );
+        costs.push(work);
+        let (_, repeated) = crate::instrumentation::measure_deterministic_work(|| {
+            collect_integer_constants(&value, &mut cache).unwrap();
+        });
+        assert!(repeated < 8, "{repeated}");
+    }
+    // The result's bit length grows with depth; numeric work may be
+    // quadratic in depth, but never exponential in the unshared tree size.
+    for pair in costs.windows(2) {
+        assert!(pair[1] < 5 * pair[0], "{costs:?}");
+    }
+    let mut value = SharedIntegerTerm::from(IntegerTerm::constant_i64(2));
+    for _ in 0..64 {
+        value = IntegerTerm::Multiply(value.clone(), value).into();
+    }
+    let limits = crate::instrumentation::TacticWorkLimits {
+        simple: 1000,
+        smart: 1000,
+        control: 1000,
+    };
+    let result = crate::instrumentation::with_tactic_work_limits(limits, || {
+        collect_integer_constants(&value, &mut HashMap::new())
+    });
+    assert!(
+        result.is_none(),
+        "checking must refuse before evaluating a giant numeral"
+    );
+}

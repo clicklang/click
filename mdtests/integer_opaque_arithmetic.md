@@ -27,12 +27,14 @@ theorem observed_distribution(x: int64, y: int64) {
     requires defined(x + 1i64);
     ensures (to_integer(x + 1i64) + 1) * to_integer(y) == to_integer(x + 1i64) * to_integer(y) + to_integer(y) by {
         apply(integer::multiply_add(to_integer(x + 1i64), 1, to_integer(y)));
+        solve();
     }
 }
 theorem truncating_distribution(n: Integer, d: Integer) {
     requires d != 0;
     ensures (truncating_quotient(n, d) + 1) * d == truncating_quotient(n, d) * d + d by {
         apply(integer::multiply_add(truncating_quotient(n, d), 1, d));
+        solve();
     }
 }
 ```
