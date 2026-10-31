@@ -40,6 +40,11 @@ pub enum Type {
     SharedArrayOption {
         element: Box<Type>,
     },
+    /// A `core::ops::Range` of an integer, `start..end`, held as its two
+    /// bounds; the state of a `for` over it.
+    Range {
+        element: Box<Type>,
+    },
     /// `&[T]` or `&mut [T]` of a scalar `T` other than `u8`, whose slices
     /// are `ByteSlice`.
     ScalarSlice {
@@ -265,6 +270,10 @@ pub enum Expression {
     SharedArrayHasNext {
         iterator: String,
     },
+    /// Whether range `iterator` has a next value, `start < end`.
+    RangeHasNext {
+        iterator: String,
+    },
     SharedArrayOptionElement {
         option: String,
     },
@@ -475,6 +484,24 @@ pub enum MirStatement {
     SharedArrayNext {
         iterator: String,
         option: String,
+    },
+    /// `target = start..end`.
+    RangeInitialize {
+        target: String,
+        start: Expression,
+        end: Expression,
+    },
+    RangeMove {
+        target: String,
+        source: String,
+    },
+    /// `option = iterator.next()`: `Some(start)`, advancing `start`, while
+    /// `start < end`, else `None`. `option` is a value of the `Option`
+    /// enum `option_type`.
+    RangeNext {
+        iterator: String,
+        option: String,
+        option_type: String,
     },
     ChunkInitialize {
         target: String,

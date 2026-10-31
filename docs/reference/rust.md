@@ -1174,6 +1174,28 @@ Moving an iterator retires its source; repeated exhaustion yields no element.
 `.iter_mut()`, by-value array iteration, custom iterators, labels, `break`, and
 `continue` remain outside this subset.
 
+## Range loops
+
+`for i in a..b` over an integer `a..b` of any admitted width holds the range
+in two locals of its element type, `iter_start` and `iter_end`, the bounds of
+the iterator the compiler names `iter`; a nested loop's iterator, whose name
+is ambiguous, uses its `__rust_mir_ID` identity as the prefix, as slice
+iterators do. A range stored in a local first, `let r = a..b; for i in r`,
+is the same. The exporter checks that `into_iter` and `next` are the core
+`impl<I: Iterator> IntoIterator for I` and `impl<A: Step> Iterator for
+Range<A>`. `next` yields `Some(iter_start)` and advances `iter_start` while
+`iter_start < iter_end`, else `None`; the advance owes the addition's check,
+which the guard decides. The loop's `Option` is an ordinary `Option` value,
+so the body reads the yielded value as a `match` arm does.
+
+Invariants are written over the bounds: `decreases iter_end - iter_start`
+ranks the loop, and after it the exit guard gives `iter_start >= iter_end`.
+[`design/charon-trial/ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/ranges/ranges.click)
+verifies counts over `u32`, `i32` `a..b`, `u64` and `i64` ranges, the last
+value a loop yields, a slice read at each index of `0..bytes.len()`, and
+nested ranges. Inclusive ranges `a..=b`, `.rev()`, `.step_by()` and other
+range adapters remain later work.
+
 ## Primitive unsigned conversions
 
 Calls such as `u32::from(byte)` and `<u32 as From<u16>>::from(half)` support

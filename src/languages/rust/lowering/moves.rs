@@ -66,6 +66,10 @@ pub(super) fn lower(
             );
             continue;
         }
+        if let Type::Range { element } = &local.value_type {
+            declarations = c_seq(declarations, cx.range_storage(&local.name, element)?);
+            continue;
+        }
         if matches!(local.value_type, Type::ChunkIterator | Type::ChunkOption) {
             declarations = c_seq(
                 declarations,
@@ -524,6 +528,15 @@ pub(super) fn lower(
                     size,
                 } => cx.chunk_initialize_mir(target, slice, size)?,
                 S::ChunkMove { target, source } => cx.chunk_move(target, source)?,
+                S::RangeInitialize { target, start, end } => {
+                    cx.range_initialize(target, start, end)?
+                }
+                S::RangeMove { target, source } => cx.range_move(target, source)?,
+                S::RangeNext {
+                    iterator,
+                    option,
+                    option_type,
+                } => cx.range_next(iterator, option, option_type)?,
                 S::ChunkNext { iterator, option } => cx.chunk_next(iterator, option)?,
                 S::Assign {
                     target: E::Local { name },
@@ -828,6 +841,7 @@ pub(super) fn lower(
                     slice, midpoint, ..
                 } => vec![slice, midpoint],
                 S::SharedArrayInitialize { source, .. } => vec![source],
+                S::RangeInitialize { start, end, .. } => vec![start, end],
                 S::Assign { target, value } => vec![target, value],
                 S::Initialize { fields, .. } => fields.iter().collect(),
                 _ => Vec::new(),
@@ -898,7 +912,7 @@ fn iterator_reference(ty: &Type) -> bool {
         Type::Reference { pointee, .. } => {
             matches!(
                 pointee.as_ref(),
-                Type::ChunkIterator | Type::SharedArrayIterator { .. }
+                Type::ChunkIterator | Type::SharedArrayIterator { .. } | Type::Range { .. }
             ) || iterator_reference(pointee)
         }
         _ => false,
@@ -1398,6 +1412,7 @@ mod tests {
             let mut cx = Context {
                 references: BTreeMap::new(),
                 shared_array_iterators: BTreeMap::new(),
+                ranges: BTreeMap::new(),
                 shared_array_options: BTreeMap::new(),
                 shared_scalar_slices: BTreeMap::new(),
                 chunk_iterators: BTreeSet::new(),

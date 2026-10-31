@@ -16,6 +16,7 @@ mod option_try;
 #[cfg(test)]
 mod option_try_tests;
 mod protocol;
+mod ranges;
 mod referent_match;
 mod shared_arrays;
 #[cfg(test)]
@@ -726,6 +727,9 @@ impl Adapter<'_> {
                     element: Box::new(self.ty(self.shared_option_element(t, false).unwrap())?),
                 }
             }
+            a::TyKind::Adt(_) if self.range_element(t, false).is_some() => Type::Range {
+                element: Box::new(self.ty(self.range_element(t, false).unwrap())?),
+            },
             a::TyKind::Adt(_) if self.chunk_type(t) => Type::ChunkIterator,
             a::TyKind::Adt(_) if self.chunk_option_type(t) => Type::ChunkOption,
             a::TyKind::Adt(r) if r.id == a::TypeDeclId::UNIT => Type::Unit,
@@ -1134,6 +1138,9 @@ impl BodyAdapter<'_, '_> {
             }));
         }
         if let Some(statement) = self.split_slice_call(t)? {
+            return Ok(Some(statement));
+        }
+        if let Some(statement) = self.range_call(t)? {
             return Ok(Some(statement));
         }
         if let Some(statement) = self.shared_array_call(t)? {
@@ -1854,6 +1861,9 @@ impl BodyAdapter<'_, '_> {
     fn statement(&self, s: &u::Statement) -> Result<Option<S>, String> {
         if let Some(statement) = self.closure_statement(s)? {
             return Ok(statement);
+        }
+        if let Some(statement) = self.range_statement(s)? {
+            return Ok(Some(statement));
         }
         if let Some(statement) = self.iterator_statement(s)? {
             return Ok(statement);
