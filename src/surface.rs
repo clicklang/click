@@ -3326,11 +3326,11 @@ impl RecordedSnapshots {
 
     fn record_call_result(&mut self, index: usize, value: Option<CValue>) {
         crate::instrumentation::record_deterministic_work(1);
-        if let Some(prior) = self.call_results.get(&index) {
-            if let CValue::Bool(term) | crate::kernel::integer_c_value!(term) = prior {
-                self.call_result_points
-                    .remove(&(crate::kernel::held_term_fingerprint(term), index));
-            }
+        if let Some(CValue::Bool(term) | crate::kernel::integer_c_value!(term)) =
+            self.call_results.get(&index)
+        {
+            self.call_result_points
+                .remove(&(crate::kernel::held_term_fingerprint(term), index));
         }
         self.call_results.remove(&index);
         if let Some(value) = value.filter(|value| *value != CValue::Void) {
