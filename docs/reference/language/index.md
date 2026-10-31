@@ -1197,9 +1197,12 @@ declaration.
 
 A generic theorem can declare `p: T*`. Applications infer `T` from the
 argument's pointee type and require repeated occurrences to agree. Native
-scalar and pointer element types retain their actual widths when instantiated;
-this does not erase the pointer to a byte pointer. Struct-value element types
-are currently refused rather than losing their nominal type or layout.
+scalar, pointer, and struct element types retain their identity when instantiated.
+For a struct element, range lowering looks up its physical size, including padding,
+in the imported C layout. The generic declaration does not require a concrete
+layout. This permits `p: T*` with `T = struct Foo`; it does not introduce a
+struct-by-value logical parameter `x: T`. Instantiation supplies the declared
+stride, not original-object provenance or permission to access memory.
 See [`separation::subrange`](../library/index.md#separationsubrange).
 
 `Resource` is a theorem-parameter type for resource descriptors. For example,

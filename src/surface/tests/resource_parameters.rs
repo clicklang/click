@@ -153,3 +153,58 @@ fn generic_pointer_parameters_require_consistent_element_types() {
         error.report()
     );
 }
+
+#[test]
+fn generic_pointer_struct_parameters_apply_and_expand() {
+    let (source, sources) = mdtest_sources("mdtests/generic_pointer_struct_parameters.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+    for label in ["inspect.contract", "padded.ensures_0"] {
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, label).unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+    let verified =
+        without_implicit_auto(|| verify_click_theorems_with_c_sources(&source, &sources)).unwrap();
+    let padded = verified
+        .iter()
+        .find(|theorem| theorem.theorem_definition.name() == "padded")
+        .unwrap();
+    let Proposition::CResourceContains { parent, child } = &padded.conclusion else {
+        panic!("expected containment");
+    };
+    for resource in [parent, child] {
+        let crate::kernel::CResource::Memory(range) = resource.as_ref() else {
+            panic!("expected memory");
+        };
+        assert_eq!(
+            range.element_width(),
+            16,
+            "the padded struct keeps its physical stride"
+        );
+    }
+
+    let no_origin = source.replace("theorem identity<T>", "theorem requires_item(p: struct item*) { ensures p == p by { normalize(); } }\ntheorem identity<T>")
+        .replace("have p == p by { apply(identity(p)) using {}; }", "have p == p by { apply(identity(p)) using {}; }\n    have p == p by { apply(requires_item(p)) using {}; }");
+    let error = without_implicit_auto(|| verify_c0_sources(&no_origin, &sources)).unwrap_err();
+    assert!(
+        error.report().contains("requires original object class"),
+        "{}",
+        error.report()
+    );
+
+    let wrong = source
+        .replace(
+            "theorem identity<T>(p: T*)",
+            "theorem identity<T>(p: T*, q: T*)",
+        )
+        .replace("apply(identity(p))", "apply(identity(p, q))");
+    let error = without_implicit_auto(|| verify_c0_sources(&wrong, &sources)).unwrap_err();
+    assert!(
+        error.report().contains("type parameter"),
+        "{}",
+        error.report()
+    );
+}

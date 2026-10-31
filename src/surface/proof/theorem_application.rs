@@ -209,8 +209,12 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
     };
     let pre_state = bind(context.pre_state);
     let post_state = bind(context.post_state);
-    let pointer_element_widths =
-        theorem_application_pointer_element_widths(&theorem, application, context);
+    let pointer_element_widths = theorem_application_pointer_element_widths(
+        &theorem,
+        application,
+        context,
+        spec_definitions,
+    );
     let bound_array_memories =
         theorem_application_bound_array_memories(&theorem, application, &array_refs);
     let resource_bindings = theorem_resource_argument_bindings(
@@ -1146,7 +1150,14 @@ pub(super) fn theorem_application_bindings(
                     array_ref.element_type
                 ));
             }
-            let value = if let Some(class) = parameter.pointer_object_class() {
+            // An instantiated `T*` supplies a declared stride, not a nominal
+            // original-object requirement. Its concrete body was checked with
+            // declared-only pointer metadata, so binding grants no provenance.
+            let value = if let Some(class) = parameter.pointer_object_class()
+                && !theorem
+                    .generic_pointer_parameters
+                    .contains(parameter.name())
+            {
                 let mut value = evaluate_native_theorem_argument(
                     argument,
                     context,
@@ -1207,13 +1218,49 @@ pub(super) fn theorem_application_pointer_element_widths(
     theorem: &TheoremDefinition,
     application: &TheoremApplication,
     context: &TheoremApplicationContext<'_>,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> BTreeMap<String, u32> {
     theorem
         .parameters()
         .iter()
         .zip(&application.arguments)
         .filter_map(|(parameter, argument)| {
-            pointer_element_width_for_argument(argument, &context.pointer_element_widths)
+            let declared_width = parameter.struct_name().and_then(|name| {
+                if parameter
+                    .c_type()
+                    .pointee_type()
+                    .is_some_and(|ty| ty.is_pointer())
+                {
+                    parameter
+                        .c_type()
+                        .pointee_type()
+                        .map(|ty| ty.to_kernel_type().byte_width())
+                } else {
+                    spec_definitions
+                        .struct_sizes
+                        .and_then(|sizes| sizes.get(name))
+                        .copied()
+                }
+            });
+            declared_width
+                .or_else(|| {
+                    // A cast may retain the source object's provenance while
+                    // changing the inferred element type. Generic instances
+                    // use that element type's stride, not the source stride.
+                    theorem
+                        .generic_pointer_parameters
+                        .contains(parameter.name())
+                        .then(|| {
+                            parameter
+                                .c_type()
+                                .pointee_type()
+                                .map(|ty| ty.to_kernel_type().byte_width())
+                        })
+                        .flatten()
+                })
+                .or_else(|| {
+                    pointer_element_width_for_argument(argument, &context.pointer_element_widths)
+                })
                 .map(|width| (parameter.name().to_string(), width))
         })
         .collect()

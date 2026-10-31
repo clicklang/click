@@ -229,6 +229,7 @@ pub(in crate::surface::proof) fn lower_theorem_application_requirements_with_ass
                     &theorem,
                     application,
                     context,
+                    spec_definitions,
                 );
             let lowered = lower_fixed_state_proposition_through_kernel_with(
                 &requirement,

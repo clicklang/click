@@ -3134,6 +3134,13 @@ pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
                 .array_element_width()
                 .or_else(|| {
                     parameter
+                        .c_type()
+                        .pointee_type()
+                        .filter(|ty| ty.is_pointer())
+                        .map(|ty| ty.to_kernel_type().byte_width())
+                })
+                .or_else(|| {
+                    parameter
                         .pointee_struct_layout()
                         .map(|layout| layout.size_bytes())
                 })
@@ -3154,9 +3161,22 @@ pub(in crate::surface) fn click_parameter_pointer_element_widths_with_layouts(
         .iter()
         .filter_map(|parameter| {
             parameter
-                .struct_name()
-                .and_then(|name| struct_layouts.get(name))
-                .map(|layout| (parameter.name().to_string(), layout.size_bytes()))
+                .click_type()
+                .c_type()
+                .and_then(|ty| ty.pointee_type())
+                .filter(|ty| ty.is_pointer())
+                .map(|ty| {
+                    (
+                        parameter.name().to_string(),
+                        ty.to_kernel_type().byte_width(),
+                    )
+                })
+                .or_else(|| {
+                    parameter
+                        .struct_name()
+                        .and_then(|name| struct_layouts.get(name))
+                        .map(|layout| (parameter.name().to_string(), layout.size_bytes()))
+                })
                 .or_else(|| {
                     parameter
                         .click_type()
@@ -4924,7 +4944,7 @@ impl AnnotationLowerer<'_> {
                     start: self.lower_c_fragment_to_spec(&segment.start, &segment_environment)?,
                     end: self.lower_c_fragment_to_spec(&segment.end, &segment_environment)?,
                     element_width: self
-                        .contract_segment_element_width(segment, &segment_environment),
+                        .contract_segment_element_width(segment, &segment_environment)?,
                 })
             }
             ClickProposition::Defined { expression } => {
@@ -7489,13 +7509,51 @@ impl AnnotationLowerer<'_> {
         &self,
         segment: &ContractSegment,
         environment: &SpecElaborationContext,
-    ) -> u32 {
+    ) -> Result<u32, String> {
         if let Some(width) = segment.field_element_width() {
-            return width;
+            return Ok(width);
         }
-        self.c_expression_array_element_type(&segment.base, environment)
-            .unwrap_or(CType::Int32)
-            .byte_width()
+        // Whole-object and field syntax has already lowered its storage
+        // extent to the carrier's coordinates. Only an element range still
+        // needs the instantiated generic pointee's physical stride.
+        if !matches!(segment.surface, ContractSegmentSurface::Range { .. }) {
+            return Ok(self
+                .c_expression_array_element_type(&segment.base, environment)
+                .unwrap_or(CType::Int32)
+                .byte_width());
+        }
+        if let CExpression::Variable(name) = &segment.base
+            && let Some(width) = self.parameter_pointer_element_widths.get(name)
+        {
+            return Ok(*width);
+        }
+        // A generic range retains the nominal pointer value at instantiation.
+        // Its scalar carrier is not the aggregate's physical stride.
+        if let Some(pointer) = self.direct_pointer_value(&segment.base, environment) {
+            return self.spec_definitions.pointer_element_width(pointer);
+        }
+        Ok(self
+            .c_expression_array_element_width(&segment.base, environment)
+            .unwrap_or_else(|| {
+                self.c_expression_array_element_type(&segment.base, environment)
+                    .unwrap_or(CType::Int32)
+                    .byte_width()
+            }))
+    }
+
+    fn direct_pointer_value<'b>(
+        &'b self,
+        expression: &'b CExpression,
+        environment: &'b SpecElaborationContext,
+    ) -> Option<&'b crate::kernel::CPointerValue> {
+        match expression {
+            CExpression::Value(CValue::Pointer(pointer)) => Some(pointer),
+            CExpression::Variable(name) => match environment.values.get(name) {
+                Some(SpecExpression::Value(CValue::Pointer(pointer))) => Some(pointer),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     fn lower_contract_segment_base_to_spec(
@@ -7528,7 +7586,7 @@ impl AnnotationLowerer<'_> {
                     base: self.lower_contract_segment_base_to_spec(&segment.base, &environment)?,
                     start: self.lower_c_fragment_to_spec(&segment.start, &environment)?,
                     end: self.lower_c_fragment_to_spec(&segment.end, &environment)?,
-                    element_width: self.contract_segment_element_width(segment, &environment),
+                    element_width: self.contract_segment_element_width(segment, &environment)?,
                 })
             }
             ResourceSubject::Declared {
@@ -8412,14 +8470,10 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
         match expression {
-            ContractExpression::CBinding(name) => self
-                .parameter_pointer_element_widths
-                .get(name)
-                .copied()
-                .or_else(|| {
-                    self.contract_pointer_element_type(expression, environment)
-                        .map(CType::byte_width)
-                }),
+            ContractExpression::CBinding(name) => self.c_expression_array_element_width(
+                &CExpression::Variable(name.clone()),
+                environment,
+            ),
             ContractExpression::QualifiedC { lowered, .. }
             | ContractExpression::CFragment(lowered)
             | ContractExpression::Field { lowered, .. } => {
@@ -8558,6 +8612,14 @@ impl AnnotationLowerer<'_> {
         expression: &CExpression,
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
+        if let CExpression::Variable(name) = expression
+            && let Some(width) = self.parameter_pointer_element_widths.get(name)
+        {
+            return Some(*width);
+        }
+        if let Some(pointer) = self.direct_pointer_value(expression, environment) {
+            return self.spec_definitions.pointer_element_width(pointer).ok();
+        }
         if matches!(expression, CExpression::Variable(name) if name == "result")
             && environment.contract_result_in_scope
         {

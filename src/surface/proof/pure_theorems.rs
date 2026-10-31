@@ -127,7 +127,7 @@ pub(in crate::surface) fn verify_theorem_definition(
         .map(|name| {
             (
                 name.clone(),
-                if pointer_elements.contains(name.as_str()) {
+                generics::TypeArgument::from(if pointer_elements.contains(name.as_str()) {
                     ClickType::C(C0Type::Parameter(crate::kernel::TypeParameterName::intern(
                         name,
                     )))
@@ -137,7 +137,7 @@ pub(in crate::surface) fn verify_theorem_definition(
                         name: name.clone(),
                         arguments: Vec::new(),
                     })
-                },
+                }),
             )
         })
         .collect();
@@ -1288,7 +1288,10 @@ pub(super) fn pure_theorem_context(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<PureTheoremContext, ClickError> {
     let memory = CMemory::new();
-    let values = pure_theorem_parameter_values(theorem.parameters());
+    let values = pure_theorem_parameter_values_with_generic_pointers(
+        theorem.parameters(),
+        &theorem.generic_pointer_parameters,
+    );
     let integer_values = pure_theorem_parameter_integer_values(theorem.parameters());
     let array_refs = pure_theorem_array_refs(theorem.parameters(), &values, &memory);
     // A theorem's premises are its `requires` clauses in source order, each
@@ -1495,6 +1498,13 @@ fn pure_theorem_parameter_integer_values(
 
 pub(in crate::surface) fn pure_theorem_parameter_values(
     parameters: &[FunctionParameter],
+) -> BTreeMap<String, CValue> {
+    pure_theorem_parameter_values_with_generic_pointers(parameters, &BTreeSet::new())
+}
+
+fn pure_theorem_parameter_values_with_generic_pointers(
+    parameters: &[FunctionParameter],
+    generic_pointers: &BTreeSet<String>,
 ) -> BTreeMap<String, CValue> {
     parameters
         .iter()
@@ -1770,10 +1780,17 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                     c_type.to_kernel_type(),
                 ),
             };
-            Some((
-                parameter.name().to_string(),
-                value.with_pointer_object_class(parameter.pointer_object_class()),
-            ))
+            let value = if generic_pointers.contains(parameter.name()) {
+                match value {
+                    CValue::Pointer(pointer) => CValue::Pointer(
+                        pointer.with_declared_object_class(parameter.pointer_object_class()),
+                    ),
+                    value => value,
+                }
+            } else {
+                value.with_pointer_object_class(parameter.pointer_object_class())
+            };
+            Some((parameter.name().to_string(), value))
         })
         .collect()
 }
@@ -1904,6 +1921,7 @@ fn verify_theorem_ensure(
             claim_label,
             context,
             goal,
+            spec_definitions,
         );
     }
 
@@ -2638,6 +2656,7 @@ fn verify_kernel_standard_theorem_axiom(
     claim_label: &str,
     context: &PureTheoremContext,
     goal: Proposition,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let (parameter_count, requirement_count) = match theorem.name() {
         "click::separation::restrict" => (4, 3),
@@ -2736,11 +2755,9 @@ fn verify_kernel_standard_theorem_axiom(
         else {
             return Err(ClickError::new("subrange base must be a typed pointer"));
         };
-        let width = pointer
-            .c_type()
-            .pointee_type()
-            .ok_or_else(|| ClickError::new("subrange requires a sized element type"))?
-            .byte_width();
+        let width = spec_definitions
+            .pointer_element_width(pointer)
+            .map_err(ClickError::new)?;
         if width == 0 {
             return Err(ClickError::new("subrange requires a nonzero element width"));
         }

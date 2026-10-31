@@ -514,6 +514,8 @@ pub(in crate::surface) fn call_source_spelling(callee: &str) -> &str {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFile {
+    /// Physical struct strides retained for generic theorem instantiation.
+    struct_sizes: std::sync::Arc<BTreeMap<String, u32>>,
     /// Unique source spelling to C execution identity, shared by specification lowering.
     c_function_names: std::sync::Arc<BTreeMap<String, String>>,
     imports: Vec<ImportDeclaration>,
@@ -1001,6 +1003,8 @@ impl ResourceWitness {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TheoremDefinition {
+    /// `T*` supplies a declared element type, not original-object provenance.
+    generic_pointer_parameters: BTreeSet<String>,
     /// Where the parser read this theorem's clauses.
     body: parser::DeclarationBody,
     name: String,
@@ -2444,6 +2448,7 @@ pub(crate) fn clone_theorem_definition_iteratively(
     #[cfg(test)]
     THEOREM_DEFINITION_COPIES.with(|copies| copies.set(copies.get() + 1));
     TheoremDefinition {
+        generic_pointer_parameters: theorem.generic_pointer_parameters.clone(),
         body: theorem.body.clone(),
         name: theorem.name.clone(),
         type_parameters: theorem.type_parameters.clone(),
@@ -6711,6 +6716,7 @@ impl ParameterIndex {
 /// and its Click functions.
 #[derive(Clone, Copy)]
 struct SpecDefinitions<'a> {
+    struct_sizes: Option<&'a BTreeMap<String, u32>>,
     predicates: &'a PredicateEnvironment,
     functions: &'a ClickFunctionEnvironment,
 }
@@ -6720,7 +6726,30 @@ impl<'a> SpecDefinitions<'a> {
         Self {
             predicates,
             functions,
+            struct_sizes: None,
         }
+    }
+
+    fn with_struct_sizes(mut self, sizes: &'a BTreeMap<String, u32>) -> Self {
+        self.struct_sizes = Some(sizes);
+        self
+    }
+
+    fn pointer_element_width(&self, pointer: &crate::kernel::CPointerValue) -> Result<u32, String> {
+        if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
+            pointer.object_class()
+        {
+            return self
+                .struct_sizes
+                .and_then(|sizes| sizes.get(class.tag()))
+                .copied()
+                .ok_or_else(|| format!("struct `{}` has no known layout", class.tag()));
+        }
+        pointer
+            .c_type()
+            .pointee_type()
+            .map(CType::byte_width)
+            .ok_or_else(|| "expected a sized pointer element".to_string())
     }
 }
 

@@ -2125,6 +2125,12 @@ impl Parser {
         }
         let c_target = self.resolve_c_target(c_target_name, c_mode)?;
         let file = ClickFile {
+            struct_sizes: std::sync::Arc::new(
+                self.struct_layouts
+                    .iter()
+                    .map(|(name, layout)| (name.clone(), layout.size_bytes()))
+                    .collect(),
+            ),
             c_function_names: std::sync::Arc::new(c_function_names),
             imports,
             library_imports,
@@ -3992,6 +3998,17 @@ impl Parser {
             .collect();
         let ensure_claim_ids = flattened_claim_ids(&ensure_kinds, &ensure_source_clauses);
         Ok(TheoremDefinition {
+            generic_pointer_parameters: parsed_parameters
+                .parameters
+                .iter()
+                .filter(|parameter| {
+                    matches!(
+                        parameter.click_type(),
+                        ClickType::C(C0Type::ParameterPointer(_))
+                    )
+                })
+                .map(|parameter| parameter.name().to_owned())
+                .collect(),
             body: DeclarationBody {
                 open: body_open,
                 close: body_close,

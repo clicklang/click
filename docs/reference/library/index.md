@@ -4074,4 +4074,4 @@ Applications supply all three bound premises explicitly. Empty inner intervals
 are permitted. Memory access and separation still require their usual validity
 conditions.
 
-**Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md).
+**Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md) and [`mdtests/generic_pointer_struct_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_struct_parameters.md), including padded structs and struct-pointer elements.
