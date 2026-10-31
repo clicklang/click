@@ -6,6 +6,7 @@ mod memory_loads;
 mod operators;
 pub(in crate::kernel) mod pointer_tags;
 mod statements;
+pub(in crate::kernel) mod typed_reads;
 mod undefined_site;
 pub(in crate::kernel) use statements::{
     end_scope_automatic_lifetimes, missing_aggregate_copy_read_resource,

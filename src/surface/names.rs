@@ -202,6 +202,7 @@ pub(in crate::surface) fn library_theorem_identities() -> &'static BTreeMap<Stri
 /// theorems, have qualified verifier identities. A module joins when its
 /// names drop their prefixes and its uses move to paths.
 const QUALIFIED_MODULES: &[&str] = &[
+    "library/separation.click",
     "library/nat.click",
     "library/list.click",
     "library/bytes.click",

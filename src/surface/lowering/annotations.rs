@@ -104,6 +104,7 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         fixed_measure_state(left).or_else(|| fixed_measure_state(right))
     };
     match expression {
+        ContractExpression::Resource(_) => None,
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
         ContractExpression::Old(_) => Some(FixedMeasureState::Old),
         ContractExpression::At { selector, .. } => Some(FixedMeasureState::At(selector.clone())),
@@ -180,6 +181,11 @@ pub(in crate::surface) fn resolve_resource_field_schema(
         .iter()
         .map(|field| {
             let ty = match field.click_type() {
+                ClickType::Resource => {
+                    return Err(ClickError::new(
+                        "Resource values are supported as theorem parameters only",
+                    ));
+                }
                 ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } => {
                     crate::kernel::ResourceFieldType::C(ty.to_kernel_type())
                 }
@@ -2811,7 +2817,8 @@ pub(in crate::surface) fn function_contract_summary(
 
 fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> bool {
     match proposition {
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => true,
@@ -3127,6 +3134,13 @@ pub(in crate::surface) fn parameter_pointer_element_widths<'a>(
                 .array_element_width()
                 .or_else(|| {
                     parameter
+                        .c_type()
+                        .pointee_type()
+                        .filter(|ty| ty.is_pointer())
+                        .map(|ty| ty.to_kernel_type().byte_width())
+                })
+                .or_else(|| {
+                    parameter
                         .pointee_struct_layout()
                         .map(|layout| layout.size_bytes())
                 })
@@ -3147,9 +3161,22 @@ pub(in crate::surface) fn click_parameter_pointer_element_widths_with_layouts(
         .iter()
         .filter_map(|parameter| {
             parameter
-                .struct_name()
-                .and_then(|name| struct_layouts.get(name))
-                .map(|layout| (parameter.name().to_string(), layout.size_bytes()))
+                .click_type()
+                .c_type()
+                .and_then(|ty| ty.pointee_type())
+                .filter(|ty| ty.is_pointer())
+                .map(|ty| {
+                    (
+                        parameter.name().to_string(),
+                        ty.to_kernel_type().byte_width(),
+                    )
+                })
+                .or_else(|| {
+                    parameter
+                        .struct_name()
+                        .and_then(|name| struct_layouts.get(name))
+                        .map(|layout| (parameter.name().to_string(), layout.size_bytes()))
+                })
                 .or_else(|| {
                     parameter
                         .click_type()
@@ -3193,21 +3220,23 @@ pub(in crate::surface) fn lower_integer_certificate_proposition(
                 integer_root_work(&left).saturating_add(integer_root_work(&right)),
             )?;
             let condition = match integer_comparison_operator(*operator)? {
-                IntegerComparisonOperator::Equal => ConditionTerm::integer_equal(left, right),
+                IntegerComparisonOperator::Equal => {
+                    ConditionTerm::IntegerEqual(left.into(), right.into())
+                }
                 IntegerComparisonOperator::NotEqual => {
-                    ConditionTerm::integer_not_equal(left, right)
+                    ConditionTerm::IntegerNotEqual(left.into(), right.into())
                 }
                 IntegerComparisonOperator::LessThan => {
-                    ConditionTerm::integer_less_than(left, right)
+                    ConditionTerm::IntegerLessThan(left.into(), right.into())
                 }
                 IntegerComparisonOperator::LessEqual => {
-                    ConditionTerm::integer_less_equal(left, right)
+                    ConditionTerm::IntegerLessEqual(left.into(), right.into())
                 }
                 IntegerComparisonOperator::GreaterThan => {
-                    ConditionTerm::integer_greater_than(left, right)
+                    ConditionTerm::IntegerGreaterThan(left.into(), right.into())
                 }
                 IntegerComparisonOperator::GreaterEqual => {
-                    ConditionTerm::integer_greater_equal(left, right)
+                    ConditionTerm::IntegerGreaterEqual(left.into(), right.into())
                 }
             };
             Ok(Proposition::ConditionIs(condition, true))
@@ -3256,6 +3285,12 @@ pub(in crate::surface) fn lower_contract_integer_to_spec(
             Ok(value.clone())
         }
         ContractExpression::Negate(inner) => {
+            if let Some(literal) = integer_literal_spelling(expression) {
+                return lower_contract_integer_to_spec(
+                    &ContractExpression::IntegerLiteral(literal),
+                    integer_values,
+                );
+            }
             let SpecIntegerExpression::Term(term) =
                 lower_contract_integer_to_spec(inner, integer_values)?
             else {
@@ -3264,7 +3299,9 @@ pub(in crate::surface) fn lower_contract_integer_to_spec(
                 );
             };
             check_integer_lowering_work(integer_root_work(&term))?;
-            Ok(SpecIntegerExpression::Term(IntegerTerm::negate(term)))
+            Ok(SpecIntegerExpression::Term(IntegerTerm::Negate(
+                term.into(),
+            )))
         }
         ContractExpression::Add(left, right) => {
             let left = lower_contract_integer_to_spec(left, integer_values)?;
@@ -3341,9 +3378,9 @@ fn lower_integer_operation(
     };
     check_integer_lowering_work(work)?;
     let term = match operation {
-        IntegerOperation::Add => IntegerTerm::add(left, right),
-        IntegerOperation::Subtract => IntegerTerm::subtract(left, right),
-        IntegerOperation::Multiply => IntegerTerm::multiply(left, right),
+        IntegerOperation::Add => IntegerTerm::Add(left.into(), right.into()),
+        IntegerOperation::Subtract => IntegerTerm::Subtract(left.into(), right.into()),
+        IntegerOperation::Multiply => IntegerTerm::Multiply(left.into(), right.into()),
     };
     Ok(SpecIntegerExpression::Term(term))
 }
@@ -4111,6 +4148,7 @@ impl AnnotationLowerer<'_> {
             }
             ClickProposition::Comparison { .. }
             | ClickProposition::FloatClassification { .. }
+            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
@@ -4639,6 +4677,11 @@ impl AnnotationLowerer<'_> {
                     );
                     for (parameter, argument) in definition.parameters().iter().zip(arguments) {
                         match parameter.click_type() {
+                            ClickType::Resource => {
+                                return Err(
+                                    "Resource predicate parameters are not supported".into()
+                                );
+                            }
                             ClickType::Parameter(name) => {
                                 return Err(format!(
                                     "predicate `{}` has unresolved type parameter `{name}`",
@@ -4874,6 +4917,26 @@ impl AnnotationLowerer<'_> {
                     syntax::C0FloatClassification::Nan => CFloatClassification::Nan,
                 },
             }),
+            ClickProposition::ChangesOnly {
+                before,
+                after,
+                resources,
+            } => {
+                let before = self
+                    .snapshot_environment(before, environment)?
+                    .ok_or("changes_only requires a recorded before snapshot")?;
+                let after = self
+                    .snapshot_environment(after, environment)?
+                    .ok_or("changes_only requires a recorded after snapshot")?;
+                Ok(SpecProposition::ChangesOnly {
+                    before: before.current_memory.clone(),
+                    after: after.current_memory.clone(),
+                    resources: resources
+                        .iter()
+                        .map(|r| self.lower_resource_subject_to_spec(r, &before))
+                        .collect::<Result<_, _>>()?,
+                })
+            }
             ClickProposition::Separate { left, right } => Ok(SpecProposition::ResourceSeparate {
                 left: self.lower_resource_subject_to_spec(left, environment)?,
                 right: self.lower_resource_subject_to_spec(right, environment)?,
@@ -4891,7 +4954,7 @@ impl AnnotationLowerer<'_> {
                     start: self.lower_c_fragment_to_spec(&segment.start, &segment_environment)?,
                     end: self.lower_c_fragment_to_spec(&segment.end, &segment_environment)?,
                     element_width: self
-                        .contract_segment_element_width(segment, &segment_environment),
+                        .contract_segment_element_width(segment, &segment_environment)?,
                 })
             }
             ClickProposition::Defined { expression } => {
@@ -5507,9 +5570,15 @@ impl AnnotationLowerer<'_> {
                     )?;
                     return Ok(SpecIntegerExpression::Term(
                         if name == "truncating_quotient" {
-                            crate::kernel::IntegerTerm::truncating_quotient(a.clone(), b.clone())
+                            crate::kernel::IntegerTerm::TruncatingQuotient(
+                                a.clone().into(),
+                                b.clone().into(),
+                            )
                         } else {
-                            crate::kernel::IntegerTerm::truncating_remainder(a.clone(), b.clone())
+                            crate::kernel::IntegerTerm::TruncatingRemainder(
+                                a.clone().into(),
+                                b.clone().into(),
+                            )
                         },
                     ));
                 }
@@ -5604,12 +5673,18 @@ impl AnnotationLowerer<'_> {
                 Ok(SpecIntegerExpression::FromMachine(Box::new(argument)))
             }
             ContractExpression::Negate(inner) => {
+                if let Some(literal) = integer_literal_spelling(expression) {
+                    return self.lower_contract_integer_to_spec(
+                        &ContractExpression::IntegerLiteral(literal),
+                        environment,
+                    );
+                }
                 let inner = self.lower_contract_integer_to_spec(inner, environment)?;
                 match inner {
                     SpecIntegerExpression::Term(term) => {
                         check_integer_lowering_work(integer_root_work(&term))?;
                         Ok(SpecIntegerExpression::Term(
-                            crate::kernel::IntegerTerm::negate(term),
+                            crate::kernel::IntegerTerm::Negate(term.into()),
                         ))
                     }
                     inner => Ok(SpecIntegerExpression::Negate(Box::new(inner))),
@@ -5891,6 +5966,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
         match expression {
+            ContractExpression::Resource(_) => Err("a Resource descriptor is not a C value".into()),
             ContractExpression::CUnary { operand, lowered } => {
                 let value = self.lower_contract_expression_to_spec(operand, environment)?;
                 match lowered {
@@ -7162,6 +7238,9 @@ impl AnnotationLowerer<'_> {
             .zip(arguments)
             .map(|(parameter, argument)| {
                 let lowered = match parameter.click_type() {
+                    ClickType::Resource => {
+                        Err("Resource function parameters are not supported".into())
+                    }
                     ClickType::Parameter(name) => Err(format!(
                         "function `{}` has unresolved type parameter `{name}`",
                         definition.name()
@@ -7312,6 +7391,7 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<Option<ClickType>, String> {
         match expected {
+            ClickType::Resource => Ok(Some(ClickType::Resource)),
             ClickType::Algebraic(_) => {
                 let value = self.lower_contract_algebraic_to_spec(argument, environment)?;
                 Ok(Some(generics::click_type_from_algebraic_value_type(
@@ -7451,13 +7531,51 @@ impl AnnotationLowerer<'_> {
         &self,
         segment: &ContractSegment,
         environment: &SpecElaborationContext,
-    ) -> u32 {
+    ) -> Result<u32, String> {
         if let Some(width) = segment.field_element_width() {
-            return width;
+            return Ok(width);
         }
-        self.c_expression_array_element_type(&segment.base, environment)
-            .unwrap_or(CType::Int32)
-            .byte_width()
+        // Whole-object and field syntax has already lowered its storage
+        // extent to the carrier's coordinates. Only an element range still
+        // needs the instantiated generic pointee's physical stride.
+        if !matches!(segment.surface, ContractSegmentSurface::Range { .. }) {
+            return Ok(self
+                .c_expression_array_element_type(&segment.base, environment)
+                .unwrap_or(CType::Int32)
+                .byte_width());
+        }
+        if let CExpression::Variable(name) = &segment.base
+            && let Some(width) = self.parameter_pointer_element_widths.get(name)
+        {
+            return Ok(*width);
+        }
+        // A generic range retains the nominal pointer value at instantiation.
+        // Its scalar carrier is not the aggregate's physical stride.
+        if let Some(pointer) = self.direct_pointer_value(&segment.base, environment) {
+            return self.spec_definitions.pointer_element_width(pointer);
+        }
+        Ok(self
+            .c_expression_array_element_width(&segment.base, environment)
+            .unwrap_or_else(|| {
+                self.c_expression_array_element_type(&segment.base, environment)
+                    .unwrap_or(CType::Int32)
+                    .byte_width()
+            }))
+    }
+
+    fn direct_pointer_value<'b>(
+        &'b self,
+        expression: &'b CExpression,
+        environment: &'b SpecElaborationContext,
+    ) -> Option<&'b crate::kernel::CPointerValue> {
+        match expression {
+            CExpression::Value(CValue::Pointer(pointer)) => Some(pointer),
+            CExpression::Variable(name) => match environment.values.get(name) {
+                Some(SpecExpression::Value(CValue::Pointer(pointer))) => Some(pointer),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     fn lower_contract_segment_base_to_spec(
@@ -7474,13 +7592,23 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecResource, String> {
         match resource {
+            ResourceSubject::Footprint(region) => Ok(SpecResource::Value(
+                self.snapshots
+                    .ok_or("region footprint requires execution snapshots")?
+                    .footprint(region)?,
+            )),
+            ResourceSubject::Parameter { index, .. } => Ok(SpecResource::Value(
+                crate::kernel::CResource::Parameter(crate::kernel::Variable(*index as u64)),
+            )),
+            ResourceSubject::Captured { value, .. } => Ok(SpecResource::Value(value.clone())),
+
             ResourceSubject::Memory(segment) => {
                 let environment = self.spec_segment_environment(segment, environment)?;
                 Ok(SpecResource::Memory {
                     base: self.lower_contract_segment_base_to_spec(&segment.base, &environment)?,
                     start: self.lower_c_fragment_to_spec(&segment.start, &environment)?,
                     end: self.lower_c_fragment_to_spec(&segment.end, &environment)?,
-                    element_width: self.contract_segment_element_width(segment, &environment),
+                    element_width: self.contract_segment_element_width(segment, &environment)?,
                 })
             }
             ResourceSubject::Declared {
@@ -7843,6 +7971,20 @@ impl AnnotationLowerer<'_> {
                 )),
                 elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
                 byte_width: element_type.byte_width(),
+            });
+        }
+        if !environment.checking_definedness
+            && let CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) =
+                expression
+            && let CExpression::Index(base, index) = target.as_ref()
+            && let Some(byte_width) = self.c_expression_array_element_width(base, environment)
+        {
+            // Taking an element's address retains its physical stride,
+            // including the concrete layout of a generic struct pointee.
+            return Ok(SpecExpression::PointerOffset {
+                pointer: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
+                elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
+                byte_width,
             });
         }
         match expression {
@@ -8364,14 +8506,10 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
         match expression {
-            ContractExpression::CBinding(name) => self
-                .parameter_pointer_element_widths
-                .get(name)
-                .copied()
-                .or_else(|| {
-                    self.contract_pointer_element_type(expression, environment)
-                        .map(CType::byte_width)
-                }),
+            ContractExpression::CBinding(name) => self.c_expression_array_element_width(
+                &CExpression::Variable(name.clone()),
+                environment,
+            ),
             ContractExpression::QualifiedC { lowered, .. }
             | ContractExpression::CFragment(lowered)
             | ContractExpression::Field { lowered, .. } => {
@@ -8510,6 +8648,14 @@ impl AnnotationLowerer<'_> {
         expression: &CExpression,
         environment: &SpecElaborationContext,
     ) -> Option<u32> {
+        if let CExpression::Variable(name) = expression
+            && let Some(width) = self.parameter_pointer_element_widths.get(name)
+        {
+            return Some(*width);
+        }
+        if let Some(pointer) = self.direct_pointer_value(expression, environment) {
+            return self.spec_definitions.pointer_element_width(pointer).ok();
+        }
         if matches!(expression, CExpression::Variable(name) if name == "result")
             && environment.contract_result_in_scope
         {
@@ -8519,6 +8665,14 @@ impl AnnotationLowerer<'_> {
             );
         }
         match expression {
+            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target)
+                if matches!(target.as_ref(), CExpression::Index(..)) =>
+            {
+                let CExpression::Index(base, _) = target.as_ref() else {
+                    unreachable!()
+                };
+                self.c_expression_array_element_width(base, environment)
+            }
             CExpression::Value(CValue::Pointer(pointer)) => {
                 pointer.c_type().pointee_type().map(CType::byte_width)
             }
@@ -8694,6 +8848,7 @@ fn click_type_to_algebraic_value_type(
     click_type: &ClickType,
 ) -> Result<AlgebraicValueType, String> {
     match click_type {
+        ClickType::Resource => Err("Resource is not an algebraic field type".into()),
         ClickType::Parameter(name) => Err(format!("unresolved type parameter `{name}`")),
         ClickType::C(c_type) => Ok(AlgebraicValueType::C(c_type.to_kernel_type())),
         ClickType::CObjectPointer { c_type, .. } => Ok(AlgebraicValueType::ObjectPointer(

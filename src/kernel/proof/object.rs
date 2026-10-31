@@ -957,6 +957,20 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         Ok(self.closed_focused())
     }
 
+    pub(crate) fn apply_transport_certificate(
+        &self,
+        certificate: &super::transport_certificate::TransportCertificate,
+    ) -> Result<Self, String> {
+        let (goal, facts) = self
+            .focused_proposition()
+            .ok_or("transport certificate requires a proposition goal")?;
+        let result = certificate.apply(|p| facts.contains(p))?;
+        if &result != goal.proposition() {
+            return Err("transport conclusion does not match the goal".into());
+        }
+        Ok(self.closed_focused())
+    }
+
     pub(crate) fn apply_integer_arithmetic(
         &self,
         certificate: &super::integer_arithmetic::IntegerArithmeticCertificate,

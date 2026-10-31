@@ -152,6 +152,15 @@ impl Context<'_> {
         iterator: &str,
         option: &str,
     ) -> Result<CStatement, String> {
+        self.shared_array_next_with(iterator, option, c_skip())
+    }
+    /// [`Self::shared_array_next`], also running `yielded` when it yields.
+    pub(super) fn shared_array_next_with(
+        &self,
+        iterator: &str,
+        option: &str,
+        yielded: CStatement,
+    ) -> Result<CStatement, String> {
         if !self.shared_array_iterators.contains_key(iterator)
             || self.shared_array_iterators.get(iterator) != self.shared_array_options.get(option)
         {
@@ -165,9 +174,12 @@ impl Context<'_> {
                 c_assign(format!("{option}_pointer"), c_variable(&cursor)),
                 c_seq(
                     c_assign(&cursor, c_add(c_variable(&cursor), c_int32_literal(1))),
-                    c_assign(
-                        &remaining,
-                        c_subtract(c_variable(&remaining), c_uint64_literal(1)),
+                    c_seq(
+                        c_assign(
+                            &remaining,
+                            c_subtract(c_variable(&remaining), c_uint64_literal(1)),
+                        ),
+                        yielded,
                     ),
                 ),
             ),

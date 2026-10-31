@@ -1195,6 +1195,26 @@ proposition `requires` clauses, and proposition `ensures` clauses with proof
 clauses. A theorem-only `.click` file does not need a `verifying "file.c";`
 declaration.
 
+A generic theorem can declare `p: T*`. Applications infer `T` from the
+argument's pointee type and require repeated occurrences to agree. Native
+scalar, pointer, and struct element types retain their identity when instantiated.
+For a struct element, range lowering looks up its physical size, including padding,
+in the imported C layout. The generic declaration does not require a concrete
+layout. This permits `p: T*` with `T = struct Foo`; it does not introduce a
+struct-by-value logical parameter `x: T`. Instantiation supplies the declared
+stride, not original-object provenance or permission to access memory.
+See [`separation::subrange`](../library/index.md#separationsubrange).
+
+`Resource` is a theorem-parameter type for resource descriptors. For example,
+`theorem transport(A: Resource, B: Resource) { requires separate(A, B);
+ensures separate(A, B); }` accepts `memory(...)`, a declared resource
+application, or another resource parameter as an argument. A descriptor carries
+no ownership. Arguments are evaluated in the caller before substitution, so
+callee parameter names cannot capture names inside them. This type is currently
+limited to theorem parameters; it is not a C type or an ownership clause.
+See [`separation::restrict`](../library/index.md#separationrestrict) for an
+explicit separation axiom and its checked field-separation example.
+
 Theorems are intentionally pure. They do not support `owns`, `consumes`,
 `produces`, region proof blocks, `old(...)`, `at(...)`, or
 `result`: applying a theorem lends, consumes, creates and separates nothing.
@@ -3266,6 +3286,14 @@ theorem three_is_in_range() {
 
 ## Propositions
 
+`changes_only(before, after, A)` describes the recorded transition between two
+named snapshots, restricted to the byte footprint of resource `A`. The resource
+is interpreted at `before`. Naming this proposition does not establish it:
+a certificate premise must match an existing execution fact. The initial
+implementation supports constant-size memory resources. See
+[transport certificates](../tactics/index.md#transport-certificates).
+
+
 Click proposition connectives are words:
 
 <!-- verified-example: mdtests/proposition_connectives_quantifiers_and_old.md -->
@@ -3606,6 +3634,15 @@ name is available after the allocation step and survives reassignment and
 `free`. Naming it does not prove that allocation succeeded or grant access
 to freed memory (`mdtests/an_allocation_result_keeps_its_name_after_reassignment.md`,
 `mdtests/an_allocation_name_does_not_keep_freed_memory_readable.md`).
+
+A recorded region exposes `R.footprint`, a resource descriptor for its effects:
+writes, mutable call resources, and allocation lifetime changes. It grants no
+ownership. `separate(R.footprint, B)` is the preservation premise consumed by
+[`transport_certificate`](../tactics/index.md#transport-certificates). Effects
+are recorded during execution; this property does not reconstruct history.
+The current simple separation rule handles one checked transition. Longer
+transports use individual transition footprints and explicit equality composition;
+not every branch/loop boundary currently has a complete recorded footprint.
 
 Click writes points the same way. A diagnostic, a suggested premise or an
 expansion names a recorded point by its statement: `.entry` or `.exit` when

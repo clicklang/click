@@ -2284,6 +2284,8 @@ impl Renderer<'_> {
     }
     fn resource(&mut self, resource: &CResource) {
         match resource {
+            CResource::Footprint(fp) => self.push(&fp.source),
+            CResource::Parameter(v) => self.push(&format!("resource#{:?}", v)),
             CResource::MutexGuard(identity) => {
                 self.push("mutex_guard(");
                 self.pointer(identity.mutex());

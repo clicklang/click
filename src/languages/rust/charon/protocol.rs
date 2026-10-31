@@ -24,9 +24,12 @@ impl Adapter<'_> {
         self.chunk_type(ty)
             || self.shared_iterator_element(ty, false).is_some()
             || self.range_element(ty, false).is_some()
+            || self.enumerate_element(ty).is_some()
     }
     pub(super) fn protocol_option(&self, ty: &a::Ty) -> bool {
-        self.chunk_option_type(ty) || self.shared_option_element(ty, false).is_some()
+        self.chunk_option_type(ty)
+            || self.shared_option_element(ty, false).is_some()
+            || self.enumerate_option_element(ty).is_some()
     }
 }
 pub(super) fn bindings(
@@ -199,7 +202,9 @@ impl BodyAdapter<'_, '_> {
                 left: Box::new(E::Local { name }),
                 right: Box::new(E::NoneBox),
             }
-        } else if self.adapter.shared_option_element(ty, false).is_some() {
+        } else if self.adapter.shared_option_element(ty, false).is_some()
+            || self.adapter.enumerate_option_element(ty).is_some()
+        {
             E::SharedArrayOptionTag { option: name }
         } else {
             E::ChunkOptionTag { option: name }
@@ -236,6 +241,12 @@ impl BodyAdapter<'_, '_> {
                 }
                 let target_name = self.local(local(target)?)?;
                 let source_name = self.local(local(source)?)?;
+                if self.adapter.enumerate_element(&target.ty).is_some() {
+                    return Ok(Some(Some(S::EnumerateMove {
+                        target: target_name,
+                        source: source_name,
+                    })));
+                }
                 Ok(Some(Some(
                     if self
                         .adapter
@@ -381,6 +392,7 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
         let (iterator, option, shared) = match &next {
             S::ChunkNext { iterator, option } => (iterator.clone(), option.clone(), false),
             S::SharedArrayNext { iterator, option } => (iterator.clone(), option.clone(), true),
+            S::EnumerateNext { iterator, option } => (iterator.clone(), option.clone(), true),
             S::RangeNext {
                 iterator, option, ..
             } => {

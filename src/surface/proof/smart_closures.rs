@@ -68,6 +68,7 @@ fn collect_signed_surface_terms<'a>(
     while let Some(expression) = pending.pop() {
         terms.push(expression);
         match expression {
+            ContractExpression::Resource(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner)
             | ContractExpression::Old(inner)
@@ -247,7 +248,8 @@ fn collect_signed_surface_proposition_terms<'a>(
                 collect_signed_surface_terms(end, terms);
                 pending.push(body);
             }
-            ClickProposition::Separate { .. }
+            ClickProposition::ChangesOnly { .. }
+            | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
             | ClickProposition::PredicateCall { .. } => {}
@@ -11519,6 +11521,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let replacement = match &click_type {
+            ClickType::Resource => return Ok(None),
             ClickType::Integer | ClickType::Algebraic(_) => {
                 ContractExpression::Binding(choice_name.clone())
             }

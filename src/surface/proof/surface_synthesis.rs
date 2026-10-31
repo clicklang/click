@@ -1456,11 +1456,14 @@ fn synthesize_zero_based_loadable_segment(
     {
         return Some(named);
     }
-    let element_count = if let Some(byte_count) = bytes.as_const() {
+    let (element_count, element_pointer_type) = if let Some(byte_count) = bytes.as_const() {
         if !byte_count.is_multiple_of(4) {
             return None;
         }
-        CExpression::Value(int32(byte_count / 4))
+        (
+            CExpression::Value(int32(byte_count / 4)),
+            CType::Int32Pointer,
+        )
     } else if let binary_term!(Int32, Multiply, left, right) = bytes {
         let elements = if right.as_const() == Some(4) {
             left.as_ref()
@@ -1478,31 +1481,43 @@ fn synthesize_zero_based_loadable_segment(
         {
             return None;
         }
-        contract_expression_to_c_fragment(&synthesize_surface_bitvector(
-            elements,
-            parameter_binding,
-            state,
-            bound_variables,
-        )?)?
+        (
+            contract_expression_to_c_fragment(&synthesize_surface_bitvector(
+                elements,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?)?,
+            CType::Int32Pointer,
+        )
     } else if !matches!(bytes, binary_term!(Int32, Subtract, _, _)) {
-        // A range of one-byte elements keeps its extent unscaled: `a[0..n]`
-        // over `uint8` is `n` bytes. The spelling is a candidate only; every
-        // caller re-lowers it and keeps it only when it names this fact, so
-        // over a wider element it lowers to `n * w` and is refused.
-        contract_expression_to_c_fragment(&synthesize_surface_bitvector(
-            bytes,
-            parameter_binding,
-            state,
-            bound_variables,
-        )?)?
+        // A byte extent remains unscaled over an explicit byte pointer.
+        (
+            contract_expression_to_c_fragment(&synthesize_surface_bitvector(
+                bytes,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?)?,
+            CType::UInt8Pointer,
+        )
     } else {
         return None;
     };
     let semantic_base = synthesize_surface_pointer(base, parameter_binding, state, bound_variables);
-    let semantic_base = semantic_base?;
-    let surface_base =
-        synthesize_surface_pointer_offset(&base.offset, parameter_binding, state, bound_variables)
-            .unwrap_or_else(|| ContractExpression::CFragment(semantic_base.clone()));
+    // These counts use scalar units, regardless of the named pointer's
+    // pointee (including a struct-valued proof binder). Spell those units
+    // explicitly instead of relying on its historical four-byte carrier.
+    let semantic_base = CExpression::Cast {
+        expression: Box::new(semantic_base?),
+        target_type: element_pointer_type,
+        integer_mode: crate::kernel::CIntegerCastMode::Standard,
+        pointee_struct: None,
+        pointee_volatile: false,
+        pointee_constant: false,
+        explicit_qualification: false,
+    };
+    let surface_base = ContractExpression::CFragment(semantic_base.clone());
     Some(ClickProposition::Loadable {
         segment: ContractSegment {
             uninitialized: false,
@@ -2409,20 +2424,12 @@ fn synthesize_surface_atomic_proposition(
         });
     }
     if let ConditionTerm::Constant(condition) = condition {
-        // An exact Integer comparison keeps the condition's constant value.
-        // A native `0 != 0` instead lowers to Constant(true) with false
-        // polarity, which is equivalent but is not the same proposition.
+        // A native equality folds to precisely this constant condition;
+        // using != would instead change its polarity.
         let comparison = ClickProposition::Comparison {
-            left: ContractExpression::Call {
-                name: "to_integer".into(),
-                arguments: vec![ContractExpression::IntegerLiteral("0".into())],
-            },
-            operator: if *condition {
-                ComparisonOperator::Equal
-            } else {
-                ComparisonOperator::NotEqual
-            },
-            right: ContractExpression::IntegerLiteral("0".into()),
+            left: ContractExpression::IntegerLiteral("0".into()),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::IntegerLiteral(if *condition { "0" } else { "1" }.into()),
         };
         return Some(if *value {
             comparison
@@ -2518,7 +2525,14 @@ fn synthesize_surface_atomic_proposition(
     };
     if let Some((left, operator, right)) = integer_comparison {
         let comparison = ClickProposition::Comparison {
-            left: synthesize_surface_integer(left, parameter_binding, state, bound_variables)?,
+            // A rewrite may have removed the last typed operand. Retain
+            // mathematical context without relying on an ambient binding.
+            left: integer_typed_expression(synthesize_surface_integer(
+                left,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?),
             operator,
             right: synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
         };
@@ -2672,6 +2686,17 @@ fn synthesize_surface_atomic_proposition(
     }
 }
 
+/// The value is outside the binding's scope, so this local name cannot
+/// capture a name in the expression being spelled.
+fn integer_typed_expression(value: ContractExpression) -> ContractExpression {
+    ContractExpression::Let {
+        name: "integer_value".into(),
+        click_type: Some(ClickType::Integer),
+        value: Box::new(value),
+        body: Box::new(ContractExpression::Binding("integer_value".into())),
+    }
+}
+
 /// An Integer arithmetic term over machine observations, spelled with
 /// `to_integer` around each observation and named truncating operations.
 /// Opaque specification applications retain their source boundary.
@@ -2705,7 +2730,11 @@ fn synthesize_surface_integer(
                 bound_variables,
             )?],
         },
-        IntegerTerm::Negate(inner) => ContractExpression::Negate(recurse(inner)?),
+        IntegerTerm::Negate(inner) => {
+            ContractExpression::Negate(Box::new(integer_typed_expression(
+                synthesize_surface_integer(inner, parameter_binding, state, bound_variables)?,
+            )))
+        }
         IntegerTerm::Add(left, right) => ContractExpression::Add(recurse(left)?, recurse(right)?),
         IntegerTerm::Subtract(left, right) => {
             ContractExpression::Subtract(recurse(left)?, recurse(right)?)

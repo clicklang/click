@@ -920,11 +920,6 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
     }
 }
 
-/// Whether a mathematical Integer term is the literal zero.
-fn integer_is_zero(term: &IntegerTerm) -> bool {
-    matches!(term, IntegerTerm::Constant(value) if num_traits::Zero::is_zero(value))
-}
-
 /// Decide rebuilt scalar guards through their existing context-free rules.
 /// Machine comparisons use their smart constructors; concrete nullary enum
 /// constructors use the algebraic equality decision. Other guards stay intact.
@@ -3402,61 +3397,26 @@ impl<'a> TermRewrite<'a> {
             // Rewriting preserves the symbolic DAG. In particular, it must
             // not fold a repeated symbolic expression into a giant literal.
             IntegerTerm::Negate(value) => IntegerTerm::Negate(self.integer_shared(value).into()),
-            // Adding or subtracting a rewritten zero is the identity, and
-            // dropping it is the one fold that cannot grow a term: it deletes
-            // a node. `IntegerTerm::add` and `IntegerTerm::subtract` are where
-            // every other producer drops it, so keeping it here would leave a
-            // substituted `x + 0` beside the `x` those producers build, and a
-            // proof would have to see past the difference. Two literals are
-            // deliberately still left alone, which is what the note above is
-            // about.
-            IntegerTerm::Add(left, right) => {
-                let left = self.integer_shared(left);
-                let right = self.integer_shared(right);
-                if integer_is_zero(&right) {
-                    left
-                } else if integer_is_zero(&left) {
-                    right
-                } else {
-                    IntegerTerm::Add(left.into(), right.into())
-                }
-            }
-            IntegerTerm::Subtract(left, right) => {
-                let left = self.integer_shared(left);
-                let right = self.integer_shared(right);
-                if integer_is_zero(&right) {
-                    left
-                } else {
-                    IntegerTerm::Subtract(left.into(), right.into())
-                }
-            }
-            IntegerTerm::TruncatingQuotient(left, right) => IntegerTerm::truncating_quotient(
-                self.integer_shared(left),
-                self.integer_shared(right),
+            IntegerTerm::Add(left, right) => IntegerTerm::Add(
+                self.integer_shared(left).into(),
+                self.integer_shared(right).into(),
             ),
-            IntegerTerm::TruncatingRemainder(left, right) => IntegerTerm::truncating_remainder(
-                self.integer_shared(left),
-                self.integer_shared(right),
+            IntegerTerm::Subtract(left, right) => IntegerTerm::Subtract(
+                self.integer_shared(left).into(),
+                self.integer_shared(right).into(),
             ),
-            IntegerTerm::Multiply(left, right) => {
-                let left = self.integer_shared(left);
-                let right = self.integer_shared(right);
-                // Match lowering's zero and unit identities without doing
-                // arbitrary-precision multiplication. These folds only
-                // delete nodes; repeated squaring of other literals must
-                // retain the shared symbolic DAG above.
-                if integer_is_zero(&left) || integer_is_zero(&right) {
-                    IntegerTerm::constant_i64(0)
-                } else if matches!(&left, IntegerTerm::Constant(value) if num_traits::One::is_one(value))
-                {
-                    right
-                } else if matches!(&right, IntegerTerm::Constant(value) if num_traits::One::is_one(value))
-                {
-                    left
-                } else {
-                    IntegerTerm::Multiply(left.into(), right.into())
-                }
-            }
+            IntegerTerm::Multiply(left, right) => IntegerTerm::Multiply(
+                self.integer_shared(left).into(),
+                self.integer_shared(right).into(),
+            ),
+            IntegerTerm::TruncatingQuotient(left, right) => IntegerTerm::TruncatingQuotient(
+                self.integer_shared(left).into(),
+                self.integer_shared(right).into(),
+            ),
+            IntegerTerm::TruncatingRemainder(left, right) => IntegerTerm::TruncatingRemainder(
+                self.integer_shared(left).into(),
+                self.integer_shared(right).into(),
+            ),
             IntegerTerm::RangeFold {
                 index,
                 initial,
@@ -4877,52 +4837,22 @@ impl<'a> TermRewrite<'a> {
                 Box::new(self.offset(b)),
             ),
             ConditionTerm::IntegerLessThan(a, b) => {
-                if self.integer_variables.is_some() {
-                    ConditionTerm::IntegerLessThan(self.integer(a).into(), self.integer(b).into())
-                } else {
-                    ConditionTerm::integer_less_than(self.integer(a), self.integer(b))
-                }
+                ConditionTerm::IntegerLessThan(self.integer(a).into(), self.integer(b).into())
             }
             ConditionTerm::IntegerLessEqual(a, b) => {
-                if self.integer_variables.is_some() {
-                    ConditionTerm::IntegerLessEqual(self.integer(a).into(), self.integer(b).into())
-                } else {
-                    ConditionTerm::integer_less_equal(self.integer(a), self.integer(b))
-                }
+                ConditionTerm::IntegerLessEqual(self.integer(a).into(), self.integer(b).into())
             }
             ConditionTerm::IntegerGreaterThan(a, b) => {
-                if self.integer_variables.is_some() {
-                    ConditionTerm::IntegerGreaterThan(
-                        self.integer(a).into(),
-                        self.integer(b).into(),
-                    )
-                } else {
-                    ConditionTerm::integer_greater_than(self.integer(a), self.integer(b))
-                }
+                ConditionTerm::IntegerGreaterThan(self.integer(a).into(), self.integer(b).into())
             }
             ConditionTerm::IntegerGreaterEqual(a, b) => {
-                if self.integer_variables.is_some() {
-                    ConditionTerm::IntegerGreaterEqual(
-                        self.integer(a).into(),
-                        self.integer(b).into(),
-                    )
-                } else {
-                    ConditionTerm::integer_greater_equal(self.integer(a), self.integer(b))
-                }
+                ConditionTerm::IntegerGreaterEqual(self.integer(a).into(), self.integer(b).into())
             }
             ConditionTerm::IntegerEqual(a, b) => {
-                if self.integer_variables.is_some() {
-                    ConditionTerm::IntegerEqual(self.integer(a).into(), self.integer(b).into())
-                } else {
-                    ConditionTerm::integer_equal(self.integer(a), self.integer(b))
-                }
+                ConditionTerm::IntegerEqual(self.integer(a).into(), self.integer(b).into())
             }
             ConditionTerm::IntegerNotEqual(a, b) => {
-                if self.integer_variables.is_some() {
-                    ConditionTerm::IntegerNotEqual(self.integer(a).into(), self.integer(b).into())
-                } else {
-                    ConditionTerm::integer_not_equal(self.integer(a), self.integer(b))
-                }
+                ConditionTerm::IntegerNotEqual(self.integer(a).into(), self.integer(b).into())
             }
             // A `Bool` value rewrites its children, an application's
             // arguments and a read's pointer, as a word-valued application
@@ -5694,7 +5624,7 @@ mod tests {
     }
 
     #[test]
-    fn integer_rewrite_folds_product_identities_and_scales() {
+    fn integer_rewrite_preserves_product_identities_and_scales() {
         let x = IntegerTerm::from_machine(
             MachineIntegerType::UInt32,
             Bitvector32Term::Variable(Variable(65006)),
@@ -5708,10 +5638,20 @@ mod tests {
             for (left, right) in [(x.clone(), y.clone()), (y.clone(), x.clone())] {
                 let mut rewrite = TermRewrite::for_integer_exact(&source, &target);
                 let input = Term::Integer(IntegerTerm::Multiply(left.into(), right.into()));
-                let expected = if identity == 0 {
-                    replacement.clone()
-                } else {
-                    y.clone()
+                let expected = match &input {
+                    Term::Integer(IntegerTerm::Multiply(a, b)) => IntegerTerm::Multiply(
+                        if a == &source {
+                            target.clone()
+                        } else {
+                            a.clone()
+                        },
+                        if b == &source {
+                            target.clone()
+                        } else {
+                            b.clone()
+                        },
+                    ),
+                    _ => unreachable!(),
                 };
                 assert_eq!(rewrite.term(&input), Term::Integer(expected));
                 assert!(rewrite.changed);
@@ -5724,9 +5664,14 @@ mod tests {
                     expression = IntegerTerm::Multiply(child.clone(), child);
                 }
                 let mut rewrite = TermRewrite::for_integer_exact(&source, &target);
+                let mut expected = replacement.clone();
+                for _ in 0..depth {
+                    let child: SharedIntegerTerm = expected.into();
+                    expected = IntegerTerm::Multiply(child.clone(), child);
+                }
                 assert_eq!(
                     rewrite.term(&Term::Integer(expression)),
-                    Term::Integer(replacement.clone())
+                    Term::Integer(expected)
                 );
                 assert!(rewrite.changed);
                 assert!(rewrite.refusal().is_none());

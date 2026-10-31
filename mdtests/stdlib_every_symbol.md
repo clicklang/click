@@ -9,6 +9,16 @@ The `authority` resource's restricted empty-population source use is verified
 by `authority_establishes_and_retires_empty_stack_population` in
 `src/surface/tests/execution_tests.rs`.
 
+The separation axiom `separation::restrict` is verified in
+[`resource_theorem_parameters.md`](resource_theorem_parameters.md), including
+forwarding through a user theorem and application to C struct fields.
+The element law `separation::elements` is verified in
+[`separation_elements.md`](separation_elements.md) and
+[`separation_elements_types.md`](separation_elements_types.md).
+The generic range law `separation::subrange` is verified in
+[`generic_pointer_theorem_parameters.md`](generic_pointer_theorem_parameters.md),
+including nested generic applications and several element widths.
+
 The external catalog symbols `memcmp` and `strlen` are verified in
 [`strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md`](strlen_of_an_empty_string_and_memcmp_use_the_catalog_contracts.md),
 `memcpy` in

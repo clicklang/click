@@ -1640,6 +1640,11 @@ fn expand_declared_resource_tactic(
             record_produced_instances(&application, resource_definitions);
             Ok(ProofTactic::UserTactic(application))
         }
+        ProofTactic::TransportCertificate(certificate) => Ok(ProofTactic::TransportCertificate(
+            certificate.map_propositions(|p| {
+                expand_declared_resource_proposition(p.clone(), resource_definitions)
+            })?,
+        )),
         ProofTactic::ArithmeticCertificate(certificate) => Ok(ProofTactic::ArithmeticCertificate(
             expand_declared_resource_certificate(certificate, resource_definitions)?,
         )),
@@ -3253,6 +3258,19 @@ fn expand_declared_resource_proposition_one(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ClickProposition, ClickError> {
     match proposition {
+        ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => Ok(ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources: resources
+                .into_iter()
+                .map(|r| expand_declared_resource_subject(r, resource_definitions))
+                .collect::<Result<_, _>>()?,
+        }),
+
         ClickProposition::Comparison {
             left,
             operator,
@@ -3529,6 +3547,25 @@ fn expand_declared_resource_expression_node(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ContractExpression, ClickError> {
     match expression {
+        ContractExpression::Resource(subject) => Ok(ContractExpression::Resource(Box::new(
+            expand_declared_resource_subject(*subject, resource_definitions)?,
+        ))),
+        ContractExpression::Call { name, arguments }
+            if resource_definitions.definitions.contains_key(&name) =>
+        {
+            Ok(ContractExpression::Resource(Box::new(
+                expand_declared_resource_subject(
+                    ResourceSubject::Declared {
+                        kind: ResourceKind::Token,
+                        name,
+                        arguments,
+                        parameter_types: vec![],
+                    },
+                    resource_definitions,
+                )?,
+            )))
+        }
+
         ContractExpression::ResourceField(mut access) => {
             if let Some(name) = resource_definitions
                 .unowned_resource_parameters

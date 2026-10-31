@@ -292,7 +292,8 @@ pub(super) fn spec_proposition_supports_stateful_memory_refinement(
 pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
     match node {
         SpecNode::Proposition(proposition) => match proposition {
-            SpecProposition::SequenceComparison { .. }
+            SpecProposition::ChangesOnly { .. }
+            | SpecProposition::SequenceComparison { .. }
             | SpecProposition::SequenceMembership { .. }
             | SpecProposition::Comparison { .. }
             | SpecProposition::AlgebraicComparison { .. }

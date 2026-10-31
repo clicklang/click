@@ -113,16 +113,30 @@ pub(in crate::surface) fn verify_theorem_definition(
             function_environment,
         );
     }
+    let pointer_elements = theorem
+        .parameters()
+        .iter()
+        .filter_map(|parameter| match parameter.click_type() {
+            ClickType::C(C0Type::ParameterPointer(element)) => Some(element.name()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
     let substitution = theorem
         .type_parameters()
         .iter()
         .map(|name| {
             (
                 name.clone(),
-                ClickType::Algebraic(AlgebraicTypeApplication {
-                    rigid: true,
-                    name: name.clone(),
-                    arguments: Vec::new(),
+                generics::TypeArgument::from(if pointer_elements.contains(name.as_str()) {
+                    ClickType::C(C0Type::Parameter(crate::kernel::TypeParameterName::intern(
+                        name,
+                    )))
+                } else {
+                    ClickType::Algebraic(AlgebraicTypeApplication {
+                        rigid: true,
+                        name: name.clone(),
+                        arguments: Vec::new(),
+                    })
                 }),
             )
         })
@@ -1274,7 +1288,10 @@ pub(super) fn pure_theorem_context(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<PureTheoremContext, ClickError> {
     let memory = CMemory::new();
-    let values = pure_theorem_parameter_values(theorem.parameters());
+    let values = pure_theorem_parameter_values_with_generic_pointers(
+        theorem.parameters(),
+        &theorem.generic_pointer_parameters,
+    );
     let integer_values = pure_theorem_parameter_integer_values(theorem.parameters());
     let array_refs = pure_theorem_array_refs(theorem.parameters(), &values, &memory);
     // A theorem's premises are its `requires` clauses in source order, each
@@ -1345,7 +1362,7 @@ pub(super) fn pure_theorem_context(
                 ClickType::Algebraic(_) => {
                     crate::surface::lowering::algebraic_binder_variable(index).ok()?
                 }
-                ClickType::Integer => Variable(index as u64),
+                ClickType::Integer | ClickType::Resource => Variable(index as u64),
                 _ => return None,
             };
             Some((variable, parameter.name().to_owned()))
@@ -1481,6 +1498,13 @@ fn pure_theorem_parameter_integer_values(
 
 pub(in crate::surface) fn pure_theorem_parameter_values(
     parameters: &[FunctionParameter],
+) -> BTreeMap<String, CValue> {
+    pure_theorem_parameter_values_with_generic_pointers(parameters, &BTreeSet::new())
+}
+
+fn pure_theorem_parameter_values_with_generic_pointers(
+    parameters: &[FunctionParameter],
+    generic_pointers: &BTreeSet<String>,
 ) -> BTreeMap<String, CValue> {
     parameters
         .iter()
@@ -1756,10 +1780,17 @@ pub(in crate::surface) fn pure_theorem_parameter_values(
                     c_type.to_kernel_type(),
                 ),
             };
-            Some((
-                parameter.name().to_string(),
-                value.with_pointer_object_class(parameter.pointer_object_class()),
-            ))
+            let value = if generic_pointers.contains(parameter.name()) {
+                match value {
+                    CValue::Pointer(pointer) => CValue::Pointer(
+                        pointer.with_declared_object_class(parameter.pointer_object_class()),
+                    ),
+                    value => value,
+                }
+            } else {
+                value.with_pointer_object_class(parameter.pointer_object_class())
+            };
+            Some((parameter.name().to_string(), value))
         })
         .collect()
 }
@@ -1890,6 +1921,7 @@ fn verify_theorem_ensure(
             claim_label,
             context,
             goal,
+            spec_definitions,
         );
     }
 
@@ -2544,7 +2576,12 @@ fn is_nat_integer_law_name(name: &str) -> bool {
 }
 
 pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
-    integer_round_trip_destination(name).is_some()
+    name == "click::separation::restrict"
+        || matches!(
+            name.split("::<").next(),
+            Some("click::separation::subrange" | "click::separation::elements")
+        )
+        || integer_round_trip_destination(name).is_some()
         || crate::kernel::integer_truncation_law_requirements(name).is_some()
         || is_nat_integer_law_name(name)
         || matches!(
@@ -2622,8 +2659,12 @@ fn verify_kernel_standard_theorem_axiom(
     claim_label: &str,
     context: &PureTheoremContext,
     goal: Proposition,
+    spec_definitions: SpecDefinitions<'_>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let (parameter_count, requirement_count) = match theorem.name() {
+        "click::separation::restrict" => (4, 3),
+        name if name.split("::<").next() == Some("click::separation::subrange") => (5, 3),
+        name if name.split("::<").next() == Some("click::separation::elements") => (3, 1),
         "click::nat::to_integer_zero" | "click::nat::to_nat_zero" => (0, 0),
         "click::nat::to_integer_succ"
         | "click::nat::to_integer_nonnegative"
@@ -2708,7 +2749,69 @@ fn verify_kernel_standard_theorem_axiom(
             "`{claim_label}` does not have the declaration shape required by its kernel axiom",
         )));
     }
-    let axiom = if crate::kernel::integer_truncation_law_requirements(theorem.name()).is_some() {
+    let axiom = if theorem.name().split("::<").next() == Some("click::separation::elements") {
+        let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
+        {
+            Some(CValue::UInt64(value)) => Ok(value.clone()),
+            _ => Err(ClickError::new("elements indices must be uint64")),
+        };
+        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        else {
+            return Err(ClickError::new("elements base must be a typed pointer"));
+        };
+        let width = spec_definitions
+            .pointer_element_width(pointer)
+            .map_err(ClickError::new)?;
+        if width == 0 {
+            return Err(ClickError::new("elements requires a nonzero element width"));
+        }
+        crate::kernel::prove_separation_elements(
+            pointer.clone(),
+            width,
+            parameter(1)?,
+            parameter(2)?,
+        )
+    } else if theorem.name().split("::<").next() == Some("click::separation::subrange") {
+        let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
+        {
+            Some(CValue::Int32(value)) => Ok(value.clone()),
+            _ => Err(ClickError::new("subrange bounds must be int32")),
+        };
+        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        else {
+            return Err(ClickError::new("subrange base must be a typed pointer"));
+        };
+        let width = spec_definitions
+            .pointer_element_width(pointer)
+            .map_err(ClickError::new)?;
+        if width == 0 {
+            return Err(ClickError::new("subrange requires a nonzero element width"));
+        }
+        crate::kernel::prove_separation_subrange(
+            pointer.clone(),
+            width,
+            parameter(1)?,
+            parameter(2)?,
+            parameter(3)?,
+            parameter(4)?,
+        )
+    } else if theorem.name() == "click::separation::restrict" {
+        if theorem
+            .parameters()
+            .iter()
+            .any(|p| p.click_type() != &ClickType::Resource)
+        {
+            return Err(ClickError::new(
+                "separation::restrict parameters must be Resource",
+            ));
+        }
+        crate::kernel::prove_separation_restrict(
+            crate::kernel::CResource::Parameter(Variable(0)),
+            crate::kernel::CResource::Parameter(Variable(1)),
+            crate::kernel::CResource::Parameter(Variable(2)),
+            crate::kernel::CResource::Parameter(Variable(3)),
+        )
+    } else if crate::kernel::integer_truncation_law_requirements(theorem.name()).is_some() {
         let parameter = |index: usize| {
             let parameter = &theorem.parameters()[index];
             match context.integer_values.get(parameter.name()) {
@@ -3138,6 +3241,7 @@ pub(super) fn click_function_applications(
         applications: &mut Vec<ClickFunctionApplication>,
     ) {
         match term {
+            ContractExpression::Resource(_) => {}
             ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
@@ -3280,7 +3384,8 @@ pub(super) fn click_function_applications(
                     expression(argument, known_facts, applications);
                 }
             }
-            ClickProposition::Separate { .. }
+            ClickProposition::ChangesOnly { .. }
+            | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}
         }

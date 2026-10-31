@@ -267,7 +267,24 @@ impl TermClasses {
                     continue;
                 }
                 Work::RememberInteger(term) => {
-                    integer_values.insert(term, *values.last().expect("Integer value"));
+                    // Register literal identities as equalities, retaining the
+                    // original operation node and its source spelling.
+                    use crate::kernel::IntegerTerm as I;
+                    let value = *values.last().expect("Integer value");
+                    let zero = |t: &crate::kernel::SharedIntegerTerm| matches!(t.as_ref(), I::Constant(n) if n == &0.into());
+                    let one = |t: &crate::kernel::SharedIntegerTerm| matches!(t.as_ref(), I::Constant(n) if n == &1.into());
+                    let equivalent = match term.as_ref() {
+                        I::Add(a, b) if zero(b) => Some(a),
+                        I::Add(a, b) if zero(a) => Some(b),
+                        I::Subtract(a, b) if zero(b) => Some(a),
+                        I::Multiply(a, b) if zero(a) || one(b) => Some(a),
+                        I::Multiply(a, b) if zero(b) || one(a) => Some(b),
+                        _ => None,
+                    };
+                    if let Some(other) = equivalent.and_then(|child| integer_values.get(child)) {
+                        self.close(vec![(value, *other)]);
+                    }
+                    integer_values.insert(term, value);
                     continue;
                 }
                 Work::Integer(term) => {

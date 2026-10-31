@@ -54,6 +54,29 @@ expressions. A signed machine-addition equality needs evidence that the C
 operation is defined; an unsigned equality must account for modular arithmetic.
 No unconditional conversion distribution rule is sound.
 
+### Structural arithmetic and spelling
+
+Specification lowering retains mathematical addition, subtraction,
+multiplication, negation, truncating quotient/remainder, and comparison
+nodes, including constant operands. It does not compute `1 + 1` or replace
+its equality with `2` by `true`. Arithmetic checking evaluates these claims;
+constant subexpressions are evaluated once per shared node in the arithmetic
+certificate's comparison form, with numeric work charged before computation.
+Each shared node records whether it contains only literal arithmetic, computed
+from its immediate children at construction. This lets checking keep symbolic
+nonlinear atoms opaque without traversing their operand DAGs. A signed numeral such as `-2`
+is a constant; negating a bound expression retains a negation node.
+
+A rewrite can remove the last operand that supplied `Integer` context.
+Structural comparison synthesis therefore gives its left operand an explicit
+typed local expression, for example
+`(let integer_value: Integer = 1 + 1; integer_value) == 2`.
+The local's value is outside its binding scope, so this spelling cannot capture
+names inside the value. The right operand inherits mathematical context.
+Negation nodes similarly give their operands a typed local expression to
+distinguish an operator over a constant from a signed numeral. Source printing
+and reparsing must preserve the exact kernel nodes and comparison polarity.
+
 ### One form for comparisons of observations
 
 A comparison of exact observations of one machine type, `to_integer(x) OP
@@ -61,12 +84,20 @@ to_integer(y)` or `to_integer(x) OP c` for a constant `c` in the type's range,
 holds exactly when the native comparison `x OP y` or `x OP c` does
 (`to_integer` is injective and order-preserving within each type). The kernel
 states such a fact in one form, the native comparison
-(`native_comparison_of_integer_observation`, applied when a contract lowers and
+(`structural_native_comparison_of_integer_observation`, applied when a contract lowers and
 again by `canonical_observation_form` on every kernel-built verification
 condition). Written either way it is the same fact: `assumption()` closes
 `to_integer(i) < to_integer(n)` from `i < n`, and a dropped `requires right !=
 0u32;` beside `requires to_integer(right) != 0;` changes nothing. The order and
 equality bridge theorems below therefore restate a fact rather than derive one.
+
+Checking additionally evaluates literal arithmetic in the comparison view:
+`to_integer(x) != -2147483647 - 1` can establish the native `INT_MIN`
+exclusion while retaining its written subtraction. Compound proposition views
+are indexed at admission with their source and support count, so queries do
+not scan facts and withdrawing a source removes its support. Literal zero/unit
+arithmetic identities join equality-graph classes without replacing either
+term; generic substitution preserves operation and comparison nodes too.
 
 Two cases keep the Integer form. A comparison whose native form folds to a
 constant, such as `0 <= to_integer(u)` for an unsigned `u`, stays an Integer

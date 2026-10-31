@@ -3587,6 +3587,15 @@ pub(super) fn contract_expression_mentions_c_local(
     parameter_names: &BTreeSet<&str>,
 ) -> bool {
     match expression {
+        ContractExpression::Resource(subject) => {
+            let mut names = BTreeSet::new();
+            crate::surface::lowering::collect_resource_subject_referenced_names(
+                subject, &mut names,
+            );
+            names
+                .iter()
+                .any(|name| !parameter_names.contains(name.as_str()))
+        }
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {

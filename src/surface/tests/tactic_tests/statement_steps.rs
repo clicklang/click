@@ -1370,3 +1370,6 @@ void change(struct node *g, struct node *source, struct node *t) {
         .expect_err("transport must refuse a pointer overwritten after its source snapshot");
     assert!(error.message().contains("transport"), "{}", error.message());
 }
+
+#[path = "../../../scaling_tests/surface/tests/tactic_tests/statement_steps.rs"]
+mod scaling_tests;

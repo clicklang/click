@@ -673,7 +673,8 @@ fn verify_click_file_theorems_with_environment(
     verify_theorem_definitions(
         TheoremEnvironment::with_standard_library(&[])?,
         file.theorem_definitions(),
-        SpecDefinitions::new(&predicate_environment, &click_function_environment),
+        SpecDefinitions::new(&predicate_environment, &click_function_environment)
+            .with_struct_sizes(&file.struct_sizes),
         function_environment,
         &ResourceEnvironment::new(&combined_resource_definitions(file)?),
         function_source_registry,
@@ -751,7 +752,8 @@ pub(in crate::surface) fn verify_click_theorems_with_context(
         &parsed_sources,
         &external_and_user_function_blocks,
         file.contract_definitions(),
-        SpecDefinitions::new(&predicate_environment, &click_function_environment),
+        SpecDefinitions::new(&predicate_environment, &click_function_environment)
+            .with_struct_sizes(&file.struct_sizes),
         &resource_environment,
     )?
     .with_byte_order(file.selected_c_target().byte_order());
@@ -826,7 +828,8 @@ fn verify_click_file_theorem_context(
         &combined_algebraic_type_definitions(&file)?,
     );
     let spec_definitions =
-        SpecDefinitions::new(&predicate_environment, &click_function_environment);
+        SpecDefinitions::new(&predicate_environment, &click_function_environment)
+            .with_struct_sizes(&file.struct_sizes);
     let resource_environment = ResourceEnvironment::new(&resource_definitions);
     let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
     let mut function_environment = build_function_environment(
@@ -2325,7 +2328,8 @@ fn verify_c0_sources_in_context(
             &combined_algebraic_type_definitions(&file)?,
         );
         let spec_definitions =
-            SpecDefinitions::new(&predicate_environment, &click_function_environment);
+            SpecDefinitions::new(&predicate_environment, &click_function_environment)
+                .with_struct_sizes(&file.struct_sizes);
         let resource_environment = ResourceEnvironment::with_struct_layouts(
             &resource_definitions,
             &resource_struct_layouts,
@@ -2458,7 +2462,8 @@ fn verify_c0_sources_in_context(
         )
     };
     let spec_definitions =
-        SpecDefinitions::new(&predicate_environment, &click_function_environment);
+        SpecDefinitions::new(&predicate_environment, &click_function_environment)
+            .with_struct_sizes(&file.struct_sizes);
 
     // Frame evidence may look through composite definitions to decide that a
     // call's mutable ranges or a store's written cell cannot touch a loaded
@@ -2796,10 +2801,7 @@ fn verify_c0_sources_in_context(
                             &claim,
                             &claim_label,
                             &verification_function_environment,
-                            SpecDefinitions::new(
-                                &predicate_environment,
-                                &click_function_environment,
-                            ),
+                            spec_definitions,
                             &resource_environment,
                             &theorem_environment,
                             function_source_registry.clone(),

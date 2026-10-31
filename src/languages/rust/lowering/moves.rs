@@ -66,6 +66,19 @@ pub(super) fn lower(
             );
             continue;
         }
+        if let Type::EnumerateIterator { element } | Type::EnumerateOption { element } =
+            &local.value_type
+        {
+            declarations = c_seq(
+                declarations,
+                cx.enumerate_storage(
+                    &local.name,
+                    element,
+                    matches!(local.value_type, Type::EnumerateOption { .. }),
+                )?,
+            );
+            continue;
+        }
         if let Type::Range { element } = &local.value_type {
             declarations = c_seq(declarations, cx.range_storage(&local.name, element)?);
             continue;
@@ -528,6 +541,11 @@ pub(super) fn lower(
                     size,
                 } => cx.chunk_initialize_mir(target, slice, size)?,
                 S::ChunkMove { target, source } => cx.chunk_move(target, source)?,
+                S::EnumerateInitialize { target, source } => {
+                    cx.enumerate_initialize(target, source)?
+                }
+                S::EnumerateMove { target, source } => cx.enumerate_move(target, source)?,
+                S::EnumerateNext { iterator, option } => cx.enumerate_next(iterator, option)?,
                 S::RangeInitialize { target, start, end } => {
                     cx.range_initialize(target, start, end)?
                 }
@@ -912,7 +930,10 @@ fn iterator_reference(ty: &Type) -> bool {
         Type::Reference { pointee, .. } => {
             matches!(
                 pointee.as_ref(),
-                Type::ChunkIterator | Type::SharedArrayIterator { .. } | Type::Range { .. }
+                Type::ChunkIterator
+                    | Type::SharedArrayIterator { .. }
+                    | Type::EnumerateIterator { .. }
+                    | Type::Range { .. }
             ) || iterator_reference(pointee)
         }
         _ => false,
@@ -1413,6 +1434,7 @@ mod tests {
                 references: BTreeMap::new(),
                 shared_array_iterators: BTreeMap::new(),
                 ranges: BTreeMap::new(),
+                enumerated: BTreeSet::new(),
                 shared_array_options: BTreeMap::new(),
                 shared_scalar_slices: BTreeMap::new(),
                 chunk_iterators: BTreeSet::new(),

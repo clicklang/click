@@ -838,6 +838,7 @@ pub(in crate::surface) fn walk_written_expressions(
     visit(expression);
     let mut children: Vec<&ContractExpression> = Vec::new();
     match expression {
+        ContractExpression::Resource(_) => {}
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
@@ -957,7 +958,8 @@ pub(in crate::surface) fn walk_written_expressions_in_proposition(
                 walk_written_expressions(argument, visit);
             }
         }
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => {}
     }

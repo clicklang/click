@@ -682,6 +682,13 @@ fn advance_execution_proof_statement(
                 state: exit_state, ..
             } = &transition.outcome
             {
+                let footprint = crate::kernel::RegionFootprint::transition(
+                    format!("region({statement_index}).footprint"),
+                    &context.state,
+                    exit_state,
+                    &transition.execution_facts,
+                );
+                recorded_snapshots.record_effect(Some(&footprint));
                 record_code_region_program_snapshot_state(
                     &mut recorded_snapshots,
                     environment.function_block,

@@ -420,6 +420,10 @@ fn merge_modules(
     identities.retain(|identity| identity != entry);
     identities.push(entry.to_string());
     let mut merged = ClickFile {
+        struct_sizes: locals
+            .get(entry)
+            .map(|file| file.struct_sizes.clone())
+            .unwrap_or_default(),
         c_function_names: locals
             .get(entry)
             .map(|file| file.c_function_names.clone())
@@ -887,7 +891,7 @@ verifying "test.c";
 int32 caller(int32 x) {
     ensures result == x + 1 by { step_until(function.exit); solve(); }
 }
-void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); assumption(); }
+void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); solve(); }
 "#,
             ["library.click".to_string()],
         );

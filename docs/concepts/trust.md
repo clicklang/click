@@ -43,7 +43,10 @@ public kernel function that returns a `Theorem` is an axiom in Click's sense,
 even when its Rust name is `prove_*`: about 125 such operations, some of which
 are parameterized families (see [Kernel](../internals/kernel.md#trusted-shape)
 and the glossary entry for axiom). Fifteen `prove_int32_*` operations are also
-exposed as named standard theorems.
+exposed as named standard theorems. `separation::restrict` is likewise a named
+trusted axiom, implemented in `src/kernel/separation_laws.rs`: separate parents
+and explicit containment premises imply separate parts. Its `Resource`
+parameters describe resources without granting ownership.
 
 The kernel deliberately contains domain-specific reasoning about C memory,
 resources, integers, and allocation, so that verification is fast and proofs

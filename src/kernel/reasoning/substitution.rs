@@ -660,6 +660,7 @@ fn walk_c_ranking_component<S: VariableSubstitution + ?Sized>(
 
 fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S) -> CResource {
     match resource {
+        CResource::Footprint(_) | CResource::Parameter(_) => resource.clone(),
         CResource::PopulationAuthority(description) => CResource::PopulationAuthority(
             description.map_values(|value| walk_algebraic_value(value, s)),
         ),
@@ -3073,6 +3074,10 @@ fn collect_memory_bound_variables_entering(
 
 fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeSet<Variable>) {
     match resource {
+        CResource::Footprint(_) => {}
+        CResource::Parameter(v) => {
+            variables.insert(*v);
+        }
         CResource::PopulationAuthority(description) => {
             description
                 .visit_values(|value| collect_algebraic_value_bound_variables(value, variables));
@@ -7321,6 +7326,18 @@ fn substitute_pointer_variable_in_spec_proposition(
                 })
                 .collect(),
         },
+        SpecProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => SpecProposition::ChangesOnly {
+            before: substitute_pointer_variable_in_spec_memory(before, from, to),
+            after: substitute_pointer_variable_in_spec_memory(after, from, to),
+            resources: resources
+                .iter()
+                .map(|r| substitute_pointer_variable_in_spec_resource(r, from, to))
+                .collect(),
+        },
         SpecProposition::ResourceSeparate { left, right } => SpecProposition::ResourceSeparate {
             left: substitute_pointer_variable_in_spec_resource(left, from, to),
             right: substitute_pointer_variable_in_spec_resource(right, from, to),
@@ -7375,6 +7392,7 @@ fn substitute_pointer_variable_in_spec_resource(
     to: &Pointer,
 ) -> SpecResource {
     match resource {
+        SpecResource::Value(_) => resource.clone(),
         SpecResource::Memory {
             base,
             start,

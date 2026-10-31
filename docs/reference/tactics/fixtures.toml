@@ -291,3 +291,8 @@ needle = "scatter(arena_cells(data, occupied, capacity));"
 id = "step-contract-map"
 path = "mdtests/named_contract_call_output_bindings.md"
 needle = "let { result: status, output: done } = step(Repair, { input: dirty });"
+
+[[form]]
+id = "transport-certificate"
+path = "mdtests/transport_certificate.md"
+needle = "transport_certificate {"

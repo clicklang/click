@@ -4032,3 +4032,65 @@ theorem int32_remainder_to_integer(left: int32, right: int32) {
 ```
 
 Connects a defined signed machine remainder to mathematical truncation. Native definedness excludes both a zero divisor and `INT32_MIN % -1`; a nonzero mathematical divisor alone does not establish that the C operation is defined.
+
+## Separation
+
+### `separation::restrict`
+
+```click
+theorem restrict(A: Resource, B: Resource, a: Resource, b: Resource) {
+    requires separate(A, B);
+    requires contains(A, a);
+    requires contains(B, b);
+    ensures separate(a, b);
+}
+```
+
+**Meaning:** Contained parts of separate parents are separate. Import
+`click::separation` and apply the theorem with the three explicit premises.
+`Resource` arguments are descriptors and grant no ownership. This named axiom
+is backed by a trusted kernel constructor; application does not search memory
+history or discover containment facts.
+
+**Verified use:** [`mdtests/resource_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_theorem_parameters.md).
+
+### `separation::elements`
+
+```click
+theorem elements<T>(p: T*, i: uint64, j: uint64) {
+    requires i != j;
+    ensures separate(memory(p[i]), memory(p[j]));
+}
+```
+
+**Meaning:** Unequal indices of one typed array describe separate complete
+elements. Indices are `uint64`; the inferred `T` supplies the physical
+storage width, including struct padding. Apply with the explicit disequality
+premise. The law constructs two element descriptors directly, without enumerating
+an interval or inspecting memory history. These are logical resource descriptors;
+the law grants no ownership or permission to read or write either element.
+Executable pointer arithmetic and accesses retain their normal definedness checks.
+
+**Verified use:** [`mdtests/separation_elements.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements.md) and [`mdtests/separation_elements_types.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_types.md).
+
+### `separation::subrange`
+
+```click
+theorem subrange<T>(p: T*, lo: int32, hi: int32, inner_lo: int32, inner_hi: int32) {
+    requires lo <= inner_lo;
+    requires inner_lo <= inner_hi;
+    requires inner_hi <= hi;
+    ensures contains(memory(p[lo..hi]), memory(p[inner_lo..inner_hi]));
+}
+```
+
+**Meaning:** Nested element intervals describe contained resources. Bounds are
+in elements of the inferred type `T`, not bytes. Both descriptors retain the
+same pointer origin and element width. The law grants no ownership or read
+permission. It constructs the containment implication directly, without
+searching facts, enumerating elements, or traversing memory history.
+Applications supply all three bound premises explicitly. Empty inner intervals
+are permitted. Memory access and separation still require their usual validity
+conditions.
+
+**Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md) and [`mdtests/generic_pointer_struct_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_struct_parameters.md), including padded structs and struct-pointer elements.

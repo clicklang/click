@@ -2586,6 +2586,7 @@ fn collect_conjunctive_loadability_segments(
         // or range binder is not unconditional entry authority.
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
+        | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Defined { .. }
@@ -2884,6 +2885,7 @@ fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
         | ClickProposition::RangeAny { body, .. } => click_proposition_mentions_defined(body),
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
+        | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }

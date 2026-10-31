@@ -242,6 +242,8 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "constructs",
     "consumes",
     "contains",
+    "changes_only",
+    "transitive",
     "contract",
     "contradiction",
     "conclusion",
@@ -278,6 +280,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "import",
     "implies",
     "arithmetic_certificate",
+    "transport_certificate",
     "peel",
     "signed_int32",
     "rules",
@@ -365,11 +368,13 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "at",
     "at-expression",
     "region-allocation",
+    "region-footprint",
     "auto",
     "bool",
     "by",
     "c-fragment",
     "contains-proposition",
+    "changes-only",
     "contract",
     "decreases",
     "defined",
@@ -442,6 +447,10 @@ fn library_module_path(identity: &str) -> String {
 /// with the declarations of the modules before it.
 const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
+        "library/separation.click",
+        include_str!("../library/separation.click"),
+    ),
+    (
         "library/primitives.click",
         include_str!("../library/primitives.click"),
     ),
@@ -505,6 +514,8 @@ pub(in crate::surface) fn call_source_spelling(callee: &str) -> &str {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClickFile {
+    /// Physical struct strides retained for generic theorem instantiation.
+    struct_sizes: std::sync::Arc<BTreeMap<String, u32>>,
     /// Unique source spelling to C execution identity, shared by specification lowering.
     c_function_names: std::sync::Arc<BTreeMap<String, String>>,
     imports: Vec<ImportDeclaration>,
@@ -790,6 +801,8 @@ impl AlgebraicFieldType {
 /// of Click types; specification-only algebraic datatypes are another.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ClickType {
+    /// A specification-only resource descriptor; it carries no ownership.
+    Resource,
     /// A declaration-scoped type parameter. Generic logical declarations are
     /// instantiated to concrete types at applications, or rigid arbitrary
     /// types when checking theorem declarations, before crossing into Kernel Click.
@@ -808,6 +821,7 @@ pub enum ClickType {
 impl ClickType {
     pub fn c_type(&self) -> Option<C0Type> {
         match self {
+            Self::Resource => None,
             Self::Parameter(_) => None,
             Self::C(c_type) | Self::CObjectPointer { c_type, .. } => Some(*c_type),
             Self::Integer => None,
@@ -989,6 +1003,8 @@ impl ResourceWitness {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TheoremDefinition {
+    /// `T*` supplies a declared element type, not original-object provenance.
+    generic_pointer_parameters: BTreeSet<String>,
     /// Where the parser read this theorem's clauses.
     body: parser::DeclarationBody,
     name: String,
@@ -1931,6 +1947,15 @@ pub struct ResourceFieldAccess {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceSubject {
+    Footprint(CodeRegionRef),
+    Parameter {
+        name: String,
+        index: usize,
+    },
+    Captured {
+        value: crate::kernel::CResource,
+        source: Box<ResourceSubject>,
+    },
     Memory(ContractSegment),
     Declared {
         kind: ResourceKind,
@@ -1954,6 +1979,11 @@ pub enum ResourceKind {
 
 #[derive(Debug, Eq, PartialEq, Hash)]
 pub enum ClickProposition {
+    ChangesOnly {
+        before: SnapshotSelector,
+        after: SnapshotSelector,
+        resources: Vec<ResourceSubject>,
+    },
     Comparison {
         left: ContractExpression,
         operator: ComparisonOperator,
@@ -2033,6 +2063,16 @@ impl Clone for ClickProposition {
 
 fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposition {
     match proposition {
+        ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => ClickProposition::ChangesOnly {
+            before: before.clone(),
+            after: after.clone(),
+            resources: resources.clone(),
+        },
+
         ClickProposition::Comparison {
             left,
             operator,
@@ -2408,6 +2448,7 @@ pub(crate) fn clone_theorem_definition_iteratively(
     #[cfg(test)]
     THEOREM_DEFINITION_COPIES.with(|copies| copies.set(copies.get() + 1));
     TheoremDefinition {
+        generic_pointer_parameters: theorem.generic_pointer_parameters.clone(),
         body: theorem.body.clone(),
         name: theorem.name.clone(),
         type_parameters: theorem.type_parameters.clone(),
@@ -2585,6 +2626,11 @@ fn collect_current_resource_subject_variables(
     names: &mut BTreeSet<String>,
 ) {
     match subject {
+        ResourceSubject::Footprint(_) => {}
+        ResourceSubject::Parameter { name, .. } => {
+            names.insert(name.clone());
+        }
+        ResourceSubject::Captured { .. } => {}
         ResourceSubject::Memory(segment) => collect_current_segment_variables(segment, names),
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
@@ -2599,6 +2645,9 @@ pub(crate) fn collect_current_contract_expression_variables(
     names: &mut BTreeSet<String>,
 ) {
     match expression {
+        ContractExpression::Resource(subject) => {
+            collect_current_resource_subject_variables(subject, names)
+        }
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
@@ -2711,6 +2760,8 @@ fn collect_current_proposition_variables(
     let mut pending = vec![proposition];
     while let Some(proposition) = pending.pop() {
         match proposition {
+            ClickProposition::ChangesOnly { .. } => {}
+
             ClickProposition::Comparison { left, right, .. } => {
                 collect_current_contract_expression_variables(left, names);
                 collect_current_contract_expression_variables(right, names);
@@ -2767,6 +2818,7 @@ fn collect_current_proposition_variables(
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ContractExpression {
+    Resource(Box<ResourceSubject>),
     /// An unsuffixed decimal retained until specification type checking. The
     /// same source spelling can denote a C literal or an exact Integer when
     /// its surrounding expression supplies that context.
@@ -2996,6 +3048,25 @@ const POINTER_POINTS_OFFERED: usize = 4;
 
 #[derive(Clone)]
 struct RecordedSnapshots {
+    effect_log: imbl::Vector<crate::kernel::CResource>,
+    effect_gaps: imbl::Vector<usize>,
+    effect_offsets: imbl::OrdMap<SnapshotSelector, usize>,
+    footprint_values: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<
+                (
+                    SnapshotSelector,
+                    SnapshotSelector,
+                    usize,
+                    usize,
+                    Option<crate::kernel::CResource>,
+                    crate::kernel::SharedCMemory,
+                    crate::kernel::SharedCMemory,
+                ),
+                crate::kernel::CResource,
+            >,
+        >,
+    >,
     version: std::sync::Arc<RecordedSnapshotVersion>,
     /// The labels the proof gave loops on this path. A program point is
     /// recorded once, under its loop's first label when it has one and as
@@ -3073,6 +3144,12 @@ struct RecordedSnapshotVersion {
 impl Default for RecordedSnapshots {
     fn default() -> Self {
         Self {
+            effect_log: imbl::Vector::new(),
+            effect_gaps: imbl::Vector::new(),
+            effect_offsets: imbl::OrdMap::new(),
+            footprint_values: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             version: std::sync::Arc::new(RecordedSnapshotVersion {
                 root: None,
                 history: None,
@@ -3222,6 +3299,126 @@ impl<'a> Iterator for RecordedSnapshotRange<'a> {
 }
 
 impl RecordedSnapshots {
+    fn record_effect(&mut self, effect: Option<&std::sync::Arc<crate::kernel::RegionFootprint>>) {
+        if let Some(effect) = effect {
+            let gap = self.effect_log.back().is_some_and(|previous| {
+                let crate::kernel::CResource::Footprint(previous) = previous else {
+                    unreachable!()
+                };
+                crate::kernel::intern_c_memory_ref(&previous.after)
+                    != crate::kernel::intern_c_memory_ref(&effect.before)
+                    || !previous
+                        .after_resources
+                        .shares_storage_with(&effect.before_resources)
+            });
+            self.effect_gaps
+                .push_back(self.effect_gaps.back().copied().unwrap_or(0) + usize::from(gap));
+            self.effect_log
+                .push_back(crate::kernel::CResource::Footprint(effect.clone()));
+        }
+    }
+
+    fn footprint(&self, region: &CodeRegionRef) -> Result<crate::kernel::CResource, String> {
+        let before = self.recorded_spelling(SnapshotSelector::ProgramPoint(ProgramPointRef {
+            region: region.clone(),
+            kind: ProgramPointKind::Entry,
+        }));
+        let after = self.recorded_spelling(SnapshotSelector::ProgramPoint(ProgramPointRef {
+            region: region.clone(),
+            kind: ProgramPointKind::Exit,
+        }));
+        let start = *self
+            .effect_offsets
+            .get(&before)
+            .ok_or("region footprint requires a recorded entry")?;
+        let end = *self
+            .effect_offsets
+            .get(&after)
+            .ok_or("region footprint requires a recorded exit")?;
+        if start > end {
+            return Err("region footprint endpoints belong to different executions".into());
+        }
+        let before_state = self.get(&before).ok_or("missing footprint entry")?;
+        let after_state = self.get(&after).ok_or("missing footprint exit")?;
+        let memory_is = |a: &crate::kernel::CMemory, b: &crate::kernel::CMemory| {
+            crate::kernel::intern_c_memory_ref(a) == crate::kernel::intern_c_memory_ref(b)
+        };
+        let covered = if start == end {
+            memory_is(before_state.memory(), after_state.memory())
+                && before_state
+                    .resources()
+                    .shares_storage_with(after_state.resources())
+        } else {
+            match (self.effect_log.get(start), self.effect_log.get(end - 1)) {
+                (
+                    Some(crate::kernel::CResource::Footprint(first)),
+                    Some(crate::kernel::CResource::Footprint(last)),
+                ) => {
+                    memory_is(before_state.memory(), &first.before)
+                        && memory_is(after_state.memory(), &last.after)
+                        && before_state
+                            .resources()
+                            .shares_storage_with(&first.before_resources)
+                        && after_state
+                            .resources()
+                            .shares_storage_with(&last.after_resources)
+                        && self.effect_gaps.get(start) == self.effect_gaps.get(end - 1)
+                }
+                _ => false,
+            }
+        };
+        if !covered {
+            return Err("region footprint is not recorded across this execution boundary".into());
+        }
+        let key = (
+            before.clone(),
+            after.clone(),
+            start,
+            end,
+            end.checked_sub(1)
+                .and_then(|i| self.effect_log.get(i).cloned()),
+            crate::kernel::intern_c_memory_ref(before_state.memory()),
+            crate::kernel::intern_c_memory_ref(after_state.memory()),
+        );
+        if let Some(value) = self.footprint_values.lock().unwrap().get(&key) {
+            return Ok(value.clone());
+        }
+        let mut members = self.effect_log.clone().split_off(start);
+        members.truncate(end - start);
+        // A state comparison cannot establish that an unrecorded region had
+        // no effects: a write may restore the same value. Only the matching
+        // producer's atomic region is currently a complete footprint.
+        let complete = match (&before, &after, members.front()) {
+            (
+                SnapshotSelector::ProgramPoint(ProgramPointRef {
+                    region: CodeRegionRef::Region(a),
+                    ..
+                }),
+                SnapshotSelector::ProgramPoint(ProgramPointRef {
+                    region: CodeRegionRef::Region(b),
+                    ..
+                }),
+                Some(crate::kernel::CResource::Footprint(effect)),
+            ) => a == b && members.len() == 1 && effect.source == format!("region({a}).footprint"),
+            _ => false,
+        };
+        let value = crate::kernel::CResource::Footprint(crate::kernel::RegionFootprint::sequence(
+            format!(
+                "{}.footprint",
+                diagnostics::describe_code_region_ref(region)
+            ),
+            self.get(&before).ok_or("missing footprint entry")?,
+            self.get(&after).ok_or("missing footprint exit")?,
+            members,
+            complete,
+        ));
+        self.footprint_values
+            .lock()
+            .unwrap()
+            .insert(key, value.clone());
+        Ok(value)
+    }
+
     fn new() -> Self {
         Self::default()
     }
@@ -3758,6 +3955,8 @@ impl RecordedSnapshots {
 
     fn insert(&mut self, selector: impl Into<SnapshotSelector>, state: CState) -> Option<CState> {
         let selector = self.recorded_spelling(selector.into());
+        self.effect_offsets
+            .insert(selector.clone(), self.effect_log.len());
         let prior = self.get(&selector).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), Some(&state));
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
@@ -4724,6 +4923,7 @@ pub enum ProofTactic {
     AutoClose,
     SolveUsing(ProofSolveUsing),
     ArithmeticCertificate(ArithmeticCertificate),
+    TransportCertificate(TransportCertificate),
     /// Dev-only proof hole. Closes the enclosing proof unit without checking
     /// anything. Parses only while `verification::with_allow_sorry` is active
     /// (set solely by `click verify --allow-sorry`); every other use is
@@ -5124,6 +5324,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "transport-certificate",
+        syntax: "transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "arithmetic-certificate",
         syntax: "arithmetic_certificate { premise ...; conclusion N; }",
         class: "simple",
@@ -5342,6 +5547,7 @@ impl ProofTactic {
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
             Self::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
+            Self::TransportCertificate(_) => TacticClass::Simple(SimpleTactic::FactTransport),
             Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
             Self::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
@@ -6510,6 +6716,7 @@ impl ParameterIndex {
 /// and its Click functions.
 #[derive(Clone, Copy)]
 struct SpecDefinitions<'a> {
+    struct_sizes: Option<&'a BTreeMap<String, u32>>,
     predicates: &'a PredicateEnvironment,
     functions: &'a ClickFunctionEnvironment,
 }
@@ -6519,7 +6726,30 @@ impl<'a> SpecDefinitions<'a> {
         Self {
             predicates,
             functions,
+            struct_sizes: None,
         }
+    }
+
+    fn with_struct_sizes(mut self, sizes: &'a BTreeMap<String, u32>) -> Self {
+        self.struct_sizes = Some(sizes);
+        self
+    }
+
+    fn pointer_element_width(&self, pointer: &crate::kernel::CPointerValue) -> Result<u32, String> {
+        if let Some(crate::kernel::effective_type::CAccessClass::Struct(class)) =
+            pointer.object_class()
+        {
+            return self
+                .struct_sizes
+                .and_then(|sizes| sizes.get(class.tag()))
+                .copied()
+                .ok_or_else(|| format!("struct `{}` has no known layout", class.tag()));
+        }
+        pointer
+            .c_type()
+            .pointee_type()
+            .map(CType::byte_width)
+            .ok_or_else(|| "expected a sized pointer element".to_string())
     }
 }
 
@@ -6732,6 +6962,7 @@ fn contract_expression_reads_memory(
     callees: &mut Vec<String>,
 ) -> bool {
     match expression {
+        ContractExpression::Resource(_) => false,
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
@@ -6857,7 +7088,8 @@ fn click_proposition_reads_memory(
         }
         // Resource separation, containment, loadability, snapshots, and
         // predicates all observe the C state.
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::At { .. }
@@ -8417,6 +8649,7 @@ impl FunctionSignature {
 impl FunctionParameter {
     pub fn c_type(&self) -> C0Type {
         match &self.click_type {
+            ClickType::Resource => panic!("a Resource parameter has no C type"),
             ClickType::Parameter(_) => {
                 panic!("a generic Click parameter has no concrete C type")
             }
@@ -10032,3 +10265,76 @@ impl Eq for ClickError {}
 
 #[cfg(test)]
 mod tests;
+
+/// Explicit resource transport proof. All references name earlier nodes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TransportCertificate {
+    pub nodes: Vec<TransportCertificateNode>,
+    pub conclusion: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TransportCertificateNode {
+    Premise {
+        index: usize,
+        proposition: ClickProposition,
+        result: ClickProposition,
+    },
+    Preserve {
+        effect: Option<usize>,
+        separation: usize,
+        result: ClickProposition,
+    },
+    Transitive {
+        left: usize,
+        right: usize,
+        result: ClickProposition,
+    },
+}
+
+impl TransportCertificate {
+    pub(crate) fn map_propositions<E>(
+        &self,
+        mut f: impl FnMut(&ClickProposition) -> Result<ClickProposition, E>,
+    ) -> Result<Self, E> {
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|node| {
+                Ok(match node {
+                    TransportCertificateNode::Premise {
+                        index,
+                        proposition,
+                        result,
+                    } => TransportCertificateNode::Premise {
+                        index: *index,
+                        proposition: f(proposition)?,
+                        result: f(result)?,
+                    },
+                    TransportCertificateNode::Preserve {
+                        effect,
+                        separation,
+                        result,
+                    } => TransportCertificateNode::Preserve {
+                        effect: *effect,
+                        separation: *separation,
+                        result: f(result)?,
+                    },
+                    TransportCertificateNode::Transitive {
+                        left,
+                        right,
+                        result,
+                    } => TransportCertificateNode::Transitive {
+                        left: *left,
+                        right: *right,
+                        result: f(result)?,
+                    },
+                })
+            })
+            .collect::<Result<_, E>>()?;
+        Ok(Self {
+            nodes,
+            conclusion: self.conclusion,
+        })
+    }
+}

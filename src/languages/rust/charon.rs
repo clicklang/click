@@ -9,6 +9,7 @@ mod chunks;
 mod closures;
 mod constants;
 mod constructors;
+mod enumerate;
 mod option_take;
 #[cfg(test)]
 mod option_take_tests;
@@ -717,6 +718,14 @@ impl Adapter<'_> {
                     .ok_or_else(|| unsupported("symbolic array length"))?
                     as u64,
             },
+            a::TyKind::Adt(_) if self.enumerate_element(t).is_some() => Type::EnumerateIterator {
+                element: Box::new(self.ty(self.enumerate_element(t).unwrap())?),
+            },
+            a::TyKind::Adt(_) if self.enumerate_option_element(t).is_some() => {
+                Type::EnumerateOption {
+                    element: Box::new(self.ty(self.enumerate_option_element(t).unwrap())?),
+                }
+            }
             a::TyKind::Adt(_) if self.shared_iterator_element(t, false).is_some() => {
                 Type::SharedArrayIterator {
                     element: Box::new(self.ty(self.shared_iterator_element(t, false).unwrap())?),
@@ -1140,6 +1149,9 @@ impl BodyAdapter<'_, '_> {
         if let Some(statement) = self.split_slice_call(t)? {
             return Ok(Some(statement));
         }
+        if let Some(statement) = self.enumerate_call(t)? {
+            return Ok(Some(statement));
+        }
         if let Some(statement) = self.range_call(t)? {
             return Ok(Some(statement));
         }
@@ -1314,6 +1326,9 @@ impl BodyAdapter<'_, '_> {
                 return Err(unsupported("Option projection"));
             }
             return self.place(base);
+        }
+        if let Some(value) = self.enumerate_projection(p)? {
+            return Ok(value);
         }
         if let Some(value) = self.iterator_projection(p)? {
             return Ok(value);

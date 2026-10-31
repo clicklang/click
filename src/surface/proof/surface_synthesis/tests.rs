@@ -3448,3 +3448,73 @@ fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
         assert_eq!(lower(written_again), original, "{text}");
     }
 }
+
+#[test]
+fn mathematical_constant_goals_keep_structure_and_type() {
+    use crate::kernel::IntegerTerm;
+    let c = IntegerTerm::constant_i64;
+    let pairs = [
+        (c(1), c(1)),
+        (IntegerTerm::Add(c(1).into(), c(1).into()), c(2)),
+        (IntegerTerm::Add(c(1).into(), c(1).into()), c(3)),
+        (
+            IntegerTerm::Add(c(2147483647).into(), c(1).into()),
+            c(2147483648),
+        ),
+        (IntegerTerm::Subtract(c(1).into(), c(1).into()), c(0)),
+        (IntegerTerm::Multiply(c(3).into(), c(2).into()), c(6)),
+        (IntegerTerm::Negate(c(1).into()), c(-1)),
+        (
+            IntegerTerm::Negate(IntegerTerm::Negate(c(1).into()).into()),
+            c(1),
+        ),
+        (
+            IntegerTerm::TruncatingQuotient(c(-7).into(), c(3).into()),
+            c(-2),
+        ),
+        (
+            IntegerTerm::TruncatingRemainder(c(-7).into(), c(3).into()),
+            c(-1),
+        ),
+    ];
+    for (left, right) in pairs {
+        for constructor in [
+            ConditionTerm::IntegerEqual,
+            ConditionTerm::IntegerNotEqual,
+            ConditionTerm::IntegerLessThan,
+            ConditionTerm::IntegerLessEqual,
+            ConditionTerm::IntegerGreaterThan,
+            ConditionTerm::IntegerGreaterEqual,
+        ] {
+            for truth in [false, true] {
+                let goal = Proposition::ConditionIs(
+                    constructor(left.clone().into(), right.clone().into()),
+                    truth,
+                );
+                let state = CState::new();
+                let surface =
+                    synthesize_surface_proposition(&goal, ParameterBinding::default(), &state)
+                        .unwrap();
+                let text = crate::surface::printing::source_click_proposition(&surface);
+                assert_eq!(
+                    relower_written_proposition(&surface, &state).unwrap(),
+                    goal,
+                    "{text}"
+                );
+                let file = parser::parse(&format!(
+                    "theorem probe() {{ requires {text}; ensures true; }}"
+                ))
+                .unwrap();
+                let Requirement::Proposition(parsed) = &file.theorem_definitions()[0].requires()[0]
+                else {
+                    panic!()
+                };
+                assert_eq!(
+                    relower_written_proposition(parsed, &state).unwrap(),
+                    goal,
+                    "{text}"
+                );
+            }
+        }
+    }
+}

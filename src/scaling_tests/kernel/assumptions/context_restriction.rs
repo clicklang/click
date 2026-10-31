@@ -362,3 +362,52 @@ fn atomic_view_miss_cannot_reopen_coverage_bucket_scans() {
         );
     }
 }
+
+#[test]
+fn numeric_comparison_view_queries_do_not_scan_supports() {
+    use crate::kernel::{IntegerTerm as I, SharedIntegerTerm};
+    let mut samples = Vec::new();
+    for size in [8i64, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut context = PureFactContext::new();
+        let mut selected = None;
+        for index in 0..size {
+            let bound: SharedIntegerTerm = I::Subtract(
+                I::constant_i64(index).into(),
+                I::constant_i64(index + 2147483648).into(),
+            )
+            .into();
+            let source = Proposition::Or(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::IntegerNotEqual(
+                        I::from_machine(
+                            MachineIntegerType::Int32,
+                            Bitvector32Term::Variable(Variable(880000)),
+                        )
+                        .unwrap()
+                        .into(),
+                        bound,
+                    ),
+                    true,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::Variable(Variable(880001)),
+                    true,
+                )),
+            );
+            selected = Some(observation_comparison_form(&source, true));
+            context.insert_proposition_fact(source);
+        }
+        let view = selected.unwrap();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(context.contains_proposition_fact(&view));
+        });
+        samples.push(work);
+        context.clear_proposition_facts_with_graph_rebuild(false);
+        assert!(!context.contains_proposition_fact(&view));
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 32),
+        "{samples:?}"
+    );
+}

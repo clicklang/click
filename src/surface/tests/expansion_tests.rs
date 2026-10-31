@@ -14785,7 +14785,6 @@ fn pure_folded_constant_successor_solve_expands_to_successor_bound() {
 
     let expanded = expand_c0_tactic_source_at(click_source, &[], line, column)
         .expect("the folded constant successor solve should have an explicit certificate");
-    assert!(expanded.contains("rewrite(x == 0);"), "{expanded}");
     assert!(expanded.contains("arithmetic_certificate"), "{expanded}");
     assert!(!expanded.contains("solve()"), "{expanded}");
     verify_click_theorems(&expanded).expect("expanded constant successor proof should check");

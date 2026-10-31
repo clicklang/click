@@ -107,6 +107,7 @@ pub enum ProofStep {
     NormalizeUsing(Vec<ClickProposition>),
     ArithmeticUsing(Vec<ClickProposition>),
     ArithmeticCertificate(ArithmeticCertificate),
+    TransportCertificate(TransportCertificate),
     Intro,
     IntroAs(String),
     Enumerate,
@@ -692,6 +693,9 @@ impl ProofStep {
             ProofTactic::Normalize => Self::Normalize,
             ProofTactic::NormalizeUsing(premises) => Self::NormalizeUsing(premises.clone()),
             ProofTactic::ArithmeticUsing(premises) => Self::ArithmeticUsing(premises.clone()),
+            ProofTactic::TransportCertificate(certificate) => {
+                Self::TransportCertificate(certificate.clone())
+            }
             ProofTactic::ArithmeticCertificate(certificate) => {
                 Self::ArithmeticCertificate(certificate.clone())
             }
@@ -841,6 +845,9 @@ impl ProofStep {
             Self::Normalize => ProofTactic::Normalize,
             Self::NormalizeUsing(premises) => ProofTactic::NormalizeUsing(premises.clone()),
             Self::ArithmeticUsing(premises) => ProofTactic::ArithmeticUsing(premises.clone()),
+            Self::TransportCertificate(certificate) => {
+                ProofTactic::TransportCertificate(certificate.clone())
+            }
             Self::ArithmeticCertificate(certificate) => {
                 ProofTactic::ArithmeticCertificate(certificate.clone())
             }
@@ -1063,6 +1070,7 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         }
         ProofStep::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
         ProofStep::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
+        ProofStep::TransportCertificate(_) => TacticClass::Simple(SimpleTactic::FactTransport),
         ProofStep::Intro | ProofStep::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
