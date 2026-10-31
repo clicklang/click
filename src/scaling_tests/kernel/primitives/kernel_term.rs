@@ -35,10 +35,14 @@ fn machine_term_bridge_is_linear_in_explicit_tree_size() {
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
             let mut bits = Bitvector32Term::Variable(Variable(921_000));
-            for _ in 0..size {
+            for i in 0..size {
                 bits = Bitvector32Term::Binary {
                     format: MachineIntegerType::Int32,
-                    op: MachineBinaryOp::Add,
+                    op: match i % 3 {
+                        0 => MachineBinaryOp::Add,
+                        1 => MachineBinaryOp::ShiftLeft,
+                        _ => MachineBinaryOp::ShiftRight,
+                    },
                     left: Box::new(bits),
                     right: Box::new(Bitvector32Term::Constant(1)),
                 };

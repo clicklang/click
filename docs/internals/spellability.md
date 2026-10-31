@@ -108,8 +108,12 @@ format are distinct: a `uint32` result may contain a sign-free `int32` word
 operation. Literal payload tags survive exactly. Export builds the explicit
 boxed checker output once, without cloning every intermediate subtree.
 This is a bridge migration for argument spelling; machine execution and
-lowering producers still construct the old representation. Shifts retain
-legacy payloads until their independently typed counts migrate. Pointer-carrying
+lowering producers still construct the old representation. Shifts use the
+same shared binary nodes: lowering has already converted a count to the
+left operand's carrier width, and the bridge preserves that explicit conversion
+without reinterpreting it from the result's signedness. Widening spellings explicitly retain the source `int32`/`uint32`
+interpretation: zero-extending signed `x` prints as `(x as uint32) as uint64`,
+so lowering cannot replace zero extension with sign extension. Pointer-carrying
 integers retain their complete metadata, even though their C type is numeric.
 Machine raising currently uses one exact export to the existing speller.
 Wide symbolic cast chains retain their intermediate nodes. Collapsing

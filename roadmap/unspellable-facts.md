@@ -80,6 +80,20 @@ limits and ordinary verification charges are unchanged. All 27 focused
 accounting tests passed, and the full 4,936-fixture fact-stability audit
 passed with zero lowering differences. No nightly suite or limits were changed.
 
+The shift follow-up extends those binary nodes to both shift operators.
+The old shift producer already converts counts to the left operand's carrier
+width; preserve the conversion structurally rather than assigning a new source
+count type. Coverage includes narrower and wider counts with both signednesses,
+plus mixed arithmetic/shift chains beside unrelated terms. The mixed signedness
+case exposed a pre-existing spelling defect: zero-extending the word of signed
+`x` printed as `x as uint64`, which sign-extends instead. Widening spellings
+now explicitly retain the source `int32`/`uint32` interpretation before the
+64-bit cast. Validation: 76 focused tests passed; shift-fixture fact-stability
+audit passed with zero differences; full gate passed in 9m50s (6,981 unit/import/
+scaling tests, 58 examples, 4,936 mdtests). PR #2202 entered the merge queue
+while this follow-up was validating; keep this commit local until its queued
+head merges, then carry the follow-up onto current master in a new PR.
+
 Next: migrate the remaining ordinary expression producers and machine arithmetic onto the
 shared tree, then replace checker adapters with typed views. Algebraic values,
 binders, full pointers and loads follow; facts and goals should ultimately

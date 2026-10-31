@@ -52,13 +52,14 @@ impl KernelTermImport {
                 format,
                 left,
                 right,
-            } if !matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight) => {
-                Node::MachineBinary {
-                    format: *format,
-                    operator: *op,
-                    arguments: [self.machine(*format, left), self.machine(*format, right)],
-                }
-            }
+            } => Node::MachineBinary {
+                format: *format,
+                operator: *op,
+                // Shift lowering has already converted the count to this
+                // carrier width. Preserve that conversion in the operand;
+                // do not infer a source count type from the result type.
+                arguments: [self.machine(*format, left), self.machine(*format, right)],
+            },
             Old::Unary {
                 format,
                 op,
@@ -77,8 +78,8 @@ impl KernelTermImport {
                 destination: *destination,
                 operand: self.machine(*source, value),
             },
-            // Shifts need an independently typed count; loads, binders and
-            // pointer observations retain their complete legacy payload.
+            // Loads, binders and pointer observations retain their complete
+            // legacy payload.
             _ => {
                 return KernelTerm::legacy(PureFunctionArgument::Value(wrap_exact(
                     result,
@@ -171,6 +172,8 @@ mod tests {
                 MachineBinaryOp::Multiply,
                 MachineBinaryOp::Divide,
                 MachineBinaryOp::Remainder,
+                MachineBinaryOp::ShiftLeft,
+                MachineBinaryOp::ShiftRight,
                 MachineBinaryOp::BitwiseAnd,
                 MachineBinaryOp::BitwiseOr,
                 MachineBinaryOp::BitwiseXor,

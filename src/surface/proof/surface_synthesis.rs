@@ -3932,37 +3932,37 @@ fn synthesize_surface_bitvector(
         Bitvector32Term::UInt64Constant(value) => Some(ContractExpression::CFragment(
             CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(*value))),
         )),
-        Bitvector32Term::Int64From32(value) | Bitvector32Term::Int64FromUInt32(value) => {
-            Some(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(contract_expression_to_c_fragment(
-                    &synthesize_surface_bitvector(
-                        value,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?,
-                )?),
-                target_type: CType::Int64,
-                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
-                pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
-                explicit_qualification: false,
-            }))
-        }
-        Bitvector32Term::UInt64From32(value)
+        Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::Int64FromUInt32(value)
+        | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value) => {
+            let mut operand =
+                synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
+            // Widening interprets the source word's signedness. Its name
+            // alone may have a different type (e.g. zero-extending int32 x
+            // after `x as uint32`). Preserve that interpretation explicitly.
+            if !matches!(term, Bitvector32Term::UInt64FromInt64(_)) {
+                let unsigned_source = matches!(
+                    term,
+                    Bitvector32Term::Int64FromUInt32(_) | Bitvector32Term::UInt64From32(_)
+                );
+                if unsigned_source {
+                    operand = synthesize_uint32_operand(operand)?;
+                } else {
+                    operand = synthesize_int32_operand(operand)?;
+                }
+            }
             Some(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(contract_expression_to_c_fragment(
-                    &synthesize_surface_bitvector(
-                        value,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?,
-                )?),
-                target_type: CType::UInt64,
+                expression: Box::new(contract_expression_to_c_fragment(&operand)?),
+                target_type: if matches!(
+                    term,
+                    Bitvector32Term::Int64From32(_) | Bitvector32Term::Int64FromUInt32(_)
+                ) {
+                    CType::Int64
+                } else {
+                    CType::UInt64
+                },
                 integer_mode: crate::kernel::CIntegerCastMode::CConversion,
                 pointee_struct: None,
                 pointee_volatile: false,
