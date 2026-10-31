@@ -275,6 +275,7 @@ mod cached_read_completion_tests {
             c_function_specification(state.clone(), vec![], vec![], outcome.clone());
         let path = SymbolicCExecutionPath {
             completion_origin: Some(outcome.clone()),
+            call_result: None,
             assumptions: PureFactContext::new(),
             post_assumptions: None,
             facts: ExecutionFacts::new(),
@@ -3542,6 +3543,7 @@ mod checked_proposition_index_tests {
         let fact = ExecutionPureFact::new(body_fact.clone());
         let path = SymbolicCExecutionPath {
             completion_origin: None,
+            call_result: None,
             assumptions: PureFactContext::new(),
             post_assumptions: Some(PureFactContext::new().assume_proposition(body_fact.clone())),
             facts: vec![fact.clone()].into(),

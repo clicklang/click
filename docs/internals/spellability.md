@@ -39,10 +39,14 @@ checked. Each one costs completeness, expansion, or a readable report.
   value or memory state (a call result, a havoc, an allocation, a state
   between recorded points) gives it a name from its provenance at that
   point. Do not recover a name later from whatever locals happen to hold the
-  value. A call's result is `<region>.result`, its call's region read at that
-  region's exit (`RecordedSnapshots::region_result`): the source layout maps
-  each call region to the local it assigns, and each frontend result
-  temporary back to its call (`SourceExecutionLayout::temporary_call_region`).
+  value. A non-void call's result is `<region>.result`, including calls whose
+  source discards the return value. The checked call transition retains the
+  exact returned value, and its exit records it by region in
+  `RecordedSnapshots::call_results`. Lowering reads that value directly;
+  integer and Boolean synthesis uses a reverse term index. Replacing or removing
+  the recorded exit replaces or removes its result name too. Source-layout
+  result locals preserve allocation naming, and frontend result temporaries
+  map back to their calls (`SourceExecutionLayout::temporary_call_region`).
   A heap allocation keeps its nullable return value as `<region>.result` and
   names its success identity as `<region>.allocation`. The producer reserves
   both identities before the null check. The allocation exit indexes the heap
@@ -54,8 +58,8 @@ checked. Each one costs completeness, expansion, or a readable report.
   Recorded points index each integer value, and each pointer's block, by the
   point and the local it was first given to (`RecordedSnapshots::value_points`
   and `pointer_points`, filled from the locals each recorded state changed),
-  and each scalar model-field value by the point whose resource instance first
-  held it (`field_points`, filled from the instances each state changed), and
+  and each symbolic integer or algebraic model-field value by the point whose
+  resource instance first held it (`field_points`, filled from the instances each state changed), and
   each integer a memory cell came to hold by the point that recorded it there
   (`cell_points`, filled from the cells each memory changed). The structural
   speller writes `at(point, ...)` from these indexes for a value no nearer

@@ -13792,6 +13792,7 @@ pub struct SymbolicCExecutionPath {
     /// same producer applies the contract exit rule. Ordinary symbolic paths
     /// have no separate proof-completion origin.
     pub(super) completion_origin: Option<CFunctionOutcome>,
+    pub(super) call_result: Option<CValue>,
     pub(super) assumptions: PureFactContext,
     /// The checked body context, retained by the Proof completion producer.
     /// It is available only after certification has checked the entry under
@@ -13809,6 +13810,7 @@ pub struct SymbolicCExecutionPath {
 impl PartialEq for SymbolicCExecutionPath {
     fn eq(&self, other: &Self) -> bool {
         self.completion_origin == other.completion_origin
+            && self.call_result == other.call_result
             && self.assumptions == other.assumptions
             && self.facts == other.facts
             && self.effect_facts == other.effect_facts
@@ -13918,6 +13920,8 @@ pub(super) struct CStatementExecutionPath {
     /// Declaration-indexed source correspondence for this loop's checked exit.
     /// This is presentation metadata, never an additional assumption.
     pub(super) loop_invariant_correspondence: LoopInvariantCorrespondence,
+    /// Exact non-void result retained by the call producer, even when discarded.
+    pub(super) call_result: Option<CValue>,
     pub(super) outcome: CStatementOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
@@ -13925,6 +13929,13 @@ pub(super) struct CStatementExecutionPath {
 }
 
 impl CStatementExecutionPath {
+    pub(super) fn with_call_result(mut self, result: Option<CValue>) -> Self {
+        if matches!(self.outcome, CStatementOutcome::Normal(_)) {
+            self.call_result = result.filter(|value| *value != CValue::Void);
+        }
+        self
+    }
+
     /// A path with no loop-invariant correspondence and no loan evidence,
     /// which is every path not leaving a checked loop or a borrowing call.
     pub(super) fn new(
@@ -13934,6 +13945,7 @@ impl CStatementExecutionPath {
     ) -> Self {
         Self {
             loop_invariant_correspondence: Default::default(),
+            call_result: None,
             outcome,
             facts,
             obligations,

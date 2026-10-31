@@ -12,6 +12,39 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Discarded call results and historical model fields (2026-10-31)
+
+The two remaining smart Boolean misses in
+`cpp_generic_class_state_in_a_resource` shared a discarded `pop` return value.
+One also needed the list produced by the preceding `push`; the other needed
+its contract-entry list. The code kept execution snapshots, but discarded the
+unassigned return value and indexed only scalar model-field history.
+
+The checked call transition now retains its exact non-void result. Recording
+the call exit gives it `<region>.result` independently of destination locals;
+Boolean and integer synthesis uses an indexed reverse lookup. Resource-field
+history now includes symbolic algebraic values. Synthesis selects the exact
+field in the current state, at entry (`old`), or at its indexed historical
+point (`at`). Neither path recovers names by searching equalities or history.
+The original C++ source and contracts are unchanged.
+
+Focused checks eliminate both Boolean misses in the original fixture and cover
+unassigned integer/Boolean results and void-call rejection. Deterministic tests
+at 16, 64, 256, and 1,024 entries cover result replacement/removal, independent
+snapshot branches, and historical field lookup after unrelated state changes.
+The full `scripts/check.sh --no-fail-fast` gate passed on upstream #2171:
+6,896 unit/API/import/scaling tests and all four fixture aggregates (58 example
+projects and 4,918 mdtests). It took 12m53s, including a 3m12s rebuild, exceeding
+the ten-minute target; test phases took 258s and 300s. No limits were raised and
+no nightly suite ran. A fresh combined ordinary-corpus census and fact-stability
+audit passed in 227s on that same binary: 23,003 observations, 1,721 written
+misses and 6,772 smart misses, versus 1,783 and 6,792 at the preceding checkpoint.
+Both written and smart Boolean misses are zero, as are fact-stability
+differences. These are observation counts, not distinct defects. The largest
+remaining written groups are int32 equalities (357), loadability (228), pointer
+value equalities (136), Integer less-or-equal (133), and algebraic equalities
+(122). Overall spellability acceptance remains incomplete.
+
 ## Current arithmetic checkpoint (2026-10-30)
 
 The pointer migration has moved on to arithmetic definedness. This source tree

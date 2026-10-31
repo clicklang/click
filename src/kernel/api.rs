@@ -4895,6 +4895,7 @@ pub fn prove_symbolic_c_execution_paths_with_environment_and_budget(
             ));
             SymbolicCExecutionPath {
                 completion_origin: None,
+                call_result: path.call_result,
                 assumptions: assumptions.clone(),
                 post_assumptions: None,
                 facts,
@@ -5182,6 +5183,7 @@ fn symbolic_c_statement_execution_with_loop_rule(
             ));
             SymbolicCExecutionPath {
                 completion_origin: None,
+                call_result: path.call_result,
                 assumptions: assumptions.clone(),
                 post_assumptions: None,
                 facts,
@@ -5413,6 +5415,7 @@ fn prove_symbolic_c_function_execution_paths_with_contract_resources(
             ));
             SymbolicCExecutionPath {
                 completion_origin: None,
+                call_result: None,
                 assumptions: assumptions.clone(),
                 post_assumptions: None,
                 facts,
@@ -6527,6 +6530,7 @@ fn checked_execution_at_definitionally_equal_entry_state(
         };
         paths.push(SymbolicCExecutionPath {
             completion_origin: None,
+            call_result: None,
             assumptions: path.assumptions.clone(),
             post_assumptions: path.post_assumptions.clone(),
             facts: path.facts.clone(),

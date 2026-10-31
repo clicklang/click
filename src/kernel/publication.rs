@@ -186,9 +186,11 @@ pub(super) fn execute_publication_paths(
         {
             let facts = argument_path.facts.clone();
             let mut obligations = argument_path.obligations.clone();
+            let mut call_result = None;
             let outcome = match outcome {
                 Err(outcome) => outcome,
                 Ok((mut next, loaded)) => {
+                    call_result = loaded.clone();
                     let assigned = match (target, loaded) {
                         (Some(target), Some(value)) => super::loops::assign_call_result(
                             &mut next,
@@ -206,7 +208,10 @@ pub(super) fn execute_publication_paths(
                     }
                 }
             };
-            paths.push(CStatementExecutionPath::new(outcome, facts, obligations));
+            paths.push(
+                CStatementExecutionPath::new(outcome, facts, obligations)
+                    .with_call_result(call_result),
+            );
         }
     }
     budget.check_path_width(paths.len())?;

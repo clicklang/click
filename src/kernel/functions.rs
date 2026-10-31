@@ -110,6 +110,7 @@ fn execute_function_body_paths(
 fn invalid_goto_path(path: CStatementExecutionPath, message: &str) -> CStatementExecutionPath {
     CStatementExecutionPath {
         loop_invariant_correspondence: Default::default(),
+        call_result: None,
         outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
             message.to_string(),
         )),

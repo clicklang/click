@@ -2956,25 +2956,35 @@ impl<'a> ContractEnvironment<'a> {
 /// checks for it.
 const MEMORY_POINTS_NEAR: usize = 4;
 
-/// Whether `state`'s instance `identity` holds the scalar value `variable`
-/// as one of its fields.
+/// The identity of a symbolic model-field value, independent of its carrier.
+fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::kernel::Variable> {
+    use crate::kernel::{AlgebraicTermNode, AlgebraicValue, Bitvector32Term};
+    match value {
+        AlgebraicValue::Algebraic(term) => match term.node {
+            AlgebraicTermNode::Variable(variable) => Some(variable),
+            _ => None,
+        },
+        AlgebraicValue::C(CValue::Parameter(term)) => match term.node {
+            AlgebraicTermNode::Variable(variable) => Some(variable),
+            _ => None,
+        },
+        AlgebraicValue::C(crate::kernel::integer_c_value!(Bitvector32Term::Variable(variable))) => {
+            Some(*variable)
+        }
+        _ => None,
+    }
+}
+
 fn instance_holds_field_value(
     state: &CState,
     identity: crate::kernel::Variable,
+    field_index: usize,
     variable: crate::kernel::Variable,
 ) -> bool {
     state
         .resource_instance_fields(identity)
-        .is_some_and(|instance| {
-            instance.fields().iter().any(|field| {
-                matches!(
-                    field,
-                    crate::kernel::AlgebraicValue::C(CValue::Int32(
-                        crate::kernel::Bitvector32Term::Variable(held)
-                    )) if *held == variable
-                )
-            })
-        })
+        .and_then(|instance| instance.fields().get(field_index))
+        .is_some_and(|field| model_field_variable(field) == Some(variable))
 }
 
 /// How many recorded points whose memory held a value's fingerprint the
@@ -3020,6 +3030,9 @@ struct RecordedSnapshots {
     /// Allocation results keep the region that introduced them, independently
     /// of later pointer reads or assignments to the result local.
     allocation_results: crate::persistent::PersistentMap<crate::kernel::Pointer, CodeRegionRef>,
+    /// Values produced at call exits, independent of destination locals.
+    call_results: crate::persistent::PersistentMap<usize, CValue>,
+    call_result_points: crate::persistent::PersistentMap<(u64, usize), ()>,
     /// The recorded point at which each scalar model-field value was first
     /// held by its resource instance, keyed by the value's variable: a field
     /// value no nearer state's instance holds is spelled at that point.
@@ -3071,6 +3084,8 @@ impl Default for RecordedSnapshots {
             value_points: crate::persistent::PersistentMap::default(),
             pointer_points: crate::persistent::PersistentMap::default(),
             allocation_results: crate::persistent::PersistentMap::default(),
+            call_results: crate::persistent::PersistentMap::default(),
+            call_result_points: crate::persistent::PersistentMap::default(),
             field_points: crate::persistent::PersistentMap::default(),
             last_locals: None,
             last_resources: None,
@@ -3286,6 +3301,70 @@ impl RecordedSnapshots {
         ))
     }
 
+    fn result_region_index(&self, region: &CodeRegionRef) -> Result<usize, String> {
+        match region {
+            CodeRegionRef::Region(index) => Ok(*index),
+            CodeRegionRef::Path(steps) => self
+                .source_layout
+                .clone()
+                .or_else(diagnostics::spelling_layout)
+                .ok_or("`.result` requires a function execution")?
+                .source_path_region(steps, ProgramPointKind::Exit),
+            _ => Err("`.result` names a call's region".into()),
+        }
+    }
+
+    fn region_result_value(&self, region: &CodeRegionRef) -> Result<CValue, String> {
+        let index = self.result_region_index(region)?;
+        self.call_results.get(&index).cloned().ok_or_else(|| {
+            format!(
+                "`{}.result` has no recorded non-void result at this call's exit",
+                diagnostics::describe_code_region_ref(region)
+            )
+        })
+    }
+
+    fn record_call_result(&mut self, index: usize, value: Option<CValue>) {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(prior) = self.call_results.get(&index) {
+            if let CValue::Bool(term) | crate::kernel::integer_c_value!(term) = prior {
+                self.call_result_points
+                    .remove(&(crate::kernel::held_term_fingerprint(term), index));
+            }
+        }
+        self.call_results.remove(&index);
+        if let Some(value) = value.filter(|value| *value != CValue::Void) {
+            if let CValue::Bool(term) | crate::kernel::integer_c_value!(term) = &value {
+                self.call_result_points
+                    .insert((crate::kernel::held_term_fingerprint(term), index), ());
+            }
+            self.call_results.insert(index, value);
+        }
+    }
+
+    fn call_result_naming_integer(
+        &self,
+        term: &crate::kernel::Bitvector32Term,
+    ) -> Option<CodeRegionRef> {
+        let fingerprint = crate::kernel::held_term_fingerprint(term);
+        let mut key = (fingerprint, 0);
+        let mut found = self.call_result_points.get_key_value(&key);
+        loop {
+            let ((hash, index), _) =
+                found.or_else(|| self.call_result_points.get_greater_than(&key))?;
+            if *hash != fingerprint {
+                return None;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if matches!(self.call_results.get(index), Some(CValue::Bool(held) | crate::kernel::integer_c_value!(held)) if held == term)
+            {
+                return Some(CodeRegionRef::Region(*index));
+            }
+            key = (*hash, *index);
+            found = None;
+        }
+    }
+
     fn region_allocation(&self, region: &CodeRegionRef) -> Result<CValue, String> {
         let (point, local) = self.region_result(region)?;
         let CodeRegionRef::Region(index) = &point.region else {
@@ -3488,22 +3567,24 @@ impl RecordedSnapshots {
             .resources()
             .changed_owned_instances(self.last_resources.as_ref())
         {
-            for field in instance.fields().iter() {
-                let crate::kernel::AlgebraicValue::C(CValue::Int32(
-                    crate::kernel::Bitvector32Term::Variable(variable),
-                )) = field
-                else {
+            for (field_index, field) in instance.fields().iter().enumerate() {
+                let Some(variable) = model_field_variable(field) else {
                     continue;
                 };
                 crate::instrumentation::record_deterministic_work(1);
-                let named = self.field_points.get(variable).is_some_and(|earlier| {
+                let named = self.field_points.get(&variable).is_some_and(|earlier| {
                     earlier != selector
                         && self.get_exact(earlier).is_some_and(|earlier| {
-                            instance_holds_field_value(earlier, instance.identity(), *variable)
+                            instance_holds_field_value(
+                                earlier,
+                                instance.identity(),
+                                field_index,
+                                variable,
+                            )
                         })
                 });
                 if !named {
-                    self.field_points.insert(*variable, selector.clone());
+                    self.field_points.insert(variable, selector.clone());
                 }
             }
         }
@@ -3667,7 +3748,8 @@ impl RecordedSnapshots {
         let selector = self.field_points.get(&variable)?;
         let state = self.get_exact(selector)?;
         let origin = crate::kernel::model_fields::registered_model_field_origin(variable)?;
-        instance_holds_field_value(state, origin.identity, variable).then_some((selector, state))
+        instance_holds_field_value(state, origin.identity, origin.field_index, variable)
+            .then_some((selector, state))
     }
 
     fn contains_key<K: RecordedSnapshotKey + ?Sized>(&self, key: &K) -> bool {
@@ -3681,6 +3763,19 @@ impl RecordedSnapshots {
         if let Some(memory) = crate::kernel::interned_storage_of(state.memory()) {
             self.memory_points
                 .insert(memory.read_identity(), selector.clone());
+        }
+        if let SnapshotSelector::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(index),
+            kind: ProgramPointKind::Exit,
+        }) = &selector
+        {
+            let result = self
+                .source_layout
+                .as_ref()
+                .and_then(|layout| layout.call_result_local(*index))
+                .and_then(|local| state.locals().get(local))
+                .cloned();
+            self.record_call_result(*index, result);
         }
         self.record_value_points(&selector, &state);
         self.version = std::sync::Arc::new(RecordedSnapshotVersion {
@@ -3729,6 +3824,14 @@ impl RecordedSnapshots {
         let selector = self.recorded_spelling(key.to_selector());
         let prior = self.get(key).cloned();
         self.update_allocation_result(&selector, prior.as_ref(), None);
+        if let SnapshotSelector::ProgramPoint(ProgramPointRef {
+            region: CodeRegionRef::Region(index),
+            kind: ProgramPointKind::Exit,
+        }) = &selector
+        {
+            self.record_call_result(*index, None);
+        }
+
         if let Some(memory) = prior
             .as_ref()
             .and_then(|state| crate::kernel::interned_storage_of(state.memory()))
@@ -4448,6 +4551,7 @@ pub enum SourceProof {
 #[doc(hidden)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedStatementTransition {
+    pub(crate) call_result: Option<CValue>,
     pub(crate) theorem: Theorem,
     /// The kernel fact context the theorem was proved under; retained with
     /// the theorem so the proof object checks its premises against exactly that.
