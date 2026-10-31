@@ -90,6 +90,8 @@ mod machine_relations_tests;
 #[cfg(test)]
 mod narrow_cast_tests;
 #[cfg(test)]
+mod narrow_tests;
+#[cfg(test)]
 mod object_type_tests;
 mod pointer_facts;
 mod separation;

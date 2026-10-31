@@ -76,7 +76,7 @@ impl MachineIntegerFormat {
         self.signed
     }
 
-    const fn mask(self) -> u128 {
+    pub(crate) const fn mask(self) -> u128 {
         if self.bits() == 128 {
             u128::MAX
         } else {
