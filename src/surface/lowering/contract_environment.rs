@@ -57,6 +57,11 @@ pub(in crate::surface) fn contract_environment_at_state(
         let CValue::Pointer(pointer) = value.clone() else {
             unreachable!("local array values are pointers")
         };
+        // File-scope arrays remain in the state even when a parameter hides
+        // their name. They must not replace that parameter's current value.
+        if pointer.block.is_global_block() && parameter_values.contains_key(name) {
+            continue;
+        }
         values.insert(name.to_string(), value);
         state_array_refs.insert(
             name.to_string(),
@@ -96,6 +101,9 @@ pub(in crate::surface) fn contract_environment_for_names(
             let CValue::Pointer(pointer) = &value else {
                 unreachable!("local array values are pointers")
             };
+            if pointer.block.is_global_block() && values.contains_key(name) {
+                continue;
+            }
             array_refs.insert(
                 name.clone(),
                 ClickArrayRef {
@@ -273,5 +281,101 @@ pub(in crate::surface) fn scale_int32_offset(
             value: Box::new(value),
             byte_width,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn globals(unrelated: usize) -> CState {
+        let arrays = std::iter::once("bytes".to_string())
+            .chain((0..unrelated).map(|i| format!("other_{i}")))
+            .map(|name| {
+                crate::kernel::CGlobalArray::new_with_kernel_name(
+                    &name,
+                    &name,
+                    CType::UInt8,
+                    2,
+                    vec![crate::kernel::uint8(0); 2],
+                )
+            })
+            .collect();
+        let function = crate::kernel::CFunction::new(
+            CType::Void,
+            "shadow",
+            vec![],
+            crate::kernel::CStatement::Skip,
+        )
+        .with_global_arrays(arrays);
+        crate::kernel::c_function_entry_state(&CState::new(), &function, &[]).unwrap()
+    }
+
+    fn assert_bytes(
+        values: &BTreeMap<String, CValue>,
+        arrays: &ClickArrayRefs,
+        value: &CValue,
+        element_type: CType,
+    ) {
+        assert_eq!(values.get("bytes"), Some(value));
+        let CValue::Pointer(pointer) = value else {
+            unreachable!()
+        };
+        assert_eq!(arrays["bytes"].pointer, *pointer.pointer());
+        assert_eq!(arrays["bytes"].element_type, element_type);
+    }
+
+    #[test]
+    fn parameter_array_binding_hides_global_and_follows_reassignment() {
+        let state = globals(0);
+        let value = CValue::typed_pointer(
+            Pointer {
+                block: "parameter-bytes".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CType::Int32Pointer,
+        );
+        let parameters = [syntax::C0Parameter::new(
+            C0Type::Int32Pointer,
+            "bytes".into(),
+            None,
+        )];
+        let arguments = [CExpression::Value(value.clone())];
+        let binding = ParameterBinding::new(&parameters, &arguments);
+        let values = BTreeMap::from([("bytes".to_string(), value.clone())]);
+        let arrays = array_refs_for_parameters(&parameters, &values, state.memory());
+        let names = BTreeSet::from(["bytes".to_string()]);
+        let reassigned = CValue::typed_pointer(
+            Pointer {
+                block: "reassigned-bytes".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            CType::Int32Pointer,
+        );
+        for (state, expected) in [
+            (state.clone(), value),
+            (
+                state.clone().with_local("bytes", reassigned.clone()),
+                reassigned,
+            ),
+        ] {
+            let (all_values, all_arrays) = contract_environment_at_state(&values, &arrays, &state);
+            assert_bytes(&all_values, &all_arrays, &expected, CType::Int32);
+            let (named_values, named_arrays) =
+                contract_environment_for_names(binding, &names, &state).unwrap();
+            assert_bytes(&named_values, &named_arrays, &expected, CType::Int32);
+        }
+        // Without a shadowing parameter, the same name still denotes the global.
+        let expected = CValue::typed_pointer(CMemory::global_pointer("bytes"), CType::UInt8Pointer);
+        let (values, arrays) =
+            contract_environment_at_state(&BTreeMap::new(), &BTreeMap::new(), &state);
+        assert_bytes(&values, &arrays, &expected, CType::UInt8);
+        let (values, arrays) =
+            contract_environment_for_names(ParameterBinding::default(), &names, &state).unwrap();
+        assert_bytes(&values, &arrays, &expected, CType::UInt8);
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/surface/lowering/contract_environment.rs");
     }
 }
