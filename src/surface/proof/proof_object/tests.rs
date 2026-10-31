@@ -76,11 +76,48 @@ fn arithmetic_certificate_premises(step: &ProofStep) -> Option<Vec<ClickProposit
 /// Whether `steps` is one explicit arithmetic certificate citing exactly
 /// `expected` (in any order) and nothing else.
 fn is_one_arithmetic_certificate_over(steps: &[ProofStep], expected: &[ClickProposition]) -> bool {
+    // Signed certificates now preserve native typing with explicit operand
+    // casts. These assertions check the selected source premises, not that
+    // output-only type annotations are absent.
+    fn without_native_operand_casts(proposition: &ClickProposition) -> ClickProposition {
+        let operand = |expression: &ContractExpression| match expression {
+            ContractExpression::CUnary {
+                operand,
+                lowered:
+                    CExpression::Cast {
+                        target_type: CType::Int32,
+                        ..
+                    },
+            } => operand.as_ref().clone(),
+            expression => expression.clone(),
+        };
+        match proposition {
+            ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } => ClickProposition::Comparison {
+                left: operand(left),
+                operator: *operator,
+                right: operand(right),
+            },
+            proposition => proposition.clone(),
+        }
+    }
     matches!(
         steps,
         [step] if arithmetic_certificate_premises(step).is_some_and(|premises| {
+            let signed = matches!(step, ProofStep::ArithmeticCertificate(ArithmeticCertificate {
+                family: ArithmeticCertificateFamily::SignedInt32(_),
+            }));
+            let selected = |proposition: &ClickProposition| if signed {
+                without_native_operand_casts(proposition)
+            } else {
+                proposition.clone()
+            };
+            let premises: Vec<_> = premises.iter().map(selected).collect();
             premises.len() == expected.len()
-                && expected.iter().all(|premise| premises.contains(premise))
+                && expected.iter().all(|premise| premises.contains(&selected(premise)))
         })
     )
 }
