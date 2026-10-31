@@ -123,6 +123,7 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
                 true,
             );
             certificate.nodes[2] = TransportNode::Preserve {
+                field: None,
                 effect: Some(0),
                 separation: 1,
                 result: goal.clone(),
@@ -143,6 +144,7 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
                     true,
                 );
                 certificate.nodes[2] = TransportNode::Preserve {
+                    field: None,
                     effect: Some(0),
                     separation: 1,
                     result: wider,
@@ -225,6 +227,7 @@ fn region_footprint_preservation_does_not_walk_prior_memory_history() {
                     result: separation,
                 },
                 TransportNode::Preserve {
+                    field: None,
                     effect: None,
                     separation: 0,
                     result: goal.clone(),
@@ -383,4 +386,47 @@ fn two_footprints_do_not_expand_into_a_cartesian_product() {
     });
     assert!(costs[0] > 0);
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+}
+
+#[test]
+fn selected_resource_field_preservation_does_not_scan_ambient_instances() {
+    let costs = [4, 16, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (certificate, goal) = tests::resource_fixture(size);
+        let (result, work) =
+            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+        assert_eq!(result.unwrap(), goal);
+        work
+    });
+    assert!(costs[0] > 0);
+    assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
+}
+
+#[test]
+fn selected_resource_field_preservation_does_not_walk_instance_history() {
+    let costs = [4, 16, 64, 256].map(|history| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (certificate, goal) = tests::resource_history_fixture(history);
+        let (result, work) =
+            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+        assert_eq!(result.unwrap(), goal);
+        work
+    });
+    assert!(costs[0] > 0);
+    assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
+}
+
+#[test]
+fn abstract_memory_preservation_does_not_walk_read_history() {
+    let costs = [4, 16, 64, 256].map(|history| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let _reads = typed_reads::ReadScope::enter();
+        let (certificate, goal) = tests::abstract_fixture(history);
+        let (result, work) =
+            crate::instrumentation::measure_deterministic_work(|| certificate.apply(|_| true));
+        assert_eq!(result.unwrap(), goal);
+        work
+    });
+    assert!(costs[0] > 0);
+    assert!(costs.iter().all(|work| *work == costs[0]), "{costs:?}");
 }

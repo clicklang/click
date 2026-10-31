@@ -1951,11 +1951,17 @@ impl<'a> Proof<'a> {
                         effect,
                         separation,
                         result,
-                    } => TransportNode::Preserve {
-                        effect: *effect,
-                        separation: *separation,
-                        result: lower(result)?,
-                    },
+                    } => {
+                        let fields = crate::kernel::TransportFieldScope::enter();
+                        let result = lower(result)?;
+                        let field = fields.selected().map_err(|e| self.step_error(e))?;
+                        TransportNode::Preserve {
+                            field,
+                            effect: *effect,
+                            separation: *separation,
+                            result,
+                        }
+                    }
                     TransportCertificateNode::Transitive {
                         left,
                         right,

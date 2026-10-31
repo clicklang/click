@@ -2239,6 +2239,7 @@ fn collect_resource_fact_reads_from_resource_subject(
     match resource {
         ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Instance { .. }
         | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => collect_resource_fact_reads_from_contract_segment(
             segment,

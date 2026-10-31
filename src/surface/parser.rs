@@ -6401,6 +6401,17 @@ impl Parser {
 
     fn parse_resource_subject(&mut self) -> Result<ResourceSubject, ClickError> {
         if let Some(name) = self.peek_ident()
+            && self.peek_next() != Some(&Token::LParen)
+            && let Some((identity, _)) = self.names.resource_bindings.get(name)
+        {
+            let subject = ResourceSubject::Instance {
+                name: name.to_string(),
+                identity: *identity,
+            };
+            self.position += 1;
+            return Ok(subject);
+        }
+        if let Some(name) = self.peek_ident()
             && let Some(index) = self.resource_parameters.get(name).copied()
         {
             let name = name.to_string();
@@ -10667,6 +10678,8 @@ impl Parser {
         let first_reference = arguments.iter().position(|argument| {
             matches!(argument, ContractExpression::CFragment(CExpression::Variable(name)) | ContractExpression::Binding(name)
                 if self.names.resource_bindings.contains_key(name))
+                || matches!(argument, ContractExpression::Resource(subject)
+                    if matches!(subject.as_ref(), ResourceSubject::Instance { .. }))
         });
         if let Some(first) = first_reference {
             for argument in arguments.drain(first..) {
@@ -10674,6 +10687,10 @@ impl Parser {
                     match argument {
                         ContractExpression::CFragment(CExpression::Variable(name))
                         | ContractExpression::Binding(name) => name,
+                        ContractExpression::Resource(subject) => match *subject {
+                            ResourceSubject::Instance { name, .. } => name,
+                            _ => return Err(self.error("resource arguments must name instances")),
+                        },
                         _ => return Err(self.error(
                             "resource arguments must be named resources after ordinary arguments",
                         )),
@@ -11831,10 +11848,11 @@ impl Parser {
     }
 
     fn parse_contract_expression(&mut self) -> Result<ContractExpression, ClickError> {
-        if self
-            .peek_ident()
-            .is_some_and(|name| self.resource_parameters.contains_key(name))
-            || (self.peek_ident() == Some("memory") && self.peek_next() == Some(&Token::LParen))
+        if self.peek_ident().is_some_and(|name| {
+            self.resource_parameters.contains_key(name)
+                || (self.names.resource_bindings.contains_key(name)
+                    && !matches!(self.peek_next(), Some(Token::Dot | Token::LParen)))
+        }) || (self.peek_ident() == Some("memory") && self.peek_next() == Some(&Token::LParen))
         {
             return self
                 .parse_resource_subject()
@@ -11903,6 +11921,15 @@ impl Parser {
 
     fn parse_measure_component(&mut self) -> Result<ContractExpression, ClickError> {
         let component = self.parse_contract_expression()?;
+        // In a decreases clause a bare resource name selects its structural
+        // measure, as before resource descriptors could be theorem arguments.
+        let component = match component {
+            ContractExpression::Resource(subject) => match *subject {
+                ResourceSubject::Instance { name, .. } => ContractExpression::Binding(name),
+                other => ContractExpression::Resource(Box::new(other)),
+            },
+            other => other,
+        };
         Ok(self.at_integer_position(component))
     }
 
