@@ -5746,3 +5746,105 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
     assert_eq!(written.surface(&left_kernel).unwrap(), &left);
     assert_eq!(written.kernels_containing_conjunct(&left_kernel).count(), 0);
 }
+
+#[test]
+fn printed_machine_arithmetic_keeps_exact_transport_premises() {
+    for (ty, one, operator, authored) in [
+        (
+            "int32",
+            CValue::Int32(Bitvector32Term::Constant(1)),
+            "-",
+            "to_integer(hi - 1) < to_integer(hi)",
+        ),
+        (
+            "uint64",
+            CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+            "+",
+            "to_integer(hi) < to_integer(hi + 1u64)",
+        ),
+    ] {
+        let variable = CExpression::Variable("hi".into());
+        let arithmetic = if operator == "-" {
+            CExpression::Subtract(
+                Box::new(variable.clone()),
+                Box::new(CExpression::Value(one)),
+            )
+        } else {
+            CExpression::Add(
+                Box::new(variable.clone()),
+                Box::new(CExpression::Value(one)),
+            )
+        };
+        let (left, right) = if operator == "-" {
+            (arithmetic, variable)
+        } else {
+            (variable, arithmetic)
+        };
+        let premise = ClickProposition::Comparison {
+            left: ContractExpression::CFragment(left),
+            operator: ComparisonOperator::LessThan,
+            right: ContractExpression::CFragment(right),
+        };
+        let printed = printing::source_click_proposition(&premise);
+        let source = format!(
+            "theorem retained(hi: {ty}) {{ requires 0 < hi; requires hi < 100; requires {authored}; ensures {printed} by {{ assumption(); }} }}"
+        );
+        verify_click_theorems(&source).unwrap_or_else(|error| panic!("{source}\n{error:?}"));
+    }
+}
+
+#[test]
+fn synthesized_signed_difference_preserves_its_type_without_literals() {
+    let less_equal = |left, right| ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(left),
+        right: Box::new(right),
+    };
+    let hi = Bitvector32Term::Variable(Variable(984_600));
+    let lo = Bitvector32Term::Variable(Variable(984_601));
+    let difference =
+        Bitvector32Term::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
+    let original =
+        Proposition::ConditionIs(less_equal(Bitvector32Term::Constant(0), difference), true);
+    let state = CState::new()
+        .with_local("hi", CValue::Int32(hi.clone()))
+        .with_local("lo", CValue::Int32(lo.clone()));
+    let surface =
+        synthesize_surface_proposition(&original, ParameterBinding::default(), &state).unwrap();
+    let printed = printing::source_click_proposition(&surface);
+    let file = parser::parse_file_items(&format!(
+        "theorem t() {{ requires {printed}; ensures true; }}"
+    ))
+    .unwrap();
+    let reparsed = file.theorem_definitions()[0].requires()[0]
+        .theorem_proposition()
+        .unwrap();
+    let mut bounds = Vec::new();
+    for term in [hi.clone(), lo.clone()] {
+        bounds.push(Proposition::ConditionIs(
+            less_equal(Bitvector32Term::Constant(0), term.clone()),
+            true,
+        ));
+        bounds.push(Proposition::ConditionIs(
+            less_equal(term, Bitvector32Term::Constant(100)),
+            true,
+        ));
+    }
+    let facts = crate::surface::verification::assumptions_from_propositions(&bounds);
+    let values = BTreeMap::from([
+        ("hi".to_string(), CValue::Int32(hi)),
+        ("lo".to_string(), CValue::Int32(lo)),
+    ]);
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let lowered = crate::surface::proof::lower_fixed_state_proposition_through_kernel(
+        &reparsed,
+        &facts,
+        ContractEnvironment::new(&values, &BTreeMap::new()),
+        FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+        SpecDefinitions::new(&predicates, &functions),
+    )
+    .unwrap();
+    assert_eq!(lowered, original, "{printed}");
+}

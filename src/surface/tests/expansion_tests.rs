@@ -6625,7 +6625,7 @@ fn uint64_bit_test_inequality_expands_to_rewrite_and_normalize() {
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("the smart uint64 inequality should expand");
     assert!(
-        expanded.contains("rewrite((word & 1u64) == 1u64);"),
+        expanded.contains("rewrite((word & 1u64) as uint64 == 1u64);"),
         "{expanded}"
     );
     assert!(expanded.contains("normalize();"), "{expanded}");

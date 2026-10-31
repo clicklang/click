@@ -2633,7 +2633,14 @@ fn synthesize_surface_atomic_proposition(
     let operand = |term: &Bitvector32Term| {
         let expression =
             synthesize_surface_bitvector(term, parameter_binding, state, bound_variables)?;
-        if signed_order && bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
+        if signed_order
+            && (bitvector_spells_uint32(term, parameter_binding, state, bound_variables)
+                || matches!(
+                    expression,
+                    ContractExpression::Add(..)
+                        | ContractExpression::Subtract(..)
+                        | ContractExpression::Multiply(..)
+                ))
         {
             synthesize_int32_operand(expression)
         } else {
