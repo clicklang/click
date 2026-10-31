@@ -76,11 +76,48 @@ fn arithmetic_certificate_premises(step: &ProofStep) -> Option<Vec<ClickProposit
 /// Whether `steps` is one explicit arithmetic certificate citing exactly
 /// `expected` (in any order) and nothing else.
 fn is_one_arithmetic_certificate_over(steps: &[ProofStep], expected: &[ClickProposition]) -> bool {
+    // Signed certificates now preserve native typing with explicit operand
+    // casts. These assertions check the selected source premises, not that
+    // output-only type annotations are absent.
+    fn without_native_operand_casts(proposition: &ClickProposition) -> ClickProposition {
+        let operand = |expression: &ContractExpression| match expression {
+            ContractExpression::CUnary {
+                operand,
+                lowered:
+                    CExpression::Cast {
+                        target_type: CType::Int32,
+                        ..
+                    },
+            } => operand.as_ref().clone(),
+            expression => expression.clone(),
+        };
+        match proposition {
+            ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } => ClickProposition::Comparison {
+                left: operand(left),
+                operator: *operator,
+                right: operand(right),
+            },
+            proposition => proposition.clone(),
+        }
+    }
     matches!(
         steps,
         [step] if arithmetic_certificate_premises(step).is_some_and(|premises| {
+            let signed = matches!(step, ProofStep::ArithmeticCertificate(ArithmeticCertificate {
+                family: ArithmeticCertificateFamily::SignedInt32(_),
+            }));
+            let selected = |proposition: &ClickProposition| if signed {
+                without_native_operand_casts(proposition)
+            } else {
+                proposition.clone()
+            };
+            let premises: Vec<_> = premises.iter().map(selected).collect();
             premises.len() == expected.len()
-                && expected.iter().all(|premise| premises.contains(premise))
+                && expected.iter().all(|premise| premises.contains(&selected(premise)))
         })
     )
 }
@@ -14245,4 +14282,88 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
         Some(&surface_goal("chosen")),
         "internal captured values must not replace authored proof names"
     );
+}
+
+#[test]
+fn signed_certificate_premise_keeps_native_addition_when_printed() {
+    use crate::kernel::proof::signed_arithmetic::{
+        SignedArithmeticCertificate, SignedArithmeticNode, signed_arithmetic_claim,
+    };
+    let x = Bitvector32Term::Variable(Variable(985_600));
+    let y = Bitvector32Term::Variable(Variable(985_601));
+    let z = Bitvector32Term::Variable(Variable(985_602));
+    let compare = |relation, left, right| {
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation,
+                left: Box::new(left),
+                right: Box::new(right),
+            },
+            true,
+        )
+    };
+    let sum = Bitvector32Term::add_at(MachineIntegerType::Int32, y.clone(), z.clone());
+    let premise = compare(CompareRelation::Equal, x.clone(), sum);
+    let mut facts = vec![premise.clone()];
+    for term in [y.clone(), z.clone()] {
+        facts.push(compare(
+            CompareRelation::LessEqual,
+            Bitvector32Term::Constant(0),
+            term.clone(),
+        ));
+        facts.push(compare(
+            CompareRelation::LessEqual,
+            term,
+            Bitvector32Term::Constant(100),
+        ));
+    }
+    let mut context = pure_identity_fixture();
+    context.values = BTreeMap::from([
+        ("x".into(), CValue::Int32(x)),
+        ("y".into(), CValue::Int32(y)),
+        ("z".into(), CValue::Int32(z)),
+    ]);
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let root = Proof::for_pure_goal(
+        "native premise",
+        &facts,
+        premise.clone(),
+        &context,
+        SpecDefinitions::new(&predicates, &functions),
+        &theorems,
+    );
+    let variable = |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));
+    let surface = ClickProposition::Comparison {
+        left: variable("x"),
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::Add(Box::new(variable("y")), Box::new(variable("z"))),
+    };
+    let plan = SignedArithmeticCertificate {
+        nodes: vec![SignedArithmeticNode::Premise {
+            index: 0,
+            result: signed_arithmetic_claim(&premise).unwrap(),
+        }],
+        conclusion: 0,
+    };
+    let certificate = root
+        .signed_plan_to_surface_certificate(&plan, &[(premise.clone(), surface.clone())], &surface)
+        .unwrap();
+    let SignedArithmeticStep::Premise { proposition, .. } = &certificate.nodes[0] else {
+        panic!("expected premise");
+    };
+    let printed = crate::surface::printing::source_click_proposition(proposition);
+    let file = crate::surface::parser::parse_file_items(&format!(
+        "theorem t() {{ requires {printed}; ensures true; }}"
+    ))
+    .unwrap();
+    let reparsed = file.theorem_definitions()[0].requires()[0]
+        .theorem_proposition()
+        .unwrap();
+    let lowered = root
+        .lower_surface_proposition_direct(&reparsed, "printed premise")
+        .unwrap();
+    assert_eq!(lowered, premise, "{printed}");
 }
