@@ -11,6 +11,12 @@ own termination evidence (`mdtests/unreachable_owned_loops_terminate.md`).
 Loops require summaries. Click cannot prove a symbolic loop by unrolling it
 forever.
 
+When a sidecar is parsed against its C or Rust source, an unbound value name
+in a loop specification is a type error naming the clause. This includes
+invariants, decreases, resources, and initialize/preserve proofs; C locals and
+lexically scoped proof binders remain valid names
+(`mdtests/loop_unknown_name_in_invariant.md`).
+
 A loop invariant is a fact that must hold:
 
 - before the first iteration,
