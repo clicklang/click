@@ -213,11 +213,12 @@ rewrites), rather than depend on tag removal during lowering.
 under the same policy with no facts (`kernel::fact_stability`) and records
 every lowering whose term differs. `scripts/fact-stability.sh` runs the
 mdtest corpus under it and groups the differences by where the two terms
-first diverge. The corpus still has fact-dependent lowerings: comparisons
-folded to constants, pointer reads and aliased reads resolved through known
-values or aliases, comparison kinds chosen by known provenance, and decided guards
-and disjuncts dropped. Each is a defect to remove, by moving the equality
-into the check that needs it.
+first diverge. The recent ordinary-corpus audits record zero differences;
+[the handoff](https://github.com/clicklang/click/blob/master/roadmap/unspellable-facts.md) tracks their exact scope.
+Historical defects included comparisons folded using facts, pointer and aliased
+reads resolved through known values, comparison kinds chosen by provenance,
+and decided guards dropped. Such equalities belong in checking, not in the
+term lowering produces.
 
 ## A read names its version
 
@@ -300,6 +301,14 @@ its search succeeds and is expanded, but a written step's facts and goal may
 be cited by the next written step. The census only observes; it does not
 change any proof. A unit test can record the same lines in memory with
 `spellability_census::capture` and assert that a step's facts are spelled.
+
+Audit-budget limitation (2026-10-31): enabling both census and fact-stability
+instrumentation together pushes `solve_false_list_position_is_prompt` over
+its 100,000-unit smart-work budget, changing the expected rejection diagnostic.
+The ordinary gate and isolated runs with either flag pass that fixture. Run
+the corpus audits separately for validation; do not increase the proof budget.
+This is an instrumentation-accounting issue to investigate, not a recorded
+fact-dependent lowering.
 
 The census sorts a miss into one of three gaps, each with its own fix:
 

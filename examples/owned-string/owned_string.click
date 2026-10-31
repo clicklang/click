@@ -359,7 +359,7 @@ int32 owned_string_pipeline(
         rewrite(owner->cap == capacity);
         rewrite(owner->len == 0);
         have 1 < at(region(2).entry, capacity);
-        assumption();
+        solve();
     }
     step();
     have owner->len == 1 by {

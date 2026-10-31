@@ -593,9 +593,16 @@ pub struct SharedIntegerTerm(Arc<SharedIntegerNode>);
 struct SharedIntegerNode {
     id: u64,
     term: IntegerTerm,
+    literal_arithmetic: bool,
 }
 
 impl SharedIntegerTerm {
+    /// Cached from immediate children when the node is introduced. Numeric
+    /// checking can leave symbolic nonlinear operands opaque without a walk.
+    pub(crate) fn is_literal_arithmetic(&self) -> bool {
+        self.0.literal_arithmetic
+    }
+
     pub(crate) fn id(&self) -> u64 {
         self.0.id
     }
@@ -1046,7 +1053,23 @@ impl IntegerInterner {
             .next_id
             .checked_add(1)
             .expect("mathematical Integer node identity exhausted");
-        let node = Arc::new(SharedIntegerNode { id, term });
+        let literal_arithmetic = match &term {
+            IntegerTerm::Constant(_) => true,
+            IntegerTerm::Negate(child) => child.is_literal_arithmetic(),
+            IntegerTerm::Add(left, right)
+            | IntegerTerm::Subtract(left, right)
+            | IntegerTerm::Multiply(left, right)
+            | IntegerTerm::TruncatingQuotient(left, right)
+            | IntegerTerm::TruncatingRemainder(left, right) => {
+                left.is_literal_arithmetic() && right.is_literal_arithmetic()
+            }
+            _ => false,
+        };
+        let node = Arc::new(SharedIntegerNode {
+            id,
+            term,
+            literal_arithmetic,
+        });
         self.nodes
             .entry(fingerprint)
             .or_default()
@@ -1201,6 +1224,7 @@ impl IntegerTerm {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn negate(value: Self) -> Self {
         match value {
             Self::Constant(value) => {

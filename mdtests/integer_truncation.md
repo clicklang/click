@@ -18,6 +18,13 @@ theorem guarded(a: Integer, b: Integer) {
     ensures truncating_quotient(a, b) == truncating_quotient(a, b) by solve();
     ensures truncating_remainder(a, b) == truncating_remainder(a, b) by solve();
 }
+
+theorem nested_constants() {
+    let product: Integer = (2 + 3) * (4 + 5);
+    ensures product == 45 by solve();
+    ensures truncating_quotient(-7 - 1, 1 + 2) == -2 by solve();
+    ensures truncating_remainder(-7 - 1, 1 + 2) == -2 by solve();
+}
 ```
 
 ```expect

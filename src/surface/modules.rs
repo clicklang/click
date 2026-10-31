@@ -891,7 +891,7 @@ verifying "test.c";
 int32 caller(int32 x) {
     ensures result == x + 1 by { step_until(function.exit); solve(); }
 }
-void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); assumption(); }
+void user() { ensures 0 == 1; } by { impossible(0); step_until(function.exit); solve(); }
 "#,
             ["library.click".to_string()],
         );

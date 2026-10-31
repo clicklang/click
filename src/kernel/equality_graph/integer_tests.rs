@@ -149,3 +149,38 @@ fn integer_observations_keep_machine_types_and_read_snapshots() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/integer_tests.rs");
 }
+
+#[test]
+fn literal_integer_identities_join_classes_without_rewriting_terms() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let x = I::var(Variable(929001));
+    let y = I::var(Variable(929002));
+    let zero: SharedIntegerTerm = I::constant_i64(0).into();
+    let one: SharedIntegerTerm = I::constant_i64(1).into();
+    let premise = eq(x.clone(), y.clone());
+    let context = PureFactContext::new().assume_proposition(premise.clone());
+    for operation in [
+        I::Add(x.clone().into(), zero.clone()),
+        I::Add(zero.clone(), x.clone().into()),
+        I::Subtract(x.clone().into(), zero.clone()),
+        I::Multiply(x.clone().into(), one.clone()),
+        I::Multiply(one, x.clone().into()),
+    ] {
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(operation.clone().into(), y.clone().into()),
+            true,
+        );
+        assert!(context.contains_known(&goal));
+        assert!(!context.without_exact_fact(&premise).contains_known(&goal));
+        assert_ne!(operation, x);
+    }
+    for operation in [
+        I::Multiply(x.clone().into(), zero.clone()),
+        I::Multiply(zero.clone(), x.into()),
+    ] {
+        assert!(context.contains_known(&Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(operation.into(), zero.clone()),
+            true
+        )));
+    }
+}

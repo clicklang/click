@@ -3220,21 +3220,23 @@ pub(in crate::surface) fn lower_integer_certificate_proposition(
                 integer_root_work(&left).saturating_add(integer_root_work(&right)),
             )?;
             let condition = match integer_comparison_operator(*operator)? {
-                IntegerComparisonOperator::Equal => ConditionTerm::integer_equal(left, right),
+                IntegerComparisonOperator::Equal => {
+                    ConditionTerm::IntegerEqual(left.into(), right.into())
+                }
                 IntegerComparisonOperator::NotEqual => {
-                    ConditionTerm::integer_not_equal(left, right)
+                    ConditionTerm::IntegerNotEqual(left.into(), right.into())
                 }
                 IntegerComparisonOperator::LessThan => {
-                    ConditionTerm::integer_less_than(left, right)
+                    ConditionTerm::IntegerLessThan(left.into(), right.into())
                 }
                 IntegerComparisonOperator::LessEqual => {
-                    ConditionTerm::integer_less_equal(left, right)
+                    ConditionTerm::IntegerLessEqual(left.into(), right.into())
                 }
                 IntegerComparisonOperator::GreaterThan => {
-                    ConditionTerm::integer_greater_than(left, right)
+                    ConditionTerm::IntegerGreaterThan(left.into(), right.into())
                 }
                 IntegerComparisonOperator::GreaterEqual => {
-                    ConditionTerm::integer_greater_equal(left, right)
+                    ConditionTerm::IntegerGreaterEqual(left.into(), right.into())
                 }
             };
             Ok(Proposition::ConditionIs(condition, true))
@@ -3283,6 +3285,12 @@ pub(in crate::surface) fn lower_contract_integer_to_spec(
             Ok(value.clone())
         }
         ContractExpression::Negate(inner) => {
+            if let Some(literal) = integer_literal_spelling(expression) {
+                return lower_contract_integer_to_spec(
+                    &ContractExpression::IntegerLiteral(literal),
+                    integer_values,
+                );
+            }
             let SpecIntegerExpression::Term(term) =
                 lower_contract_integer_to_spec(inner, integer_values)?
             else {
@@ -3291,7 +3299,9 @@ pub(in crate::surface) fn lower_contract_integer_to_spec(
                 );
             };
             check_integer_lowering_work(integer_root_work(&term))?;
-            Ok(SpecIntegerExpression::Term(IntegerTerm::negate(term)))
+            Ok(SpecIntegerExpression::Term(IntegerTerm::Negate(
+                term.into(),
+            )))
         }
         ContractExpression::Add(left, right) => {
             let left = lower_contract_integer_to_spec(left, integer_values)?;
@@ -3368,9 +3378,9 @@ fn lower_integer_operation(
     };
     check_integer_lowering_work(work)?;
     let term = match operation {
-        IntegerOperation::Add => IntegerTerm::add(left, right),
-        IntegerOperation::Subtract => IntegerTerm::subtract(left, right),
-        IntegerOperation::Multiply => IntegerTerm::multiply(left, right),
+        IntegerOperation::Add => IntegerTerm::Add(left.into(), right.into()),
+        IntegerOperation::Subtract => IntegerTerm::Subtract(left.into(), right.into()),
+        IntegerOperation::Multiply => IntegerTerm::Multiply(left.into(), right.into()),
     };
     Ok(SpecIntegerExpression::Term(term))
 }
@@ -5560,9 +5570,15 @@ impl AnnotationLowerer<'_> {
                     )?;
                     return Ok(SpecIntegerExpression::Term(
                         if name == "truncating_quotient" {
-                            crate::kernel::IntegerTerm::truncating_quotient(a.clone(), b.clone())
+                            crate::kernel::IntegerTerm::TruncatingQuotient(
+                                a.clone().into(),
+                                b.clone().into(),
+                            )
                         } else {
-                            crate::kernel::IntegerTerm::truncating_remainder(a.clone(), b.clone())
+                            crate::kernel::IntegerTerm::TruncatingRemainder(
+                                a.clone().into(),
+                                b.clone().into(),
+                            )
                         },
                     ));
                 }
@@ -5657,12 +5673,18 @@ impl AnnotationLowerer<'_> {
                 Ok(SpecIntegerExpression::FromMachine(Box::new(argument)))
             }
             ContractExpression::Negate(inner) => {
+                if let Some(literal) = integer_literal_spelling(expression) {
+                    return self.lower_contract_integer_to_spec(
+                        &ContractExpression::IntegerLiteral(literal),
+                        environment,
+                    );
+                }
                 let inner = self.lower_contract_integer_to_spec(inner, environment)?;
                 match inner {
                     SpecIntegerExpression::Term(term) => {
                         check_integer_lowering_work(integer_root_work(&term))?;
                         Ok(SpecIntegerExpression::Term(
-                            crate::kernel::IntegerTerm::negate(term),
+                            crate::kernel::IntegerTerm::Negate(term.into()),
                         ))
                     }
                     inner => Ok(SpecIntegerExpression::Negate(Box::new(inner))),

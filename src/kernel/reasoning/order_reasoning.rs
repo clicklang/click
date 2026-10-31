@@ -6,6 +6,13 @@ pub(in crate::kernel) fn condition_as_order_fact(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
+    if let Some((native, truth)) =
+        crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
+            condition, value,
+        )
+    {
+        return condition_as_order_fact(&native, truth);
+    }
     match (condition, value) {
         (
             ConditionTerm::Compare {
@@ -416,6 +423,10 @@ fn uint64_antecedent_ranges(
             // `(lower, upper, strict)` for a held comparison; a comparison
             // held false is the reversed one with the other strictness.
             Proposition::ConditionIs(condition, value) => {
+                let native = crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(condition, *value);
+                let (condition, value) = native
+                    .as_ref()
+                    .map_or((condition, value), |(condition, value)| (condition, value));
                 let (left, right, lower_first, strict) = match condition {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::UInt64,
