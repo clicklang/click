@@ -2792,19 +2792,60 @@ impl<'a> Proof<'a> {
     /// The spelling of a refined goal no written template carries over to:
     /// the premise speller's, which lowers back to exactly `goal`. A goal is
     /// stated at the current state, so it is spelled with no premise anchor
-    /// and never searches recorded snapshots. A smart tactic's search skips
-    /// it; expansion writes its steps out as written ones, which spell their
-    /// goals (`docs/internals/spellability.md`).
+    /// and never searches recorded snapshots. Smart refinements reconstruct
+    /// their structural goal from indexed source names, without premise search.
+    /// Written refinements retain the existing premise presentation support.
     pub(in crate::surface::proof) fn spelled_goal(
         &self,
         goal: &Proposition,
     ) -> Option<ClickProposition> {
         if crate::instrumentation::smart_tactic_active() {
-            return None;
+            return self.structural_goal_spelling(goal);
         }
         let recorded = self.premise_surface_facts()?;
         self.available_surface_fact(recorded, None, goal)
             .or_else(|| self.available_surface_fact(self.local_surface_facts(), None, goal))
+    }
+
+    fn structural_goal_spelling(&self, goal: &Proposition) -> Option<ClickProposition> {
+        use super::surface_synthesis as synthesis;
+        let candidate =
+            synthesis::with_structural_goal_synthesis(|| match self.context.as_ref() {
+                ProofContext::Pure(context) => {
+                    synthesis::synthesize_surface_proposition_with_names(
+                        goal,
+                        ParameterBinding::new(&[], &[]),
+                        &context.source_state,
+                        &context.source_names,
+                    )
+                }
+                ProofContext::FixedState(context) => {
+                    synthesis::synthesize_surface_proposition_at_entry_and_post(
+                        goal,
+                        context.parameter_binding,
+                        context.fixed_state.pre_state,
+                        context.fixed_state.state,
+                    )
+                }
+                ProofContext::Execution(_) => {
+                    let view = self.premise_fixed_state_view()?;
+                    let _points = synthesis::SynthesisRecordedPointsScope::enter(
+                        view.fixed_state.recorded_snapshots,
+                    );
+                    synthesis::synthesize_surface_proposition_at_entry_and_post(
+                        goal,
+                        view.parameter_binding,
+                        view.fixed_state.pre_state,
+                        view.fixed_state.state,
+                    )
+                }
+            })?;
+        // This compares presentation, not proof authority: rewriting already
+        // produced the successor. A spelling must retain its exact term.
+        self.lower_surface_proposition_direct(&candidate, "structural goal spelling")
+            .ok()
+            .filter(|lowered| lowered == goal)
+            .map(|_| candidate)
     }
 
     fn refinement_outcome(&self) -> Option<Arc<OutcomeProofData>> {

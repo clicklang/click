@@ -20,6 +20,7 @@ struct SurfaceSynthesisBudget {
 }
 
 thread_local! {
+    static STRUCTURAL_GOAL_SYNTHESIS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static SYNTHESIS_QUALIFIED_SOURCES: std::cell::RefCell<Option<SurfacePropositionMap>> = const { std::cell::RefCell::new(None) };
     static SYNTHESIS_ENTRY_STATE: std::cell::RefCell<Option<CState>> = const { std::cell::RefCell::new(None) };
     /// A second reference state, named by its own recorded snapshot selector
@@ -56,6 +57,19 @@ thread_local! {
     /// the way the source did.
     static SYNTHESIS_BINDER_NAMES: std::cell::RefCell<Option<std::sync::Arc<BTreeMap<Variable, String>>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// Goal production uses only the selected term's indexed names. Speculative
+/// local alias selection belongs to premise search, not every rewrite step.
+pub(in crate::surface::proof) fn with_structural_goal_synthesis<T>(f: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            STRUCTURAL_GOAL_SYNTHESIS.with(|slot| slot.set(self.0));
+        }
+    }
+    let _restore = Restore(STRUCTURAL_GOAL_SYNTHESIS.with(|slot| slot.replace(true)));
+    f()
 }
 
 /// Runs `synthesize` with `names` as the written names of kernel quantifier
@@ -3341,6 +3355,9 @@ fn synthesize_surface_bitvector(
     let named = first
         .filter(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
         .or_else(|| {
+            if STRUCTURAL_GOAL_SYNTHESIS.with(|slot| slot.get()) {
+                return None;
+            }
             holders.find(|name| !crate::surface::diagnostics::is_call_result_temporary(name))
         });
     if named.is_none()
@@ -3773,6 +3790,7 @@ fn synthesize_surface_bitvector(
             // reads as its own name here. Looking for aliases is a bounded
             // smart search; a simple certificate never scans unrelated slots.
             if crate::instrumentation::smart_tactic_active()
+                && !STRUCTURAL_GOAL_SYNTHESIS.with(|slot| slot.get())
                 && let Some(name) = state.local_name_holding_bitvector_variable(*variable)
             {
                 return Some(ContractExpression::CFragment(CExpression::Variable(
