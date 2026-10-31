@@ -2824,12 +2824,11 @@ impl<'a> Proof<'a> {
         self.try_solve_closure()
     }
 
-    /// A `solve` nested inside the connected-fact search, closing a goal it
-    /// rewrote, skips them too: that search runs once arithmetic has missed.
+    /// Arithmetic subgoals do not recursively select the same premises.
+    /// A connected-equality rewrite, however, changes the goal: selecting a
+    /// match arm can expose arithmetic that the original goal did not have.
     fn try_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
-        if SolveFallbackScope::active(SolveFallback::ConnectedFacts)
-            || SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal)
-        {
+        if SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal) {
             return Ok(None);
         }
         if let Some(closed) = self.try_selected_arithmetic()? {
@@ -2855,9 +2854,7 @@ impl<'a> Proof<'a> {
     /// is known only after the reading is proved, and a native comparison
     /// through its `Integer` reading.
     fn try_late_arithmetic_with_selected_premises(&self) -> Result<Option<Self>, ClickError> {
-        if SolveFallbackScope::active(SolveFallback::ConnectedFacts)
-            || SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal)
-        {
+        if SolveFallbackScope::active(SolveFallback::ArithmeticSubgoal) {
             return Ok(None);
         }
         if let Some(closed) = self.try_wide_equality_through_integer()? {

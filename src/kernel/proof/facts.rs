@@ -2754,6 +2754,13 @@ fn collect_proposition_algebraic_terms(
                 }
             }
         }
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), _) => {
+            for value in [left.as_ref(), right.as_ref()] {
+                if let crate::kernel::IntegerTerm::AlgebraicMatch { scrutinee, .. } = value {
+                    collect_algebraic_term_roots(scrutinee, terms);
+                }
+            }
+        }
         Proposition::Not(body)
         | Proposition::ForAll { body, .. }
         | Proposition::Exists { body, .. } => collect_proposition_algebraic_terms(body, terms),

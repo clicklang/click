@@ -4130,6 +4130,69 @@ fn spec_algebraic_result_match_arms_are_well_formed(
         })
 }
 
+/// Arm-local definedness is required only at that constructor. Binding the
+/// payloads keeps the match's internal variables out of the enclosing path.
+fn guard_scalar_match_obligation(
+    obligation: ProofObligation,
+    scrutinee: &AlgebraicTerm,
+    arm: &SpecAlgebraicMatchArm,
+    bindings: &[AlgebraicValue],
+    variables: &[Variable],
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<ProofObligation> {
+    budget.consume_expression_step()?;
+    let constructor = AlgebraicTerm {
+        algebraic_type: scrutinee.algebraic_type.clone(),
+        node: AlgebraicTermNode::Constructor {
+            variant: arm.variant.clone(),
+            fields: bindings.to_vec(),
+        },
+    };
+    let guard = Proposition::Equal(
+        Term::Algebraic(scrutinee.clone()),
+        Term::Algebraic(constructor),
+    );
+    let mut obligation =
+        obligation.map_proposition(|body| Proposition::Implies(Box::new(guard), Box::new(body)));
+    for (index, ((variable, name), binding)) in variables
+        .iter()
+        .zip(&arm.bindings)
+        .zip(bindings)
+        .enumerate()
+        .rev()
+    {
+        budget.consume_expression_step()?;
+        let sort = match binding {
+            AlgebraicValue::Integer(_) => Sort::Integer,
+            AlgebraicValue::Algebraic(value) => Sort::Algebraic(value.algebraic_type.clone()),
+            AlgebraicValue::C(value) => {
+                let ty = value.c_type();
+                if let Some(integer) = MachineIntegerType::from_c_type(ty) {
+                    Sort::machine_integer(integer)
+                } else if ty == CType::Bool {
+                    Sort::Condition
+                } else if let CValue::Parameter(value) = value {
+                    Sort::Algebraic(value.algebraic_type.clone())
+                } else if ty.is_pointer() {
+                    match arm.binding_types[index].object_class() {
+                        Some(class) => Sort::CObjectPointer(ty, class),
+                        None => Sort::CPointer(ty),
+                    }
+                } else {
+                    return Err(ExecutionLimit::Paths);
+                }
+            }
+        };
+        obligation = obligation.map_proposition(|body| Proposition::ForAll {
+            var: *variable,
+            name: BinderName::written(name),
+            sort,
+            body: Box::new(body),
+        });
+    }
+    Ok(obligation)
+}
+
 fn spec_scalar_match_arms_are_well_formed(
     algebraic_type: &AlgebraicType,
     arms: &[SpecAlgebraicMatchArm],
@@ -6138,7 +6201,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let mut parameter_arms = Vec::new();
                     let mut result_type = None;
                     let facts = scrutinee_path.facts.clone();
-                    let obligations = scrutinee_path.obligations.clone();
+                    let mut obligations = scrutinee_path.obligations.clone();
                     for arm in arms {
                         let Some(schema) = scrutinee_path
                             .value
@@ -6149,10 +6212,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         else {
                             return Err(ExecutionLimit::Paths);
                         };
-                        let bindings = symbolic_algebraic_match_binders_in(
+                        let mut variables = Vec::with_capacity(schema.fields.len());
+                        let bindings = symbolic_algebraic_fields(
                             &scrutinee_path.value.algebraic_type,
                             schema,
-                            budget,
+                            || {
+                                let variable = budget.allocate_match_binder_variable()?;
+                                variables.push(variable);
+                                Ok(variable)
+                            },
                         )?;
                         let mut body_state = state.clone();
                         let mut body_algebraic_bindings = algebraic_bindings.clone();
@@ -6167,8 +6235,11 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 }
                             }
                         }
-                        let body_assumptions =
-                            assumptions_with_path_context(assumptions, &facts, &obligations);
+                        let body_assumptions = assumptions_with_path_context(
+                            assumptions,
+                            &facts,
+                            &scrutinee_path.obligations,
+                        );
                         let mut body_paths =
                             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                                 SpecScope::new(
@@ -6186,13 +6257,18 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         if !body_paths.is_empty() {
                             return Err(ExecutionLimit::Paths);
                         }
-                        // These side conditions would need to be guarded by the
-                        // arm's constructor test. Reject instead of asserting them
-                        // unconditionally beside the symbolic match term.
-                        if body_path.facts.has_path_conditions()
-                            || !body_path.obligations.is_empty()
-                        {
+                        if body_path.facts.has_path_conditions() {
                             return Err(ExecutionLimit::Paths);
+                        }
+                        for obligation in body_path.obligations {
+                            obligations.push(guard_scalar_match_obligation(
+                                obligation,
+                                &scrutinee_path.value,
+                                arm,
+                                &bindings,
+                                &variables,
+                                budget,
+                            )?);
                         }
                         let body_type = body_path.value.c_type();
                         if result_type.is_some_and(|expected| expected != body_type) {
