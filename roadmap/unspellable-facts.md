@@ -55,6 +55,31 @@ subtraction, multiplication and constant-nonzero-divisor quotient/remainder.
 Deferred operands and symbolic-divisor obligations retain their evaluation
 forms. The repeated-squares scaling test now covers ordinary lowering too.
 
+The ordinary-Integer follow-up merged as PR #2196 (`170c72d43`). The next
+slice, on `codex/kernel-machine-terms`, migrates machine argument bridges:
+shared nodes for exact literals, variables, non-shift binary operations,
+complement and casts. Result types remain distinct from operation formats.
+Pointer-carrying integer records stay intact. Shifts, loads and binders remain
+legacy leaves; machine lowering/execution producers have not migrated yet.
+Machine export is linear in the explicit boxed output, with no cache that
+clones every intermediate subtree. Round-trip coverage exposed a cast-chain
+collapse defect: `(x as int128) as int64` lost its intermediate cast and
+produced a generic cast that direct syntax lowered to `Int64From32` instead.
+Keep wide symbolic chains intact, retain the established 32-bit word rules,
+and spell wide casts and literals structurally. The C++ round-trip contract
+then exposed a reliance on constructor folding; extend the existing indexed
+e-graph cast-composition rules to 128-bit intermediates instead. A regression
+keeps the cast syntax distinct while proving the equality, rejects lossy
+round trips, and scales selected chains beside unrelated classes.
+The normal gate passed: 6,979 unit/API/import/scaling tests, 58 examples and
+4,936 mdtests (10m06s, with the ten-minute timing warning). The subsequent
+fact-stability audit exposed diagnostic work consuming the proof budget:
+alpha comparison was charged, and the existing uncharged scope suppressed
+explicit records but not checkpoints. Both paths now exclude audit work;
+limits and ordinary verification charges are unchanged. All 27 focused
+accounting tests passed, and the full 4,936-fixture fact-stability audit
+passed with zero lowering differences. No nightly suite or limits were changed.
+
 Next: migrate the remaining ordinary expression producers and machine arithmetic onto the
 shared tree, then replace checker adapters with typed views. Algebraic values,
 binders, full pointers and loads follow; facts and goals should ultimately

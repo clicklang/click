@@ -74,6 +74,13 @@ pub(crate) fn shadow<T>(lower: impl FnOnce() -> T) -> T {
 /// Records `site` when its lowering under facts differs from its fact-free
 /// lowering.
 pub(crate) fn compare(site: &str, with_facts: &Proposition, fact_free: &FactFree) {
+    // Alpha comparison can rename binders and canonicalize read terms. Like
+    // the shadow lowering, this is audit work, not work by the proof being
+    // observed. Charging it makes enabling the audit change proof outcomes.
+    crate::instrumentation::without_charging(|| compare_uncharged(site, with_facts, fact_free));
+}
+
+fn compare_uncharged(site: &str, with_facts: &Proposition, fact_free: &FactFree) {
     let line = match fact_free {
         FactFree::Term(term)
             if crate::kernel::api::contract_certification::propositions_alpha_equivalent(
@@ -149,6 +156,40 @@ int32 id(int32 x) {
             crate::surface::verify_c0_sources(click, &[("f.c", c)]).unwrap();
         });
         assert!(lines.is_empty(), "{lines:#?}");
+    }
+
+    #[test]
+    fn comparing_alpha_equivalent_binders_does_not_charge_the_observed_proof() {
+        let quantified = |var| Proposition::Exists {
+            name: "x".into(),
+            var,
+            sort: crate::kernel::Sort::CInt32,
+            body: Box::new(Proposition::CMemoryLoadable {
+                memory: crate::kernel::CMemory::new().with_declared_scalar_block(
+                    "local:word".into(),
+                    4,
+                    crate::kernel::CType::Int32,
+                ),
+                base: crate::kernel::Pointer::symbolic(Variable(700)),
+                bytes: Bitvector32Term::Variable(var),
+                wide: false,
+            }),
+        };
+        let left = quantified(Variable(701));
+        let right = quantified(Variable(702));
+        let (equal, comparison_work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::api::contract_certification::propositions_alpha_equivalent(&left, &right)
+        });
+        assert!(equal);
+        assert!(
+            comparison_work > 0,
+            "the regression must exercise real comparison work"
+        );
+        let (lines, audit_work) = crate::instrumentation::measure_deterministic_work(|| {
+            capture(|| compare("binder budget", &left, &FactFree::Term(right)))
+        });
+        assert!(lines.is_empty());
+        assert_eq!(audit_work, 0);
     }
 
     #[test]

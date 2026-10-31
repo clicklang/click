@@ -2010,18 +2010,21 @@ impl TermClasses {
         if left_atom.is_some() && left_atom == right_atom {
             return true;
         }
-        // Registration can create a literal through evaluation, but cannot
-        // create a new opaque nonliteral atom as another term's consequence.
-        // Such an absent endpoint therefore cannot match an application.
-        for atom in [&left_atom, &right_atom].into_iter().flatten() {
-            if let Node::Int32(value) = atom
-                && !matches!(
-                    value.value(),
-                    Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
-                )
-                && !self.nodes.contains_key(atom)
-            {
-                return false;
+        // Two opaque endpoints cannot introduce one another. An application
+        // can, however, introduce an operand and prove itself equal to it
+        // (for example, a wide cast round trip). Do not reject its missing
+        // opaque endpoint before registering that explicit expression.
+        if left_atom.is_some() && right_atom.is_some() {
+            for atom in [&left_atom, &right_atom].into_iter().flatten() {
+                if let Node::Int32(value) = atom
+                    && !matches!(
+                        value.value(),
+                        Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+                    )
+                    && !self.nodes.contains_key(atom)
+                {
+                    return false;
+                }
             }
         }
         if let (Some(left), Some(right)) = (left_atom, right_atom) {

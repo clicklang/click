@@ -132,3 +132,37 @@ fn truncation_of_promoted_arithmetic_is_linear() {
     }
     assert_linear("narrow truncation", &work, 150);
 }
+
+#[test]
+fn wide_cast_composition_scales_with_selected_chain_not_unrelated_classes() {
+    for unrelated in [0, 128, 512] {
+        for size in [16, 64, 256] {
+            let _session = VerificationSession::enter();
+            let mut graph = EqualityGraph::default();
+            for i in 0..unrelated {
+                graph.add_int32_equality(&var(195_000 + 2 * i), &var(195_001 + 2 * i));
+            }
+            let original = var(196_100);
+            let mut term = cast(Ty::Int64, Ty::UInt128, original.clone());
+            let mut format = Ty::UInt128;
+            for _ in 0..size {
+                let destination = if format == Ty::UInt128 {
+                    Ty::Int128
+                } else {
+                    Ty::UInt128
+                };
+                term = cast(format, destination, term);
+                format = destination;
+            }
+            let restored = cast(format, Ty::Int64, term);
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                graph.are_uint64_equal(&restored, &original)
+            });
+            assert!(equal);
+            assert!(
+                work <= 128 * (size + 1),
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}

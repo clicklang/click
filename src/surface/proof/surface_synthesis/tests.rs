@@ -3581,11 +3581,19 @@ fn mathematical_constant_goals_keep_structure_and_type() {
 
 #[test]
 fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
-    let declarations = "function foo(x: int32) -> Integer { to_integer(x) } function bar(x: Integer) -> Integer { x + 1 }";
+    let declarations = "function foo(x: int32) -> Integer { to_integer(x) } function foo_wide(x: int64) -> Integer { to_integer(x) } function bar(x: Integer) -> Integer { x + 1 }";
     for expression in [
         "to_integer(x) + foo(x)",
         "bar(foo(x) + 1) * (foo(x) - 2)",
         "-foo(x)",
+        "foo(x + 1)",
+        "foo(x * 2)",
+        "foo(x / 2)",
+        "foo(x ^ 1)",
+        "foo(~x)",
+        "foo_wide(x as int64)",
+        "foo_wide((x as int64) + 1i64)",
+        "foo_wide((x as int128) as int64)",
     ] {
         let source = format!(
             "{declarations} theorem probe(x: int32) {{ requires {expression} == 0; ensures true; }}"
@@ -3609,7 +3617,12 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
         let raised = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
             .expect("shared term spelling");
         let text = crate::surface::printing::source_click_proposition(&raised);
-        assert!(text.contains("foo("), "opaque call must survive: {text}");
+        let call_name = if expression.contains("foo_wide(") {
+            "foo_wide("
+        } else {
+            "foo("
+        };
+        assert!(text.contains(call_name), "opaque call must survive: {text}");
         let reparsed = parser::parse(&format!(
             "{declarations} theorem probe(x: int32) {{ requires {text}; ensures true; }}"
         ))
@@ -3618,7 +3631,8 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
         else {
             panic!("requirement")
         };
-        assert_eq!(lower(written), original, "{text}");
+        let restored = lower(written);
+        assert_eq!(restored, original, "{expression} => {text}");
     }
 }
 

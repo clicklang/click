@@ -226,3 +226,29 @@ fn a_narrow_same_width_conversion_is_not_inverted() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/machine_relations_tests.rs");
 }
+
+#[test]
+fn wide_cast_composition_is_an_equality_without_erasing_the_terms() {
+    let _session = VerificationSession::enter();
+    for source in [Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64] {
+        let original = var(189_001);
+        let wide = cast(source, Ty::UInt128, original.clone());
+        let signed = cast(Ty::UInt128, Ty::Int128, wide);
+        let restored = cast(Ty::Int128, source, signed);
+        assert_ne!(restored, original, "the cast structure must survive");
+        let graph = EqualityGraph::default();
+        let equal = if source.format().bits() == 32 {
+            graph.are_int32_equal(&restored, &original)
+        } else {
+            graph.are_uint64_equal(&restored, &original)
+        };
+        assert!(equal, "{source:?}");
+    }
+    // A narrow intermediate loses bits. Widening afterwards cannot restore
+    // equality with an arbitrary original 64-bit value.
+    let original = var(189_002);
+    let narrow = cast(Ty::Int64, Ty::Int32, original.clone());
+    let wide = cast(Ty::Int32, Ty::Int128, narrow);
+    let restored = cast(Ty::Int128, Ty::Int64, wide);
+    assert!(!EqualityGraph::default().are_uint64_equal(&restored, &original));
+}

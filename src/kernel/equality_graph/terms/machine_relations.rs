@@ -15,8 +15,10 @@
 //! - **R-comp.** A conversion of a conversion is one conversion
 //!   `Cast(S -> D, x)` when the inner one preserves its operand's value and
 //!   the outer reads exactly the inner's format, or when the outer keeps no
-//!   more bits than either of the others: every conversion keeps its
-//!   operand's low bits, and a value-preserving one keeps the value.
+//!   more bits than the intermediate and the source has a full-width carrier.
+//!   For narrow source carriers, it must also keep no more bits than the
+//!   source. Every conversion keeps its operand's low bits, and a
+//!   value-preserving one keeps the value.
 //! - **R0.** A conversion between the signed and unsigned formats of one
 //!   width of at least 32 bits is a bijection: the conversion back of its
 //!   result is in its operand's class, so equality carries across it by
@@ -37,7 +39,8 @@
 //! narrow widening into 32 bits is a node in its operand's class (rule K8,
 //! a relation). The rules act on the 64-bit conversions (`UInt64FromInt64`,
 //! the low word, the extensions), on conversions into 8 and 16 bits, and on
-//! narrow widenings; they reach σ at 32 bits once it is a node (step 4b).
+//! narrow widenings, and conversions involving 128-bit intermediates; they
+//! reach σ at 32 bits once it is a node (step 4b).
 
 use super::*;
 use crate::kernel::machine_integer::representation;
@@ -210,9 +213,6 @@ fn cast_key_of_unary(op: U) -> Option<CastKey> {
         U::UInt64FromInt32 => (CastSource::Format(Ty::Int32), Ty::UInt64),
         U::Machine(..) | U::Float32Negate | U::Float64Negate => return None,
     };
-    if source.bits() > 64 || destination.format().bits() > 64 {
-        return None;
-    }
     Some(CastKey {
         source,
         destination,
@@ -535,7 +535,11 @@ impl TermClasses {
         let exact =
             inner_key.preserves_value() && outer_key.source.reads_exactly(inner_key.destination);
         let low_bits = bits <= inner_key.destination.format().bits()
-            && bits <= source.format().bits()
+            // A full-width source has canonical bits. Reducing modulo the
+            // intermediate width and then a no-wider destination is the
+            // direct modular conversion, even when the intermediate changes
+            // signedness. Narrow source words need the existing restriction.
+            && (bits <= source.format().bits() || source.format().bits() >= 32)
             && outer_key.source.bits() == inner_key.destination.format().bits();
         if !exact && !low_bits {
             return;
@@ -621,9 +625,6 @@ impl TermClasses {
     ) -> Option<u64> {
         use crate::kernel::machine_integer::conversion::{self, ConversionLowering as L};
         let (from, to) = (source.format(), destination.format());
-        if from.bits() > 64 || to.bits() > 64 {
-            return None;
-        }
         let unary = |classes: &mut Self, op: U, width: crate::kernel::CarrierWidth| {
             let head = classes.intern_node(Node::MachineUnary(op, width));
             classes.intern_node(Node::Apply(head, value))
