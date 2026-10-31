@@ -6,8 +6,12 @@ fn subrange_law_does_not_enumerate_the_interval() {
         let _session = crate::kernel::VerificationSession::enter();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::prove_separation_subrange(
-                CPointerValue::new(Pointer::symbolic(Variable(8_390_000)), CType::Int64Pointer), 8,
-                0u32.into(), length.into(), 1u32.into(), (length - 1).into(),
+                CPointerValue::new(Pointer::symbolic(Variable(8_390_000)), CType::Int64Pointer),
+                8,
+                0u32.into(),
+                length.into(),
+                1u32.into(),
+                (length - 1).into(),
             )
         });
         work
