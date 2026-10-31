@@ -2512,3 +2512,77 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
         "typed intro spelling work: {samples:?}"
     );
 }
+
+#[test]
+fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let snapshots = RecordedSnapshots::new();
+    let surfaces = SurfacePropositionMap::default();
+    let term = Bitvector32Term::Variable(Variable(8_199_901));
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::GreaterEqual,
+            left: Box::new(term.clone()),
+            right: Box::new(Bitvector32Term::Constant(1)),
+        },
+        true,
+    );
+    let mut samples = Vec::new();
+    for size in [16_u32, 64, 256, 1024] {
+        let mut state = CState::new();
+        for index in 0..size {
+            state = state
+                .with_local(format!("alias_{index:04}"), CValue::Int32(term.clone()))
+                .with_local(format!("unrelated_{index:04}"), int32(index));
+        }
+        let facts = (0..size).map(indexed_fact).collect::<Vec<_>>();
+        let root = Proof::for_fixed_state_goal(
+            "structural smart goal",
+            0,
+            &facts,
+            goal.clone(),
+            ParameterBinding::default(),
+            &state,
+            &state,
+            &snapshots,
+            &surfaces,
+            SpecDefinitions::new(&predicates, &functions),
+            &theorems,
+            &[],
+            &[],
+        );
+        let event = crate::instrumentation::TacticEvent {
+            source_tactic_path: None,
+            claim: "structural smart goal".into(),
+            tactic_index: 0,
+            tactic_name: "solve".into(),
+            class: "smart".into(),
+            statement_index: 0,
+            source_index: 0,
+        };
+        crate::instrumentation::emit(crate::instrumentation::VerificationEvent::TacticStarted(
+            event.clone(),
+        ));
+        let (spelled, work) =
+            crate::instrumentation::measure_deterministic_work(|| root.spelled_goal(&goal));
+        crate::instrumentation::emit(crate::instrumentation::VerificationEvent::TacticFinished {
+            tactic: event,
+            elapsed: std::time::Duration::ZERO,
+            work: 0,
+        });
+        let spelled = spelled.expect("a smart goal retains its structural name");
+        assert_eq!(
+            root.lower_surface_proposition_direct(&spelled, "round trip")
+                .unwrap(),
+            goal
+        );
+        // Merely naming the goal must not prove its unsupported inequality.
+        assert!(!root.facts().contains(&goal));
+        samples.push(work);
+    }
+    assert!(samples[0] > 0);
+    assert!(samples.windows(2).all(|p| p[1] <= p[0] + 32), "{samples:?}");
+}

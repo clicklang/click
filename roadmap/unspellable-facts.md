@@ -12,6 +12,42 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Smart refined-goal spellings (2026-10-31)
+
+The ten rewrite-goal misses exposed by the nested resource field increment
+were an explicit smart-search shortcut: `Proof::spelled_goal` returned `None`
+while search was active. Surface substitution cannot always carry the goal
+forward when its operand and the selected equality use different spellings
+of the same kernel term (`result` versus `old(p->n)`, for example).
+
+Smart refinements now reconstruct their goal from source names, current and
+entry states, and indexed recorded points, using the structural speller
+directly rather than premise-spelling search. Scalar goal reconstruction
+selects the indexed first holder and does not scan alternative local aliases.
+The candidate must lower to the exact successor; this retains presentation
+and does not prove the outstanding goal. Written refinement behavior is
+unchanged. The original false hidden-record claim is still rejected, and its
+smart rewrite goals now all retain spellings.
+
+A deterministic regression at 16, 64, 256 and 1,024 ambient facts and local
+names, including many holders of the same value, pins bounded spelling work
+and checks that spelling does not admit the unsupported goal. All 236 focused
+rewrite tests passed. The full `scripts/check.sh --no-fail-fast` passed:
+6,903 unit/API/import/scaling tests, 58 examples and 4,922 mdtests, with pinned
+frontends required. Its 10m18s wall time exceeded the ten-minute target by
+18 seconds (preceding gate: 9m19s); unit and fixture phases took 279.5s and
+322.3s. No limits were raised and no nightly suite ran.
+
+The combined ordinary-corpus census and fact-stability audit passed in
+252.29s: 23,786 observations, 1,615 written misses (unchanged), 3,167 smart
+misses (previously 6,620), and zero fact-stability differences. The extra
+observations reflect further search steps made available by retained goal
+spellings; these are observation counts, not distinct defects. Remaining
+smart groups include Integer equality rewrite goals (339), int32 equality
+rewrite goals (311), loadability step facts (254), pointer-value step facts
+(224), and Integer less-or-equal rewrite goals (214). Overall spellability
+acceptance remains incomplete.
+
 ## Nested resource field selectors (2026-10-30)
 
 The hidden-child equality in `a_hidden_record_is_shown_beside_its_resource`

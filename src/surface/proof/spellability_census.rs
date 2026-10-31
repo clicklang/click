@@ -194,6 +194,20 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert!(!fields.is_empty(), "{lines:#?}");
+        let rewrites = lines
+            .iter()
+            .filter(|line| {
+                let parts = line.split('\t').collect::<Vec<_>>();
+                parts.get(1) == Some(&"goal")
+                    && parts.get(4) == Some(&"rewrite")
+                    && parts.get(5) == Some(&"smart")
+            })
+            .collect::<Vec<_>>();
+        assert!(!rewrites.is_empty(), "{lines:#?}");
+        assert!(
+            rewrites.iter().all(|line| line.starts_with("spelled\t")),
+            "{rewrites:#?}"
+        );
         assert!(
             fields.iter().all(|line| line.starts_with("spelled\t")),
             "{fields:#?}"
