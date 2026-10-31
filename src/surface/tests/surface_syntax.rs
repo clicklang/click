@@ -5746,3 +5746,49 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
     assert_eq!(written.surface(&left_kernel).unwrap(), &left);
     assert_eq!(written.kernels_containing_conjunct(&left_kernel).count(), 0);
 }
+
+#[test]
+fn printed_machine_arithmetic_keeps_exact_transport_premises() {
+    for (ty, one, operator, authored) in [
+        (
+            "int32",
+            CValue::Int32(Bitvector32Term::Constant(1)),
+            "-",
+            "to_integer(hi - 1) < to_integer(hi)",
+        ),
+        (
+            "uint64",
+            CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+            "+",
+            "to_integer(hi) < to_integer(hi + 1u64)",
+        ),
+    ] {
+        let variable = CExpression::Variable("hi".into());
+        let arithmetic = if operator == "-" {
+            CExpression::Subtract(
+                Box::new(variable.clone()),
+                Box::new(CExpression::Value(one)),
+            )
+        } else {
+            CExpression::Add(
+                Box::new(variable.clone()),
+                Box::new(CExpression::Value(one)),
+            )
+        };
+        let (left, right) = if operator == "-" {
+            (arithmetic, variable)
+        } else {
+            (variable, arithmetic)
+        };
+        let premise = ClickProposition::Comparison {
+            left: ContractExpression::CFragment(left),
+            operator: ComparisonOperator::LessThan,
+            right: ContractExpression::CFragment(right),
+        };
+        let printed = printing::source_click_proposition(&premise);
+        let source = format!(
+            "theorem retained(hi: {ty}) {{ requires 0 < hi; requires hi < 100; requires {authored}; ensures {printed} by {{ assumption(); }} }}"
+        );
+        verify_click_theorems(&source).unwrap_or_else(|error| panic!("{source}\n{error:?}"));
+    }
+}

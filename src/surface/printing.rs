@@ -63,12 +63,10 @@ fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling
     {
         return rendered;
     }
-    // C arithmetic read at a snapshot is a machine value, but the parser
-    // reads arithmetic inside `at(...)` or `old(...)` as Integer arithmetic,
-    // so the comparison would reparse as an Integer one. The cast keeps the
-    // machine type.
+    // Generated machine arithmetic must retain its type when reparsed as
+    // specification syntax, including arithmetic outside a snapshot.
     if mode == PropositionSpelling::Source
-        && let Some(machine_type) = snapshot_machine_arithmetic(expression)
+        && let Some(machine_type) = machine_arithmetic(expression)
     {
         return crate::surface::diagnostics::click_cast(
             &describe_contract_expression(expression),
@@ -78,12 +76,10 @@ fn comparison_operand(expression: &ContractExpression, mode: PropositionSpelling
     describe_contract_expression(expression)
 }
 
-/// The C type of a snapshot of C arithmetic, `at(p, a - 1)` or
-/// `old(a - 1)`, or `None` when the snapshot holds no arithmetic or some
-/// Integer arithmetic. C arithmetic is a C fragment, or an operation whose
-/// operands include a typed C constant; the type is that of its typed
-/// constants, `int32` when they are all `int32`.
-fn snapshot_machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
+/// Preserve the existing machine-arithmetic type barrier both at snapshots
+/// and in current-state comparison operands. Mathematical Integer operands
+/// do not receive a machine cast.
+fn machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
     let mut inner = expression;
     let mut snapshot = false;
     while let ContractExpression::Old(next)
@@ -93,9 +89,6 @@ fn snapshot_machine_arithmetic(expression: &ContractExpression) -> Option<&'stat
     {
         snapshot = true;
         inner = next;
-    }
-    if !snapshot {
-        return None;
     }
     fn c_arithmetic(expression: &CExpression) -> bool {
         matches!(
@@ -182,6 +175,11 @@ fn snapshot_machine_arithmetic(expression: &ContractExpression) -> Option<&'stat
             CExpression::BitwiseNot(operand) => c_pending.push(operand),
             _ => {}
         }
+    }
+    // Current-state expressions without typed operands need their type
+    // retained by the producer; do not infer it from variable spellings.
+    if !snapshot && c_types.is_empty() {
+        return None;
     }
     let mut machine_type = "int32";
     for value in c_types {
