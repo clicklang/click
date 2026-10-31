@@ -368,6 +368,14 @@ the repaired parent and the promoted tree after the inner rotation, retaining
 the other child. These are pure count lemmas; composing the broader C rotation
 paths remains unfinished.
 
+`rbtree_size_double_outer_counts.click` proves count validity after the second
+rotation in both directions. Given the recomputed grandparent count and the
+unchanged whole-tree count, it constructs valid demoted and promoted models
+with arbitrary repaired, transferred, and uncle subtrees. Reparenting the
+transferred subtree preserves its cached counts. These pure lemmas complement
+the inner-rotation count proof; connecting the full C double-rotation paths
+with both focused children remains unfinished.
+
 `rbtree_size_insert_context_double_middle_subtree_rotation.click` and
 `rbtree_size_insert_mirrored_context_double_middle_subtree_rotation.click`
 compose both double rotations with an arbitrary owned far subtree and a
