@@ -26,11 +26,11 @@ fn charon_range_loops_verify_from_their_bounds() {
             "    ensures bytes.len() != 0u64 implies result == bytes[0u64];\n",
             "last_byte",
         ),
-        // Over a negative start the count can exceed `i32`.
+        // The count starts at zero, so it trails the yielded value by `a`.
         (
-            "    requires 0i32 <= a and a <= b;\n",
-            "    requires a <= b;\n",
-            "signed overflow",
+            "        invariant count == iter_start - a;\n",
+            "        invariant count == iter_start;\n",
+            "span",
         ),
     ] {
         // Only the function that holds the change is verified again.
