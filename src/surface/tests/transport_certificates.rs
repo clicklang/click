@@ -2,6 +2,24 @@ use super::expansion_tests::mdtest_sources;
 use super::*;
 
 #[test]
+fn transport_certificate_preserves_byte_reads_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/transport_certificate_byte_read.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+    let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    // Separation of q cannot carry a read of the cell actually written.
+    let overlapping = source.replace(
+        "*q == at(statement(0).entry, *q)",
+        "*p == at(statement(0).entry, *p)",
+    );
+    assert!(without_implicit_auto(|| verify_c0_sources(&overlapping, &sources)).is_err());
+}
+
+#[test]
 fn transport_certificate_preserves_pointer_read() {
     let (source, sources) = mdtest_sources("mdtests/transport_certificate.md");
     let sources = sources

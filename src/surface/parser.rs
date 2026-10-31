@@ -12066,6 +12066,25 @@ impl Parser {
                             .map(|layout| layout.size_bytes())
                     })
                 {
+                    // A single complete element retains typed indexing. Byte
+                    // arithmetic below is for navigating further into a struct;
+                    // its pointer result is not a place to take the address of.
+                    if struct_array_shape.is_none()
+                        && !matches!(
+                            self.peek(),
+                            Some(Token::Arrow | Token::Dot | Token::LBracket)
+                        )
+                    {
+                        base = CExpression::Index(Box::new(base), Box::new(index.clone()));
+                        surface_base = ContractExpression::Index(
+                            Box::new(surface_base_before_index),
+                            Box::new(ContractExpression::CFragment(index)),
+                        );
+                        struct_name = None;
+                        union_name = None;
+                        struct_array_element_width = None;
+                        continue;
+                    }
                     let mut indexes = vec![index.clone()];
                     let mut surface_indexes = vec![ContractExpression::CFragment(index.clone())];
                     while struct_array_shape.is_some() && self.peek() == Some(&Token::LBracket) {

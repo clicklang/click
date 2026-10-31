@@ -1856,7 +1856,9 @@ rule. Empty memory ranges, distinct storage blocks, and token/memory pairs
 are disjoint directly. This simple rule does not walk a region containing several transitions: write individual
 preservation nodes and compose their equalities with `transitive`.
 
-`preserve` supports complete pointer or 32/64-bit integer observations. The
+`preserve` supports complete pointer, `uint8`, or 32/64-bit integer observations.
+A byte read retains its one-byte storage extent even though C promotes its
+equality to `int32`; separating one byte never licenses a four-byte read. The
 result is oriented after-to-before. Logical read producers
 retain their complete typed values under the exact snapshot, address, and read
 type. `preserve` looks up the selected observations and constructs their equality;

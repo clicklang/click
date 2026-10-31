@@ -4054,6 +4054,25 @@ history or discover containment facts.
 
 **Verified use:** [`mdtests/resource_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_theorem_parameters.md).
 
+### `separation::elements`
+
+```click
+theorem elements<T>(p: T*, i: uint64, j: uint64) {
+    requires i != j;
+    ensures separate(memory(p[i]), memory(p[j]));
+}
+```
+
+**Meaning:** Unequal indices of one typed array describe separate complete
+elements. Indices are `uint64`; the inferred `T` supplies the physical
+storage width, including struct padding. Apply with the explicit disequality
+premise. The law constructs two element descriptors directly, without enumerating
+an interval or inspecting memory history. These are logical resource descriptors;
+the law grants no ownership or permission to read or write either element.
+Executable pointer arithmetic and accesses retain their normal definedness checks.
+
+**Verified use:** [`mdtests/separation_elements.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements.md) and [`mdtests/separation_elements_types.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_types.md).
+
 ### `separation::subrange`
 
 ```click
