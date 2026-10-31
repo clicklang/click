@@ -1,9 +1,19 @@
 # A refold at the arm identity after a store to another owned node
 
-Unfold `tree(p)`, write a field of the separately owned node `q`, and refold at
-the pointer `id` bound by the arm. Two explicit transport certificates preserve
-the child pointers across the store, using separation from the live ownership
-partition. The effect names the C store's four-byte footprint explicitly.
+Unfold `tree(p)`, write a field of a separately owned node `q`, and refold at
+the pointer the arm bound, `id`, with the same children. The children's
+arguments are `id->left` and `id->right`. The unfold seeded those cells as one
+run based at `p`, and the store leaves them cached, since owned memory keeps
+`q->tag` apart from them.
+
+The load's equal-cell scan names a run slot from the byte shift between the
+load and the run's base. `id` reached the base through the stated alias
+`p == id`, which is filed under exactly `id`; `id + 8` has no such entry, so
+the field at offset 8 missed its slot and became a fresh load after the store,
+unequal to the child the unfold produced. The scan now re-expresses the load in
+the run's block through the equality graph's affine class relation, which
+already holds `id + 8 == p + 8`, as the per-cell path does for single cells.
+`fold(tree(p), ...)` always verified.
 
 The negatives are
 [`fold_at_arm_identity_rejects_an_overwritten_child.md`](fold_at_arm_identity_rejects_an_overwritten_child.md),
@@ -49,31 +59,7 @@ void roundtrip(struct node* p, struct node* q) {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
         Tree::Node(id, lm, rm) => {
             let { left: l, right: r } = unfold(t);
-            have separate(memory((&q->tag as (int32 *))[0..1]), memory(p->left));
-            have separate(memory((&q->tag as (int32 *))[0..1]), memory(p->right));
-            mark before_store;
             step();
-            mark after_store;
-            have p->left == at(before_store, p->left) by {
-                transport_certificate {
-                    premise 0: changes_only(before_store, after_store, memory((&q->tag as (int32 *))[0..1]))
-                        => changes_only(before_store, after_store, memory((&q->tag as (int32 *))[0..1]));
-                    premise 1: at(before_store, separate(memory((&q->tag as (int32 *))[0..1]), memory(p->left)))
-                        => at(before_store, separate(memory((&q->tag as (int32 *))[0..1]), memory(p->left)));
-                    preserve 0, 1 => p->left == at(before_store, p->left);
-                    conclusion 2;
-                }
-            }
-            have p->right == at(before_store, p->right) by {
-                transport_certificate {
-                    premise 0: changes_only(before_store, after_store, memory((&q->tag as (int32 *))[0..1]))
-                        => changes_only(before_store, after_store, memory((&q->tag as (int32 *))[0..1]));
-                    premise 1: at(before_store, separate(memory((&q->tag as (int32 *))[0..1]), memory(p->right)))
-                        => at(before_store, separate(memory((&q->tag as (int32 *))[0..1]), memory(p->right)));
-                    preserve 0, 1 => p->right == at(before_store, p->right);
-                    conclusion 2;
-                }
-            }
             let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
             step_until(function.exit);
             solve();

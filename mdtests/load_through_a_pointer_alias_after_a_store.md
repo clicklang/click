@@ -11,9 +11,6 @@ through the pointer equality (lowering is fact-stable). The equality graph
 equates a read with the value its snapshot stores at an equal address under
 another spelling, so the read meets the store through `p`.
 
-An explicit transport certificate preserves `c->up` across the store to
-`p->word`, so refolding also retains the original parent-pointer fact.
-
 ```c filename=arm_identity_loaded.c
 struct node { unsigned long word; struct node *up; };
 
@@ -51,21 +48,7 @@ void set_up_word(struct node* c) {
             unfold(f);
             step();
             step();
-            have p == id;
-            have separate(memory(p->word), memory(c->up));
-            mark before_store;
             step();
-            mark after_store;
-            have c->up == at(before_store, c->up) by {
-                transport_certificate {
-                    premise 0: changes_only(before_store, after_store, memory(p->word))
-                        => changes_only(before_store, after_store, memory(p->word));
-                    premise 1: at(before_store, separate(memory(p->word), memory(c->up)))
-                        => at(before_store, separate(memory(p->word), memory(c->up)));
-                    preserve 0, 1 => c->up == at(before_store, c->up);
-                    conclusion 2;
-                }
-            }
             have p == id;
             have p->word == 5;
             have id->word == 5;

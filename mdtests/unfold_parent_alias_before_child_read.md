@@ -37,42 +37,7 @@ void probe(struct node *p, struct node *q) {
         Tag::At(id, cm) => {
             let {kid: kid} = unfold(a);
             have p == id by assumption();
-            have separate(memory(q->next), memory(id->other));
-            mark before_first;
-            step();
-            mark after_first;
-            have id->other == at(before_first, id->other) by {
-                transport_certificate {
-                    premise 0: changes_only(before_first, after_first, memory(q->next))
-                        => changes_only(before_first, after_first, memory(q->next));
-                    premise 1: at(before_first, separate(memory(q->next), memory(id->other)))
-                        => at(before_first, separate(memory(q->next), memory(id->other)));
-                    preserve 0, 1 => id->other == at(before_first, id->other);
-                    conclusion 2;
-                }
-            }
-            have separate(memory(id->other), memory(q->tag));
-            mark before_call;
-            step();
-            have id->other == at(before_call, id->other) by {
-                transport(at(before_call, id->other) == at(before_call, id->other), id->other == at(before_call, id->other)) using {
-                    separate(memory(id->other), memory(q->tag));
-                };
-            }
-            have separate(memory(q->other), memory(id->other));
-            mark before_last;
-            step();
-            mark after_last;
-            have id->other == at(before_last, id->other) by {
-                transport_certificate {
-                    premise 0: changes_only(before_last, after_last, memory(q->other))
-                        => changes_only(before_last, after_last, memory(q->other));
-                    premise 1: at(before_last, separate(memory(q->other), memory(id->other)))
-                        => at(before_last, separate(memory(q->other), memory(id->other)));
-                    preserve 0, 1 => id->other == at(before_last, id->other);
-                    conclusion 2;
-                }
-            }
+            step(); step(); step();
             let b = fold(frame(p), {model: Tag::At(id, cm)}, {kid: kid});
             step_until(function.exit); solve();
         },
