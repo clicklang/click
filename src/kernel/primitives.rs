@@ -65,6 +65,12 @@ pub(crate) use contracts::{
     stated_separation_extent_guards, wide_loadable_element_count, wide_range_bounds,
 };
 mod integer;
+pub(crate) use integer::WeakIntegerTerm;
+mod kernel_term;
+pub use kernel_term::{
+    KernelIntegerOperator, KernelLegacyTerm, KernelTerm, KernelTermNode, KernelType,
+};
+pub(crate) use kernel_term::{KernelTermExport, KernelTermImport};
 mod machine_integer;
 pub(crate) use machine_integer::is_narrow_widening32;
 pub use machine_integer::{

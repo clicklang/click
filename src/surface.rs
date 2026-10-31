@@ -2816,8 +2816,12 @@ fn collect_current_proposition_variables(
     }
 }
 
+/// Compatibility name while expression consumers migrate to `SurfaceTerm`.
+pub type ContractExpression = SurfaceTerm;
+
+/// Source expressions shared by declarations, proof claims and raised terms.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ContractExpression {
+pub enum SurfaceTerm {
     Resource(Box<ResourceSubject>),
     /// An unsuffixed decimal retained until specification type checking. The
     /// same source spelling can denote a C literal or an exact Integer when
