@@ -803,6 +803,8 @@ struct Parser {
     /// recognizes their spelling; lowering and proof checking still enforce
     /// their availability at the point of use.
     loop_proof_value_names: crate::persistent::PersistentSet<String>,
+    /// A predicate goal may introduce its declared quantifiers when unfolded.
+    loop_predicate_bodies: BTreeMap<String, ClickProposition>,
     resource_parameters: BTreeMap<String, usize>,
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
@@ -1566,6 +1568,7 @@ impl Parser {
             union_layouts,
             loop_name_context: None,
             loop_proof_value_names: Default::default(),
+            loop_predicate_bodies: BTreeMap::new(),
             c_object_names_by_function: BTreeMap::new(),
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
@@ -2782,6 +2785,8 @@ impl Parser {
         self.names
             .replace(NameKind::TypeParameter, previous_type_parameters);
         self.expect(Token::RBrace)?;
+        self.loop_predicate_bodies
+            .insert(name.clone(), body.clone());
         Ok(PredicateDefinition {
             name,
             type_parameters,
@@ -8405,10 +8410,12 @@ impl Parser {
         self.expect_ident_spelling("by")?;
         let scope = self.names.scope();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
+        let value_scope = self.loop_proof_value_names.clone();
         let result = self.parse_by_clause_body();
         self.names.end(scope);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
+        self.loop_proof_value_names = value_scope;
         // A `;` after a closing brace ends nothing; accept it after a block
         // proof as everywhere else, though it is never required.
         if result.is_ok()
@@ -8470,6 +8477,7 @@ impl Parser {
             )));
         }
         self.names.hide_for_proof_binder(name, resource);
+        self.loop_proof_value_names = self.loop_proof_value_names.with_value(name.to_string());
         Ok(())
     }
 
@@ -8546,8 +8554,16 @@ impl Parser {
             return;
         }
         let mut pending = vec![proposition];
+        let mut predicates = BTreeSet::new();
         while let Some(proposition) = pending.pop() {
             match proposition {
+                ClickProposition::PredicateCall { name, .. } => {
+                    if predicates.insert(name)
+                        && let Some(body) = self.loop_predicate_bodies.get(name)
+                    {
+                        pending.push(body);
+                    }
+                }
                 ClickProposition::ForAll {
                     name,
                     written_name,
@@ -9452,6 +9468,7 @@ impl Parser {
                 // from the `p->word` the same arm's `fact p == id` identifies
                 // it with.
                 let saved_arm_binding_types = std::mem::take(&mut self.names.arm_binding_types);
+                let value_scope = self.loop_proof_value_names.clone();
                 for binding in &bindings {
                     self.bind_proof_name(binding, false)?;
                 }
@@ -9459,6 +9476,7 @@ impl Parser {
                 let tactics = self.parse_possibly_empty_tactic_block();
                 self.names.end(scope);
                 self.names.arm_binding_types = saved_arm_binding_types;
+                self.loop_proof_value_names = value_scope;
                 arms.push(ProofInductionArm {
                     type_name,
                     variant,
@@ -10306,7 +10324,10 @@ impl Parser {
                 self.expect(Token::LBrace)?;
                 let else_open = self.positions[self.position - 1].clone();
                 let mut else_starts = Vec::new();
-                scopes.push((self.names.scope(), self.names.take(NameKind::ProofBinder)));
+                let scope = self.names.scope();
+                let names = self.names.take(NameKind::ProofBinder);
+                let value_scope = self.loop_proof_value_names.clone();
+                scopes.push((scope, names, value_scope));
                 let mut else_tactics = Vec::new();
                 while self.peek() != Some(&Token::RBrace) && self.peek_ident() != Some("if") {
                     else_starts.push(self.positions[self.position].clone());
@@ -10348,9 +10369,10 @@ impl Parser {
                 }
                 self.record_proof_block(else_open, else_starts);
                 self.expect(Token::RBrace)?;
-                let (scope, names) = scopes.pop().expect("an else block owns a scope");
+                let (scope, names, value_scope) = scopes.pop().expect("an else block owns a scope");
                 self.names.end(scope);
                 self.names.replace(NameKind::ProofBinder, names);
+                self.loop_proof_value_names = value_scope;
                 self.skip_redundant_semicolon();
                 nested = Some(ProofTactic::If(ProofIf {
                     condition,
@@ -10362,9 +10384,10 @@ impl Parser {
             Ok(nested.expect("an if spine has a root"))
         })();
         // Error exits restore exactly the same bindings as a recursive block.
-        while let Some((scope, names)) = scopes.pop() {
+        while let Some((scope, names, value_scope)) = scopes.pop() {
             self.names.end(scope);
             self.names.replace(NameKind::ProofBinder, names);
+            self.loop_proof_value_names = value_scope;
         }
         result
     }
@@ -10541,10 +10564,12 @@ impl Parser {
     fn parse_tactics_until_rbrace(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
         let scope = self.names.scope();
         let previous_proof_let_names = self.names.take(NameKind::ProofBinder);
+        let value_scope = self.loop_proof_value_names.clone();
         let result = self.parse_tactic_list_to_rbrace();
         self.names.end(scope);
         self.names
             .replace(NameKind::ProofBinder, previous_proof_let_names);
+        self.loop_proof_value_names = value_scope;
         result
     }
 
@@ -16787,7 +16812,7 @@ mod loop_name_tests {
 
     fn parse_loop(body: &str) -> Result<ClickFile, ClickError> {
         let source = format!(
-            "int32 lp(int32 n, int32* p) {{ ensures result == n; }} by {{ loop {{ {body} }} }}"
+            "predicate reflexive() {{ forall (introduced: int32) {{ introduced == introduced }} }} predicate alias() {{ reflexive() }} int32 lp(int32 n, int32* p) {{ ensures result == n; }} by {{ loop {{ {body} }} }}"
         );
         let mut layouts = ProgramLayouts::default();
         layouts.c_object_names.insert(
@@ -16821,6 +16846,10 @@ mod loop_name_tests {
                 "initialize",
             ),
             ("if bogus == 0 { views p[0..1]; }", "if"),
+            (
+                "invariant i <= n; preserve by { if i == 0 { let { result: bogus } = step(); } else { step(); } have bogus == n; }",
+                "preserve",
+            ),
         ] {
             let error = parse_loop(body).unwrap_err();
             assert_eq!(error.kind(), ClickErrorKind::Type, "{body}: {error}");
@@ -16841,6 +16870,16 @@ mod loop_name_tests {
     #[test]
     fn loop_range_binders_and_invariant_proof_binders_are_recognized() {
         parse_loop("invariant (0..n).all(|k| { k >= 0 }); invariant (0..n).fold(0, |acc, k| { acc + k }) >= 0; invariant forall (v: int32) { v == v }; preserve by { intro(); have v == v; }").unwrap();
+    }
+
+    #[test]
+    fn loop_phase_proofs_recognize_binders_from_predicate_goals() {
+        parse_loop("invariant alias(); initialize by { intro(); have introduced == introduced; } preserve by { have alias() by { intro(); have introduced == introduced; } }").unwrap();
+    }
+
+    #[test]
+    fn loop_proof_values_remain_visible_in_nested_blocks() {
+        parse_loop("invariant i <= n; preserve by { let { result: saved } = step(); if i == 0 { have forall (k: int32) { saved == saved } by { intro(); have saved == saved; } } else { have saved == n; } }").unwrap();
     }
 
     #[test]
