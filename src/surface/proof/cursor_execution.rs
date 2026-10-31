@@ -3953,13 +3953,13 @@ fn describe_path_case_split_guidance(
 ) -> String {
     let split = match split_condition {
         Some(condition) => format!(
-            "Split the proof on the case condition first, then step each case:\n  if {} {{\n      step(); ...\n  }} else {{\n      step(); ...\n  }}\n",
+            "Split the proof on the case condition first, then step each case:\n  if {} {{\n      step(); ...\n  }} else {{\n      step(); ...\n  }}\nThe implicit tail makes this split itself where the script ends.\n",
             crate::surface::diagnostics::describe_click_proposition(condition)
         ),
-        None => "No case condition has a Click spelling, so the cases cannot yet be split in source terms.\n".to_string(),
+        None => "Click could not express a case condition in proof syntax, so the implicit tail cannot make this split. Use explicit cases and `step()` to expose the remaining obligation; a different source-level case split may work. The missing spelling is a tooling limitation.\n".to_string(),
     };
     format!(
-        "These successors are {} cases of one C operation, told apart only by the conditions above; a simple step never splits the proof. {split}The implicit tail makes this split itself where the script ends.\n",
+        "These successors are {} cases of one C operation, told apart only by the conditions above; a simple step never splits the proof. {split}",
         case_count,
     )
 }
