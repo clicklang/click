@@ -420,6 +420,10 @@ fn merge_modules(
     identities.retain(|identity| identity != entry);
     identities.push(entry.to_string());
     let mut merged = ClickFile {
+        struct_sizes: locals
+            .get(entry)
+            .map(|file| file.struct_sizes.clone())
+            .unwrap_or_default(),
         c_function_names: locals
             .get(entry)
             .map(|file| file.c_function_names.clone())

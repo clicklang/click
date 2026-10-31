@@ -511,6 +511,7 @@ impl Names {
     }
     fn resource(&mut self, resource: &mut SpecResource) {
         match resource {
+            SpecResource::Value(_) => {}
             SpecResource::Memory {
                 base, start, end, ..
             } => {
@@ -529,6 +530,12 @@ impl Names {
         self.visit();
         use SpecProposition::*;
         match proposition {
+            ChangesOnly { resources, .. } => {
+                for r in resources {
+                    self.resource(r);
+                }
+            }
+
             IntegerComparison { left, right, .. } => {
                 self.integer(left);
                 self.integer(right);

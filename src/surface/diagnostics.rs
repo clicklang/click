@@ -2081,6 +2081,11 @@ pub(in crate::surface) fn describe_iterated_memory(
 
 pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
     match resource {
+        ResourceSubject::Footprint(region) => {
+            format!("{}.footprint", describe_code_region_ref(region))
+        }
+        ResourceSubject::Parameter { name, .. } => name.clone(),
+        ResourceSubject::Captured { source, .. } => describe_resource_subject(source),
         ResourceSubject::Memory(segment) => {
             format!("memory({})", describe_contract_segment(segment))
         }
@@ -2206,7 +2211,12 @@ fn describe_struct_place_range(
         let CExpression::Value(CValue::Pointer(base)) = argument else {
             continue;
         };
-        if parameter.is_struct_value() {
+        if parameter.is_struct_value()
+            || parameter
+                .c_type()
+                .pointee_type()
+                .is_some_and(|ty| ty.is_pointer())
+        {
             continue;
         }
         let Some(layout) = parameter
@@ -2298,7 +2308,12 @@ fn struct_byte_bounds(
             let CExpression::Value(CValue::Pointer(base)) = argument else {
                 return None;
             };
-            if parameter.is_struct_value() {
+            if parameter.is_struct_value()
+                || parameter
+                    .c_type()
+                    .pointee_type()
+                    .is_some_and(|ty| ty.is_pointer())
+            {
                 return None;
             }
             let layout = parameter
@@ -3421,6 +3436,7 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
             ClickProposition::PredicateCall { arguments, .. } => expressions.extend(arguments),
             // A snapshot proposition reads its own state.
             ClickProposition::At { .. }
+            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}
@@ -5128,6 +5144,13 @@ pub(super) fn diagnostic_parameter_element_width(parameter: &syntax::C0Parameter
     if let Some(width) = parameter.array_element_width() {
         return i64::from(width);
     }
+    if let Some(pointee) = parameter
+        .c_type()
+        .pointee_type()
+        .filter(|ty| ty.is_pointer())
+    {
+        return i64::from(pointee.to_kernel_type().byte_width());
+    }
     if let Some(layout) = parameter.pointee_struct_layout() {
         return i64::from(layout.size_bytes());
     }
@@ -6579,6 +6602,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         return describe_add_contract_expression(expression);
     }
     match expression {
+        ContractExpression::Resource(subject) => describe_resource_subject(subject),
         ContractExpression::RegionAllocation(region) => {
             format!("{}.allocation", describe_code_region_ref(region))
         }

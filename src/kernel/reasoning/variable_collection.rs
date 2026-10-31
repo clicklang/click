@@ -792,6 +792,9 @@ fn collect_spec_bitvector_variables(root: SpecNode<'_>, variables: &mut BTreeSet
     walk_spec::<()>(root, WalkBudget::Unmetered, |node| {
         use SpecNode as N;
         match node {
+            N::Resource(SpecResource::Value(resource)) => {
+                collect_c_resource_bitvector_variables(resource, variables)
+            }
             N::Expression(SpecExpression::Value(value)) => {
                 collect_c_value_bitvector_variables(value, variables);
             }
@@ -1142,6 +1145,9 @@ fn collect_spec_bound_identities(
     walk_spec::<()>(root, WalkBudget::Unmetered, |node| {
         use SpecNode as N;
         match node {
+            N::Resource(SpecResource::Value(resource)) => {
+                collect_c_resource_bitvector_variables(resource, variables)
+            }
             N::Expression(SpecExpression::Value(value)) => {
                 collect_c_value_bound_identities(value, variables, integer_seen);
             }
@@ -1302,6 +1308,7 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
+        CResource::Footprint(_) | CResource::Parameter(_) => {}
         CResource::PopulationAuthority(description) => {
             description.visit_values(|value| {
                 collect_algebraic_value_bitvector_variables(value, variables)

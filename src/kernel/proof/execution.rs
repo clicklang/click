@@ -5822,6 +5822,7 @@ pub(crate) struct PendingLoopReturnPath {
 /// and rules, typed frontier state, and semantic freshness/region flags.
 #[derive(Clone)]
 pub(crate) struct ExecutionProofCore {
+    pub(crate) last_footprint: Option<Arc<crate::kernel::RegionFootprint>>,
     pub(crate) state: SharedValue<CState>,
     initial_match_scope: SharedValue<CState>,
     /// Context of the logical frontier cases admitted by the kernel, in
@@ -7744,6 +7745,7 @@ impl ExecutionProofCore {
     pub(crate) fn at_entry(state: CState, frontier: ExecutionFrontier) -> Self {
         let state: SharedValue<CState> = state.into();
         Self {
+            last_footprint: None,
             initial_match_scope: state.clone(),
             checked_step_cases: (0, PureFactContext::new()),
             publication_case_facts: ExecutionFacts::new(),
@@ -7974,6 +7976,28 @@ impl ExecutionProofCore {
             .into_iter()
             .map(|view| self.checked_call_events.new_event(view))
             .collect::<Vec<_>>();
+        let before = match checked_evidence_conclusion(&theorem) {
+            Proposition::CStatementExecutes { state, .. }
+            | Proposition::CStatementVerifies { state, .. } => Some(state.as_ref()),
+            _ => None,
+        };
+        let after = match &outcome {
+            CStatementOutcome::Normal(state)
+            | CStatementOutcome::Return { state, .. }
+            | CStatementOutcome::Break(state)
+            | CStatementOutcome::Continue(state)
+            | CStatementOutcome::Jump { state, .. }
+            | CStatementOutcome::Throw { state, .. } => Some(state.as_ref()),
+            _ => None,
+        };
+        self.last_footprint = before.zip(after).map(|(before, after)| {
+            crate::kernel::RegionFootprint::transition(
+                format!("region({}).footprint", self.frontier.next_statement_index),
+                before,
+                after,
+                execution_facts,
+            )
+        });
         let memory_effects = self.append_statement_effects(execution_facts);
         self.advance_path_context(&context);
         for trace in self.execution_evidence.iter_mut() {

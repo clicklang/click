@@ -1005,6 +1005,7 @@ step is still checked.
 | `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
+| `transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }` | simple | Specialized | Check explicit preservation and equality composition. | [Reference](#transport-certificates) |
 | `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }` | simple | Expansion output | Check explicit arithmetic evidence. | [Reference](#arithmetic-certificates) |
 | `rewrite(P)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
 | `intro()` | simple | Core | Introduce a universal binder or implication premise. | [Reference](#introducing-a-binder-or-premise) |
@@ -1814,6 +1815,72 @@ emits a flat certificate; expansion directly rechecks that certificate without
 planning again.
 
 **Checked examples:** [`pure_arithmetic_affine.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_affine.md), [`pure_arithmetic_bounded_operations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_bounded_operations.md), [`c_pointer_local_loop_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/c_pointer_local_loop_invariant.md), [`arithmetic_plans_a_greater_bound_on_an_operation.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_plans_a_greater_bound_on_an_operation.md), [`arithmetic_sharpens_a_bound_with_a_disequality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_sharpens_a_bound_with_a_disequality.md), [`arithmetic_bounds_a_strict_lower_side_below_int32_max.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_bounds_a_strict_lower_side_below_int32_max.md), [`arithmetic_eliminates_integer_equalities.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_eliminates_integer_equalities.md), [`arithmetic_refuses_an_unchained_integer_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_refuses_an_unchained_integer_equality.md), [`a_size_t_loop_stepping_by_two_closes_with_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/a_size_t_loop_stepping_by_two_closes_with_arithmetic.md), [`a_uint64_sum_that_may_wrap_is_not_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/a_uint64_sum_that_may_wrap_is_not_arithmetic.md), [`arithmetic_proves_int64_order_goals.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_proves_int64_order_goals.md), [`an_int64_sum_that_may_overflow_is_not_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/an_int64_sum_that_may_overflow_is_not_arithmetic.md), [`arithmetic_reduces_order_premises_under_an_untouched_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_reduces_order_premises_under_an_untouched_goal.md), [`arithmetic_compound_premise_and_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_compound_premise_and_goal.md), [`arithmetic_compound_wrapping_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_compound_wrapping_premise.md)
+
+### Transport certificates
+
+**Form:** `transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }`
+
+An explicit sequence of primitive transport operations. Nodes are numbered from
+zero in written order; references must point backward. Each node constructs its
+result from the cited facts, and `=> P` asserts that the result is exactly `P`.
+It does not search memory history, discover separation, or find intermediate
+equalities.
+
+- `premise i: P => P;` imports an exactly available fact. The stated result
+  must be the same proposition; `i` must equal this node's position.
+- `preserve i => R;` uses node `i`'s `separate(region.footprint, B)` to
+  establish equality of a read of `B` at the region's exit and entry. Either
+  separation orientation is accepted. The footprint carries its endpoints.
+- The older `preserve i, j => R;` form still accepts `changes_only` and
+  separation as separate premises for a single constant-size store.
+- `transitive i, j => R;` composes `x == y` and `y == z` into `x == z`.
+- `conclusion N;` must be last and unique; node `N` must equal the goal.
+
+A reflexive equality that lowering already reduced to `true` needs no read
+observation: `preserve` introduces that constant fact directly, and `transitive`
+retains the other equality when one cited equality reduced to `true`.
+
+`region.footprint` is a resource descriptor, not ownership. Execution records
+writes, call effects, resource changes, and allocation lifetime changes while
+producing the transition. A footprint can contain several resources and can
+conservatively include more than the exact mutated cells. Selecting it uses
+recorded region boundaries, never a memory-history search. A boundary without
+a complete recorded effect sequence is refused.
+
+For one checked transition, prove `separate(region.footprint, B)` with
+`normalize() using { ... };`, listing an exact separation for each affected resource. Restrict parent
+separations or rewrite aliases in preceding explicit proof steps. Spatial ranges
+are compared in byte coordinates; their written range-validity conditions are
+retained. Separating two footprint collections is not a simple normalization
+rule. Empty memory ranges, distinct storage blocks, and token/memory pairs
+are disjoint directly. This simple rule does not walk a region containing several transitions: write individual
+preservation nodes and compose their equalities with `transitive`.
+
+`preserve` supports complete pointer or 32/64-bit integer observations. The
+result is oriented after-to-before. Logical read producers
+retain their complete typed values under the exact snapshot, address, and read
+type. `preserve` looks up the selected observations and constructs their equality;
+it does not reconstruct values from cached cells or memory derivations. This
+includes pointers whose address and provenance have different internal names.
+Read observations are retained only while lowering and applying an explicit
+certificate, then released. Nested applications have isolated tables. Ordinary
+checking does not retain these observations. Missing observations fail locally;
+no alias or history fallback runs.
+Pointer preservation also accepts address equality when the pointer domains
+already agree. `transitive` supports pointer-value, pointer-address, and native
+machine-integer equalities.
+Footprints can record non-memory resources, symbolic release extents, and
+multiple mutable call resources. The observation rule currently establishes
+memory-read equalities; transport of non-memory model fields and wide-index
+memory ranges is not yet supported. Joined branch/loop footprints still need
+producer integration; use recorded individual transitions where available.
+An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
+
+The certificate can be handwritten and is retained by expansion. Automatic
+expansion of general `transport` searches into these certificates is not yet
+implemented.
+
+**Checked example:** [`transport_certificate.md`](https://github.com/clicklang/click/blob/master/mdtests/transport_certificate.md).
 
 ### Arithmetic certificates
 

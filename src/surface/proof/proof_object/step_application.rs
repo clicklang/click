@@ -1297,6 +1297,9 @@ impl<'a> Proof<'a> {
                     },
                 ))
             }
+            ProofStep::TransportCertificate(certificate) => {
+                Some(self.apply_transport_certificate(certificate))
+            }
             ProofStep::ArithmeticCertificate(certificate) => {
                 Some(self.apply_arithmetic_certificate(certificate))
             }
@@ -1911,6 +1914,66 @@ impl<'a> Proof<'a> {
         Err(self.step_error(
             "arithmetic could not construct a checked arithmetic certificate from exactly the listed premises",
         ))
+    }
+
+    fn apply_transport_certificate(
+        &self,
+        certificate: &TransportCertificate,
+    ) -> Result<KernelProofHandle, ClickError> {
+        use crate::kernel::proof::transport_certificate::{
+            TransportCertificate as Checked, TransportNode,
+        };
+        let _reads = crate::kernel::TransportReadScope::enter();
+        let lower =
+            |p| self.lower_surface_proposition_direct(p, "transport certificate proposition");
+        let nodes = certificate
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(position, n)| {
+                Ok(match n {
+                    TransportCertificateNode::Premise {
+                        index,
+                        proposition,
+                        result,
+                    } => {
+                        if *index != position {
+                            return Err(self.step_error(
+                                "transport premise index differs from its node position",
+                            ));
+                        }
+                        TransportNode::Premise {
+                            proposition: lower(proposition)?,
+                            result: lower(result)?,
+                        }
+                    }
+                    TransportCertificateNode::Preserve {
+                        effect,
+                        separation,
+                        result,
+                    } => TransportNode::Preserve {
+                        effect: *effect,
+                        separation: *separation,
+                        result: lower(result)?,
+                    },
+                    TransportCertificateNode::Transitive {
+                        left,
+                        right,
+                        result,
+                    } => TransportNode::Transitive {
+                        left: *left,
+                        right: *right,
+                        result: lower(result)?,
+                    },
+                })
+            })
+            .collect::<Result<_, ClickError>>()?;
+        self.state
+            .apply_transport_certificate(&Checked {
+                nodes,
+                conclusion: certificate.conclusion,
+            })
+            .map_err(|e| self.step_error(e))
     }
 
     pub(super) fn apply_arithmetic_certificate(

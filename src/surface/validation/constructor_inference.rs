@@ -301,7 +301,12 @@ impl ConstructorTypes {
             }
             let Some(inferred) = parameters
                 .iter()
-                .map(|parameter| substitution.get(parameter).cloned())
+                .map(|parameter| {
+                    substitution
+                        .get(parameter)
+                        .and_then(|argument| argument.value())
+                        .cloned()
+                })
                 .collect::<Option<Vec<_>>>()
             else {
                 return;
@@ -553,7 +558,10 @@ fn instantiate(
     substitution: &TypeSubstitution,
 ) -> Option<ClickType> {
     match click_type {
-        ClickType::Parameter(name) if parameters.contains(name) => substitution.get(name).cloned(),
+        ClickType::Parameter(name) if parameters.contains(name) => substitution
+            .get(name)
+            .and_then(|argument| argument.value())
+            .cloned(),
         ClickType::Algebraic(application) => Some(ClickType::Algebraic(AlgebraicTypeApplication {
             rigid: application.rigid,
             name: application.name.clone(),

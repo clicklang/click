@@ -90,6 +90,13 @@ fn validate_proposition_expression_types_one(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                validate_resource_subject_expression_types(r, variables, click_functions, context)?;
+            }
+            Ok(())
+        }
+
         ClickProposition::Comparison {
             left,
             operator,
@@ -725,6 +732,7 @@ fn contains_scoped_expression_shape(
         return false;
     }
     match expression {
+        ContractExpression::Resource(_) => false,
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             shape == ScopedExpressionShape::AlgebraicMatch
@@ -1356,6 +1364,11 @@ pub(super) fn infer_scoped_spec_value_type(
                 }
             }
             Ok(match &function.return_type {
+                ClickType::Resource => {
+                    return Err(ClickError::new(
+                        "Resource function results are not supported",
+                    ));
+                }
                 ClickType::Integer => SpecValueType::Integer,
                 ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     SpecValueType::Scalar(Some(*c_type))
@@ -2012,6 +2025,7 @@ pub(super) fn validate_to_nat_argument_type(
 
 fn return_type_needs_instantiation(click_type: &ClickType) -> bool {
     match click_type {
+        ClickType::Resource => false,
         ClickType::Parameter(_) => true,
         ClickType::Algebraic(application) => application
             .arguments
@@ -2258,6 +2272,11 @@ fn infer_spec_value_type(
                 .transpose()?
                 .unwrap_or_else(|| function.return_type.clone());
             Ok(match return_type {
+                ClickType::Resource => {
+                    return Err(ClickError::new(
+                        "Resource function results are not supported",
+                    ));
+                }
                 ClickType::Algebraic(application) => SpecValueType::Algebraic(application),
                 ClickType::C(c_type) | ClickType::CObjectPointer { c_type, .. } => {
                     SpecValueType::Scalar(Some(c_type))
@@ -2317,6 +2336,9 @@ fn validate_resource_subject_expression_types(
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => {
             validate_contract_segment_expression_types(segment, variables, click_functions, context)
         }
@@ -2379,7 +2401,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::Extract(_)
             | ProofTactic::Normalize
             | ProofTactic::NormalizeUsing(_)
-            | ProofTactic::ArithmeticCertificate(_)
+            | ProofTactic::TransportCertificate(_) | ProofTactic::ArithmeticCertificate(_)
             | ProofTactic::ArithmeticUsing(_)
             | ProofTactic::Intro
             | ProofTactic::IntroAs(_)
@@ -2521,6 +2543,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Solve => "solve",
         ProofTactic::AutoClose => "implicit tail",
         ProofTactic::SolveUsing(_) => "solve",
+        ProofTactic::TransportCertificate(_) => "transport_certificate",
         ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",
     }
 }
@@ -2707,6 +2730,7 @@ pub(in crate::surface) fn describe_c0_type(c_type: C0Type) -> String {
 
 pub(in crate::surface) fn describe_click_type(click_type: &ClickType) -> String {
     match click_type {
+        ClickType::Resource => "Resource".into(),
         ClickType::Parameter(name) => name.clone(),
         ClickType::C(c_type) => describe_c0_type(*c_type),
         ClickType::CObjectPointer {
@@ -2944,6 +2968,9 @@ pub(super) fn infer_contract_expression_type(
         return Ok(Some(value_type));
     }
     match expression {
+        ContractExpression::Resource(_) => {
+            Err(ClickError::new("a Resource descriptor is not a C value"))
+        }
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(None),
         ContractExpression::ResourceField(access) => match &access.click_type {
             Some(ClickType::C(ty)) => Ok(Some(*ty)),
@@ -4020,6 +4047,13 @@ fn validate_predicate_calls_in_proposition_one(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                validate_resource_subject_calls(r, click_functions, context)?;
+            }
+            Ok(())
+        }
+
         ClickProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
             validate_contract_expression_calls(right, click_functions, context)
@@ -4192,6 +4226,9 @@ fn validate_contract_expression_calls(
         return Ok(());
     }
     match expression {
+        ContractExpression::Resource(subject) => {
+            validate_resource_subject_calls(subject, click_functions, context)
+        }
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(()),
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
@@ -4317,6 +4354,9 @@ fn validate_resource_subject_calls(
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => {
             validate_contract_segment_calls(segment, click_functions, context)
         }
@@ -4335,6 +4375,13 @@ fn validate_if_condition_proposition(
     context: &str,
 ) -> Result<(), ClickError> {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                validate_resource_subject_calls(r, click_functions, context)?;
+            }
+            Ok(())
+        }
+
         ClickProposition::Comparison { left, right, .. } => {
             validate_contract_expression_calls(left, click_functions, context)?;
             validate_contract_expression_calls(right, click_functions, context)

@@ -915,6 +915,10 @@ fn execute_concrete_loop_head_step(
                         describe_evidence_refusal(&refusal, parameter_binding)
                     ))
                 })?;
+            execution
+                .presentation
+                .recorded_snapshots
+                .record_effect(execution.core.last_footprint.as_ref());
         }
         let loop_head = match remaining {
             Some(remaining) => c_seq(loop_head, remaining),
@@ -1277,6 +1281,7 @@ fn annotate_surface_at_snapshot(
     if matches!(
         surface,
         ClickProposition::Loadable { .. }
+            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
     ) {
@@ -1402,7 +1407,8 @@ fn annotate_surface_at_snapshot(
                     arguments: arguments.iter().map(expression_at_snapshot).collect(),
                 }
             }
-            ClickProposition::Separate { .. }
+            ClickProposition::ChangesOnly { .. }
+            | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => proposition.clone(),
         }
@@ -1487,7 +1493,8 @@ pub(in crate::surface) fn surface_snapshot_selector(
         ClickProposition::PredicateCall { arguments, .. } => {
             arguments.iter().find_map(expression_site)
         }
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => None,
@@ -1593,6 +1600,10 @@ pub(super) fn route_throw_to_handler(
                 describe_evidence_refusal(&refusal, parameter_binding)
             ))
         })?;
+        execution
+            .presentation
+            .recorded_snapshots
+            .record_effect(execution.core.last_footprint.as_ref());
         execution
             .presentation
             .record_generated_load_bindings(&transition.generated_load_bindings);
@@ -1942,6 +1953,10 @@ pub(super) fn apply_prepared_call_outcome_transition(
                 describe_evidence_refusal(&refusal, ParameterBinding::new(parameters, arguments))
             ))
         })?;
+    execution
+        .presentation
+        .recorded_snapshots
+        .record_effect(execution.core.last_footprint.as_ref());
     append_execution_effect_facts(
         &mut execution.core.effect_facts,
         &transition.execution_facts,
@@ -3062,6 +3077,10 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_evidence_refusal(&refusal, parameter_binding)
             ))
         })?;
+    execution
+        .presentation
+        .recorded_snapshots
+        .record_effect(execution.core.last_footprint.as_ref());
     if let Some(parent) = loop_return_parent {
         for (return_index, returned) in loop_return_transitions.into_iter().enumerate() {
             // The path's fact base: what was available at the loop, plus what

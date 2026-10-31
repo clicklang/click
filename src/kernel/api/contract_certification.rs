@@ -1707,6 +1707,8 @@ fn c_function_contract_entry_facts(
             .into_iter()
             .map(|(index, required)| {
                 let kind = match required.resource() {
+                    CResource::Footprint(fp) => fp.source.clone(),
+                    CResource::Parameter(v) => format!("resource parameter {v:?}"),
                     CResource::Memory(range) => {
                         format!("memory in {}", range.base().block)
                     }
@@ -1750,6 +1752,7 @@ fn c_function_contract_entry_facts(
             continue;
         }
         let (name, arguments) = match required.resource() {
+            CResource::Footprint(_) | CResource::Parameter(_) => continue,
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 (name.as_str(), arguments.as_ref())
             }

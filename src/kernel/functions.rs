@@ -8076,6 +8076,9 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         }
         match fact.resource() {
+            CResource::Footprint(_) | CResource::Parameter(_) => {
+                self.reaches_unnamed = true;
+            }
             CResource::Memory(range) => {
                 if self.mutex_storage_bytes.is_none() {
                     self.ranges.push(canonical_memory_range(range.clone()));
@@ -9944,6 +9947,7 @@ fn evaluate_resource_population_body_resources(
         .prefer_symbolic_external_loads();
     for required in required_resources.facts() {
         let (name, arguments) = match required.resource() {
+            CResource::Footprint(_) | CResource::Parameter(_) => continue,
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 (name, arguments)
             }
@@ -18126,6 +18130,7 @@ fn resource_clause_supply_with_fact(
         };
         for child in children {
             match child.resource() {
+                CResource::Footprint(_) | CResource::Parameter(_) => {}
                 CResource::Memory(range) => {
                     let view = CResourceFact::view_memory(range.clone());
                     if !supply.facts().contains(&view) {
@@ -19432,6 +19437,11 @@ fn evaluate_function_declared_resource_spec(
         });
     }
     let resource = match family {
+        ResourceFamily::Parameter => {
+            return Ok(Err(CRuntimeError::FunctionContract(
+                "a resource descriptor carries no ownership".into(),
+            )));
+        }
         ResourceFamily::Composite => CResource::Composite {
             name: name.to_string(),
             arguments: values.into_iter().map(AlgebraicValue::C).collect(),
@@ -19461,6 +19471,7 @@ fn evaluate_function_declared_resource_spec(
 
 fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
     match resource {
+        CResourceFact::Own(CResource::Footprint(_) | CResource::Parameter(_), _) => 2,
         CResourceFact::View(_) => 0,
         CResourceFact::Own(CResource::Memory(_), _) => 1,
         CResourceFact::Own(

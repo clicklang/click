@@ -796,6 +796,7 @@ fn reduce_contract_binary_expression(
 }
 
 struct Parser {
+    resource_parameters: BTreeMap<String, usize>,
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
     recursion_peers_by_function: BTreeMap<String, Vec<String>>,
     /// Click library modules the program's C declarations bring.
@@ -1192,6 +1193,7 @@ fn algebraic_parameter_types(
         .iter()
         .enumerate()
         .filter_map(|(index, parameter)| match parameter.click_type() {
+            ClickType::Resource => None,
             ClickType::Algebraic(application) => {
                 Some((parameter.name().to_string(), (application.clone(), index)))
             }
@@ -1588,6 +1590,7 @@ impl Parser {
             closure_captures: BTreeMap::new(),
             contract_value_parameter_names: BTreeMap::new(),
             in_function_block: false,
+            resource_parameters: BTreeMap::new(),
             integer_literal_context: false,
             proof_block_spans: Vec::new(),
             proof_clause_spans: Vec::new(),
@@ -2122,6 +2125,12 @@ impl Parser {
         }
         let c_target = self.resolve_c_target(c_target_name, c_mode)?;
         let file = ClickFile {
+            struct_sizes: std::sync::Arc::new(
+                self.struct_layouts
+                    .iter()
+                    .map(|(name, layout)| (name.clone(), layout.size_bytes()))
+                    .collect(),
+            ),
             c_function_names: std::sync::Arc::new(c_function_names),
             imports,
             library_imports,
@@ -3674,6 +3683,16 @@ impl Parser {
         self.expect(Token::LParen)?;
         let parsed_parameters = self.parse_click_parameters()?;
         self.expect(Token::RParen)?;
+        let previous_resource_parameters = std::mem::replace(
+            &mut self.resource_parameters,
+            parsed_parameters
+                .parameters
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| p.click_type() == &ClickType::Resource)
+                .map(|(i, p)| (p.name().to_string(), i))
+                .collect(),
+        );
         let previous_integer_params = self.names.replace(
             NameKind::IntegerParameter,
             parsed_parameters
@@ -3955,6 +3974,7 @@ impl Parser {
             .replace(NameKind::TheoremParameter, previous_theorem_param_names);
         self.spec_parameter_types = previous_spec_parameter_types;
         self.theorem_pointer_params = previous_theorem_pointer_params;
+        self.resource_parameters = previous_resource_parameters;
         self.names
             .replace(NameKind::IntegerParameter, previous_integer_params);
         self.names
@@ -3978,6 +3998,17 @@ impl Parser {
             .collect();
         let ensure_claim_ids = flattened_claim_ids(&ensure_kinds, &ensure_source_clauses);
         Ok(TheoremDefinition {
+            generic_pointer_parameters: parsed_parameters
+                .parameters
+                .iter()
+                .filter(|parameter| {
+                    matches!(
+                        parameter.click_type(),
+                        ClickType::C(C0Type::ParameterPointer(_))
+                    )
+                })
+                .map(|parameter| parameter.name().to_owned())
+                .collect(),
             body: DeclarationBody {
                 open: body_open,
                 close: body_close,
@@ -5807,6 +5838,10 @@ impl Parser {
         let Some(name) = self.peek_ident() else {
             return Err(self.error("expected Click type"));
         };
+        if name == "Resource" {
+            self.position += 1;
+            return Ok((ClickType::Resource, None));
+        }
         if name == "Integer" {
             self.position += 1;
             return Ok((ClickType::Integer, None));
@@ -5814,6 +5849,15 @@ impl Parser {
         if self.names.contains(NameKind::TypeParameter, name) {
             let name = name.to_string();
             self.position += 1;
+            if self.peek() == Some(&Token::Star) {
+                self.position += 1;
+                return Ok((
+                    ClickType::C(C0Type::ParameterPointer(
+                        crate::kernel::TypeParameterName::intern(&name),
+                    )),
+                    None,
+                ));
+            }
             return Ok((ClickType::Parameter(name), None));
         }
         let application = self.parse_algebraic_type_application()?;
@@ -6322,6 +6366,13 @@ impl Parser {
     }
 
     fn parse_resource_subject(&mut self) -> Result<ResourceSubject, ClickError> {
+        if let Some(name) = self.peek_ident()
+            && let Some(index) = self.resource_parameters.get(name).copied()
+        {
+            let name = name.to_string();
+            self.position += 1;
+            return Ok(ResourceSubject::Parameter { name, index });
+        }
         if self.peek_ident() == Some("memory") && self.peek_next() == Some(&Token::LParen) {
             self.position += 1;
             self.expect(Token::LParen)?;
@@ -6330,6 +6381,15 @@ impl Parser {
             return Ok(ResourceSubject::Memory(segment));
         }
 
+        let saved = self.position;
+        if let Ok(region) = self.parse_code_region_ref()
+            && self.peek() == Some(&Token::Dot)
+            && self.peek_next() == Some(&Token::Ident("footprint".into()))
+        {
+            self.position += 2;
+            return Ok(ResourceSubject::Footprint(region));
+        }
+        self.position = saved;
         let (name, arguments) = self.parse_call_arguments("resource subject name")?;
         Ok(ResourceSubject::Declared {
             kind: ResourceKind::Token,
@@ -7670,6 +7730,24 @@ impl Parser {
             return Ok(proposition);
         }
 
+        if self.peek_ident() == Some("changes_only") && self.peek_next() == Some(&Token::LParen) {
+            self.position += 2;
+            let before = self.parse_snapshot_selector()?;
+            self.expect(Token::Comma)?;
+            let after = self.parse_snapshot_selector()?;
+            let mut resources = Vec::new();
+            while self.peek() == Some(&Token::Comma) {
+                self.position += 1;
+                resources.push(self.parse_resource_subject()?);
+            }
+            self.expect(Token::RParen)?;
+            return Ok(ClickProposition::ChangesOnly {
+                before,
+                after,
+                resources,
+            });
+        }
+
         if self.peek_ident() == Some("at") && self.peek_next() == Some(&Token::LParen) {
             let start = self.position;
             self.position += 2;
@@ -7994,6 +8072,11 @@ impl Parser {
                         self.names.hide_for_proof_binder(&name, false);
                         self.names.hide_resource_field(&name);
                         match &click_type {
+                            ClickType::Resource => {
+                                return Err(self.error(
+                                    "Resource is currently supported only for theorem parameters",
+                                ));
+                            }
                             ClickType::Integer => {
                                 self.names
                                     .set_scoped(NameKind::ContractBinding, &name, false);
@@ -8337,6 +8420,11 @@ impl Parser {
     /// the program's variable, so a proof binder of its name would change
     /// what the proof's propositions mean without changing what runs.
     fn bind_proof_name(&mut self, name: &str, resource: bool) -> Result<(), ClickError> {
+        if self.resource_parameters.contains_key(name) {
+            return Err(self.error(format!(
+                "`{name}` names a Resource theorem parameter; choose another proof binder name"
+            )));
+        }
         if resource
             && self.names.is_c_variable(name)
             && self.names.resource_bindings.contains_key(name)
@@ -8967,6 +9055,11 @@ impl Parser {
         for (name, click_type) in &bindings {
             self.bind_proof_name(name, false)?;
             match click_type {
+                ClickType::Resource => {
+                    return Err(
+                        self.error("Resource is currently supported only for theorem parameters")
+                    );
+                }
                 ClickType::Integer => {
                     self.names
                         .set_scoped(NameKind::ContractBinding, name, false);
@@ -9861,6 +9954,9 @@ impl Parser {
                 }
                 ProofTactic::Normalize
             }
+            "transport_certificate" => {
+                return self.parse_transport_certificate_tactic();
+            }
             "arithmetic_certificate" => {
                 return self.parse_arithmetic_certificate_tactic();
             }
@@ -10500,6 +10596,93 @@ impl Parser {
         }
         self.expect(Token::RBrace)?;
         Ok(premises)
+    }
+
+    fn parse_transport_certificate_tactic(&mut self) -> Result<ProofTactic, ClickError> {
+        self.expect(Token::LBrace)?;
+        let mut nodes = Vec::new();
+        let mut conclusion = None;
+        while self.peek() != Some(&Token::RBrace) {
+            let keyword = self.expect_ident("transport certificate instruction")?;
+            if keyword == "conclusion" {
+                if conclusion.is_some() {
+                    return Err(self.error("duplicate transport conclusion"));
+                }
+                conclusion = Some(self.expect_index("transport conclusion")?);
+                self.expect(Token::Semicolon)?;
+                if self.peek() != Some(&Token::RBrace) {
+                    return Err(self.error("transport conclusion must be last"));
+                }
+                continue;
+            }
+            let first = self.expect_index("transport node reference")?;
+            let node = match keyword.as_str() {
+                "premise" => {
+                    if first != nodes.len() {
+                        return Err(
+                            self.error("transport premise index must match its node position")
+                        );
+                    }
+                    self.expect(Token::Colon)?;
+                    let proposition = self.parse_proposition()?;
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    TransportCertificateNode::Premise {
+                        index: first,
+                        proposition,
+                        result,
+                    }
+                }
+                "preserve" if self.peek() == Some(&Token::FatArrow) => {
+                    if first >= nodes.len() {
+                        return Err(self.error("transport references must name earlier nodes"));
+                    }
+                    self.position += 1;
+                    TransportCertificateNode::Preserve {
+                        effect: None,
+                        separation: first,
+                        result: self.parse_proposition()?,
+                    }
+                }
+                "preserve" | "transitive" => {
+                    self.expect(Token::Comma)?;
+                    let second = self.expect_index("transport node reference")?;
+                    if first >= nodes.len() || second >= nodes.len() {
+                        return Err(self.error("transport references must name earlier nodes"));
+                    }
+                    self.expect(Token::FatArrow)?;
+                    let result = self.parse_proposition()?;
+                    if keyword == "preserve" {
+                        TransportCertificateNode::Preserve {
+                            effect: Some(first),
+                            separation: second,
+                            result,
+                        }
+                    } else {
+                        TransportCertificateNode::Transitive {
+                            left: first,
+                            right: second,
+                            result,
+                        }
+                    }
+                }
+                _ => {
+                    return Err(self.error("expected premise, preserve, transitive, or conclusion"));
+                }
+            };
+            self.expect(Token::Semicolon)?;
+            nodes.push(node);
+        }
+        self.expect(Token::RBrace)?;
+        let conclusion =
+            conclusion.ok_or_else(|| self.error("transport certificate needs a conclusion"))?;
+        if conclusion >= nodes.len() {
+            return Err(self.error("transport conclusion must name an existing node"));
+        }
+        Ok(ProofTactic::TransportCertificate(TransportCertificate {
+            nodes,
+            conclusion,
+        }))
     }
 
     fn parse_arithmetic_certificate_tactic(&mut self) -> Result<ProofTactic, ClickError> {
@@ -11518,6 +11701,15 @@ impl Parser {
     }
 
     fn parse_contract_expression(&mut self) -> Result<ContractExpression, ClickError> {
+        if self
+            .peek_ident()
+            .is_some_and(|name| self.resource_parameters.contains_key(name))
+            || (self.peek_ident() == Some("memory") && self.peek_next() == Some(&Token::LParen))
+        {
+            return self
+                .parse_resource_subject()
+                .map(|r| ContractExpression::Resource(Box::new(r)));
+        }
         let first = self.parse_contract_unary()?;
         self.parse_contract_binary_suffix(first)
     }
@@ -14010,6 +14202,18 @@ impl Parser {
     }
 
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
+        let start = self.position;
+        if let Ok(region) = self.parse_code_region_ref() {
+            if self.peek() == Some(&Token::Dot)
+                && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "footprint")
+            {
+                self.position += 2;
+                return Ok(ContractExpression::Resource(Box::new(
+                    ResourceSubject::Footprint(region),
+                )));
+            }
+        }
+        self.position = start;
         // A proof may need the previous binding of a name shadowed by an
         // introduced quantifier. Keep the qualification on the variable name
         // until the proof scope substitutes its checked binder identity.
@@ -16321,6 +16525,10 @@ mod tactic_classification_tests {
         ("extract", "extract(x == 1);"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
+        (
+            "transport-certificate",
+            "transport_certificate { premise 0: x == 1 => x == 1; conclusion 0; }",
+        ),
         (
             "arithmetic-certificate",
             "arithmetic_certificate { trivial => x + 1 > x; conclusion 0; }",

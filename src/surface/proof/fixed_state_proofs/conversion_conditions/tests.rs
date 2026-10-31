@@ -39,7 +39,7 @@ fn pointer_base(values: &BTreeMap<String, CValue>) -> Pointer {
     pointer.pointer().clone()
 }
 
-/// The cell `p[index]`, as the kernel indexes it.
+/// The cell `(p + index) as (int32 *)[0]`, as the kernel indexes it.
 fn indexed_cell(values: &BTreeMap<String, CValue>) -> Pointer {
     Pointer {
         block: pointer_base(values).block,
@@ -95,15 +95,17 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
     .expect_err("an unproved mandatory condition is refused");
     assert!(message.starts_with("the expression `"), "{message}");
     assert!(
-        message.contains("its subterm `p[index]` denotes a value only where 1 condition"),
+        message.contains(
+            "its subterm `(p + index) as (int32 *)[0]` denotes a value only where 1 condition"
+        ),
         "{message}"
     );
     assert!(
-        message.contains("the 4 bytes at `p[index]` must be viewable"),
+        message.contains("the 4 bytes at `(p + index) as (int32 *)[0]` must be viewable"),
         "{message}"
     );
     assert!(
-        message.contains("`viewable(p[index..index + 1])`"),
+        message.contains("`viewable((p + index) as (int32 *)[0..0 + 1])`"),
         "{message}"
     );
     assert!(message.contains("premises consulted: none"), "{message}");
@@ -154,7 +156,7 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
     // The range premise over the same object is the one a reader believes
     // covers the cell, so the refusal has to name it as consulted.
     assert!(
-        message.contains("why that was not enough: `viewable(p[0..index])`"),
+        message.contains("why that was not enough: `viewable((p as (int32 *))[0..index])`"),
         "{message}"
     );
 }
@@ -227,7 +229,9 @@ fn established_conditions_are_named_beside_the_missing_one() {
         "{message}"
     );
     assert!(
-        message.contains("not established: the 4 bytes at `p[index]` must be viewable"),
+        message.contains(
+            "not established: the 4 bytes at `(p + index) as (int32 *)[0]` must be viewable"
+        ),
         "{message}"
     );
 }

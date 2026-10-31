@@ -6,6 +6,8 @@
 //! directly.
 //!
 pub(crate) mod api;
+mod region_footprint;
+pub use region_footprint::RegionFootprint;
 mod source_access;
 mod source_loans;
 pub use source_access::{CStatementAssignSource, CStatementStoreSource};
@@ -30,6 +32,7 @@ mod difference_graph;
 pub(crate) mod effective_type;
 mod equality_graph;
 mod eval;
+pub(crate) use eval::typed_reads::ReadScope as TransportReadScope;
 pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
 mod fold_read_summary;
@@ -78,6 +81,8 @@ pub use loans::{
     LoanRefusalOperation, LoanRefusalSubject,
 };
 mod integer_truncation_laws;
+mod separation_laws;
+pub(crate) use separation_laws::{prove_separation_restrict, prove_separation_subrange};
 mod loops;
 pub(crate) mod machine_integer;
 mod memory_provenance;

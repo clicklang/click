@@ -232,6 +232,18 @@ pub(super) fn print_proposition(
             },
             describe_contract_expression(expression)
         ),
+        ClickProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => {
+            let mut args = vec![
+                describe_snapshot_selector(before),
+                describe_snapshot_selector(after),
+            ];
+            args.extend(resources.iter().map(describe_resource_subject));
+            format!("changes_only({})", args.join(", "))
+        }
         ClickProposition::Separate { left, right } => format!(
             "separate({}, {})",
             describe_resource_subject(left),
@@ -994,6 +1006,47 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ),
         ProofTactic::SolveUsing(solve) => {
             write_using_premises(output, "solve()", &solve.premises, indent)
+        }
+        ProofTactic::TransportCertificate(certificate) => {
+            line(output, &prefix, "transport_certificate {");
+            let inner = format!("{prefix}    ");
+            for node in &certificate.nodes {
+                let text = match node {
+                    TransportCertificateNode::Premise {
+                        index,
+                        proposition,
+                        result,
+                    } => format!(
+                        "premise {index}: {} => {};",
+                        source_click_proposition(proposition),
+                        source_click_proposition(result)
+                    ),
+                    TransportCertificateNode::Preserve {
+                        effect,
+                        separation,
+                        result,
+                    } => format!(
+                        "preserve {}{separation} => {};",
+                        effect.map(|i| format!("{i}, ")).unwrap_or_default(),
+                        source_click_proposition(result)
+                    ),
+                    TransportCertificateNode::Transitive {
+                        left,
+                        right,
+                        result,
+                    } => format!(
+                        "transitive {left}, {right} => {};",
+                        source_click_proposition(result)
+                    ),
+                };
+                line(output, &inner, &text);
+            }
+            line(
+                output,
+                &inner,
+                &format!("conclusion {};", certificate.conclusion),
+            );
+            line(output, &prefix, "}");
         }
         ProofTactic::ArithmeticCertificate(certificate) => {
             write_arithmetic_certificate(output, certificate, indent)

@@ -4084,3 +4084,34 @@ fn resource_separation_matches_written_goal_with_pointer_alias() {
     let no_alias = source.replace("requires cb == &table;", "");
     verify_c0_sources(&no_alias, &[("callback-read.c", c)]).unwrap();
 }
+
+#[test]
+fn struct_pointer_pointer_ranges_print_pointer_units() {
+    let function = crate::languages::c::syntax::parse_function(
+        "struct item { uint8 tag; int64 value; }; void inspect(struct item **pp) {}",
+    )
+    .unwrap();
+    let pointer = crate::kernel::CPointerValue::new(
+        Pointer {
+            block: PointerBlock::Concrete("array".into()),
+            offset: crate::kernel::PointerOffsetTerm::Constant(0),
+        },
+        CType::Int32PointerPointer,
+    );
+    let arguments = [CExpression::Value(CValue::Pointer(pointer.clone()))];
+    for (start, end) in [(0, 4), (1, 3)] {
+        let range = CMemoryRange::from_pointer_value(
+            &pointer,
+            Bitvector32Term::Constant(start),
+            Bitvector32Term::Constant(end),
+            8,
+        );
+        assert_eq!(
+            super::diagnostics::describe_memory_range(
+                &range,
+                ParameterBinding::new(function.parameters(), &arguments)
+            ),
+            format!("pp[{start}..{end}]"),
+        );
+    }
+}

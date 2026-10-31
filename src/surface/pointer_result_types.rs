@@ -383,6 +383,7 @@ impl Analysis<'_> {
     ) -> Result<(), String> {
         crate::instrumentation::record_deterministic_work(1);
         match expression {
+            ContractExpression::Resource(_) => {}
             ContractExpression::AlgebraicConstructor {
                 algebraic_type,
                 variant,
@@ -611,7 +612,8 @@ impl Analysis<'_> {
             }
             // These query resources; their arguments cannot return a value
             // into the enclosing function's result or lexical bindings.
-            ClickProposition::Separate { .. }
+            ClickProposition::ChangesOnly { .. }
+            | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}
         }

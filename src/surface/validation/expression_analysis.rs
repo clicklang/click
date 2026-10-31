@@ -56,6 +56,7 @@ pub(in crate::surface) fn c_expression_uses_variable(
 
 pub(in crate::surface) fn contains_old_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::Resource(subject) => resource_subject_contains_old_expression(subject),
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
@@ -125,6 +126,7 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
 
 pub(in crate::surface) fn contains_resource_count(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::Resource(_) => false,
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
@@ -226,7 +228,8 @@ pub(in crate::surface) fn proposition_contains_resource_count(
         ClickProposition::PredicateCall { arguments, .. } => {
             arguments.iter().any(contains_resource_count)
         }
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => false,
     }
@@ -298,6 +301,7 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
         }
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
+        | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Defined { .. } => false,
@@ -310,6 +314,7 @@ pub(in crate::surface) fn collect_resource_count_families(
 ) {
     fn collect_expression(expression: &ContractExpression, families: &mut BTreeSet<String>) {
         match expression {
+            ContractExpression::Resource(_) => {}
             ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
@@ -436,7 +441,8 @@ pub(in crate::surface) fn collect_resource_count_families(
                 collect_expression(argument, families);
             }
         }
-        ClickProposition::Separate { .. }
+        ClickProposition::ChangesOnly { .. }
+        | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => {}
     }
@@ -471,6 +477,7 @@ pub(in crate::surface) fn collect_called_predicates(
         }
         ClickProposition::Comparison { .. }
         | ClickProposition::FloatClassification { .. }
+        | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
@@ -488,6 +495,9 @@ fn contract_segment_contains_old_expression(segment: &ContractSegment) -> bool {
 
 fn resource_subject_contains_old_expression(resource: &ResourceSubject) -> bool {
     match resource {
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => false,
         ResourceSubject::Memory(segment) => contract_segment_contains_old_expression(segment),
         ResourceSubject::Declared { arguments, .. } => {
             arguments.iter().any(contains_old_expression)
@@ -499,6 +509,10 @@ pub(in crate::surface) fn proposition_contains_old_expression(
     proposition: &ClickProposition,
 ) -> bool {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => resources
+            .iter()
+            .any(resource_subject_contains_old_expression),
+
         ClickProposition::Comparison { left, right, .. } => {
             contains_old_expression(left) || contains_old_expression(right)
         }
@@ -544,6 +558,7 @@ pub(in crate::surface) fn proposition_contains_old_expression(
 
 pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression) -> bool {
     match expression {
+        ContractExpression::Resource(subject) => resource_subject_contains_at_expression(subject),
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => true,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
@@ -622,6 +637,8 @@ fn contract_segment_contains_at_expression(segment: &ContractSegment) -> bool {
 
 fn resource_subject_contains_at_expression(resource: &ResourceSubject) -> bool {
     match resource {
+        ResourceSubject::Footprint(_) => true,
+        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => false,
         ResourceSubject::Memory(segment) => contract_segment_contains_at_expression(segment),
         ResourceSubject::Declared { arguments, .. } => arguments.iter().any(contains_at_expression),
     }
@@ -631,6 +648,8 @@ pub(in crate::surface) fn proposition_contains_at_expression(
     proposition: &ClickProposition,
 ) -> bool {
     match proposition {
+        ClickProposition::ChangesOnly { .. } => true,
+
         ClickProposition::Comparison { left, right, .. } => {
             contains_at_expression(left) || contains_at_expression(right)
         }
@@ -703,6 +722,9 @@ pub(in crate::surface) fn collect_click_function_calls(
 
 fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut BTreeSet<String>) {
     match expression {
+        ContractExpression::Resource(subject) => {
+            collect_click_function_calls_in_resource_subject(subject, calls)
+        }
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
         ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
@@ -803,6 +825,9 @@ fn collect_click_function_calls_in_resource_subject(
     calls: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => {}
         ResourceSubject::Memory(segment) => collect_click_function_calls_in_segment(segment, calls),
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
@@ -835,6 +860,12 @@ fn collect_click_function_calls_in_proposition_one(
     calls: &mut BTreeSet<String>,
 ) {
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for r in resources {
+                collect_click_function_calls_in_resource_subject(r, calls);
+            }
+        }
+
         ClickProposition::Comparison { left, right, .. } => {
             collect_click_function_calls(left, calls);
             collect_click_function_calls(right, calls);
@@ -1177,6 +1208,7 @@ fn validate_recursive_calls_in_expression(
         )
     };
     match expression {
+        ContractExpression::Resource(_) => Ok(()),
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(()),
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
@@ -1385,6 +1417,22 @@ fn validate_recursive_calls_in_proposition(
         )
     };
     match proposition {
+        ClickProposition::ChangesOnly { resources, .. } => {
+            for resource in resources {
+                validate_recursive_calls_in_resource_subject(
+                    caller,
+                    resource,
+                    lower_bounds,
+                    structural_subterms,
+                    definitions,
+                    function_calls,
+                    measures,
+                    algebraic_definitions,
+                )?;
+            }
+            Ok(())
+        }
+
         ClickProposition::Comparison { left, right, .. } => {
             expression(left)?;
             expression(right)
@@ -1471,6 +1519,9 @@ fn validate_recursive_calls_in_resource_subject(
     algebraic_definitions: &BTreeMap<&str, &AlgebraicTypeDefinition>,
 ) -> Result<(), ClickError> {
     match subject {
+        ResourceSubject::Footprint(_)
+        | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => validate_recursive_calls_in_segment(
             caller,
             segment,

@@ -4363,6 +4363,11 @@ pub enum SpecPredicateArgument {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecProposition {
+    ChangesOnly {
+        before: SpecMemory,
+        after: SpecMemory,
+        resources: Vec<SpecResource>,
+    },
     IntegerComparison {
         left: SpecIntegerExpression,
         operator: IntegerComparisonOperator,
@@ -4490,6 +4495,7 @@ pub enum SequenceTermNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecResource {
+    Value(CResource),
     Memory {
         base: SpecExpression,
         start: SpecExpression,
@@ -9824,6 +9830,9 @@ pub type ResourceArguments = std::sync::Arc<[AlgebraicValue]>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResource {
+    Footprint(Arc<super::RegionFootprint>),
+    /// Rigid descriptor for a resource-valued theorem parameter.
+    Parameter(Variable),
     Memory(CMemoryRange),
     /// Exclusive control of a population described by a checked resource type.
     PopulationAuthority(super::ResourceDescription),
@@ -9959,6 +9968,7 @@ impl CResource {
     /// spelling: the kernel has no source names for those.
     pub(crate) fn diagnostic_name(&self) -> &str {
         match self {
+            CResource::Footprint(_) | CResource::Parameter(_) => "resource parameter",
             CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
             CResource::Memory(_) => "memory",
             CResource::PopulationAuthority(_) => "population authority",
@@ -10131,6 +10141,11 @@ pub(super) trait ResourceFamilyAlgebra {
             ));
         }
         match self.family() {
+            ResourceFamily::Parameter => {
+                return Err(CResourceSpecError::InvalidNestedTerm(
+                    "a Resource parameter carries no ownership".into(),
+                ));
+            }
             ResourceFamily::PopulationAuthority
             | ResourceFamily::MutexGuard
             | ResourceFamily::MutexLive
@@ -10269,6 +10284,7 @@ static ITERATED_RESOURCE_ALGEBRA: IteratedResourceAlgebra = IteratedResourceAlge
 /// `ResourceFamilyAlgebra` implementation in `resource_family_algebra`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum ResourceFamily {
+    Parameter,
     Memory,
     PopulationAuthority,
     Composite,
@@ -10287,6 +10303,7 @@ impl ResourceFamily {
     /// The family's name in a diagnostic.
     pub(crate) fn describe(self) -> &'static str {
         match self {
+            Self::Parameter => "resource parameter",
             Self::Memory => "memory",
             Self::PopulationAuthority => "population authority",
             Self::Composite => "composite",
@@ -10695,6 +10712,11 @@ impl CResourceSpec {
             ));
         }
         let term = match family {
+            ResourceFamily::Parameter => {
+                return Err(CResourceSpecError::InvalidNestedTerm(
+                    "a Resource parameter carries no ownership".into(),
+                ));
+            }
             ResourceFamily::Composite => CResourceTerm::Composite {
                 name,
                 arguments,

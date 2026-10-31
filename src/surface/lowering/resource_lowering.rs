@@ -1657,6 +1657,7 @@ pub(in crate::surface) fn requirement_definedness_surfaces(
             | ClickProposition::Exists { .. }
             | ClickProposition::RangeAll { .. }
             | ClickProposition::RangeAny { .. }
+            | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
@@ -2754,6 +2755,9 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
     argument: &ContractExpression,
 ) -> Result<CExpression, ClickError> {
     match argument {
+        ContractExpression::Resource(_) => {
+            Err(ClickError::new("a Resource descriptor is not a C argument"))
+        }
         ContractExpression::IntegerLiteral(text) => {
             let value = text.parse::<u64>().map_err(|_| {
                 ClickError::new("an arbitrary Integer literal requires Integer context")

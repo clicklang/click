@@ -1,14 +1,10 @@
 # A parent word frames across a child-pointer store in a loop
 
-The Linux rbtree insertion rotation (`__rb_insert`) keeps a node's
-eight-byte `__rb_parent_color` word while it rewrites the node's
-`rb_right` link with `WRITE_ONCE`. Inside the loop the store's address is
-the owned node the invariant names, `g->rb_left`, so the transport lists that
-alias. The two reads of the `unsigned long` word are 64-bit loads; the
-checked load history frames them across the store exactly as it frames a
-32-bit read. Before that route covered 64-bit equalities, this transport
-was refused with "found no frame evidence" unless lowering happened to give
-both reads one canonical name, which depended on the function's name.
+The loop store changes the child's right link while preserving the pointer
+field that names the child. Its explicit certificate uses the recorded write
+footprint and separation; pointer reads retain both address and provenance even
+when their internal names differ. The parent-word equality then follows by the
+written alias rewrite and an available fact, without another transport search.
 
 ```c filename=parent_word.c
 #define WRITE_ONCE(x, value) ({ typeof(x) __value = (value); (*(volatile typeof(x) *)&(x)) = __value; __value; })
@@ -55,19 +51,28 @@ void rotate_child_link(struct rb_node* gparent, struct rb_node* tmp) {
             let { child: c } = unfold(s);
             unfold(c);
             have separate(memory(gparent->rb_left), memory(parent->rb_right));
+            have gparent->rb_left == parent by { solve() using { parent == gparent->rb_left; }; }
+            have separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)) by {
+                rewrite(gparent->rb_left == parent);
+                assumption();
+            }
             mark before_store;
             step();
-            have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
-                transport(at(before_store, parent->__rb_parent_color) == at(before_store, parent->__rb_parent_color),
-                          parent->__rb_parent_color == at(before_store, parent->__rb_parent_color)) using {
-                    parent == gparent->rb_left;
-                };
-            }
+            mark after_store;
             have gparent->rb_left == at(before_store, gparent->rb_left) by {
-                transport(at(before_store, gparent->rb_left) == at(before_store, gparent->rb_left),
-                          gparent->rb_left == at(before_store, gparent->rb_left)) using {
-                    separate(memory(gparent->rb_left), memory(parent->rb_right));
-                };
+                transport_certificate {
+                    premise 0: changes_only(before_store, after_store, memory(gparent->rb_left->rb_right))
+                        => changes_only(before_store, after_store, memory(gparent->rb_left->rb_right));
+                    premise 1: at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)))
+                        => at(before_store, separate(memory(gparent->rb_left), memory(gparent->rb_left->rb_right)));
+                    preserve 0, 1 => gparent->rb_left == at(before_store, gparent->rb_left);
+                    conclusion 2;
+                }
+            }
+            have parent == at(before_store, gparent->rb_left) by { assumption(); }
+            have parent->__rb_parent_color == at(before_store, parent->__rb_parent_color) by {
+                rewrite(parent == at(before_store, gparent->rb_left));
+                assumption();
             }
             have defined(gparent->rb_left) by {
                 transport(defined(at(before_store, gparent->rb_left)), defined(gparent->rb_left)) using {

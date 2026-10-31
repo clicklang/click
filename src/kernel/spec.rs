@@ -1261,6 +1261,46 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     match proposition {
+        SpecProposition::ChangesOnly {
+            before,
+            after,
+            resources,
+        } => {
+            let (SpecMemory::Fixed(before), SpecMemory::Fixed(after)) = (before, after) else {
+                return Ok(Vec::new());
+            };
+            let mut writes = Vec::with_capacity(resources.len());
+            let mut facts = ExecutionFacts::default();
+            let mut obligations = Vec::new();
+            for resource in resources {
+                let mut paths =
+                    evaluate_spec_resource_at_state_in(scope, resource, assumptions, budget)?;
+                if paths.len() != 1 {
+                    return Ok(Vec::new());
+                }
+                let (resource, path_facts, path_obligations) = paths.pop().unwrap();
+                let CResource::Memory(range) = resource else {
+                    return Ok(Vec::new());
+                };
+                let (pointer, bytes) = range.byte_footprint();
+                let Some(bytes) = bytes.as_const() else {
+                    return Ok(Vec::new());
+                };
+                writes.push((pointer, bytes));
+                facts.extend_shared(&path_facts);
+                obligations.extend(path_obligations);
+            }
+            Ok(vec![SpecPropositionPath {
+                proposition: Proposition::CMemoryMutatesOnly {
+                    before: before.clone(),
+                    after: after.clone(),
+                    writes,
+                },
+                facts,
+                obligations,
+                introductions: Vec::new(),
+            }])
+        }
         SpecProposition::IntegerComparison {
             left,
             operator,
@@ -4568,6 +4608,10 @@ fn evaluate_spec_resource_at_state_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<EvaluatedSpecResource>> {
     let (expressions, build): (Vec<SpecExpression>, SpecResourceBuilder) = match resource {
+        SpecResource::Value(value) => {
+            let value = value.clone();
+            (vec![], Box::new(move |_| Some(value.clone())))
+        }
         SpecResource::Memory {
             base,
             start,

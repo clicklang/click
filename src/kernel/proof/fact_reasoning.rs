@@ -384,6 +384,34 @@ pub(crate) fn normalize_using_conditions(
     premises: &[Proposition],
     facts: &super::ProofFacts,
 ) -> Result<(), ConditionalNormalizationError> {
+    if let Proposition::CResourceSeparate { left, right } = goal
+        && (matches!(left.as_ref(), CResource::Footprint(_))
+            || matches!(right.as_ref(), CResource::Footprint(_)))
+    {
+        let mut selected = PureFactContext::new();
+        for (index, premise) in premises.iter().enumerate() {
+            if !facts.available(premise) && !crate::kernel::proposition_holds_without_facts(premise)
+            {
+                return Err(ConditionalNormalizationError::UnavailablePremise(index));
+            }
+            let mut pending = vec![premise];
+            while let Some(part) = pending.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                if let Proposition::And(left, right) = part {
+                    pending.push(right);
+                    pending.push(left);
+                } else {
+                    selected = selected.assume_proposition(
+                        crate::kernel::region_footprint::byte_premise(part)
+                            .ok_or(ConditionalNormalizationError::DoesNotNormalize)?,
+                    );
+                }
+            }
+        }
+        return crate::kernel::region_footprint::separate_using(left, right, &selected)
+            .then_some(())
+            .ok_or(ConditionalNormalizationError::DoesNotNormalize);
+    }
     let mut conditions = std::collections::HashMap::new();
     // Keep graph admission in source order. Its bounded pointer fragment may
     // retain different coordinates after a block merge; hash iteration must
