@@ -2336,34 +2336,39 @@ fn evaluate_spec_integer_expression_paths_in(
     }
 }
 
-/// A load definition is trusted only when its descriptor is the exact
-/// registered snapshot and pointer for the reserved variable. Comparing
+/// A load definition is trusted only when it names the same registered read
+/// on both sides, by handle or exact snapshot/address/kind descriptor. Comparing
 /// interned snapshots uses their O(1) identity equality; arbitrary memory
 /// contents are never traversed here.
 pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition) -> bool {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
+            ..
         },
         true,
     ) = proposition
     else {
         return false;
     };
-    let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
-        (left.as_ref(), right.as_ref())
-    else {
+    let Bitvector32Term::Variable(variable) = left.as_ref() else {
         return false;
     };
     if !crate::kernel::is_load_variable(variable) {
         return false;
     }
-    // The descriptor is the registered load exactly, kind included: a
-    // definition that names another kind of read at the address is not one.
-    crate::kernel::eval::registered_load_term_for_variable(variable).as_ref() == Some(load)
+    let Some(descriptor) = crate::kernel::eval::registered_load_term_for_variable(variable) else {
+        return false;
+    };
+    // A produced definition uses the registered read handle on both sides.
+    // Retained raw definitions must still name its exact snapshot and kind.
+    match right.as_ref() {
+        Bitvector32Term::Variable(read) => read == variable,
+        raw @ Bitvector32Term::MemoryLoad(_, _, _) => descriptor == *raw,
+        _ => false,
+    }
 }
 
 /// Removes only kernel-certified load definitions from a conjunction. The
