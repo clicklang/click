@@ -29,3 +29,45 @@ fn alpha_identity_work_scales_with_nested_binder_depth() {
         assert!(pair[1] <= pair[0] * 3 + 32, "alpha identity work: {work:?}");
     }
 }
+
+#[test]
+fn local_definedness_identity_ignores_unrelated_store_history() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let mut samples = Vec::new();
+    for size in [8u32, 32, 128, 512] {
+        let array = Pointer {
+            block: "local:defined-array".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let mut memory = CMemory::new().with_uninitialized_block(array.block.clone(), 4);
+        for index in 0..size {
+            memory = memory.with_block(format!("local:defined-unrelated-{index}"), 4);
+        }
+        memory = memory.store(array, CValue::UInt8(7u32.into()));
+        let key = proposition_identity_key(&local_definedness_fact(&memory, 82_000)).unwrap();
+        for index in 0..size {
+            memory = memory.store(
+                Pointer {
+                    block: format!("local:defined-unrelated-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::Int32(index.into()),
+            );
+        }
+        let goal = local_definedness_fact(&memory, 82_001);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(Some(key.clone()), proposition_identity_key(&goal));
+            })
+        });
+        samples.push((work, map_work));
+    }
+    assert!(
+        samples[3].0 <= samples[0].0 + 8,
+        "query walked history: {samples:?}"
+    );
+    assert!(
+        samples[3].1 <= samples[0].1 * 4 + 32,
+        "query copied unrelated versions: {samples:?}"
+    );
+}
