@@ -2706,63 +2706,83 @@ fn synthesize_surface_integer(
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
-    use crate::kernel::IntegerTerm;
-    let _frame = SurfaceSynthesisFrame::enter("integer")?;
-    let recurse = |term: &IntegerTerm| {
-        synthesize_surface_integer(term, parameter_binding, state, bound_variables).map(Box::new)
+    let term = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
+    raise_kernel_term(&term, parameter_binding, state, bound_variables)
+}
+
+/// The shared term-to-surface boundary. Arithmetic and calls have common
+/// children; the legacy leaf dispatch is temporary and never projects away
+/// part of a value. Scoped binders retain their old refusal until migrated.
+fn raise_kernel_term(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::{KernelIntegerOperator as Op, KernelTermNode as Node, KernelType};
+    let category = if term.ty() == &KernelType::Integer {
+        "integer"
+    } else {
+        "function-call"
     };
-    Some(match term {
-        IntegerTerm::Constant(value) if value.sign() == num_bigint::Sign::Minus => {
-            ContractExpression::Negate(Box::new(ContractExpression::IntegerLiteral(
-                (-value).to_string(),
-            )))
+    let _frame = SurfaceSynthesisFrame::enter(category)?;
+    let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
+    Some(match term.node() {
+        Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
+            SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))
         }
-        IntegerTerm::Constant(value) => ContractExpression::IntegerLiteral(value.to_string()),
-        IntegerTerm::Variable(variable) => {
-            ContractExpression::Binding(bound_variables.get(variable)?.clone())
+        Node::IntegerLiteral(value) => SurfaceTerm::IntegerLiteral(value.to_string()),
+        Node::Variable(variable) if term.ty() == &KernelType::Integer => {
+            SurfaceTerm::Binding(bound_variables.get(variable)?.clone())
         }
-        IntegerTerm::Machine(machine) => ContractExpression::Call {
-            name: "to_integer".into(),
-            arguments: vec![synthesize_surface_bitvector(
-                machine.value(),
-                parameter_binding,
-                state,
-                bound_variables,
-            )?],
-        },
-        IntegerTerm::Negate(inner) => {
-            ContractExpression::Negate(Box::new(integer_typed_expression(
-                synthesize_surface_integer(inner, parameter_binding, state, bound_variables)?,
-            )))
-        }
-        IntegerTerm::Add(left, right) => ContractExpression::Add(recurse(left)?, recurse(right)?),
-        IntegerTerm::Subtract(left, right) => {
-            ContractExpression::Subtract(recurse(left)?, recurse(right)?)
-        }
-        IntegerTerm::Multiply(left, right) => {
-            ContractExpression::Multiply(recurse(left)?, recurse(right)?)
-        }
-        IntegerTerm::PureFunctionApplication(application) => synthesize_surface_call(
-            application.name(),
-            application.arguments(),
-            parameter_binding,
-            state,
-            bound_variables,
-        )?,
-        IntegerTerm::TruncatingQuotient(left, right)
-        | IntegerTerm::TruncatingRemainder(left, right) => ContractExpression::Call {
-            name: if matches!(term, IntegerTerm::TruncatingQuotient(..)) {
-                "truncating_quotient"
-            } else {
-                "truncating_remainder"
+        Node::IntegerOperation {
+            operator,
+            arguments,
+        } => {
+            let mut arguments = arguments
+                .iter()
+                .map(recurse)
+                .collect::<Option<Vec<_>>>()?
+                .into_iter();
+            let left = arguments.next()?;
+            match operator {
+                Op::Negate => SurfaceTerm::Negate(Box::new(integer_typed_expression(left))),
+                Op::Add => SurfaceTerm::Add(Box::new(left), Box::new(arguments.next()?)),
+                Op::Subtract => SurfaceTerm::Subtract(Box::new(left), Box::new(arguments.next()?)),
+                Op::Multiply => SurfaceTerm::Multiply(Box::new(left), Box::new(arguments.next()?)),
+                Op::TruncatingQuotient | Op::TruncatingRemainder => SurfaceTerm::Call {
+                    name: if *operator == Op::TruncatingQuotient {
+                        "truncating_quotient"
+                    } else {
+                        "truncating_remainder"
+                    }
+                    .into(),
+                    arguments: vec![left, arguments.next()?],
+                },
             }
-            .into(),
-            arguments: vec![
-                synthesize_surface_integer(left, parameter_binding, state, bound_variables)?,
-                synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
-            ],
+        }
+        Node::Call { name, arguments } => SurfaceTerm::Call {
+            name: generic_instance_source_name(name).into(),
+            arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
         },
-        _ => return None,
+        Node::Legacy(legacy) => match legacy.value() {
+            crate::kernel::PureFunctionArgument::Integer(value) => match value.as_ref() {
+                crate::kernel::IntegerTerm::Machine(machine) => SurfaceTerm::Call {
+                    name: "to_integer".into(),
+                    arguments: vec![synthesize_surface_bitvector(
+                        machine.value(),
+                        parameter_binding,
+                        state,
+                        bound_variables,
+                    )?],
+                },
+                _ => return None,
+            },
+            value => {
+                synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
+            }
+        },
+        Node::Variable(_) => return None,
     })
 }
 
@@ -3982,76 +4002,88 @@ fn synthesize_surface_call(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("function-call")?;
-    let mut result = Vec::with_capacity(values.len());
-    for value in values {
-        if !consume_surface_synthesis_work("function-argument") {
-            return None;
+    let mut importer = crate::kernel::KernelTermImport::default();
+    let arguments = values
+        .iter()
+        .map(|value| {
+            if !consume_surface_synthesis_work("function-argument") {
+                return None;
+            }
+            raise_kernel_term(
+                &importer.argument(value),
+                parameter_binding,
+                state,
+                bound_variables,
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(SurfaceTerm::Call {
+        name: generic_instance_source_name(name).into(),
+        arguments,
+    })
+}
+
+fn synthesize_legacy_call_argument(
+    value: &crate::kernel::PureFunctionArgument,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    Some(match value {
+        crate::kernel::PureFunctionArgument::Value(CValue::Bool(word)) => synthesize_surface_bool(
+            &ConditionTerm::truth_of_bool_word(word),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
+        // A word argument's term carries its own width; the candidate's
+        // round trip confirms the call lowers it at the parameter's type.
+        crate::kernel::PureFunctionArgument::Value(
+            CValue::Int32(value)
+            | CValue::UInt32(value)
+            | CValue::Int64(value)
+            | CValue::UInt64(value)
+            | CValue::Int128(value)
+            | CValue::UInt128(value),
+        ) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
+        crate::kernel::PureFunctionArgument::Integer(value) => {
+            synthesize_surface_integer(value, parameter_binding, state, bound_variables)?
         }
-        let expression = match value {
-            crate::kernel::PureFunctionArgument::Value(CValue::Bool(word)) => {
-                synthesize_surface_bool(
-                    &ConditionTerm::truth_of_bool_word(word),
+        crate::kernel::PureFunctionArgument::Algebraic(value) => {
+            synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
+        }
+        crate::kernel::PureFunctionArgument::ArrayRef {
+            memory,
+            pointer: CValue::Pointer(pointer),
+            ..
+        } => {
+            let snapshot = crate::kernel::intern_c_memory_ref(memory);
+            if snapshot == crate::kernel::intern_c_memory_ref(state.memory()) {
+                synthesize_surface_pointer_expression(
+                    pointer,
                     parameter_binding,
                     state,
                     bound_variables,
                 )?
+            } else {
+                SYNTHESIS_ENTRY_STATE
+                    .with(|slot| slot.borrow().clone())
+                    .and_then(|entry| {
+                        if snapshot != crate::kernel::intern_c_memory_ref(entry.memory()) {
+                            return None;
+                        }
+                        Some(ContractExpression::Old(Box::new(
+                            synthesize_surface_pointer_expression(
+                                pointer,
+                                parameter_binding,
+                                &entry,
+                                bound_variables,
+                            )?,
+                        )))
+                    })?
             }
-            // A word argument's term carries its own width; the candidate's
-            // round trip confirms the call lowers it at the parameter's type.
-            crate::kernel::PureFunctionArgument::Value(
-                CValue::Int32(value)
-                | CValue::UInt32(value)
-                | CValue::Int64(value)
-                | CValue::UInt64(value)
-                | CValue::Int128(value)
-                | CValue::UInt128(value),
-            ) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
-            crate::kernel::PureFunctionArgument::Integer(value) => {
-                synthesize_surface_integer(value, parameter_binding, state, bound_variables)?
-            }
-            crate::kernel::PureFunctionArgument::Algebraic(value) => {
-                synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
-            }
-            crate::kernel::PureFunctionArgument::ArrayRef {
-                memory,
-                pointer: CValue::Pointer(pointer),
-                ..
-            } => {
-                let snapshot = crate::kernel::intern_c_memory_ref(memory);
-                if snapshot == crate::kernel::intern_c_memory_ref(state.memory()) {
-                    synthesize_surface_pointer_expression(
-                        pointer,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?
-                } else {
-                    SYNTHESIS_ENTRY_STATE
-                        .with(|slot| slot.borrow().clone())
-                        .and_then(|entry| {
-                            if snapshot != crate::kernel::intern_c_memory_ref(entry.memory()) {
-                                return None;
-                            }
-                            Some(ContractExpression::Old(Box::new(
-                                synthesize_surface_pointer_expression(
-                                    pointer,
-                                    parameter_binding,
-                                    &entry,
-                                    bound_variables,
-                                )?,
-                            )))
-                        })?
-                }
-            }
-            _ => return None,
-        };
-        result.push(expression);
-    }
-    Some(ContractExpression::Call {
-        // Instance names are kernel identities, not declared Surface names.
-        // The typed arguments reconstruct the same generic instance.
-        name: generic_instance_source_name(name).into(),
-        arguments: result,
+        }
+        _ => return None,
     })
 }
 
