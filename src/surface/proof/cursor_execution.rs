@@ -2723,6 +2723,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 })
         });
         let mut completed_outcomes = Vec::new();
+        let mut terminal_cases = Vec::new();
+        let retain_terminal_cases = matches!(step_statement, CStatement::Return(_));
         for transition in transitions {
             let return_assumptions = transition.pure_facts.context();
             let case_outcomes =
@@ -2740,6 +2742,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 for fact in case_facts {
                     completed_execution_facts.push(ExecutionPureFact::new(fact));
                 }
+                terminal_cases.push(transition.path_facts.clone());
                 completed_outcomes.push((
                     outcome,
                     completed_execution_facts,
@@ -2750,6 +2753,16 @@ fn execute_step_from_frontier_position_selecting_path(
                     ),
                 ));
             }
+        }
+        if retain_terminal_cases {
+            execution.retain_terminal_statement_cases(
+                terminal_cases,
+                current_state.clone(),
+                ProgramPointRef {
+                    region: CodeRegionRef::Region(statement_index),
+                    kind: ProgramPointKind::Entry,
+                },
+            );
         }
         append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
         let state: &mut CState = &mut execution.core.state;
