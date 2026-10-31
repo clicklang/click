@@ -94,15 +94,23 @@ scaling tests, 58 examples, 4,936 mdtests). PR #2202 entered the merge queue
 while this follow-up was validating, then left it after the Rust scalar-slice
 integration test hit its 30-second limit. Its three negative mutations had
 reverified every unrelated function. Keep the full positive check, but check
-each mutation against its affected independent function; no limits or cases
-are removed. The follow-ups can now update the same PR.
+each mutation against its affected independent function. Separate the full
+positive suite and negative proof search into ordinary gate tests, retaining
+every case and the 30-second bound. They took 11.1s and 10.3s respectively in
+the integrated parallel gate. No limits or cases are removed. The follow-ups
+update the same PR.
 
 The next local increment migrates all six specialized 32/64-bit conversions
 to shared cast nodes. Their source/destination formats and operands are explicit;
 a transitional encoding tag preserves the exact old constructor, distinct from
 a generic cast. Tests cover all six encodings, repeated import identity, typed
 children, and linear cast-chain work beside unrelated terms. All 78 focused
-bridge/spelling tests passed. Integrated gate validation pending.
+bridge/spelling tests passed. After merging current master (`aece82749`), the
+full gate passed: 6,998 unit/import/scaling tests, 58 examples, 4,948 mdtests.
+Elapsed 13m07s included a 3m05s rebuild; unit and fixture phases totaled about
+9m46s, and the overall gate emitted its ten-minute timing warning. The focused
+machine-fixture fact-stability audit passed with zero differences. No nightly
+suite was run.
 
 Next: migrate the remaining ordinary expression producers and machine arithmetic onto the
 shared tree, then replace checker adapters with typed views. Algebraic values,
