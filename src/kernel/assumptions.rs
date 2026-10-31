@@ -10457,6 +10457,10 @@ impl SymbolicCExecution {
 }
 
 impl SymbolicCExecutionPath {
+    pub(crate) fn call_result(&self) -> Option<&CValue> {
+        self.call_result.as_ref()
+    }
+
     /// The entry premises this path was checked under.
     pub fn assumptions(&self) -> &PureFactContext {
         &self.assumptions

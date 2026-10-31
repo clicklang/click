@@ -3573,11 +3573,14 @@ it: an `if`'s own region is its test
 
 A call's region also has a value: `R.result` is the result of the call `R`
 names, such as `statement(0).call(make, 0).result`. It is the value the
-call's region assigned, read at the region's exit, so it names the call's
-result after every local or cell that held it has lost it, and a fact the
-call produced lowers from it exactly
-(`mdtests/a_call_result_is_spelled_by_its_call.md`). Allocation regions also expose their nullable return through `.result`;
-other regions that do not produce a result are refused. Click writes a value only the frontend's
+call returned, retained at the region's exit even if the source discards it.
+It still names that result after every local or cell that held it has lost it,
+and a fact the call produced lowers from it exactly
+(`mdtests/a_call_result_is_spelled_by_its_call.md`,
+`mdtests/a_discarded_call_result_keeps_its_call_name.md`). Allocation regions also
+expose their nullable return through `.result`; void calls and other regions
+that do not produce a result are refused
+(`mdtests/a_void_call_has_no_result_value.md`). Click writes a value only the frontend's
 temporary for a call held this way
 (`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).
 

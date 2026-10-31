@@ -3392,6 +3392,11 @@ fn synthesize_surface_bitvector(
     {
         return Some(ContractExpression::CFragment(CExpression::Variable(name)));
     }
+    if let Some(region) = SYNTHESIS_RECORDED_POINTS
+        .with(|slot| slot.borrow().as_ref()?.call_result_naming_integer(term))
+    {
+        return Some(ContractExpression::RegionResult(region));
+    }
     if let Some(field) = synthesize_local_aggregate_field(term, state) {
         return Some(field);
     }
@@ -5184,8 +5189,8 @@ fn synthesize_snapshot_pointer_expression(
 /// The source spelling of an algebraic value: a held instance's model field
 /// as `instance.field`, from the kernel's model-field registry and the
 /// instance the state holds under that identity, and a constructor as
-/// `Type::Variant(fields)`. Only datatypes without type arguments are
-/// spelled; a candidate is still admitted only after it re-lowers exactly.
+/// `Type::Variant(fields)`. Historical fields use their recorded introduction
+/// point; a candidate is admitted only after it re-lowers exactly.
 fn synthesize_surface_algebraic(
     term: &crate::kernel::AlgebraicTerm,
     parameter_binding: ParameterBinding<'_>,
@@ -5221,14 +5226,19 @@ fn synthesize_surface_algebraic(
                 )));
             }
             let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
-            if !matches!(
-                origin.minted_by,
-                crate::kernel::model_fields::ModelMint::ContractEntry
-            ) {
-                let owner =
-                    crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+            let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
+            let field_at = |state: &CState| {
                 let instance = state.resource_instance_at_path(origin.identity, &[])?;
-                return Some(ContractExpression::ResourceField(ResourceFieldAccess {
+                let held = instance.fields().get(origin.field_index)?;
+                let exact = match held {
+                    crate::kernel::AlgebraicValue::Algebraic(value) => value == term,
+                    crate::kernel::AlgebraicValue::C(CValue::Parameter(value)) => {
+                        value.as_ref() == term
+                    }
+                    _ => false,
+                };
+                exact.then_some(())?;
+                Some(ContractExpression::ResourceField(ResourceFieldAccess {
                     owner: owner.to_string(),
                     resource_name: instance.name().to_string(),
                     identity: origin.identity,
@@ -5238,10 +5248,28 @@ fn synthesize_surface_algebraic(
                     click_type: Some(ClickType::Algebraic(surface_algebraic_type(
                         &term.algebraic_type,
                     )?)),
-                }));
+                }))
+            };
+            if let Some(field) = field_at(state) {
+                return Some(field);
             }
-            None
+            if let Some(field) = SYNTHESIS_ENTRY_STATE.with(|slot| {
+                Some(ContractExpression::Old(Box::new(field_at(
+                    slot.borrow().as_ref()?,
+                )?)))
+            }) {
+                return Some(field);
+            }
+            SYNTHESIS_RECORDED_POINTS.with(|slot| {
+                let points = slot.borrow();
+                let (selector, recorded) = points.as_ref()?.point_holding_field_value(*variable)?;
+                Some(ContractExpression::At {
+                    selector: selector.clone(),
+                    expression: Box::new(field_at(recorded)?),
+                })
+            })
         }
+
         // The value a reference parameter refers to is spelled `*r`.
         crate::kernel::AlgebraicTermNode::MemoryLoad { pointer, .. } => parameter_binding
             .parameters

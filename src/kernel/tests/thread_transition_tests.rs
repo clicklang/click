@@ -1728,6 +1728,7 @@ fn thread_local_view_blocks_writes_and_all_scope_exits_until_join() {
                 facts: vec![].into(),
                 obligations: vec![],
                 loop_invariant_correspondence: Default::default(),
+                call_result: None,
                 loan_evidence: crate::kernel::empty_checked_loan_evidence_sequence(),
             }],
             &names,

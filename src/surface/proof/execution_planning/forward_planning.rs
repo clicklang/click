@@ -689,6 +689,9 @@ fn advance_execution_proof_statement(
                     ProgramPointKind::Exit,
                     *exit_state.clone(),
                 );
+                if let Some(result) = &transition.call_result {
+                    recorded_snapshots.record_call_result(statement_index, Some(result.clone()));
+                }
             }
             if matches!(statement, CStatement::While { .. }) {
                 let loop_index = loop_index.expect("a while statement has a checked loop index");

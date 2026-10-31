@@ -1100,6 +1100,7 @@ fn certified_transitions_from_execution(
                 let generated_load_source_events =
                     generated_load_source_events_from_facts(&execution_facts);
                 return Ok(CertifiedStatementTransition {
+                call_result: path.call_result().cloned(),
                     theorem: path.theorem().clone(),
                     context: executed_under.clone(),
                     outcome: outcome.clone(),
@@ -1121,6 +1122,7 @@ fn certified_transitions_from_execution(
             let generated_load_source_events =
                 generated_load_source_events_from_facts(&execution_facts);
             Ok(CertifiedStatementTransition {
+                call_result: path.call_result().cloned(),
                 theorem: path.theorem().clone(),
                 context: executed_under.clone(),
                 outcome: outcome.clone(),
