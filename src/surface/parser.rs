@@ -799,9 +799,9 @@ struct Parser {
     /// The loop clause currently being read, including its phase proofs.
     /// Source-aware parsing can reject unbound values before proof execution.
     loop_name_context: Option<String>,
-    /// Declared binders whose availability is established by proof steps.
-    /// Name checking recognizes their spelling; proof checking still requires
-    /// the corresponding introduction before the value can be used.
+    /// Binders declared in quantified goals and range bodies. This set only
+    /// recognizes their spelling; lowering and proof checking still enforce
+    /// their availability at the point of use.
     loop_proof_value_names: crate::persistent::PersistentSet<String>,
     resource_parameters: BTreeMap<String, usize>,
     c_object_names_by_function: BTreeMap<String, std::sync::Arc<BTreeSet<String>>>,
@@ -8255,7 +8255,7 @@ impl Parser {
         let item = self.expect_ident("range item name")?;
         self.expect(Token::Pipe)?;
         let binder_scope = self.loop_proof_value_names.clone();
-        self.loop_proof_value_names.insert(item.clone());
+        self.loop_proof_value_names = self.loop_proof_value_names.with_value(item.clone());
         let body = if self.peek() == Some(&Token::LBrace) {
             self.position += 1;
             let body = self.parse_proposition()?;
@@ -8557,8 +8557,9 @@ impl Parser {
                     body,
                     ..
                 } => {
-                    self.loop_proof_value_names
-                        .insert(written_name.as_ref().unwrap_or(name).clone());
+                    self.loop_proof_value_names = self
+                        .loop_proof_value_names
+                        .with_value(written_name.as_ref().unwrap_or(name).clone());
                     pending.push(body);
                 }
                 ClickProposition::RangeAll {
@@ -8573,8 +8574,9 @@ impl Parser {
                     body,
                     ..
                 } => {
-                    self.loop_proof_value_names
-                        .insert(written_item.as_ref().unwrap_or(item).clone());
+                    self.loop_proof_value_names = self
+                        .loop_proof_value_names
+                        .with_value(written_item.as_ref().unwrap_or(item).clone());
                     pending.push(body);
                 }
                 ClickProposition::And(left, right)
@@ -15160,8 +15162,8 @@ impl Parser {
         let item = self.expect_ident("fold item name")?;
         self.expect(Token::Pipe)?;
         let binder_scope = self.loop_proof_value_names.clone();
-        self.loop_proof_value_names.insert(accumulator.clone());
-        self.loop_proof_value_names.insert(item.clone());
+        self.loop_proof_value_names = self.loop_proof_value_names.with_value(accumulator.clone());
+        self.loop_proof_value_names = self.loop_proof_value_names.with_value(item.clone());
         let body = if self.peek() == Some(&Token::LBrace) {
             self.position += 1;
             let body = self.parse_contract_expression()?;
