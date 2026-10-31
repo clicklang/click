@@ -234,6 +234,15 @@ cell holding its own read (a materialization), which reads as that read. C
 evaluation still computes with stored values: a function's `result` is the
 value its statements produced.
 
+A logical 32-bit read through a model-pointer alias keeps that same read
+term. When the published footprint index selects an equal address with a
+stored word, the read returns a path-local equation to that word. The
+selection uses the address-class index and one exact cell lookup; it grants
+no access permission and does not search other aliases or snapshots.
+`logical_read_through_an_alias_retains_the_stored_word` checks the equation,
+missing-alias and changed-cell controls; its nightly scaling companion keeps
+the work bounds as aliases and unrelated frames grow.
+
 A scalar read handle retains its structural descriptor (memory version,
 address, and read kind) in the load registry. A generated read-definition fact
 uses that same handle representation as source lowering; its producer binding
