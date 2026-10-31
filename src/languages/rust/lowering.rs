@@ -3,6 +3,7 @@ use super::schema::{Expression as E, Function, Record, RustExport, Statement as 
 mod array_reference_tests;
 mod arrays;
 mod chunks;
+mod enumerate;
 #[cfg(test)]
 mod move_regressions;
 mod moves;
@@ -572,6 +573,7 @@ fn lower_function(
     let mut cx = Context {
         shared_array_iterators: BTreeMap::new(),
         ranges: BTreeMap::new(),
+        enumerated: BTreeSet::new(),
         shared_array_options: BTreeMap::new(),
         shared_scalar_slices,
         chunk_iterators: BTreeSet::new(),
@@ -639,6 +641,8 @@ struct Context<'a> {
     shared_array_iterators: BTreeMap<String, CType>,
     /// The range locals, with their element type.
     ranges: BTreeMap<String, Type>,
+    /// The enumerated slice iterators and their `Option` locals.
+    enumerated: BTreeSet<String>,
     shared_array_options: BTreeMap<String, CType>,
     shared_scalar_slices: BTreeMap<String, (String, CType)>,
     chunk_iterators: BTreeSet<String>,
@@ -1378,6 +1382,7 @@ impl Context<'_> {
     // The generated asserts are checked execution obligations, not assumptions.
     fn prepared_expr(&mut self, e: &E) -> Result<(CStatement, CExpression), String> {
         match e {
+            E::EnumerateOptionIndex { option } => self.enumerate_option_index(option),
             E::SharedArrayOptionElement { option } => {
                 if !self.shared_array_options.contains_key(option) {
                     return Err("unknown shared iterator Option".into());
@@ -1892,6 +1897,9 @@ impl Context<'_> {
             }
             E::SharedArrayOptionElement { .. } => {
                 Err("shared Option payload requires checked preparation".into())
+            }
+            E::EnumerateOptionIndex { .. } => {
+                Err("enumerated Option index requires checked preparation".into())
             }
             E::ChunkHasNext { iterator } => self.chunk_has_next(iterator),
             E::ChunkOptionTag { option } => {

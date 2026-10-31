@@ -5392,6 +5392,8 @@ mod array_values;
 mod capturing_closures;
 #[path = "rust_import/closures.rs"]
 mod closures;
+#[path = "rust_import/enumerate.rs"]
+mod enumerate;
 #[path = "rust_import/extern_functions.rs"]
 mod extern_functions;
 #[path = "rust_import/function_pointers.rs"]
