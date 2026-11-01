@@ -1,6 +1,35 @@
 use super::*;
 
 #[test]
+fn unsigned_array_read_cases_expand_without_implicit_search() {
+    let (source, sources) = mdtest_sources("mdtests/unsigned_array_read_cases_are_spellable.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "read").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    let wrong = source.replace("result == 3 or result == 5", "result == 3");
+    assert!(verify_c0_sources(&wrong, &sources).is_err());
+}
+
+#[test]
+fn pointer_translation_with_integer_bound_expands_without_implicit_search() {
+    let (source, sources) =
+        mdtest_sources("mdtests/a_pointer_translation_bound_may_be_an_integer_observation.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "at_offset").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn signed_division_ordinary_domains_expand_without_implicit_solving() {
     let c = "int f(int a, int b) { return a / b; }";
     let source = r#"verifying "division.c";
