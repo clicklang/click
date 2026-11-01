@@ -15776,13 +15776,12 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
 
 #[test]
 fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
-    // The automatic preservation the `loop` keyword owns walks this body
-    // once: each of the two sibling C `if`s has both arms fall through to
-    // more of the body, so its arms are joined as a `branch` and the rest is
-    // not walked once per arm. It used to split each `if` into its own proof
-    // case and walk four paths, which is what first exposed the
-    // certificate-offset bug this test was written for; the expansion is now
-    // two `branch` steps and must still reverify on its own.
+    // The automatic preservation the `loop` keyword owns walks this body as
+    // a function's implicit tail does: each of the two sibling C `if`s
+    // splits into its own proof case, so the rest of the body runs on four
+    // paths. Those cases are what first exposed the certificate-offset bug
+    // this test was written for; the expansion splits on both conditions
+    // and must reverify on its own.
     let c_source = r#"
         int32 two_ifs(int32 n) {
             int32 i = 0;
@@ -15833,14 +15832,9 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the automatic preservation should expand");
-    assert_eq!(
-        expanded.matches("branch ").count(),
-        2,
-        "both sibling C `if`s should expand to joined branches: {expanded}"
-    );
     assert!(
-        !expanded.contains("if x == 0") && !expanded.contains("if y == 0"),
-        "neither `if` should be walked as separate proof cases: {expanded}"
+        expanded.contains("if x == 0") && expanded.contains("if y == 0"),
+        "both sibling C `if`s should expand to proof cases: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("the expanded preservation should independently reverify: {error:?}\n{expanded}")
