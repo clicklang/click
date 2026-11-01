@@ -40,6 +40,10 @@ pub enum KernelTermNode {
         relation: CompareRelation,
         arguments: [KernelTerm; 2],
     },
+    IntegerCompare {
+        operator: IntegerComparisonOperator,
+        arguments: [KernelTerm; 2],
+    },
     BoolEqual {
         arguments: [KernelTerm; 2],
     },
@@ -264,6 +268,7 @@ impl KernelTerm {
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
+            | KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => arguments,
             KernelTermNode::BoolIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }

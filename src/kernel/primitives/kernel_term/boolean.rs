@@ -20,6 +20,27 @@ impl KernelTermImport {
                 relation: *relation,
                 arguments: [self.machine(*format, left), self.machine(*format, right)],
             },
+            Old::IntegerLessThan(left, right)
+            | Old::IntegerLessEqual(left, right)
+            | Old::IntegerGreaterThan(left, right)
+            | Old::IntegerGreaterEqual(left, right)
+            | Old::IntegerEqual(left, right)
+            | Old::IntegerNotEqual(left, right) => {
+                use IntegerComparisonOperator as Op;
+                let operator = match condition {
+                    Old::IntegerLessThan(..) => Op::LessThan,
+                    Old::IntegerLessEqual(..) => Op::LessEqual,
+                    Old::IntegerGreaterThan(..) => Op::GreaterThan,
+                    Old::IntegerGreaterEqual(..) => Op::GreaterEqual,
+                    Old::IntegerEqual(..) => Op::Equal,
+                    Old::IntegerNotEqual(..) => Op::NotEqual,
+                    _ => unreachable!(),
+                };
+                Node::IntegerCompare {
+                    operator,
+                    arguments: [self.integer(left), self.integer(right)],
+                }
+            }
             Old::BoolEqual(left, right) => Node::BoolEqual {
                 arguments: [self.condition(left), self.condition(right)],
             },
@@ -94,6 +115,23 @@ impl KernelTermExport {
                 left: Box::new(Self::machine(&arguments[0])?),
                 right: Box::new(Self::machine(&arguments[1])?),
             },
+            Node::IntegerCompare {
+                operator,
+                arguments,
+            } => {
+                use IntegerComparisonOperator as Op;
+                let mut export = Self::default();
+                let left = export.integer(&arguments[0])?;
+                let right = export.integer(&arguments[1])?;
+                match operator {
+                    Op::LessThan => Old::IntegerLessThan(left, right),
+                    Op::LessEqual => Old::IntegerLessEqual(left, right),
+                    Op::GreaterThan => Old::IntegerGreaterThan(left, right),
+                    Op::GreaterEqual => Old::IntegerGreaterEqual(left, right),
+                    Op::Equal => Old::IntegerEqual(left, right),
+                    Op::NotEqual => Old::IntegerNotEqual(left, right),
+                }
+            }
             Node::BoolEqual { arguments } => Old::BoolEqual(
                 Box::new(Self::condition(&arguments[0])?),
                 Box::new(Self::condition(&arguments[1])?),
@@ -128,6 +166,56 @@ impl KernelTermExport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn integer_comparisons_preserve_all_operators_and_order_after_source_drop() {
+        use IntegerComparisonOperator as Op;
+        type Constructor = fn(SharedIntegerTerm, SharedIntegerTerm) -> ConditionTerm;
+        let constructors: [(Op, Constructor); 6] = [
+            (Op::LessThan, ConditionTerm::IntegerLessThan),
+            (Op::LessEqual, ConditionTerm::IntegerLessEqual),
+            (Op::GreaterThan, ConditionTerm::IntegerGreaterThan),
+            (Op::GreaterEqual, ConditionTerm::IntegerGreaterEqual),
+            (Op::Equal, ConditionTerm::IntegerEqual),
+            (Op::NotEqual, ConditionTerm::IntegerNotEqual),
+        ];
+        let mut distinct = std::collections::HashSet::new();
+        for (operator, constructor) in constructors {
+            let left: SharedIntegerTerm = IntegerTerm::Add(
+                IntegerTerm::Variable(Variable(964_001)).into(),
+                IntegerTerm::constant_i64(1).into(),
+            )
+            .into();
+            let right: SharedIntegerTerm = IntegerTerm::constant_i64(0).into();
+            let source = constructor(left, right);
+            let term = KernelTermImport::default().condition(&source);
+            assert_eq!(term.ty(), &KernelType::Bool);
+            assert!(
+                matches!(term.node(), KernelTermNode::IntegerCompare { operator: actual, .. } if *actual == operator)
+            );
+            assert_eq!(term.children().len(), 2);
+            assert!(
+                term.children()
+                    .iter()
+                    .all(|child| child.ty() == &KernelType::Integer)
+            );
+            assert!(matches!(
+                term.children()[0].node(),
+                KernelTermNode::IntegerOperation { .. }
+            ));
+            assert!(matches!(
+                term.children()[1].node(),
+                KernelTermNode::IntegerLiteral(_)
+            ));
+            assert!(distinct.insert(term.clone()));
+            assert_eq!(KernelTermImport::default().condition(&source), term);
+            drop(source);
+            let restored = KernelTermExport::condition(&term).unwrap();
+            // Reconstructed old objects may have new allocation IDs; the
+            // common operator and ordered operands must retain their identity.
+            assert_eq!(KernelTermImport::default().condition(&restored), term);
+        }
+    }
 
     #[test]
     fn boolean_bridge_preserves_structure_and_comparison_format() {

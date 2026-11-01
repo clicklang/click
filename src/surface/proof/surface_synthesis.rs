@@ -2803,6 +2803,7 @@ fn raise_kernel_term(
         },
         Node::BoolLiteral(_)
         | Node::BoolCompare { .. }
+        | Node::IntegerCompare { .. }
         | Node::BoolEqual { .. }
         | Node::BoolIf { .. }
         | Node::LegacyBool(_) => unreachable!("Bool sorts handled above"),
