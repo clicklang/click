@@ -1233,6 +1233,13 @@ by `contradiction` on that antecedent, reading only the goal; expansion
 writes `intro(); contradiction(A);`
 ([`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md)).
 
+A goal that is one conjunct of an implication's consequent, `c == 2` from
+`a != 0` and `a != 0 implies (b == 1 and c == 2)`, is closed once the
+antecedent is an available fact: the closer extracts the whole consequent,
+spelled as the implication is written, and the goal is then a proper
+conjunct; expansion writes the `extract`
+([`solve_closes_a_conjunct_of_a_discharged_consequent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_a_conjunct_of_a_discharged_consequent.md)).
+
 A comparison held only under a definedness guard (`defined(e) implies a == b`,
 as a call postcondition over partial arithmetic lowers) whose consequent names a
 goal operand is used once a nested `solve` proves the guard: the closer extracts
