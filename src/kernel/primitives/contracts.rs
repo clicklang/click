@@ -830,8 +830,8 @@ impl CStringLiteral {
     /// The cell value the literal stores for byte `byte`.
     pub(crate) fn element_value(&self, byte: u8) -> CValue {
         match self.element_type {
-            CType::Int8 => CValue::Int8(Bitvector32Term::Constant(byte as i8 as i32 as u32)),
-            _ => CValue::UInt8(Bitvector32Term::Constant(u32::from(byte))),
+            CType::Int8 => crate::kernel::int8(byte as i8 as i32 as u32),
+            _ => crate::kernel::uint8(u32::from(byte)),
         }
     }
 }

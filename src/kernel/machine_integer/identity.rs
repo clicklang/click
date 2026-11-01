@@ -138,7 +138,11 @@ pub(crate) fn machine_operation_of_integer_value(
                     source: machine.ty(),
                     destination: ty,
                 };
-                let word = [word, widened].into_iter().find(|word| {
+                // A value of another width is never `ty`'s word as written:
+                // its word in `ty` is its widening, a node of its own.
+                let as_written =
+                    (machine.ty().format().bits() == ty.format().bits()).then_some(word);
+                let word = as_written.into_iter().chain([widened]).find(|word| {
                     IntegerTerm::from_machine(ty, word.clone()).as_ref() == Some(side)
                 })?;
                 let (low, high) = range::range(machine.ty());

@@ -1313,13 +1313,11 @@ fn c_function_contract_entry_facts(
             }
         }
     }
-    // A narrow integer parameter holds a value of its type: the argument was
-    // converted to it, and that conversion lands in the range. A `bool`
-    // parameter's cast holds 0 or 1 (rule C1b).
+    // A `bool` parameter's cast holds 0 or 1 (rule C1b). A narrow integer
+    // parameter is a value of its own format, whose range is the format's.
     for argument in arguments {
         if let CExpression::Value(value) = argument
-            && let Some(facts) =
-                c_narrow_integer_range_facts(value).or_else(|| c_bool_cast_range_facts(value))
+            && let Some(facts) = c_bool_cast_range_facts(value)
         {
             for fact in facts {
                 assumptions =

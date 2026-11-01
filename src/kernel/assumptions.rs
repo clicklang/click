@@ -7233,11 +7233,6 @@ impl PureFactContext {
                 )
             });
         crate::kernel::eval::check_canonical_at_creation(&condition, value);
-        crate::kernel::debug_assert_widths(
-            "an assumed condition",
-            || crate::kernel::condition_narrow_violation(&condition),
-            &condition,
-        );
         if cfg!(debug_assertions) {
             let widths = &mut self.variable_widths;
             crate::kernel::debug_assert_widths(
@@ -7327,11 +7322,6 @@ impl PureFactContext {
         if let Some((term, bound, strict)) =
             condition_reasoning::unsigned_upper_bound_below_sign_bit(&condition, value)
         {
-            // A 32-bit widening of a narrow value has its operand's word
-            // (rule K8, a relation), so the range is filed on the operand.
-            let term = term
-                .narrow_widening32_operand()
-                .map_or(term, |(_, operand)| operand);
             self = self.assume_unsigned_word_range(term.clone(), bound, strict);
         } else if let Some((term, bound, strict)) =
             condition_reasoning::uint64_upper_bound_below_sign_bit(&condition, value)
@@ -11054,8 +11044,9 @@ mod integer_observation_tests {
     fn a_definedness_bound_over_a_promoted_byte_reads_back_to_its_fact() {
         // `total + (int32)byte`: the byte's `int32` observation is the
         // byte's own, and the bound still names the `int32` overflow fact.
-        // The byte is a C narrowing; its promotion names its word (rule K8),
-        // so the overflow test reads the byte's word.
+        // The byte is a C narrowing, a value of 8 bits; its promotion is a
+        // widening node of its own (rule K8, a relation), which the
+        // overflow test reads.
         let byte = Bitvector32Term::MachineIntegerCast {
             value: Box::new(Bitvector32Term::Variable(Variable(821))),
             source: MachineIntegerType::Int32,
@@ -11070,9 +11061,11 @@ mod integer_observation_tests {
             MachineIntegerType::Int32,
             OverflowOperation::Add,
             Bitvector32Term::Variable(Variable(822)),
-            promoted,
+            promoted.clone(),
         );
-        assert!(matches!(&condition, ConditionTerm::Overflows { right, .. } if **right == byte));
+        assert!(
+            matches!(&condition, ConditionTerm::Overflows { right, .. } if **right == promoted)
+        );
         let fact = Proposition::ConditionIs(condition, false);
         let bounds = integer_bounds_of_definedness(&fact);
         assert_eq!(bounds.len(), 2);
@@ -11083,8 +11076,9 @@ mod integer_observation_tests {
 
     #[test]
     fn a_narrow_observation_is_native_only_for_an_extended_word() {
-        // A conversion's word is its value's extension, so its observation
-        // compares as the signed 32-bit word and reads back exactly.
+        // A conversion into 8 bits is a native 8-bit value, so its
+        // observation compares as a native 8-bit comparison and reads back
+        // exactly.
         let byte = Bitvector32Term::MachineIntegerCast {
             value: Box::new(Bitvector32Term::Variable(Variable(811))),
             source: MachineIntegerType::Int32,
@@ -11098,7 +11092,12 @@ mod integer_observation_tests {
         let (native, truth) = native_comparison_of_integer_observation(&condition, true).unwrap();
         assert_eq!(
             native,
-            ConditionTerm::signed_less_than(byte, Bitvector32Term::Constant(255))
+            ConditionTerm::narrow_compare(
+                MachineIntegerType::UInt8,
+                CompareRelation::LessThan,
+                byte,
+                Bitvector32Term::narrow_constant(MachineIntegerType::UInt8, 255)
+            )
         );
         assert_eq!(
             integer_observations_of_native_comparison(&Proposition::ConditionIs(native, truth)),
