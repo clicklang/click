@@ -136,7 +136,7 @@ refusal.
 | Comparing pointers to different objects | Supported: `mdtests/a_one_past_the_end_pointer_is_not_compared_with_another_object.md` | Not supported: pointer comparisons outside equality are not admitted | Not applicable |
 | Data races | Partial: under the modeled pthread runtime, workers need exclusive authority; there is no race semantics; `mdtests/authority_modeled_pthread_alias_worker_requires_authority.md` | Not applicable: no concurrency admitted | Not applicable: no concurrency admitted |
 | Undefined behavior in `unsafe` code | Not applicable | Not applicable | Not supported: `unsafe` functions and calls are refused at import |
-| Explicit `panic!`, `assert!`, `unwrap` | Not applicable | Not applicable | Partial: `assert!`, `panic!`, `unreachable!`, `todo!` and `unimplemented!` are obligations that no call reaches them, and `Option::unwrap`/`expect` of a scalar require `Some`; no `assert_eq!`/`assert_ne!`; `tests/rust_import/panics.rs::charon_panics_are_obligations` |
+| Explicit `panic!`, `assert!`, `unwrap` | Not applicable | Not applicable | Partial: `assert!`, `assert_eq!` and `assert_ne!` of scalars, `panic!`, `unreachable!`, `todo!` and `unimplemented!` are obligations that no call reaches them, and `Option::unwrap`/`expect` of a scalar require `Some`; `tests/rust_import/panics.rs::charon_panics_are_obligations` |
 
 ## Provenance
 

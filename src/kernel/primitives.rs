@@ -125,6 +125,7 @@ mod memory_equality_index;
 mod resource_algebra;
 #[cfg(test)]
 pub(crate) use resource_algebra::take_whole_normalization_facts;
+mod arithmetic_domains;
 mod term_operations;
 mod term_shape;
 mod term_width;

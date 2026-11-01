@@ -9789,16 +9789,8 @@ pub fn prove_int32_remainder_to_integer(left: Bitvector32Term, right: Bitvector3
         IntegerTerm::from_machine(MachineIntegerType::Int32, value)
             .expect("typed operands have exact Integer interpretations")
     };
-    let native_defined = Proposition::And(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0)),
-            false,
-        )),
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::signed_divide_overflows(left.clone(), right.clone()),
-            false,
-        )),
-    );
+    let native_defined =
+        Proposition::signed_division_defined(MachineIntegerType::Int32, &left, &right);
     let integer_nonzero = Proposition::ConditionIs(
         ConditionTerm::integer_not_equal(observe(right.clone()), IntegerTerm::constant_i64(0)),
         true,

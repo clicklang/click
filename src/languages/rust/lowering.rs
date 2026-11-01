@@ -2106,9 +2106,17 @@ impl Context<'_> {
                     );
                 }
                 if matches!(left_type, Type::U8 | Type::U16) {
-                    // Rust narrow unsigned operations use unsigned words;
-                    // the checked result is coerced to its original width.
-                    l = c_cast(l, CType::UInt32);
+                    // Narrow unsigned remainder fits in signed int, matching
+                    // the promotion used by its contract expression. Other
+                    // operations keep unsigned words (notably u16 multiply).
+                    l = c_cast(
+                        l,
+                        if operator == "rem" {
+                            CType::Int32
+                        } else {
+                            CType::UInt32
+                        },
+                    );
                 } else if left_type.is_signed_integer() && operator == "shl" {
                     // A signed left shift wraps in Rust and may be undefined
                     // in C: shift the bits as an unsigned word of at least
@@ -2158,9 +2166,10 @@ impl Context<'_> {
                 {
                     // Checked narrow arithmetic cannot discard bits. Its range
                     // obligation permits an exact coercion; only casts,
-                    // bitwise results and shifts need explicit truncation. An
-                    // unsigned operation is computed in `uint32` and converts
-                    // from there; a signed one in `int32`.
+                    // bitwise results and shifts need explicit truncation.
+                    // Convert from the operation's promoted type: `int32` for
+                    // signed arithmetic and narrow unsigned remainder,
+                    // `uint32` for the other unsigned operations.
                     let computed = if matches!(left_type, Type::U8 | Type::U16) {
                         result
                     } else {
@@ -2205,4 +2214,9 @@ impl Context<'_> {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/languages/rust/lowering/tests.rs");
 }

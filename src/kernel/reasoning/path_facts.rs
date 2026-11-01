@@ -1017,6 +1017,43 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
         value,
     )?;
 
+    // A single wide stride is exact, not modular multiplication. Dividing
+    // a constant multiple by its nonzero stride gives an equivalent native
+    // index comparison in both polarities, without truncating to 32 bits.
+    let wide_index_condition = |scaled: &PointerOffsetTerm, constant: &PointerOffsetTerm| {
+        let PointerOffsetTerm::Int64Scaled {
+            value: index,
+            byte_width,
+            unsigned,
+        } = scaled
+        else {
+            return None;
+        };
+        let PointerOffsetTerm::Constant(target) = constant else {
+            return None;
+        };
+        if target.checked_rem(*byte_width)? != 0 {
+            return None;
+        }
+        let element = target.checked_div(*byte_width)?;
+        Some(if *unsigned {
+            ConditionTerm::uint64_equal(
+                index.as_ref().clone(),
+                Bitvector32Term::UInt64Constant(u64::try_from(element).ok()?),
+            )
+        } else {
+            ConditionTerm::int64_equal(
+                index.as_ref().clone(),
+                Bitvector32Term::Int64Constant(element),
+            )
+        })
+    };
+    if let Some(condition) =
+        wide_index_condition(&left, &right).or_else(|| wide_index_condition(&right, &left))
+    {
+        add_condition_path_fact(facts, assumptions, condition, value)?;
+    }
+
     // The element index a byte offset folds to is that offset divided by the
     // element width, *modulo* `2^32`: every leaf contributes a whole multiple
     // of the width, but `Bitvector32Term::add` folds the pieces modularly.

@@ -3880,7 +3880,24 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                                 scope.state.memory(),
                                 &context,
                             ) {
-                                continue;
+                                if !budget.recover_resource_call_types
+                                    || !matches!(value, CValue::Pointer(pointer)
+                                        if pointer.object_type_evidence().is_none())
+                                {
+                                    continue;
+                                }
+                                // A held body asserts the constructor's nominal
+                                // field domain, just as it asserts a call's domain.
+                                // Never replace incompatible positive evidence.
+                                *value =
+                                    value.clone().with_pointer_object_class(Some(class.clone()));
+                            }
+                            if budget.recover_resource_call_types {
+                                field_path.facts.push(ExecutionPureFact::certified(
+                                    crate::kernel::object_types::checked_call_type_fact(
+                                        value, class,
+                                    ),
+                                ));
                             }
                         }
                         let Some((merged_facts, merged_obligations)) =

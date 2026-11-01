@@ -80,3 +80,43 @@ the repair below:
 resources already state the parent-pointer facts described above. Keep this
 report open: the remaining sidecars and full-directory audit have not met the
 acceptance criteria.
+
+## Rotation helper parent designation
+
+`rbtree_size_rotate_set_parents.click` now verifies both selected proofs. Its
+contract requires the explicit masked parent-pointer equality, matching the
+ordinary rbtree helper: equality of the packed numeric word does not establish
+pointer designation. The non-root proof branches rewrite that premise through
+`sized_context_parent` before reading the C local `parent`. All 22 smart sites
+pass expansion audit. The C and postconditions are unchanged.
+
+The 14 direct rotation callers retain the typed parent-pointer fact across the
+child-link updates and, for double rotations, the inner rotation callback. They
+then rewrite the context parent explicitly to supply the helper's premise.
+Paired runs of all 14 callers on `e7cb3ca08` and with this repair reach the
+same existing failing statements and goals; none fails earlier. The broader
+report remains open: the complete insertion sidecars and directory audit do
+not yet pass.
+
+## Color-flip insertion
+
+`rbtree_size_insert_color_flip.click` now gets past its first `unfold(state)`
+at line 106. A held resource's constructor-valued facts retain nominal pointer
+domains, matching the existing handling of typed logical calls. The reduced
+`held_resource_constructor_pointer_domain.md` proof unfolds and refolds the
+same model successfully, and its expansion audit passes.
+
+The remaining color-flip proof now explicitly frames the root pointer and all
+six child links across the three color-word stores. It names the C locals'
+node aliases, retains the grandparent's typed null-parent fact across the two
+child recolorings, and states the resulting `parent == 0` before recoloring
+the root. All three selected proofs in `rbtree_size_insert_color_flip.click`
+verify, with the C, contracts, resources, and verifier unchanged by this proof
+repair.
+
+The mirrored color-flip sidecar now uses the same explicit framing for the
+opposite insertion branch, taking its snapshot after the extra left-child
+read. All three selected proofs in
+`rbtree_size_insert_mirrored_color_flip.click` verify as well. Its C, contracts,
+resources, and verifier are unchanged by this repair. The other sidecars and
+full-directory audit still leave this broader report open.

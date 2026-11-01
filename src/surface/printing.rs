@@ -90,6 +90,18 @@ fn machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
         snapshot = true;
         inner = next;
     }
+    // Surface addition/subtraction may be pointer arithmetic. A typed
+    // literal nested inside it does not determine the result type:
+    // `a + (i + 1u64)` can be a pointer. Preserve its source semantics;
+    // generated C arithmetic still receives the machine barrier below.
+    if !snapshot
+        && matches!(
+            inner,
+            ContractExpression::Add(..) | ContractExpression::Subtract(..)
+        )
+    {
+        return None;
+    }
     fn c_arithmetic(expression: &CExpression) -> bool {
         matches!(
             expression,

@@ -210,11 +210,52 @@ impl Adapter<'_> {
                 });
             }
         }
+        let mut pruned = pruned;
+        unpair_borrows(&mut rewritten, &mut pruned);
         Some(PanicBody {
             body: rewritten,
             messages,
             pruned,
         })
+    }
+
+    /// `assert_eq!`'s and `assert_ne!`'s message, as Rust prints it without
+    /// its quotes, `assertion left == right failed`, when
+    /// `call` is their `core::panicking::assert_failed`.
+    fn assert_failed_message(
+        &self,
+        body: &u::ExprBody,
+        panics: &BTreeSet<u::BlockId>,
+        call: &a::Call,
+    ) -> Option<String> {
+        let a::FnOperand::Regular(pointer) = &call.func else {
+            return None;
+        };
+        let callee = self.krate.fun_decls.get(self.resolve(pointer).ok()?)?;
+        if !matches!(callee.item_meta.name.name.last(), Some(a::PathElem::Ident(name, _)) if name == "assert_failed")
+        {
+            return None;
+        }
+        let variant = panics.iter().find_map(|id| {
+            body.body[*id].statements.iter().find_map(|statement| {
+                let u::StatementKind::Assign(
+                    _,
+                    a::Rvalue::Aggregate(a::AggregateKind::Adt(r, Some(variant), None), _),
+                ) = &statement.kind
+                else {
+                    return None;
+                };
+                let decl = self.krate.type_decls.get(r.id)?;
+                protocol::path(&decl.item_meta.name, &["core", "panicking", "AssertKind"])
+                    .then_some(variant.index())
+            })
+        })?;
+        let relation = match variant {
+            0 => "==",
+            1 => "!=",
+            _ => return None,
+        };
+        Some(format!("assertion left {relation} right failed"))
     }
 
     /// The message of the panic block `id` reaches: the string the panic
@@ -230,6 +271,9 @@ impl Adapter<'_> {
         while seen.insert(current) {
             let block = &body.body[current];
             if let Some(call) = self.panic_call(block) {
+                if let Some(message) = self.assert_failed_message(body, panics, call) {
+                    return message;
+                }
                 let argument = call.args.first();
                 if let Some(text) = argument.and_then(operand_string) {
                     return text.to_string();
@@ -295,5 +339,186 @@ pub(super) fn assert_branches(blocks: &mut [out::MirBlock]) {
             .statements
             .push(S::Assert { condition, message });
         blocks[index].terminator = T::Goto { target };
+    }
+}
+
+/// `assert_eq!(x, y)` pairs its operands' borrows, `t = (&x, &y)`, and reads
+/// them back, `left = copy t.0`: each read is the borrow itself, `left =
+/// &x`, which is the same address while the shared borrow lives. The pair
+/// and the temporaries that held the borrows are dropped.
+fn unpair_borrows(body: &mut u::ExprBody, pruned: &mut BTreeSet<a::LocalId>) {
+    let mentions = |body: &u::ExprBody, wanted: a::LocalId| {
+        let mut count = 0;
+        for block in &body.body {
+            for statement in &block.statements {
+                if !matches!(
+                    statement.kind,
+                    u::StatementKind::StorageLive(_) | u::StatementKind::StorageDead(_)
+                ) {
+                    statement
+                        .dyn_visit(|local: &a::LocalId| count += usize::from(*local == wanted));
+                }
+            }
+            block
+                .terminator
+                .dyn_visit(|local: &a::LocalId| count += usize::from(*local == wanted));
+        }
+        count
+    };
+    let shared_borrow =
+        |body: &u::ExprBody, operand: &a::Operand| -> Option<(a::LocalId, a::Rvalue)> {
+            let a::Operand::Move(place) = operand else {
+                return None;
+            };
+            let local = place.as_local()?;
+            let mut definition = None;
+            for block in &body.body {
+                for statement in &block.statements {
+                    if let u::StatementKind::Assign(target, value) = &statement.kind
+                        && target.as_local() == Some(local)
+                    {
+                        if definition.is_some() {
+                            return None;
+                        }
+                        definition = Some(value.clone());
+                    }
+                }
+            }
+            let definition = definition?;
+            matches!(
+                definition,
+                a::Rvalue::Ref {
+                    kind: a::BorrowKind::Shared,
+                    ..
+                }
+            )
+            .then_some((local, definition))
+        };
+    let mut pairs = Vec::new();
+    for block in &body.body {
+        for statement in &block.statements {
+            let u::StatementKind::Assign(
+                target,
+                a::Rvalue::Aggregate(a::AggregateKind::Adt(r, None, None), fields),
+            ) = &statement.kind
+            else {
+                continue;
+            };
+            let (Some(pair), [left, right]) = (target.as_local(), fields.as_slice()) else {
+                continue;
+            };
+            if r.builtin != Some(a::BuiltinAdt::Tuple) {
+                continue;
+            }
+            let (Some(left), Some(right)) = (shared_borrow(body, left), shared_borrow(body, right))
+            else {
+                continue;
+            };
+            pairs.push((pair, [left, right]));
+        }
+    }
+    for (pair, borrows) in pairs {
+        // Each borrow temporary is defined and moved into the pair, and the
+        // pair is otherwise only read field by field.
+        if borrows.iter().any(|(local, _)| mentions(body, *local) != 2) {
+            continue;
+        }
+        let mut reads = 0;
+        let mut defined = 0;
+        for block in &body.body {
+            for statement in &block.statements {
+                let u::StatementKind::Assign(target, value) = &statement.kind else {
+                    continue;
+                };
+                if target.as_local() == Some(pair) {
+                    defined += 1;
+                }
+                if let a::Rvalue::Use(a::Operand::Copy(place), _) = value
+                    && let a::PlaceKind::Projection(base, a::ProjectionElem::Field(None, field)) =
+                        &place.kind
+                    && base.as_local() == Some(pair)
+                    && field.index() < 2
+                {
+                    reads += 1;
+                }
+            }
+        }
+        if defined != 1 || mentions(body, pair) != defined + reads {
+            continue;
+        }
+        let removed = [pair, borrows[0].0, borrows[1].0];
+        for block in body.body.iter_mut() {
+            block.statements.retain(|statement| match &statement.kind {
+                u::StatementKind::Assign(target, _) => !target
+                    .as_local()
+                    .is_some_and(|local| removed.contains(&local)),
+                u::StatementKind::StorageLive(local) | u::StatementKind::StorageDead(local) => {
+                    !removed.contains(local)
+                }
+                _ => true,
+            });
+            for statement in &mut block.statements {
+                if let u::StatementKind::Assign(_, value) = &mut statement.kind
+                    && let a::Rvalue::Use(a::Operand::Copy(place), _) = value
+                    && let a::PlaceKind::Projection(base, a::ProjectionElem::Field(None, field)) =
+                        &place.kind
+                    && base.as_local() == Some(pair)
+                {
+                    *value = borrows[field.index()].1.clone();
+                }
+            }
+        }
+        pruned.extend(removed);
+        // A read-back used only through its referent, `_9 = copy *left`,
+        // reads the borrowed place itself.
+        for (local, borrow) in borrows {
+            let a::Rvalue::Ref {
+                place: borrowed, ..
+            } = borrow
+            else {
+                continue;
+            };
+            let mut readers = Vec::new();
+            for block in &body.body {
+                for statement in &block.statements {
+                    if let u::StatementKind::Assign(target, value) = &statement.kind
+                        && let Some(reader) = target.as_local()
+                        && matches!(value, a::Rvalue::Ref { place, .. } if *place == borrowed)
+                        && reader != local
+                    {
+                        readers.push(reader);
+                    }
+                }
+            }
+            for reader in readers {
+                let mut through = 0;
+                for block in &body.body {
+                    block.dyn_visit(|place: &a::Place| {
+                        if matches!(&place.kind, a::PlaceKind::Projection(base, a::ProjectionElem::Deref) if base.as_local() == Some(reader))
+                        {
+                            through += 1;
+                        }
+                    });
+                }
+                if mentions(body, reader) != through + 1 {
+                    continue;
+                }
+                for block in body.body.iter_mut() {
+                    block.statements.retain(|statement| match &statement.kind {
+                        u::StatementKind::Assign(target, _) => target.as_local() != Some(reader),
+                        u::StatementKind::StorageLive(local)
+                        | u::StatementKind::StorageDead(local) => *local != reader,
+                        _ => true,
+                    });
+                    block.dyn_visit_mut(|place: &mut a::Place| {
+                        if matches!(&place.kind, a::PlaceKind::Projection(base, a::ProjectionElem::Deref) if base.as_local() == Some(reader))
+                        {
+                            *place = borrowed.clone();
+                        }
+                    });
+                }
+                pruned.insert(reader);
+            }
+        }
     }
 }

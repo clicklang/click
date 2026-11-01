@@ -40,3 +40,18 @@ pub fn unwrapped(o: Option<u32>) -> u32 {
 pub fn expected(o: Option<i64>) -> i64 {
     o.expect("a value")
 }
+
+pub fn same(x: u32, y: u32) -> u32 {
+    assert_eq!(x, y);
+    x
+}
+
+pub fn even_half(x: u32) -> u32 {
+    assert_eq!(x % 2, 0, "odd");
+    x / 2
+}
+
+pub fn distinct(x: i64, y: i64) -> i64 {
+    assert_ne!(x, y);
+    x - y
+}
