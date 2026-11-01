@@ -119,11 +119,12 @@ impl RegionFootprint {
             for fact in changed {
                 crate::instrumentation::record_deterministic_work(1);
                 if let CResourceFact::Own(resource, _) = fact
-                    && !matches!(resource, CResource::Memory(_))
+                    && !matches!(resource, CResource::Memory(_) | CResource::Iterated(_))
                 {
                     // Spatial ownership may split or coalesce while a call
-                    // lends and returns a cell. Those map edits do not write
-                    // bytes. Memory writes and lifetime effects are recorded
+                    // lends and returns a cell; iterated ownership also updates
+                    // its taken-out markers when a guard changes. Those map
+                    // edits do not write bytes. Writes and lifetime effects are recorded
                     // above; retain changes to named resource observations.
                     members.push_back(resource);
                 }

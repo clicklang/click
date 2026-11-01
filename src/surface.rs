@@ -2005,6 +2005,13 @@ pub enum ResourceSubject {
         source: Box<ResourceSubject>,
     },
     Memory(ContractSegment),
+    /// A saved pointer base with bounds evaluated in the surrounding state.
+    SavedMemory {
+        base: ContractExpression,
+        start: ContractExpression,
+        /// None names one cell at `start`, without computing `start + 1`.
+        end: Option<ContractExpression>,
+    },
     Declared {
         kind: ResourceKind,
         name: String,
@@ -2678,6 +2685,11 @@ fn collect_current_resource_subject_variables(
         }
         ResourceSubject::Captured { .. } => {}
         ResourceSubject::Memory(segment) => collect_current_segment_variables(segment, names),
+        ResourceSubject::SavedMemory { base, start, end } => {
+            for expression in [base, start].into_iter().chain(end.iter()) {
+                collect_current_contract_expression_variables(expression, names);
+            }
+        }
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
                 collect_current_contract_expression_variables(argument, names);

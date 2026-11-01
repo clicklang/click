@@ -1844,8 +1844,9 @@ equality does not establish complete pointer equality.
 
 `region.footprint` is a resource descriptor, not ownership. Execution records
 writes, call effects, resource changes, and allocation lifetime changes while
-producing the transition. Splitting or rejoining spatial ownership alone does
-not modify memory bytes; named-resource changes remain effects. A footprint can contain several resources and can
+producing the transition. Splitting or rejoining spatial ownership, or updating
+an iterated ownership marker, does not modify memory bytes; named-resource
+changes remain effects. A footprint can contain several resources and can
 conservatively include more than the exact mutated cells. Selecting it uses
 recorded region boundaries, never a memory-history search. A boundary without
 a complete recorded effect sequence is refused.

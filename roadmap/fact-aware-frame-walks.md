@@ -9,15 +9,9 @@ The unlanded `typed_reads_share_memory_source` removal in
 one immediate predecessor per endpoint. Complete-pointer equality, designation,
 and extent comparison must retain that bound.
 
-Before landing:
-
-- Resolve the resource-descriptor spelling for a saved pointer base with
-  current indices, needed by the arena store's separation proof. Reuse the
-  existing `take`/`give` form if approved; do not add a history fallback.
-- Finish the nested arena-prefix read preservation with explicit addresses,
-  preserving the original C and produced range.
-- Validate the full ordinary corpus and affected expansion/replay checks on
-  the completed repairs. Keep this work separate from the open cell-source PR.
+Before landing, integrate current master and validate the ordinary corpus and
+affected expansion/replay checks with the traversal disabled. The pointer
+comparison removal must remain independent of the compact-run store experiment.
 
 Retain the repeated-query, adjacent-state, explicit-composition, and cold
 refusal controls in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`.

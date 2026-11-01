@@ -3004,7 +3004,13 @@ fn replay_cell_source_example(example: &str, sidecar: &str, claim: &str) {
         &ProgramInputs::Bundle(sources.clone()),
         claim,
     )
-    .unwrap_or_else(|error| panic!("{example}: {}", error.report()));
+    .unwrap_or_else(|error| {
+        panic!(
+            "{example}: {}\n{}",
+            error.report(),
+            error.trace_context_report().unwrap_or_default()
+        )
+    });
     click::surface::without_implicit_auto_for_claim(claim, || {
         click::surface::verify_project_functions(
             &project.with_entry_source(expanded),
@@ -3047,4 +3053,12 @@ fn cell_source_repair_fork_join_replays() {
 #[ignore = "nightly: expands and cold-replays the vector-copy contract"]
 fn cell_source_repair_vector_copy_replays() {
     replay_cell_source_example("owned-vector", "vector.click", "vector_copy.contract");
+}
+
+#[test]
+#[ignore = "nightly: pointer-history arena allocation proof expansion and replay"]
+fn pointer_history_repair_arena_alloc_replays() {
+    click::surface::with_proof_trace("arena_alloc", || {
+        replay_cell_source_example("arena", "arena_cells.click", "arena_alloc.contract");
+    });
 }

@@ -1728,6 +1728,36 @@ fn explicitly_packaged_pointer_frame_expands_without_history_search() {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
 }
 
+#[test]
+#[ignore = "nightly: saved memory descriptor expansion and cold replay"]
+fn saved_memory_descriptors_expand_and_replay() {
+    for (fixture, claim) in [
+        ("saved_memory_bases_keep_current_indices", "advance"),
+        ("saved_memory_struct_elements_keep_their_stride", "advance"),
+        ("saved_memory_cell_does_not_increment_its_index", "keep"),
+        ("saved_memory_field_address_keeps_snapshot", "redirect"),
+        ("arena_prefix_free_reads_region_arena", "arena_release"),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = c_sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        with_proof_trace(claim, || {
+            let verified = verify_c0_sources(&source, &sources).unwrap_or_else(|error| {
+                panic!(
+                    "{fixture}: {}\n{}",
+                    error.report(),
+                    error.trace_context_report().unwrap_or_default()
+                )
+            });
+            let expanded = expand_checked_grouped_claim(&source, &verified, claim).unwrap();
+            without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+                .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
+        });
+    }
+}
+
 /// Expands the smart tactic that starts at `anchor` (plus `skip` bytes) in
 /// an mdtest's Click source and re-verifies the rewrite.
 fn expand_mdtest_site_and_reverify(relative: &str, anchor: &str, skip: usize) -> String {
