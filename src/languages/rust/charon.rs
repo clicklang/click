@@ -2462,7 +2462,10 @@ impl BodyAdapter<'_, '_> {
                 // external function, whose contract is the library's.
                 let core_method = match self.adapter.core_method_call(callee, ptr, call)? {
                     Some(function) => Some(function),
-                    None => self.adapter.option_method_call(callee, ptr, call)?,
+                    None => match self.adapter.option_method_call(callee, ptr, call)? {
+                        Some(function) => Some(function),
+                        None => self.adapter.slice_method_call(callee, ptr, call)?,
+                    },
                 };
                 if let Some(function) = core_method {
                     let a::PlaceKind::Local(destination) = call.dest.kind else {

@@ -40,3 +40,17 @@ pub fn fewer(a: usize, b: usize) -> usize {
 pub fn or_default(o: Option<u32>) -> u32 {
     o.unwrap_or(7)
 }
+
+pub fn exchange(xs: &mut [u32], a: usize, b: usize) {
+    xs.swap(a, b);
+}
+
+pub fn swap_bytes(bytes: &mut [u8]) {
+    if bytes.len() >= 2 {
+        bytes.swap(0, 1);
+    }
+}
+
+pub fn reverse_three(xs: &mut [i64]) {
+    xs.swap(0, 2);
+}

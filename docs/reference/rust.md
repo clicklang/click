@@ -875,8 +875,27 @@ Each contract is an assumption, listed in [trust](../concepts/trust.md); each
 library function is checked at the edge of its type in
 `mdtests/stdlib_every_symbol.md`.
 [`design/charon-trial/core-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.click)
-verifies calls at several widths. Other core methods, such as `pow`, remain
-unmodeled calls, refused with the callee's name.
+verifies calls at several widths.
+
+`xs.swap(a, b)` on a mutable slice of integers calls `slice::swap<T>`, whose
+contract states the call's effect rather than a result:
+
+```text
+extern fn slice::swap<u32>(s: &mut [u32], a: usize, b: usize) {
+    owns *s;
+    requires a < s.len();
+    requires b < s.len();
+    ensures s[a] == old(s[b]);
+    ensures s[b] == old(s[a]);
+    ensures forall (k: usize) { k < s.len() and k != a and k != b implies s[k] == old(s[k]) };
+}
+```
+
+The two `requires` are Rust's index panics, so a caller shows both indices in
+bounds. An element the call keeps is the last clause at its index: after the
+call, `instantiate(forall (k: usize) { ... }, 1u64)` gives `xs[1] ==
+old(xs[1])` once `1u64 < xs.len()` is held. Other core methods, such as `pow`,
+remain unmodeled calls, refused with the callee's name.
 
 ## Supported semantics
 
