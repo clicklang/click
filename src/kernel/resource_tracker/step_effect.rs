@@ -853,8 +853,8 @@ pub(in crate::kernel) fn seeded_cell_effect(
 }
 
 /// Loading each scalar from a byte-identical predecessor and caching that same
-/// value does not modify memory. Restrict this rule to byte-preserving scalar
-/// carriers: bool normalization and pointer representation have separate rules.
+/// value does not modify memory. Complete pointer reads preserve their bytes
+/// just like scalar reads; bool normalization is still a different representation.
 /// The producer-maintained read identity also covers successive materializations
 /// from one source. A slot may have a wider stride than its scalar carrier:
 /// caching four observed bytes every eight bytes leaves the intervening bytes
@@ -868,7 +868,6 @@ pub(in crate::kernel) fn seeded_loads_preserve_base(step: &CMemoryDerivation) ->
     matches!(run.value_mode(), RunValueMode::Load)
         && run.source().read_identity() == base.read_identity()
         && run.element_type() != CType::Bool
-        && !run.element_type().is_pointer()
         && run.element_width() >= run.value_width()
 }
 

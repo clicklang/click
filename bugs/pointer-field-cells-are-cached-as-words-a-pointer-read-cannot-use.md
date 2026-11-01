@@ -4,7 +4,42 @@ Soundness: incomplete. Existing checked proofs are refused; nothing false is
 accepted. Two reads of one unchanged pointer field get different names, so a
 proof step that once closed by normalization is refused.
 
-## Violated invariant
+## Current status (2026-11-01)
+
+The representation repair is implemented: composite unfolds observe complete
+pointer cells, symbolic storage uses the same `LoadedPointer` identity as an
+ordinary read, and same-source pointer observation runs preserve bytes in the
+memory-history checker. The named-cell rule compares the full typed read,
+including designation and extent. Scalar load handles no longer double as
+pointer parameters in symbolic arrays.
+
+Regression coverage checks complete pointer cells, cached/ordinary read identity,
+upper-half writes, wrong read provenance, and no-write witnesses for pointer
+runs. The retained-field Markdown fixture also checks a bare before/after read
+equality after unfolding, sibling stores, and a retaining call. Pointer-run
+framing stays bounded as run sizes grow from 16 to 65,536 cells; observation
+chains are checked at 8, 32, 128, and 512 cells. The pointer fact-stability audit
+has zero differences before and after; its three quarantined fixture failures
+are unchanged.
+
+Keep this report open: the original sidecars do not yet meet the end-to-end
+acceptance criteria. Against the pre-repair baseline `617ab6c8a`, unchanged
+production runs give these frontiers:
+
+| Sidecar | Before | After |
+| --- | --- | --- |
+| `rbtree_erase_augmented.click` | smart budget at line 544 | missing explicit `erase_spine_minimum` nonempty premise at line 596 |
+| `rbtree_size_insert_context_double_far_rotation.click` | smart budget at line 191 | same |
+| `rbtree_size_insert_mirrored_context_double_rotation.click` | fold argument equality at line 217 | earlier smart budget for `node->rb_left == 0` at line 203 |
+
+No example proof or C source is changed by the representation repair. In a
+scratch erase proof, explicitly normalizing the nonempty-constructor premise
+passes line 596, then stops at an unavailable exact rewrite equality at original
+line 652, still before the historical pointer-read trigger. The sections below
+record the original investigation, not a claim that the full erase proof now
+verifies.
+
+## Original violated invariant
 
 A read of a pointer field that no step writes has one name before and after a
 call that does not touch it. Since #1806 every C pointer read is an 8-byte
@@ -85,9 +120,12 @@ suite passes, but the corpus shows a spelling split:
 - `mdtests/a_retained_pointer_field_fact_needs_its_listed_loop_alias.md`
   passes without its listed alias, which needs review before it is accepted.
 
-The likely complete fix is one spelling for a pointer read everywhere (the
-`LoadedPointer` read), symbolic storage cells included, followed by whole
-pointer cells.
+The representation repair uses one spelling for a pointer read everywhere
+(the `LoadedPointer` read), symbolic storage cells included, followed by whole
+pointer cells. It also removes the obsolete pointer exclusion from the
+same-source no-write rule: otherwise the newly complete cache entries are
+mistaken for writes during transport. End-to-end proof work remains as listed
+in the current status above.
 
 ## Acceptance criteria
 

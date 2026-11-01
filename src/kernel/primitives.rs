@@ -8695,8 +8695,7 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
             if matches!(run.value_mode(), cell_store::RunValueMode::Load)
                 && (run.element_width() == run.value_width()
                     || (run.element_width() > run.value_width()
-                        && run.element_type() != CType::Bool
-                        && !run.element_type().is_pointer()))
+                        && run.element_type() != CType::Bool))
                 && base.read_identity() == run.source().read_identity() =>
         {
             // Copying the same bytes already in the base is materialization,

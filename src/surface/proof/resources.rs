@@ -5454,11 +5454,8 @@ fn materialize_composite_resource_cells_from_snapshot(
         return memory;
     }
 
-    // `*p` is one complete struct: its cells take the layout's field
-    // types, so a wide integer field reads back as itself. Pointer fields
-    // keep the int32 words this projection uses everywhere: a pointer cell
-    // must carry its load variable, which the load itself mints, whereas a
-    // raw load term embedded in a pointer offset is not canonical.
+    // Observe complete typed fields. In particular, an eight-byte pointer read
+    // cannot reuse two independently named four-byte integer observations.
     if let Some(layout) = crate::surface::lowering::object_segment_layout(parameters, segment)
         && *start == 0
     {
@@ -5468,25 +5465,8 @@ fn materialize_composite_resource_cells_from_snapshot(
                 range.base(),
                 memory,
                 |mut memory, pointer, element_type| {
-                    let word_cells = if element_type.is_pointer() {
-                        (0..element_type.byte_width())
-                            .step_by(4)
-                            .collect::<Vec<_>>()
-                    } else {
-                        vec![0]
-                    };
-                    for word in word_cells {
-                        let pointer = pointer.offset_by_bytes(word);
-                        if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
-                            continue;
-                        }
-                        // A pointer field is held as its four-byte words.
-                        let storage_type = if element_type.is_pointer() {
-                            CType::Int32
-                        } else {
-                            element_type
-                        };
-                        memory = memory.materialize_symbolic_cell(pointer, storage_type);
+                    if !matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
+                        memory = memory.materialize_symbolic_cell(pointer, element_type);
                     }
                     memory
                 },
@@ -5499,8 +5479,8 @@ fn materialize_composite_resource_cells_from_snapshot(
     // A scalar field's ownership span can include alignment padding. Its retained
     // declaration names only the actual scalar/array elements, not typed reads
     // of every word in that wider span.
-    let (element_width, start, end) = if !segment_type.is_pointer()
-        && let Some(count) = crate::surface::lowering::declared_segment_observation_count(segment)
+    let (element_width, start, end) = if let Some(count) =
+        crate::surface::lowering::declared_segment_observation_count(segment)
     {
         let width = segment_type.byte_width();
         let Some(first_byte) = start.checked_mul(element_width) else {
@@ -5523,12 +5503,9 @@ fn materialize_composite_resource_cells_from_snapshot(
     } else {
         (element_width, *start, *end)
     };
-    // The cells below as one run. Every element's value is its load in the
-    // naming memory, typed as the element for a scalar and kept as the word
-    // the load names for a pointer, so the run's element type is that word's
-    // type. A value wider than the stride would overlap the next element,
-    // which a run does not stand for.
-    let run_type = if !segment_type.is_pointer() {
+    // Keep typed reads at their physical stride. A narrower byte/word view
+    // does not authorize overlapping whole-pointer observations.
+    let run_type = if !segment_type.is_pointer() || segment_type.byte_width() <= element_width {
         segment_type
     } else if element_width == 1 {
         CType::UInt8
@@ -5557,18 +5534,7 @@ fn materialize_composite_resource_cells_from_snapshot(
         if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
             continue;
         }
-        // Preserve scalar pointee types, including substituted pointer values.
-        // Pointer cells retain the word representation used for load origins,
-        // and each cell is named as the read of its own kind.
-        let element_type = contract_segment_element_type(parameters, segment);
-        let storage_type = if !element_type.is_pointer() {
-            element_type
-        } else if element_width == 1 {
-            CType::UInt8
-        } else {
-            CType::Int32
-        };
-        memory = memory.materialize_symbolic_cell(pointer, storage_type);
+        memory = memory.materialize_symbolic_cell(pointer, run_type);
     }
     memory
 }
@@ -6302,6 +6268,46 @@ mod declared_scalar_field_observation_tests {
                 "{samples:?}"
             );
         }
+    }
+
+    #[test]
+    fn pointer_field_observation_is_one_complete_typed_read() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(985_803));
+        let memory = CMemory::new();
+        let segment = field(
+            CExpression::Value(CValue::pointer(base.clone())),
+            CType::Int32Pointer,
+        );
+        let named = materialize_composite_resource_cells_from_snapshot(
+            memory.clone(),
+            &memory,
+            &ResourceClause::OwnMemory(segment),
+            &CResourceFact::own_memory(CMemoryRange::new(base.clone(), 0.into(), 2.into())),
+            &[],
+        );
+        let CExpressionOutcome::Value(value) = named.load(&base) else {
+            panic!("observed field")
+        };
+        assert!(
+            matches!(value, CValue::Pointer(_)),
+            "a pointer field must not be cached as an integer prefix"
+        );
+        let expected = Pointer::loaded(&Bitvector32Term::MemoryLoad(
+            crate::kernel::intern_c_memory(memory),
+            Box::new(base.clone()),
+            crate::kernel::LoadKind::Int32,
+        ))
+        .unwrap();
+        assert!(value == CValue::typed_pointer(expected, CType::Int32Pointer));
+        assert!(!matches!(
+            named.load(&base.offset_by_bytes(4)),
+            CExpressionOutcome::Value(_)
+        ));
+        assert!(!matches!(
+            named.load(&base.offset_by_bytes(8)),
+            CExpressionOutcome::Value(_)
+        ));
     }
 
     #[test]
