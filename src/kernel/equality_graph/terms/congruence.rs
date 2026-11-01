@@ -95,7 +95,7 @@ impl TermClasses {
         self.intern_typed_machine(term, if wide { W::Bits64 } else { W::Bits32 })
     }
 
-    fn intern_typed_machine(&mut self, term: &T, width: W) -> u64 {
+    pub(super) fn intern_typed_machine(&mut self, term: &T, width: W) -> u64 {
         self.intern_expression(Some((term, width)), None, None, None, None)
     }
 
@@ -515,14 +515,15 @@ impl TermClasses {
                     } else {
                         None
                     };
-                    // A conversion into a narrow format: its node, and its
-                    // word under rule K7 in the same class.
-                    if width == W::Bits32
-                        && let T::MachineIntegerCast {
-                            value,
-                            source,
-                            destination,
-                        } = term
+                    // A conversion into a narrow format: its node, of its
+                    // own width, whose 32-bit widening has its operand's
+                    // masked word (rule K7').
+                    if let T::MachineIntegerCast {
+                        value,
+                        source,
+                        destination,
+                    } = term
+                        && width == W::of_machine_type(*destination)
                         && representation::narrow_carrier_mask(*destination).is_some()
                         && source.format().bits() <= 64
                     {
@@ -535,8 +536,10 @@ impl TermClasses {
                         continue;
                     }
                     if width == W::Bits32 {
+                        // A complement reads a word; a conversion reads its
+                        // operand at the source's width.
                         let unary = if let unary_term!(Bits32, BitwiseNot, value) = term {
-                            Some((Int32Unary::Not, value.as_ref(), false))
+                            Some((Int32Unary::Not, value.as_ref(), false, W::Bits32))
                         } else {
                             constants::word_cast_operand(term).map(
                                 |(value, source, destination)| {
@@ -544,13 +547,14 @@ impl TermClasses {
                                         Int32Unary::Cast(source, destination),
                                         value,
                                         constants::signed_byte_load_operand(term).is_some(),
+                                        W::of_machine_type(source),
                                     )
                                 },
                             )
                         };
-                        if let Some((op, value, inverse)) = unary {
+                        if let Some((op, value, inverse, operand_width)) = unary {
                             pending.push(Work::Unary(op, inverse));
-                            pending.push(Work::Machine(value, W::Bits32));
+                            pending.push(Work::Machine(value, operand_width));
                             continue;
                         }
                     }
@@ -660,6 +664,7 @@ impl TermClasses {
                                 T::Int64Constant(i64::from(value))
                             }
                             W::Bits64 => T::UInt64Constant(u64::from(value)),
+                            W::Bits8 | W::Bits16 => T::narrow_constant(*to, u128::from(value)),
                             _ => T::Constant(value),
                         };
                         if width != W::Bits128 {
@@ -687,15 +692,30 @@ impl TermClasses {
                     } else if matches!(width, W::Bits8 | W::Bits16) {
                         // A native narrow value, by its bits: both
                         // signednesses of one width share its classes, as
-                        // the 32-bit words do.
-                        Node::MachineNarrow(MachineAtom::new(
-                            if width == W::Bits8 {
-                                crate::kernel::MachineIntegerType::UInt8
-                            } else {
-                                crate::kernel::MachineIntegerType::UInt16
-                            },
-                            term.clone(),
-                        ))
+                        // the 32-bit words do, and a constant is keyed by
+                        // its bits at the unsigned format.
+                        let canonical = if width == W::Bits8 {
+                            crate::kernel::MachineIntegerType::UInt8
+                        } else {
+                            crate::kernel::MachineIntegerType::UInt16
+                        };
+                        let atom = match term {
+                            T::MachineIntegerConstant(constant) => {
+                                T::narrow_constant(canonical, constant.bits())
+                            }
+                            // A narrow read is named as its exact cell, as
+                            // a 32-bit read is, so R-mem finds it.
+                            T::MemoryLoad(memory, pointer, kind) => {
+                                T::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                                    memory,
+                                    pointer,
+                                    *kind,
+                                    crate::kernel::load_term_access_width(memory, pointer, *kind),
+                                ))
+                            }
+                            _ => term.clone(),
+                        };
+                        Node::MachineNarrow(MachineAtom::new(canonical, atom))
                     } else if wide {
                         if let Some((memory, pointer)) = uint64_read(term) {
                             let address = self
@@ -726,9 +746,7 @@ impl TermClasses {
                         }
                     } else {
                         let value = match term {
-                            T::MemoryLoad(memory, pointer, kind)
-                                if *kind != crate::kernel::LoadKind::Int8 =>
-                            {
+                            T::MemoryLoad(memory, pointer, kind) => {
                                 // Exact observation naming, without a version walk:
                                 // another snapshot needs its checked read bridge.
                                 T::Variable(crate::kernel::eval::load_variable_for_exact_cell(
@@ -771,11 +789,13 @@ impl TermClasses {
                 Work::Value(value) => {
                     let value = value.numeric_value();
                     let scalar = match value {
-                        CValue::Bool(t) => Some((CType::Bool, t, W::Bits32)),
-                        CValue::Int8(t) => Some((CType::Int8, t, W::Bits32)),
-                        CValue::UInt8(t) => Some((CType::UInt8, t, W::Bits32)),
-                        CValue::Int16(t) => Some((CType::Int16, t, W::Bits32)),
-                        CValue::UInt16(t) => Some((CType::UInt16, t, W::Bits32)),
+                        // A `Bool` travels as its 8-bit carrier (rule C1),
+                        // and an 8- or 16-bit value is a value of its width.
+                        CValue::Bool(t) => Some((CType::Bool, t, W::Bits8)),
+                        CValue::Int8(t) => Some((CType::Int8, t, W::Bits8)),
+                        CValue::UInt8(t) => Some((CType::UInt8, t, W::Bits8)),
+                        CValue::Int16(t) => Some((CType::Int16, t, W::Bits16)),
+                        CValue::UInt16(t) => Some((CType::UInt16, t, W::Bits16)),
                         CValue::Int32(t) => Some((CType::Int32, t, W::Bits32)),
                         CValue::UInt32(t) => Some((CType::UInt32, t, W::Bits32)),
                         CValue::Int64(t) => Some((CType::Int64, t, W::Bits64)),
@@ -835,13 +855,7 @@ impl TermClasses {
                     if inverse {
                         self.register_byte_inverse(node, value);
                     }
-                    // Rule K8, a relation: the 32-bit widening of a narrow
-                    // value is that value's word, its canonical carrier.
-                    if let Int32Unary::Cast(source, destination) = op
-                        && crate::kernel::is_narrow_widening32(source, destination)
-                    {
-                        self.close(vec![(node, value)]);
-                    }
+                    self.join_widening_sibling(op, node, value);
                     values.push(node);
                     continue;
                 }
@@ -874,6 +888,28 @@ impl TermClasses {
         values.pop().expect("machine term")
     }
 
+    /// Rule K1 at a widening: the `int32` and `uint32` widenings of one 8-
+    /// or 16-bit value are one word, as a narrow cast's two widenings are
+    /// (rule K7'). Interning either interns the other and joins them: one
+    /// node and one union, once per widening.
+    fn join_widening_sibling(&mut self, op: Int32Unary, node: u64, value: u64) {
+        let Int32Unary::Cast(source, destination) = op else {
+            return;
+        };
+        let other = match destination {
+            MachineIntegerType::Int32 => MachineIntegerType::UInt32,
+            MachineIntegerType::UInt32 => MachineIntegerType::Int32,
+            _ => return,
+        };
+        if source.format().bits() >= 32 {
+            return;
+        }
+        let sibling = self.intern_node(Node::Int32Unary(Int32Unary::Cast(source, other), value));
+        if self.root(sibling) != self.root(node) {
+            self.close(vec![(node, sibling)]);
+        }
+    }
+
     /// The class of `Cast(source -> destination, v)` into an 8- or 16-bit
     /// format, given the class `value` of its operand `v`: the cast node,
     /// as every other conversion is interned (`Int32Unary::Cast` over a
@@ -888,15 +924,15 @@ impl TermClasses {
     /// ones the constructors' spelling of the word interns
     /// (`Bitvector32Term::bitwise_and`, `bitwise_xor`, `subtract`), so the
     /// written `x & 255u32` meets the cast's class.
-    fn narrow_cast_node(
+    pub(super) fn narrow_cast_node(
         &mut self,
         source: MachineIntegerType,
         destination: MachineIntegerType,
         value: u64,
         inverse: bool,
     ) -> u64 {
-        let (node, carrier) = self.narrow_cast_with_word(source, destination, value, inverse);
-        self.close(vec![(node, carrier)]);
+        let (node, unions) = self.narrow_cast_with_word(source, destination, value, inverse);
+        self.close(unions.to_vec());
         node
     }
 
@@ -909,20 +945,24 @@ impl TermClasses {
         value: u64,
         pending: &mut PendingUnions,
     ) -> u64 {
-        let (node, carrier) = self.narrow_cast_with_word(source, destination, value, false);
-        pending.push((node, carrier));
+        let (node, unions) = self.narrow_cast_with_word(source, destination, value, false);
+        for union in unions {
+            pending.push(union);
+        }
         node
     }
 
-    /// The narrow cast node and the class of its rule-K7 word, not yet
-    /// joined.
+    /// The narrow cast node, and the unions of its two 32-bit widenings
+    /// with its rule-K7' word, not yet joined. The cast is a value of its
+    /// own width, so the word joins its widenings (`int32` and `uint32`,
+    /// the same bits), never the node itself.
     fn narrow_cast_with_word(
         &mut self,
         source: MachineIntegerType,
         destination: MachineIntegerType,
         value: u64,
         inverse: bool,
-    ) -> (u64, u64) {
+    ) -> (u64, [(u64, u64); 2]) {
         use crate::kernel::BitvectorBinaryOp as B;
         crate::instrumentation::record_deterministic_work(1);
         let (mask, sign) = representation::narrow_carrier_mask(destination)
@@ -935,7 +975,16 @@ impl TermClasses {
             if inverse {
                 self.register_byte_inverse(node, value);
             }
-            (node, value)
+            // A narrow operand's word is its 32-bit widening.
+            let word = if source.format().bits() < 32 {
+                self.intern_node(Node::Int32Unary(
+                    Int32Unary::Cast(source, MachineIntegerType::Int32),
+                    value,
+                ))
+            } else {
+                value
+            };
+            (node, word)
         } else {
             let head = self.intern_node(Node::MachineUnary(
                 U::MachineIntegerCast {
@@ -971,7 +1020,9 @@ impl TermClasses {
                 sign,
             ));
         }
-        (node, carrier)
+        let widened = [MachineIntegerType::Int32, MachineIntegerType::UInt32]
+            .map(|to| self.intern_node(Node::Int32Unary(Int32Unary::Cast(destination, to), node)));
+        (node, widened.map(|widening| (widening, carrier)))
     }
 
     fn algebraic_type_token(&mut self, ty: &crate::kernel::AlgebraicType) -> SharedPureApplication {
@@ -1385,6 +1436,30 @@ impl TermClasses {
         condition: &C,
     ) -> Option<u64> {
         use ConditionKind::*;
+        // An equality of 8- or 16-bit values (a native narrow equality, or a
+        // load equation written with the 32-bit equality) equates two values
+        // of that width: its sides are interned at it. The width is read from
+        // the sides' roots (`root_width`), O(1) per interned equation.
+        if let C::Compare {
+            format,
+            relation: CompareRelation::Equal,
+            left: a,
+            right: b,
+        } = condition
+            && let Some(width @ (W::Bits8 | W::Bits16)) = if format.format().bits() < 32 {
+                Some(W::of_machine_type(*format))
+            } else if format.format().bits() == 32 {
+                crate::kernel::root_width(a).or_else(|| crate::kernel::root_width(b))
+            } else {
+                None
+            }
+        {
+            let (a, b) = (
+                self.intern_typed_machine(a, width),
+                self.intern_typed_machine(b, width),
+            );
+            return Some(self.intern_node(Node::Condition(Int32Eq, a, b)));
+        }
         let (kind, left, right) = match condition {
             C::IntegerEqual(a, b) => (IntegerEq, self.intern_integer(a), self.intern_integer(b)),
             C::IntegerNotEqual(a, b) => (IntegerNe, self.intern_integer(a), self.intern_integer(b)),
@@ -1559,7 +1634,13 @@ impl TermClasses {
             C::IntegerGreaterEqual(..) => ConditionKind::IntegerGe,
             C::AlgebraicEqual(..) => ConditionKind::AlgebraicEq,
             C::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                format:
+                    MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16,
                 relation: CompareRelation::Equal,
                 ..
             } => ConditionKind::Int32Eq,
@@ -1815,6 +1896,12 @@ impl TermClasses {
     ) -> bool {
         Self::condition_kind(condition).is_some_and(|kind| {
             self.condition_kinds.contains(&(kind, value))
+                // A narrow equation is false when its sides' classes hold
+                // two constants (`knows_condition`).
+                || (!value
+                    && kind == ConditionKind::Int32Eq
+                    && !self.narrow_constants.is_empty()
+                    && self.narrow_equation(condition))
                 || (kind == ConditionKind::OffsetEq
                     && self
                         .condition_kinds
@@ -1934,7 +2021,38 @@ impl TermClasses {
             }
         }
         self.retain_condition_truth(node, if value { 1 } else { 2 });
+        // A true equation of 8- or 16-bit values equates its sides, as the
+        // 32-bit equations do through their typed input. One union.
+        if value
+            && let Some(Application::Condition(ConditionKind::Int32Eq, left, right)) =
+                self.applications.get(&node).copied()
+            && self.narrow_equation(condition)
+        {
+            self.close(vec![(left, right)]);
+        }
         true
+    }
+
+    /// Whether `condition` is an equation the graph interns at 8 or 16 bits
+    /// (`condition_node`). One root match and at most two width reads.
+    fn narrow_equation(&self, condition: &C) -> bool {
+        let C::Compare {
+            format,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        } = condition
+        else {
+            return false;
+        };
+        match format.format().bits() {
+            8 | 16 => true,
+            32 => matches!(
+                crate::kernel::root_width(left).or_else(|| crate::kernel::root_width(right)),
+                Some(W::Bits8 | W::Bits16)
+            ),
+            _ => false,
+        }
     }
 
     pub(in crate::kernel::equality_graph) fn knows_condition(
@@ -1953,6 +2071,23 @@ impl TermClasses {
             .is_some_and(|known| known & truth != 0)
         {
             return true;
+        }
+        // An equation of 8- or 16-bit values is decided by its sides'
+        // classes: true when they are one class, false when they hold two
+        // different constants. Two lookups.
+        if let Some(Application::Condition(ConditionKind::Int32Eq, left, right)) =
+            self.applications.get(&node).copied()
+            && self.narrow_equation(condition)
+        {
+            let (left, right) = (self.root(left), self.root(right));
+            return if value {
+                left == right
+            } else {
+                matches!(
+                    (self.narrow_constants.get(&left), self.narrow_constants.get(&right)),
+                    (Some(a), Some(b)) if a != b
+                )
+            };
         }
         let C::PointerOffsetEqual(a, b) = condition else {
             return false;

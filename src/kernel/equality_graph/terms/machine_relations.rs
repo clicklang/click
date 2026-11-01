@@ -20,11 +20,10 @@
 //!   source. Every conversion keeps its operand's low bits, and a
 //!   value-preserving one keeps the value.
 //! - **R0.** A conversion between the signed and unsigned formats of one
-//!   width of at least 32 bits is a bijection: the conversion back of its
-//!   result is in its operand's class, so equality carries across it by
-//!   congruence. A narrow conversion reads only its operand's low bits,
-//!   and a narrow operand's word need not be canonical, so neither R0 nor
-//!   an R-comp that names a narrow operand itself applies there.
+//!   width is a bijection: the conversion back of its result is in its
+//!   operand's class, so equality carries across it by congruence. An 8- or
+//!   16-bit value is native, a value of its own width, so R0 and R-comp
+//!   apply at every width.
 //!
 //! Each rule fires where a conversion node and an operator or conversion
 //! node meet in one class: when either is interned, and when a union brings
@@ -36,11 +35,12 @@
 //! The 32-bit operators are word operators while the term arena files a
 //! `uint32` operation at `int32` (rule K1), so they read either 32-bit
 //! format here; σ at 32 bits is peeled before the e-graph sees it (K1). A
-//! narrow widening into 32 bits is a node in its operand's class (rule K8,
-//! a relation). The rules act on the 64-bit conversions (`UInt64FromInt64`,
-//! the low word, the extensions), on conversions into 8 and 16 bits, and on
-//! narrow widenings, and conversions involving 128-bit intermediates; they
-//! reach σ at 32 bits once it is a node (step 4b).
+//! narrow widening into 32 bits is a node of its own width, linked to its
+//! operand by value (K8, a relation across widths). The rules act on the
+//! 64-bit conversions (`UInt64FromInt64`, the low word, the extensions), on
+//! conversions into and between 8 and 16 bits, on narrow widenings, and on
+//! conversions involving 128-bit intermediates; they reach σ at 32 bits once
+//! it is a node (step 4b).
 
 use super::*;
 use crate::kernel::machine_integer::representation;
@@ -547,15 +547,6 @@ impl TermClasses {
         self.fired_machine_relations = self.fired_machine_relations.with_value((outer, inner));
         crate::instrumentation::record_deterministic_work(1);
         let operand = self.root(operand);
-        // A conversion from a narrow format that names its operand itself
-        // (the identity, or a widening into 32 bits, rule K8) holds only for
-        // a canonical operand; the composed conversions read its low bits,
-        // so leave it (see `invert`).
-        if source.format().bits() < 32
-            && (source == destination || crate::kernel::is_narrow_widening32(source, destination))
-        {
-            return;
-        }
         if let Some(result) = self.intern_conversion(source, destination, operand, pending) {
             pending.push((outer, result));
         }
@@ -570,14 +561,28 @@ impl TermClasses {
         let CastSource::Format(source) = key.source else {
             return;
         };
-        // A narrow value's word is a canonical carrier by the producer's
-        // range facts, not by its construction, and a conversion reads
-        // only its operand's low bits (rule K7), so the conversion back of
-        // a narrow conversion is the operand's canonical word, which a
-        // non-canonical operand is not. Only a byte read is inverted, by
-        // its own rule (`register_byte_inverse`).
+        // The `int32` and `uint32` widenings of one narrow value are one
+        // word (rule K1), so each is in the other's class.
+        if crate::kernel::is_narrow_widening32(source, key.destination)
+            && !self.fired_machine_relations.contains(&(cast, cast))
+        {
+            self.fired_machine_relations = self.fired_machine_relations.with_value((cast, cast));
+            crate::instrumentation::record_deterministic_work(1);
+            let other = if key.destination.format().is_signed() {
+                MachineIntegerType::UInt32
+            } else {
+                MachineIntegerType::Int32
+            };
+            let sibling = self.intern_node(Node::Int32Unary(
+                Int32Unary::Cast(source, other),
+                self.root(operand),
+            ));
+            pending.push((cast, sibling));
+            return;
+        }
+        // A narrow value is native, a value of its own width, so the two
+        // signednesses of 8 or 16 bits are a bijection as at 32 and 64.
         if source.format().bits() != key.destination.format().bits()
-            || source.format().bits() < 32
             || source == key.destination
             || self.fired_machine_relations.contains(&(cast, cast))
         {
@@ -639,16 +644,11 @@ impl TermClasses {
                 L::Cast if representation::narrow_carrier_mask(destination).is_some() => {
                     self.narrow_cast_parts(source, destination, value, pending)
                 }
-                // A 32-bit widening of a narrow value: its own node, in its
-                // operand's class (rule K8, a relation).
-                L::Cast if from.bits() < 32 && to.bits() == 32 => {
-                    let node = self.intern_node(Node::Int32Unary(
-                        Int32Unary::Cast(source, destination),
-                        value,
-                    ));
-                    pending.push((node, value));
-                    node
-                }
+                // A 32-bit widening of a narrow value: a node of its own,
+                // over an operand of the narrow width.
+                L::Cast if from.bits() < 32 && to.bits() == 32 => self.intern_node(
+                    Node::Int32Unary(Int32Unary::Cast(source, destination), value),
+                ),
                 L::Cast => unary(
                     self,
                     U::MachineIntegerCast {

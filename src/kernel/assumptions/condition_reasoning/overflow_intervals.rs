@@ -646,17 +646,49 @@ impl PureFactContext {
             return (value as i64, value as i64);
         }
         let mut range = (0, u32::MAX as i64);
+        // The `uint32` widening of an unsigned 8- or 16-bit value is in its
+        // source's range (the format's own range, no fact read).
+        if let Bitvector32Term::MachineIntegerCast { source, .. } = term
+            && source.format().bits() < 32
+            && !source.format().is_signed()
+        {
+            range.1 = i64::try_from(source.format().bounds().1).unwrap_or(range.1);
+        }
         if let Some((lo, hi)) = self.indexed_unsigned32_constant_interval(term) {
             range.0 = range.0.max(lo);
             range.1 = range.1.min(hi);
         }
-        if let Some((lo, hi)) = self.indexed_constant_interval(term)
-            && (lo >= 0 || range.1 <= i32::MAX as i64)
-        {
-            range.0 = range.0.max(lo);
-            range.1 = range.1.min(hi);
+        let sibling = Self::int32_widening_sibling(term);
+        for term in std::iter::once(term).chain(sibling.as_ref()) {
+            if let Some((lo, hi)) = self.indexed_constant_interval(term)
+                && (lo >= 0 || range.1 <= i32::MAX as i64)
+            {
+                range.0 = range.0.max(lo);
+                range.1 = range.1.min(hi);
+            }
         }
         range
+    }
+
+    /// The `int32` widening of the 8- or 16-bit value a `uint32` widening
+    /// widens: the same word (rule K1), under which a signed fact about the
+    /// value is filed. One match on the root.
+    fn int32_widening_sibling(term: &Bitvector32Term) -> Option<Bitvector32Term> {
+        let Bitvector32Term::MachineIntegerCast {
+            value,
+            source,
+            destination: MachineIntegerType::UInt32,
+        } = term
+        else {
+            return None;
+        };
+        (source.format().bits() < 32).then(|| {
+            Bitvector32Term::machine_integer_cast(
+                *source,
+                MachineIntegerType::Int32,
+                value.as_ref().clone(),
+            )
+        })
     }
 
     fn widened_unsigned_operand(term: &Bitvector32Term) -> Option<Option<&Bitvector32Term>> {
@@ -697,10 +729,16 @@ impl PureFactContext {
         for operand in [a_operand, b_operand].into_iter().flatten() {
             let unsigned =
                 self.unsigned32_constant_bound_facts(&crate::kernel::eval::canonical_term(operand));
-            let signed = self.signed_constant_bound_facts(
+            let mut signed = self.signed_constant_bound_facts(
                 SignedDefinedWidth::Int32,
                 &crate::kernel::eval::canonical_term(operand),
             );
+            if let Some(sibling) = Self::int32_widening_sibling(operand) {
+                signed.extend(self.signed_constant_bound_facts(
+                    SignedDefinedWidth::Int32,
+                    &crate::kernel::eval::canonical_term(&sibling),
+                ));
+            }
             if unsigned.is_empty() {
                 premises.extend(signed);
             } else {
@@ -717,8 +755,11 @@ impl PureFactContext {
                     };
                     condition_as_order_fact(condition, *value).is_some_and(
                         |(lower, upper, strict)| {
-                            crate::kernel::eval::canonical_term(&lower)
-                                == crate::kernel::eval::canonical_term(operand)
+                            let lower = crate::kernel::eval::canonical_term(&lower);
+                            (lower == crate::kernel::eval::canonical_term(operand)
+                                || Self::int32_widening_sibling(operand).is_some_and(|sibling| {
+                                    lower == crate::kernel::eval::canonical_term(&sibling)
+                                }))
                                 && signed_bitvector_constant(&upper)
                                     .is_some_and(|bound| bound - i64::from(strict) < unsigned_upper)
                         },
@@ -1097,6 +1138,18 @@ impl PureFactContext {
                     .min()
                     .expect("matched above");
                 let (lower, upper) = (lower.max(0), upper.min(mask));
+                return (lower <= upper).then_some((lower, upper));
+            }
+            // A 32-bit widening of an 8- or 16-bit value holds that value,
+            // so it lies in its source format's range (K8, a relation).
+            term if term.narrow_widening32_operand().is_some() => {
+                let (source, _) = term.narrow_widening32_operand().expect("matched above");
+                let (min, max) = source.format().bounds();
+                let (min, max) = (
+                    i64::try_from(min).expect("a narrow bound"),
+                    i64::try_from(max).expect("a narrow bound"),
+                );
+                let (lower, upper) = (lower.max(min), upper.min(max));
                 return (lower <= upper).then_some((lower, upper));
             }
             // Any other narrowing conversion: its operand's interval moved
