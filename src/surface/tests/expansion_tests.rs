@@ -12320,6 +12320,8 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
             return 0;
         }
     "#;
+    // Leave execution to the implicit tail so undecided branches retain their
+    // separate outcomes and the explicit unfold survives into each closer.
     let click_source = r#"
         import click::permutation;
 
@@ -12328,9 +12330,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
         int32 sort_three_cells(int32 p[3]) {
             consumes p[0..3];
             ensures permutation::permutation(p, old(p), 0, 3) by {
-                step_until(function.exit);
                 unfold(permutation::permutation);
-                solve();
             }
         }
     "#;
