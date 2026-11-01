@@ -1,5 +1,6 @@
-//! One byte, one name: a byte's single term is its unsigned read, and a
-//! signed read is the two's-complement conversion of that term.
+//! Byte reads at their own types: the `int8` and `uint8` reads of one byte
+//! are two loads, neither a conversion of the other, related by the native
+//! 8-bit sign cast when they read the same byte (R-mem).
 
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -11,51 +12,64 @@ fn byte(offset: i64) -> Pointer {
     }
 }
 
+fn read(offset: i64, kind: LoadKind) -> Bitvector32Term {
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    Bitvector32Term::memory_read(memory, byte(offset), kind)
+}
+
+fn constant(format: MachineIntegerType, value: i64) -> Bitvector32Term {
+    Bitvector32Term::narrow_constant(format, value as u128)
+}
+
+fn equal(
+    format: MachineIntegerType,
+    left: Bitvector32Term,
+    right: Bitvector32Term,
+) -> ConditionTerm {
+    ConditionTerm::narrow_compare(format, CompareRelation::Equal, left, right)
+}
+
+/// The signed/unsigned pairs every byte test checks: both halves of the
+/// range and both of its ends.
+const BYTE_PAIRS: [(i64, i64); 7] = [
+    (0, 0),
+    (7, 7),
+    (127, 127),
+    (-128, 128),
+    (-56, 200),
+    (-1, 255),
+    (-2, 254),
+];
+
 #[test]
-fn a_signed_byte_read_is_the_conversion_of_the_unsigned_read() {
+fn a_signed_byte_read_is_its_own_load() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_c_memory(CMemory::new());
-    let unsigned = Bitvector32Term::memory_read(memory.clone(), byte(0), LoadKind::UInt8);
     let signed = Bitvector32Term::memory_read(memory.clone(), byte(0), LoadKind::Int8);
-    assert_eq!(signed, Bitvector32Term::signed_byte(unsigned.clone()));
-    assert_eq!(signed.signed_byte_operand(), Some(&unsigned));
-    // Every other kind is its own load term.
     assert!(matches!(
-        Bitvector32Term::memory_read(memory.clone(), byte(0), LoadKind::Int16),
-        Bitvector32Term::MemoryLoad(_, _, LoadKind::Int16)
+        signed,
+        Bitvector32Term::MemoryLoad(_, _, LoadKind::Int8)
     ));
-    // The canonical form names the one unsigned read in both.
-    let canonical_signed =
-        crate::kernel::canonical_form_of_load(memory.clone(), byte(0), LoadKind::Int8);
-    let canonical_unsigned =
-        crate::kernel::canonical_form_of_load(memory, byte(0), LoadKind::UInt8);
-    assert_eq!(
-        canonical_signed,
-        Bitvector32Term::signed_byte(canonical_unsigned)
+    assert_eq!(signed.signed_byte_operand(), None);
+    // Its canonical form is its own load's, and the read is named.
+    assert_ne!(
+        crate::kernel::canonical_form_of_load(memory.clone(), byte(0), LoadKind::Int8),
+        crate::kernel::canonical_form_of_load(memory, byte(0), LoadKind::UInt8)
     );
-    // Constants fold: the byte 0xC8 is -56 signed.
+    assert!(crate::kernel::eval::load_variable_for_term(&signed).is_some());
+    // The native sign cast still folds a constant: the byte 0xC8 is -56.
     assert_eq!(
-        Bitvector32Term::signed_byte(Bitvector32Term::Constant(0xC8)),
-        Bitvector32Term::Constant(-56i32 as u32)
+        Bitvector32Term::signed_byte(constant(MachineIntegerType::UInt8, 0xC8)),
+        constant(MachineIntegerType::Int8, -56)
     );
 }
 
 #[test]
-fn a_raw_signed_byte_load_term_is_refused_a_name() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
-    let raw = Bitvector32Term::MemoryLoad(memory.clone(), Box::new(byte(0)), LoadKind::Int8);
-    assert_eq!(crate::kernel::eval::load_variable_for_term(&raw), None);
-    let unsigned = Bitvector32Term::MemoryLoad(memory, Box::new(byte(0)), LoadKind::UInt8);
-    assert!(crate::kernel::eval::load_variable_for_term(&unsigned).is_some());
-}
-
-#[test]
-fn signed_and_unsigned_symbolic_reads_of_one_byte_share_its_name() {
+fn signed_and_unsigned_symbolic_reads_of_one_byte_are_two_loads() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = CMemory::new()
         .with_block("global:bytes", 4)
-        .store(byte(1), CValue::UInt8(Bitvector32Term::Constant(7)));
+        .store(byte(1), crate::kernel::uint8(7));
     let read = |value_type| {
         let paths = evaluate_c_memory_load_paths(
             &memory,
@@ -75,339 +89,93 @@ fn signed_and_unsigned_symbolic_reads_of_one_byte_share_its_name() {
             other => panic!("{other:?}"),
         }
     };
-    let CValue::UInt8(unsigned) = read(CType::UInt8) else {
-        panic!("an unsigned byte read is uint8");
-    };
+    assert!(matches!(read(CType::UInt8), CValue::UInt8(_)));
     let CValue::Int8(signed) = read(CType::Int8) else {
         panic!("a signed byte read is int8");
     };
-    assert_eq!(signed.signed_byte_operand(), Some(&unsigned));
+    assert_eq!(signed.signed_byte_operand(), None);
 }
 
+/// R-mem: a constant known of either read of a byte decides the other, and
+/// refutes every other value.
 #[test]
-fn signed_byte_intervals_follow_the_unsigned_byte() {
-    let unsigned = Bitvector32Term::Variable(Variable(612_001));
-    let signed = Bitvector32Term::signed_byte(unsigned.clone());
-    let unconstrained = PureFactContext::new();
-    assert_eq!(unconstrained.signed_interval(&signed), Some((-128, 127)));
-    let low = PureFactContext::new()
-        .assume_condition(
-            ConditionTerm::signed_less_equal(unsigned.clone(), Bitvector32Term::Constant(100)),
-            true,
-        )
-        .assume_condition(
-            ConditionTerm::signed_greater_equal(unsigned.clone(), Bitvector32Term::Constant(0)),
-            true,
-        );
-    assert_eq!(low.signed_interval(&signed), Some((0, 100)));
-    let high = PureFactContext::new()
-        .assume_condition(
-            ConditionTerm::signed_greater_equal(unsigned.clone(), Bitvector32Term::Constant(200)),
-            true,
-        )
-        .assume_condition(
-            ConditionTerm::signed_less_equal(unsigned, Bitvector32Term::Constant(255)),
-            true,
-        );
-    assert_eq!(high.signed_interval(&signed), Some((-56, -1)));
-}
-
-fn byte_load(offset: i64) -> Bitvector32Term {
-    let memory = crate::kernel::intern_c_memory(CMemory::new());
-    Bitvector32Term::memory_read(memory, byte(offset), LoadKind::UInt8)
-}
-
-fn equal(left: Bitvector32Term, right: i64) -> ConditionTerm {
-    ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
-        relation: CompareRelation::Equal,
-        left: Box::new(left),
-        right: Box::new(Bitvector32Term::Constant(right as i32 as u32)),
-    }
-}
-
-fn equal_terms(left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
-    ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
-        relation: CompareRelation::Equal,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
-}
-
-fn fact(condition: ConditionTerm) -> Proposition {
-    Proposition::ConditionIs(condition, true)
-}
-
-/// The signed/unsigned pairs every byte test checks: both halves of the
-/// range and both of its ends.
-const BYTE_PAIRS: [(i64, i64); 7] = [
-    (0, 0),
-    (7, 7),
-    (127, 127),
-    (-128, 128),
-    (-56, 200),
-    (-1, 255),
-    (-2, 254),
-];
-
-#[test]
-fn a_signed_byte_constant_decides_its_unsigned_byte() {
+fn a_byte_constant_decides_the_other_read_of_its_byte() {
+    use MachineIntegerType::{Int8, UInt8};
     let _session = crate::kernel::VerificationSession::enter();
-    let unsigned = byte_load(0);
-    let signed = Bitvector32Term::signed_byte(unsigned.clone());
+    let unsigned = read(0, LoadKind::UInt8);
+    let signed = read(0, LoadKind::Int8);
     for (signed_value, unsigned_value) in BYTE_PAIRS {
-        let context =
-            PureFactContext::new().assume_condition(equal(signed.clone(), signed_value), true);
-        assert_eq!(
-            context.known_signed_constant_after_normalization(&unsigned),
-            Some(unsigned_value),
-            "int8(u) == {signed_value}"
+        let from_signed = PureFactContext::new().assume_condition(
+            equal(Int8, signed.clone(), constant(Int8, signed_value)),
+            true,
         );
         assert_eq!(
-            context.decide(&equal(unsigned.clone(), unsigned_value)),
-            Some(true)
+            from_signed.decide(&equal(
+                UInt8,
+                unsigned.clone(),
+                constant(UInt8, unsigned_value)
+            )),
+            Some(true),
+            "int8 read == {signed_value}"
         );
-        // A different byte is refuted, not merely undecided.
         assert_eq!(
-            context.decide(&equal(unsigned.clone(), (unsigned_value + 1) % 256)),
+            from_signed.decide(&equal(
+                UInt8,
+                unsigned.clone(),
+                constant(UInt8, (unsigned_value + 1) % 256)
+            )),
             Some(false)
         );
-    }
-}
-
-#[test]
-fn an_unsigned_byte_constant_decides_its_signed_read() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let unsigned = byte_load(0);
-    let signed = Bitvector32Term::signed_byte(unsigned.clone());
-    for (signed_value, unsigned_value) in BYTE_PAIRS {
-        let context =
-            PureFactContext::new().assume_condition(equal(unsigned.clone(), unsigned_value), true);
-        assert_eq!(
-            context.known_signed_constant_after_normalization(&signed),
-            Some(signed_value),
-            "u == {unsigned_value}"
+        let from_unsigned = PureFactContext::new().assume_condition(
+            equal(UInt8, unsigned.clone(), constant(UInt8, unsigned_value)),
+            true,
         );
         assert_eq!(
-            context.decide(&equal(signed.clone(), signed_value)),
-            Some(true)
+            from_unsigned.decide(&equal(Int8, signed.clone(), constant(Int8, signed_value))),
+            Some(true),
+            "uint8 read == {unsigned_value}"
         );
     }
 }
 
+/// R-mem relates only reads of the same byte: a fact about one byte's read
+/// decides nothing about another byte's.
 #[test]
-fn frozen_signed_byte_comparisons_follow_exact_unsigned_facts() {
+fn reads_of_different_bytes_are_not_related() {
+    use MachineIntegerType::{Int8, UInt8};
     let _session = crate::kernel::VerificationSession::enter();
-    let unsigned = byte_load(0);
-    let signed = Bitvector32Term::signed_byte(unsigned.clone());
-    let other = Bitvector32Term::signed_byte(byte_load(1));
-    let facts = crate::kernel::ExecutionFacts::new();
-    for (signed_value, unsigned_value) in BYTE_PAIRS {
-        for byte_condition in [
-            equal(unsigned.clone(), unsigned_value),
-            equal_terms(
-                Bitvector32Term::Constant(unsigned_value as u32),
-                unsigned.clone(),
-            ),
-        ] {
-            let context = PureFactContext::new()
-                .assume_condition(byte_condition, true)
-                .defer_non_exact_condition_reasoning();
-            for condition in [
-                equal(signed.clone(), signed_value),
-                equal_terms(
-                    Bitvector32Term::Constant(signed_value as i32 as u32),
-                    signed.clone(),
-                ),
-            ] {
-                assert!(!context.contains_assumed_exact(&fact(condition.clone())));
-                assert_eq!(
-                    crate::kernel::reasoning::path_facts::decide_with_facts(
-                        &context, &facts, &condition,
-                    ),
-                    Some(true)
-                );
-            }
-            let different = if signed_value == 127 {
-                -128
-            } else {
-                signed_value + 1
-            };
-            assert_eq!(
-                context
-                    .decide_signed_byte_equality_from_exact_fact(&equal(signed.clone(), different)),
-                Some(false)
-            );
-            assert_eq!(
-                context.decide_signed_byte_equality_from_exact_fact(&equal(
-                    other.clone(),
-                    signed_value
-                )),
-                None
-            );
-        }
-    }
-    let ordinary = Bitvector32Term::Variable(Variable(612_155));
-    let context = PureFactContext::new().assume_condition(equal(ordinary.clone(), 0), true);
-    assert_eq!(
-        context.decide_signed_byte_equality_from_exact_fact(&equal(
-            Bitvector32Term::signed_byte(ordinary),
-            0
-        )),
-        None
+    let context = PureFactContext::new().assume_condition(
+        equal(UInt8, read(0, LoadKind::UInt8), constant(UInt8, 200)),
+        true,
     );
     assert_eq!(
-        PureFactContext::new().decide_signed_byte_equality_from_exact_fact(&equal(signed, 0)),
+        context.decide(&equal(Int8, read(1, LoadKind::Int8), constant(Int8, -56))),
         None
     );
 }
 
+/// The native sign cast is a bijection at eight bits (R0), so a constant of
+/// a conversion decides its operand whatever the operand is: every 8-bit
+/// value is canonical.
 #[test]
-fn byte_constants_cross_equalities_with_symbolic_values_in_both_directions() {
+fn a_native_sign_cast_constant_decides_its_operand() {
+    use MachineIntegerType::{Int8, UInt8};
     let _session = crate::kernel::VerificationSession::enter();
-    let unsigned = byte_load(0);
-    let signed = Bitvector32Term::signed_byte(unsigned.clone());
-    let value = Bitvector32Term::Variable(Variable(612_101));
-    // A call result equal to the signed read, with the byte known (the
-    // forward direction a callee's `char` contract needs).
-    let forward = PureFactContext::new()
-        .assume_condition(equal_terms(value.clone(), signed.clone()), true)
-        .assume_condition(equal(unsigned.clone(), 200), true);
-    assert_eq!(
-        forward.known_signed_constant_after_normalization(&value),
-        Some(-56)
-    );
-    // The same facts in the other order settle the class by a union.
-    let forward_after = PureFactContext::new()
-        .assume_condition(equal(unsigned.clone(), 200), true)
-        .assume_condition(equal_terms(value.clone(), signed.clone()), true);
-    assert_eq!(
-        forward_after.known_signed_constant_after_normalization(&value),
-        Some(-56)
-    );
-    // The signed read equal to a value later known: a union settles the
-    // signed read's class, which settles the byte.
-    for (first, second) in [
-        (
-            equal_terms(signed.clone(), value.clone()),
-            equal(value.clone(), 7),
-        ),
-        (
-            equal(value.clone(), -56),
-            equal_terms(signed.clone(), value.clone()),
-        ),
-    ] {
-        let reverse = PureFactContext::new()
-            .assume_condition(first.clone(), true)
-            .assume_condition(second.clone(), true);
-        let expected = reverse
-            .known_signed_constant_after_normalization(&value)
-            .map(|signed| i64::from(signed as i8 as u8));
-        assert!(expected.is_some());
-        assert_eq!(
-            reverse.known_signed_constant_after_normalization(&unsigned),
-            expected
-        );
-    }
-    // A symbolic value alone settles nothing.
-    let symbolic =
-        PureFactContext::new().assume_condition(equal_terms(signed.clone(), value.clone()), true);
-    assert_eq!(
-        symbolic.known_signed_constant_after_normalization(&unsigned),
-        None
-    );
-    assert_eq!(symbolic.decide(&equal(unsigned, 7)), None);
-}
-
-#[test]
-fn an_out_of_range_signed_byte_constant_settles_no_byte() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let unsigned = byte_load(0);
-    let signed = Bitvector32Term::signed_byte(unsigned.clone());
-    // `int8(u) == 200` is the conversion of no byte. It must not become the
-    // satisfiable `u == 200` (nor `u == 200 mod 256` read any other way).
-    for impossible in [200, 128, -129, 255, 256, -200] {
-        let context =
-            PureFactContext::new().assume_condition(equal(signed.clone(), impossible), true);
-        assert_eq!(
-            context.known_signed_constant_after_normalization(&unsigned),
-            None,
-            "int8(u) == {impossible}"
-        );
-        assert_ne!(
-            context.decide(&equal(unsigned.clone(), impossible.rem_euclid(256))),
-            Some(true)
-        );
-        let goal = fact(equal(unsigned.clone(), impossible.rem_euclid(256)));
-        let premise = fact(equal(signed.clone(), impossible));
-        assert!(!crate::kernel::proof::equality_rewrite::equality_rewrite_applies(&goal, &premise));
-    }
-}
-
-#[test]
-fn only_a_byte_load_is_settled_by_its_signed_conversion() {
-    let _session = crate::kernel::VerificationSession::enter();
-    // An operand that is not a byte load has no structural byte range, so
-    // its conversion's constant folds forward but is never inverted.
     let operand = Bitvector32Term::Variable(Variable(612_201));
     let signed = Bitvector32Term::signed_byte(operand.clone());
-    let context = PureFactContext::new().assume_condition(equal(signed.clone(), 7), true);
-    assert_eq!(
-        context.known_signed_constant_after_normalization(&operand),
-        None
-    );
-    let goal = fact(equal(operand.clone(), 7));
-    assert!(
-        !crate::kernel::proof::equality_rewrite::equality_rewrite_applies(
-            &goal,
-            &fact(equal(signed.clone(), 7))
-        )
-    );
-    let forward = PureFactContext::new().assume_condition(equal(operand, 200), true);
-    assert_eq!(
-        forward.known_signed_constant_after_normalization(&signed),
-        Some(-56)
-    );
-}
-
-#[test]
-fn a_signed_byte_equality_rewrites_the_unsigned_byte() {
-    let _session = crate::kernel::VerificationSession::enter();
-    let unsigned = byte_load(0);
-    let signed = Bitvector32Term::signed_byte(unsigned.clone());
-    let premise = fact(equal(signed.clone(), -56));
-    let available = vec![premise.clone()];
-    let rewrite = |goal: Proposition| {
-        crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
-            &goal, &premise, &available,
-        )
-    };
-    // The unsigned read the written equality never mentions is reached.
-    assert_eq!(
-        rewrite(fact(equal(unsigned.clone(), 200))),
-        Ok(fact(ConditionTerm::Constant(true)))
-    );
-    // The signed read itself still rewrites to the stated constant.
-    assert_eq!(
-        rewrite(fact(equal(signed.clone(), -56))),
-        Ok(fact(ConditionTerm::Constant(true)))
-    );
-    // A symbolic right side is an ordinary equality, rewritten as written.
-    let value = Bitvector32Term::Variable(Variable(612_301));
-    let symbolic = fact(equal_terms(signed.clone(), value.clone()));
-    assert_eq!(
-        crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality(
-            &fact(equal(signed, 1)),
-            &symbolic,
-            std::slice::from_ref(&symbolic),
-        ),
-        Ok(fact(equal(value, 1)))
-    );
-    assert!(
-        !crate::kernel::proof::equality_rewrite::equality_rewrite_applies(
-            &fact(equal(unsigned, 1)),
-            &symbolic
-        )
-    );
+    for (signed_value, unsigned_value) in BYTE_PAIRS {
+        let context = PureFactContext::new().assume_condition(
+            equal(Int8, signed.clone(), constant(Int8, signed_value)),
+            true,
+        );
+        assert_eq!(
+            context.decide(&equal(
+                UInt8,
+                operand.clone(),
+                constant(UInt8, unsigned_value)
+            )),
+            Some(true),
+            "int8(u) == {signed_value}"
+        );
+    }
 }

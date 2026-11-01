@@ -2361,10 +2361,7 @@ fn a_store_forgets_the_wider_cell_whose_bytes_it_overwrites() {
         let after = wide
             .clone()
             .without_possible_aliasing_cells(&arc_pointer(offset), 1, &bare)
-            .store(
-                arc_pointer(offset),
-                CValue::UInt8(Bitvector32Term::Constant(7)),
-            );
+            .store(arc_pointer(offset), crate::kernel::uint8(7));
         assert_eq!(
             after.known_value(&arc_pointer(0)),
             None,
@@ -2377,10 +2374,10 @@ fn a_store_forgets_the_wider_cell_whose_bytes_it_overwrites() {
     let after = wide
         .clone()
         .without_possible_aliasing_cells(&arc_pointer(0), 1, &bare)
-        .store(arc_pointer(0), CValue::UInt8(Bitvector32Term::Constant(7)));
+        .store(arc_pointer(0), crate::kernel::uint8(7));
     assert_eq!(
         after.known_value(&arc_pointer(0)),
-        Some(CValue::UInt8(Bitvector32Term::Constant(7))),
+        Some(crate::kernel::uint8(7)),
         "a one-byte write at the base leaves its own byte, not the int64"
     );
 
@@ -2389,7 +2386,7 @@ fn a_store_forgets_the_wider_cell_whose_bytes_it_overwrites() {
     let after = wide
         .clone()
         .without_possible_aliasing_cells(&arc_pointer(8), 1, &bare)
-        .store(arc_pointer(8), CValue::UInt8(Bitvector32Term::Constant(7)));
+        .store(arc_pointer(8), crate::kernel::uint8(7));
     assert_eq!(
         after.known_value(&arc_pointer(0)),
         Some(CValue::Int64(Bitvector32Term::Int64Constant(5))),
@@ -2443,7 +2440,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
     // byte a sixteen-byte load of `read` returns.
     for offset in 1..16 {
         assert!(
-            !canonical_equal_across_store_at(offset, CValue::UInt8(Bitvector32Term::Constant(7))),
+            !canonical_equal_across_store_at(offset, crate::kernel::uint8(7)),
             "a one-byte cell {offset} bytes above the load is inside an \
              sixteen-byte read of it and must not be dropped"
         );
@@ -2454,7 +2451,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
          sixteen-byte read of it and must not be dropped"
     );
     assert!(
-        !canonical_equal_across_store_at(6, CValue::Int16(Bitvector32Term::Constant(7))),
+        !canonical_equal_across_store_at(6, crate::kernel::int16(7)),
         "an int16 cell six bytes above the load is inside an eight-byte read"
     );
     assert!(
@@ -2464,7 +2461,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
 
     // Below the load: the cell's own width decides, and it is known exactly.
     assert!(
-        canonical_equal_across_store_at(-1, CValue::UInt8(Bitvector32Term::Constant(7))),
+        canonical_equal_across_store_at(-1, crate::kernel::uint8(7)),
         "a one-byte cell one byte below the load ends where the load starts"
     );
     assert!(
@@ -2492,7 +2489,7 @@ fn canonical_load_form_keeps_a_cell_a_wide_read_covers() {
         "a cell eight bytes above an unknown load is still inside its maximum width"
     );
     assert!(
-        canonical_equal_across_store_at(16, CValue::UInt8(Bitvector32Term::Constant(7))),
+        canonical_equal_across_store_at(16, crate::kernel::uint8(7)),
         "a cell well above the load is outside every scalar read"
     );
 }
@@ -2519,10 +2516,7 @@ fn a_store_inside_a_read_stops_two_snapshots_agreeing_about_it() {
     let byte_written_at = |offset: i64| {
         base.clone()
             .without_possible_aliasing_cells(&arc_pointer(offset), 1, &bare)
-            .store(
-                arc_pointer(offset),
-                CValue::UInt8(Bitvector32Term::Constant(7)),
-            )
+            .store(arc_pointer(offset), crate::kernel::uint8(7))
     };
 
     for offset in 1..4 {
@@ -2579,7 +2573,7 @@ fn a_store_inside_a_read_refutes_the_load_equality_at_every_offset() {
             };
             base.clone()
                 .without_possible_aliasing_cells(&write, 1, &bare)
-                .store(write, CValue::UInt8(Bitvector32Term::Constant(7)))
+                .store(write, crate::kernel::uint8(7))
         };
         let history_about = |after: &CMemory| {
             crate::kernel::memory_provenance::recorded_load_history(
@@ -2827,7 +2821,7 @@ fn a_differing_cell_inside_a_read_stops_the_two_snapshots_matching() {
                     block: block.into(),
                     offset: PointerOffsetTerm::Constant(offset),
                 },
-                CValue::UInt8(Bitvector32Term::Constant(value)),
+                crate::kernel::uint8(value),
             )
         };
         for offset in 1..i64::from(read_bytes) {
@@ -3394,7 +3388,7 @@ fn pointer_read_cache_forgetting_does_not_bridge_writes_havoc_or_unrecorded_prun
         forgotten
             .memory()
             .clone()
-            .store(address.offset_by_bytes(4), CValue::UInt8(1u32.into())),
+            .store(address.offset_by_bytes(4), crate::kernel::uint8(1u32)),
         forgotten
             .memory()
             .clone()
@@ -3575,7 +3569,7 @@ fn a_stored_value_resolves_only_a_read_of_its_own_address_and_width() {
 
     let wide_read = at(0);
     crate::kernel::eval::declare_load_access_width(&wide_read, 4);
-    let narrow_store = stored_at(at(1), CValue::UInt8(Bitvector32Term::Constant(7)));
+    let narrow_store = stored_at(at(1), crate::kernel::uint8(7));
     assert!(
         !resolves_to_seven(&narrow_store, &wide_read),
         "a byte stored inside a four-byte read is one of its bytes, not its value"
@@ -4064,10 +4058,12 @@ fn seeded_scalar_read_keeps_its_predecessor_cell_version() {
             matches!(history, LoadHistory::OneVersion(_)),
             "{ty:?}: {history:?}"
         );
-        let overwritten = intern_c_memory(cached.memory().clone().store(
-            pointer.offset_by_bytes(bytes - 1),
-            CValue::UInt8(Bitvector32Term::Constant(9)),
-        ));
+        let overwritten = intern_c_memory(
+            cached
+                .memory()
+                .clone()
+                .store(pointer.offset_by_bytes(bytes - 1), crate::kernel::uint8(9)),
+        );
         let history = with_extended_dag_bridging(|| {
             recorded_load_history(&original, &overwritten, &pointer, kind, &assumptions)
         });
@@ -4302,12 +4298,12 @@ fn seeded_mixed_width_aliases_still_invalidate_overlapping_reads() {
     let written = bytes.offset_by_bytes(4);
     let memory = memory
         .without_possible_aliasing_cells(&written, 1, &assumptions)
-        .store_with_context(written.clone(), CValue::UInt8(9u32.into()), &assumptions);
+        .store_with_context(written.clone(), crate::kernel::uint8(9u32), &assumptions);
     assert!(
         !memory.cells.contains_key(&word),
         "a byte written through an alias overlaps the cached word"
     );
-    assert_eq!(memory.cells.get(&written), Some(CValue::UInt8(9u32.into())));
+    assert_eq!(memory.cells.get(&written), Some(crate::kernel::uint8(9u32)));
 }
 
 #[test]

@@ -211,3 +211,54 @@ fn zero_index_read_condition_ignores_unrelated_read_predicates() {
         "{samples:?}"
     );
 }
+
+/// An 8- or 16-bit read of a canonical projection is joined to the same read
+/// of its recorded source by one indexed edge (`Node::NarrowRead`), as a
+/// four-byte read is: deciding that the two reads are one value costs the
+/// same work however many stores the source's history holds. A walk from
+/// the projection back through that history would grow with it.
+#[test]
+fn narrow_read_projection_edge_does_not_walk_memory_history() {
+    use crate::kernel::{CompareRelation, ConditionTerm, LoadKind, MachineIntegerType};
+    for (kind, format, bytes) in [
+        (LoadKind::UInt8, MachineIntegerType::UInt8, 1),
+        (LoadKind::Int16, MachineIntegerType::Int16, 2),
+    ] {
+        let mut baseline = None;
+        for size in [0u64, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut history = CMemory::new().with_block("array", 4096);
+            for index in 0..size {
+                history = history.store(
+                    address(500_000 + index),
+                    CValue::Int32(Bitvector32Term::Constant(index as u32)),
+                );
+            }
+            let source = intern_c_memory(history.clone());
+            let projected = intern_c_memory(history.with_block("local:projection", 1));
+            let cell = address(1);
+            crate::kernel::reasoning::record_canonical_load_projection(&source, &projected, &cell);
+            let read = |memory: &SharedCMemory| {
+                Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                    memory, &cell, kind, bytes,
+                ))
+            };
+            let equal = ConditionTerm::Compare {
+                format,
+                relation: CompareRelation::Equal,
+                left: Box::new(read(&projected)),
+                right: Box::new(read(&source)),
+            };
+            let graph = EqualityGraph::default();
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut state = graph.state.lock().expect("equality graph");
+                assert!(state.terms.knows_condition(&equal, true), "{kind:?}");
+            });
+            let first = *baseline.get_or_insert(work);
+            assert!(
+                work == first && work <= 1024,
+                "{kind:?}: size={size}, work={work}, baseline={first}"
+            );
+        }
+    }
+}

@@ -558,7 +558,7 @@ fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
     // One byte just below the endpoint cell is the last cell's top byte.
     let after = before.clone().store(
         byte_offset(&element(&v, bv(HI)), -1),
-        CValue::UInt8(Bitvector32Term::Constant(7)),
+        crate::kernel::uint8(7),
     );
     let new = application(&after, &v, bv(LO), bv(HI));
     assert!(is_store_refusal(&frame(&old, &new, &[])));
@@ -571,7 +571,7 @@ fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
     let below = Bitvector32Term::subtract(bv(LO), Bitvector32Term::Constant(1));
     let after = before.clone().store(
         byte_offset(&element(&v, below.clone()), 2),
-        CValue::Int16(Bitvector32Term::Constant(7)),
+        crate::kernel::int16(7),
     );
     let new = application(&after, &v, bv(LO), bv(HI));
     assert_eq!(frame(&old, &new, &[lt(below, bv(LO))]), Ok(1));
@@ -1006,10 +1006,9 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
     let summary = registered_fold_read_summary("byte_sum").unwrap();
     assert!(summary.instantiate(&at(&before, CType::Int32)).is_none());
     for (offset, outside) in [(0, false), (1, false), (2, true)] {
-        let after = before.clone().store(
-            byte_offset(&base, offset),
-            CValue::UInt8(Bitvector32Term::Constant(7)),
-        );
+        let after = before
+            .clone()
+            .store(byte_offset(&base, offset), crate::kernel::uint8(7));
         let result = frame(&old, &at(&after, CType::UInt8), &[]);
         if outside {
             assert_eq!(result, Ok(1));

@@ -2050,7 +2050,7 @@ fn store_union_forgets_aliased_raw_cell() {
     let memory = CMemory::new().store(alias.clone(), int32(7)).store_union(
         base.clone(),
         CType::Int16,
-        CValue::Int16(Bitvector32Term::Constant(42)),
+        crate::kernel::int16(42),
     );
     assert!(memory.has_union_overlay_at(&base));
     assert_eq!(memory.known_value(&alias), None);
@@ -2060,11 +2060,7 @@ fn store_union_forgets_aliased_raw_cell() {
     )));
 
     let memory = CMemory::new()
-        .store_union(
-            base.clone(),
-            CType::Int16,
-            CValue::Int16(Bitvector32Term::Constant(42)),
-        )
+        .store_union(base.clone(), CType::Int16, crate::kernel::int16(42))
         .store_with_context(alias.clone(), int32(7), &assumptions);
     assert_eq!(memory.known_value(&alias), Some(int32(7)));
     assert!(!memory.has_union_overlay_at(&base));

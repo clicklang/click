@@ -37,7 +37,7 @@ fn byte_parent() -> CState {
         .with_memory(
             CMemory::new()
                 .with_block(pointer(0).block, 4)
-                .store(pointer(0), CValue::UInt8(0.into())),
+                .store(pointer(0), crate::kernel::uint8(0)),
         )
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_memory(CMemoryRange::new_with_element_width(
@@ -525,7 +525,7 @@ fn modeled_pthread_create_status_selects_the_checked_c_outcome() {
     for hostile in [
         external_store(
             0,
-            CValue::UInt8(5.into()),
+            crate::kernel::uint8(5),
             CType::UInt8,
             CType::UInt8Pointer,
         ),

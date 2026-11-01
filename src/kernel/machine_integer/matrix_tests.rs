@@ -259,11 +259,8 @@ fn every_order_is_native_at_its_own_format() {
     use crate::kernel::CompareRelation;
     for ty in FORMATS {
         let (a, b) = (value(ty, 172_031), value(ty, 172_032));
-        let filed = if ty.format().bits() < 32 {
-            Ty::Int32
-        } else {
-            ty
-        };
+        // Every format, a narrow one too, files its own native order.
+        let filed = ty;
         for (relation, compare) in [
             (Relation::Less, CompareRelation::LessThan),
             (Relation::LessEqual, CompareRelation::LessEqual),
@@ -684,11 +681,9 @@ fn modular_equality_reduces_at_every_width() {
             })
             .unwrap();
         let wrapped = modular::wrapped_equality_at(modulus, &condition, true);
-        // 128 bits has no ring operations, and a narrow format's are the
-        // 32-bit word's, which do not reduce modulo its own width: a
-        // narrow equality is read at the word's modulus, where its
-        // observations are not of the modulus's width.
-        if in_gaps(OPERATION_GAPS, ty) || ty.format().bits() < 32 {
+        // 128 bits has no ring operations. A narrow format's are native
+        // operations of its own width, which reduce modulo it.
+        if in_gaps(OPERATION_GAPS, ty) {
             assert_eq!(wrapped, None, "{ty:?}");
             continue;
         }
@@ -723,14 +718,36 @@ fn modular_equality_reduces_at_every_width() {
             }
         }
     }
-    // A narrow sum is a 32-bit word sum: `to_integer(a) + to_integer(b)
-    // == 256` over bytes says nothing of the word `a + b` modulo 2^8.
+    // A narrow sum is a native sum of its width: `to_integer(a) +
+    // to_integer(b) == 256` over bytes is the 8-bit `a + b == 0`, and says
+    // nothing modulo 2^16, whose observations are of another width.
     let byte = |variable| observe(Ty::UInt8, value(Ty::UInt8, variable));
     let wide_sum = ConditionTerm::IntegerEqual(
         IntegerTerm::add(byte(172_054), byte(172_055)).into(),
         IntegerTerm::constant(BigInt::from(256)).into(),
     );
-    for modulus in [Ty::UInt8, Ty::Int8, Ty::UInt16, Ty::Int16] {
+    for modulus in [Ty::UInt8, Ty::Int8] {
+        let expected = representation::comparison(
+            modulus,
+            Relation::Equal,
+            representation::folded_operation_word(
+                modulus,
+                Operation::Add,
+                value(Ty::UInt8, 172_054),
+                value(Ty::UInt8, 172_055),
+            )
+            .unwrap(),
+            constant(modulus, &BigInt::zero()),
+        )
+        .unwrap()
+        .0;
+        assert_eq!(
+            modular::wrapped_equality_at(modulus, &wide_sum, true),
+            Some(expected),
+            "{modulus:?}"
+        );
+    }
+    for modulus in [Ty::UInt16, Ty::Int16] {
         assert_eq!(
             modular::wrapped_equality_at(modulus, &wide_sum, true),
             None,
@@ -890,10 +907,13 @@ fn a_narrow_cast_word_is_the_carrier_of_its_value_at_every_narrow_format() {
                         Some(expected),
                         "{source:?} -> {destination:?}: {n}"
                     );
+                    // The cast itself folds to the native constant of its
+                    // destination, whose bits are the word's low bits.
                     let cast = Bitvector32Term::machine_integer_cast(source, destination, operand);
+                    let mask = (1u128 << destination.format().bits()) - 1;
                     assert_eq!(
-                        cast.as_const(),
-                        Some(expected),
+                        cast.narrow_constant_bits(destination),
+                        Some(u128::from(expected) & mask),
                         "{source:?} -> {destination:?}: {n}"
                     );
                     checked += 1;
@@ -905,11 +925,11 @@ fn a_narrow_cast_word_is_the_carrier_of_its_value_at_every_narrow_format() {
 }
 
 /// Rule K8, value by value: the widening of every value `n` of an 8- or
-/// 16-bit format into `int32` or `uint32` has the 32-bit word of `n`'s
-/// canonical carrier (exhaustive at 8 bits, sampled at 16), so the
-/// widening's word is its operand's; and symbolically the widening node is
-/// peeled to its operand by `word32` and `into_word32`, so an operator over
-/// it is the operator over the operand.
+/// 16-bit format into `int32` or `uint32` has the 32-bit word of `n`'s zero
+/// or sign extension (exhaustive at 8 bits, sampled at 16), and the
+/// constructors fold the widening of the native constant to that word; and
+/// symbolically the widening is a node of its own (K8 is a relation), which
+/// `word32` and `into_word32` keep, so an operator over it keeps it.
 #[test]
 fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() {
     use num_traits::ToPrimitive;
@@ -927,7 +947,7 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
             .filter(|n| *n >= min);
         for n in values {
             let n = BigInt::from(n);
-            let carrier = constant(source, &n).constant32().unwrap();
+            let carrier = carrier_bits(&n);
             for destination in [Ty::Int32, Ty::UInt32] {
                 let widened = MachineIntegerConstant::from_integer(source.format(), &n)
                     .unwrap()
@@ -945,6 +965,16 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
                     .constant32()
                     .unwrap();
                 assert_eq!(word, carrier, "{source:?} -> {destination:?}: {n}");
+                let folded = Bitvector32Term::machine_integer_cast(
+                    source,
+                    destination,
+                    constant(source, &n),
+                );
+                assert_eq!(
+                    folded.constant32(),
+                    Some(carrier),
+                    "{source:?} -> {destination:?}: {n}"
+                );
                 checked += 1;
             }
         }
@@ -952,10 +982,11 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
             let operand = value(source, 172_091);
             let cast = conversion::convert_term(source, destination, operand.clone());
             assert!(matches!(cast, Bitvector32Term::MachineIntegerCast { .. }));
-            assert_eq!(cast.word32(), &operand, "{source:?} -> {destination:?}");
-            assert_eq!(cast.word_cast32_operand(), Some((source, &operand)));
-            assert_eq!(cast.clone().into_word32(), operand);
-            assert_eq!(
+            assert_eq!(cast.word32(), &cast, "{source:?} -> {destination:?}");
+            assert_eq!(cast.word_cast32_operand(), None);
+            assert_eq!(cast.narrow_widening32_operand(), Some((source, &operand)));
+            assert_eq!(cast.clone().into_word32(), cast);
+            assert_ne!(
                 Bitvector32Term::add(cast, Bitvector32Term::Constant(1)),
                 Bitvector32Term::add(operand, Bitvector32Term::Constant(1)),
                 "{source:?} -> {destination:?}"

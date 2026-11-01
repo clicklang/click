@@ -60,7 +60,7 @@ fn scalar_array_copy_after_partial_call_keeps_known_lanes_and_rejects_bad_storag
         after_call
             .clone()
             .store(source.clone(), CValue::Int32(7u32.into())),
-        after_call.store(pointer("local:array-source", 1), CValue::UInt8(7u32.into())),
+        after_call.store(pointer("local:array-source", 1), crate::kernel::uint8(7u32)),
     ] {
         assert!(
             invalid
@@ -572,7 +572,7 @@ fn scalar_array_snapshots_check_explicit_coverage_types_and_overlap() {
         .clone()
         .store(pointer("local:array-source", 4), CValue::Int32(2.into()));
     let missing = fresh(4).store(source.clone(), CValue::UInt32(1u32.into()));
-    let misaligned = memory.store(pointer("local:array-source", 1), CValue::UInt8(3u32.into()));
+    let misaligned = memory.store(pointer("local:array-source", 1), crate::kernel::uint8(3u32));
     for invalid in [wrong_type, missing, misaligned] {
         assert!(
             invalid

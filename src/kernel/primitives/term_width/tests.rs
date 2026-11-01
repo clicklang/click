@@ -83,10 +83,7 @@ fn a_value_tag_and_its_term_agree_on_the_carrier() {
         None
     );
     // Narrow values ride in the 32-bit carrier.
-    assert_eq!(
-        value_width_mismatch(&CValue::Int8(Bitvector32Term::Constant(5))),
-        None
-    );
+    assert_eq!(value_width_mismatch(&crate::kernel::int8(5)), None);
     assert_eq!(
         value_width_mismatch(&CValue::Int64(Bitvector32Term::Variable(Variable(4)))),
         None
@@ -209,37 +206,35 @@ fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
 }
 
 #[test]
-fn a_narrow_constant_stays_inside_its_type() {
-    let c = Bitvector32Term::Constant;
+fn a_bool_constant_is_the_byte_zero_or_one() {
+    let byte = |bits| Bitvector32Term::narrow_constant(MachineIntegerType::UInt8, bits);
     for in_range in [
-        CValue::Bool(c(1)),
-        CValue::Int8(c(-128i32 as u32)),
-        CValue::Int8(c(127)),
-        CValue::UInt8(c(255)),
-        CValue::Int16(c(-32768i32 as u32)),
-        CValue::UInt16(c(65535)),
-        // A symbolic narrow value is kept in range by its path facts.
-        CValue::UInt8(Bitvector32Term::Variable(Variable(15))),
+        CValue::bool_constant(false),
+        CValue::bool_constant(true),
+        // A symbolic `Bool` carrier is kept in range by rule C1.
+        CValue::Bool(Bitvector32Term::Variable(Variable(15))),
     ] {
         assert_eq!(
             narrow_constant_out_of_range(&in_range),
             None,
             "{in_range:?}"
         );
+        assert_eq!(value_mismatch(&in_range), None, "{in_range:?}");
     }
-    for out_of_range in [
-        CValue::Bool(c(2)),
-        CValue::Int8(c(128)),
-        CValue::Int8(c(-129i32 as u32)),
-        CValue::UInt8(c(256)),
-        // A negative int8 must be sign-extended, not zero-extended.
-        CValue::Int8(c(0xff)),
-        CValue::UInt16(c(65536)),
+    let out_of_range = CValue::Bool(byte(2));
+    assert!(narrow_constant_out_of_range(&out_of_range).is_some());
+    assert!(value_mismatch(&out_of_range).is_some());
+    // A narrow value's constant is native: a 32-bit word in an 8- or 16-bit
+    // value, a `Bool` among them, is a width mismatch, whatever its bits.
+    let c = Bitvector32Term::Constant;
+    for word in [
+        CValue::Bool(c(1)),
+        CValue::Int8(c(127)),
+        CValue::UInt8(c(255)),
+        CValue::Int16(c(-32768i32 as u32)),
+        CValue::UInt16(c(65535)),
     ] {
-        assert!(
-            narrow_constant_out_of_range(&out_of_range).is_some(),
-            "{out_of_range:?}"
-        );
+        assert!(value_mismatch(&word).is_some(), "{word:?}");
     }
 }
 

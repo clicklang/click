@@ -538,7 +538,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
     let retained = facts
         .clone()
         .assume_condition(ConditionTerm::equal(right.clone(), 42u32.into()), true);
-    for value in [CValue::Int32(7u32.into()), CValue::UInt8(7u32.into())] {
+    for value in [CValue::Int32(7u32.into()), crate::kernel::uint8(7u32)] {
         let changed = memory.clone().store(field.clone(), value);
         let paths = evaluate_logical_memory_load_paths(
             &changed,

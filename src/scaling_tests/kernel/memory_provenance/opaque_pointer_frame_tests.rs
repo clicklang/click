@@ -370,7 +370,7 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
         for index in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(9_890_000 + index)),
-                CValue::UInt8(Bitvector32Term::Constant(7)),
+                crate::kernel::uint8(7),
             );
             facts = facts.assume_condition(
                 ConditionTerm::equal(
@@ -380,7 +380,7 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
                 true,
             );
         }
-        let value = Bitvector32Term::Constant(129);
+        let value = Bitvector32Term::narrow_constant(MachineIntegerType::UInt8, 129);
         memory = memory.store(pointer.clone(), CValue::UInt8(value.clone()));
         let load = Bitvector32Term::MemoryLoad(
             intern_c_memory(memory),
@@ -402,7 +402,10 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
         samples.push(work);
         assert!(!narrow_read_has_recorded_value(
             &left,
-            &cast(Bitvector32Term::Constant(7)),
+            &cast(Bitvector32Term::narrow_constant(
+                MachineIntegerType::UInt8,
+                7
+            )),
             &facts
         ));
         let other_cast = Bitvector32Term::MachineIntegerCast {

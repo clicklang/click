@@ -4,7 +4,7 @@
 
 use super::*;
 
-/// Interning a narrow cast adds its rule-K7 word from the operand's class:
+/// Interning a narrow cast adds its rule-K7' word from the operand's class:
 /// constant work per cast, so `size` distinct casts, and a chain of `size`
 /// nested casts (each operand a sum over a narrow cast), intern in work linear in
 /// `size`. A word built from the operand's term would re-intern the chain
@@ -16,23 +16,47 @@ fn narrow_cast_words_intern_in_work_linear_in_the_casts() {
         let mut chain = var(174_000);
         for level in 0..size {
             let destination = if level % 2 == 0 { Ty::Int16 } else { Ty::UInt8 };
+            // Each level adds one to the previous cast's widening.
+            let word = if level == 0 {
+                chain
+            } else {
+                let previous = if level % 2 == 0 { Ty::UInt8 } else { Ty::Int16 };
+                Bitvector32Term::machine_integer_cast(previous, Ty::UInt32, chain)
+            };
             chain = Bitvector32Term::machine_integer_cast(
                 Ty::UInt32,
                 destination,
-                Bitvector32Term::add(chain, Bitvector32Term::Constant(1)),
+                Bitvector32Term::add(word, Bitvector32Term::Constant(1)),
             );
         }
-        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
-            let graph = EqualityGraph::default();
+        let graph = EqualityGraph::default();
+        let ((), casts) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
                 let cast =
                     Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, var(175_000 + i));
+                let [widened, _] = widenings(Ty::UInt8, &cast);
                 let mask =
                     Bitvector32Term::bitwise_and(var(175_000 + i), Bitvector32Term::Constant(255));
-                assert!(graph.are_int32_equal(&cast, &mask));
+                assert!(graph.are_int32_equal(&widened, &mask));
             }
+        });
+        let ((), chain_work) = crate::instrumentation::measure_deterministic_work(|| {
+            let last = if size % 2 == 0 { Ty::UInt8 } else { Ty::Int16 };
+            let [chain, _] = widenings(last, &chain);
             assert!(!graph.are_int32_equal(&chain, &var(174_000)));
         });
-        assert!(work < 400 * size as usize, "size={size}, work={work}");
+        // Each half is linear in `size`. Measured (2026-11-01): about 54
+        // units per independent cast, and about 1230 per chain level (a
+        // narrowing, a widening, a sum and its constant; most of it is
+        // union-find root reads while the level's K7', K1 and R-comp
+        // relations close). The chain half is what rose with the merge of
+        // master's 2026-10-31 change that interns an absent opaque endpoint
+        // before deciding an equality (`TermClasses::are_int32_equal`): the
+        // chain query used to stop at its unknown root and intern nothing.
+        assert!(casts < 120 * size as usize, "size={size}, casts={casts}");
+        assert!(
+            chain_work < 1400 * size as usize,
+            "size={size}, chain={chain_work}"
+        );
     }
 }

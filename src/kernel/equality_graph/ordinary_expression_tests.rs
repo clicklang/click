@@ -125,7 +125,19 @@ fn unary_operations() -> Vec<(U, bool, bool)> {
     }
     ops
 }
+/// The width of two sides when either is an 8- or 16-bit value, which is
+/// equated at its own width.
+fn narrow_width(a: &Bitvector32Term, b: &Bitvector32Term) -> Option<W> {
+    match crate::kernel::root_width(a).or_else(|| crate::kernel::root_width(b)) {
+        Some(width @ (W::Bits8 | W::Bits16)) => Some(width),
+        _ => None,
+    }
+}
 fn equal(graph: &EqualityGraph, a: &Bitvector32Term, b: &Bitvector32Term, wide: bool) -> bool {
+    if let Some(width) = narrow_width(a, b) {
+        let mut state = graph.state.lock().expect("equality graph");
+        return state.terms.are_typed_equal(width, a, b);
+    }
     if wide {
         graph.are_uint64_equal(a, b)
     } else {
@@ -133,6 +145,11 @@ fn equal(graph: &EqualityGraph, a: &Bitvector32Term, b: &Bitvector32Term, wide: 
     }
 }
 fn merge(graph: &mut EqualityGraph, a: &Bitvector32Term, b: &Bitvector32Term, wide: bool) {
+    if let Some(width) = narrow_width(a, b) {
+        let mut state = graph.state.lock().expect("equality graph");
+        state.terms.add_typed_equality(width, a, b);
+        return;
+    }
     if wide {
         graph.add_uint64_equality(a, b);
     } else {
@@ -169,7 +186,20 @@ fn every_integer_operator_propagates_early_and_late_aliases() {
             if !early {
                 assert!(!equal(&graph, &a, &b, destination_wide));
             }
-            merge(&mut graph, &word(940_011), &word(940_012), source_wide);
+            // An 8- or 16-bit operand is a value of its width, equated at it.
+            match &a {
+                Bitvector32Term::MachineIntegerCast { source, .. }
+                    if source.format().bits() < 32 =>
+                {
+                    let mut state = graph.state.lock().expect("equality graph");
+                    state.terms.add_typed_equality(
+                        W::of_machine_type(*source),
+                        &word(940_011),
+                        &word(940_012),
+                    );
+                }
+                _ => merge(&mut graph, &word(940_011), &word(940_012), source_wide),
+            }
             assert!(
                 equal(&graph, &a, &b, destination_wide),
                 "{op:?} early={early}"

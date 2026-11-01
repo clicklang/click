@@ -98,9 +98,7 @@ fn a_narrow_store_inside_a_wide_cell_reports_changed() {
     let cell = at(block("global:g"), 0);
     for offset in 1..8 {
         let written = at(block("global:g"), offset);
-        let after = entry
-            .clone()
-            .store(written, CValue::UInt8(Bitvector32Term::Constant(7)));
+        let after = entry.clone().store(written, crate::kernel::uint8(7));
         assert_ne!(
             same(
                 Resource::Cell {
@@ -1096,7 +1094,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
         // when that arm was not chosen as the join's derivation base.
         let changed = second.store(
             at(cell.block.clone(), i64::from(bytes - 1)),
-            CValue::UInt8(Bitvector32Term::Constant(9)),
+            crate::kernel::uint8(9),
         );
         let bad = first
             .clone()

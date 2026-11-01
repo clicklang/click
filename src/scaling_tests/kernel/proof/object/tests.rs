@@ -491,15 +491,9 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
         if related {
             assert_ne!(fresh, binder);
         }
-        let expected = crate::kernel::c_narrow_integer_range_facts(
-            &MachineIntegerType::UInt8.symbolic_value(fresh),
-        )
-        .unwrap();
-        assert_eq!(next.state().added_facts(), expected);
-        let (_, facts) = next.focused_proposition().unwrap();
-        for bound in expected {
-            assert!(facts.contains(&bound));
-        }
+        // A `uint8` binder is a value of its own format: its range is the
+        // format's, and introducing it files no fact.
+        assert!(next.state().added_facts().is_empty());
         work
     };
     for related in [false, true] {
