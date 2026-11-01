@@ -152,9 +152,10 @@ writes it, and that order is exact for every narrow value. The native form is
 taken where its Integer reading recovers the narrow observation: a load of the
 narrow type (or the variable naming one) or a conversion to it. A comparison
 of a narrow binder, whose word does not name its format, keeps its Integer
-form. For the same reason an `int32` or `uint32` observation of a narrow load
-is that load's narrow observation (`IntegerTerm::from_machine`), as it
-already is for a narrow conversion. So the native `old(bytes[0]) < 255` reads
+form. For the same reason an `int32` or `uint32` observation of a narrow
+load's widening reads as that load's narrow observation (rule W,
+`SharedMachineIntegerTerm::value_reading`); the observation itself is built as
+written (`IntegerTerm::from_machine` folds no conversion). So the native `old(bytes[0]) < 255` reads
 as `to_integer(old(bytes[0])) < 255`. The Rust sum `old(bytes[0]) + 1` is a
 checked narrowing of its 32-bit sum, a conversion node whose identity with
 the sum is filed beside its range obligations, so its in-range identity
@@ -576,7 +577,7 @@ a `MachineIntegerCast`, read as its operand's word by rule K8 (below).
 | Rule | Statement | Where |
 |---|---|---|
 | K1 word identity | `σ(x) == x` as a 32-bit word | 32-bit operator, comparison, overflow and 32-to-64 extension constructors read operands through `word32`; the e-graph interns σ(x) as `x` |
-| K2 observation | `to_integer(σ(x))` at `int32` or `uint32` is `to_integer(x)` at that format | `IntegerTerm::from_machine` |
+| K2 observation | `to_integer(σ(x))` at `int32` or `uint32` has the value of `to_integer(x)` at that format; the observation keeps σ as written | rule W: `SharedMachineIntegerTerm::value_reading` |
 | K3 orders and indices | σ(x) has `x`'s `Int32` and `UInt32` difference-graph nodes; an element index is its word; `integer_cast_identity` and the checked-narrowing identity compare conversions by word | `difference_graph::word`, `canonicalized_offset_index_term`, `conversion::cast`, `checked_narrowing_identity` |
 | K4 modular equality | an observation of σ(x) contributes `x`'s word | through K2 |
 
