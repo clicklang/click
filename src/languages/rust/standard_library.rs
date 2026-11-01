@@ -11,17 +11,17 @@ pub(super) fn contracts(export: &RustExport) -> String {
         let Some(specification) = &function.core_method else {
             continue;
         };
+        // An `Option` is of the type of the method's scalar parameter:
+        // `checked_add`'s operands, `unwrap_or`'s default.
+        let payload = function
+            .parameters
+            .iter()
+            .find_map(|parameter| parameter.value_type.scalar_name())
+            .expect("a core method takes a scalar");
         let spell = |ty: &Type| -> String {
             match ty.scalar_name() {
                 Some(name) => name.into(),
-                // An `Option` result is of the parameters' type.
-                None => format!(
-                    "Option<{}>",
-                    function.parameters[0]
-                        .value_type
-                        .scalar_name()
-                        .expect("a core method takes integers")
-                ),
+                None => format!("Option<{payload}>"),
             }
         };
         let parameters = function

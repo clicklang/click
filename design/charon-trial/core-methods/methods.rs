@@ -36,3 +36,7 @@ pub fn magnitude(a: i8) -> u8 {
 pub fn fewer(a: usize, b: usize) -> usize {
     a.min(b)
 }
+
+pub fn or_default(o: Option<u32>) -> u32 {
+    o.unwrap_or(7)
+}

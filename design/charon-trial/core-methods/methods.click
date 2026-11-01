@@ -68,6 +68,11 @@ fn fewer(a: usize, b: usize) -> usize {
     ensures result == usize::min(a, b);
 }
 
+fn or_default(o: Option<u32>) -> u32 {
+    ensures result == option::unwrap_or(o, 7u32);
+    ensures o == Option<u32>::None implies result == 7u32;
+}
+
 // Each definition is Rust's at the edge of its type.
 theorem i8_wrapping_add_wraps() {
     ensures i8::wrapping_add(127i8, 1i8) == -128i8 by {

@@ -205,6 +205,7 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/separation.click",
     "library/nat.click",
     "library/list.click",
+    "library/option.click",
     "library/bytes.click",
     "library/cstr.click",
     "library/permutation.click",

@@ -864,7 +864,10 @@ The importer recognizes `min` and `max` of `Ord` and the inherent
 `wrapping_add`, `wrapping_sub`, `wrapping_mul`, `saturating_add`,
 `saturating_sub`, `checked_add`, `checked_sub` and `abs_diff` of every
 integer type, and `unsigned_abs` of a signed one, by the callee's identity and
-signature. A `checked_*` result is the library's `Option`. The library
+signature. A `checked_*` result is the library's `Option`. `o.unwrap_or(d)` of
+an `Option` of a scalar calls `Option::unwrap_or` the same way, whose contract
+states its result with `option::unwrap_or(o, d)`; that module is implicit, so
+a sidecar needs no import. The library
 function is opaque until `unfold` gives its definition, so a claim that needs
 the value, `result <= a`, unfolds it, and a proof of one arm states the value
 there: `have u32::min(a, b) == a by { unfold(u32::min(a, b)); solve(); }`.
@@ -1524,8 +1527,8 @@ several `?`s in a function returns `None` through the same tail, which the
 importer lowers in each arm that reaches it, as a C early `return`: the
 fixture's `sum(a, b)`, `let x = a?; let y = b?; Some(x + y)`, verifies its
 nested `match` contract after splitting on `a` and `b`. Options of other
-payloads and `Option` methods other than [`take`](#boxes)
-remain later work.
+payloads and `Option` methods other than [`take`](#boxes) and
+[`unwrap_or`](#core-library-methods) remain later work.
 
 A `&Option<T>` or `&mut Option<T>` parameter, and a reference to a crate enum,
 refers to one value of the enum: the contract writes `views *o` or `owns *o`

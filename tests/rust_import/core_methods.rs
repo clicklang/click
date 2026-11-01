@@ -32,6 +32,12 @@ fn charon_core_methods_verify_against_their_library_contracts() {
             "    have u32::checked_add(a, b) == Option<u32>::None by {\n",
             "clamp_add",
         ),
+        // `unwrap_or` of `None` is the default.
+        (
+            "    ensures o == Option<u32>::None implies result == 7u32;\n",
+            "    ensures o == Option<u32>::None implies result == 0u32;\n",
+            "or_default",
+        ),
         // `i8::wrapping_add` wraps to the minimum, not to the maximum.
         (
             "    ensures i8::wrapping_add(127i8, 1i8) == -128i8 by {\n",

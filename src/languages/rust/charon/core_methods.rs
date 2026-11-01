@@ -164,4 +164,72 @@ impl Adapter<'_> {
         );
         Ok(Some(name))
     }
+
+    /// The external function a call of `Option::<T>::unwrap_or` calls,
+    /// declared once per payload type: its contract is the library's
+    /// `option::unwrap_or`.
+    pub(super) fn option_method_call(
+        &self,
+        callee: &a::FunDecl,
+        pointer: &a::FnPtr,
+        call: &a::Call,
+    ) -> Result<Option<String>, String> {
+        let name = &callee.item_meta.name.name;
+        let identity = !callee.item_meta.is_local
+            && matches!(callee.src, a::FunSource::Normal)
+            && matches!(name.as_slice(), [
+                a::PathElem::Ident(core, _),
+                a::PathElem::Ident(option, _),
+                a::PathElem::Impl(a::ImplElem::Ty(_)),
+                a::PathElem::Ident(method, d),
+            ] if core == "core" && option == "option" && method == "unwrap_or" && *d == a::Disambiguator::ZERO);
+        if !identity {
+            return Ok(None);
+        }
+        let [payload] = pointer.generics.types.as_raw_slice() else {
+            return Err(unsupported("core method `Option::unwrap_or` instance"));
+        };
+        let payload = self.ty(payload)?;
+        let option = self.ty(&call
+            .args
+            .first()
+            .map(|argument| argument.ty().clone())
+            .ok_or_else(|| unsupported("core method `Option::unwrap_or` arity"))?)?;
+        if !payload.is_scalar()
+            || callee.signature.is_unsafe
+            || call.safety == a::CallSafety::Unsafe
+            || !pointer.generics.const_generics.is_empty()
+            || call.args.len() != 2
+            || option != self.option_enum(payload.clone())?
+            || self.ty(call.args[1].ty())? != payload
+            || self.ty(&call.dest.ty)? != payload
+        {
+            return Err(unsupported("core method `Option::unwrap_or` signature"));
+        }
+        let type_name = payload.scalar_name().expect("a scalar");
+        let mut function = super::super::names::qualified_name(["Option", "unwrap_or"]);
+        super::super::names::push_type_argument(&mut function, type_name);
+        let parameter = |name: &str, value_type: Type| out::Place {
+            name: name.into(),
+            value_type,
+            span: span(callee.item_meta.span),
+        };
+        self.core_methods.borrow_mut().insert(
+            function.clone(),
+            out::Function {
+                name: function.clone(),
+                return_type: payload.clone(),
+                parameters: vec![parameter("o", option), parameter("d", payload)],
+                body: vec![],
+                mir: None,
+                external: true,
+                captures: 0,
+                implements: None,
+                instance_of: None,
+                core_method: Some("click::option::unwrap_or".into()),
+                span: span(callee.item_meta.span),
+            },
+        );
+        Ok(Some(function))
+    }
 }

@@ -1772,6 +1772,13 @@ theorem use_rust_usize_abs_diff() {
         solve();
     }
 }
+
+theorem use_option_unwrap_or(d: int32) {
+    ensures option::unwrap_or(Option<int32>::None, d) == d by {
+        unfold(option::unwrap_or(Option<int32>::None, d));
+        solve();
+    }
+}
 ```
 
 ```expect
