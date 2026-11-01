@@ -3750,35 +3750,34 @@ pub(super) fn typed_read_has_same_memory_source(
     let _scope = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
     with_extended_dag_bridging(|| {
         let before = intern_c_memory_ref(before);
-        let mut current = intern_c_memory_ref(after);
+        let current = intern_c_memory_ref(after);
+        crate::instrumentation::record_deterministic_work(1);
+        if current == before {
+            return true;
+        }
+        let Some(step) = current.derivation() else {
+            return false;
+        };
+        // Only the named adjacent transition is implicit. Longer arguments
+        // must provide explicit intermediate read-validity facts.
+        if step.base() != &before {
+            return false;
+        }
         let evidence = crate::kernel::resource_tracker::step_effect::Evidence {
             assumptions,
             cross_loop_havoc: true,
         };
-        // Stop at the named premise, never walk its unrelated earlier history.
-        loop {
-            crate::instrumentation::record_deterministic_work(1);
-            if current == before {
-                return true;
-            }
-            let Some(step) = current.derivation() else {
-                return false;
-            };
-            if !matches!(
-                crate::kernel::resource_tracker::step_effect::affects(
-                    &step,
-                    &current,
-                    crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
-                    &evidence,
-                ),
-                crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
-                    crate::kernel::resource_tracker::step_effect::Separation::Cell(_)
-                )
-            ) {
-                return false;
-            }
-            current = step.base().clone();
-        }
+        matches!(
+            crate::kernel::resource_tracker::step_effect::affects(
+                &step,
+                &current,
+                crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
+                &evidence,
+            ),
+            crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
+                crate::kernel::resource_tracker::step_effect::Separation::Cell(_)
+            )
+        )
     })
 }
 

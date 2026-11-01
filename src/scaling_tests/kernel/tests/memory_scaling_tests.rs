@@ -2722,7 +2722,14 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 facts.has_memory_read_defined_evidence(&memory, &read, CType::Int32)
             });
-            assert!(proved, "read initialization at query {index} of {size}");
+            if adjacent || exact || index == 0 {
+                assert!(proved, "read initialization at query {index} of {size}");
+            } else {
+                assert!(
+                    !proved,
+                    "long initialization history must need explicit links"
+                );
+            }
             total += work;
         }
         samples.push((size, total));
@@ -2731,7 +2738,6 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
 }
 
 #[test]
-#[ignore = "design regression: read-initialization checking still walks history"]
 fn repeated_read_initialization_queries_have_near_linear_total_work() {
     let samples = repeated_read_initialization_work(false, false);
     eprintln!("entry-to-current read-initialization checks: {samples:?}");
