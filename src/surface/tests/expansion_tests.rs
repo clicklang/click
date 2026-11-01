@@ -1,6 +1,35 @@
 use super::*;
 
 #[test]
+fn common_terminal_proofs_do_not_require_internal_case_spellings() {
+    let c = "int f(int i) { int a[2] = {3, 5}; return a[i]; }";
+    let source = r#"verifying "f.c";
+        int32 f(int32 i) {
+            requires 0 <= i and i < 2;
+            ensures result == result;
+        }"#;
+    let sources = [("f.c", c)];
+    let verified = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "f").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn terminal_result_selector_precedes_internal_load_cases() {
+    let c = "struct Q { unsigned int count; }; int f(const struct Q *q) { return q->count == 8u; }";
+    let source = r#"verifying "f.c";
+        int32 f(const struct Q* q) {
+            views q->count;
+            ensures result == 1 or result == 0;
+            ensures result == 1 implies q->count == 8u32;
+        }"#;
+    let sources = [("f.c", c)];
+    let verified = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "f").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
 fn short_circuit_boolean_returns_expand_distinct_outcome_proofs() {
     for (expression, proposition) in [("a && b", "a and b"), ("a || b", "a or b")] {
         let c = format!("bool f(bool a, bool b) {{ return {expression}; }}");
