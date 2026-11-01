@@ -2180,17 +2180,15 @@ thread_local! {
 /// The specification `bool` literal `true` or `false`: a C `bool` value,
 /// exactly `1` or `0`.
 pub(crate) fn bool_literal(value: bool) -> ContractExpression {
-    ContractExpression::CFragment(CExpression::Value(CValue::Bool(
-        crate::kernel::Bitvector32Term::Constant(u32::from(value)),
-    )))
+    ContractExpression::CFragment(CExpression::Value(CValue::bool_constant(value)))
 }
 
 /// The value of a `bool` literal written as `true` or `false`.
 pub(crate) fn bool_literal_value(expression: &ContractExpression) -> Option<bool> {
     match expression {
-        ContractExpression::CFragment(CExpression::Value(CValue::Bool(
-            crate::kernel::Bitvector32Term::Constant(value @ (0 | 1)),
-        ))) => Some(*value == 1),
+        ContractExpression::CFragment(CExpression::Value(CValue::Bool(value))) => {
+            value.bool_constant_value()
+        }
         _ => None,
     }
 }

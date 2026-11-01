@@ -14779,7 +14779,7 @@ impl Parser {
                 Ok(ContractExpression::IntegerLiteral(value.to_string()))
             }
             Some(Token::UInt8Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt8(Bitvector32Term::Constant(u32::from(value)))),
+                CExpression::Value(crate::kernel::uint8(u32::from(value))),
             )),
             Some(Token::UInt32Number(value)) => Ok(ContractExpression::CFragment(
                 CExpression::Value(CValue::UInt32(Bitvector32Term::UInt32Constant(value))),
@@ -15861,11 +15861,11 @@ impl Parser {
     /// unsigned byte; a higher byte needs the target's plain `char`.
     fn character_constant_value(&self, byte: u8) -> Result<CValue, ClickError> {
         if byte < 0x80 {
-            return Ok(CValue::UInt8(Bitvector32Term::Constant(u32::from(byte))));
+            return Ok(crate::kernel::uint8(u32::from(byte)));
         }
         match self.plain_char {
             Some(syntax::PlainChar::Unsigned) => {
-                Ok(CValue::UInt8(Bitvector32Term::Constant(u32::from(byte))))
+                Ok(crate::kernel::uint8(u32::from(byte)))
             }
             Some(plain @ syntax::PlainChar::Signed) => Ok(CValue::Int32(Bitvector32Term::Constant(
                 plain.character_value(byte) as i32 as u32,
