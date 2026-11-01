@@ -417,7 +417,8 @@ fn canonical_integer_read(
     ty: CType,
 ) -> Option<Bitvector32Term> {
     let kind = match ty {
-        CType::Bool | CType::Int8 | CType::UInt8 => LoadKind::UInt8,
+        CType::Bool | CType::UInt8 => LoadKind::UInt8,
+        CType::Int8 => LoadKind::Int8,
         CType::Int16 => LoadKind::Int16,
         CType::UInt16 => LoadKind::UInt16,
         CType::Int32 => LoadKind::Int32,
@@ -431,7 +432,6 @@ fn canonical_integer_read(
         kind,
     );
     Some(match ty {
-        CType::Int8 => Bitvector32Term::signed_byte(value),
         // The byte rule (Stage 5): a `bool` cell's byte `b` is the `Bool`
         // `b != 0`, carried as its cast.
         CType::Bool => match crate::kernel::bool_value(value) {
@@ -519,9 +519,21 @@ fn retain_call_read_aliases(
         }
         // Carry only the selected numeric equation. Ordinary fact admission
         // installs it in the shared graph after scratch call contexts expire.
+        // An 8- or 16-bit read is a value of its own format, equated at it.
         let equal = match value_type {
             CType::Int64 => ConditionTerm::int64_equal(source.clone(), value),
             CType::UInt64 => ConditionTerm::uint64_equal(source.clone(), value),
+            CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16 => {
+                let Some(format) = MachineIntegerType::from_c_type(value_type) else {
+                    continue;
+                };
+                ConditionTerm::machine_compare(
+                    format,
+                    CompareRelation::Equal,
+                    source.clone(),
+                    value,
+                )
+            }
             _ => ConditionTerm::equal(source.clone(), value),
         };
         path.facts.push(ExecutionPureFact {
@@ -1661,15 +1673,10 @@ fn canonicalized_pointer_value_from_int_cell(
 ) -> Option<CValue> {
     value_type.pointee_type()?;
     let fresh = match value {
-        CValue::Int8(bits) => {
-            let unsigned @ Bitvector32Term::MemoryLoad(_, _, _) = bits.signed_byte_operand()?
-            else {
-                return None;
-            };
-            let fresh = mint_load_variable(unsigned, facts, assumptions, source)?;
-            return Some(CValue::Int8(Bitvector32Term::signed_byte(
-                Bitvector32Term::Variable(fresh),
-            )));
+        // A narrow read is its own load (R-mem relates the two byte reads).
+        CValue::Int8(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
+            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
+            return Some(CValue::Int8(Bitvector32Term::Variable(fresh)));
         }
         CValue::Int16(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
@@ -2022,16 +2029,11 @@ fn canonicalized_symbolic_load_value_with_identity(
     // load variable, with the defining fact beside it, so every fact,
     // offset, and range built from the value is canonical.
     match &value {
-        // A signed byte read names the byte's unsigned read.
-        CValue::Int8(bits) => {
-            if let Some(unsigned @ Bitvector32Term::MemoryLoad(_, _, _)) =
-                bits.signed_byte_operand()
-            {
-                let fresh = mint_load_variable(unsigned, facts, assumptions, source)?;
-                return Some(CValue::Int8(Bitvector32Term::signed_byte(
-                    Bitvector32Term::Variable(fresh),
-                )));
-            }
+        // A signed byte read is its own load (byte R-mem relates it to the
+        // byte's unsigned read).
+        CValue::Int8(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
+            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
+            return Some(CValue::Int8(Bitvector32Term::Variable(fresh)));
         }
         CValue::Int16(bits @ Bitvector32Term::MemoryLoad(_, _, _)) => {
             let fresh = mint_load_variable(bits, facts, assumptions, source)?;
@@ -3499,14 +3501,6 @@ pub(crate) fn canonical_form_of_load(
     pointer: Pointer,
     kind: LoadKind,
 ) -> Bitvector32Term {
-    // A signed byte read is the conversion of the byte's one unsigned read.
-    if kind == LoadKind::Int8 {
-        return Bitvector32Term::signed_byte(canonical_form_of_load(
-            memory,
-            pointer,
-            LoadKind::UInt8,
-        ));
-    }
     let load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer), kind);
     match load_variable_for_term(&load) {
         Some((variable, _)) => Bitvector32Term::Variable(variable),
@@ -4494,17 +4488,9 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Bitvec
 pub(crate) fn load_variable_for_term(
     bits: &Bitvector32Term,
 ) -> Option<(Variable, Bitvector32Term)> {
-    let Bitvector32Term::MemoryLoad(_, _, kind) = bits else {
+    let Bitvector32Term::MemoryLoad(..) = bits else {
         return None;
     };
-    // One byte, one name: a signed byte read is formed only as the
-    // conversion of the unsigned read (`Bitvector32Term::memory_read`). A
-    // raw signed-byte load term came from a producer that bypassed it; it is
-    // refused a name, so it can never stand as a second, unrelated value of
-    // the byte.
-    if *kind == LoadKind::Int8 {
-        return None;
-    }
     // Naming is deterministic per term, and callers ask per fact atom per
     // comparison; the version walk and canonicalization behind a cold call
     // are not free, so cache by term. Term hashing is cheap: embedded
@@ -4649,12 +4635,16 @@ fn record_load_variable_defining_fact_with_source_and_pointer(
         ConditionTerm::Compare {
             // The raw-load form historically used a 32-bit equality with
             // a width-check exception. Registered read terms use the actual
-            // carrier width. Narrow load kinds still have 32-bit carriers.
+            // carrier width: a narrow read is a value of its own format.
             format: match kind {
+                LoadKind::Int8 => MachineIntegerType::Int8,
+                LoadKind::UInt8 => MachineIntegerType::UInt8,
+                LoadKind::Int16 => MachineIntegerType::Int16,
+                LoadKind::UInt16 => MachineIntegerType::UInt16,
                 LoadKind::Bits64 | LoadKind::Float64 => MachineIntegerType::Int64,
                 LoadKind::Int128 => MachineIntegerType::Int128,
                 LoadKind::UInt128 => MachineIntegerType::UInt128,
-                _ => MachineIntegerType::Int32,
+                LoadKind::Int32 | LoadKind::UInt32 | LoadKind::Float32 => MachineIntegerType::Int32,
             },
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(variable)),
@@ -4831,10 +4821,8 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
     c_type: CType,
 ) -> Option<CValue> {
     let (kind, wrap): (LoadKind, fn(Bitvector32Term) -> CValue) = match c_type {
-        // The cache names the byte's unsigned read; a signed read converts it.
-        CType::Int8 => (LoadKind::UInt8, |unsigned| {
-            CValue::Int8(Bitvector32Term::signed_byte(unsigned))
-        }),
+        // A signed byte read is its own load.
+        CType::Int8 => (LoadKind::Int8, CValue::Int8),
         CType::Int16 => (LoadKind::Int16, CValue::Int16),
         CType::Int32 => (LoadKind::Int32, CValue::Int32),
         CType::UInt8 => (LoadKind::UInt8, CValue::UInt8),
@@ -5865,9 +5853,10 @@ mod tests {
         let memory = intern_c_memory(CMemory::new());
         let pointer = Pointer::symbolic(Variable(299_301));
         for (kind, format) in [
-            (LoadKind::UInt8, MachineIntegerType::Int32),
-            (LoadKind::Int16, MachineIntegerType::Int32),
-            (LoadKind::UInt16, MachineIntegerType::Int32),
+            (LoadKind::Int8, MachineIntegerType::Int8),
+            (LoadKind::UInt8, MachineIntegerType::UInt8),
+            (LoadKind::Int16, MachineIntegerType::Int16),
+            (LoadKind::UInt16, MachineIntegerType::UInt16),
             (LoadKind::Int32, MachineIntegerType::Int32),
             (LoadKind::UInt32, MachineIntegerType::Int32),
             (LoadKind::Bits64, MachineIntegerType::Int64),

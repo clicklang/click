@@ -8,10 +8,10 @@ fn verified_read_ensure_normalization_preserves_snapshot_and_load_type() {
     };
     let before = CMemory::new()
         .with_block(pointer.block.clone(), 4)
-        .store(pointer.clone(), CValue::UInt8(3u32.into()));
+        .store(pointer.clone(), crate::kernel::uint8(3u32));
     let after = before
         .clone()
-        .store(pointer.clone(), CValue::UInt8(9u32.into()));
+        .store(pointer.clone(), crate::kernel::uint8(9u32));
     let unknown = CMemory::new().with_block(pointer.block.clone(), 4);
     for (memory, kind, expected) in [
         (&before, LoadKind::UInt8, Some(3)),
@@ -27,7 +27,17 @@ fn verified_read_ensure_normalization_preserves_snapshot_and_load_type() {
             kind.byte_width(),
         ));
         let result = Bitvector32Term::Variable(Variable(930_401));
-        let ensure = Proposition::ConditionIs(ConditionTerm::equal(result.clone(), load), true);
+        // A byte read is an 8-bit value, compared at its own format.
+        let equal = |left: Bitvector32Term, right: Bitvector32Term| match kind {
+            LoadKind::UInt8 => ConditionTerm::narrow_compare(
+                crate::kernel::MachineIntegerType::UInt8,
+                crate::kernel::CompareRelation::Equal,
+                left,
+                right,
+            ),
+            _ => ConditionTerm::equal(left, right),
+        };
+        let ensure = Proposition::ConditionIs(equal(result.clone(), load), true);
         let mut facts = crate::kernel::ExecutionFacts::new();
         add_normalized_verified_ensure_facts(
             &mut facts,
@@ -38,7 +48,13 @@ fn verified_read_ensure_normalization_preserves_snapshot_and_load_type() {
         );
         if let Some(value) = expected {
             let expected = Proposition::ConditionIs(
-                ConditionTerm::equal(result, Bitvector32Term::Constant(value)),
+                equal(
+                    result,
+                    Bitvector32Term::narrow_constant(
+                        crate::kernel::MachineIntegerType::UInt8,
+                        value,
+                    ),
+                ),
                 true,
             );
             assert!(facts.iter().any(|fact| fact.proposition() == &expected));

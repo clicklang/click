@@ -9198,7 +9198,13 @@ fn add_normalized_verified_ensure_facts(
 ) {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format:
+                format @ (MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16
+                | MachineIntegerType::Int32
+                | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
@@ -9215,6 +9221,13 @@ fn add_normalized_verified_ensure_facts(
     }
     let assumptions = assumptions_with_path_context(ensure_assumptions, ensure_facts, &[])
         .assume_proposition(ensure.clone());
+    // A constant of an 8- or 16-bit equality's own format, read at its root.
+    let narrow_constant = |term: &Bitvector32Term| {
+        (format.format().bits() < 32)
+            .then(|| format.constant_from_term(term)?.to_i128())
+            .flatten()
+            .and_then(|value| i64::try_from(value).ok())
+    };
     let constant_value = |term: &Bitvector32Term| {
         assumptions
             .known_signed_constant_after_normalization(term)
@@ -9233,7 +9246,9 @@ fn add_normalized_verified_ensure_facts(
                     kind,
                     &assumptions,
                 )?;
-                assumptions.known_signed_constant_after_normalization(&value)
+                assumptions
+                    .known_signed_constant_after_normalization(&value)
+                    .or_else(|| narrow_constant(&value))
             })
     };
     let left_value = constant_value(left);
@@ -9245,15 +9260,27 @@ fn add_normalized_verified_ensure_facts(
         (Some(value), None) | (None, Some(value)) => value,
         _ => return,
     };
-    let constant = Bitvector32Term::Constant(value as i32 as u32);
+    // An 8- or 16-bit equality states its constant at its own format.
+    let narrow = format.format().bits() < 32;
+    let (constant, format) = if narrow {
+        let bits = (i128::from(value) as u128) & ((1u128 << format.format().bits()) - 1);
+        (Bitvector32Term::narrow_constant(*format, bits), *format)
+    } else {
+        (
+            Bitvector32Term::Constant(value as i32 as u32),
+            MachineIntegerType::Int32,
+        )
+    };
     for term in [left.as_ref(), right.as_ref()] {
-        if signed_bitvector_constant(term).is_some() {
+        if signed_bitvector_constant(term).is_some()
+            || (narrow && format.constant_from_term(term).is_some())
+        {
             continue;
         }
         let normalized = wrap_path_context(
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format,
                     relation: CompareRelation::Equal,
                     left: Box::new(term.clone()),
                     right: Box::new(constant.clone()),
@@ -10835,8 +10862,14 @@ fn string_literal_reads_resolved(
         let offset = pointer.offset.as_const()?;
         let byte = *bytes.get(usize::try_from(offset).ok()?)?;
         let value = match kind {
-            LoadKind::UInt8 => Bitvector32Term::Constant(u32::from(byte)),
-            LoadKind::Int8 => Bitvector32Term::Constant(byte as i8 as i32 as u32),
+            LoadKind::UInt8 => Bitvector32Term::narrow_constant(
+                crate::kernel::MachineIntegerType::UInt8,
+                u128::from(byte),
+            ),
+            LoadKind::Int8 => Bitvector32Term::narrow_constant(
+                crate::kernel::MachineIntegerType::Int8,
+                u128::from(byte),
+            ),
             _ => return None,
         };
         resolved = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(

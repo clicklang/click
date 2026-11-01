@@ -90,7 +90,7 @@ fn wide_multiply_promotes_narrow_operands_before_multiplying() {
             -BigInt::from(i128::MIN + 1),
         ),
         (
-            CExpression::Value(CValue::Bool(Bitvector32Term::Constant(1))),
+            CExpression::Value(CValue::bool_constant(true)),
             c_int128_literal(i128::MIN),
             BigInt::from(i128::MIN),
         ),

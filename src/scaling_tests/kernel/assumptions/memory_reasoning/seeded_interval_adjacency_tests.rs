@@ -23,10 +23,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
             let run = CellRun::new(base.clone(), 1, CType::UInt8, size, source.clone(), holes);
             let mut memory = CMemory::new();
             std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
-            let memory = memory.store(
-                base.offset_by_bytes(size),
-                CValue::UInt8(Bitvector32Term::Constant(7)),
-            );
+            let memory = memory.store(base.offset_by_bytes(size), crate::kernel::uint8(7));
             let (facts, work) = crate::instrumentation::measure_deterministic_work(|| {
                 context.adjacent_loadable_region_facts(
                     &memory,

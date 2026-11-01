@@ -33,10 +33,12 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
         for byte in 0u32..4 {
             expected = Bitvector32Term::bitwise_or(
                 expected,
+                // Each byte's word is its zero extension.
                 Bitvector32Term::unsigned_shift_left(
-                    Bitvector32Term::bitwise_and(
+                    Bitvector32Term::machine_integer_cast(
+                        crate::kernel::MachineIntegerType::UInt8,
+                        crate::kernel::MachineIntegerType::Int32,
                         Bitvector32Term::Variable(Variable(8000 + u64::from(byte))),
-                        0xFFu32.into(),
                     ),
                     (8 * byte).into(),
                 ),

@@ -34,9 +34,6 @@ pub(crate) enum WordIdentity {
     UInt32OperatorAtInt32,
     /// A `uint32` equality filed as the `int32` one (rule K6).
     UInt32EqualityAtInt32,
-    /// A C widening between narrow formats that keeps the operand's term
-    /// under the wider format's tag.
-    NarrowWordReused,
     /// A narrow value observed whose term is a 32-bit operation's word
     /// rather than a value of its format.
     NarrowValueAsWord,
@@ -52,7 +49,6 @@ impl WordIdentity {
             Self::UInt32ConstantPeeled => "uint32-constant-peeled",
             Self::UInt32OperatorAtInt32 => "uint32-operator-at-int32",
             Self::UInt32EqualityAtInt32 => "uint32-equality-at-int32",
-            Self::NarrowWordReused => "narrow-word-reused",
             Self::NarrowValueAsWord => "narrow-value-as-word",
             Self::PromotedNarrowArithmetic => "promoted-narrow-arithmetic",
         }

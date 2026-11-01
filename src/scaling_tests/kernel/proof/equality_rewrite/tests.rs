@@ -27,7 +27,7 @@ fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
             for index in 0..size {
                 memory = memory.store(
                     Pointer::symbolic(Variable(242_000 + index)),
-                    CValue::UInt8(Bitvector32Term::Constant(7)),
+                    crate::kernel::uint8(7),
                 );
                 facts = facts.with_fact(integer_equality(
                     IntegerTerm::var(Variable(244_000 + index)),
@@ -53,9 +53,7 @@ fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
                     &crate::kernel::intern_c_memory(memory.clone()),
                 ));
             let target = read(&memory, &q, LoadKind::UInt8);
-            let later = memory
-                .clone()
-                .store(q.clone(), CValue::UInt8(Bitvector32Term::Constant(99)));
+            let later = memory.clone().store(q.clone(), crate::kernel::uint8(99));
             let other_snapshot = read(&later, &q, LoadKind::UInt8);
             let other_kind = read(&memory, &q, LoadKind::Int8);
             let mut work = 0;

@@ -2,11 +2,12 @@ use super::*;
 
 const SIDECAR: &str = include_str!("../../design/charon-trial/core-methods/methods.click");
 
-/// A call of a Rust core integer method calls an external function whose
-/// contract the library supplies, stating its result with the library's
-/// function of the same path: claims written with `u32::min(a, b)` verify,
-/// a wrong claim about one is refused, and each definition is Rust's at the
-/// edge of its type.
+/// A call of a Rust core method calls an external function whose contract
+/// the library supplies, stating an integer method's result with the
+/// library's function of the same path and `swap`'s effect on its slice:
+/// claims written with `u32::min(a, b)` verify, a wrong claim about one is
+/// refused, a `swap` index not shown in bounds is refused, and each
+/// definition is Rust's at the edge of its type.
 #[test]
 fn charon_core_methods_verify_against_their_library_contracts() {
     let p = Project::from_fixture("design/charon-trial/core-methods");
@@ -31,6 +32,20 @@ fn charon_core_methods_verify_against_their_library_contracts() {
             "    have u32::checked_add(a, b) == Option<u32>::Some(a + b) by {\n",
             "    have u32::checked_add(a, b) == Option<u32>::None by {\n",
             "clamp_add",
+        ),
+        // `unwrap_or` of `None` is the default.
+        (
+            "    ensures o == Option<u32>::None implies result == 7u32;\n",
+            "    ensures o == Option<u32>::None implies result == 0u32;\n",
+            "or_default",
+        ),
+        // `swap` requires its second index in bounds.
+        ("    requires b < xs.len();\n", "", "precondition clause 3"),
+        // The second element receives the first, not itself.
+        (
+            "    ensures xs[b] == old(xs[a]);\n",
+            "    ensures xs[b] == old(xs[b]);\n",
+            "exchange",
         ),
         // `i8::wrapping_add` wraps to the minimum, not to the maximum.
         (

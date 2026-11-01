@@ -2542,6 +2542,38 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
+    // A native 8- or 16-bit comparison is spelled as the Integer comparison
+    // of its operands' values, which lowers back to it (the Integer form of
+    // exact observations of one format is its native comparison).
+    if let ConditionTerm::Compare {
+        format:
+            format @ (MachineIntegerType::Int8
+            | MachineIntegerType::UInt8
+            | MachineIntegerType::Int16
+            | MachineIntegerType::UInt16),
+        relation,
+        left,
+        right,
+    } = condition
+    {
+        let observe = |term: &Bitvector32Term| -> Option<crate::kernel::SharedIntegerTerm> {
+            crate::kernel::IntegerTerm::from_machine(*format, term.clone()).map(Into::into)
+        };
+        let (l, r) = (observe(left)?, observe(right)?);
+        let integer = match relation {
+            CompareRelation::LessThan => ConditionTerm::IntegerLessThan(l, r),
+            CompareRelation::LessEqual => ConditionTerm::IntegerLessEqual(l, r),
+            CompareRelation::GreaterThan => ConditionTerm::IntegerGreaterThan(l, r),
+            CompareRelation::GreaterEqual => ConditionTerm::IntegerGreaterEqual(l, r),
+            CompareRelation::Equal => ConditionTerm::IntegerEqual(l, r),
+        };
+        return synthesize_surface_atomic_proposition(
+            &Proposition::ConditionIs(integer, *value),
+            parameter_binding,
+            state,
+            bound_variables,
+        );
+    }
     let (left, operator, right) = match condition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,

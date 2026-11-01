@@ -2460,7 +2460,14 @@ impl BodyAdapter<'_, '_> {
                 }
                 // A Rust core method the library specifies calls its
                 // external function, whose contract is the library's.
-                if let Some(function) = self.adapter.core_method_call(callee, ptr, call)? {
+                let core_method = match self.adapter.core_method_call(callee, ptr, call)? {
+                    Some(function) => Some(function),
+                    None => match self.adapter.option_method_call(callee, ptr, call)? {
+                        Some(function) => Some(function),
+                        None => self.adapter.slice_method_call(callee, ptr, call)?,
+                    },
+                };
+                if let Some(function) = core_method {
                     let a::PlaceKind::Local(destination) = call.dest.kind else {
                         return Err(unsupported("projected call destination"));
                     };

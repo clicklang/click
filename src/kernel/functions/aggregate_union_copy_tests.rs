@@ -27,11 +27,7 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
     let memory = CMemory::new()
         .with_block(source.block.clone(), 4)
         .with_block(destination.block.clone(), 4)
-        .store_union(
-            source.clone(),
-            CType::UInt8,
-            CValue::UInt8(Bitvector32Term::Constant(0xAA)),
-        )
+        .store_union(source.clone(), CType::UInt8, crate::kernel::uint8(0xAA))
         .store_union(
             destination.clone(),
             CType::Int32,
@@ -42,7 +38,7 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
 
     assert_eq!(
         copied.known_union_value(&destination, CType::UInt8),
-        Some(CValue::UInt8(Bitvector32Term::Constant(0xAA))),
+        Some(crate::kernel::uint8(0xAA)),
     );
     assert_eq!(copied.known_union_value(&destination, CType::Int32), None);
 }

@@ -43,7 +43,7 @@ fn unsigned_index_membership_ignores_unrelated_facts_and_stores() {
             // A store to another object, and the effect fact it records.
             let target = Pointer::symbolic(Variable(9_906_000 + index));
             let before = memory.clone();
-            memory = memory.store(target.clone(), CValue::UInt8(0u32.into()));
+            memory = memory.store(target.clone(), crate::kernel::uint8(0u32));
             context = context.assume_proposition(Proposition::CMemoryMutatesOnly {
                 before,
                 after: memory.clone(),

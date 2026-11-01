@@ -731,7 +731,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let written = state
         .memory()
         .clone()
-        .store(input.clone(), CValue::UInt8(Bitvector32Term::Constant(7)));
+        .store(input.clone(), crate::kernel::uint8(7));
     assert!(
         context
             .derive_solve_atomic_proposition(&equality(&written))

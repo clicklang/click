@@ -850,12 +850,12 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::Int8,
             BigInt::from(i8::MIN),
-            CValue::Int8(Bitvector32Term::Constant(i8::MIN as i32 as u32)),
+            crate::kernel::int8(i8::MIN as i32 as u32),
         ),
         (
             MachineIntegerType::Int16,
             BigInt::from(i16::MIN),
-            CValue::Int16(Bitvector32Term::Constant(i16::MIN as i32 as u32)),
+            crate::kernel::int16(i16::MIN as i32 as u32),
         ),
         (
             MachineIntegerType::Int32,
@@ -865,12 +865,12 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::UInt8,
             BigInt::from(u8::MAX),
-            CValue::UInt8(Bitvector32Term::Constant(u8::MAX as u32)),
+            crate::kernel::uint8(u8::MAX as u32),
         ),
         (
             MachineIntegerType::UInt16,
             BigInt::from(u16::MAX),
-            CValue::UInt16(Bitvector32Term::Constant(u16::MAX as u32)),
+            crate::kernel::uint16(u16::MAX as u32),
         ),
         (
             MachineIntegerType::UInt32,

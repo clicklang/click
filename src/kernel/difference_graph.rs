@@ -36,6 +36,10 @@ pub(crate) enum Domain {
     /// A 32-bit word read as unsigned. Its node is paired with the word's
     /// `Int32` node (`readings`).
     UInt32,
+    /// An 8- or 16-bit value of its own format, whose range is the
+    /// format's. A narrow value is ordered through its 32-bit widening,
+    /// which links to it here ([`link_parts`]).
+    Narrow(MachineIntegerType),
 }
 
 impl Domain {
@@ -45,8 +49,43 @@ impl Domain {
             Domain::Int64 => (i128::from(i64::MIN), i128::from(i64::MAX)),
             Domain::UInt64 => (0, i128::from(u64::MAX)),
             Domain::UInt32 => (0, i128::from(u32::MAX)),
+            Domain::Narrow(format) => {
+                let bits = format.format().bits();
+                if format.format().is_signed() {
+                    (-(1 << (bits - 1)), (1 << (bits - 1)) - 1)
+                } else {
+                    (0, (1 << bits) - 1)
+                }
+            }
         }
     }
+}
+
+/// An 8- or 16-bit comparison as the `int32` comparison of its operands'
+/// widenings, which hold the same values: the graph orders narrow values
+/// through their widenings. One match on the root.
+fn widened_narrow_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::Compare {
+        format,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    if format.format().bits() >= 32 {
+        return None;
+    }
+    let widen = |term: &Bitvector32Term| {
+        Bitvector32Term::machine_integer_cast(*format, MachineIntegerType::Int32, term.clone())
+    };
+    Some(ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: *relation,
+        left: Box::new(widen(left)),
+        right: Box::new(widen(right)),
+    })
 }
 
 type NodeId = u32;
@@ -196,6 +235,9 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+        if let Some(widened) = widened_narrow_comparison(condition) {
+            return self.assume_condition(&widened, value);
+        }
         if let ConditionTerm::PointerValueEqual(a, b) = condition {
             if value {
                 self.assume_condition(
@@ -926,6 +968,9 @@ impl DifferenceGraph {
         if let C::Constant(value) = condition {
             return Some(*value);
         }
+        if let Some(widened) = widened_narrow_comparison(condition) {
+            return self.decide(&widened);
+        }
         if let C::PointerOffsetEqual(a, b) = condition
             && let Some(answer) = offset_mismatch(a, b)
         {
@@ -1269,7 +1314,7 @@ impl DifferenceGraph {
         let (other_low, other_high) = match domain {
             Domain::Int64 => Some(Domain::UInt64),
             Domain::UInt64 => Some(Domain::Int64),
-            Domain::Int32 | Domain::UInt32 => None,
+            Domain::Int32 | Domain::UInt32 | Domain::Narrow(_) => None,
         }
         .and_then(|other| self.resolve(other, term))
         .map_or_else(
@@ -1317,12 +1362,12 @@ impl DifferenceGraph {
         }
         charge();
         let (low, high) = match (domain, term) {
-            // A 32-bit widening of a narrow value has its operand's word
-            // (rule K8, a relation).
-            (Domain::Int32, T::MachineIntegerCast { value, .. })
+            // A 32-bit widening of a narrow value holds its operand's value,
+            // in the operand's format's range (rule K8, a relation).
+            (Domain::Int32, T::MachineIntegerCast { value, source, .. })
                 if term.narrow_widening32_operand().is_some() =>
             {
-                self.term_interval(domain, value)
+                self.term_interval(Domain::Narrow(*source), value)
             }
             (Domain::Int32, binary_term!(Bits32, Add, a, b))
             | (
@@ -1780,7 +1825,10 @@ impl ContextDifferenceGraph {
 /// Whether difference logic reads anything from a fact about `condition`.
 fn expresses(condition: &ConditionTerm) -> bool {
     use ConditionTerm as C;
-    matches!(condition, C::PointerEqual(..) | C::PointerValueEqual(..))
+    matches!(
+        condition,
+        C::Compare { format, .. } if format.format().bits() < 32
+    ) || matches!(condition, C::PointerEqual(..) | C::PointerValueEqual(..))
         || overflow_parts(condition).is_some()
         || offset_equality(condition).is_some()
         || matches!(
@@ -2008,7 +2056,7 @@ fn narrow_cast_parts(
 fn word(domain: Domain, term: &Bitvector32Term) -> &Bitvector32Term {
     match domain {
         Domain::Int32 | Domain::UInt32 => term.word32(),
-        Domain::Int64 | Domain::UInt64 => term,
+        Domain::Int64 | Domain::UInt64 | Domain::Narrow(_) => term,
     }
 }
 
@@ -2684,6 +2732,11 @@ fn constant(domain: Domain, term: &Bitvector32Term) -> Option<i128> {
         (Domain::UInt64, T::UInt64Constant(value)) => Some(i128::from(*value)),
         (Domain::UInt64, T::Int64Constant(value)) if *value >= 0 => Some(i128::from(*value)),
         (Domain::UInt32, T::Constant(value) | T::UInt32Constant(value)) => Some(i128::from(*value)),
+        (Domain::Narrow(format), T::MachineIntegerConstant(value))
+            if value.format() == format.format() =>
+        {
+            value.to_i128()
+        }
         _ => None,
     }
 }
@@ -2697,9 +2750,9 @@ fn link_parts(
 ) -> Option<(Domain, &Bitvector32Term, i128, bool)> {
     use Bitvector32Term as T;
     match (domain, term) {
-        // A 32-bit widening of a narrow value keeps its operand's word
-        // (rule K8, a relation), so either 32-bit reading of it is the same
-        // reading of the operand.
+        // A 32-bit widening of a narrow value holds its operand's value, of
+        // the operand's own format and range (rule K8, a relation across
+        // widths).
         (
             Domain::Int32 | Domain::UInt32,
             T::MachineIntegerCast {
@@ -2708,7 +2761,7 @@ fn link_parts(
                 destination,
             },
         ) if crate::kernel::is_narrow_widening32(*source, *destination) => {
-            Some((domain, value.as_ref(), 0, false))
+            Some((Domain::Narrow(*source), value.as_ref(), 0, false))
         }
         (Domain::Int32, binary_term!(Bits32, Add, left, right))
         | (

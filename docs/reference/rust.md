@@ -864,7 +864,10 @@ The importer recognizes `min` and `max` of `Ord` and the inherent
 `wrapping_add`, `wrapping_sub`, `wrapping_mul`, `saturating_add`,
 `saturating_sub`, `checked_add`, `checked_sub` and `abs_diff` of every
 integer type, and `unsigned_abs` of a signed one, by the callee's identity and
-signature. A `checked_*` result is the library's `Option`. The library
+signature. A `checked_*` result is the library's `Option`. `o.unwrap_or(d)` of
+an `Option` of a scalar calls `Option::unwrap_or` the same way, whose contract
+states its result with `option::unwrap_or(o, d)`; that module is implicit, so
+a sidecar needs no import. The library
 function is opaque until `unfold` gives its definition, so a claim that needs
 the value, `result <= a`, unfolds it, and a proof of one arm states the value
 there: `have u32::min(a, b) == a by { unfold(u32::min(a, b)); solve(); }`.
@@ -872,8 +875,27 @@ Each contract is an assumption, listed in [trust](../concepts/trust.md); each
 library function is checked at the edge of its type in
 `mdtests/stdlib_every_symbol.md`.
 [`design/charon-trial/core-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.click)
-verifies calls at several widths. Other core methods, such as `pow`, remain
-unmodeled calls, refused with the callee's name.
+verifies calls at several widths.
+
+`xs.swap(a, b)` on a mutable slice of integers calls `slice::swap<T>`, whose
+contract states the call's effect rather than a result:
+
+```text
+extern fn slice::swap<u32>(s: &mut [u32], a: usize, b: usize) {
+    owns *s;
+    requires a < s.len();
+    requires b < s.len();
+    ensures s[a] == old(s[b]);
+    ensures s[b] == old(s[a]);
+    ensures forall (k: usize) { k < s.len() and k != a and k != b implies s[k] == old(s[k]) };
+}
+```
+
+The two `requires` are Rust's index panics, so a caller shows both indices in
+bounds. An element the call keeps is the last clause at its index: after the
+call, `instantiate(forall (k: usize) { ... }, 1u64)` gives `xs[1] ==
+old(xs[1])` once `1u64 < xs.len()` is held. Other core methods, such as `pow`,
+remain unmodeled calls, refused with the callee's name.
 
 ## Supported semantics
 
@@ -1524,8 +1546,8 @@ several `?`s in a function returns `None` through the same tail, which the
 importer lowers in each arm that reaches it, as a C early `return`: the
 fixture's `sum(a, b)`, `let x = a?; let y = b?; Some(x + y)`, verifies its
 nested `match` contract after splitting on `a` and `b`. Options of other
-payloads and `Option` methods other than [`take`](#boxes)
-remain later work.
+payloads and `Option` methods other than [`take`](#boxes) and
+[`unwrap_or`](#core-library-methods) remain later work.
 
 A `&Option<T>` or `&mut Option<T>` parameter, and a reference to a crate enum,
 refers to one value of the enum: the contract writes `views *o` or `owns *o`

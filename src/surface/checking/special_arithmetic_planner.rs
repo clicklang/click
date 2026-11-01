@@ -366,9 +366,7 @@ fn cited_premises_only(
 /// range facts `x`'s introduction filed, matched exactly as filed.
 fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<Vec<usize>> {
     use crate::kernel::IntegerTerm;
-    use crate::kernel::machine_integer::conversion::{
-        cast_operands, narrow_binder_range_facts, narrow_widening,
-    };
+    use crate::kernel::machine_integer::conversion::{cast_operands, narrow_widening};
     let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = goal else {
         return None;
     };
@@ -381,10 +379,6 @@ fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<
     let IntegerTerm::Machine(machine) = observed else {
         return None;
     };
-    if let Some((lower, upper)) = narrow_binder_range_facts(observed, original) {
-        let cited = |fact: &Proposition| premises.iter().position(|premise| premise == fact);
-        return Some(vec![cited(&lower)?, cited(&upper)?]);
-    }
     let (min, max) = machine.ty().format().bounds();
     let bound = |lower: bool| {
         premises.iter().position(|premise| {

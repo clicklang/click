@@ -1,8 +1,8 @@
-//! Rust core methods of the integer types, `a.min(b)` or `x.checked_add(y)`:
-//! each call is a call of an external function the importer declares once
-//! per method and type, whose contract is the library's. The callee is
-//! checked by identity: an inherent method of `core::num` or `<T as
-//! Ord>::{min, max}`, with the signature the method has.
+//! Rust core methods, `a.min(b)`, `o.unwrap_or(d)` or `xs.swap(i, j)`: each
+//! call is a call of an external function the importer declares once per
+//! method and type, whose contract is the library's. The callee is checked
+//! by identity, an inherent method of `core::num`, `Option` or `[T]`, or
+//! `<T as Ord>::{min, max}`, with the signature the method has.
 use super::*;
 
 /// What a core method returns: its type, an `Option` of it, or the
@@ -163,5 +163,152 @@ impl Adapter<'_> {
             },
         );
         Ok(Some(name))
+    }
+
+    /// The external function a call of `Option::<T>::unwrap_or` calls,
+    /// declared once per payload type: its contract is the library's
+    /// `option::unwrap_or`.
+    pub(super) fn option_method_call(
+        &self,
+        callee: &a::FunDecl,
+        pointer: &a::FnPtr,
+        call: &a::Call,
+    ) -> Result<Option<String>, String> {
+        let name = &callee.item_meta.name.name;
+        let identity = !callee.item_meta.is_local
+            && matches!(callee.src, a::FunSource::Normal)
+            && matches!(name.as_slice(), [
+                a::PathElem::Ident(core, _),
+                a::PathElem::Ident(option, _),
+                a::PathElem::Impl(a::ImplElem::Ty(_)),
+                a::PathElem::Ident(method, d),
+            ] if core == "core" && option == "option" && method == "unwrap_or" && *d == a::Disambiguator::ZERO);
+        if !identity {
+            return Ok(None);
+        }
+        let [payload] = pointer.generics.types.as_raw_slice() else {
+            return Err(unsupported("core method `Option::unwrap_or` instance"));
+        };
+        let payload = self.ty(payload)?;
+        let option = self.ty(&call
+            .args
+            .first()
+            .map(|argument| argument.ty().clone())
+            .ok_or_else(|| unsupported("core method `Option::unwrap_or` arity"))?)?;
+        if !payload.is_scalar()
+            || callee.signature.is_unsafe
+            || call.safety == a::CallSafety::Unsafe
+            || !pointer.generics.const_generics.is_empty()
+            || call.args.len() != 2
+            || option != self.option_enum(payload.clone())?
+            || self.ty(call.args[1].ty())? != payload
+            || self.ty(&call.dest.ty)? != payload
+        {
+            return Err(unsupported("core method `Option::unwrap_or` signature"));
+        }
+        let type_name = payload.scalar_name().expect("a scalar");
+        let mut function = super::super::names::qualified_name(["Option", "unwrap_or"]);
+        super::super::names::push_type_argument(&mut function, type_name);
+        let parameter = |name: &str, value_type: Type| out::Place {
+            name: name.into(),
+            value_type,
+            span: span(callee.item_meta.span),
+        };
+        self.core_methods.borrow_mut().insert(
+            function.clone(),
+            out::Function {
+                name: function.clone(),
+                return_type: payload.clone(),
+                parameters: vec![parameter("o", option), parameter("d", payload)],
+                body: vec![],
+                mir: None,
+                external: true,
+                captures: 0,
+                implements: None,
+                instance_of: None,
+                core_method: Some("click::option::unwrap_or".into()),
+                span: span(callee.item_meta.span),
+            },
+        );
+        Ok(Some(function))
+    }
+
+    /// The external function a call of `<[T]>::swap` calls, declared once
+    /// per element type: its contract, which the library supplies, owns the
+    /// slice and exchanges two of its elements.
+    pub(super) fn slice_method_call(
+        &self,
+        callee: &a::FunDecl,
+        pointer: &a::FnPtr,
+        call: &a::Call,
+    ) -> Result<Option<String>, String> {
+        let name = &callee.item_meta.name.name;
+        let identity = !callee.item_meta.is_local
+            && matches!(callee.src, a::FunSource::Normal)
+            && matches!(name.as_slice(), [
+                a::PathElem::Ident(core, _),
+                a::PathElem::Ident(slice, _),
+                a::PathElem::Impl(a::ImplElem::Ty(_)),
+                a::PathElem::Ident(method, d),
+            ] if core == "core" && slice == "slice" && method == "swap" && *d == a::Disambiguator::ZERO);
+        if !identity {
+            return Ok(None);
+        }
+        let [element] = pointer.generics.types.as_raw_slice() else {
+            return Err(unsupported("core method `<[T]>::swap` instance"));
+        };
+        let element = self.ty(element)?;
+        let [slice, a, b] = call.args.as_slice() else {
+            return Err(unsupported("core method `<[T]>::swap` arity"));
+        };
+        let slice = self.ty(slice.ty())?;
+        let mutable_slice = match &slice {
+            Type::ScalarSlice {
+                element: e,
+                mutable: true,
+            } => **e == element,
+            Type::ByteSlice { mutable: true } => element == Type::U8,
+            _ => false,
+        };
+        if !element.is_integer()
+            || !mutable_slice
+            || callee.signature.is_unsafe
+            || call.safety == a::CallSafety::Unsafe
+            || !pointer.generics.const_generics.is_empty()
+            || self.ty(a.ty())? != Type::Usize
+            || self.ty(b.ty())? != Type::Usize
+            || self.ty(&call.dest.ty)? != Type::Unit
+        {
+            return Err(unsupported("core method `<[T]>::swap` signature"));
+        }
+        let type_name = element.scalar_name().expect("an integer");
+        let mut function = super::super::names::qualified_name(["slice", "swap"]);
+        super::super::names::push_type_argument(&mut function, type_name);
+        let parameter = |name: &str, value_type: Type| out::Place {
+            name: name.into(),
+            value_type,
+            span: span(callee.item_meta.span),
+        };
+        self.core_methods.borrow_mut().insert(
+            function.clone(),
+            out::Function {
+                name: function.clone(),
+                return_type: Type::Unit,
+                parameters: vec![
+                    parameter("s", slice),
+                    parameter("a", Type::Usize),
+                    parameter("b", Type::Usize),
+                ],
+                body: vec![],
+                mir: None,
+                external: true,
+                captures: 0,
+                implements: None,
+                instance_of: None,
+                core_method: Some(super::super::standard_library::SLICE_SWAP.into()),
+                span: span(callee.item_meta.span),
+            },
+        );
+        Ok(Some(function))
     }
 }

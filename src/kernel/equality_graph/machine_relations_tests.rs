@@ -184,18 +184,31 @@ fn conversions_compose_through_a_class() {
         graph.add_uint64_equality(&y, &extended);
         assert!(graph.are_int32_equal(&Bitvector32Term::uint32_from_64(y), &x));
     }
+    // `y` is a 16-bit value, equated at its width; the two byte casts are
+    // 8-bit values compared at theirs.
     let y = var(181_063);
-    let mut graph = EqualityGraph::default();
-    graph.add_int32_equality(&y, &cast(Ty::UInt32, Ty::Int16, x.clone()));
-    assert!(graph.are_int32_equal(
+    let graph = EqualityGraph::default();
+    let mut state = graph.state.lock().expect("equality graph");
+    state.terms.add_typed_equality(
+        crate::kernel::CarrierWidth::Bits16,
+        &y,
+        &cast(Ty::UInt32, Ty::Int16, x.clone()),
+    );
+    assert!(state.terms.are_typed_equal(
+        crate::kernel::CarrierWidth::Bits8,
         &cast(Ty::Int16, Ty::UInt8, y.clone()),
         &cast(Ty::UInt32, Ty::UInt8, x.clone())
     ));
     // A widening of a truncation keeps the truncation's sign, not the
-    // operand's: it is not the operand's conversion.
+    // operand's: it is not the operand's conversion. `z` is an 8-bit value.
     let z = var(181_064);
-    graph.add_int32_equality(&z, &cast(Ty::UInt32, Ty::UInt8, x.clone()));
-    assert!(!graph.are_int32_equal(
+    state.terms.add_typed_equality(
+        crate::kernel::CarrierWidth::Bits8,
+        &z,
+        &cast(Ty::UInt32, Ty::UInt8, x.clone()),
+    );
+    assert!(!state.terms.are_typed_equal(
+        crate::kernel::CarrierWidth::Bits16,
         &cast(Ty::UInt8, Ty::Int16, z),
         &cast(Ty::UInt32, Ty::Int16, x)
     ));

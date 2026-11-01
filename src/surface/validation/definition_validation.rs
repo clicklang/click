@@ -2196,7 +2196,7 @@ fn quantified_index_interval(
 /// literal, or `None` for a type whose values may be negative.
 fn unsigned_binder_zero(binder_type: &ClickType) -> Option<CExpression> {
     let value = match binder_type.c_type()? {
-        C0Type::UInt8 => CValue::UInt8(Bitvector32Term::Constant(0)),
+        C0Type::UInt8 => crate::kernel::uint8(0),
         C0Type::UInt32 => CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
         C0Type::UInt64(_) => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
         _ => return None,

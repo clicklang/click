@@ -245,7 +245,6 @@ fn stored_pointer_bounds_ignore_unrelated_numeric_classes() {
 #[test]
 fn narrow_value_range_construction_ignores_unrelated_order_facts() {
     let value = CValue::UInt8(Bitvector32Term::Variable(Variable(986_000)));
-    let expected = c_narrow_integer_range_facts(&value).unwrap();
     let state = CState::new().with_local("byte", value);
     let expression = c_variable("byte");
     for size in [4u64, 16, 64, 256] {
@@ -274,14 +273,8 @@ fn narrow_value_range_construction_ignores_unrelated_order_facts() {
             paths[0].outcome,
             CExpressionOutcome::Value(state.locals().get("byte").unwrap().clone())
         );
-        for fact in &expected {
-            assert!(
-                paths[0]
-                    .facts
-                    .iter()
-                    .any(|given| given.proposition() == fact)
-            );
-        }
+        // A `uint8` value is of its own format; reading it files no range.
+        assert!(paths[0].facts.is_empty());
         assert!(
             work <= 256,
             "{size} unrelated order facts took {work} units"
@@ -305,10 +298,7 @@ fn rust_bool_values_do_not_split_paths() {
                     format!("a_{index}"),
                     int32(Bitvector32Term::Variable(Variable(100 + index as u64))),
                 )
-                .with_local(
-                    format!("c_{index}"),
-                    CValue::Bool(Bitvector32Term::Constant(0)),
-                );
+                .with_local(format!("c_{index}"), CValue::bool_constant(false));
             statement = c_seq(
                 statement,
                 c_assign(

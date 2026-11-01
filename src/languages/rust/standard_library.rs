@@ -4,6 +4,25 @@
 //! are assumptions, as an `extern fn` contract is.
 use super::schema::{RustExport, Type};
 
+/// The `core_method` of `<[T]>::swap`, whose contract states its effect on
+/// the slice rather than a result.
+pub(super) const SLICE_SWAP: &str = "slice::swap";
+
+/// `<[T]>::swap(s, a, b)`'s contract: it owns the slice, Rust panics unless
+/// both indices are in bounds, and the two elements are exchanged while
+/// every other element is unchanged.
+fn slice_swap_contract(function: &super::schema::Function) -> String {
+    let element = match &function.parameters[0].value_type {
+        Type::ScalarSlice { element, .. } => element.scalar_name().expect("an integer element"),
+        Type::ByteSlice { .. } => "u8",
+        _ => unreachable!("checked by the importer"),
+    };
+    format!(
+        "\nextern fn {}(s: &mut [{element}], a: usize, b: usize) {{\n    owns *s;\n    requires a < s.len();\n    requires b < s.len();\n    ensures s[a] == old(s[b]);\n    ensures s[b] == old(s[a]);\n    ensures forall (k: usize) {{ k < s.len() and k != a and k != b implies s[k] == old(s[k]) }};\n}}\n",
+        function.name
+    )
+}
+
 /// The `extern fn` contract of each core method `export` declares.
 pub(super) fn contracts(export: &RustExport) -> String {
     let mut source = String::new();
@@ -11,17 +30,21 @@ pub(super) fn contracts(export: &RustExport) -> String {
         let Some(specification) = &function.core_method else {
             continue;
         };
+        if specification == SLICE_SWAP {
+            source.push_str(&slice_swap_contract(function));
+            continue;
+        }
+        // An `Option` is of the type of the method's scalar parameter:
+        // `checked_add`'s operands, `unwrap_or`'s default.
+        let payload = function
+            .parameters
+            .iter()
+            .find_map(|parameter| parameter.value_type.scalar_name())
+            .expect("a core method takes a scalar");
         let spell = |ty: &Type| -> String {
             match ty.scalar_name() {
                 Some(name) => name.into(),
-                // An `Option` result is of the parameters' type.
-                None => format!(
-                    "Option<{}>",
-                    function.parameters[0]
-                        .value_type
-                        .scalar_name()
-                        .expect("a core method takes integers")
-                ),
+                None => format!("Option<{payload}>"),
             }
         };
         let parameters = function

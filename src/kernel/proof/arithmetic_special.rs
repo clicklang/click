@@ -1755,7 +1755,7 @@ fn integer_rule(
     let cited = bounds
         .iter()
         .map(|&bound| {
-            crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+            crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 &premises[bound],
             )
             .into_iter()

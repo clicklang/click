@@ -96,24 +96,38 @@ impl SignedArithmeticAtom {
     }
 
     fn is_opaque_root(&self) -> bool {
-        matches!(
+        // The `int32` widening of an 8- or 16-bit value is that value, as
+        // opaque as a variable; a narrowing is an operation, related to its
+        // operand only by `IntervalNarrowedCast`.
+        let widening = |token: &SignedArithmeticAtomToken| {
+            matches!(
+                token,
+                SignedArithmeticAtomToken::Cast {
+                    source,
+                    destination: MachineIntegerType::Int32,
+                } if source.format().bits() < 32
+            )
+        };
+        (matches!(
             self.tokens.first(),
             Some(SignedArithmeticAtomToken::Variable(_))
                 | Some(SignedArithmeticAtomToken::Narrow64Variable(_))
                 | Some(SignedArithmeticAtomToken::Narrow64Expression)
                 | Some(SignedArithmeticAtomToken::PureFunction { .. })
-        ) && self.tokens.iter().all(|token| {
-            matches!(
-                token,
-                SignedArithmeticAtomToken::Constant(_)
-                    | SignedArithmeticAtomToken::Variable(_)
-                    | SignedArithmeticAtomToken::Narrow64Variable(_)
-                    | SignedArithmeticAtomToken::Narrow64Expression
-                    | SignedArithmeticAtomToken::NativeConstant(_)
-                    | SignedArithmeticAtomToken::NativeBinary(_)
-                    | SignedArithmeticAtomToken::PureFunction { .. }
-            )
-        })
+        ) || self.tokens.first().is_some_and(widening))
+            && self.tokens.iter().all(|token| {
+                widening(token)
+                    || matches!(
+                        token,
+                        SignedArithmeticAtomToken::Constant(_)
+                            | SignedArithmeticAtomToken::Variable(_)
+                            | SignedArithmeticAtomToken::Narrow64Variable(_)
+                            | SignedArithmeticAtomToken::Narrow64Expression
+                            | SignedArithmeticAtomToken::NativeConstant(_)
+                            | SignedArithmeticAtomToken::NativeBinary(_)
+                            | SignedArithmeticAtomToken::PureFunction { .. }
+                    )
+            })
     }
 }
 
@@ -214,11 +228,20 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
                 push_token!(SignedArithmeticAtomToken::UnaryNot);
                 pending.push(operand);
             }
+            term if let Some((value, source, destination)) = widened_narrowed_cast(term) => {
+                push_token!(SignedArithmeticAtomToken::Cast {
+                    source,
+                    destination,
+                });
+                pending.push(value);
+            }
+            // The `int32` widening of an 8- or 16-bit value is that value: an
+            // opaque observation of its operand, as a 32-bit variable is.
             Bitvector32Term::MachineIntegerCast {
                 value,
                 source,
-                destination,
-            } if narrowed_word_cast(*source, *destination) => {
+                destination: destination @ MachineIntegerType::Int32,
+            } if source.format().bits() < 32 => {
                 push_token!(SignedArithmeticAtomToken::Cast {
                     source: *source,
                     destination: *destination,
@@ -540,25 +563,75 @@ impl TermArena {
                     pending.push((*left, actual_left));
                     pending.push((*right, actual_right));
                 }
+                // A checked cast is the `int32` widening of its narrowing.
                 (
                     CheckedTerm::Cast {
                         source,
                         destination,
                         operand,
                     },
-                    Bitvector32Term::MachineIntegerCast {
-                        value,
-                        source: actual_source,
-                        destination: actual_destination,
-                    },
-                ) if source == actual_source && destination == actual_destination => {
-                    pending.push((*operand, value));
+                    actual,
+                ) if let Some((value, actual_source, actual_destination)) =
+                    widened_narrowed_cast(actual)
+                    && *source == actual_source
+                    && *destination == actual_destination =>
+                {
+                    // The operand's `int32` reading: an 8- or 16-bit source
+                    // value is read through its widening.
+                    if source.format().bits() < 32 {
+                        let widened = Bitvector32Term::machine_integer_cast(
+                            *source,
+                            MachineIntegerType::Int32,
+                            value.clone(),
+                        );
+                        if !self.equivalent_explicit(*operand, &widened) {
+                            return false;
+                        }
+                    } else {
+                        pending.push((*operand, value));
+                    }
                 }
                 (CheckedTerm::Cast { .. }, _) => return false,
             }
         }
         true
     }
+}
+
+/// The 32-bit reading of a conversion `IntervalNarrowedCast` may relate to
+/// its operand: the `int32` widening `Cast(D -> Int32, Cast(S -> D, x))` of
+/// a narrowing ([`narrowed_word_cast`]), with its operand `x`, `S` and `D`.
+/// An 8- or 16-bit value is a value of its own width, so its 32-bit
+/// observation is its widening, which every one- and two-byte value keeps.
+/// One match on the root.
+pub(crate) fn widened_narrowed_cast(
+    term: &Bitvector32Term,
+) -> Option<(
+    &Bitvector32Term,
+    crate::kernel::MachineIntegerType,
+    crate::kernel::MachineIntegerType,
+)> {
+    let Bitvector32Term::MachineIntegerCast {
+        value: narrowed,
+        source: widened_from,
+        destination: crate::kernel::MachineIntegerType::Int32,
+    } = term
+    else {
+        return None;
+    };
+    let Bitvector32Term::MachineIntegerCast {
+        value,
+        source,
+        destination,
+    } = narrowed.as_ref()
+    else {
+        return None;
+    };
+    (widened_from == destination && narrowed_word_cast(*source, *destination)).then_some((
+        value,
+        *source,
+        *destination,
+    ))
 }
 
 /// A conversion `IntervalNarrowedCast` may relate to its operand: from a
@@ -2864,6 +2937,33 @@ fn term_interval_proves(
         if tokens.iter().any(|token| matches!(token, SignedArithmeticAtomToken::Constant(value) if *value <= 31)))
 }
 
+/// The `int32` reading of an 8- or 16-bit comparison: the same comparison
+/// of its sides' `int32` widenings, which keep every value of those
+/// formats. `None` for any other condition. One match on the root.
+pub(crate) fn narrow_comparison_as_int32(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::Compare {
+        format,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    if format.format().bits() >= 32 {
+        return None;
+    }
+    let widen = |term: &Bitvector32Term| {
+        Bitvector32Term::machine_integer_cast(*format, MachineIntegerType::Int32, term.clone())
+    };
+    Some(ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation: *relation,
+        left: Box::new(widen(left)),
+        right: Box::new(widen(right)),
+    })
+}
+
 fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
     let (condition, value) = match proposition {
         Proposition::ConditionIs(condition, value) => (condition, *value),
@@ -2873,6 +2973,8 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         },
         _ => return None,
     };
+    let widened = narrow_comparison_as_int32(condition);
+    let condition = widened.as_ref().unwrap_or(condition);
     let (relation, left, right, strict) = match (condition, value) {
         (
             ConditionTerm::Compare {
@@ -3028,10 +3130,19 @@ pub(crate) fn signed_arithmetic_integer_result(
         let IntegerAffineAtom::Machine(machine) = atom else {
             return None;
         };
-        if machine.ty() != MachineIntegerType::Int32 {
-            return None;
-        }
-        let term = canonical_term_budgeted(machine.value())?;
+        // An 8- or 16-bit observation reads the value its `int32` widening
+        // keeps, so its atom is that widening's.
+        let term = match machine.ty() {
+            MachineIntegerType::Int32 => canonical_term_budgeted(machine.value())?,
+            narrow if narrow.format().bits() < 32 => {
+                canonical_term_budgeted(&Bitvector32Term::machine_integer_cast(
+                    narrow,
+                    MachineIntegerType::Int32,
+                    machine.value().clone(),
+                ))?
+            }
+            _ => return None,
+        };
         let atom = SignedArithmeticAtom::from_term(&term)?;
         if !charge_affine_map_update_work(&terms, &atom, &coefficient) {
             return None;
@@ -4639,6 +4750,30 @@ mod tests {
         );
     }
 
+    /// The value a narrowed-cast test converts: the 32-bit `x`, or for an
+    /// 8- or 16-bit source a variable of that width.
+    fn narrowed_cast_value(source: crate::kernel::MachineIntegerType) -> Bitvector32Term {
+        if source.format().bits() < 32 {
+            Bitvector32Term::Variable(Variable(7_116))
+        } else {
+            x()
+        }
+    }
+
+    /// The `int32` reading of [`narrowed_cast_value`]: the value, or its
+    /// widening.
+    fn narrowed_cast_operand(source: crate::kernel::MachineIntegerType) -> Bitvector32Term {
+        if source.format().bits() < 32 {
+            Bitvector32Term::machine_integer_cast(
+                source,
+                crate::kernel::MachineIntegerType::Int32,
+                narrowed_cast_value(source),
+            )
+        } else {
+            x()
+        }
+    }
+
     fn narrowed_cast_certificate(
         upper: i64,
         source: crate::kernel::MachineIntegerType,
@@ -4646,6 +4781,7 @@ mod tests {
         goal: &Proposition,
         relational: bool,
     ) -> SignedArithmeticCertificate {
+        let x = || narrowed_cast_operand(source);
         let interval = |lower: i64, upper: i64| SignedArithmeticInterval {
             carrier: SignedArithmeticCarrier::SignedInt32,
             lower,
@@ -4724,13 +4860,14 @@ mod tests {
     #[test]
     fn a_narrowed_cast_is_its_operand_only_inside_the_destination_range() {
         use crate::kernel::MachineIntegerType as Ty;
-        let cast =
-            |source, destination| Bitvector32Term::machine_integer_cast(source, destination, x());
-        let premises = |upper: u32| {
-            vec![
-                le(Bitvector32Term::Constant(0), x()),
-                le(x(), Bitvector32Term::Constant(upper)),
-            ]
+        // The conversion of the source value, and its `int32` reading (an
+        // 8- or 16-bit value's is its widening, read in the 32-bit
+        // arithmetic).
+        let cast = |source, destination| {
+            Bitvector32Term::machine_integer_cast(source, destination, narrowed_cast_value(source))
+        };
+        let widened = |source, destination| {
+            Bitvector32Term::machine_integer_cast(destination, Ty::Int32, cast(source, destination))
         };
         for (source, destination, upper) in [
             (Ty::Int32, Ty::UInt8, 255),
@@ -4738,7 +4875,14 @@ mod tests {
             (Ty::UInt32, Ty::Int16, 32767),
             (Ty::Int16, Ty::Int8, 127),
         ] {
-            let byte = cast(source, destination);
+            let x = || narrowed_cast_operand(source);
+            let premises = |upper: u32| {
+                vec![
+                    le(Bitvector32Term::Constant(0), x()),
+                    le(x(), Bitvector32Term::Constant(upper)),
+                ]
+            };
+            let byte = widened(source, destination);
             // The interval of the conversion bounds it.
             let bound = le(byte.clone(), Bitvector32Term::Constant(upper));
             narrowed_cast_certificate(i64::from(upper), source, destination, &bound, false)
@@ -4769,6 +4913,12 @@ mod tests {
         }
         // A conversion between types that cannot change the value, or from
         // a 64-bit source, is not this node's to relate.
+        let premises = |upper: u32| {
+            vec![
+                le(Bitvector32Term::Constant(0), x()),
+                le(x(), Bitvector32Term::Constant(upper)),
+            ]
+        };
         for (source, destination) in [(Ty::UInt8, Ty::Int32), (Ty::Int64, Ty::UInt8)] {
             let same = equal(cast(source, destination), x());
             assert!(
