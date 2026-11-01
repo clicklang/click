@@ -2048,3 +2048,70 @@ fn direct_compound_interval_ignores_unrelated_facts() {
         "the lookup should visit the same facts at every size: {visited:?}"
     );
 }
+
+#[test]
+fn integer_match_rewrite_lookup_scales_with_its_selected_sources() {
+    for related in [false, true] {
+        let mut previous = None;
+        for size in [8u64, 16, 32, 64] {
+            let ty = maybe_int32_type();
+            let model = |id| AlgebraicTerm {
+                algebraic_type: ty.clone(),
+                node: AlgebraicTermNode::Variable(Variable(id)),
+            };
+            let sources = (0..size)
+                .map(|index| {
+                    Proposition::Equal(
+                        Term::Algebraic(model(if related { 90_000 } else { 90_000 + index })),
+                        Term::Algebraic(maybe_constructor(
+                            &ty,
+                            "Some",
+                            vec![CValue::Int32(Bitvector32Term::Variable(Variable(
+                                100_000 + index,
+                            )))],
+                        )),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let facts = crate::kernel::proof::ProofFacts::from_ordered(&sources);
+            let matched = crate::kernel::IntegerTerm::AlgebraicMatch {
+                scrutinee: Box::new(model(90_000)),
+                arms: vec![
+                    crate::kernel::AlgebraicIntegerMatchArm {
+                        binding_names: Default::default(),
+                        variant: "None".into(),
+                        bindings: vec![],
+                        body: crate::kernel::IntegerTerm::constant_i64(0).into(),
+                    },
+                    crate::kernel::AlgebraicIntegerMatchArm {
+                        binding_names: Default::default(),
+                        variant: "Some".into(),
+                        bindings: vec![AlgebraicValue::C(CValue::Int32(
+                            Bitvector32Term::Variable(Variable(200_000)),
+                        ))],
+                        body: crate::kernel::IntegerTerm::constant_i64(1).into(),
+                    },
+                ],
+            };
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(
+                    matched.into(),
+                    crate::kernel::IntegerTerm::constant_i64(1).into(),
+                ),
+                true,
+            );
+            let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.algebraic_equalities_mentioning(&goal)
+            });
+            assert_eq!(selected.len(), if related { size as usize } else { 1 });
+            assert!(selected.contains(&sources[0]));
+            if let Some(previous) = previous {
+                assert!(
+                    work <= previous * 5 / 2 + 16,
+                    "related={related}, size={size}: {previous} -> {work}"
+                );
+            }
+            previous = Some(work);
+        }
+    }
+}

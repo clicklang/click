@@ -328,8 +328,8 @@ mod tests {
 
     fn value_of_width(width: u32, seed: u32) -> CValue {
         match width {
-            1 => CValue::UInt8(Bitvector32Term::Constant(seed & 0xff)),
-            2 => CValue::Int16(Bitvector32Term::Constant(seed & 0x7fff)),
+            1 => crate::kernel::uint8(seed & 0xff),
+            2 => crate::kernel::int16(seed & 0x7fff),
             4 => CValue::Int32(Bitvector32Term::Constant(seed)),
             8 => CValue::Int64(Bitvector32Term::Int64Constant(i64::from(seed))),
             16 => match crate::kernel::c_uint128_literal((1u128 << 127) | u128::from(seed)) {
@@ -511,7 +511,7 @@ mod tests {
         let mut stores = far.to_vec();
         stores.push((shifted(0), int64(5)));
         let (before, _) = stored_both_ways(&stores);
-        stores.push((shifted(3), CValue::UInt8(Bitvector32Term::Constant(7))));
+        stores.push((shifted(3), crate::kernel::uint8(7)));
         let (memory, _) = stored_both_ways(&stores);
         assert_eq!(memory.known_value(&at(&shifted(0))), None);
         assert!(
@@ -524,15 +524,15 @@ mod tests {
         // store goes, one just past it stays.
         let mut stores = far.to_vec();
         stores.extend([
-            (shifted(6), CValue::Int16(Bitvector32Term::Constant(4))),
-            (shifted(8), CValue::Int16(Bitvector32Term::Constant(5))),
+            (shifted(6), crate::kernel::int16(4)),
+            (shifted(8), crate::kernel::int16(5)),
             (shifted(4), int32(6)),
         ]);
         let (memory, _) = stored_both_ways(&stores);
         assert_eq!(memory.known_value(&at(&shifted(6))), None);
         assert_eq!(
             memory.known_value(&at(&shifted(8))),
-            Some(CValue::Int16(Bitvector32Term::Constant(5)))
+            Some(crate::kernel::int16(5))
         );
 
         // Negative shifts, anchored and constant: an eight-byte cell ending

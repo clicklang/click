@@ -3310,9 +3310,13 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
         let mut obligations = Vec::new();
         // C's conversion is the low byte, read as signed, owing nothing.
         let word = match &input {
-            CValue::Int32(Bitvector32Term::Constant(word))
-            | CValue::Int16(Bitvector32Term::Constant(word))
-            | CValue::UInt8(Bitvector32Term::Constant(word)) => *word,
+            CValue::Int32(Bitvector32Term::Constant(word)) => *word,
+            narrow @ (CValue::Int16(_) | CValue::UInt8(_)) => {
+                MachineIntegerType::from_c_type(narrow.c_type())
+                    .and_then(|ty| ty.constant_from_value(narrow))
+                    .and_then(|value| value.to_i128())
+                    .expect("a narrow constant") as i32 as u32
+            }
             other => panic!("{other:?}"),
         };
         assert_eq!(
@@ -3378,8 +3382,8 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
         ));
         assert_eq!(result, Some(checked.clone()));
         assert_eq!(obligations.len(), 2 - mask.count_ones() as usize);
-        // It is filed as values and, since a 32-bit operand is its own
-        // value's extension, as the words a comparison of words uses.
+        // It is filed as values and as the 32-bit word comparison of the
+        // narrow value's widening with the operand.
         assert_eq!(
             crate::kernel::eval::checked_narrowing_identity(&int32(value.clone()), &checked),
             vec![
@@ -3399,7 +3403,14 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
                     true,
                 ),
                 Proposition::ConditionIs(
-                    ConditionTerm::equal(checked_term(&checked), value.clone()),
+                    ConditionTerm::equal(
+                        Bitvector32Term::machine_integer_cast(
+                            crate::kernel::MachineIntegerType::Int8,
+                            crate::kernel::MachineIntegerType::Int32,
+                            checked_term(&checked),
+                        ),
+                        value.clone()
+                    ),
                     true,
                 ),
             ]
@@ -3729,7 +3740,7 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
     ] {
         for flag in [false, true] {
             let actual = outcome(c_integer_cast_modulo(
-                CExpression::Value(CValue::Bool(Bitvector32Term::Constant(u32::from(flag)))),
+                CExpression::Value(CValue::bool_constant(flag)),
                 target,
             ));
             let ty = MachineIntegerType::from_c_type(target).unwrap();
@@ -3822,13 +3833,9 @@ fn a_modular_narrowing_files_its_range_and_no_identity_with_its_operand() {
                 ),
                 "{index} -> {target:?}: {value:?}"
             );
-            let range = crate::kernel::c_narrow_integer_range_facts(value).unwrap();
-            let filed: Vec<_> = path
-                .facts
-                .iter()
-                .map(|fact| fact.proposition().clone())
-                .collect();
-            assert_eq!(filed, range, "{index} -> {target:?}");
+            // The narrowing is a value of its own format, whose range is the
+            // format's: no range fact is filed for it.
+            assert!(path.facts.is_empty(), "{index} -> {target:?}");
             assert!(path.obligations.is_empty(), "{index} -> {target:?}");
         }
     }

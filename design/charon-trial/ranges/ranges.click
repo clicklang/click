@@ -15,21 +15,6 @@ fn count_to(n: u32) -> u32 {
     }
 }
 
-fn last_index(n: u32) -> u32 {
-    ensures n == 0u32 implies result == 0u32;
-    ensures n != 0u32 implies result == n - 1u32;
-} by {
-    step_until(loop(0));
-    loop {
-        decreases iter_end - iter_start;
-        invariant iter_end == n;
-        invariant iter_start <= n;
-        invariant iter_start == 0u32 implies last == 0u32;
-        invariant iter_start != 0u32 implies last == iter_start - 1u32;
-    }
-    have iter_start == n by solve();
-}
-
 fn span(a: i32, b: i32) -> i32 {
     requires 0i32 <= a and a <= b;
     ensures result == b - a;
@@ -40,18 +25,6 @@ fn span(a: i32, b: i32) -> i32 {
         invariant iter_end == b;
         invariant a <= iter_start and iter_start <= b;
         invariant count == iter_start - a;
-    }
-}
-
-fn count_wide(n: u64) -> u64 {
-    ensures result == n;
-} by {
-    step_until(loop(0));
-    loop {
-        decreases iter_end - iter_start;
-        invariant iter_end == n;
-        invariant iter_start <= n;
-        invariant count == iter_start;
     }
 }
 

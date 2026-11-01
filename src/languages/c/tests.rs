@@ -12619,11 +12619,11 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
             execution.proposition(),
             crate::kernel::Proposition::CFunctionExecutes {
                 outcome: crate::kernel::CFunctionOutcome::Return {
-                    value: crate::kernel::CValue::Bool(crate::kernel::Bitvector32Term::Constant(value)),
+                    value: crate::kernel::CValue::Bool(value),
                     ..
                 },
                 ..
-            } if *value == expected
+            } if value.bool_constant_value() == Some(expected == 1)
         ));
     }
 
@@ -12967,17 +12967,11 @@ fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
     )
     .unwrap();
     for (name, expected) in [
-        (
-            "high",
-            CValue::Int8(Bitvector32Term::Constant(-128i32 as u32)),
-        ),
-        ("low", CValue::Int8(Bitvector32Term::Constant(127))),
-        ("negative", CValue::UInt8(Bitvector32Term::Constant(200))),
-        ("wide", CValue::UInt8(Bitvector32Term::Constant(44))),
-        (
-            "big",
-            CValue::Int16(Bitvector32Term::Constant(-25536i32 as u32)),
-        ),
+        ("high", crate::kernel::int8(-128i32 as u32)),
+        ("low", crate::kernel::int8(127)),
+        ("negative", crate::kernel::uint8(200)),
+        ("wide", crate::kernel::uint8(44)),
+        ("big", crate::kernel::int16(-25536i32 as u32)),
         ("value", CValue::Int32(Bitvector32Term::Constant(0))),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();

@@ -2795,6 +2795,67 @@ mod proposition_identity_tests {
         }
     }
 
+    fn local_definedness_fact(memory: &CMemory, variable: u64) -> Proposition {
+        forall(
+            variable,
+            Proposition::CMemoryReadDefined {
+                memory: memory.clone(),
+                pointer: Pointer {
+                    block: "local:defined-array".into(),
+                    offset: PointerOffsetTerm::scale_int32(
+                        Bitvector32Term::Variable(Variable(variable)),
+                        1,
+                    ),
+                },
+                value_type: CType::UInt8,
+            },
+        )
+    }
+
+    #[test]
+    fn definedness_identity_keeps_object_and_lifetime_boundaries() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let array = Pointer {
+            block: "local:defined-array".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let other = Pointer {
+            block: "local:defined-other".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let before = CMemory::new()
+            .with_uninitialized_block(array.block.clone(), 4)
+            .with_uninitialized_block(other.block.clone(), 4)
+            .store(array.clone(), crate::kernel::uint8(7u32));
+        let key = proposition_identity_key(&local_definedness_fact(&before, 81_001)).unwrap();
+        let disjoint = before.clone().store(other, CValue::Int32(9u32.into()));
+        assert_eq!(
+            Some(key.clone()),
+            proposition_identity_key(&local_definedness_fact(&disjoint, 81_002))
+        );
+        let affected = before
+            .clone()
+            .store(array.clone(), crate::kernel::uint8(8u32));
+        let retired = before.without_local_block(&array.block);
+        let resized = before.clone().with_block(array.block.clone(), 8);
+        let unknown_write = before.clone().store(
+            Pointer::symbolic(Variable(81_003)),
+            CValue::Int32(1u32.into()),
+        );
+        for changed in [affected, retired, resized, unknown_write] {
+            assert_ne!(
+                Some(key.clone()),
+                proposition_identity_key(&local_definedness_fact(&changed, 81_001))
+            );
+        }
+        // An independently constructed unwritten object is not the old one.
+        let uninitialized = CMemory::new().with_uninitialized_block(array.block, 4);
+        assert_ne!(
+            Some(key),
+            proposition_identity_key(&local_definedness_fact(&uninitialized, 81_001))
+        );
+    }
+
     /// Pure-function applications are keyed through typed arguments, so a
     /// separately lowered binder keeps its identity without erasing an array
     /// snapshot or accidentally treating a free variable as bound.
@@ -3287,7 +3348,10 @@ fn alpha_proposition_key_with_bindings<const ALLOW_LOADS: bool>(
                 alpha_work_checkpoint(bindings, 1)?;
                 let snapshot = crate::kernel::intern_c_memory_ref(memory);
                 Some(AlphaPropositionKey::CMemoryReadDefined {
-                    memory: AlphaSnapshotKey::new(&snapshot),
+                    memory: AlphaSnapshotKey {
+                        identity: snapshot.local_read_definedness_identity(pointer),
+                        _snapshot: snapshot.clone(),
+                    },
                     pointer: alpha_pointer_key_with_bindings::<ALLOW_LOADS>(
                         pointer,
                         bindings,

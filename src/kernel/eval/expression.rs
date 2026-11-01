@@ -127,17 +127,17 @@ fn integer_constant_as_sign_magnitude(value: &CValue) -> Option<(bool, u128)> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Bool(bits) => Some((false, u128::from(bits.as_const()?))),
-        CValue::Int8(bits) => {
+        narrow @ (CValue::Int8(_) | CValue::UInt8(_) | CValue::Int16(_) | CValue::UInt16(_)) => {
+            let value = MachineIntegerType::from_c_type(narrow.c_type())?
+                .constant_from_value(narrow)?
+                .to_i128()?;
+            Some((value < 0, value.unsigned_abs()))
+        }
+        CValue::Int32(bits) => {
             let value = bits.as_const()? as i32;
             Some((value < 0, u128::from(value.unsigned_abs())))
         }
-        CValue::Int16(bits) | CValue::Int32(bits) => {
-            let value = bits.as_const()? as i32;
-            Some((value < 0, u128::from(value.unsigned_abs())))
-        }
-        CValue::UInt8(bits) | CValue::UInt16(bits) | CValue::UInt32(bits) => {
-            Some((false, u128::from(bits.as_const()?)))
-        }
+        CValue::UInt32(bits) => Some((false, u128::from(bits.as_const()?))),
         CValue::Int64(bits) => {
             let value = bits.int64_as_const()?;
             Some((value < 0, u128::from(value.unsigned_abs())))
@@ -217,8 +217,8 @@ fn float_to_integer_value(negative: bool, magnitude: u128, target_type: CType) -
             magnitude as i128
         };
         return Some(match target_type {
-            CType::Int8 => CValue::Int8(Bitvector32Term::Constant(value as i32 as u32)),
-            CType::Int16 => CValue::Int16(Bitvector32Term::Constant(value as i32 as u32)),
+            CType::Int8 => crate::kernel::int8(value as i32 as u32),
+            CType::Int16 => crate::kernel::int16(value as i32 as u32),
             CType::Int32 => CValue::Int32(Bitvector32Term::Constant(value as i32 as u32)),
             CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(value as i64)),
             _ => unreachable!(),
@@ -233,8 +233,8 @@ fn float_to_integer_value(negative: bool, magnitude: u128, target_type: CType) -
     }
     let value = magnitude as u64;
     Some(match target_type {
-        CType::UInt8 => CValue::UInt8(Bitvector32Term::Constant(value as u32)),
-        CType::UInt16 => CValue::UInt16(Bitvector32Term::Constant(value as u32)),
+        CType::UInt8 => crate::kernel::uint8(value as u32),
+        CType::UInt16 => crate::kernel::uint16(value as u32),
         CType::UInt32 => CValue::UInt32(Bitvector32Term::UInt32Constant(value as u32)),
         CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(value)),
         _ => unreachable!(),
@@ -595,10 +595,9 @@ impl Drop for WordRepresentationScope {
     }
 }
 
-/// Files the type range of a narrow integer value where the value is
-/// produced, as certified path facts. The facts are the ones
-/// [`crate::kernel::c_narrow_integer_range_facts`] states, so a parameter's
-/// entry facts and a read value's path facts are one definition.
+/// Files the range of a `Bool`'s cast where the value is produced, as
+/// certified path facts (rule C1b). An 8- or 16-bit value is a value of its
+/// own format, whose range is the format's, so nothing is filed for it.
 ///
 /// The range is a consequence, not a premise: every producer of a narrow
 /// value already established it (a conversion, which lands in the range, a
@@ -616,10 +615,7 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
     if SPECIFICATION_READS.with(|depth| depth.get() > 0) {
         return;
     }
-    // A `Bool`'s cast has its range too (rule C1b).
-    let Some(range_facts) = crate::kernel::c_narrow_integer_range_facts(value)
-        .or_else(|| crate::kernel::c_bool_cast_range_facts(value))
-    else {
+    let Some(range_facts) = crate::kernel::c_bool_cast_range_facts(value) else {
         return;
     };
     for proposition in range_facts {
@@ -857,15 +853,28 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
             target,
             Bitvector32Term::bool_word_as(MachineIntegerType::from_c_type(target)?, &word),
         ),
-        // C's widening between narrow formats reuses the word: K8 reads a
-        // widening into 32 bits only.
-        (CType::Int16, CValue::Int8(value) | CValue::UInt8(value)) => {
-            record_narrow_word_reuse();
-            Some(CValue::Int16(value))
+        // C's widening between narrow formats is a conversion node of the
+        // destination's width, as the source writes it.
+        (CType::Int16, CValue::Int8(value)) => {
+            Some(CValue::Int16(Bitvector32Term::machine_integer_cast(
+                MachineIntegerType::Int8,
+                MachineIntegerType::Int16,
+                value,
+            )))
+        }
+        (CType::Int16, CValue::UInt8(value)) => {
+            Some(CValue::Int16(Bitvector32Term::machine_integer_cast(
+                MachineIntegerType::UInt8,
+                MachineIntegerType::Int16,
+                value,
+            )))
         }
         (CType::UInt16, CValue::UInt8(value)) => {
-            record_narrow_word_reuse();
-            Some(CValue::UInt16(value))
+            Some(CValue::UInt16(Bitvector32Term::machine_integer_cast(
+                MachineIntegerType::UInt8,
+                MachineIntegerType::UInt16,
+                value,
+            )))
         }
         (
             target @ (CType::Int8
@@ -1099,15 +1108,6 @@ fn narrow_integer(
 /// the form a comparison of words takes, which a Rust narrow result's `==`
 /// lowers to. A conversion that cannot change the value, or a folded
 /// constant, has no node and files nothing.
-/// Records C's word reuse between narrow formats for the signedness audit.
-#[track_caller]
-fn record_narrow_word_reuse() {
-    crate::kernel::machine_integer::format_audit::record(
-        crate::kernel::machine_integer::format_audit::WordIdentity::NarrowWordReused,
-        std::panic::Location::caller(),
-    );
-}
-
 pub(in crate::kernel) fn checked_narrowing_identity(
     source: &CValue,
     converted: &CValue,
@@ -1150,8 +1150,17 @@ fn checked_narrowing_identity_readings(
         true,
     )];
     if source_type.format().bits() <= 32 {
+        // The narrow result is a value of its own width; its widening is the
+        // operand's word, itself widened when the operand is narrow too.
+        let word = |ty: MachineIntegerType, term: &Bitvector32Term| {
+            if ty.format().bits() < 32 {
+                Bitvector32Term::machine_integer_cast(ty, MachineIntegerType::Int32, term.clone())
+            } else {
+                term.clone()
+            }
+        };
         identities.push(Proposition::ConditionIs(
-            ConditionTerm::equal(converted.clone(), operand.clone()),
+            ConditionTerm::equal(word(*destination, converted), word(source_type, operand)),
             true,
         ));
     }
@@ -2613,8 +2622,8 @@ fn evaluate_c_enum_is_paths(
                         unreachable!("variant paths carry constructors");
                     };
                     paths.push(CExpressionPath {
-                        outcome: CExpressionOutcome::Value(CValue::Bool(
-                            Bitvector32Term::Constant(u32::from(actual == variant)),
+                        outcome: CExpressionOutcome::Value(CValue::bool_constant(
+                            actual == variant,
                         )),
                         facts: case_facts,
                         obligations: obligations.clone(),

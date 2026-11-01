@@ -849,6 +849,54 @@ refused, as their calls need `unsafe`. Functions of other crates are not
 imported
 ([`design/charon-trial/extern-functions`](https://github.com/clicklang/click/blob/master/design/charon-trial/extern-functions/ffi.click)).
 
+### Core library methods
+
+A call of a Rust core integer method, `a.min(b)`, `x.checked_add(y)` or
+`n.unsigned_abs()`, calls an external function whose contract Click supplies:
+`u32::min` has `ensures result == click::rust::u32::min(a, b);`. The library
+defines that function, and the others of each integer type, in
+`library/rust/` ([Rust core methods](library/index.md#rust-core-methods)), so
+a sidecar writes the same function after importing its module: after
+`import click::rust::u32;`, `fn smaller(a: u32, b: u32) -> u32` calling
+`a.min(b)` verifies `ensures result == u32::min(a, b);`.
+
+The importer recognizes `min` and `max` of `Ord` and the inherent
+`wrapping_add`, `wrapping_sub`, `wrapping_mul`, `saturating_add`,
+`saturating_sub`, `checked_add`, `checked_sub` and `abs_diff` of every
+integer type, and `unsigned_abs` of a signed one, by the callee's identity and
+signature. A `checked_*` result is the library's `Option`. `o.unwrap_or(d)` of
+an `Option` of a scalar calls `Option::unwrap_or` the same way, whose contract
+states its result with `option::unwrap_or(o, d)`; that module is implicit, so
+a sidecar needs no import. The library
+function is opaque until `unfold` gives its definition, so a claim that needs
+the value, `result <= a`, unfolds it, and a proof of one arm states the value
+there: `have u32::min(a, b) == a by { unfold(u32::min(a, b)); solve(); }`.
+Each contract is an assumption, listed in [trust](../concepts/trust.md); each
+library function is checked at the edge of its type in
+`mdtests/stdlib_every_symbol.md`.
+[`design/charon-trial/core-methods`](https://github.com/clicklang/click/blob/master/design/charon-trial/core-methods/methods.click)
+verifies calls at several widths.
+
+`xs.swap(a, b)` on a mutable slice of integers calls `slice::swap<T>`, whose
+contract states the call's effect rather than a result:
+
+```text
+extern fn slice::swap<u32>(s: &mut [u32], a: usize, b: usize) {
+    owns *s;
+    requires a < s.len();
+    requires b < s.len();
+    ensures s[a] == old(s[b]);
+    ensures s[b] == old(s[a]);
+    ensures forall (k: usize) { k < s.len() and k != a and k != b implies s[k] == old(s[k]) };
+}
+```
+
+The two `requires` are Rust's index panics, so a caller shows both indices in
+bounds. An element the call keeps is the last clause at its index: after the
+call, `instantiate(forall (k: usize) { ... }, 1u64)` gives `xs[1] ==
+old(xs[1])` once `1u64 < xs.len()` is held. Other core methods, such as `pow`,
+remain unmodeled calls, refused with the callee's name.
+
 ## Supported semantics
 
 The scalar slice supports every integer width but 128 bits, `i8`, `i16`,
@@ -1084,8 +1132,8 @@ support.
 
 ## While loops and invariants
 
-Unlabeled `while` loops, including nested loops, use the shared checked loop
-rules. Sidecars can declare `invariant`, memory/resource clauses, and numeric
+`while` loops, including nested and labeled loops, use the shared checked
+loop rules. Sidecars can declare `invariant`, memory/resource clauses, and numeric
 `decreases` measures. Entry and preservation are separate obligations;
 arithmetic and indexing in the body retain Rust's panic-freedom checks.
 A decreasing measure proves termination through the existing loop checker.
@@ -1101,9 +1149,18 @@ A loop whose body breaks lowers to `while (1)` whose test also exits by
 `break`, so each exit runs its own path, including its storage ends, to the
 code after the loop
 ([`design/charon-trial/loop-control`](https://github.com/clicklang/click/blob/master/design/charon-trial/loop-control/control.click)).
-Every exit must reach one join through straight blocks; labeled `break` or
-`continue` out of an inner loop, and general iterators, remain unsupported.
-The copied-byte slice `for` form described below is supported.
+Every exit of a loop reaches one join through straight blocks, or returns.
+A `return` from a loop body, from any depth, runs straight to the function's
+exit as a C `return` does, so the loop's invariants are not owed on that path
+and the contract is checked there. A labeled `break 'outer` or `continue
+'outer` from an inner loop leaves each loop it crosses: the inner loop exits
+with the escape recorded in a flag, `__rust_loop_escape_ID`, that the enclosing
+loop tests to `break` or `continue` itself. In a written `preserve`, a body
+branch that returns is a proof-level `if` whose returning arm steps to
+`function.exit`
+([`design/charon-trial/early-exits`](https://github.com/clicklang/click/blob/master/design/charon-trial/early-exits/exits.click)).
+General iterators remain unsupported; the slice, array, range and `enumerate`
+`for` forms described below are supported.
 
 [`examples/rust-loops/loops.rs`](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.rs)
 and its [sidecar](https://github.com/clicklang/click/blob/master/examples/rust-loops/loops.click)
@@ -1182,8 +1239,8 @@ copied pattern `(i, &x)` reads it.
 [`design/charon-trial/enumerate`](https://github.com/clicklang/click/blob/master/design/charon-trial/enumerate/enumerate.click)
 proves the last index a loop yields and bounds the elements it reads; its
 cursor invariant needs the same explicit `u64` steps as the sum example.
-`.iter_mut()`, by-value array iteration, custom iterators, labels, `break`, and
-`continue` remain outside this subset.
+`.iter_mut()`, by-value array iteration and custom iterators remain outside
+this subset.
 
 ## Range loops
 
@@ -1202,9 +1259,8 @@ so the body reads the yielded value as a `match` arm does.
 Invariants are written over the bounds: `decreases iter_end - iter_start`
 ranks the loop, and after it the exit guard gives `iter_start >= iter_end`.
 [`design/charon-trial/ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/ranges/ranges.click)
-verifies counts over `u32`, `i32` `a..b`, `u64` and `i64` ranges, the last
-value a loop yields, a slice read at each index of `0..bytes.len()`, and
-nested ranges. Inclusive ranges `a..=b`, `.rev()`, `.step_by()` and other
+verifies counts over `u32`, `i32` `a..b` and `i64` ranges, the last byte a
+loop over `0..bytes.len()` reads, and nested ranges. Inclusive ranges `a..=b`, `.rev()`, `.step_by()` and other
 range adapters remain later work.
 
 ## Primitive unsigned conversions
@@ -1490,8 +1546,8 @@ several `?`s in a function returns `None` through the same tail, which the
 importer lowers in each arm that reaches it, as a C early `return`: the
 fixture's `sum(a, b)`, `let x = a?; let y = b?; Some(x + y)`, verifies its
 nested `match` contract after splitting on `a` and `b`. Options of other
-payloads and `Option` methods other than [`take`](#boxes)
-remain later work.
+payloads and `Option` methods other than [`take`](#boxes) and
+[`unwrap_or`](#core-library-methods) remain later work.
 
 A `&Option<T>` or `&mut Option<T>` parameter, and a reference to a crate enum,
 refers to one value of the enum: the contract writes `views *o` or `owns *o`
@@ -1562,7 +1618,11 @@ that matches on `s`, reduced at that constructor, so a requirement
 `match s { Shape::Circle(r) => r, ... } < 4294967295u32` becomes the citable
 `s_circle_0 < 4294967295u32` for the `+ 1` panic check. A written proof
 `match s { Shape::Circle(r) => { ... }, ... }` placed before the C does the
-same with its own binders.
+same with its own binders. A scalar spec `match` retains its symbolic term
+while its scrutinee is symbolic, even when the facts identify a constructor.
+Signed arithmetic in an arm contributes a definedness obligation guarded by
+that constructor, universally quantified over its payloads. Only a selected
+arm owes that obligation; checking reduces the term using the branch facts.
 
 Not yet supported: generic crate enums and options other than the
 [scalar options](#option-values) and the `Option<Box<R>>` above, enums declared in
@@ -1633,3 +1693,17 @@ and its translator. The lock detects stale or changed inputs; it is not an
 attestation against somebody deliberately replacing the artifact and its lock.
 Tests distinguish invalid Rust rejected by rustc from false functional claims
 rejected by Click, and check the ordinary CLI and proof expansion path.
+
+### Scalar recursion
+
+A scalar recursive function can declare `decreases n;` for an integer
+parameter. The measure is checked at each recursive call, using the value
+of the argument even when checked Rust arithmetic introduces a MIR temporary.
+The next measure must be nonnegative and strictly smaller. An unchanged
+argument is refused. This uses the same call-ranked expression measure for
+`i32` and `i64` parameters.
+
+`tests/fixtures/rust-verification/recursive-countdown/r.click` verifies the
+unchanged `countdown(n - 1)` functions at both widths;
+`tests/rust_import.rs::rust_recursive_countdown_refuses_unchanged_argument`
+keeps the negative control.

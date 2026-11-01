@@ -1132,13 +1132,10 @@ fn lower_spec_universal_chain_in(
     Ok(Some(paths))
 }
 
-fn machine_quantifier_range_facts(sort: &Sort, variable: Variable) -> ExecutionFacts {
-    sort.machine_integer_type()
-        .and_then(|ty| super::api::c_narrow_integer_range_facts(&ty.symbolic_value(variable)))
-        .unwrap_or_default()
-        .into_iter()
-        .map(ExecutionPureFact::certified)
-        .collect()
+/// A machine binder's range is its format's: an 8- or 16-bit binder is a
+/// value of its own format, so no fact states it.
+fn machine_quantifier_range_facts(_sort: &Sort, _variable: Variable) -> ExecutionFacts {
+    ExecutionFacts::default()
 }
 
 fn wrap_spec_universal_path(
@@ -4142,6 +4139,69 @@ fn spec_algebraic_result_match_arms_are_well_formed(
         })
 }
 
+/// Arm-local definedness is required only at that constructor. Binding the
+/// payloads keeps the match's internal variables out of the enclosing path.
+fn guard_scalar_match_obligation(
+    obligation: ProofObligation,
+    scrutinee: &AlgebraicTerm,
+    arm: &SpecAlgebraicMatchArm,
+    bindings: &[AlgebraicValue],
+    variables: &[Variable],
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<ProofObligation> {
+    budget.consume_expression_step()?;
+    let constructor = AlgebraicTerm {
+        algebraic_type: scrutinee.algebraic_type.clone(),
+        node: AlgebraicTermNode::Constructor {
+            variant: arm.variant.clone(),
+            fields: bindings.to_vec(),
+        },
+    };
+    let guard = Proposition::Equal(
+        Term::Algebraic(scrutinee.clone()),
+        Term::Algebraic(constructor),
+    );
+    let mut obligation =
+        obligation.map_proposition(|body| Proposition::Implies(Box::new(guard), Box::new(body)));
+    for (index, ((variable, name), binding)) in variables
+        .iter()
+        .zip(&arm.bindings)
+        .zip(bindings)
+        .enumerate()
+        .rev()
+    {
+        budget.consume_expression_step()?;
+        let sort = match binding {
+            AlgebraicValue::Integer(_) => Sort::Integer,
+            AlgebraicValue::Algebraic(value) => Sort::Algebraic(value.algebraic_type.clone()),
+            AlgebraicValue::C(value) => {
+                let ty = value.c_type();
+                if let Some(integer) = MachineIntegerType::from_c_type(ty) {
+                    Sort::machine_integer(integer)
+                } else if ty == CType::Bool {
+                    Sort::Condition
+                } else if let CValue::Parameter(value) = value {
+                    Sort::Algebraic(value.algebraic_type.clone())
+                } else if ty.is_pointer() {
+                    match arm.binding_types[index].object_class() {
+                        Some(class) => Sort::CObjectPointer(ty, class),
+                        None => Sort::CPointer(ty),
+                    }
+                } else {
+                    return Err(ExecutionLimit::Paths);
+                }
+            }
+        };
+        obligation = obligation.map_proposition(|body| Proposition::ForAll {
+            var: *variable,
+            name: BinderName::written(name),
+            sort,
+            body: Box::new(body),
+        });
+    }
+    Ok(obligation)
+}
+
 fn spec_scalar_match_arms_are_well_formed(
     algebraic_type: &AlgebraicType,
     arms: &[SpecAlgebraicMatchArm],
@@ -6168,7 +6228,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     let mut parameter_arms = Vec::new();
                     let mut result_type = None;
                     let facts = scrutinee_path.facts.clone();
-                    let obligations = scrutinee_path.obligations.clone();
+                    let mut obligations = scrutinee_path.obligations.clone();
                     for arm in arms {
                         let Some(schema) = scrutinee_path
                             .value
@@ -6179,10 +6239,15 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         else {
                             return Err(ExecutionLimit::Paths);
                         };
-                        let bindings = symbolic_algebraic_match_binders_in(
+                        let mut variables = Vec::with_capacity(schema.fields.len());
+                        let bindings = symbolic_algebraic_fields(
                             &scrutinee_path.value.algebraic_type,
                             schema,
-                            budget,
+                            || {
+                                let variable = budget.allocate_match_binder_variable()?;
+                                variables.push(variable);
+                                Ok(variable)
+                            },
                         )?;
                         let mut body_state = state.clone();
                         let mut body_algebraic_bindings = algebraic_bindings.clone();
@@ -6197,8 +6262,11 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                                 }
                             }
                         }
-                        let body_assumptions =
-                            assumptions_with_path_context(assumptions, &facts, &obligations);
+                        let body_assumptions = assumptions_with_path_context(
+                            assumptions,
+                            &facts,
+                            &scrutinee_path.obligations,
+                        );
                         let mut body_paths =
                             evaluate_spec_expression_paths_with_algebraic_bindings_in(
                                 SpecScope::new(
@@ -6216,13 +6284,18 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         if !body_paths.is_empty() {
                             return Err(ExecutionLimit::Paths);
                         }
-                        // These side conditions would need to be guarded by the
-                        // arm's constructor test. Reject instead of asserting them
-                        // unconditionally beside the symbolic match term.
-                        if body_path.facts.has_path_conditions()
-                            || !body_path.obligations.is_empty()
-                        {
+                        if body_path.facts.has_path_conditions() {
                             return Err(ExecutionLimit::Paths);
+                        }
+                        for obligation in body_path.obligations {
+                            obligations.push(guard_scalar_match_obligation(
+                                obligation,
+                                &scrutinee_path.value,
+                                arm,
+                                &bindings,
+                                &variables,
+                                budget,
+                            )?);
                         }
                         let body_type = body_path.value.c_type();
                         if result_type.is_some_and(|expected| expected != body_type) {
@@ -8378,7 +8451,7 @@ fn bool_word_truth_proposition(word: &CValue, value: bool) -> Option<Proposition
         } else {
             CComparisonOperator::Equal
         },
-        &CValue::Bool(Bitvector32Term::Constant(0)),
+        &CValue::bool_constant(false),
     )
 }
 
@@ -8386,9 +8459,10 @@ fn bool_word_truth_proposition(word: &CValue, value: bool) -> Option<Proposition
 /// nothing else, and is not an integer (decision D2): an order, or a
 /// comparison with an integer, is refused. Two `Bool` values are equal when
 /// they have the same truth (rule L-Eq), and a comparison with `true` or
-/// `false` is the claim on the other operand. Two `Bool` words of which one
-/// is not a cast (a `match` whose arms are `Bool` values) keep their word
-/// equality (`None`), which is the same claim by rule C1c.
+/// `false` is the claim on the other operand. A `Bool` word that is not a
+/// cast (a `match` whose arms are `Bool` values, a havocked carrier) holds
+/// the truth C's test `w != 0` at `uint8` gives it (rule C1), so it is
+/// compared through that truth too, never as a raw word.
 fn bool_comparison_proposition(
     left: &CValue,
     operator: CComparisonOperator,
@@ -8412,12 +8486,7 @@ fn bool_comparison_proposition(
     let (CValue::Bool(left_term), CValue::Bool(right_term)) = (left, right) else {
         unreachable!("both operands are `bool`");
     };
-    let literal = |term: &Bitvector32Term| match term {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            Some(*value != 0)
-        }
-        _ => None,
-    };
+    let literal = Bitvector32Term::bool_constant_value;
     match (literal(left_term), literal(right_term)) {
         (Some(left), Some(right)) => {
             return Some(Ok(Proposition::ConditionIs(
@@ -8433,18 +8502,21 @@ fn bool_comparison_proposition(
         }
         (None, None) => {}
     }
-    // A `Bool` word that is not a cast, such as a `match` whose arms are
-    // `Bool` values, is compared as the word it is: every `Bool` word is the
-    // canonical 1 or 0 (rule C1c), so two are equal exactly when their
-    // truths are, and the word keeps the `match` for its reduction.
-    if left_term.bool_cast_operand().is_none() || right_term.bool_cast_operand().is_none() {
-        return None;
-    }
+    // Rule L-Eq over the operands' truths, each read at its root. Two casts
+    // compare their `Bool`s. When either word is not a cast (a `match` whose
+    // arms are carriers, a havocked carrier), both truths are C's test
+    // `w != 0` at `uint8` (`nonzero_bool_word`), exact for a cast by rule
+    // C1a: the two tests are then one class once their words are, as when
+    // the `match` reduces to the other side's cast, and the `match` stays
+    // inside its test for that reduction.
+    let truth =
+        if left_term.bool_cast_operand().is_some() && right_term.bool_cast_operand().is_some() {
+            ConditionTerm::truth_of_bool_word
+        } else {
+            ConditionTerm::nonzero_bool_word
+        };
     Some(Ok(Proposition::ConditionIs(
-        ConditionTerm::bool_equal(
-            ConditionTerm::truth_of_bool_word(left_term),
-            ConditionTerm::truth_of_bool_word(right_term),
-        ),
+        ConditionTerm::bool_equal(truth(left_term), truth(right_term)),
         equal,
     )))
 }
@@ -8675,16 +8747,20 @@ pub(super) fn c_value_comparison_proposition(
     Some(Proposition::ConditionIs(condition, value))
 }
 
+/// The word an integer operand of at most 32 bits has at the comparison's
+/// 32-bit format: its own word, a narrow value's widening to `int32`, or a
+/// `Bool`'s cast (rule C1), as C's promotion reads them.
 fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int8(value) => Some(value.clone()),
-        CValue::Bool(value)
-        | CValue::Int16(value)
-        | CValue::Int32(value)
-        | CValue::UInt8(value)
-        | CValue::UInt16(value)
-        | CValue::UInt32(value) => Some(value.clone()),
+        CValue::Int32(value) | CValue::UInt32(value) => Some(value.clone()),
+        value @ (CValue::Bool(_)
+        | CValue::Int8(_)
+        | CValue::Int16(_)
+        | CValue::UInt8(_)
+        | CValue::UInt16(_)) => {
+            crate::kernel::eval::promote_c_path_value(value.clone(), MachineIntegerType::Int32)
+        }
         CValue::Int128(_)
         | CValue::UInt128(_)
         | CValue::Void
@@ -8697,17 +8773,21 @@ fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
     }
 }
 
+/// The word an integer operand has at `int64`: its own word, a 32-bit
+/// word's extension, or a narrow value's or `Bool`'s conversion.
 fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int64(value) => Some(value.clone()),
-        CValue::Bool(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
-        CValue::Int8(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
-        CValue::Int16(value)
-        | CValue::Int32(value)
-        | CValue::UInt8(value)
-        | CValue::UInt16(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
+        CValue::Int32(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
         CValue::UInt32(value) => Some(Bitvector32Term::int64_from_uint32(value.clone())),
+        value @ (CValue::Bool(_)
+        | CValue::Int8(_)
+        | CValue::Int16(_)
+        | CValue::UInt8(_)
+        | CValue::UInt16(_)) => {
+            crate::kernel::eval::promote_c_path_value(value.clone(), MachineIntegerType::Int64)
+        }
         CValue::Int128(_)
         | CValue::UInt128(_)
         | CValue::Void
@@ -8719,18 +8799,27 @@ fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
     }
 }
 
+/// The word an integer operand has at `uint64`, modulo 2^64: its own word,
+/// a 32-bit word's conversion, or a narrow value's or `Bool`'s.
 fn c_value_uint64_term(value: &CValue) -> Option<Bitvector32Term> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::UInt64(value) => Some(value.clone()),
-        CValue::Bool(value) => Some(Bitvector32Term::uint64_from_32(value.clone())),
         CValue::Int64(value) => Some(Bitvector32Term::uint64_from_int64(value.clone())),
-        CValue::Int8(value) => Some(Bitvector32Term::uint64_from_int32(value.clone())),
-        CValue::Int16(value)
-        | CValue::Int32(value)
-        | CValue::UInt8(value)
-        | CValue::UInt16(value) => Some(Bitvector32Term::uint64_from_int32(value.clone())),
+        CValue::Int32(value) => Some(Bitvector32Term::uint64_from_int32(value.clone())),
         CValue::UInt32(value) => Some(Bitvector32Term::uint64_from_32(value.clone())),
+        CValue::Bool(word) => Some(Bitvector32Term::bool_word_as(
+            MachineIntegerType::UInt64,
+            word,
+        )),
+        value @ (CValue::Int8(word)
+        | CValue::Int16(word)
+        | CValue::UInt8(word)
+        | CValue::UInt16(word)) => Some(Bitvector32Term::machine_integer_cast(
+            MachineIntegerType::from_c_type(value.c_type())?,
+            MachineIntegerType::UInt64,
+            word.clone(),
+        )),
         CValue::Int128(_)
         | CValue::UInt128(_)
         | CValue::Void

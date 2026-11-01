@@ -728,12 +728,36 @@ impl ExecutionProofState {
         Ok(())
     }
 
+    pub(super) fn retain_terminal_statement_cases(
+        &mut self,
+        cases: Vec<Vec<Proposition>>,
+        state: CState,
+        point: ProgramPointRef,
+    ) {
+        let state = Arc::new(state);
+        self.presentation.outcome_provenance = cases
+            .into_iter()
+            .enumerate()
+            .map(|(index, facts)| {
+                let mut provenance = self.provenance_for_outcome(index);
+                provenance.terminal_statement_case = Some(Arc::new(TerminalStatementCase {
+                    facts,
+                    state: state.clone(),
+                    point: point.clone(),
+                }));
+                provenance
+            })
+            .collect::<Vec<_>>()
+            .into();
+    }
+
     fn provenance_for_outcome(&self, path_index: usize) -> OutcomeProvenance {
         self.presentation
             .outcome_provenance
             .get(path_index)
             .cloned()
             .unwrap_or_else(|| OutcomeProvenance {
+                terminal_statement_case: None,
                 checked_leaf_facts: self.presentation.checked_leaf_facts.clone(),
                 loop_return: self.loop_return_proof(path_index).cloned(),
                 call_routes: Vec::new(),
@@ -1028,6 +1052,47 @@ pub(super) struct ProofExecutionView<'p> {
 }
 
 impl ProofExecutionView<'_> {
+    pub(super) fn terminal_statement_choices(
+        &self,
+        path_index: usize,
+    ) -> Result<Vec<SurfacePathChoice>, String> {
+        let Some(case) = self
+            .outcome_provenance
+            .get(path_index)
+            .and_then(|path| path.terminal_statement_case.as_ref())
+        else {
+            return Ok(Vec::new());
+        };
+        case.facts
+            .iter()
+            .enumerate()
+            .filter_map(|(index, fact)| {
+                let Proposition::ConditionIs(condition, value) = fact else {
+                    return None;
+                };
+                Some((|| {
+                    let condition = synthesize_surface_proposition(
+                        &Proposition::ConditionIs(condition.clone(), true),
+                        self.context.parameter_binding(),
+                        &case.state,
+                    )
+                    .ok_or_else(|| "terminal statement case has no Click spelling".to_string())?;
+                    let condition = super::cursor_execution::surface_frozen_at_snapshot(
+                        &condition,
+                        &case.point,
+                    )
+                    .map_err(|error| error.raw_summary().to_string())?;
+                    Ok(SurfacePathChoice {
+                        occurrence: usize::MAX - index,
+                        selector: SurfacePathSelector::Proposition(condition),
+                        value: *value,
+                        tactic_offset: 0,
+                    })
+                })())
+            })
+            .collect()
+    }
+
     /// Exact producer metadata for one terminal outcome. Terminal joins keep
     /// this per-outcome map because different arms may carry different
     /// observations; a non-branching frontier uses the shared presentation
@@ -1202,8 +1267,18 @@ impl EffectLeaf {
     }
 }
 
+/// Explicit case facts emitted by one terminal statement, in evaluation order.
+/// Kept with each outcome so expansion can place different closers after a
+/// single `step()` without reconstructing guards from ambient facts.
+struct TerminalStatementCase {
+    facts: Vec<Proposition>,
+    state: Arc<CState>,
+    point: ProgramPointRef,
+}
+
 #[derive(Clone)]
 struct OutcomeProvenance {
+    terminal_statement_case: Option<Arc<TerminalStatementCase>>,
     checked_leaf_facts: Option<Arc<CheckedLeafFacts>>,
     loop_return: Option<Arc<LoopReturnProof>>,
     /// The checked call edges selected on this terminal path, outermost

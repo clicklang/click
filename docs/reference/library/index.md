@@ -785,6 +785,23 @@ spec enum Option<T> {
 this value in a contract: `ensures result == Option<u32>::Some(x);`. The
 importer lays the Rust value out itself; a contract never reads that layout.
 
+### `option::unwrap_or`
+
+```click
+function unwrap_or<T>(o: Option<T>, default: T) -> T {
+    match o {
+        Option::Some(value) => value,
+        Option::None => default,
+    }
+}
+```
+
+**Meaning:** Rust's `Option::unwrap_or`: the payload of `Some`, else
+`default`. A call `o.unwrap_or(d)` in imported Rust calls an external function
+whose contract is `ensures result == click::option::unwrap_or(o, d);`. The
+module is implicit, so a sidecar writes `option::unwrap_or(o, d)` with no
+import.
+
 **Verified use:** [`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click).
 
 ## Signed `int32` theorems
@@ -4033,6 +4050,1000 @@ theorem int32_remainder_to_integer(left: int32, right: int32) {
 
 Connects a defined signed machine remainder to mathematical truncation. Native definedness excludes both a zero divisor and `INT32_MIN % -1`; a nonzero mathematical divisor alone does not establish that the C operation is defined.
 
+## Rust core methods
+
+`click::rust::i8` through `click::rust::usize` define, for each Rust integer
+type, the core methods the Rust importer specifies: `min`, `max`,
+`wrapping_add`, `wrapping_sub`, `wrapping_mul`, `saturating_add`,
+`saturating_sub`, `checked_add`, `checked_sub`, `abs_diff`, and, for a signed
+type, `unsigned_abs`. A call of one of these methods in imported Rust calls an
+external function whose contract Click supplies, `ensures result ==
+click::rust::u32::min(a, b);`, so a sidecar states and proves claims about it
+with the same function after `import click::rust::u32;`. Each is opaque until
+`unfold` gives its definition. A signed type's wrapping arithmetic, `abs_diff`
+and `unsigned_abs` go through the unsigned type of its width, whose casts are
+modular; an 8- or 16-bit result is cast back from C's promoted `int`.
+
+### `i8::min`
+
+```click
+function min(a: int8, b: int8) -> int8 {
+    if a <= b { a } else { b }
+}
+```
+
+### `i8::max`
+
+```click
+function max(a: int8, b: int8) -> int8 {
+    if a <= b { b } else { a }
+}
+```
+
+### `i8::wrapping_add`
+
+```click
+function wrapping_add(a: int8, b: int8) -> int8 {
+    ((a as uint8) + (b as uint8)) as int8
+}
+```
+
+### `i8::wrapping_sub`
+
+```click
+function wrapping_sub(a: int8, b: int8) -> int8 {
+    ((a as uint8) - (b as uint8)) as int8
+}
+```
+
+### `i8::wrapping_mul`
+
+```click
+function wrapping_mul(a: int8, b: int8) -> int8 {
+    ((a as uint8) * (b as uint8)) as int8
+}
+```
+
+### `i8::saturating_add`
+
+```click
+function saturating_add(a: int8, b: int8) -> int8 {
+    if to_integer(a) + to_integer(b) > 127 {
+        (127i64 as int8)
+    } else {
+        if to_integer(a) + to_integer(b) < -128 {
+            (-128i64 as int8)
+        } else {
+            ((a as uint8) + (b as uint8)) as int8
+        }
+    }
+}
+```
+
+### `i8::saturating_sub`
+
+```click
+function saturating_sub(a: int8, b: int8) -> int8 {
+    if to_integer(a) - to_integer(b) > 127 {
+        (127i64 as int8)
+    } else {
+        if to_integer(a) - to_integer(b) < -128 {
+            (-128i64 as int8)
+        } else {
+            ((a as uint8) - (b as uint8)) as int8
+        }
+    }
+}
+```
+
+### `i8::checked_add`
+
+```click
+function checked_add(a: int8, b: int8) -> Option<int8> {
+    if -128 <= to_integer(a) + to_integer(b) and to_integer(a) + to_integer(b) <= 127 {
+        Option<int8>::Some(((a as uint8) + (b as uint8)) as int8)
+    } else {
+        Option<int8>::None
+    }
+}
+```
+
+### `i8::checked_sub`
+
+```click
+function checked_sub(a: int8, b: int8) -> Option<int8> {
+    if -128 <= to_integer(a) - to_integer(b) and to_integer(a) - to_integer(b) <= 127 {
+        Option<int8>::Some(((a as uint8) - (b as uint8)) as int8)
+    } else {
+        Option<int8>::None
+    }
+}
+```
+
+### `i8::abs_diff`
+
+```click
+function abs_diff(a: int8, b: int8) -> uint8 {
+    if b <= a { ((a as uint8) - (b as uint8)) as uint8 } else { ((b as uint8) - (a as uint8)) as uint8 }
+}
+```
+
+### `i8::unsigned_abs`
+
+```click
+function unsigned_abs(a: int8) -> uint8 {
+    if a < (0i64 as int8) { ((0u32 as uint8) - (a as uint8)) as uint8 } else { a as uint8 }
+}
+```
+
+### `i16::min`
+
+```click
+function min(a: int16, b: int16) -> int16 {
+    if a <= b { a } else { b }
+}
+```
+
+### `i16::max`
+
+```click
+function max(a: int16, b: int16) -> int16 {
+    if a <= b { b } else { a }
+}
+```
+
+### `i16::wrapping_add`
+
+```click
+function wrapping_add(a: int16, b: int16) -> int16 {
+    ((a as uint16) + (b as uint16)) as int16
+}
+```
+
+### `i16::wrapping_sub`
+
+```click
+function wrapping_sub(a: int16, b: int16) -> int16 {
+    ((a as uint16) - (b as uint16)) as int16
+}
+```
+
+### `i16::wrapping_mul`
+
+```click
+function wrapping_mul(a: int16, b: int16) -> int16 {
+    ((a as uint16) * (b as uint16)) as int16
+}
+```
+
+### `i16::saturating_add`
+
+```click
+function saturating_add(a: int16, b: int16) -> int16 {
+    if to_integer(a) + to_integer(b) > 32767 {
+        (32767i64 as int16)
+    } else {
+        if to_integer(a) + to_integer(b) < -32768 {
+            (-32768i64 as int16)
+        } else {
+            ((a as uint16) + (b as uint16)) as int16
+        }
+    }
+}
+```
+
+### `i16::saturating_sub`
+
+```click
+function saturating_sub(a: int16, b: int16) -> int16 {
+    if to_integer(a) - to_integer(b) > 32767 {
+        (32767i64 as int16)
+    } else {
+        if to_integer(a) - to_integer(b) < -32768 {
+            (-32768i64 as int16)
+        } else {
+            ((a as uint16) - (b as uint16)) as int16
+        }
+    }
+}
+```
+
+### `i16::checked_add`
+
+```click
+function checked_add(a: int16, b: int16) -> Option<int16> {
+    if -32768 <= to_integer(a) + to_integer(b) and to_integer(a) + to_integer(b) <= 32767 {
+        Option<int16>::Some(((a as uint16) + (b as uint16)) as int16)
+    } else {
+        Option<int16>::None
+    }
+}
+```
+
+### `i16::checked_sub`
+
+```click
+function checked_sub(a: int16, b: int16) -> Option<int16> {
+    if -32768 <= to_integer(a) - to_integer(b) and to_integer(a) - to_integer(b) <= 32767 {
+        Option<int16>::Some(((a as uint16) - (b as uint16)) as int16)
+    } else {
+        Option<int16>::None
+    }
+}
+```
+
+### `i16::abs_diff`
+
+```click
+function abs_diff(a: int16, b: int16) -> uint16 {
+    if b <= a { ((a as uint16) - (b as uint16)) as uint16 } else { ((b as uint16) - (a as uint16)) as uint16 }
+}
+```
+
+### `i16::unsigned_abs`
+
+```click
+function unsigned_abs(a: int16) -> uint16 {
+    if a < (0i64 as int16) { ((0u32 as uint16) - (a as uint16)) as uint16 } else { a as uint16 }
+}
+```
+
+### `i32::min`
+
+```click
+function min(a: int32, b: int32) -> int32 {
+    if a <= b { a } else { b }
+}
+```
+
+### `i32::max`
+
+```click
+function max(a: int32, b: int32) -> int32 {
+    if a <= b { b } else { a }
+}
+```
+
+### `i32::wrapping_add`
+
+```click
+function wrapping_add(a: int32, b: int32) -> int32 {
+    ((a as uint32) + (b as uint32)) as int32
+}
+```
+
+### `i32::wrapping_sub`
+
+```click
+function wrapping_sub(a: int32, b: int32) -> int32 {
+    ((a as uint32) - (b as uint32)) as int32
+}
+```
+
+### `i32::wrapping_mul`
+
+```click
+function wrapping_mul(a: int32, b: int32) -> int32 {
+    ((a as uint32) * (b as uint32)) as int32
+}
+```
+
+### `i32::saturating_add`
+
+```click
+function saturating_add(a: int32, b: int32) -> int32 {
+    if to_integer(a) + to_integer(b) > 2147483647 {
+        (2147483647i64 as int32)
+    } else {
+        if to_integer(a) + to_integer(b) < -2147483648 {
+            (-2147483648i64 as int32)
+        } else {
+            ((a as uint32) + (b as uint32)) as int32
+        }
+    }
+}
+```
+
+### `i32::saturating_sub`
+
+```click
+function saturating_sub(a: int32, b: int32) -> int32 {
+    if to_integer(a) - to_integer(b) > 2147483647 {
+        (2147483647i64 as int32)
+    } else {
+        if to_integer(a) - to_integer(b) < -2147483648 {
+            (-2147483648i64 as int32)
+        } else {
+            ((a as uint32) - (b as uint32)) as int32
+        }
+    }
+}
+```
+
+### `i32::checked_add`
+
+```click
+function checked_add(a: int32, b: int32) -> Option<int32> {
+    if -2147483648 <= to_integer(a) + to_integer(b) and to_integer(a) + to_integer(b) <= 2147483647 {
+        Option<int32>::Some(((a as uint32) + (b as uint32)) as int32)
+    } else {
+        Option<int32>::None
+    }
+}
+```
+
+### `i32::checked_sub`
+
+```click
+function checked_sub(a: int32, b: int32) -> Option<int32> {
+    if -2147483648 <= to_integer(a) - to_integer(b) and to_integer(a) - to_integer(b) <= 2147483647 {
+        Option<int32>::Some(((a as uint32) - (b as uint32)) as int32)
+    } else {
+        Option<int32>::None
+    }
+}
+```
+
+### `i32::abs_diff`
+
+```click
+function abs_diff(a: int32, b: int32) -> uint32 {
+    if b <= a { (a as uint32) - (b as uint32) } else { (b as uint32) - (a as uint32) }
+}
+```
+
+### `i32::unsigned_abs`
+
+```click
+function unsigned_abs(a: int32) -> uint32 {
+    if a < (0i64 as int32) { 0u32 - (a as uint32) } else { a as uint32 }
+}
+```
+
+### `i64::min`
+
+```click
+function min(a: int64, b: int64) -> int64 {
+    if a <= b { a } else { b }
+}
+```
+
+### `i64::max`
+
+```click
+function max(a: int64, b: int64) -> int64 {
+    if a <= b { b } else { a }
+}
+```
+
+### `i64::wrapping_add`
+
+```click
+function wrapping_add(a: int64, b: int64) -> int64 {
+    ((a as uint64) + (b as uint64)) as int64
+}
+```
+
+### `i64::wrapping_sub`
+
+```click
+function wrapping_sub(a: int64, b: int64) -> int64 {
+    ((a as uint64) - (b as uint64)) as int64
+}
+```
+
+### `i64::wrapping_mul`
+
+```click
+function wrapping_mul(a: int64, b: int64) -> int64 {
+    ((a as uint64) * (b as uint64)) as int64
+}
+```
+
+### `i64::saturating_add`
+
+```click
+function saturating_add(a: int64, b: int64) -> int64 {
+    if to_integer(a) + to_integer(b) > 9223372036854775807 {
+        9223372036854775807i64
+    } else {
+        if to_integer(a) + to_integer(b) < -9223372036854775808 {
+            -9223372036854775808i64
+        } else {
+            ((a as uint64) + (b as uint64)) as int64
+        }
+    }
+}
+```
+
+### `i64::saturating_sub`
+
+```click
+function saturating_sub(a: int64, b: int64) -> int64 {
+    if to_integer(a) - to_integer(b) > 9223372036854775807 {
+        9223372036854775807i64
+    } else {
+        if to_integer(a) - to_integer(b) < -9223372036854775808 {
+            -9223372036854775808i64
+        } else {
+            ((a as uint64) - (b as uint64)) as int64
+        }
+    }
+}
+```
+
+### `i64::checked_add`
+
+```click
+function checked_add(a: int64, b: int64) -> Option<int64> {
+    if -9223372036854775808 <= to_integer(a) + to_integer(b) and to_integer(a) + to_integer(b) <= 9223372036854775807 {
+        Option<int64>::Some(((a as uint64) + (b as uint64)) as int64)
+    } else {
+        Option<int64>::None
+    }
+}
+```
+
+### `i64::checked_sub`
+
+```click
+function checked_sub(a: int64, b: int64) -> Option<int64> {
+    if -9223372036854775808 <= to_integer(a) - to_integer(b) and to_integer(a) - to_integer(b) <= 9223372036854775807 {
+        Option<int64>::Some(((a as uint64) - (b as uint64)) as int64)
+    } else {
+        Option<int64>::None
+    }
+}
+```
+
+### `i64::abs_diff`
+
+```click
+function abs_diff(a: int64, b: int64) -> uint64 {
+    if b <= a { (a as uint64) - (b as uint64) } else { (b as uint64) - (a as uint64) }
+}
+```
+
+### `i64::unsigned_abs`
+
+```click
+function unsigned_abs(a: int64) -> uint64 {
+    if a < 0i64 { 0u64 - (a as uint64) } else { a as uint64 }
+}
+```
+
+### `isize::min`
+
+```click
+function min(a: int64, b: int64) -> int64 {
+    if a <= b { a } else { b }
+}
+```
+
+### `isize::max`
+
+```click
+function max(a: int64, b: int64) -> int64 {
+    if a <= b { b } else { a }
+}
+```
+
+### `isize::wrapping_add`
+
+```click
+function wrapping_add(a: int64, b: int64) -> int64 {
+    ((a as uint64) + (b as uint64)) as int64
+}
+```
+
+### `isize::wrapping_sub`
+
+```click
+function wrapping_sub(a: int64, b: int64) -> int64 {
+    ((a as uint64) - (b as uint64)) as int64
+}
+```
+
+### `isize::wrapping_mul`
+
+```click
+function wrapping_mul(a: int64, b: int64) -> int64 {
+    ((a as uint64) * (b as uint64)) as int64
+}
+```
+
+### `isize::saturating_add`
+
+```click
+function saturating_add(a: int64, b: int64) -> int64 {
+    if to_integer(a) + to_integer(b) > 9223372036854775807 {
+        9223372036854775807i64
+    } else {
+        if to_integer(a) + to_integer(b) < -9223372036854775808 {
+            -9223372036854775808i64
+        } else {
+            ((a as uint64) + (b as uint64)) as int64
+        }
+    }
+}
+```
+
+### `isize::saturating_sub`
+
+```click
+function saturating_sub(a: int64, b: int64) -> int64 {
+    if to_integer(a) - to_integer(b) > 9223372036854775807 {
+        9223372036854775807i64
+    } else {
+        if to_integer(a) - to_integer(b) < -9223372036854775808 {
+            -9223372036854775808i64
+        } else {
+            ((a as uint64) - (b as uint64)) as int64
+        }
+    }
+}
+```
+
+### `isize::checked_add`
+
+```click
+function checked_add(a: int64, b: int64) -> Option<int64> {
+    if -9223372036854775808 <= to_integer(a) + to_integer(b) and to_integer(a) + to_integer(b) <= 9223372036854775807 {
+        Option<int64>::Some(((a as uint64) + (b as uint64)) as int64)
+    } else {
+        Option<int64>::None
+    }
+}
+```
+
+### `isize::checked_sub`
+
+```click
+function checked_sub(a: int64, b: int64) -> Option<int64> {
+    if -9223372036854775808 <= to_integer(a) - to_integer(b) and to_integer(a) - to_integer(b) <= 9223372036854775807 {
+        Option<int64>::Some(((a as uint64) - (b as uint64)) as int64)
+    } else {
+        Option<int64>::None
+    }
+}
+```
+
+### `isize::abs_diff`
+
+```click
+function abs_diff(a: int64, b: int64) -> uint64 {
+    if b <= a { (a as uint64) - (b as uint64) } else { (b as uint64) - (a as uint64) }
+}
+```
+
+### `isize::unsigned_abs`
+
+```click
+function unsigned_abs(a: int64) -> uint64 {
+    if a < 0i64 { 0u64 - (a as uint64) } else { a as uint64 }
+}
+```
+
+### `u8::min`
+
+```click
+function min(a: uint8, b: uint8) -> uint8 {
+    if a <= b { a } else { b }
+}
+```
+
+### `u8::max`
+
+```click
+function max(a: uint8, b: uint8) -> uint8 {
+    if a <= b { b } else { a }
+}
+```
+
+### `u8::wrapping_add`
+
+```click
+function wrapping_add(a: uint8, b: uint8) -> uint8 {
+    (a + b) as uint8
+}
+```
+
+### `u8::wrapping_sub`
+
+```click
+function wrapping_sub(a: uint8, b: uint8) -> uint8 {
+    (a - b) as uint8
+}
+```
+
+### `u8::wrapping_mul`
+
+```click
+function wrapping_mul(a: uint8, b: uint8) -> uint8 {
+    (a * b) as uint8
+}
+```
+
+### `u8::saturating_add`
+
+```click
+function saturating_add(a: uint8, b: uint8) -> uint8 {
+    if to_integer(a) + to_integer(b) <= 255 { (a + b) as uint8 } else { (255u32 as uint8) }
+}
+```
+
+### `u8::saturating_sub`
+
+```click
+function saturating_sub(a: uint8, b: uint8) -> uint8 {
+    if b <= a { (a - b) as uint8 } else { (0u32 as uint8) }
+}
+```
+
+### `u8::checked_add`
+
+```click
+function checked_add(a: uint8, b: uint8) -> Option<uint8> {
+    if to_integer(a) + to_integer(b) <= 255 {
+        Option<uint8>::Some((a + b) as uint8)
+    } else {
+        Option<uint8>::None
+    }
+}
+```
+
+### `u8::checked_sub`
+
+```click
+function checked_sub(a: uint8, b: uint8) -> Option<uint8> {
+    if b <= a { Option<uint8>::Some((a - b) as uint8) } else { Option<uint8>::None }
+}
+```
+
+### `u8::abs_diff`
+
+```click
+function abs_diff(a: uint8, b: uint8) -> uint8 {
+    if b <= a { (a - b) as uint8 } else { (b - a) as uint8 }
+}
+```
+
+### `u16::min`
+
+```click
+function min(a: uint16, b: uint16) -> uint16 {
+    if a <= b { a } else { b }
+}
+```
+
+### `u16::max`
+
+```click
+function max(a: uint16, b: uint16) -> uint16 {
+    if a <= b { b } else { a }
+}
+```
+
+### `u16::wrapping_add`
+
+```click
+function wrapping_add(a: uint16, b: uint16) -> uint16 {
+    (a + b) as uint16
+}
+```
+
+### `u16::wrapping_sub`
+
+```click
+function wrapping_sub(a: uint16, b: uint16) -> uint16 {
+    (a - b) as uint16
+}
+```
+
+### `u16::wrapping_mul`
+
+```click
+function wrapping_mul(a: uint16, b: uint16) -> uint16 {
+    (a * b) as uint16
+}
+```
+
+### `u16::saturating_add`
+
+```click
+function saturating_add(a: uint16, b: uint16) -> uint16 {
+    if to_integer(a) + to_integer(b) <= 65535 { (a + b) as uint16 } else { (65535u32 as uint16) }
+}
+```
+
+### `u16::saturating_sub`
+
+```click
+function saturating_sub(a: uint16, b: uint16) -> uint16 {
+    if b <= a { (a - b) as uint16 } else { (0u32 as uint16) }
+}
+```
+
+### `u16::checked_add`
+
+```click
+function checked_add(a: uint16, b: uint16) -> Option<uint16> {
+    if to_integer(a) + to_integer(b) <= 65535 {
+        Option<uint16>::Some((a + b) as uint16)
+    } else {
+        Option<uint16>::None
+    }
+}
+```
+
+### `u16::checked_sub`
+
+```click
+function checked_sub(a: uint16, b: uint16) -> Option<uint16> {
+    if b <= a { Option<uint16>::Some((a - b) as uint16) } else { Option<uint16>::None }
+}
+```
+
+### `u16::abs_diff`
+
+```click
+function abs_diff(a: uint16, b: uint16) -> uint16 {
+    if b <= a { (a - b) as uint16 } else { (b - a) as uint16 }
+}
+```
+
+### `u32::min`
+
+```click
+function min(a: uint32, b: uint32) -> uint32 {
+    if a <= b { a } else { b }
+}
+```
+
+### `u32::max`
+
+```click
+function max(a: uint32, b: uint32) -> uint32 {
+    if a <= b { b } else { a }
+}
+```
+
+### `u32::wrapping_add`
+
+```click
+function wrapping_add(a: uint32, b: uint32) -> uint32 {
+    a + b
+}
+```
+
+### `u32::wrapping_sub`
+
+```click
+function wrapping_sub(a: uint32, b: uint32) -> uint32 {
+    a - b
+}
+```
+
+### `u32::wrapping_mul`
+
+```click
+function wrapping_mul(a: uint32, b: uint32) -> uint32 {
+    a * b
+}
+```
+
+### `u32::saturating_add`
+
+```click
+function saturating_add(a: uint32, b: uint32) -> uint32 {
+    if to_integer(a) + to_integer(b) <= 4294967295 { a + b } else { 4294967295u32 }
+}
+```
+
+### `u32::saturating_sub`
+
+```click
+function saturating_sub(a: uint32, b: uint32) -> uint32 {
+    if b <= a { a - b } else { 0u32 }
+}
+```
+
+### `u32::checked_add`
+
+```click
+function checked_add(a: uint32, b: uint32) -> Option<uint32> {
+    if to_integer(a) + to_integer(b) <= 4294967295 {
+        Option<uint32>::Some(a + b)
+    } else {
+        Option<uint32>::None
+    }
+}
+```
+
+### `u32::checked_sub`
+
+```click
+function checked_sub(a: uint32, b: uint32) -> Option<uint32> {
+    if b <= a { Option<uint32>::Some(a - b) } else { Option<uint32>::None }
+}
+```
+
+### `u32::abs_diff`
+
+```click
+function abs_diff(a: uint32, b: uint32) -> uint32 {
+    if b <= a { a - b } else { b - a }
+}
+```
+
+### `u64::min`
+
+```click
+function min(a: uint64, b: uint64) -> uint64 {
+    if a <= b { a } else { b }
+}
+```
+
+### `u64::max`
+
+```click
+function max(a: uint64, b: uint64) -> uint64 {
+    if a <= b { b } else { a }
+}
+```
+
+### `u64::wrapping_add`
+
+```click
+function wrapping_add(a: uint64, b: uint64) -> uint64 {
+    a + b
+}
+```
+
+### `u64::wrapping_sub`
+
+```click
+function wrapping_sub(a: uint64, b: uint64) -> uint64 {
+    a - b
+}
+```
+
+### `u64::wrapping_mul`
+
+```click
+function wrapping_mul(a: uint64, b: uint64) -> uint64 {
+    a * b
+}
+```
+
+### `u64::saturating_add`
+
+```click
+function saturating_add(a: uint64, b: uint64) -> uint64 {
+    if to_integer(a) + to_integer(b) <= 18446744073709551615 { a + b } else { 18446744073709551615u64 }
+}
+```
+
+### `u64::saturating_sub`
+
+```click
+function saturating_sub(a: uint64, b: uint64) -> uint64 {
+    if b <= a { a - b } else { 0u64 }
+}
+```
+
+### `u64::checked_add`
+
+```click
+function checked_add(a: uint64, b: uint64) -> Option<uint64> {
+    if to_integer(a) + to_integer(b) <= 18446744073709551615 {
+        Option<uint64>::Some(a + b)
+    } else {
+        Option<uint64>::None
+    }
+}
+```
+
+### `u64::checked_sub`
+
+```click
+function checked_sub(a: uint64, b: uint64) -> Option<uint64> {
+    if b <= a { Option<uint64>::Some(a - b) } else { Option<uint64>::None }
+}
+```
+
+### `u64::abs_diff`
+
+```click
+function abs_diff(a: uint64, b: uint64) -> uint64 {
+    if b <= a { a - b } else { b - a }
+}
+```
+
+### `usize::min`
+
+```click
+function min(a: uint64, b: uint64) -> uint64 {
+    if a <= b { a } else { b }
+}
+```
+
+### `usize::max`
+
+```click
+function max(a: uint64, b: uint64) -> uint64 {
+    if a <= b { b } else { a }
+}
+```
+
+### `usize::wrapping_add`
+
+```click
+function wrapping_add(a: uint64, b: uint64) -> uint64 {
+    a + b
+}
+```
+
+### `usize::wrapping_sub`
+
+```click
+function wrapping_sub(a: uint64, b: uint64) -> uint64 {
+    a - b
+}
+```
+
+### `usize::wrapping_mul`
+
+```click
+function wrapping_mul(a: uint64, b: uint64) -> uint64 {
+    a * b
+}
+```
+
+### `usize::saturating_add`
+
+```click
+function saturating_add(a: uint64, b: uint64) -> uint64 {
+    if to_integer(a) + to_integer(b) <= 18446744073709551615 { a + b } else { 18446744073709551615u64 }
+}
+```
+
+### `usize::saturating_sub`
+
+```click
+function saturating_sub(a: uint64, b: uint64) -> uint64 {
+    if b <= a { a - b } else { 0u64 }
+}
+```
+
+### `usize::checked_add`
+
+```click
+function checked_add(a: uint64, b: uint64) -> Option<uint64> {
+    if to_integer(a) + to_integer(b) <= 18446744073709551615 {
+        Option<uint64>::Some(a + b)
+    } else {
+        Option<uint64>::None
+    }
+}
+```
+
+### `usize::checked_sub`
+
+```click
+function checked_sub(a: uint64, b: uint64) -> Option<uint64> {
+    if b <= a { Option<uint64>::Some(a - b) } else { Option<uint64>::None }
+}
+```
+
+### `usize::abs_diff`
+
+```click
+function abs_diff(a: uint64, b: uint64) -> uint64 {
+    if b <= a { a - b } else { b - a }
+}
+```
+
 ## Separation
 
 ### `separation::restrict`
@@ -4057,21 +5068,23 @@ history or discover containment facts.
 ### `separation::elements`
 
 ```click
-theorem elements<T>(p: T*, i: uint64, j: uint64) {
+theorem elements<T, I>(p: T*, i: I, j: I) {
     requires i != j;
     ensures separate(memory(p[i]), memory(p[j]));
 }
 ```
 
 **Meaning:** Unequal indices of one typed array describe separate complete
-elements. Indices are `uint64`; the inferred `T` supplies the physical
+elements. Both indices have the same inferred type `I`: `int32`, `int64`, or
+`uint64`. Signed indices retain signed offsets, including negative offsets;
+no unsigned conversion is inserted. The inferred `T` supplies the physical
 storage width, including struct padding. Apply with the explicit disequality
 premise. The law constructs two element descriptors directly, without enumerating
 an interval or inspecting memory history. These are logical resource descriptors;
 the law grants no ownership or permission to read or write either element.
 Executable pointer arithmetic and accesses retain their normal definedness checks.
 
-**Verified use:** [`mdtests/separation_elements.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements.md) and [`mdtests/separation_elements_types.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_types.md).
+**Verified use:** [`mdtests/separation_elements.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements.md) and [`mdtests/separation_elements_types.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_types.md). Signed indices and preservation are checked by [`mdtests/separation_elements_signed.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_signed.md) and [`mdtests/separation_elements_signed_store.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_signed_store.md).
 
 ### `separation::subrange`
 

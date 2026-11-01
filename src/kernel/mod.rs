@@ -34,6 +34,7 @@ mod equality_graph;
 mod eval;
 pub(crate) use eval::typed_reads::{
     FieldScope as TransportFieldScope, ReadScope as TransportReadScope,
+    record_field as record_transport_field,
 };
 pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
@@ -486,4 +487,3 @@ mod execution_facts;
 pub(crate) use execution_facts::indexed_execution_facts;
 pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIter};
 
-pub(crate) use eval::typed_reads::record_field as record_transport_field;

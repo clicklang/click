@@ -1,4 +1,5 @@
 use super::*;
+use crate::surface::expansion::LoopEntryBranches;
 
 pub(in crate::surface::proof) fn verify_execution_proofs_forward(
     mut expansion_capture: Option<&mut ExpansionCapture>,
@@ -243,7 +244,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         crate::surface::diagnostics::describe_c_statement_site()
                     ))
                 })?;
-                for preservation in preservation_contexts {
+                let multiple_entries = preservation_contexts.len() > 1;
+                let mut entry_certificates = Vec::new();
+                let mut entry_captures = Vec::new();
+                for preservation in &preservation_contexts {
                     // Retain the checked graph prefix paired with the head's
                     // resources. The preservation assumptions are its explicit
                     // delta, not a newly rebuilt equality namespace.
@@ -257,7 +261,7 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             } else {
                                 let planned = plan_automatic_loop_preservation_body(
                                     loop_index,
-                                    &preservation,
+                                    preservation,
                                     &pure_facts,
                                     &context.recorded_snapshots,
                                     body,
@@ -292,12 +296,23 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         // C `if` whose arms ended apart, when it did.
                         let _joined_apart =
                             crate::surface::proof::note_automatic_body_joined_apart(joined_apart);
+                        let mut path_capture = multiple_entries
+                            .then(|| {
+                                expansion_capture
+                                    .as_deref()
+                                    .map(ExpansionCapture::fork_loop_entry)
+                            })
+                            .flatten();
                         let result = verify_one_loop_preservation_proof(
-                            expansion_capture.as_deref_mut(),
+                            if multiple_entries {
+                                path_capture.as_mut()
+                            } else {
+                                expansion_capture.as_deref_mut()
+                            },
                             loop_index,
                             &preservation_tactics,
                             first_generated_tactic_index,
-                            &preservation,
+                            preservation,
                             &pure_facts,
                             &context.recorded_snapshots,
                             invariant_checks,
@@ -328,11 +343,10 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                             .borrow_mut()
                             .returns
                             .extend(result.return_proofs);
-                        preservation_path_certificates.push(PathCertificate {
-                            case_path: context.case_path.clone(),
-                            case_offsets: None,
-                            certificate: result.certificate,
-                        });
+                        if let Some(capture) = path_capture {
+                            entry_captures.push(capture);
+                        }
+                        entry_certificates.push(result.certificate);
                     }
                     iteration_contexts.push(PlanningExecutionContext {
                         state: preservation.state().clone(),
@@ -346,6 +360,39 @@ pub(in crate::surface::proof) fn verify_execution_proofs_forward(
                         // that left the counter, not from where it started.
                         next_kernel_variable: preservation.next_kernel_variable(),
                         resume_at_statement: context.resume_at_statement,
+                    });
+                }
+                // Keep the existing identical-certificate path. Only differing
+                // proofs need a tree of the guard decisions that distinguish them.
+                let identical = entry_certificates.first().is_none_or(|first| {
+                    entry_certificates.iter().skip(1).all(|certificate| {
+                        crate::instrumentation::record_deterministic_work(
+                            certificate.steps().len(),
+                        );
+                        certificate == first
+                    })
+                });
+                let entry_branches = if identical {
+                    LoopEntryBranches::Leaf((0..entry_certificates.len()).collect())
+                } else {
+                    loop_entry_branches(&preservation_contexts, environment, loop_index)?
+                };
+                if let Some(capture) = expansion_capture.as_deref_mut()
+                    && !entry_captures.is_empty()
+                {
+                    capture.merge_loop_entries(
+                        &entry_captures.iter().collect::<Vec<_>>(),
+                        &entry_branches,
+                    );
+                }
+                if !entry_certificates.is_empty() {
+                    preservation_path_certificates.push(PathCertificate {
+                        case_path: context.case_path.clone(),
+                        case_offsets: None,
+                        certificate: entry_branches.certificate(
+                            &entry_certificates,
+                            &environment.frontier_loop_source.claim_label,
+                        )?,
                     });
                 }
                 final_exit_candidates_by_context.push(final_exit_candidates);
@@ -825,4 +872,108 @@ fn locate_loop_phase_error(
     environment
         .frontier_loop_source
         .locate_phase_error(error, phase)
+}
+
+/// Rebuild the decision tree from the guard facts produced by the entry check.
+/// Only these explicit deltas are indexed; ambient proof facts are never read.
+fn loop_entry_branches(
+    entries: &[crate::kernel::CLoopPreservationContext],
+    environment: &ExecutionProofEnvironment<'_>,
+    loop_index: usize,
+) -> Result<LoopEntryBranches, ClickError> {
+    let guards = entries
+        .iter()
+        .map(|entry| {
+            crate::instrumentation::record_deterministic_work(entry.entry_guard().len());
+            entry.entry_guard().iter().cloned().collect::<BTreeSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    fn build(
+        entries: &[crate::kernel::CLoopPreservationContext],
+        guards: &[BTreeSet<Proposition>],
+        indices: Vec<usize>,
+        mut decided: BTreeSet<crate::kernel::ConditionTerm>,
+        environment: &ExecutionProofEnvironment<'_>,
+        loop_index: usize,
+    ) -> Result<LoopEntryBranches, ClickError> {
+        if indices.len() < 2 {
+            return Ok(LoopEntryBranches::Leaf(indices));
+        }
+        for fact in &guards[indices[0]] {
+            crate::instrumentation::record_deterministic_work(1);
+            let Proposition::ConditionIs(condition, _) = fact else {
+                continue;
+            };
+            if decided.contains(condition) {
+                continue;
+            }
+            let positive = Proposition::ConditionIs(condition.clone(), true);
+            let negative = Proposition::ConditionIs(condition.clone(), false);
+            let (mut yes, mut no) = (Vec::new(), Vec::new());
+            for index in &indices {
+                crate::instrumentation::record_deterministic_work(1);
+                if guards[*index].contains(&positive) {
+                    yes.push(*index);
+                } else if guards[*index].contains(&negative) {
+                    no.push(*index);
+                }
+            }
+            if yes.len() + no.len() != indices.len() {
+                continue;
+            }
+            decided.insert(condition.clone());
+            if yes.is_empty() || no.is_empty() {
+                continue;
+            }
+            let surface = crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
+                &positive,
+                ParameterBinding::new(
+                    environment.parsed_function.parameters(),
+                    environment.arguments,
+                ),
+                entries[indices[0]].state(),
+            )
+            .ok_or_else(|| ClickError::new("loop entry guard has no source spelling"))?;
+            let condition = surface_at_snapshot(
+                &surface,
+                &ProgramPointRef {
+                    region: CodeRegionRef::Region(
+                        environment
+                            .source_layout
+                            .loop_body_entry(loop_index)
+                            .expect("loop body"),
+                    ),
+                    kind: ProgramPointKind::Entry,
+                },
+            )?;
+            return Ok(LoopEntryBranches::Split {
+                condition,
+                yes: Box::new(build(
+                    entries,
+                    guards,
+                    yes,
+                    decided.clone(),
+                    environment,
+                    loop_index,
+                )?),
+                no: Box::new(build(
+                    entries,
+                    guards,
+                    no,
+                    decided,
+                    environment,
+                    loop_index,
+                )?),
+            });
+        }
+        Ok(LoopEntryBranches::Leaf(indices))
+    }
+    build(
+        entries,
+        &guards,
+        (0..entries.len()).collect(),
+        BTreeSet::new(),
+        environment,
+        loop_index,
+    )
 }

@@ -184,18 +184,31 @@ fn conversions_compose_through_a_class() {
         graph.add_uint64_equality(&y, &extended);
         assert!(graph.are_int32_equal(&Bitvector32Term::uint32_from_64(y), &x));
     }
+    // `y` is a 16-bit value, equated at its width; the two byte casts are
+    // 8-bit values compared at theirs.
     let y = var(181_063);
-    let mut graph = EqualityGraph::default();
-    graph.add_int32_equality(&y, &cast(Ty::UInt32, Ty::Int16, x.clone()));
-    assert!(graph.are_int32_equal(
+    let graph = EqualityGraph::default();
+    let mut state = graph.state.lock().expect("equality graph");
+    state.terms.add_typed_equality(
+        crate::kernel::CarrierWidth::Bits16,
+        &y,
+        &cast(Ty::UInt32, Ty::Int16, x.clone()),
+    );
+    assert!(state.terms.are_typed_equal(
+        crate::kernel::CarrierWidth::Bits8,
         &cast(Ty::Int16, Ty::UInt8, y.clone()),
         &cast(Ty::UInt32, Ty::UInt8, x.clone())
     ));
     // A widening of a truncation keeps the truncation's sign, not the
-    // operand's: it is not the operand's conversion.
+    // operand's: it is not the operand's conversion. `z` is an 8-bit value.
     let z = var(181_064);
-    graph.add_int32_equality(&z, &cast(Ty::UInt32, Ty::UInt8, x.clone()));
-    assert!(!graph.are_int32_equal(
+    state.terms.add_typed_equality(
+        crate::kernel::CarrierWidth::Bits8,
+        &z,
+        &cast(Ty::UInt32, Ty::UInt8, x.clone()),
+    );
+    assert!(!state.terms.are_typed_equal(
+        crate::kernel::CarrierWidth::Bits16,
         &cast(Ty::UInt8, Ty::Int16, z),
         &cast(Ty::UInt32, Ty::Int16, x)
     ));
@@ -225,4 +238,30 @@ fn a_narrow_same_width_conversion_is_not_inverted() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/machine_relations_tests.rs");
+}
+
+#[test]
+fn wide_cast_composition_is_an_equality_without_erasing_the_terms() {
+    let _session = VerificationSession::enter();
+    for source in [Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64] {
+        let original = var(189_001);
+        let wide = cast(source, Ty::UInt128, original.clone());
+        let signed = cast(Ty::UInt128, Ty::Int128, wide);
+        let restored = cast(Ty::Int128, source, signed);
+        assert_ne!(restored, original, "the cast structure must survive");
+        let graph = EqualityGraph::default();
+        let equal = if source.format().bits() == 32 {
+            graph.are_int32_equal(&restored, &original)
+        } else {
+            graph.are_uint64_equal(&restored, &original)
+        };
+        assert!(equal, "{source:?}");
+    }
+    // A narrow intermediate loses bits. Widening afterwards cannot restore
+    // equality with an arbitrary original 64-bit value.
+    let original = var(189_002);
+    let narrow = cast(Ty::Int64, Ty::Int32, original.clone());
+    let wide = cast(Ty::Int32, Ty::Int128, narrow);
+    let restored = cast(Ty::Int128, Ty::Int64, wide);
+    assert!(!EqualityGraph::default().are_uint64_equal(&restored, &original));
 }

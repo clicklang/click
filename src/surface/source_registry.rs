@@ -551,6 +551,7 @@ mod tests {
             body: Default::default(),
             c_object_names: Default::default(),
             recursion_peers: Vec::new(),
+            call_ranked_numeric_recursion: false,
             signature: FunctionSignature {
                 c_source: None,
                 return_type: C0Type::Int32,

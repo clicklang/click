@@ -5333,12 +5333,8 @@ pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBindi
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Parameter(term) => format!("{term:?}"),
         CValue::Void => "void".to_string(),
-        CValue::Bool(Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => {
-            "false".to_string()
-        }
-        CValue::Bool(Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => {
-            "true".to_string()
-        }
+        CValue::Bool(value) if value.bool_constant_value() == Some(false) => "false".to_string(),
+        CValue::Bool(value) if value.bool_constant_value() == Some(true) => "true".to_string(),
         CValue::Int128(value) => typed_literal_spelling(
             describe_bitvector_with_context(value, parameter_binding),
             "i128",
@@ -7231,6 +7227,9 @@ pub(super) fn describe_bitvector_with_context(
         Bitvector32Term::UInt32Constant(value) => format!("{value}u32"),
         Bitvector32Term::Int64Constant(value) => format!("{value}i64"),
         Bitvector32Term::UInt64Constant(value) => format!("{value}u64"),
+        Bitvector32Term::MachineIntegerConstant(value) if value.format().bits() < 32 => {
+            value.to_integer().to_string()
+        }
         Bitvector32Term::MachineIntegerConstant(value) => format!(
             "{}{}128",
             value.to_integer(),

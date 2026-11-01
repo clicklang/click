@@ -81,6 +81,26 @@ impl IntegerOperationRangeBound {
             .into_iter()
             .map(|form| Proposition::ConditionIs(form, true))
             .collect::<Vec<_>>();
+        // 0 <= (x - y) is exactly y <= x. Retain the native spelling
+        // when both observations have the same format, so a direct machine
+        // bound can certify subtraction without a difference-graph walk.
+        if self.lower
+            && self.bound == BigInt::from(0)
+            && let IntegerTerm::Subtract(left, right) = &self.exact
+            && let (IntegerTerm::Machine(left), IntegerTerm::Machine(right)) =
+                (left.as_ref(), right.as_ref())
+            && left.ty() == right.ty()
+        {
+            facts.push(Proposition::ConditionIs(
+                ConditionTerm::machine_compare(
+                    left.ty(),
+                    crate::kernel::CompareRelation::LessEqual,
+                    right.value().clone(),
+                    left.value().clone(),
+                ),
+                true,
+            ));
+        }
         if let Some(defined) = facts
             .iter()
             .find_map(definedness::definedness_of_integer_bound)
@@ -118,7 +138,11 @@ pub(crate) fn machine_operation_of_integer_value(
                     source: machine.ty(),
                     destination: ty,
                 };
-                let word = [word, widened].into_iter().find(|word| {
+                // A value of another width is never `ty`'s word as written:
+                // its word in `ty` is its widening, a node of its own.
+                let as_written =
+                    (machine.ty().format().bits() == ty.format().bits()).then_some(word);
+                let word = as_written.into_iter().chain([widened]).find(|word| {
                     IntegerTerm::from_machine(ty, word.clone()).as_ref() == Some(side)
                 })?;
                 let (low, high) = range::range(machine.ty());

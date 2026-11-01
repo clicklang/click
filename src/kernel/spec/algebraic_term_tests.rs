@@ -984,3 +984,80 @@ fn model_argument_guard_query_does_not_materialize_stored_models() {
         expected
     );
 }
+
+fn signed_value_or_match(variable: Variable) -> SpecExpression {
+    let mut expression = value_or_match(SpecAlgebraicExpression {
+        algebraic_type: maybe_type(),
+        node: SpecAlgebraicExpressionNode::Variable(variable),
+    });
+    let SpecExpression::AlgebraicMatch { arms, .. } = &mut expression else {
+        unreachable!()
+    };
+    arms[1].body = SpecExpression::Subtract(
+        Box::new(SpecExpression::Value(int32(0))),
+        Box::new(arms[1].body.clone()),
+    );
+    expression
+}
+
+fn maybe_variable(variable: Variable) -> AlgebraicTerm {
+    AlgebraicTerm {
+        algebraic_type: maybe_type(),
+        node: AlgebraicTermNode::Variable(variable),
+    }
+}
+
+fn maybe_constructor(payload: Option<CValue>) -> AlgebraicTerm {
+    AlgebraicTerm {
+        algebraic_type: maybe_type(),
+        node: AlgebraicTermNode::Constructor {
+            variant: if payload.is_some() { "Some" } else { "None" }.into(),
+            fields: payload.into_iter().map(AlgebraicValue::C).collect(),
+        },
+    }
+}
+
+#[test]
+fn signed_match_is_fact_stable_and_retains_guarded_definedness() {
+    let variable = Variable(41);
+    let lower = |assumptions: &PureFactContext| {
+        let mut paths = evaluate_spec_expression_paths_with_loop_entry_in(
+            &CState::new(),
+            &signed_value_or_match(variable),
+            None,
+            assumptions,
+            &mut SpecEvaluation::logical(&mut ExecutionBudget::new()),
+        )
+        .expect("signed arithmetic remains one symbolic match");
+        assert_eq!(paths.len(), 1);
+        paths.pop().unwrap()
+    };
+    let original = lower(&PureFactContext::new());
+    assert!(!original.obligations.is_empty());
+    for payload in [None, Some(int32(7)), Some(int32(i32::MIN as u32))] {
+        let context = PureFactContext::new().assume_proposition(Proposition::Equal(
+            Term::Algebraic(maybe_variable(variable)),
+            Term::Algebraic(maybe_constructor(payload)),
+        ));
+        let path = lower(&context);
+        assert_eq!(
+            path.value, original.value,
+            "constructor facts must not change the lowered term"
+        );
+        assert_eq!(
+            path.obligations, original.obligations,
+            "even a known payload must retain its guarded overflow obligation"
+        );
+    }
+    for obligation in &original.obligations {
+        let Proposition::ForAll { body, .. } = obligation.proposition() else {
+            panic!("arm payload must be bound")
+        };
+        let Proposition::Implies(guard, _) = body.as_ref() else {
+            panic!("arm obligation must be conditional")
+        };
+        assert!(
+            matches!(guard.as_ref(), Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) if left == &maybe_variable(variable) && matches!(&right.node, AlgebraicTermNode::Constructor { variant, .. } if variant == "Some"))
+        );
+    }
+}

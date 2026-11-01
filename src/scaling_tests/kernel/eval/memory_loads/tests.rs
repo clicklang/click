@@ -538,7 +538,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
     let retained = facts
         .clone()
         .assume_condition(ConditionTerm::equal(right.clone(), 42u32.into()), true);
-    for value in [CValue::Int32(7u32.into()), CValue::UInt8(7u32.into())] {
+    for value in [CValue::Int32(7u32.into()), crate::kernel::uint8(7u32)] {
         let changed = memory.clone().store(field.clone(), value);
         let paths = evaluate_logical_memory_load_paths(
             &changed,
@@ -585,6 +585,24 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
 #[test]
 #[ignore = "nightly: 1.9s in the parallel gate"]
 fn logical_read_address_uses_class_index_without_scanning_aliases_or_frames() {
+    let samples = logical_read_alias_samples(&[4, 64, 1024]);
+    assert!(
+        samples[2].0 <= samples[0].0 * 3 + 128,
+        "address lookup scanned aliases or frames: {samples:?}"
+    );
+    assert!(
+        samples[2].1 <= samples[0].1 * 4 + 256,
+        "address lookup copied unrelated indexes: {samples:?}"
+    );
+    eprintln!("logical read address work: {samples:?}");
+}
+
+#[test]
+fn logical_read_through_an_alias_retains_the_stored_word() {
+    logical_read_alias_samples(&[4]);
+}
+
+fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
     let _session = crate::kernel::VerificationSession::enter();
     let owner = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -610,7 +628,7 @@ fn logical_read_address_uses_class_index_without_scanning_aliases_or_frames() {
         memory = memory.store(owner.offset_by_bytes(offset), int32(7));
     }
     let mut samples = Vec::new();
-    for size in [4u64, 64, 1024] {
+    for &size in sizes {
         let mut context = before.clone().assume_condition(
             ConditionTerm::pointer_equal(owner.clone(), alias.clone()),
             true,
@@ -658,39 +676,95 @@ fn logical_read_address_uses_class_index_without_scanning_aliases_or_frames() {
                         &context,
                     );
                     assert_eq!(paths.len(), 1);
-                    assert!(paths[0].facts.is_empty());
+                    let without_alias = evaluate_logical_memory_load_paths(
+                        &memory,
+                        alias.offset_by_bytes(offset),
+                        CType::Int32,
+                        ExecutionFacts::new(),
+                        Vec::new(),
+                        &before,
+                    );
+                    assert_eq!(
+                        paths[0].outcome, without_alias[0].outcome,
+                        "alias evidence must not change the read term"
+                    );
+                    assert!(without_alias[0].facts.is_empty());
+                    assert_eq!(paths[0].facts.len(), 1);
+                    assert!(
+                        paths[0]
+                            .facts
+                            .iter()
+                            .all(ExecutionPureFact::is_logical_read_equation)
+                    );
+                    let retained = assumptions_with_path_context(&context, &paths[0].facts, &[]);
+                    let CExpressionOutcome::Value(CValue::Int32(read)) = &paths[0].outcome else {
+                        panic!("int32 read")
+                    };
+                    assert!(
+                        retained
+                            .equality_graph
+                            .are_int32_equal(read, &Bitvector32Term::Constant(7))
+                    );
                     assert!(paths[0].obligations.is_empty());
                     outcomes.push(paths[0].outcome.clone());
                 }
             })
         });
-        // The read names its version (`docs/internals/spellability.md`); the
-        // read-over-write authority relates it to the stored `7`.
+        // The read's term is fact-stable; only the returned equation knows
+        // the alias. Producing it must not mutate the incoming context.
         for outcome in outcomes {
             let CExpressionOutcome::Value(CValue::Int32(read)) = outcome else {
                 panic!("an int32 read: {outcome:?}");
             };
-            assert_eq!(
-                crate::kernel::read_over_write_value(&read),
-                Some(Bitvector32Term::Constant(7)),
-                "the aliased read reads the owner's stored cell"
+            assert!(
+                context
+                    .condition_facts
+                    .get(&ConditionTerm::equal(
+                        read.clone(),
+                        Bitvector32Term::Constant(7)
+                    ))
+                    .is_none(),
+                "producing a side fact must not admit it into caller evidence"
+            );
+            assert!(
+                !before
+                    .equality_graph
+                    .are_int32_equal(&read, &Bitvector32Term::Constant(7)),
+                "without the alias fact the read has no stored value"
             );
         }
+        // A different offset and a later store cannot inherit the old 7.
+        let outside = evaluate_logical_memory_load_paths(
+            &memory,
+            alias.offset_by_bytes(12),
+            CType::Int32,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+        );
+        assert!(outside[0].facts.is_empty());
+        let changed = memory.clone().store(owner.clone(), int32(9));
+        let changed_paths = evaluate_logical_memory_load_paths(
+            &changed,
+            alias.clone(),
+            CType::Int32,
+            ExecutionFacts::new(),
+            Vec::new(),
+            &context,
+        );
+        let retained = assumptions_with_path_context(&context, &changed_paths[0].facts, &[]);
+        let CExpressionOutcome::Value(CValue::Int32(read)) = &changed_paths[0].outcome else {
+            panic!("int32 read");
+        };
+        assert!(retained.equality_graph.are_int32_equal(read, &9u32.into()));
+        assert!(!retained.equality_graph.are_int32_equal(read, &7u32.into()));
         samples.push((work, map_work));
         assert_eq!(
             logical_memory_load_address(&memory, alias.clone(), CType::Int32, &before),
             alias
         );
     }
-    assert!(
-        samples[2].0 <= samples[0].0 * 3 + 128,
-        "address lookup scanned aliases or frames: {samples:?}"
-    );
-    assert!(
-        samples[2].1 <= samples[0].1 * 4 + 256,
-        "address lookup copied unrelated indexes: {samples:?}"
-    );
-    eprintln!("logical read address work: {samples:?}");
+    samples
 }
 
 #[test]

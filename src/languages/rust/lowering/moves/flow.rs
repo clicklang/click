@@ -149,6 +149,9 @@ pub(super) struct While {
     /// Whether some body edge leaves the loop other than through the test,
     /// as a `break` does.
     pub breaks: bool,
+    /// Where a labeled `break` or `continue` from the body resumes in an
+    /// enclosing loop: that loop's exit or header.
+    pub escapes: Vec<usize>,
 }
 pub(super) struct Flow {
     pub order: Vec<usize>,
@@ -198,6 +201,20 @@ impl Flow {
                 }
                 _ => (),
             }
+        }
+        // The blocks that run straight to the function's `Return`, as a
+        // `return` does. Postorder visits a block's forward successors first.
+        let mut exit_tails = vec![false; exit];
+        for &block in &order {
+            exit_tails[block] = match &mir.blocks[block].terminator {
+                T::Return => true,
+                T::Goto { target }
+                | T::Drop { target, .. }
+                | T::Call { target, .. }
+                | T::BoxNew { target, .. }
+                | T::BoxFree { target, .. } => *target < exit && exit_tails[*target],
+                _ => false,
+            };
         }
         let mut predecessors = vec![Vec::new(); exit];
         for &block in &order {
@@ -303,8 +320,12 @@ impl Flow {
                         return Err("MIR loop has an entry bypassing its header".into());
                     }
                 }
+                // An inner loop leaves through its exit, and through each
+                // labeled `break` or `continue` that names this loop.
                 let targets = if let Some(inner) = loops.get(&block) {
-                    vec![inner.exit]
+                    std::iter::once(inner.exit)
+                        .chain(inner.escapes.iter().copied())
+                        .collect()
                 } else {
                     successors(&mir.blocks[block].terminator, exit)
                 };
@@ -312,6 +333,14 @@ impl Flow {
                     crate::instrumentation::record_deterministic_work(1);
                     if target == exit {
                         return Err("MIR while body has an unsupported extra exit".into());
+                    }
+                    if loops
+                        .get(&block)
+                        .is_some_and(|inner| inner.escapes.contains(&target))
+                        && membership[root(&mut parents, target)] == Some(header)
+                        && target != header
+                    {
+                        return Err("MIR labeled break enters the middle of a loop".into());
                     }
                     if membership[root(&mut parents, target)] != Some(header) {
                         break_targets.push(target);
@@ -322,37 +351,46 @@ impl Flow {
             // chain of straight blocks to one join, where the code after the
             // loop resumes. Each chain is lowered on its own path, ending in
             // a C `break`.
+            let chain = |start: usize| -> Result<(Vec<usize>, usize), String> {
+                let mut blocks = Vec::new();
+                let mut block = start;
+                loop {
+                    crate::instrumentation::record_deterministic_work(1);
+                    if predecessors[block].len() != 1 || loops.contains_key(&block) {
+                        return Ok((blocks, block));
+                    }
+                    blocks.push(block);
+                    let T::Goto { target } = mir.blocks[block].terminator else {
+                        return Err("MIR while exit requires straight blocks to one join".into());
+                    };
+                    if target >= exit {
+                        return Err("MIR while exit requires straight blocks to one join".into());
+                    }
+                    block = target;
+                }
+            };
+            // An early `return` from the body runs its own tail to the
+            // function's exit, as a C `return` does; only a tail that joins
+            // the test's exit is a `break` to it.
+            let after_chain = chain(after);
+            break_targets.retain(|&target| {
+                !exit_tails[target]
+                    || matches!((&after_chain, chain(target)),
+                        (Ok((_, join)), Ok((_, end))) if *join == end)
+            });
             let breaks = !break_targets.is_empty();
+            let mut escapes = Vec::new();
             let (join, chains) = if !breaks {
                 (after, Vec::new())
             } else {
-                let chain = |start: usize| -> Result<(Vec<usize>, usize), String> {
-                    let mut blocks = Vec::new();
-                    let mut block = start;
-                    loop {
-                        crate::instrumentation::record_deterministic_work(1);
-                        if predecessors[block].len() != 1 || loops.contains_key(&block) {
-                            return Ok((blocks, block));
-                        }
-                        blocks.push(block);
-                        let T::Goto { target } = mir.blocks[block].terminator else {
-                            return Err(
-                                "MIR while exit requires straight blocks to one join".into()
-                            );
-                        };
-                        if target >= exit {
-                            return Err(
-                                "MIR while exit requires straight blocks to one join".into()
-                            );
-                        }
-                        block = target;
-                    }
-                };
-                let (mut chains, join) = chain(after)?;
+                let (mut chains, join) = after_chain?;
                 for target in break_targets {
                     let (blocks, end) = chain(target)?;
-                    if end != join {
-                        return Err("MIR while body has an unsupported extra exit".into());
+                    // A chain to another join leaves an enclosing loop too:
+                    // a labeled `break` to its exit or a labeled `continue`
+                    // to its header, which that loop checks.
+                    if end != join && !escapes.contains(&end) {
+                        escapes.push(end);
                     }
                     chains.extend(blocks);
                 }
@@ -379,6 +417,7 @@ impl Flow {
                     after,
                     body_on_true,
                     breaks,
+                    escapes,
                 },
             );
         }
@@ -402,7 +441,9 @@ impl Flow {
                         // the loop's region.
                         let breaks = owners[block].or(exit_owners[block]).is_some_and(|header| {
                             let loop_ = &loops[&header];
-                            loop_.breaks && loop_.exit == target && loop_.test != block
+                            loop_.breaks
+                                && (loop_.exit == target || loop_.escapes.contains(&target))
+                                && loop_.test != block
                         });
                         if owners[block] == Some(target) || breaks {
                             exit
@@ -414,20 +455,6 @@ impl Flow {
             })
             .collect::<Vec<_>>();
         let joins = graph_postdominators(&graph, &order);
-        // Postorder visits a block's forward successors first.
-        let mut exit_tails = vec![false; exit];
-        for &block in &order {
-            exit_tails[block] = !loops.contains_key(&block)
-                && match &mir.blocks[block].terminator {
-                    T::Return => true,
-                    T::Goto { target }
-                    | T::Drop { target, .. }
-                    | T::Call { target, .. }
-                    | T::BoxNew { target, .. }
-                    | T::BoxFree { target, .. } => *target < exit && exit_tails[*target],
-                    _ => false,
-                };
-        }
         Ok(Self {
             order,
             joins,
@@ -474,6 +501,7 @@ mod tests {
             captures: 0,
             implements: None,
             instance_of: None,
+            core_method: None,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {
@@ -633,14 +661,15 @@ mod tests {
                 vec![block(T::Goto { target: 1 }), block(T::Goto { target: 0 })],
                 "conditional while header",
             ),
-            // A `break` whose path never rejoins the test's exit.
+            // A `break` whose path branches instead of rejoining the test's
+            // exit or returning.
             (
                 vec![
                     block(branch(1, 3)),
                     block(branch(2, 4)),
                     block(T::Goto { target: 0 }),
                     block(T::Return),
-                    block(T::Return),
+                    block(branch(3, 3)),
                 ],
                 "straight blocks to one join",
             ),
@@ -660,6 +689,22 @@ mod tests {
                 .expect("reject unsupported graph");
             assert!(error.contains(expected), "{error}");
         }
+    }
+    #[test]
+    fn mir_while_body_edges_to_their_own_return_are_early_returns() {
+        // The body leaves for a return of its own, not the test's exit: a
+        // C `return` from inside the loop, which is no `break`.
+        let f = function(vec![
+            block(branch(1, 3)),
+            block(branch(2, 4)),
+            block(T::Goto { target: 0 }),
+            block(T::Return),
+            block(T::Return),
+        ]);
+        let flow = Flow::analyze(&f, f.mir.as_ref().unwrap()).unwrap();
+        let loop_ = &flow.loops[&0];
+        assert!(!loop_.breaks);
+        assert!(flow.exit_tails[4]);
     }
     #[test]
     fn mir_while_body_edges_to_the_exit_join_are_breaks() {

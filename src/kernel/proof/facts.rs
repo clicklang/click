@@ -569,6 +569,27 @@ impl ProofFacts {
                                 right: d,
                             },
                         ) => vec![(a.as_ref(), c.as_ref()), (b.as_ref(), d.as_ref())],
+                        // A native 8- or 16-bit equality at one format.
+                        (
+                            ConditionTerm::Compare {
+                                format:
+                                    format @ (MachineIntegerType::Int8
+                                    | MachineIntegerType::UInt8
+                                    | MachineIntegerType::Int16
+                                    | MachineIntegerType::UInt16),
+                                relation: CompareRelation::Equal,
+                                left: a,
+                                right: b,
+                            },
+                            ConditionTerm::Compare {
+                                format: other,
+                                relation: CompareRelation::Equal,
+                                left: c,
+                                right: d,
+                            },
+                        ) if format == other => {
+                            vec![(a.as_ref(), c.as_ref()), (b.as_ref(), d.as_ref())]
+                        }
                         (ConditionTerm::IntegerEqual(a, b), ConditionTerm::IntegerEqual(c, d))
                         | (
                             ConditionTerm::IntegerNotEqual(a, b),
@@ -699,10 +720,26 @@ impl ProofFacts {
                         }
                         let wide =
                             a_kind == Some(LoadKind::Bits64) || b_kind == Some(LoadKind::Bits64);
+                        // A narrow read is a value of its own format, and is
+                        // equated at it.
+                        let narrow = match a_kind.or(b_kind) {
+                            Some(LoadKind::Int8) => Some(MachineIntegerType::Int8),
+                            Some(LoadKind::UInt8) => Some(MachineIntegerType::UInt8),
+                            Some(LoadKind::Int16) => Some(MachineIntegerType::Int16),
+                            Some(LoadKind::UInt16) => Some(MachineIntegerType::UInt16),
+                            _ => None,
+                        };
                         let selected = Proposition::ConditionIs(
                             if wide {
                                 ConditionTerm::Compare {
                                     format: MachineIntegerType::Int64,
+                                    relation: CompareRelation::Equal,
+                                    left: Box::new(a.clone()),
+                                    right: Box::new(b.clone()),
+                                }
+                            } else if let Some(format) = narrow {
+                                ConditionTerm::Compare {
+                                    format,
                                     relation: CompareRelation::Equal,
                                     left: Box::new(a.clone()),
                                     right: Box::new(b.clone()),
@@ -1392,7 +1429,7 @@ impl ProofFacts {
     pub(crate) fn with_selected_load_equality_bridge(&self, goal: &Proposition) -> Self {
         if self.pure_assumption_available(goal)
             || !matches!(goal, Proposition::ConditionIs(condition, true)
-                if matches!(condition, ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. })
+                if matches!(condition, ConditionTerm::Compare { format: MachineIntegerType::Int8 | MachineIntegerType::UInt8 | MachineIntegerType::Int16 | MachineIntegerType::UInt16 | MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, .. })
                     || condition.pointer_offset_sides().is_some())
         {
             return self.clone();
@@ -1487,6 +1524,26 @@ impl ProofFacts {
     /// rewriting. This admits no unfolding or cross-snapshot transport.
     pub(crate) fn materialization_available(&self, required: &Proposition) -> bool {
         self.available(required)
+    }
+
+    /// The native reading of this selected Integer fact, only when exact
+    /// indexed range premises establish that its operations cannot wrap.
+    /// This produces a consequence of the supplied fact; it does not choose
+    /// a different ambient premise to discharge the caller's guard.
+    pub(crate) fn native_operation_reading(&self, fact: &Proposition) -> Option<Proposition> {
+        let Proposition::ConditionIs(condition, truth) = fact else {
+            return None;
+        };
+        let (native, truth, bounds) = crate::kernel::machine_integer::comparison::native_comparison_through_integer_operations(condition, *truth)?;
+        if !bounds.iter().all(|bound| {
+            bound
+                .stating_facts()
+                .iter()
+                .any(|bound| self.assumptions().contains_known(bound))
+        }) {
+            return None;
+        }
+        Some(Proposition::ConditionIs(native, truth))
     }
 
     /// Availability of a proposition to the explicit pure `assumption`
@@ -2750,6 +2807,13 @@ fn collect_proposition_algebraic_terms(
         ) => {
             for value in [left.as_ref(), right.as_ref()] {
                 if let Bitvector32Term::AlgebraicMatch { scrutinee, .. } = value {
+                    collect_algebraic_term_roots(scrutinee, terms);
+                }
+            }
+        }
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), _) => {
+            for value in [left.as_ref(), right.as_ref()] {
+                if let crate::kernel::IntegerTerm::AlgebraicMatch { scrutinee, .. } = value {
                     collect_algebraic_term_roots(scrutinee, terms);
                 }
             }

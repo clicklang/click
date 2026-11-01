@@ -14,6 +14,9 @@ with another parameter. Slice metadata is copied and passed together.
 the 64-bit `bytes.len()` bound, so they state no limit on the length; lengths,
 indices and bounds checks are all 64-bit.
 `length` and `empty` inspect metadata without requiring a byte resource.
+`increment_first` explicitly restates the resulting byte as
+`to_integer(old(bytes[0]) + 1u8)` after execution. This checks that `solve`
+relates the Rust increment's widened arithmetic to the sidecar's byte sum.
 
 Build `scripts/build-charon.sh --install-toolchain`, then run:
 

@@ -118,25 +118,18 @@ fn native_comparison_at_format(
         | (IntegerTerm::Constant(_), IntegerTerm::Machine(machine)) => machine.ty(),
         _ => return None,
     };
-    // A narrow value's word is the canonical carrier of its format, its
-    // zero or sign extension, which the signed 32-bit order compares
-    // exactly, as C's promotion to `int` does. The native form is taken only
-    // where its Integer reading, an `int32` observation of the word, is this
-    // same narrow observation again (`IntegerTerm::from_machine`
-    // normalizes a narrow load or conversion so), keeping one spelling per
-    // value. A binder's word does not name its format, so a comparison of
-    // a narrow binder keeps its Integer form.
+    // An 8- or 16-bit observation is a native value of its format, compared
+    // natively at it; a constant is that format's constant. An observation
+    // whose operand is a word of another width (the byte of a 32-bit sum)
+    // has no native comparison: its root width, read in O(1), decides.
     let narrow = ty.format().bits() < 32;
     let carrier = |side: &IntegerTerm| -> Option<Bitvector32Term> {
         match side {
             IntegerTerm::Machine(machine)
                 if narrow
-                    && IntegerTerm::from_machine(
-                        MachineIntegerType::Int32,
-                        machine.value().clone(),
-                    )
-                    .as_ref()
-                        != Some(side) =>
+                    && crate::kernel::root_width(machine.value()).is_some_and(|width| {
+                        width != crate::kernel::CarrierWidth::of_machine_type(ty)
+                    }) =>
             {
                 None
             }
@@ -226,6 +219,69 @@ pub(crate) fn native_comparison_through_integer_operations(
             (native, truth) => Some((native, truth, bounds)),
         }
     })
+}
+
+/// The Integer readings of a native comparison fact
+/// ([`integer_observations_of_native_comparison`]), and of a promoted
+/// comparison of widenings ([`integer_comparisons_of_widenings`]).
+pub(crate) fn integer_readings_with_promotions(proposition: &Proposition) -> Vec<Proposition> {
+    if let Proposition::ConditionIs(condition, value) = proposition {
+        let widened = integer_comparisons_of_widenings(condition, *value);
+        if !widened.is_empty() {
+            return widened;
+        }
+    }
+    integer_observations_of_native_comparison(proposition)
+}
+
+/// C compares an 8- or 16-bit value through its widening to `int32`
+/// (rule C2): a signed 32-bit comparison whose sides are each such a
+/// widening or a constant, at least one a widening, is the Integer
+/// comparison of the sides' values, which a widening preserves (K8):
+/// `0 <= widen(x)` is `0 <= to_integer(x)`. The widening's own `int32`
+/// observation, `to_integer(x as int32)`, is that same Integer term
+/// (`IntegerTerm::from_machine` reads a widening as its operand), so there
+/// is one reading. One match on the two sides.
+fn integer_comparisons_of_widenings(condition: &ConditionTerm, value: bool) -> Vec<Proposition> {
+    use crate::kernel::CompareRelation as R;
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return Vec::new();
+    };
+    let widening = |side: &Bitvector32Term| side.narrow_widening32_operand().is_some();
+    if !widening(left) && !widening(right) {
+        return Vec::new();
+    }
+    let side = |term: &Bitvector32Term| -> Option<SharedIntegerTerm> {
+        if !widening(term) && term.constant32().is_none() {
+            return None;
+        }
+        IntegerTerm::from_machine(MachineIntegerType::Int32, term.clone()).map(Into::into)
+    };
+    let (Some(l), Some(r)) = (side(left), side(right)) else {
+        return Vec::new();
+    };
+    let (condition, truth) = match (relation, value) {
+        (R::Equal, truth) => (ConditionTerm::IntegerEqual(l, r), truth),
+        (R::LessThan, true) | (R::GreaterEqual, false) => {
+            (ConditionTerm::IntegerLessThan(l, r), true)
+        }
+        (R::LessEqual, true) | (R::GreaterThan, false) => {
+            (ConditionTerm::IntegerLessEqual(l, r), true)
+        }
+        (R::GreaterThan, true) | (R::LessEqual, false) => {
+            (ConditionTerm::IntegerLessThan(r, l), true)
+        }
+        (R::GreaterEqual, true) | (R::LessThan, false) => {
+            (ConditionTerm::IntegerLessEqual(r, l), true)
+        }
+    };
+    vec![Proposition::ConditionIs(condition, truth)]
 }
 
 /// The Integer comparisons of exact observations whose native comparison

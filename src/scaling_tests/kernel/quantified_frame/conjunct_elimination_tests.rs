@@ -30,13 +30,12 @@ fn conjunct_elimination_is_flat_against_unrelated_history_and_facts() {
         for index in 0..size {
             before = before.store(
                 unrelated.offset_by_bytes(index),
-                CValue::UInt8(Bitvector32Term::Constant(index % 251)),
+                crate::kernel::uint8(index % 251),
             );
         }
-        let after = before.clone().store(
-            base.offset_by_bytes(8),
-            CValue::UInt8(Bitvector32Term::Constant(0)),
-        );
+        let after = before
+            .clone()
+            .store(base.offset_by_bytes(8), crate::kernel::uint8(0));
         let assumptions = (0..size).fold(PureFactContext::new(), |context, index| {
             context.assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::Variable(Variable(50_000 + u64::from(index))),
@@ -111,17 +110,17 @@ fn load_equality_work(earlier: u32, between: u32, written: bool) -> usize {
         .with_block("load-frame", between + 8)
         .with_block("load-frame-other", earlier);
     if written {
-        before = before.store(base.clone(), CValue::UInt8(7u32.into()));
+        before = before.store(base.clone(), crate::kernel::uint8(7u32));
     }
     for index in 0..earlier {
         before = before.store(
             unrelated.offset_by_bytes(index),
-            CValue::UInt8(Bitvector32Term::Constant(index % 251)),
+            crate::kernel::uint8(index % 251),
         );
     }
     let mut after = before.clone();
     for index in 0..between {
-        after = after.store(base.offset_by_bytes(8 + index), CValue::UInt8(0u32.into()));
+        after = after.store(base.offset_by_bytes(8 + index), crate::kernel::uint8(0u32));
     }
     let bi = crate::kernel::intern_c_memory_ref(&before);
     let ai = crate::kernel::intern_c_memory_ref(&after);

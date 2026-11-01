@@ -4,7 +4,7 @@
 use super::arithmetic_special::SpecialArithmeticCheckError as Error;
 #[cfg(test)]
 use crate::kernel::binary_node;
-use crate::kernel::machine_integer::conversion::{cast, narrow_binder_word};
+use crate::kernel::machine_integer::conversion::cast;
 use crate::kernel::{ConditionTerm, Proposition, SharedIntegerTerm};
 
 fn order(proposition: &Proposition) -> Option<(&SharedIntegerTerm, &SharedIntegerTerm)> {
@@ -46,20 +46,22 @@ fn check_as_written(
     let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = result else {
         return Err(invalid());
     };
-    let (observed, original, destination) = if let Some(destination) = cast(a, b) {
-        (a, b, destination)
+    // An observation that already names its original (a widening's
+    // Integer reading is its operand's) is the identity itself; its bounds
+    // are still checked, at the observation's own format.
+    let (original, destination) = if a == b {
+        match a.as_ref() {
+            crate::kernel::IntegerTerm::Machine(machine) => (a, machine.ty().format()),
+            _ => return Err(invalid()),
+        }
+    } else if let Some(destination) = cast(a, b) {
+        (b, destination)
     } else if let Some(destination) = cast(b, a) {
-        (b, a, destination)
+        (a, destination)
     } else {
         return Err(invalid());
     };
-    // A binder's widening is bounded by its stated range: the bounds are on
-    // the `int32` observation of its word, inside the source's range.
-    let binder = narrow_binder_word(observed, original);
-    let (bounded, destination) = match &binder {
-        Some((word, source)) => (word, *source),
-        None => (original.as_ref(), destination),
-    };
+    let bounded = original.as_ref();
     let lower = premises
         .get(bounds[0])
         .ok_or(Error::InvalidPremise(bounds[0]))?;
@@ -68,7 +70,13 @@ fn check_as_written(
         .ok_or(Error::InvalidPremise(bounds[1]))?;
     let (lo, operand) = order(lower).ok_or_else(invalid)?;
     let (other_operand, hi) = order(upper).ok_or_else(invalid)?;
-    if operand.as_ref() != bounded || other_operand.as_ref() != bounded {
+    // A bound may name the original or its widening, which has the same
+    // value (K8, a relation across widths).
+    let names_original = |operand: &SharedIntegerTerm| {
+        operand.as_ref() == bounded
+            || crate::kernel::machine_integer::conversion::narrow_widening(operand, bounded)
+    };
+    if !names_original(operand) || !names_original(other_operand) {
         return Err(invalid());
     }
     let (lo, hi) = lo.as_const().zip(hi.as_const()).ok_or_else(invalid)?;

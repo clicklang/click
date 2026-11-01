@@ -327,17 +327,17 @@ impl MachineIntegerType {
         MachineIntegerFormat::new(width, signed)
     }
 
-    /// Produce only the supported runtime carrier, with signed narrow values
-    /// sign-extended to the legacy 32-bit term representation.
+    /// The constant term of `value` at this format: an 8- or 16-bit value's
+    /// own native constant, a 32- or 64-bit word, or a 128-bit constant.
     pub(crate) fn constant_term(self, value: MachineIntegerConstant) -> Option<Bitvector32Term> {
         if value.format != self.format() {
             return None;
         }
         Some(match self {
-            Self::Int8 | Self::Int16 | Self::Int32 => {
-                Bitvector32Term::Constant(value.to_i128()? as u32)
+            Self::Int8 | Self::UInt8 | Self::Int16 | Self::UInt16 => {
+                Bitvector32Term::MachineIntegerConstant(value)
             }
-            Self::UInt8 | Self::UInt16 => Bitvector32Term::Constant(value.to_u128()? as u32),
+            Self::Int32 => Bitvector32Term::Constant(value.to_i128()? as u32),
             Self::UInt32 => Bitvector32Term::UInt32Constant(value.to_u128()? as u32),
             Self::Int64 => Bitvector32Term::Int64Constant(value.to_i128()? as i64),
             Self::UInt64 => Bitvector32Term::UInt64Constant(value.to_u128()? as u64),
@@ -416,7 +416,7 @@ impl MachineIntegerType {
     }
 
     pub(in crate::kernel) fn value_from_term(self, term: Bitvector32Term) -> CValue {
-        let term = term.in_format32(self);
+        let term = term.in_format32(self).in_narrow_format(self);
         match self {
             Self::Int8 => CValue::Int8(term),
             Self::UInt8 => CValue::UInt8(term),
@@ -436,17 +436,21 @@ impl MachineIntegerType {
         value: &Bitvector32Term,
     ) -> Option<MachineIntegerConstant> {
         match (self, value) {
-            (Self::Int128 | Self::UInt128, Bitvector32Term::MachineIntegerConstant(value))
-                if value.format() == self.format() =>
-            {
-                Some(*value)
-            }
             (
-                Self::Int8 | Self::Int16 | Self::Int32,
+                Self::Int8
+                | Self::UInt8
+                | Self::Int16
+                | Self::UInt16
+                | Self::Int128
+                | Self::UInt128,
+                Bitvector32Term::MachineIntegerConstant(value),
+            ) if value.format() == self.format() => Some(*value),
+            (
+                Self::Int32,
                 Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
             ) => MachineIntegerConstant::from_signed(self.format(), i128::from(*value as i32)),
             (
-                Self::UInt8 | Self::UInt16 | Self::UInt32,
+                Self::UInt32,
                 Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
             ) => MachineIntegerConstant::from_unsigned(self.format(), u128::from(*value)),
             (Self::Int64, Bitvector32Term::Int64Constant(value)) => {
@@ -475,26 +479,16 @@ impl Bitvector32Term {
     /// The term a read of `kind` at `pointer` in `memory` denotes. This is
     /// the one place a symbolic read term is formed from a kind.
     ///
-    /// One byte, one name: a byte of memory has a single term, its unsigned
-    /// (`UInt8`) read. A signed (`Int8`) read of the byte is the
-    /// two's-complement conversion of that one term, [`Self::signed_byte`],
-    /// never an unknown of its own, so a signed and an unsigned read of the
-    /// same byte are related by construction. Every other kind is its own
-    /// `MemoryLoad`. A `MemoryLoad` of kind `Int8` is never formed; the load
-    /// registry refuses to name one (`load_variable_for_term`), so a
-    /// producer that bypassed this constructor gets no name and no fact.
+    /// Every read is its own load at its own type (maintainer direction,
+    /// 2026-10-30): the `int8` and `uint8` reads of one byte are two loads,
+    /// neither a conversion of the other, related by the 8-bit sign cast
+    /// when they read the same byte (R-mem).
     pub(crate) fn memory_read(
         memory: crate::kernel::SharedCMemory,
         pointer: crate::kernel::Pointer,
         kind: crate::kernel::LoadKind,
     ) -> Self {
-        use crate::kernel::LoadKind;
-        match kind {
-            LoadKind::Int8 => {
-                Self::signed_byte(Self::MemoryLoad(memory, Box::new(pointer), LoadKind::UInt8))
-            }
-            kind => Self::MemoryLoad(memory, Box::new(pointer), kind),
-        }
+        Self::MemoryLoad(memory, Box::new(pointer), kind)
     }
 
     /// The `signed char` value of the byte whose `unsigned char` value is
@@ -620,6 +614,32 @@ impl Bitvector32Term {
         }
     }
 
+    /// `self` as a value of `ty`: at an 8- or 16-bit `ty`, a 32-bit constant
+    /// is read as the word of a `ty` value, its sign or zero extension, and
+    /// becomes that value's own constant; every other term is unchanged. One
+    /// match on the root.
+    pub(crate) fn in_narrow_format(self, ty: MachineIntegerType) -> Self {
+        match self {
+            Self::Constant(word) | Self::UInt32Constant(word) if ty.format().bits() < 32 => {
+                debug_assert!(
+                    ty.constant_from_term(&Self::narrow_constant(ty, u128::from(word)))
+                        .is_some_and(|value| {
+                            value.to_i128().is_some_and(|value| {
+                                if ty.format().is_signed() {
+                                    value == i128::from(word as i32)
+                                } else {
+                                    value == i128::from(word)
+                                }
+                            })
+                        }),
+                    "{word:#x} is not the word of a {ty:?} value"
+                );
+                Self::narrow_constant(ty, u128::from(word))
+            }
+            term => term,
+        }
+    }
+
     /// [`Self::word32`] of an owned term.
     #[track_caller]
     pub(crate) fn into_word32(self) -> Self {
@@ -672,15 +692,20 @@ impl Bitvector32Term {
                 .constant_term(constant.convert_modulo(destination.format()))
                 .expect("matching destination format");
         }
-        // The outer conversion keeps only bits the intermediate preserved.
-        // If it widens again, retain the intermediate signed interpretation.
+        // The established 32-bit word rules identify chains of sign casts
+        // and narrow promotions. Keep that representation convention local
+        // to the word carrier; it must not erase a wide intermediate cast.
         if let Self::MachineIntegerCast {
             source: original,
             destination: intermediate,
             value: operand,
         } = value
         {
-            if intermediate == source && destination.format().bits() <= intermediate.format().bits()
+            if original.carrier_bytes() == 4
+                && source.carrier_bytes() == 4
+                && destination.carrier_bytes() == 4
+                && intermediate == source
+                && destination.format().bits() <= intermediate.format().bits()
             {
                 return Self::machine_integer_cast(original, destination, *operand);
             }
@@ -694,6 +719,10 @@ impl Bitvector32Term {
                 destination,
             };
         }
+        // Keep symbolic cast composition structural. Collapsing a wide
+        // intermediate can manufacture a generic 32-to-64 cast, although
+        // direct surface conversion uses the legacy 32-to-64 node instead.
+        // Retaining both nodes lets their ordinary cast spelling round-trip.
         Self::MachineIntegerCast {
             value: Box::new(value),
             source,
@@ -713,7 +742,7 @@ impl Bitvector32Term {
 /// whose word for `n` is `n mod 2^32`: the same 32 bits. A widening into 64
 /// bits keeps its legacy extension node over that word.
 pub(crate) fn is_word_cast32(source: MachineIntegerType, destination: MachineIntegerType) -> bool {
-    is_sign_cast32(source, destination) || is_narrow_widening32(source, destination)
+    is_sign_cast32(source, destination)
 }
 
 /// Whether a conversion from `source` to `destination` widens an 8- or
@@ -803,13 +832,14 @@ mod tests {
                 CValue::Int32(word.clone())
             );
         }
-        // A narrow unsigned constant stays `Constant`.
-        let byte = M::UInt8
-            .constant_from_term(&Bitvector32Term::Constant(200))
-            .unwrap();
+        // A narrow constant is a native constant of its own width, and a
+        // 32-bit word is not one.
+        let native = Bitvector32Term::narrow_constant(M::UInt8, 200);
+        let byte = M::UInt8.constant_from_term(&native).unwrap();
+        assert_eq!(M::UInt8.constant_term(byte), Some(native));
         assert_eq!(
-            M::UInt8.constant_term(byte),
-            Some(Bitvector32Term::Constant(200))
+            M::UInt8.constant_from_term(&Bitvector32Term::Constant(200)),
+            None
         );
     }
 
@@ -912,10 +942,16 @@ mod tests {
                     );
                     let term =
                         Bitvector32Term::machine_integer_cast(intermediate, destination, inner);
-                    if destination == source
-                        && intermediate.format().bits() >= source.format().bits()
+                    if source != intermediate
+                        && intermediate != destination
+                        && (source.carrier_bytes() > 4
+                            || intermediate.carrier_bytes() > 4
+                            || destination.carrier_bytes() > 4)
                     {
-                        assert_eq!(term, Bitvector32Term::Variable(variable));
+                        assert!(matches!(&term, Bitvector32Term::MachineIntegerCast {
+                            value, source: outer_source, destination: outer_destination,
+                        } if *outer_source == intermediate && *outer_destination == destination
+                            && matches!(value.as_ref(), Bitvector32Term::MachineIntegerCast { .. })));
                     }
                     for input in [min.clone(), max.clone(), 0.into(), 1.into()] {
                         let constant =
@@ -1025,6 +1061,12 @@ mod tests {
                     ) {
                         (64, true) => term.int64_as_const().map(BigInt::from),
                         (64, false) => term.uint64_as_const().map(BigInt::from),
+                        // An 8- or 16-bit result is a native constant.
+                        (8 | 16, _) => term.narrow_constant_bits(destination).map(|bits| {
+                            MachineIntegerConstant::from_bits(destination.format(), bits)
+                                .unwrap()
+                                .to_integer()
+                        }),
                         (_, true) => term.as_const().map(|bits| BigInt::from(bits as i32)),
                         (_, false) => term.as_const().map(BigInt::from),
                     };
@@ -1315,14 +1357,18 @@ mod tests {
             }
         }
         let ty = MachineIntegerType::Int8;
-        // Narrow signed terms are sign-extended to 32 bits, never truncated
-        // from a malformed carrier that merely shares their low bits.
+        // A narrow signed constant is its own 8 bits; no 32-bit word is
+        // one, whether or not its low bits are the value's.
         assert!(
             ty.constant_from_term(&Bitvector32Term::Constant(255))
                 .is_none()
         );
-        assert_eq!(
+        assert!(
             ty.constant_from_term(&Bitvector32Term::Constant(u32::MAX))
+                .is_none()
+        );
+        assert_eq!(
+            ty.constant_from_term(&Bitvector32Term::narrow_constant(ty, 0xFF))
                 .unwrap()
                 .to_i128(),
             Some(-1)
@@ -1395,19 +1441,6 @@ mod tests {
             assert!(signed.as_const().is_some());
             assert_eq!(unsigned.as_const(), signed.as_const(), "{unsigned:?}");
         }
-        let byte = binary_node!(
-            UInt32,
-            BitwiseAnd,
-            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(186_011))),
-            constant(255)
-        );
-        assert_eq!(
-            crate::kernel::primitives::term_width::narrow_carrier_violation(
-                MachineIntegerType::UInt8,
-                &byte
-            ),
-            Ok(())
-        );
     }
 
     #[cfg(test)]

@@ -16,15 +16,11 @@ use super::*;
 use crate::kernel::unary_term;
 use crate::kernel::{CompareRelation, MachineBinaryOp, OverflowOperation};
 
-mod narrow;
-pub(crate) use narrow::*;
-
 /// The width of the carrier a term's value occupies.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(crate) enum CarrierWidth {
-    /// An 8-bit value of its own, a native narrow node. A narrow `CValue`
-    /// still rides in a 32-bit carrier word ([`Self::of_value`]) until
-    /// narrow values are native.
+    /// An 8-bit value of its own: an `int8` or `uint8` value, read, constant
+    /// or operator.
     Bits8,
     /// A 16-bit value of its own, a native narrow node.
     Bits16,
@@ -36,7 +32,9 @@ pub(crate) enum CarrierWidth {
 impl CarrierWidth {
     fn of_bits(bits: u32) -> Self {
         match bits {
-            0..=32 => Self::Bits32,
+            0..=8 => Self::Bits8,
+            9..=16 => Self::Bits16,
+            17..=32 => Self::Bits32,
             33..=64 => Self::Bits64,
             _ => Self::Bits128,
         }
@@ -46,26 +44,16 @@ impl CarrierWidth {
         Self::of_bits(integer_type.format().bits())
     }
 
-    /// The width of a native node of `format`: its own width for an 8- or
-    /// 16-bit format ([`Self::Bits8`], [`Self::Bits16`]), otherwise the
-    /// carrier's ([`Self::of_machine_type`]).
+    /// The width of a node of `format`: [`Self::of_machine_type`].
     pub(crate) fn native(format: MachineIntegerType) -> Self {
-        match format.format().bits() {
-            8 => Self::Bits8,
-            16 => Self::Bits16,
-            _ => Self::of_machine_type(format),
-        }
+        Self::of_machine_type(format)
     }
 
     fn of_load(kind: LoadKind) -> Self {
         match kind {
-            LoadKind::Int8
-            | LoadKind::UInt8
-            | LoadKind::Int16
-            | LoadKind::UInt16
-            | LoadKind::Int32
-            | LoadKind::UInt32
-            | LoadKind::Float32 => Self::Bits32,
+            LoadKind::Int8 | LoadKind::UInt8 => Self::Bits8,
+            LoadKind::Int16 | LoadKind::UInt16 => Self::Bits16,
+            LoadKind::Int32 | LoadKind::UInt32 | LoadKind::Float32 => Self::Bits32,
             LoadKind::Bits64 | LoadKind::Float64 => Self::Bits64,
             LoadKind::Int128 | LoadKind::UInt128 => Self::Bits128,
         }
@@ -76,14 +64,10 @@ impl CarrierWidth {
     pub(crate) fn of_value(value: &CValue) -> Option<Self> {
         Some(match value.numeric_value() {
             CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            CValue::Bool(_)
-            | CValue::Int8(_)
-            | CValue::Int16(_)
-            | CValue::Int32(_)
-            | CValue::UInt8(_)
-            | CValue::UInt16(_)
-            | CValue::UInt32(_)
-            | CValue::Float32(_) => Self::Bits32,
+            // A `Bool` travels as its 8-bit cast `b as uint8` (rule C1).
+            CValue::Bool(_) | CValue::Int8(_) | CValue::UInt8(_) => Self::Bits8,
+            CValue::Int16(_) | CValue::UInt16(_) => Self::Bits16,
+            CValue::Int32(_) | CValue::UInt32(_) | CValue::Float32(_) => Self::Bits32,
             CValue::Int64(_) | CValue::UInt64(_) | CValue::Float64(_) => Self::Bits64,
             CValue::Int128(_) | CValue::UInt128(_) => Self::Bits128,
             CValue::Void | CValue::Pointer(_) | CValue::Parameter(_) => return None,
@@ -111,6 +95,19 @@ impl std::fmt::Display for WidthMismatch {
 }
 
 type WidthResult = Result<Option<CarrierWidth>, WidthMismatch>;
+
+#[cfg(test)]
+thread_local! {
+    /// The nodes [`term_width`] and [`root_width`] have read on this thread,
+    /// so a scaling test can bound the width reads of a hot path.
+    pub(crate) static WIDTH_NODE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Counts one node read by a width reader (tests only).
+fn note_width_read() {
+    #[cfg(test)]
+    WIDTH_NODE_READS.with(|reads| reads.set(reads.get() + 1));
+}
 
 thread_local! {
     /// While `condition_variable_widths` runs, the width each variable meets
@@ -254,6 +251,7 @@ fn unify(
 /// first place its widths disagree.
 pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
     use Bitvector32Term as T;
+    note_width_read();
     use CarrierWidth::{Bits32, Bits64};
     match term {
         T::Constant(_) | T::UInt32Constant(_) => Ok(Some(Bits32)),
@@ -384,6 +382,45 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
     }
 }
 
+/// The carrier width a term's root node fixes, read from that node alone:
+/// a constant by its shape, an operator or cast by its format or
+/// destination, a load by its kind. `None` where the root does not fix it (a
+/// variable, an application, an `If` or a fold, whose width lives in their
+/// operands). O(1): unlike [`term_width`], it checks no operand, so a hot
+/// path may call it once per interned node.
+pub(crate) fn root_width(term: &Bitvector32Term) -> Option<CarrierWidth> {
+    use Bitvector32Term as T;
+    note_width_read();
+    use CarrierWidth::{Bits32, Bits64};
+    Some(match term {
+        T::Constant(_) | T::UInt32Constant(_) => Bits32,
+        T::Int64Constant(_) | T::UInt64Constant(_) => Bits64,
+        T::MachineIntegerConstant(constant) => CarrierWidth::of_bits(constant.format().bits()),
+        T::Variable(_)
+        | T::PointerAddress(_, _)
+        | T::If { .. }
+        | T::RangeFold { .. }
+        | T::PureFunctionApplication { .. }
+        | T::ClickFunctionApplication { .. }
+        | T::AlgebraicMatch { .. } => return None,
+        crate::kernel::binary_bitvector32_term!(_l, _r) => Bits32,
+        unary_term!(Bits32, BitwiseNot, _value) => Bits32,
+        T::MemoryLoad(_, _, kind) => CarrierWidth::of_load(*kind),
+        T::IntegerToMachine { destination, .. } => CarrierWidth::of_machine_type(*destination),
+        T::BoolCast { to, .. } => CarrierWidth::of_machine_type(*to),
+        T::MachineIntegerCast { destination, .. } => CarrierWidth::of_machine_type(*destination),
+        T::Int64From32(_)
+        | T::UInt64From32(_)
+        | T::Int64FromUInt32(_)
+        | T::UInt64FromInt32(_)
+        | T::UInt64FromInt64(_) => Bits64,
+        T::UInt32From64(_) => Bits32,
+        T::Binary { format, .. } | T::Unary { format, .. } => CarrierWidth::native(*format),
+        T::Float32Negate(_) | T::Float32Binary { .. } => Bits32,
+        T::Float64Negate(_) | T::Float64Binary { .. } => Bits64,
+    })
+}
+
 /// Where a `CValue`'s term disagrees with its tag or with itself.
 pub(crate) fn value_width_mismatch(value: &CValue) -> Option<WidthMismatch> {
     let expected = CarrierWidth::of_value(value)?;
@@ -407,38 +444,22 @@ pub(crate) fn value_width_mismatch(value: &CValue) -> Option<WidthMismatch> {
     expect(value_site(value), expected, term).err()
 }
 
-/// A narrow value's constant outside its type's range: `int8` and `int16`
-/// constants ride sign-extended in the 32-bit carrier, `uint8`, `uint16` and
-/// `_Bool` zero-extended, so the carrier word of an in-range constant is one
-/// of those extensions. A symbolic narrow value's word is checked to be its
-/// format's canonical carrier by [`value_narrow_violation`].
+/// A `_Bool` constant outside `0..=1`: a `Bool` rides zero-extended in a
+/// 32-bit carrier. An 8- or 16-bit value is a value of its own format, whose
+/// constant is in range by construction.
 pub(crate) fn narrow_constant_out_of_range(value: &CValue) -> Option<NarrowRangeViolation> {
-    let (site, term, low, high) = match value {
-        CValue::Bool(term) => ("CValue::Bool", term, 0, 1),
-        CValue::Int8(term) => ("CValue::Int8", term, i64::from(i8::MIN), i64::from(i8::MAX)),
-        CValue::UInt8(term) => ("CValue::UInt8", term, 0, i64::from(u8::MAX)),
-        CValue::Int16(term) => (
-            "CValue::Int16",
-            term,
-            i64::from(i16::MIN),
-            i64::from(i16::MAX),
-        ),
-        CValue::UInt16(term) => ("CValue::UInt16", term, 0, i64::from(u16::MAX)),
-        _ => return None,
-    };
-    let (Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) = term else {
+    let CValue::Bool(term) = value else {
         return None;
     };
-    // Signed tags read the carrier word as signed, unsigned ones as unsigned.
-    let value = if low < 0 {
-        i64::from(*bits as i32)
-    } else {
-        i64::from(*bits)
-    };
-    (value < low || value > high).then_some(NarrowRangeViolation { site, bits: *bits })
+    // A `Bool` constant is the `uint8` constant 0 or 1 (rule C1).
+    let bits = term.narrow_constant_bits(crate::kernel::MachineIntegerType::UInt8)?;
+    (bits > 1).then_some(NarrowRangeViolation {
+        site: "CValue::Bool",
+        bits: u32::try_from(bits).expect("an 8-bit constant"),
+    })
 }
 
-/// A narrow constant whose carrier word lies outside its type's range.
+/// A `Bool` constant whose carrier word lies outside its range.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct NarrowRangeViolation {
     pub(crate) site: &'static str,
@@ -455,13 +476,11 @@ impl std::fmt::Display for NarrowRangeViolation {
     }
 }
 
-/// Every refusal for a value: its widths, then a narrow constant's range,
-/// then a narrow word that is not its format's canonical carrier.
+/// Every refusal for a value: its widths, then a `Bool` constant's range.
 pub(crate) fn value_mismatch(value: &CValue) -> Option<String> {
     value_width_mismatch(value)
         .map(|mismatch| mismatch.to_string())
         .or_else(|| narrow_constant_out_of_range(value).map(|violation| violation.to_string()))
-        .or_else(|| value_narrow_violation(value).map(|violation| violation.to_string()))
 }
 
 fn value_site(value: &CValue) -> &'static str {
@@ -529,9 +548,16 @@ pub(crate) fn condition_width_mismatch(condition: &ConditionTerm) -> Option<Widt
         Bits32 => (Bits32, "32-bit comparison", "32-bit shift overflow"),
         Bits64 => (Bits64, "64-bit comparison", "64-bit shift overflow"),
         Bits128 => (Bits128, "128-bit comparison", "128-bit shift overflow"),
-        CarrierWidth::Bits8 | CarrierWidth::Bits16 => {
-            unreachable!("a carrier is at least 32 bits wide")
-        }
+        CarrierWidth::Bits8 => (
+            CarrierWidth::Bits8,
+            "8-bit comparison",
+            "8-bit shift overflow",
+        ),
+        CarrierWidth::Bits16 => (
+            CarrierWidth::Bits16,
+            "16-bit comparison",
+            "16-bit shift overflow",
+        ),
     };
     // A shift count may have any width; the shifted operand has the
     // format's.

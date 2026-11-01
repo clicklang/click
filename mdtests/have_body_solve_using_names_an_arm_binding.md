@@ -145,31 +145,17 @@ unsigned long spin(struct node* p, int n) {
                                     solve();
                                 } and {
                                     both {
-                                        arithmetic_certificate signed_int32 {
-                                            premise 0: n >= 0 => n >= 0;
-                                            premise 1: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
-                                            premise 2: at(region(3).entry, i) < at(region(3).entry, n) => at(region(3).entry, i) < at(region(3).entry, n);
-                                            interval_from_affine 0 (n) (0) (2147483647);
-                                            interval_from_affine 1 (at(region(3).entry, i)) (0) (2147483647);
-                                            interval_subtract 3, 4 3 (-2147483647) (2147483647);
-                                            interval_atom (1) (1) (1);
-                                            interval_subtract 5, 6 5 (-2147483648) (2147483646);
-                                            affine_conclusion 2 7 => 0 <= to_integer(((n - at(region(3).entry, i)) - 1));
-                                            conclusion 8;
-                                        }
+                                        solve() using {
+                                            n >= 0;
+                                            at(region(3).entry, i) >= 0;
+                                            at(region(3).entry, i) < n;
+                                        };
                                     } and {
-                                        arithmetic_certificate signed_int32 {
-                                            premise 0: n >= 0 => n >= 0;
-                                            premise 1: at(region(3).entry, i) >= at(region(3).entry, 0) => at(region(3).entry, i) >= at(region(3).entry, 0);
-                                            interval_from_affine 0 (n) (0) (2147483647);
-                                            interval_from_affine 1 (at(region(3).entry, i)) (0) (2147483647);
-                                            interval_subtract 2, 3 2 (-2147483647) (2147483647);
-                                            interval_atom (1) (1) (1);
-                                            interval_subtract 4, 5 4 (-2147483648) (2147483646);
-                                            trivial => 0 <= 0;
-                                            affine_conclusion_pair 7 6 4 => to_integer(((n - at(region(3).entry, i)) - 1)) < to_integer((n - at(region(3).entry, i)));
-                                            conclusion 8;
-                                        }
+                                        solve() using {
+                                            n >= 0;
+                                            at(region(3).entry, i) >= 0;
+                                            at(region(3).entry, i) < n;
+                                        };
                                     }
                                 }
                             }

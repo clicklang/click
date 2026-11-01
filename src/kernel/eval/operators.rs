@@ -1659,8 +1659,11 @@ pub(in crate::kernel) fn apply_c_bitwise_not(
     obligations: Vec<ProofObligation>,
 ) -> Vec<CExpressionPath> {
     match value.numeric_value().clone() {
+        // Rule C1: C promotes a `Bool` to its cast at `int32` first.
         CValue::Bool(value) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(int32(Bitvector32Term::bitwise_not(value))),
+            outcome: CExpressionOutcome::Value(int32(Bitvector32Term::bitwise_not(
+                Bitvector32Term::bool_word_as(MachineIntegerType::Int32, &value),
+            ))),
             facts,
             obligations,
         }],
@@ -1677,32 +1680,11 @@ pub(in crate::kernel) fn apply_c_bitwise_not(
             facts,
             obligations,
         }],
-        CValue::Int8(value) => {
-            let facts = facts;
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(int32(Bitvector32Term::bitwise_not(value))),
-                facts,
-                obligations,
-            }]
-        }
-        CValue::Int16(value) => {
-            let facts = facts;
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(int32(Bitvector32Term::bitwise_not(value))),
-                facts,
-                obligations,
-            }]
-        }
-        CValue::UInt8(value) => {
-            let facts = facts;
-            vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(int32(Bitvector32Term::bitwise_not(value))),
-                facts,
-                obligations,
-            }]
-        }
-        CValue::UInt16(value) => {
-            let facts = facts;
+        narrow @ (CValue::Int8(_) | CValue::Int16(_) | CValue::UInt8(_) | CValue::UInt16(_)) => {
+            // C promotes a narrow operand to `int32` first: its widening.
+            let Some(value) = promote_c_path_value(narrow, MachineIntegerType::Int32) else {
+                return Vec::new();
+            };
             vec![CExpressionPath {
                 outcome: CExpressionOutcome::Value(int32(Bitvector32Term::bitwise_not(value))),
                 facts,
@@ -3863,13 +3845,21 @@ fn apply_c_uint32_division_like(
 fn promote_c_shift_count(value: CValue) -> Option<(Bitvector32Term, bool, bool)> {
     match value.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Bool(value) => Some((value, false, false)),
+        CValue::Bool(value) => Some((
+            Bitvector32Term::bool_word_as(MachineIntegerType::Int32, &value),
+            false,
+            false,
+        )),
         CValue::UInt32(value) => Some((value, true, false)),
         CValue::Int32(value) => Some((value, false, false)),
-        CValue::UInt8(value) => Some((value, false, false)),
-        CValue::Int8(value) => Some((value, false, false)),
-        CValue::Int16(value) => Some((value, false, false)),
-        CValue::UInt16(value) => Some((value, false, false)),
+        // C promotes a narrow count to `int32` first: its widening.
+        narrow @ (CValue::UInt8(_) | CValue::Int8(_) | CValue::Int16(_) | CValue::UInt16(_)) => {
+            Some((
+                promote_c_path_value(narrow, MachineIntegerType::Int32)?,
+                false,
+                false,
+            ))
+        }
         CValue::Int64(value) => Some((value, false, true)),
         CValue::UInt64(value) => Some((value, true, true)),
         CValue::Int128(_)
@@ -3960,8 +3950,28 @@ pub(in crate::kernel) fn apply_c_shift_left(
     let Some((right, unsigned_count, right_is_64_bit)) = promote_c_shift_count(right) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     };
+    // C promotes a narrow shifted operand to `int32` first: its widening,
+    // or a `Bool`'s cast (rule C1).
+    let left = match left.numeric_value().clone() {
+        narrow @ (CValue::Bool(_)
+        | CValue::Int8(_)
+        | CValue::Int16(_)
+        | CValue::UInt8(_)
+        | CValue::UInt16(_)) => match promote_c_path_value(narrow, MachineIntegerType::Int32) {
+            Some(word) => CValue::Int32(word),
+            None => return vec![c_type_mismatch_expression_path(facts, obligations)],
+        },
+        left => left,
+    };
     match left.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
+        CValue::Bool(_)
+        | CValue::Int8(_)
+        | CValue::Int16(_)
+        | CValue::UInt8(_)
+        | CValue::UInt16(_) => {
+            unreachable!("a narrow shifted operand is promoted above")
+        }
         CValue::Int64(left) => apply_c_int64_with_valid_shift_count(
             left,
             right,
@@ -4000,47 +4010,7 @@ pub(in crate::kernel) fn apply_c_shift_left(
                 }]
             },
         ),
-        CValue::Bool(left) | CValue::Int32(left) => apply_c_int32_with_valid_shift_count(
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-            unsigned_count,
-            right_is_64_bit,
-            apply_c_int32_shift_left_valid_count,
-        ),
-        CValue::Int8(left) => apply_c_int32_with_valid_shift_count(
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-            unsigned_count,
-            right_is_64_bit,
-            apply_c_int32_shift_left_valid_count,
-        ),
-        CValue::Int16(left) => apply_c_int32_with_valid_shift_count(
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-            unsigned_count,
-            right_is_64_bit,
-            apply_c_int32_shift_left_valid_count,
-        ),
-        CValue::UInt8(left) => apply_c_int32_with_valid_shift_count(
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-            unsigned_count,
-            right_is_64_bit,
-            apply_c_int32_shift_left_valid_count,
-        ),
-        CValue::UInt16(left) => apply_c_int32_with_valid_shift_count(
+        CValue::Int32(left) => apply_c_int32_with_valid_shift_count(
             left,
             right,
             facts,
@@ -4073,8 +4043,28 @@ pub(in crate::kernel) fn apply_c_shift_right(
     let Some((right, unsigned_count, right_is_64_bit)) = promote_c_shift_count(right) else {
         return vec![c_type_mismatch_expression_path(facts, obligations)];
     };
+    // C promotes a narrow shifted operand to `int32` first: its widening,
+    // or a `Bool`'s cast (rule C1).
+    let left = match left.numeric_value().clone() {
+        narrow @ (CValue::Bool(_)
+        | CValue::Int8(_)
+        | CValue::Int16(_)
+        | CValue::UInt8(_)
+        | CValue::UInt16(_)) => match promote_c_path_value(narrow, MachineIntegerType::Int32) {
+            Some(word) => CValue::Int32(word),
+            None => return vec![c_type_mismatch_expression_path(facts, obligations)],
+        },
+        left => left,
+    };
     match left.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
+        CValue::Bool(_)
+        | CValue::Int8(_)
+        | CValue::Int16(_)
+        | CValue::UInt8(_)
+        | CValue::UInt16(_) => {
+            unreachable!("a narrow shifted operand is promoted above")
+        }
         CValue::Int64(left) => apply_c_int64_with_valid_shift_count(
             left,
             right,
@@ -4113,79 +4103,7 @@ pub(in crate::kernel) fn apply_c_shift_right(
                 }]
             },
         ),
-        CValue::Bool(left) | CValue::Int32(left) => apply_c_int32_with_valid_shift_count(
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-            unsigned_count,
-            right_is_64_bit,
-            |left, right, facts, obligations, _| {
-                vec![CExpressionPath {
-                    outcome: CExpressionOutcome::Value(int32(
-                        Bitvector32Term::arithmetic_shift_right(left, right),
-                    )),
-                    facts,
-                    obligations,
-                }]
-            },
-        ),
-        CValue::Int8(left) => apply_c_int32_with_valid_shift_count(
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-            unsigned_count,
-            right_is_64_bit,
-            |left, right, facts, obligations, _| {
-                vec![CExpressionPath {
-                    outcome: CExpressionOutcome::Value(int32(
-                        Bitvector32Term::arithmetic_shift_right(left, right),
-                    )),
-                    facts,
-                    obligations,
-                }]
-            },
-        ),
-        CValue::Int16(left) => apply_c_int32_with_valid_shift_count(
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-            unsigned_count,
-            right_is_64_bit,
-            |left, right, facts, obligations, _| {
-                vec![CExpressionPath {
-                    outcome: CExpressionOutcome::Value(int32(
-                        Bitvector32Term::arithmetic_shift_right(left, right),
-                    )),
-                    facts,
-                    obligations,
-                }]
-            },
-        ),
-        CValue::UInt8(left) => apply_c_int32_with_valid_shift_count(
-            left,
-            right,
-            facts,
-            obligations,
-            assumptions,
-            unsigned_count,
-            right_is_64_bit,
-            |left, right, facts, obligations, _| {
-                vec![CExpressionPath {
-                    outcome: CExpressionOutcome::Value(int32(
-                        Bitvector32Term::arithmetic_shift_right(left, right),
-                    )),
-                    facts,
-                    obligations,
-                }]
-            },
-        ),
-        CValue::UInt16(left) => apply_c_int32_with_valid_shift_count(
+        CValue::Int32(left) => apply_c_int32_with_valid_shift_count(
             left,
             right,
             facts,

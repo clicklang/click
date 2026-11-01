@@ -33,6 +33,8 @@ pub(super) enum CellRead {
     Int32,
     UInt64,
     FunctionPointer,
+    /// An 8- or 16-bit read, equal to a stored value of its width.
+    Narrow(crate::kernel::CarrierWidth),
 }
 
 /// A read to look up, and the blocks to look in: all of its block class, or
@@ -358,6 +360,8 @@ enum Node {
     Footprint(u64, u64),
     Int32(MachineAtom),
     Int32Read((u32, u32), u64),
+    /// An 8- or 16-bit read of a snapshot at an address, of its load kind.
+    NarrowRead((u32, u32), u64, crate::kernel::LoadKind),
     Int32Add(u64, u64),
     Int32Binary(Int32Binary, u64, u64),
     Int32Unary(Int32Unary, u64),
@@ -402,6 +406,10 @@ enum Application {
     // Defining snapshot, exact storage block ID, offset node/class ID.
     // Only registered four-byte loads in the int32 interpretation enter here.
     Int32Load((u32, u32), u64),
+    // A registered 8- or 16-bit read: its defining snapshot, its address
+    // class, and its kind. Two reads of one snapshot and kind at equal
+    // addresses are one value.
+    NarrowLoad((u32, u32), u64, crate::kernel::LoadKind),
 }
 
 impl Application {
@@ -423,7 +431,8 @@ impl Application {
             | Self::AddressShift(value, _)
             | Self::Int32Scaled(value, _)
             | Self::Int64Scaled(value, _, _)
-            | Self::Int32Load(_, value) => [Some(value), None],
+            | Self::Int32Load(_, value)
+            | Self::NarrowLoad(_, value, _) => [Some(value), None],
         }
         .into_iter()
         .flatten()
@@ -472,6 +481,9 @@ impl Application {
                 Self::Int64Scaled(classes.root(value), width, unsigned)
             }
             Self::Int32Load(snapshot, address) => Self::Int32Load(snapshot, classes.root(address)),
+            Self::NarrowLoad(snapshot, address, kind) => {
+                Self::NarrowLoad(snapshot, classes.root(address), kind)
+            }
         }
     }
 }
@@ -654,6 +666,7 @@ pub(super) struct TermClasses {
     pointer_value_merges: imbl::Vector<(PointerBlock, PointerBlock)>,
     nodes: PersistentMap<Node, u64>,
     load_blocks: PersistentMap<PointerBlock, u64>,
+    // The load nodes, four-byte and narrow, already queued for registration.
     registered_int32_loads: PersistentSet<u64>,
     // Registration dependencies are drained before any public answer. Keeping
     // this worklist iterative handles loads used as indices of further loads.
@@ -661,6 +674,17 @@ pub(super) struct TermClasses {
         u64,
         crate::kernel::SharedCMemory,
         crate::kernel::Pointer,
+        Option<crate::kernel::SharedCMemory>,
+    )>,
+    // Signed byte reads still to be related to their unsigned read (R-mem).
+    pending_signed_byte_reads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
+    // 8- and 16-bit reads whose load application is still to be registered
+    // (`enqueue_narrow_load`).
+    pending_narrow_loads: Vec<(
+        u64,
+        crate::kernel::SharedCMemory,
+        crate::kernel::Pointer,
+        crate::kernel::LoadKind,
         Option<crate::kernel::SharedCMemory>,
     )>,
     // Reads whose stored cell under another spelling of their address is
@@ -690,6 +714,9 @@ pub(super) struct TermClasses {
     weights: PersistentMap<u64, usize>,
     int32_constants: PersistentMap<u64, i32>,
     uint64_constants: PersistentMap<u64, u64>,
+    /// The bits of the constant an 8- or 16-bit class holds. A class has
+    /// one width, so its bits name its value at either signedness.
+    pub(super) narrow_constants: PersistentMap<u64, u32>,
     // Monotonic within one checked context; forks copy it and weakening
     // rebuilds the graph from retained support. Queries read one flag.
     scalar_constant_conflict: bool,
@@ -1458,6 +1485,7 @@ impl TermClasses {
     fn intern_node(&mut self, node: Node) -> u64 {
         if let Some(id) = self.nodes.get(&node).copied() {
             self.enqueue_int32_load(id, &node);
+            self.enqueue_narrow_load(id, &node);
             return id;
         }
         let id = self.nodes.len() as u64;
@@ -1508,6 +1536,9 @@ impl TermClasses {
                 Some(Application::PointerRead(*snapshot, *address, *kind))
             }
             Node::Int32Read(snapshot, address) => Some(Application::Int32Load(*snapshot, *address)),
+            Node::NarrowRead(snapshot, address, kind) => {
+                Some(Application::NarrowLoad(*snapshot, *address, *kind))
+            }
             Node::Footprint(start, end) => Some(Application::Footprint(*start, *end)),
             Node::Add(left, right) => Some(Application::Add(*left, *right)),
             Node::Int32Add(left, right) => Some(Application::Int32Add(*left, *right)),
@@ -1525,6 +1556,14 @@ impl TermClasses {
                 }
                 None
             }
+            Node::MachineNarrow(atom) => {
+                if let crate::kernel::Bitvector32Term::MachineIntegerConstant(constant) =
+                    atom.value()
+                {
+                    self.narrow_constants.insert(id, constant.bits() as u32);
+                }
+                None
+            }
             Node::UInt64(value) => {
                 let literal = match value.value() {
                     crate::kernel::Bitvector32Term::UInt64Constant(value) => Some(*value),
@@ -1539,6 +1578,8 @@ impl TermClasses {
             _ => None,
         };
         self.enqueue_int32_load(id, &node);
+        self.enqueue_narrow_load(id, &node);
+        self.enqueue_signed_byte_read(id, &node);
         self.retain_machine_head(id, &node);
         self.nodes.insert(node, id);
         self.markers.insert(id, Arc::new(()));
@@ -1578,6 +1619,66 @@ impl TermClasses {
         self.pending_loads.push((id, memory, pointer, origin));
     }
 
+    /// An 8- or 16-bit read is a load application of its snapshot, address
+    /// and kind, as a four-byte read is (`enqueue_int32_load`): two reads of
+    /// one snapshot and kind at addresses in one class are one value. Queued
+    /// when the read's node is interned; one pending entry, nothing scanned.
+    fn enqueue_narrow_load(&mut self, id: u64, node: &Node) {
+        let Node::MachineNarrow(atom) = node else {
+            return;
+        };
+        let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
+            return;
+        };
+        if !crate::kernel::is_load_variable(variable) || self.registered_int32_loads.contains(&id) {
+            return;
+        }
+        let Some(kind) = crate::kernel::registered_load_kind_for_variable(variable) else {
+            return;
+        };
+        let bytes = match kind {
+            crate::kernel::LoadKind::Int8 | crate::kernel::LoadKind::UInt8 => 1,
+            crate::kernel::LoadKind::Int16 | crate::kernel::LoadKind::UInt16 => 2,
+            _ => return,
+        };
+        // A read named at an address a wider read was recorded at carries
+        // that wider width, and is another value.
+        if crate::kernel::registered_load_bytes_for_variable(variable) != Some(bytes) {
+            return;
+        }
+        let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
+            return;
+        };
+        self.registered_int32_loads = self.registered_int32_loads.with_value(id);
+        let origin = load_origin(variable, &memory);
+        self.pending_narrow_loads
+            .push((id, memory, pointer, kind, origin));
+    }
+
+    /// R-mem for bytes: the `int8` read of a byte and its `uint8` read are
+    /// two loads of the same eight bits, so the signed read is the 8-bit
+    /// sign cast of the unsigned one. Queued when the signed read's node is
+    /// interned; one pending entry, nothing scanned.
+    fn enqueue_signed_byte_read(&mut self, id: u64, node: &Node) {
+        let Node::MachineNarrow(atom) = node else {
+            return;
+        };
+        let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
+            return;
+        };
+        if !crate::kernel::is_load_variable(variable)
+            || crate::kernel::registered_load_kind_for_variable(variable)
+                != Some(crate::kernel::LoadKind::Int8)
+            || crate::kernel::registered_load_bytes_for_variable(variable) != Some(1)
+        {
+            return;
+        }
+        let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
+            return;
+        };
+        self.pending_signed_byte_reads.push((id, memory, pointer));
+    }
+
     fn register_pending_loads(&mut self) {
         if self.registering_dependencies {
             return;
@@ -1608,6 +1709,62 @@ impl TermClasses {
                 crate::instrumentation::record_deterministic_work(1);
                 let value = self.intern_pointer_call_identity(&application);
                 self.close_with_affine_definition(vec![(identity, value)], true);
+                continue;
+            }
+            if let Some((signed, memory, pointer)) = self.pending_signed_byte_reads.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                let unsigned = crate::kernel::Bitvector32Term::Variable(
+                    crate::kernel::eval::load_variable_for_exact_cell(
+                        &memory,
+                        &pointer,
+                        crate::kernel::LoadKind::UInt8,
+                        1,
+                    ),
+                );
+                let byte = self.intern_typed_machine(&unsigned, crate::kernel::CarrierWidth::Bits8);
+                let cast = self.narrow_cast_node(
+                    crate::kernel::MachineIntegerType::UInt8,
+                    crate::kernel::MachineIntegerType::Int8,
+                    byte,
+                    false,
+                );
+                self.close(vec![(signed, cast)]);
+                continue;
+            }
+            if let Some((id, memory, pointer, kind, origin)) = self.pending_narrow_loads.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                let address = self
+                    .address(pointer.block.clone(), pointer.offset.clone())
+                    .0;
+                let address = self.read_address(address);
+                self.register_application(
+                    id,
+                    Application::NarrowLoad(memory.read_identity(), address, kind),
+                );
+                // The read's recorded projection source at the same address,
+                // as for a four-byte read: one indexed edge, no history walk.
+                if let Some(source) =
+                    crate::kernel::prelude::canonical_load_projection_source(&memory, &pointer)
+                {
+                    let source_read =
+                        self.intern_node(Node::NarrowRead(source.read_identity(), address, kind));
+                    self.close_with_affine_definition(vec![(id, source_read)], true);
+                }
+                // The value a store left in the read's cell, as for a
+                // four-byte read.
+                let width = if kind.byte_width() == 1 {
+                    crate::kernel::CarrierWidth::Bits8
+                } else {
+                    crate::kernel::CarrierWidth::Bits16
+                };
+                self.pending_cell_reads.push(PendingCellRead {
+                    read: id,
+                    memory,
+                    origin,
+                    pointer,
+                    kind: CellRead::Narrow(width),
+                    only: None,
+                });
                 continue;
             }
             let Some((id, memory, pointer, origin)) = self.pending_loads.pop() else {
@@ -1706,6 +1863,14 @@ impl TermClasses {
             found = match (stored, kind) {
                 (Some(V::Int64(value) | V::UInt64(value)), CellRead::UInt64)
                 | (Some(V::Int32(value) | V::UInt32(value)), CellRead::Int32) => Some(Ok(value)),
+                (
+                    Some(V::Bool(value) | V::Int8(value) | V::UInt8(value)),
+                    CellRead::Narrow(crate::kernel::CarrierWidth::Bits8),
+                )
+                | (
+                    Some(V::Int16(value) | V::UInt16(value)),
+                    CellRead::Narrow(crate::kernel::CarrierWidth::Bits16),
+                ) => Some(Ok(value)),
                 (Some(V::Pointer(value)), CellRead::FunctionPointer)
                     if matches!(value.c_type(), crate::kernel::CType::FunctionPointer(_)) =>
                 {
@@ -1716,7 +1881,10 @@ impl TermClasses {
             break;
         }
         let value = match found {
-            Some(Ok(value)) => self.intern_machine(&value, kind == CellRead::UInt64),
+            Some(Ok(value)) => match kind {
+                CellRead::Narrow(width) => self.intern_typed_machine(&value, width),
+                _ => self.intern_machine(&value, kind == CellRead::UInt64),
+            },
             // The read's value is a pointer; its address is the designator's.
             Some(Err(stored)) => self.address(stored.block, stored.offset).0,
             None => {
@@ -2010,18 +2178,21 @@ impl TermClasses {
         if left_atom.is_some() && left_atom == right_atom {
             return true;
         }
-        // Registration can create a literal through evaluation, but cannot
-        // create a new opaque nonliteral atom as another term's consequence.
-        // Such an absent endpoint therefore cannot match an application.
-        for atom in [&left_atom, &right_atom].into_iter().flatten() {
-            if let Node::Int32(value) = atom
-                && !matches!(
-                    value.value(),
-                    Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
-                )
-                && !self.nodes.contains_key(atom)
-            {
-                return false;
+        // Two opaque endpoints cannot introduce one another. An application
+        // can, however, introduce an operand and prove itself equal to it
+        // (for example, a wide cast round trip). Do not reject its missing
+        // opaque endpoint before registering that explicit expression.
+        if left_atom.is_some() && right_atom.is_some() {
+            for atom in [&left_atom, &right_atom].into_iter().flatten() {
+                if let Node::Int32(value) = atom
+                    && !matches!(
+                        value.value(),
+                        Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+                    )
+                    && !self.nodes.contains_key(atom)
+                {
+                    return false;
+                }
             }
         }
         if let (Some(left), Some(right)) = (left_atom, right_atom) {
@@ -2318,6 +2489,11 @@ impl TermClasses {
                 self.uint64_constants
                     .get(&class)
                     .map(|value| i128::from(*value))
+            })
+            .or_else(|| {
+                self.narrow_constants
+                    .get(&class)
+                    .map(|value| i128::from(*value))
             });
         match value {
             Some(1) => self.retain_condition_truth(link.condition, 1),
@@ -2373,6 +2549,31 @@ impl TermClasses {
         }
         let unions = std::mem::take(&mut self.pending_cast_unions);
         self.close(unions);
+    }
+
+    /// The node of the constant `term` folds to at `ty`'s width: an 8- or
+    /// 16-bit constant by its bits, or a 32-bit word. `None` when the term
+    /// is not a constant of that width.
+    fn machine_literal_node(
+        &mut self,
+        ty: crate::kernel::MachineIntegerType,
+        term: &crate::kernel::Bitvector32Term,
+    ) -> Option<u64> {
+        use crate::kernel::{Bitvector32Term as T, MachineIntegerType as M};
+        let width = ty.format().bits();
+        if width < 32 {
+            let bits = term.narrow_constant_bits(ty)?;
+            let canonical = if width == 8 { M::UInt8 } else { M::UInt16 };
+            return Some(self.intern_node(Node::MachineNarrow(MachineAtom::new(
+                canonical,
+                T::narrow_constant(canonical, bits),
+            ))));
+        }
+        if width == 32 {
+            let value = term.as_const()?;
+            return Some(self.intern_node(Node::Int32(MachineAtom::int32(T::Constant(value)))));
+        }
+        None
     }
 
     fn reindex_application(&mut self, id: u64, pending: &mut PendingUnions) {
@@ -2507,7 +2708,29 @@ impl TermClasses {
                 pending.push((id, literal));
             }
         }
-        if let Application::Int32Unary(op, value) = signature
+        // A conversion of a narrow constant, or a conversion into a narrow
+        // format of a constant, is that constant converted: a node of the
+        // destination's width. One lookup per firing.
+        if let Application::Int32Unary(Int32Unary::Cast(source, destination), value) = signature
+            && (source.format().bits() < 32 || destination.format().bits() < 32)
+        {
+            use crate::kernel::Bitvector32Term as T;
+            let operand = if source.format().bits() < 32 {
+                self.narrow_constants
+                    .get(&value)
+                    .map(|bits| T::narrow_constant(source, u128::from(*bits)))
+            } else {
+                self.int32_constants
+                    .get(&value)
+                    .map(|value| T::Constant(*value as u32))
+            };
+            if let Some(operand) = operand {
+                let converted = T::machine_integer_cast(source, destination, operand);
+                if let Some(literal) = self.machine_literal_node(destination, &converted) {
+                    pending.push((id, literal));
+                }
+            }
+        } else if let Application::Int32Unary(op, value) = signature
             && let Some(value) = self.int32_constants.get(&value).copied()
         {
             use crate::kernel::Bitvector32Term as T;
@@ -2755,6 +2978,24 @@ impl TermClasses {
                 }
                 self.uint64_constants.remove(&moved);
             }
+            match (
+                self.narrow_constants.get(&kept).copied(),
+                self.narrow_constants.get(&moved).copied(),
+            ) {
+                (Some(left), Some(right)) if left != right => {
+                    self.scalar_constant_conflict = true;
+                    self.mark_scalar_conflict(kept);
+                }
+                (None, Some(value)) => {
+                    self.narrow_constants.insert(kept, value);
+                    let uses = self.constant_uses.get(&kept).cloned().unwrap_or_default();
+                    for id in uses.iter() {
+                        self.reindex_application(*id, &mut pending);
+                    }
+                }
+                _ => {}
+            }
+            self.narrow_constants.remove(&moved);
             // A class learns a literal only once. Its existing applications
             // then need constant evaluation as well as the moved applications.
             if !self.int32_constants.contains_key(&kept)

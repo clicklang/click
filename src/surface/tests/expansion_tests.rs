@@ -1,6 +1,27 @@
 use super::*;
 
 #[test]
+fn short_circuit_boolean_returns_expand_distinct_outcome_proofs() {
+    for (expression, proposition) in [("a && b", "a and b"), ("a || b", "a or b")] {
+        let c = format!("bool f(bool a, bool b) {{ return {expression}; }}");
+        let source = format!(
+            r#"verifying "bool.c";
+            bool f(bool a, bool b) {{
+                ensures result implies {proposition};
+                ensures ({proposition}) implies result;
+            }}"#
+        );
+        let sources = [("bool.c", c.as_str())];
+        let verified = verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_checked_grouped_claim(&source, &verified, "f").unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+        let wrong = source.replace("ensures result implies", "ensures not result implies");
+        assert!(verify_c0_sources(&wrong, &sources).is_err());
+    }
+}
+
+#[test]
 #[ignore = "nightly: original branching alias proofs and expansion take one second"]
 fn alias_load_outcome_requirements_keep_recorded_value_names_in_expansion() {
     let (mut source, sources) =
@@ -19708,4 +19729,68 @@ fn explicit_store_byte_gap_expands_without_search() {
     let expanded =
         expand_c0_claim_source_by_label(&source, &sources, "wide_after.contract").unwrap();
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn loop_guard_paths_expand_distinct_nested_proofs() {
+    let (source, sources) = mdtest_sources("mdtests/loop_guard_paths_keep_distinct_proofs.md");
+    for three_paths in [false, true] {
+        let adapt = |text: &str| {
+            if three_paths {
+                text.replace("bool a, bool b", "bool a, bool b, bool c")
+                    .replace("a || b", "a || b || c")
+                    .replace("not a implies b", "not a implies not b implies c")
+            } else {
+                text.to_string()
+            }
+        };
+        let source = adapt(&source);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.clone(), adapt(text)))
+            .collect::<Vec<_>>();
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let at = expansion::position_at_offset(&source, source.find("solve();").unwrap());
+        let expanded = expand_c0_tactic_source_at(&source, &sources, at.line, at.column).unwrap();
+        assert!(expanded.contains("if "), "{expanded}");
+        verify_c0_sources(&expanded, &sources).unwrap();
+        let sites = c0_smart_tactic_source_sites(&source, &sources).unwrap();
+        let positions = sites
+            .iter()
+            .map(|site| site.position.clone())
+            .collect::<Vec<_>>();
+        let batch = expand_c0_tactics_source_at(&source, &sources, &positions).unwrap();
+        verify_c0_sources(&batch.source, &sources).unwrap();
+        let invalid = source.replace(
+            if three_paths {
+                "have not a implies not b implies c"
+            } else {
+                "have not a implies b"
+            },
+            "have b",
+        );
+        assert!(verify_c0_sources(&invalid, &sources).is_err());
+    }
+}
+
+#[test]
+#[ignore = "nightly: verifies, expands and rechecks three arithmetic proof fixtures"]
+fn machine_subtraction_fact_bridges_expand_without_implicit_search() {
+    for (fixture, function) in [
+        ("machine_subtraction_equality_rewrites_an_index", "pick"),
+        ("machine_subtraction_guard_is_selected_exactly", "at"),
+        ("machine_subtraction_guard_without_using", "at"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
 }

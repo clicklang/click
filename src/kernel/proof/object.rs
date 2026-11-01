@@ -709,7 +709,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         // such as one the Integer equality closure derives, is too: at most
         // one lookup per reading.
         let observed_otherwise = || {
-            crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+            crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 proposition,
             )
             .iter()
@@ -1201,17 +1201,9 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             }
             None => super::PropositionObligation::new(proposition, presentation),
         };
-        let mut added_facts = introduced.into_iter().collect::<Vec<_>>();
-        if let (Some(variable), Proposition::ForAll { sort, .. }) = (witness, goal.proposition()) {
-            // A universally introduced machine value has its declared type.
-            // Its intrinsic bounds are facts about the fresh value, not
-            // antecedents inserted into the proposition's spelling.
-            if let Some(bounds) = sort.machine_integer_type().and_then(|ty| {
-                crate::kernel::c_narrow_integer_range_facts(&ty.symbolic_value(variable))
-            }) {
-                added_facts.extend(bounds);
-            }
-        }
+        // A universally introduced machine value has its declared type, whose
+        // range is its format's: no bound is filed for it.
+        let added_facts = introduced.into_iter().collect::<Vec<_>>();
         let mut facts = facts.clone().with_reserved_variables(witness);
         for fact in &added_facts {
             facts = facts.with_fact(fact.clone());
@@ -1431,10 +1423,19 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         } else {
             return Err(PropositionCloseError::InstantiateQuantifiedUnavailable);
         };
+        // A listed mathematical comparison may spell an in-range machine
+        // guard. Check only its operation's exact range keys in the retained
+        // context, then pass that checked consequence beside the listed fact.
+        let mut premises_with_readings = explicit_premises.to_vec();
+        for premise in explicit_premises {
+            if let Some(native) = facts.native_operation_reading(premise) {
+                premises_with_readings.push(native);
+            }
+        }
         let conclusion = super::fact_reasoning::check_forall_instantiation(
             &quantified,
             &argument,
-            explicit_premises,
+            &premises_with_readings,
         )
         .map_err(PropositionCloseError::InstantiateInvalid)?;
         let added_facts = (!facts.contains_top_level(&conclusion))

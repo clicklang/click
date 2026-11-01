@@ -1287,11 +1287,11 @@ fn exhausted_c_value(value: &CValue) -> CValue {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Parameter(term) => CValue::Parameter(Box::new(exhausted_algebraic(term))),
         CValue::Void => CValue::Void,
-        CValue::Bool(_) => CValue::Bool(Bitvector32Term::Constant(0)),
-        CValue::Int8(_) => CValue::Int8(Bitvector32Term::Constant(0)),
-        CValue::Int16(_) => CValue::Int16(Bitvector32Term::Constant(0)),
-        CValue::UInt8(_) => CValue::UInt8(Bitvector32Term::Constant(0)),
-        CValue::UInt16(_) => CValue::UInt16(Bitvector32Term::Constant(0)),
+        CValue::Bool(_) => CValue::bool_constant(false),
+        CValue::Int8(_) => crate::kernel::int8(0),
+        CValue::Int16(_) => crate::kernel::int16(0),
+        CValue::UInt8(_) => crate::kernel::uint8(0),
+        CValue::UInt16(_) => crate::kernel::uint16(0),
         CValue::Int32(_) => CValue::Int32(Bitvector32Term::Constant(0)),
         CValue::UInt32(_) => CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
         CValue::Int64(_) => CValue::Int64(Bitvector32Term::Int64Constant(0)),
@@ -2341,6 +2341,44 @@ impl<'a> TermRewrite<'a> {
     /// operand as written or as rewritten, or fold to true by itself; no
     /// other fact is consulted. `conditional_guards` reports the bounds so
     /// a search can cite them.
+    /// The 32-bit word of `widen(conv(v))`, the widening into `int32` or
+    /// `uint32` of a narrowing `conv` whose operand the conditions place
+    /// inside its range: the operand's word (`narrowed_cast_identity`). A
+    /// narrowing is a value of its own width; only its widening has a word.
+    fn widened_narrowed_cast_carrier(
+        &mut self,
+        original: &Bitvector32Term,
+        rewritten: &Bitvector32Term,
+        source: crate::kernel::MachineIntegerType,
+        destination: crate::kernel::MachineIntegerType,
+    ) -> Option<Bitvector32Term> {
+        if !crate::kernel::is_narrow_widening32(source, destination) {
+            return None;
+        }
+        let (
+            Bitvector32Term::MachineIntegerCast {
+                value: original,
+                source: original_source,
+                destination: original_destination,
+            },
+            Bitvector32Term::MachineIntegerCast {
+                value: rewritten,
+                source: rewritten_source,
+                destination: rewritten_destination,
+            },
+        ) = (original, rewritten)
+        else {
+            return None;
+        };
+        if original_source != rewritten_source
+            || *original_destination != source
+            || *rewritten_destination != source
+        {
+            return None;
+        }
+        self.narrowed_cast_carrier(original, rewritten, *rewritten_source, source)
+    }
+
     fn narrowed_cast_carrier(
         &mut self,
         original: &Bitvector32Term,
@@ -4604,11 +4642,18 @@ impl<'a> TermRewrite<'a> {
                                 return exhausted_pointer();
                             }
                         }
-                        let result =
-                            PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
-                                application.name().to_string(),
-                                arguments,
-                            ));
+                        let rewritten = SharedPureApplication::intern(
+                            application.name().to_string(),
+                            arguments,
+                        );
+                        // A checked substitution can clear every address bit.
+                        // Use the same null representation as the original
+                        // cast, keeping the displacement outside this block.
+                        let result = if let Some(bits) = rewritten.integer_address_bits() {
+                            Pointer::integer_address(bits.clone()).block
+                        } else {
+                            PointerBlock::PureFunctionApplication(rewritten)
+                        };
                         self.pointer_application_cache.insert(key, result.clone());
                         result
                     }
@@ -5120,7 +5165,7 @@ impl<'a> TermRewrite<'a> {
                         destination: *destination,
                     }
                 } else if let Some(carrier) =
-                    self.narrowed_cast_carrier(original, &value, *source, *destination)
+                    self.widened_narrowed_cast_carrier(original, &value, *source, *destination)
                 {
                     carrier
                 } else {
@@ -5401,7 +5446,10 @@ mod tests {
                 destination: MachineIntegerType::Int8,
             };
             let expected = if (-128..=127).contains(&value) {
-                Bitvector32Term::Constant(value as i32 as u32)
+                Bitvector32Term::narrow_constant(
+                    MachineIntegerType::Int8,
+                    value as i8 as u8 as u128,
+                )
             } else {
                 input.clone()
             };

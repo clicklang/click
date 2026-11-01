@@ -485,6 +485,46 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         "library/format.click",
         include_str!("../library/format.click"),
     ),
+    (
+        "library/rust/i8.click",
+        include_str!("../library/rust/i8.click"),
+    ),
+    (
+        "library/rust/i16.click",
+        include_str!("../library/rust/i16.click"),
+    ),
+    (
+        "library/rust/i32.click",
+        include_str!("../library/rust/i32.click"),
+    ),
+    (
+        "library/rust/i64.click",
+        include_str!("../library/rust/i64.click"),
+    ),
+    (
+        "library/rust/isize.click",
+        include_str!("../library/rust/isize.click"),
+    ),
+    (
+        "library/rust/u8.click",
+        include_str!("../library/rust/u8.click"),
+    ),
+    (
+        "library/rust/u16.click",
+        include_str!("../library/rust/u16.click"),
+    ),
+    (
+        "library/rust/u32.click",
+        include_str!("../library/rust/u32.click"),
+    ),
+    (
+        "library/rust/u64.click",
+        include_str!("../library/rust/u64.click"),
+    ),
+    (
+        "library/rust/usize.click",
+        include_str!("../library/rust/usize.click"),
+    ),
 ];
 
 /// Emits one non-overlapping verifier phase on every exit path, including an
@@ -1392,6 +1432,10 @@ pub struct FunctionBlock {
     /// case each requirement counts as its own clause.
     requirement_source_clauses: Vec<usize>,
     decreases: Option<CFunctionDecrease>,
+    /// Rust arguments pass through MIR temporaries. Rank numeric recursion
+    /// at the checked call rather than by the C body's direct `n - K` shape.
+    /// This is selected by the source language, not signature presentation.
+    call_ranked_numeric_recursion: bool,
     /// The other members of this function's recursive C component, supplied
     /// by the source frontend; empty outside a component of two or more.
     recursion_peers: Vec<String>,
@@ -2136,17 +2180,15 @@ thread_local! {
 /// The specification `bool` literal `true` or `false`: a C `bool` value,
 /// exactly `1` or `0`.
 pub(crate) fn bool_literal(value: bool) -> ContractExpression {
-    ContractExpression::CFragment(CExpression::Value(CValue::Bool(
-        crate::kernel::Bitvector32Term::Constant(u32::from(value)),
-    )))
+    ContractExpression::CFragment(CExpression::Value(CValue::bool_constant(value)))
 }
 
 /// The value of a `bool` literal written as `true` or `false`.
 pub(crate) fn bool_literal_value(expression: &ContractExpression) -> Option<bool> {
     match expression {
-        ContractExpression::CFragment(CExpression::Value(CValue::Bool(
-            crate::kernel::Bitvector32Term::Constant(value @ (0 | 1)),
-        ))) => Some(*value == 1),
+        ContractExpression::CFragment(CExpression::Value(CValue::Bool(value))) => {
+            value.bool_constant_value()
+        }
         _ => None,
     }
 }
@@ -2820,8 +2862,12 @@ fn collect_current_proposition_variables(
     }
 }
 
+/// Compatibility name while expression consumers migrate to `SurfaceTerm`.
+pub type ContractExpression = SurfaceTerm;
+
+/// Source expressions shared by declarations, proof claims and raised terms.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub enum ContractExpression {
+pub enum SurfaceTerm {
     Resource(Box<ResourceSubject>),
     /// An unsuffixed decimal retained until specification type checking. The
     /// same source spelling can denote a C literal or an exact Integer when

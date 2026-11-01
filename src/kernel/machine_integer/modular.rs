@@ -28,9 +28,9 @@ pub(crate) fn wrapped_equality_of_integer_equality(
 /// `w` is the width of `modulus` and the equality is over observations of
 /// formats of that width (`int32` and `uint32` for 32 bits), constants and
 /// ring operations. `None` when the equality names no such observation, an
-/// observation of another width, or `modulus` is not as wide as the word its
-/// operations reduce in (a narrow format, whose operations are 32-bit, or a
-/// 128-bit one, which has none).
+/// observation of another width, or `modulus` is a 128-bit format, which has
+/// no operations. An 8- or 16-bit format's operations are native, of its own
+/// width.
 pub(crate) fn wrapped_equality_at(
     modulus: MachineIntegerType,
     condition: &ConditionTerm,
@@ -41,9 +41,8 @@ pub(crate) fn wrapped_equality_at(
     else {
         return None;
     };
-    // The word operations reduce modulo the word's width, which is the
-    // modulus only for a format as wide as its word: an 8-bit sum is a
-    // 32-bit word sum, not reduced modulo 2^8.
+    // The operations reduce modulo their format's width; a 128-bit format
+    // has none.
     let width = modulus.format().bits();
     if representation::word_bits(modulus) != Some(width) {
         return None;

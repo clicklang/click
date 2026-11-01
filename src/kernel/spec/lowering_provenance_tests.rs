@@ -231,7 +231,7 @@ fn native_existential_conversion_obligations_share_the_claim_witness() {
     let claim = existential(SpecProposition::Comparison {
         left: narrowed,
         operator: CComparisonOperator::Equal,
-        right: SpecExpression::Value(CValue::UInt8(255u32.into())),
+        right: SpecExpression::Value(crate::kernel::uint8(255u32)),
     });
     let (goal, _, obligations, _) =
         crate::kernel::c_lower_spec_proposition_with_checked_obligations(

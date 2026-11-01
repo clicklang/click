@@ -746,6 +746,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have defined(tmp[2u64]) by { normalize() using { j == 1; }; }
                     have tmp[2u64] == 0u8 by { normalize() using { j == 1; }; }
                     have tmp_len(j) == 2u64 by { unfold(tmp_len(j)); solve(); }
+                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j) == 2u64); assumption(); }
                     have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                     have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
                     have forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) } by { enumerate(); }
@@ -779,6 +780,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     have defined(tmp[3u64]) by { normalize() using { j == 2; }; }
                     have tmp[3u64] == 0u8 by { normalize() using { j == 2; }; }
                     have tmp_len(j) == 3u64 by { unfold(tmp_len(j)); solve(); }
+                    have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j) == 3u64); assumption(); }
                     have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                     have forall (k: uint64) { 0u64 <= k and k < 3u64 implies tmp[k] != 0u8 } by { enumerate(); }
                     have forall (k: uint64) { 0u64 <= k and k < 4u64 implies defined(tmp[k]) } by { enumerate(); }
@@ -800,6 +802,7 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             } else {
                 have j == 0;
                 have tmp_len(j) == 0u64 by { unfold(tmp_len(j)); solve(); }
+                have tmp[tmp_len(j)] == 0u8 by { rewrite(tmp_len(j) == 0u64); assumption(); }
                 have to_integer(tmp_len(j)) + 1 <= 18446744073709551615;
                 have forall (k: uint64) { 0u64 <= k and k < tmp_len(j) implies tmp[k] != 0u8 } by {
                     intro();
@@ -818,7 +821,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             }
 // The unit and the final call: one case per unit string, each split by the
 // two flags into the four literal combinations the call prints.
-            mark tmp_ready;
             have format::decimal_length(size as uint32 as uint64) <= 20u64 by {
                 unfold(format::decimal_length(size as uint32 as uint64));
                 have format::decimal_length(size as uint32 as uint64) <= 20u64;
@@ -828,7 +830,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
             if 9 <= i {
                 step();
                 step();
-                transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                 if (units & 1073741824u32) != 0u32 {
                     if (units & 2147483648u32) != 0u32 {
                         step(snprintf, { n1: tmp_len(j) });
@@ -858,7 +859,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     if i == 0 {
                         step();
                         step();
-                        transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                         if (units & 1073741824u32) != 0u32 {
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
@@ -885,7 +885,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         if i == 1 {
                             step();
                             step();
-                            transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                             if (units & 1073741824u32) != 0u32 {
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
@@ -912,7 +911,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             if i == 2 {
                                 step();
                                 step();
-                                transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                 if (units & 1073741824u32) != 0u32 {
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
@@ -939,7 +937,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 if i == 3 {
                                     step();
                                     step();
-                                    transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                     if (units & 1073741824u32) != 0u32 {
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
@@ -966,7 +963,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                     if i == 4 {
                                         step();
                                         step();
-                                        transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                         if (units & 1073741824u32) != 0u32 {
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
@@ -993,7 +989,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         if i == 5 {
                                             step();
                                             step();
-                                            transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                             if (units & 1073741824u32) != 0u32 {
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
@@ -1020,7 +1015,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                             if i == 6 {
                                                 step();
                                                 step();
-                                                transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                                 if (units & 1073741824u32) != 0u32 {
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
@@ -1047,7 +1041,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                 if i == 7 {
                                                     step();
                                                     step();
-                                                    transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                                     if (units & 1073741824u32) != 0u32 {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
@@ -1074,7 +1067,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     have i == 8 by { solve() using { 8 <= i; i <= 8; }; }
                                                     step();
                                                     step();
-                                                    transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                                     if (units & 1073741824u32) != 0u32 {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
@@ -1108,7 +1100,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                     if i == 0 {
                         step();
                         step();
-                        transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                         if (units & 1073741824u32) != 0u32 {
                             if (units & 2147483648u32) != 0u32 {
                                 step(snprintf, { n1: tmp_len(j) });
@@ -1135,7 +1126,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         if i == 1 {
                             step();
                             step();
-                            transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                             if (units & 1073741824u32) != 0u32 {
                                 if (units & 2147483648u32) != 0u32 {
                                     step(snprintf, { n1: tmp_len(j) });
@@ -1162,7 +1152,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                             if i == 2 {
                                 step();
                                 step();
-                                transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                 if (units & 1073741824u32) != 0u32 {
                                     if (units & 2147483648u32) != 0u32 {
                                         step(snprintf, { n1: tmp_len(j) });
@@ -1189,7 +1178,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 if i == 3 {
                                     step();
                                     step();
-                                    transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                     if (units & 1073741824u32) != 0u32 {
                                         if (units & 2147483648u32) != 0u32 {
                                             step(snprintf, { n1: tmp_len(j) });
@@ -1216,7 +1204,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                     if i == 4 {
                                         step();
                                         step();
-                                        transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                         if (units & 1073741824u32) != 0u32 {
                                             if (units & 2147483648u32) != 0u32 {
                                                 step(snprintf, { n1: tmp_len(j) });
@@ -1243,7 +1230,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                         if i == 5 {
                                             step();
                                             step();
-                                            transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                             if (units & 1073741824u32) != 0u32 {
                                                 if (units & 2147483648u32) != 0u32 {
                                                     step(snprintf, { n1: tmp_len(j) });
@@ -1270,7 +1256,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                             if i == 6 {
                                                 step();
                                                 step();
-                                                transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                                 if (units & 1073741824u32) != 0u32 {
                                                     if (units & 2147483648u32) != 0u32 {
                                                         step(snprintf, { n1: tmp_len(j) });
@@ -1297,7 +1282,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                 if i == 7 {
                                                     step();
                                                     step();
-                                                    transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                                     if (units & 1073741824u32) != 0u32 {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });
@@ -1324,7 +1308,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                                     have i == 8 by { solve() using { 8 <= i; i <= 8; }; }
                                                     step();
                                                     step();
-                                                    transport(forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(at(tmp_ready, tmp[k])) }, forall (k: uint64) { 0u64 <= k and k < tmp_len(j) + 1u64 implies defined(tmp[k]) });
                                                     if (units & 1073741824u32) != 0u32 {
                                                         if (units & 2147483648u32) != 0u32 {
                                                             step(snprintf, { n1: tmp_len(j) });

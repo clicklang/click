@@ -3656,3 +3656,427 @@ path = "reference/language/index.md#composite-resources"
 [[item]]
 id = "library.theorem.separation::elements"
 path = "reference/library/index.md#separationelements"
+
+[[item]]
+id = "library.function.i8::min"
+path = "reference/library/index.md#i8min"
+
+[[item]]
+id = "library.function.i8::max"
+path = "reference/library/index.md#i8max"
+
+[[item]]
+id = "library.function.i8::wrapping_add"
+path = "reference/library/index.md#i8wrapping_add"
+
+[[item]]
+id = "library.function.i8::wrapping_sub"
+path = "reference/library/index.md#i8wrapping_sub"
+
+[[item]]
+id = "library.function.i8::wrapping_mul"
+path = "reference/library/index.md#i8wrapping_mul"
+
+[[item]]
+id = "library.function.i8::saturating_add"
+path = "reference/library/index.md#i8saturating_add"
+
+[[item]]
+id = "library.function.i8::saturating_sub"
+path = "reference/library/index.md#i8saturating_sub"
+
+[[item]]
+id = "library.function.i8::checked_add"
+path = "reference/library/index.md#i8checked_add"
+
+[[item]]
+id = "library.function.i8::checked_sub"
+path = "reference/library/index.md#i8checked_sub"
+
+[[item]]
+id = "library.function.i8::abs_diff"
+path = "reference/library/index.md#i8abs_diff"
+
+[[item]]
+id = "library.function.i8::unsigned_abs"
+path = "reference/library/index.md#i8unsigned_abs"
+
+[[item]]
+id = "library.function.i16::min"
+path = "reference/library/index.md#i16min"
+
+[[item]]
+id = "library.function.i16::max"
+path = "reference/library/index.md#i16max"
+
+[[item]]
+id = "library.function.i16::wrapping_add"
+path = "reference/library/index.md#i16wrapping_add"
+
+[[item]]
+id = "library.function.i16::wrapping_sub"
+path = "reference/library/index.md#i16wrapping_sub"
+
+[[item]]
+id = "library.function.i16::wrapping_mul"
+path = "reference/library/index.md#i16wrapping_mul"
+
+[[item]]
+id = "library.function.i16::saturating_add"
+path = "reference/library/index.md#i16saturating_add"
+
+[[item]]
+id = "library.function.i16::saturating_sub"
+path = "reference/library/index.md#i16saturating_sub"
+
+[[item]]
+id = "library.function.i16::checked_add"
+path = "reference/library/index.md#i16checked_add"
+
+[[item]]
+id = "library.function.i16::checked_sub"
+path = "reference/library/index.md#i16checked_sub"
+
+[[item]]
+id = "library.function.i16::abs_diff"
+path = "reference/library/index.md#i16abs_diff"
+
+[[item]]
+id = "library.function.i16::unsigned_abs"
+path = "reference/library/index.md#i16unsigned_abs"
+
+[[item]]
+id = "library.function.i32::min"
+path = "reference/library/index.md#i32min"
+
+[[item]]
+id = "library.function.i32::max"
+path = "reference/library/index.md#i32max"
+
+[[item]]
+id = "library.function.i32::wrapping_add"
+path = "reference/library/index.md#i32wrapping_add"
+
+[[item]]
+id = "library.function.i32::wrapping_sub"
+path = "reference/library/index.md#i32wrapping_sub"
+
+[[item]]
+id = "library.function.i32::wrapping_mul"
+path = "reference/library/index.md#i32wrapping_mul"
+
+[[item]]
+id = "library.function.i32::saturating_add"
+path = "reference/library/index.md#i32saturating_add"
+
+[[item]]
+id = "library.function.i32::saturating_sub"
+path = "reference/library/index.md#i32saturating_sub"
+
+[[item]]
+id = "library.function.i32::checked_add"
+path = "reference/library/index.md#i32checked_add"
+
+[[item]]
+id = "library.function.i32::checked_sub"
+path = "reference/library/index.md#i32checked_sub"
+
+[[item]]
+id = "library.function.i32::abs_diff"
+path = "reference/library/index.md#i32abs_diff"
+
+[[item]]
+id = "library.function.i32::unsigned_abs"
+path = "reference/library/index.md#i32unsigned_abs"
+
+[[item]]
+id = "library.function.i64::min"
+path = "reference/library/index.md#i64min"
+
+[[item]]
+id = "library.function.i64::max"
+path = "reference/library/index.md#i64max"
+
+[[item]]
+id = "library.function.i64::wrapping_add"
+path = "reference/library/index.md#i64wrapping_add"
+
+[[item]]
+id = "library.function.i64::wrapping_sub"
+path = "reference/library/index.md#i64wrapping_sub"
+
+[[item]]
+id = "library.function.i64::wrapping_mul"
+path = "reference/library/index.md#i64wrapping_mul"
+
+[[item]]
+id = "library.function.i64::saturating_add"
+path = "reference/library/index.md#i64saturating_add"
+
+[[item]]
+id = "library.function.i64::saturating_sub"
+path = "reference/library/index.md#i64saturating_sub"
+
+[[item]]
+id = "library.function.i64::checked_add"
+path = "reference/library/index.md#i64checked_add"
+
+[[item]]
+id = "library.function.i64::checked_sub"
+path = "reference/library/index.md#i64checked_sub"
+
+[[item]]
+id = "library.function.i64::abs_diff"
+path = "reference/library/index.md#i64abs_diff"
+
+[[item]]
+id = "library.function.i64::unsigned_abs"
+path = "reference/library/index.md#i64unsigned_abs"
+
+[[item]]
+id = "library.function.isize::min"
+path = "reference/library/index.md#isizemin"
+
+[[item]]
+id = "library.function.isize::max"
+path = "reference/library/index.md#isizemax"
+
+[[item]]
+id = "library.function.isize::wrapping_add"
+path = "reference/library/index.md#isizewrapping_add"
+
+[[item]]
+id = "library.function.isize::wrapping_sub"
+path = "reference/library/index.md#isizewrapping_sub"
+
+[[item]]
+id = "library.function.isize::wrapping_mul"
+path = "reference/library/index.md#isizewrapping_mul"
+
+[[item]]
+id = "library.function.isize::saturating_add"
+path = "reference/library/index.md#isizesaturating_add"
+
+[[item]]
+id = "library.function.isize::saturating_sub"
+path = "reference/library/index.md#isizesaturating_sub"
+
+[[item]]
+id = "library.function.isize::checked_add"
+path = "reference/library/index.md#isizechecked_add"
+
+[[item]]
+id = "library.function.isize::checked_sub"
+path = "reference/library/index.md#isizechecked_sub"
+
+[[item]]
+id = "library.function.isize::abs_diff"
+path = "reference/library/index.md#isizeabs_diff"
+
+[[item]]
+id = "library.function.isize::unsigned_abs"
+path = "reference/library/index.md#isizeunsigned_abs"
+
+[[item]]
+id = "library.function.u8::min"
+path = "reference/library/index.md#u8min"
+
+[[item]]
+id = "library.function.u8::max"
+path = "reference/library/index.md#u8max"
+
+[[item]]
+id = "library.function.u8::wrapping_add"
+path = "reference/library/index.md#u8wrapping_add"
+
+[[item]]
+id = "library.function.u8::wrapping_sub"
+path = "reference/library/index.md#u8wrapping_sub"
+
+[[item]]
+id = "library.function.u8::wrapping_mul"
+path = "reference/library/index.md#u8wrapping_mul"
+
+[[item]]
+id = "library.function.u8::saturating_add"
+path = "reference/library/index.md#u8saturating_add"
+
+[[item]]
+id = "library.function.u8::saturating_sub"
+path = "reference/library/index.md#u8saturating_sub"
+
+[[item]]
+id = "library.function.u8::checked_add"
+path = "reference/library/index.md#u8checked_add"
+
+[[item]]
+id = "library.function.u8::checked_sub"
+path = "reference/library/index.md#u8checked_sub"
+
+[[item]]
+id = "library.function.u8::abs_diff"
+path = "reference/library/index.md#u8abs_diff"
+
+[[item]]
+id = "library.function.u16::min"
+path = "reference/library/index.md#u16min"
+
+[[item]]
+id = "library.function.u16::max"
+path = "reference/library/index.md#u16max"
+
+[[item]]
+id = "library.function.u16::wrapping_add"
+path = "reference/library/index.md#u16wrapping_add"
+
+[[item]]
+id = "library.function.u16::wrapping_sub"
+path = "reference/library/index.md#u16wrapping_sub"
+
+[[item]]
+id = "library.function.u16::wrapping_mul"
+path = "reference/library/index.md#u16wrapping_mul"
+
+[[item]]
+id = "library.function.u16::saturating_add"
+path = "reference/library/index.md#u16saturating_add"
+
+[[item]]
+id = "library.function.u16::saturating_sub"
+path = "reference/library/index.md#u16saturating_sub"
+
+[[item]]
+id = "library.function.u16::checked_add"
+path = "reference/library/index.md#u16checked_add"
+
+[[item]]
+id = "library.function.u16::checked_sub"
+path = "reference/library/index.md#u16checked_sub"
+
+[[item]]
+id = "library.function.u16::abs_diff"
+path = "reference/library/index.md#u16abs_diff"
+
+[[item]]
+id = "library.function.u32::min"
+path = "reference/library/index.md#u32min"
+
+[[item]]
+id = "library.function.u32::max"
+path = "reference/library/index.md#u32max"
+
+[[item]]
+id = "library.function.u32::wrapping_add"
+path = "reference/library/index.md#u32wrapping_add"
+
+[[item]]
+id = "library.function.u32::wrapping_sub"
+path = "reference/library/index.md#u32wrapping_sub"
+
+[[item]]
+id = "library.function.u32::wrapping_mul"
+path = "reference/library/index.md#u32wrapping_mul"
+
+[[item]]
+id = "library.function.u32::saturating_add"
+path = "reference/library/index.md#u32saturating_add"
+
+[[item]]
+id = "library.function.u32::saturating_sub"
+path = "reference/library/index.md#u32saturating_sub"
+
+[[item]]
+id = "library.function.u32::checked_add"
+path = "reference/library/index.md#u32checked_add"
+
+[[item]]
+id = "library.function.u32::checked_sub"
+path = "reference/library/index.md#u32checked_sub"
+
+[[item]]
+id = "library.function.u32::abs_diff"
+path = "reference/library/index.md#u32abs_diff"
+
+[[item]]
+id = "library.function.u64::min"
+path = "reference/library/index.md#u64min"
+
+[[item]]
+id = "library.function.u64::max"
+path = "reference/library/index.md#u64max"
+
+[[item]]
+id = "library.function.u64::wrapping_add"
+path = "reference/library/index.md#u64wrapping_add"
+
+[[item]]
+id = "library.function.u64::wrapping_sub"
+path = "reference/library/index.md#u64wrapping_sub"
+
+[[item]]
+id = "library.function.u64::wrapping_mul"
+path = "reference/library/index.md#u64wrapping_mul"
+
+[[item]]
+id = "library.function.u64::saturating_add"
+path = "reference/library/index.md#u64saturating_add"
+
+[[item]]
+id = "library.function.u64::saturating_sub"
+path = "reference/library/index.md#u64saturating_sub"
+
+[[item]]
+id = "library.function.u64::checked_add"
+path = "reference/library/index.md#u64checked_add"
+
+[[item]]
+id = "library.function.u64::checked_sub"
+path = "reference/library/index.md#u64checked_sub"
+
+[[item]]
+id = "library.function.u64::abs_diff"
+path = "reference/library/index.md#u64abs_diff"
+
+[[item]]
+id = "library.function.usize::min"
+path = "reference/library/index.md#usizemin"
+
+[[item]]
+id = "library.function.usize::max"
+path = "reference/library/index.md#usizemax"
+
+[[item]]
+id = "library.function.usize::wrapping_add"
+path = "reference/library/index.md#usizewrapping_add"
+
+[[item]]
+id = "library.function.usize::wrapping_sub"
+path = "reference/library/index.md#usizewrapping_sub"
+
+[[item]]
+id = "library.function.usize::wrapping_mul"
+path = "reference/library/index.md#usizewrapping_mul"
+
+[[item]]
+id = "library.function.usize::saturating_add"
+path = "reference/library/index.md#usizesaturating_add"
+
+[[item]]
+id = "library.function.usize::saturating_sub"
+path = "reference/library/index.md#usizesaturating_sub"
+
+[[item]]
+id = "library.function.usize::checked_add"
+path = "reference/library/index.md#usizechecked_add"
+
+[[item]]
+id = "library.function.usize::checked_sub"
+path = "reference/library/index.md#usizechecked_sub"
+
+[[item]]
+id = "library.function.usize::abs_diff"
+path = "reference/library/index.md#usizeabs_diff"
+
+[[item]]
+id = "library.function.option::unwrap_or"
+path = "reference/library/index.md#optionunwrap_or"

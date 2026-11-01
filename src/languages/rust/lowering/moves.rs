@@ -265,6 +265,16 @@ pub(super) fn lower(
         return Err("MIR body has no entry block".into());
     }
     let flow = flow::Flow::analyze(f, mir)?;
+    for (header, loop_) in &flow.loops {
+        if loop_.escapes.is_empty() {
+            continue;
+        }
+        let flag = escape_flag(*header);
+        if !cx.locals.insert(flag.clone()) {
+            return Err("MIR loop escape flag collides with a source name".into());
+        }
+        declarations = c_seq(declarations, c_declare(flag, CType::Int32));
+    }
     let leases = super::scalar_leases::prepare(
         f,
         cx.import_identity.as_deref(),
@@ -988,6 +998,36 @@ fn graph_postdominators(graph: &[Vec<usize>], order: &[usize]) -> Vec<usize> {
     }
     joins
 }
+/// How a loop body leaves its loop: by `break` at the loop's exit, or by a
+/// labeled `break` or `continue` to an enclosing loop, which sets the loop's
+/// flag to that escape's code before the `break`.
+struct LoopExits<'a> {
+    header: usize,
+    exit: usize,
+    escapes: &'a [usize],
+    flag: String,
+}
+
+impl LoopExits<'_> {
+    fn leave(&self, block: usize) -> Option<CStatement> {
+        if block == self.exit {
+            return Some(c_break());
+        }
+        let index = self.escapes.iter().position(|end| *end == block)?;
+        Some(c_seq(c_assign(&self.flag, escape_code(index)), c_break()))
+    }
+}
+
+/// The local recording which labeled escape left the loop headed at
+/// `header`; zero while none has.
+fn escape_flag(header: usize) -> String {
+    format!("__rust_loop_escape_{header}")
+}
+
+fn escape_code(index: usize) -> CExpression {
+    c_int32_literal(index as u32 + 1)
+}
+
 fn region(
     cx: &mut Context<'_>,
     mir: &MirBody,
@@ -996,15 +1036,16 @@ fn region(
     emitted: &mut [bool],
     bounds: std::ops::Range<usize>,
     leases: Option<&super::scalar_leases::Prepared>,
-    breaks: Option<usize>,
+    exits: Option<&LoopExits<'_>>,
 ) -> Result<CStatement, String> {
     let mut block = bounds.start;
     let stop = bounds.end;
     let mut result = c_skip();
     while block != stop && block != mir.blocks.len() {
-        // The enclosing loop's exit, reached from its body, is a `break`.
-        if breaks == Some(block) {
-            result = c_seq(result, c_break());
+        // The enclosing loop's exit, reached from its body, is a `break`,
+        // and so is a labeled escape, after setting the loop's flag.
+        if let Some(leave) = exits.and_then(|exits| exits.leave(block)) {
+            result = c_seq(result, leave);
             break;
         }
         if std::mem::replace(&mut emitted[block], true) && !flow.exit_tails[block] {
@@ -1014,6 +1055,12 @@ fn region(
             let T::If { condition, .. } = &mir.blocks[loop_.test].terminator else {
                 return Err("natural while header is not conditional".into());
             };
+            let inner = LoopExits {
+                header: block,
+                exit: loop_.exit,
+                escapes: &loop_.escapes,
+                flag: escape_flag(block),
+            };
             let body = region(
                 cx,
                 mir,
@@ -1022,7 +1069,7 @@ fn region(
                 emitted,
                 loop_.body..block,
                 leases,
-                loop_.breaks.then_some(loop_.exit),
+                loop_.breaks.then_some(&inner),
             )?;
             let condition = flow::header_condition(
                 mir,
@@ -1064,7 +1111,7 @@ fn region(
                     emitted,
                     loop_.after..mir.blocks.len(),
                     leases,
-                    Some(loop_.exit),
+                    Some(&inner),
                 )?;
                 c_while(
                     c_int32_literal(1),
@@ -1077,6 +1124,29 @@ fn region(
                     header,
                 )
             };
+            // A labeled `break` or `continue` leaves this loop with its flag
+            // naming the escape; the enclosing body then resumes there.
+            let mut lowered = lowered;
+            if !loop_.escapes.is_empty() {
+                lowered = c_seq(c_assign(&inner.flag, c_int32_literal(0)), lowered);
+                for (index, end) in loop_.escapes.iter().enumerate() {
+                    let resume = match exits {
+                        Some(outer) if *end == outer.header => c_continue(),
+                        Some(outer) => outer
+                            .leave(*end)
+                            .ok_or("Rust labeled break leaves more than one enclosing loop")?,
+                        None => return Err("Rust labeled break outside an enclosing loop".into()),
+                    };
+                    lowered = c_seq(
+                        lowered,
+                        c_if(
+                            c_equal(c_variable(&inner.flag), escape_code(index)),
+                            resume,
+                            c_skip(),
+                        ),
+                    );
+                }
+            }
             result = c_seq(result, lowered);
             block = loop_.exit;
             continue;
@@ -1104,7 +1174,7 @@ fn region(
                     emitted,
                     *then_target..join,
                     leases,
-                    breaks,
+                    exits,
                 )?;
                 let no = region(
                     cx,
@@ -1114,7 +1184,7 @@ fn region(
                     emitted,
                     *else_target..join,
                     leases,
-                    breaks,
+                    exits,
                 )?;
                 let branch =
                     if let Some(scope) = leases.and_then(|leases| leases.scopes.get(&block)) {
@@ -1146,7 +1216,7 @@ fn region(
                     result,
                     switch(
                         cx, mir, nodes, flow, emitted, scrutinee, cases, *otherwise, join, leases,
-                        breaks,
+                        exits,
                     )?,
                 );
                 block = join;
@@ -1178,7 +1248,7 @@ fn switch(
     otherwise: Option<usize>,
     join: usize,
     leases: Option<&super::scalar_leases::Prepared>,
-    breaks: Option<usize>,
+    exits: Option<&LoopExits<'_>>,
 ) -> Result<CStatement, String> {
     use crate::languages::rust::schema::SwitchLabel;
     let mut groups: Vec<(usize, Vec<&SwitchLabel>)> = Vec::new();
@@ -1203,7 +1273,7 @@ fn switch(
             emitted,
             *target..join,
             leases,
-            breaks,
+            exits,
         )?);
     }
     let mut chain = None;
@@ -1333,6 +1403,7 @@ mod tests {
             captures: 0,
             implements: None,
             instance_of: None,
+            core_method: None,
             span: span.clone(),
             mir: Some(MirBody {
                 locals: vec![Place {
@@ -1383,6 +1454,7 @@ mod tests {
                     captures: 0,
                     implements: None,
                     instance_of: None,
+                    core_method: None,
                     span: span.clone(),
                 });
             }

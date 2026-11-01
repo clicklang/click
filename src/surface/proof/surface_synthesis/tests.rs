@@ -3578,3 +3578,110 @@ fn mathematical_constant_goals_keep_structure_and_type() {
         }
     }
 }
+
+#[test]
+fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
+    let declarations = "function positive(x: int32) -> Bool { x > 0 } function foo(x: int32) -> Integer { to_integer(x) } function foo_wide(x: int64) -> Integer { to_integer(x) } function bar(x: Integer) -> Integer { x + 1 }";
+    for expression in [
+        "to_integer(x) + foo(x)",
+        "foo(positive(x) as int32)",
+        "foo_wide(positive(x) as int64)",
+        "to_integer(positive(x) as uint64) + foo(x)",
+        "foo((if x > 0 { true } else { false }) as int32)",
+        "foo((if x > 0 { positive(x) } else { false }) as int32)",
+        "to_integer(positive(x) as uint8) + foo(x)",
+        "to_integer(positive(x) as int16) + foo(x)",
+        "foo(to_int32(foo(x)))",
+        "foo_wide(to_int64(foo(x) + 1))",
+        "to_integer(to_uint64(foo(x))) + foo(x)",
+        "to_integer(x as uint32) + foo(x)",
+        "to_integer(x as int8) + foo(x)",
+        "to_integer(x as uint8) + foo(x)",
+        "to_integer(x as int64) + foo(x)",
+        "to_integer(x as uint64) + foo(x)",
+        "bar(foo(x) + 1) * (foo(x) - 2)",
+        "-foo(x)",
+        "foo(x + 1)",
+        "foo(x * 2)",
+        "foo(x / 2)",
+        "foo(x ^ 1)",
+        "foo(x << 1)",
+        "foo(x >> 1)",
+        "foo(x << (x as int64))",
+        "foo(x >> (x as uint64))",
+        "foo_wide((x as int64) << x)",
+        "foo_wide((x as int64) >> (x as uint32))",
+        "foo(~x)",
+        "foo_wide(x as int64)",
+        "foo_wide((x as uint32) as int64)",
+        "foo_wide((x as int64) + 1i64)",
+        "foo_wide((x as int128) as int64)",
+    ] {
+        let source = format!(
+            "{declarations} theorem probe(x: int32) {{ requires {expression} == 0; ensures true; }}"
+        );
+        let file = parser::parse(&source).unwrap();
+        let value = CValue::Int32(Bitvector32Term::Variable(Variable(99002)));
+        let state = CState::new().with_local("x", value.clone());
+        let values = BTreeMap::from([("x".to_string(), value)]);
+        let lower = |proposition: &ClickProposition| {
+            crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
+                proposition, &PureFactContext::new(), ContractEnvironment::new(&values, &BTreeMap::new()),
+                FixedStateFrame::new(&state, &state, None, &RecordedSnapshots::new()),
+                SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(file.click_function_definitions())),
+                FixedStateLoweringOptions::default(),
+            ).unwrap().0
+        };
+        let Requirement::Proposition(written) = &file.theorem_definitions()[0].requires()[0] else {
+            panic!("requirement")
+        };
+        let original = lower(written);
+        let raised = synthesize_surface_proposition(&original, ParameterBinding::default(), &state)
+            .expect("shared term spelling");
+        let text = crate::surface::printing::source_click_proposition(&raised);
+        let call_name = if expression.contains("foo_wide(") {
+            "foo_wide("
+        } else {
+            "foo("
+        };
+        assert!(text.contains(call_name), "opaque call must survive: {text}");
+        let reparsed = parser::parse(&format!(
+            "{declarations} theorem probe(x: int32) {{ requires {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(written) = &reparsed.theorem_definitions()[0].requires()[0]
+        else {
+            panic!("requirement")
+        };
+        let restored = lower(written);
+        assert_eq!(restored, original, "{expression} => {text}");
+    }
+}
+
+#[test]
+fn unified_certificate_terms_raise_and_lower_by_identity() {
+    use crate::kernel::{KernelIntegerOperator as Op, KernelTerm, KernelType};
+    use crate::surface::lowering::lower_surface_integer_term;
+    let variable = Variable(99003);
+    let a = KernelTerm::variable(KernelType::Integer, variable);
+    let names = BTreeMap::from([(variable, "a".into())]);
+    let bindings = crate::persistent::PersistentMap::default().with_inserted(
+        "a".into(),
+        crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(variable)),
+    );
+    let one = KernelTerm::integer_literal(1.into());
+    for op in [Op::Add, Op::Subtract, Op::Multiply, Op::Negate] {
+        let children = if op == Op::Negate {
+            vec![a.clone()]
+        } else {
+            vec![a.clone(), one.clone()]
+        };
+        let term = KernelTerm::integer_operation(op, children).unwrap();
+        let surface =
+            raise_kernel_term(&term, ParameterBinding::default(), &CState::new(), &names).unwrap();
+        assert_eq!(
+            lower_surface_integer_term(&surface, &bindings).unwrap(),
+            term
+        );
+    }
+}

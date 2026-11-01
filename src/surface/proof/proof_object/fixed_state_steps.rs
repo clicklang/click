@@ -4209,6 +4209,7 @@ mod outcome_case_tests {
                 &root,
                 &mut facts,
                 OutcomeProvenance {
+                    terminal_statement_case: None,
                     checked_leaf_facts: None,
                     loop_return: None,
                     call_routes: Vec::new(),

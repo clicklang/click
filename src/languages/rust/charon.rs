@@ -9,6 +9,7 @@ mod chunks;
 mod closures;
 mod constants;
 mod constructors;
+mod core_methods;
 mod enumerate;
 mod option_take;
 #[cfg(test)]
@@ -289,6 +290,7 @@ impl Adapter<'_> {
             captures: 0,
             implements: None,
             instance_of: None,
+            core_method: None,
             span: span(f.item_meta.span),
         })
     }
@@ -402,7 +404,7 @@ impl Adapter<'_> {
             }) =>
             {
                 if !self.functions.contains_key(&id) {
-                    return Err(unsupported("unmodeled external call"));
+                    return Err(self.unmodeled_call(callee));
                 }
                 self.qualified_function_name_at(&callee.item_meta.name, Some(types))?
             }
@@ -410,7 +412,7 @@ impl Adapter<'_> {
                 let mut name = self
                     .functions
                     .get(&id)
-                    .ok_or_else(|| unsupported("unmodeled external call"))?
+                    .ok_or_else(|| self.unmodeled_call(callee))?
                     .clone();
                 for ty in types.iter().flatten() {
                     if let Some(spelling) = record_argument_spelling(ty) {
@@ -603,6 +605,9 @@ struct Adapter<'a> {
     /// Each instance of a generic library enum the functions named, by the
     /// name of its type: `Option<u32>`, with the arguments it is at.
     enum_instances: std::cell::RefCell<BTreeMap<String, (String, Vec<Type>)>>,
+    /// The external function of each Rust core method a call names, by its
+    /// name: `u32::min`, declared once per method and type.
+    core_methods: std::cell::RefCell<BTreeMap<String, out::Function>>,
 }
 impl Adapter<'_> {
     fn ty(&self, t: &a::Ty) -> Result<Type, String> {
@@ -614,7 +619,12 @@ impl Adapter<'_> {
                 a::IntTy::I32 => Type::I32,
                 a::IntTy::I64 => Type::I64,
                 a::IntTy::Isize => Type::Isize,
-                _ => return Err(unsupported("integer width")),
+                _ => {
+                    return Err(unsupported(&format!(
+                        "integer width `{}`",
+                        self.describe_type(t)
+                    )));
+                }
             },
             a::TyKind::Scalar(a::ScalarTy::Integer(a::IntegerTy::Unsigned(kind))) => match kind {
                 a::UIntTy::U8 => Type::U8,
@@ -622,7 +632,12 @@ impl Adapter<'_> {
                 a::UIntTy::U32 => Type::U32,
                 a::UIntTy::U64 => Type::U64,
                 a::UIntTy::Usize => Type::Usize,
-                _ => return Err(unsupported("integer width")),
+                _ => {
+                    return Err(unsupported(&format!(
+                        "integer width `{}`",
+                        self.describe_type(t)
+                    )));
+                }
             },
             a::TyKind::Ref(_, pointee, kind) if byte_slice(pointee) => Type::ByteSlice {
                 mutable: *kind == a::RefKind::Mut,
@@ -838,11 +853,115 @@ impl Adapter<'_> {
                 }
             }
             _ => {
-                return Err(unsupported(
-                    "type (raw pointers and general generics remain later work)",
-                ));
+                return Err(unsupported(&format!(
+                    "type `{}` (raw pointers and general generics remain later work)",
+                    self.describe_type(t)
+                )));
             }
         })
+    }
+    /// The refusal of a call to `callee`, a function outside the crate the
+    /// importer has no model of: `u32::min`, `core::panicking::panic`.
+    fn unmodeled_call(&self, callee: &a::FunDecl) -> String {
+        let path = callee
+            .item_meta
+            .name
+            .name
+            .iter()
+            .map(|part| match part {
+                a::PathElem::Ident(name, _) => name.clone(),
+                a::PathElem::Impl(a::ImplElem::Ty(binder)) => {
+                    self.describe_type(&binder.skip_binder)
+                }
+                // A trait method reads as its implementing type's.
+                a::PathElem::Impl(a::ImplElem::Trait(id)) => self
+                    .krate
+                    .trait_impls
+                    .get(*id)
+                    .and_then(|imp| imp.impl_trait.generics.types.iter().next())
+                    .map_or_else(|| "_".into(), |ty| self.describe_type(ty)),
+                _ => "_".into(),
+            })
+            .collect::<Vec<_>>();
+        // An inherent method reads as its type's: `u32::min`, not
+        // `core::num::<impl u32>::min`.
+        let start = callee
+            .item_meta
+            .name
+            .name
+            .iter()
+            .rposition(|part| matches!(part, a::PathElem::Impl(_)))
+            .unwrap_or(0);
+        unsupported(&format!(
+            "unmodeled external call to `{}`",
+            path[start..].join("::")
+        ))
+    }
+    /// `t` as Rust writes it, for a refusal: `RangeInclusive<u32>`,
+    /// `(usize, &u8)`, `*const u8`.
+    fn describe_type(&self, t: &a::Ty) -> String {
+        let list = |types: &[a::Ty]| {
+            types
+                .iter()
+                .map(|t| self.describe_type(t))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        match t.kind() {
+            a::TyKind::Scalar(a::ScalarTy::Bool) => "bool".into(),
+            a::TyKind::Scalar(a::ScalarTy::Integer(a::IntegerTy::Signed(kind))) => {
+                format!("{kind:?}").to_lowercase()
+            }
+            a::TyKind::Scalar(a::ScalarTy::Integer(a::IntegerTy::Unsigned(kind))) => {
+                format!("{kind:?}").to_lowercase()
+            }
+            a::TyKind::Ref(_, pointee, kind) => format!(
+                "&{}{}",
+                if *kind == a::RefKind::Mut { "mut " } else { "" },
+                self.describe_type(pointee)
+            ),
+            a::TyKind::RawPtr(pointee, kind) => format!(
+                "*{} {}",
+                if *kind == a::RefKind::Mut {
+                    "mut"
+                } else {
+                    "const"
+                },
+                self.describe_type(pointee)
+            ),
+            a::TyKind::Slice(element, _) => format!("[{}]", self.describe_type(element)),
+            a::TyKind::Array(element, length, _) => match length.as_usize_literal() {
+                Some(length) => format!("[{}; {length}]", self.describe_type(element)),
+                None => format!("[{}; _]", self.describe_type(element)),
+            },
+            a::TyKind::Adt(r) if r.builtin == Some(a::BuiltinAdt::Tuple) => {
+                format!("({})", list(r.generics.types.as_raw_slice()))
+            }
+            a::TyKind::Adt(r) => {
+                let name = self
+                    .krate
+                    .type_decls
+                    .get(r.id)
+                    .and_then(|decl| match decl.item_meta.name.name.last() {
+                        Some(a::PathElem::Ident(name, _)) => Some(name.clone()),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| "an unnamed type".into());
+                if r.generics.types.is_empty() {
+                    name
+                } else {
+                    format!("{name}<{}>", list(r.generics.types.as_raw_slice()))
+                }
+            }
+            a::TyKind::Scalar(a::ScalarTy::Char) => "char".into(),
+            a::TyKind::Scalar(a::ScalarTy::Float(kind)) => format!("{kind:?}").to_lowercase(),
+            a::TyKind::Never => "!".into(),
+            a::TyKind::FnDef(_) => "of a function item".into(),
+            a::TyKind::FnPtr(_) => "of a function pointer".into(),
+            a::TyKind::DynTrait(_) => "of a `dyn` trait object".into(),
+            a::TyKind::TypeVar(_) => "T".into(),
+            _ => "of this kind".into(),
+        }
     }
     fn resolve(&self, p: &a::FnPtr) -> Result<a::FunDeclId, String> {
         match p.kind.as_ref() {
@@ -2339,6 +2458,32 @@ impl BodyAdapter<'_, '_> {
                         target: target.index(),
                     });
                 }
+                // A Rust core method the library specifies calls its
+                // external function, whose contract is the library's.
+                let core_method = match self.adapter.core_method_call(callee, ptr, call)? {
+                    Some(function) => Some(function),
+                    None => match self.adapter.option_method_call(callee, ptr, call)? {
+                        Some(function) => Some(function),
+                        None => self.adapter.slice_method_call(callee, ptr, call)?,
+                    },
+                };
+                if let Some(function) = core_method {
+                    let a::PlaceKind::Local(destination) = call.dest.kind else {
+                        return Err(unsupported("projected call destination"));
+                    };
+                    return Ok(T::Call {
+                        function,
+                        arguments: call
+                            .args
+                            .iter()
+                            .map(|argument| self.operand(argument))
+                            .collect::<Result<_, _>>()?,
+                        owned_arguments: Vec::new(),
+                        destination: self.local(destination)?,
+                        target: target.index(),
+                        through_pointer: false,
+                    });
+                }
                 self.adapter.assignment_operator_call(callee, ptr, call)?;
                 self.adapter.default_constructor_call(callee, ptr, call)?;
                 if callee.item_meta.diagnostic_item.as_deref() == Some("mem_drop") {
@@ -2501,7 +2646,7 @@ impl BodyAdapter<'_, '_> {
                             .adapter
                             .functions
                             .get(&id)
-                            .ok_or_else(|| unsupported("unmodeled external call"))?
+                            .ok_or_else(|| self.adapter.unmodeled_call(callee))?
                             .clone(),
                     };
                     T::Call {
@@ -2649,6 +2794,7 @@ pub(super) fn decode_crate(
         generic_records: BTreeMap::new(),
         record_instances: std::cell::RefCell::default(),
         enum_instances: std::cell::RefCell::default(),
+        core_methods: std::cell::RefCell::default(),
     };
     if crate_config.is_some() {
         adapter.record_closure_captures()?;
@@ -2727,203 +2873,228 @@ pub(super) fn decode_crate(
             );
         }
     }
-    for (id, f) in krate.fun_decls.iter_indexed() {
-        if !f.item_meta.is_local {
-            continue;
-        }
-        let name = match &f.src {
-            a::FunSource::Normal
-                if crate_config.is_some() && adapter.closure_as_fn_name(f)?.is_some() =>
-            {
-                let closure = adapter.closure_as_fn_name(f)?.unwrap();
-                adapter.closure_shims.insert(id, closure);
+    // A refusal while naming or checking an item names where it is.
+    let mut item_line = 0;
+    (|| -> Result<(), String> {
+        for (id, f) in krate.fun_decls.iter_indexed() {
+            if !f.item_meta.is_local {
                 continue;
             }
-            a::FunSource::Normal => {
-                if crate_config.is_some() {
-                    adapter.qualified_function_name(&f.item_meta.name)?
-                } else {
-                    simple_name(&f.item_meta.name, &krate.crate_name)?
-                }
-            }
-            // A crate trait method's implementation, which a call through
-            // the trait reaches by the trait's interface function.
-            a::FunSource::TraitImpl {
-                trait_ref,
-                impl_ref,
-                item_id,
-                ..
-            } if adapter.interface_trait(trait_ref.id)? => {
-                let (name, interface) =
-                    adapter.trait_impl_method(f, impl_ref.id, trait_ref.id, *item_id)?;
-                adapter.trait_impl_methods.insert(id, interface);
-                name
-            }
-            // A crate trait's default method: its body is the trait's
-            // interface function for that method, generic over the
-            // implementing type, verified once against the interface.
-            a::FunSource::TraitDefault {
-                trait_ref, item_id, ..
-            } if adapter.interface_trait(trait_ref.id)? => {
-                adapter.interface_name(trait_ref.id, *item_id, &trait_ref.generics)?
-            }
-            a::FunSource::TraitImpl {
-                trait_ref,
-                impl_ref,
-                ..
-            } => {
-                let tr = krate
-                    .trait_decls
-                    .get(trait_ref.id)
-                    .ok_or_else(|| unsupported("missing trait"))?;
-                if tr.item_meta.lang_item == Some(LangItem::Destruct) {
-                    // A struct holding a box drops it in its glue, which frees
-                    // the box's contents through their own glue: a recursive
-                    // function, checked against its sidecar contract.
-                    let imp = krate
-                        .trait_impls
-                        .get(impl_ref.id)
-                        .ok_or_else(|| unsupported("missing Destruct impl"))?;
-                    let Some((rec, record)) = imp
-                        .impl_trait
-                        .generics
-                        .types
-                        .first()
-                        .and_then(|ty| adapter.struct_id(ty).ok().map(|rec| (rec, ty)))
-                    else {
-                        continue;
-                    };
-                    if !adapter.record_holds_box(rec)? {
-                        continue;
-                    }
-                    // A generic struct's glue is generic over its parameters,
-                    // named at the struct's instance at them.
-                    let parameters = std::mem::replace(
-                        &mut *adapter.callable_parameters.borrow_mut(),
-                        adapter.callable_type_parameters(&f.generics)?,
-                    );
-                    let record = adapter.ty(record);
-                    *adapter.callable_parameters.borrow_mut() = parameters;
-                    let Type::Record { name } = record? else {
-                        return Err(unsupported("drop glue of a non-record"));
-                    };
-                    adapter.drop_glues.insert(rec, id);
-                    adapter.functions.insert(id, format!("{name}_drop_glue"));
+            item_line = f.item_meta.span.data().beg.line;
+            let name = match &f.src {
+                a::FunSource::Normal
+                    if crate_config.is_some() && adapter.closure_as_fn_name(f)?.is_some() =>
+                {
+                    let closure = adapter.closure_as_fn_name(f)?.unwrap();
+                    adapter.closure_shims.insert(id, closure);
                     continue;
                 }
-                // A closure's `Fn::call` is the closure; its `FnMut` and
-                // `FnOnce` methods only forward to it.
-                if matches!(
-                    tr.item_meta.lang_item,
-                    Some(LangItem::Fn | LangItem::FnMut | LangItem::FnOnce)
-                ) {
-                    let imp = krate
-                        .trait_impls
-                        .get(impl_ref.id)
-                        .ok_or_else(|| unsupported("missing Fn impl"))?;
-                    // A function item's `Fn` methods forward to the item,
-                    // which an `impl Fn` argument names directly.
-                    if matches!(
-                        imp.impl_trait.generics.types.first().map(|ty| ty.kind()),
-                        Some(a::TyKind::FnDef(_))
-                    ) {
-                        continue;
-                    }
-                    let (closure, state) = adapter
-                        .closure_impl_path(imp)
-                        .ok_or_else(|| unsupported("Fn trait implementation outside a closure"))?;
-                    if crate_config.is_none() {
-                        return Err(unsupported("closure outside crate imports"));
-                    }
-                    if tr.item_meta.lang_item != Some(LangItem::Fn) {
-                        continue;
-                    }
-                    adapter.closure_calls.insert(id, state);
-                    let name = adapter.closure_name(closure)?;
-                    adapter.functions.insert(id, name);
-                    continue;
-                }
-                if tr.item_meta.lang_item != Some(LangItem::Drop) {
-                    let name = if adapter.is_default_method(f) {
-                        adapter.default_constructor_name(f)?
+                a::FunSource::Normal => {
+                    if crate_config.is_some() {
+                        adapter.qualified_function_name(&f.item_meta.name)?
                     } else {
-                        adapter.assignment_operator_name(f)?
-                    };
-                    adapter.functions.insert(id, name);
+                        simple_name(&f.item_meta.name, &krate.crate_name)?
+                    }
+                }
+                // A crate trait method's implementation, which a call through
+                // the trait reaches by the trait's interface function.
+                a::FunSource::TraitImpl {
+                    trait_ref,
+                    impl_ref,
+                    item_id,
+                    ..
+                } if adapter.interface_trait(trait_ref.id)? => {
+                    let (name, interface) =
+                        adapter.trait_impl_method(f, impl_ref.id, trait_ref.id, *item_id)?;
+                    adapter.trait_impl_methods.insert(id, interface);
+                    name
+                }
+                // A crate trait's default method: its body is the trait's
+                // interface function for that method, generic over the
+                // implementing type, verified once against the interface.
+                a::FunSource::TraitDefault {
+                    trait_ref, item_id, ..
+                } if adapter.interface_trait(trait_ref.id)? => {
+                    adapter.interface_name(trait_ref.id, *item_id, &trait_ref.generics)?
+                }
+                a::FunSource::TraitImpl {
+                    trait_ref,
+                    impl_ref,
+                    ..
+                } => {
+                    let tr = krate
+                        .trait_decls
+                        .get(trait_ref.id)
+                        .ok_or_else(|| unsupported("missing trait"))?;
+                    if tr.item_meta.lang_item == Some(LangItem::Destruct) {
+                        // A struct holding a box drops it in its glue, which frees
+                        // the box's contents through their own glue: a recursive
+                        // function, checked against its sidecar contract.
+                        let imp = krate
+                            .trait_impls
+                            .get(impl_ref.id)
+                            .ok_or_else(|| unsupported("missing Destruct impl"))?;
+                        let Some((rec, record)) = imp
+                            .impl_trait
+                            .generics
+                            .types
+                            .first()
+                            .and_then(|ty| adapter.struct_id(ty).ok().map(|rec| (rec, ty)))
+                        else {
+                            continue;
+                        };
+                        if !adapter.record_holds_box(rec)? {
+                            continue;
+                        }
+                        // A generic struct's glue is generic over its parameters,
+                        // named at the struct's instance at them.
+                        let parameters = std::mem::replace(
+                            &mut *adapter.callable_parameters.borrow_mut(),
+                            adapter.callable_type_parameters(&f.generics)?,
+                        );
+                        let record = adapter.ty(record);
+                        *adapter.callable_parameters.borrow_mut() = parameters;
+                        let Type::Record { name } = record? else {
+                            return Err(unsupported("drop glue of a non-record"));
+                        };
+                        adapter.drop_glues.insert(rec, id);
+                        adapter.functions.insert(id, format!("{name}_drop_glue"));
+                        continue;
+                    }
+                    // A closure's `Fn::call` is the closure; its `FnMut` and
+                    // `FnOnce` methods only forward to it.
+                    if matches!(
+                        tr.item_meta.lang_item,
+                        Some(LangItem::Fn | LangItem::FnMut | LangItem::FnOnce)
+                    ) {
+                        let imp = krate
+                            .trait_impls
+                            .get(impl_ref.id)
+                            .ok_or_else(|| unsupported("missing Fn impl"))?;
+                        // A function item's `Fn` methods forward to the item,
+                        // which an `impl Fn` argument names directly.
+                        if matches!(
+                            imp.impl_trait.generics.types.first().map(|ty| ty.kind()),
+                            Some(a::TyKind::FnDef(_))
+                        ) {
+                            continue;
+                        }
+                        let (closure, state) = adapter.closure_impl_path(imp).ok_or_else(|| {
+                            unsupported("Fn trait implementation outside a closure")
+                        })?;
+                        if crate_config.is_none() {
+                            return Err(unsupported("closure outside crate imports"));
+                        }
+                        if tr.item_meta.lang_item != Some(LangItem::Fn) {
+                            continue;
+                        }
+                        adapter.closure_calls.insert(id, state);
+                        let name = adapter.closure_name(closure)?;
+                        adapter.functions.insert(id, name);
+                        continue;
+                    }
+                    if tr.item_meta.lang_item != Some(LangItem::Drop) {
+                        let name = if adapter.is_default_method(f) {
+                            adapter.default_constructor_name(f)?
+                        } else {
+                            adapter.assignment_operator_name(f)?
+                        };
+                        adapter.functions.insert(id, name);
+                        continue;
+                    }
+                    let imp = krate
+                        .trait_impls
+                        .get(impl_ref.id)
+                        .ok_or_else(|| unsupported("missing Drop impl"))?;
+                    let rec = adapter.record_id(
+                        imp.impl_trait
+                            .generics
+                            .types
+                            .first()
+                            .ok_or_else(|| unsupported("missing Drop receiver"))?,
+                    )?;
+                    if adapter.destructors.insert(rec, id).is_some() {
+                        return Err(unsupported("duplicate destructor"));
+                    }
+                    format!("{}_drop", adapter.records[&rec])
+                }
+                // A `dyn Fn` value's vtable and its shims carry no behavior the
+                // importer reads: a call through the value is checked against a
+                // contract of the value, not the vtable's entries.
+                a::FunSource::GlobalInitializer(reference)
+                    if krate.global_decls.get(reference.id).is_some_and(|global| {
+                        matches!(global.src, a::GlobalSource::VTableInstance { .. })
+                    }) =>
+                {
                     continue;
                 }
-                let imp = krate
-                    .trait_impls
-                    .get(impl_ref.id)
-                    .ok_or_else(|| unsupported("missing Drop impl"))?;
-                let rec = adapter.record_id(
-                    imp.impl_trait
-                        .generics
-                        .types
-                        .first()
-                        .ok_or_else(|| unsupported("missing Drop receiver"))?,
-                )?;
-                if adapter.destructors.insert(rec, id).is_some() {
-                    return Err(unsupported("duplicate destructor"));
+                a::FunSource::VTableShim => continue,
+                a::FunSource::GlobalInitializer(reference) => {
+                    adapter.constant_initializer_name(id, f, reference)?
                 }
-                format!("{}_drop", adapter.records[&rec])
-            }
-            // A `dyn Fn` value's vtable and its shims carry no behavior the
-            // importer reads: a call through the value is checked against a
-            // contract of the value, not the vtable's entries.
-            a::FunSource::GlobalInitializer(reference)
-                if krate.global_decls.get(reference.id).is_some_and(|global| {
-                    matches!(global.src, a::GlobalSource::VTableInstance { .. })
-                }) =>
+                _ => return Err(unsupported("function source")),
+            };
+            let located = |error: String| {
+                format!(
+                    "{source}:{} in {name}: {error}",
+                    f.item_meta.span.data().beg.line
+                )
+            };
+            if !adapter.crate_mode
+                && matches!(adapter.ty(&f.signature.output)?, Type::Record { .. })
             {
-                continue;
+                return Err(located(
+                    "Rust reference/aggregate returns are not supported".into(),
+                ));
             }
-            a::FunSource::VTableShim => continue,
-            a::FunSource::GlobalInitializer(reference) => {
-                adapter.constant_initializer_name(id, f, reference)?
+            // A box moves into a function and out of one by value; a reference
+            // to a box is not supported.
+            let boxed = |ty: &a::Ty| -> Result<bool, String> {
+                Ok(match adapter.ty(ty) {
+                    Ok(Type::Reference { pointee, .. }) => {
+                        matches!(*pointee, Type::Box { .. } | Type::OptionBox { .. })
+                    }
+                    _ => false,
+                })
+            };
+            if boxed(&f.signature.output)?
+                || f.signature.inputs.iter().map(boxed).any(|b| b == Ok(true))
+            {
+                return Err(located(unsupported(
+                    "reference to a box parameter or result",
+                )));
             }
-            _ => return Err(unsupported("function source")),
-        };
-        if !adapter.crate_mode && matches!(adapter.ty(&f.signature.output)?, Type::Record { .. }) {
-            return Err("Rust reference/aggregate returns are not supported".into());
+            // A `safe fn` in an `unsafe extern "C"` block is a declaration
+            // without a body, whose calls a sidecar `extern fn` contract states.
+            let abi = if matches!(f.body, a::Body::Extern(_)) {
+                a::Abi::C
+            } else {
+                a::Abi::Rust
+            };
+            if f.signature.is_unsafe
+                || f.signature.abi != abi
+                || f.signature.is_variadic
+                || (!f.generics.types.is_empty()
+                    && (crate_config.is_none()
+                        || adapter
+                            .callable_type_parameters(&f.generics)?
+                            .iter()
+                            .any(Option::is_none)))
+                || !f.generics.const_generics.is_empty()
+            {
+                return Err(unsupported("unsafe, foreign, or generic function"));
+            }
+            adapter.functions.insert(id, name);
         }
-        // A box moves into a function and out of one by value; a reference
-        // to a box is not supported.
-        let boxed = |ty: &a::Ty| -> Result<bool, String> {
-            Ok(match adapter.ty(ty) {
-                Ok(Type::Reference { pointee, .. }) => {
-                    matches!(*pointee, Type::Box { .. } | Type::OptionBox { .. })
-                }
-                _ => false,
-            })
-        };
-        if boxed(&f.signature.output)?
-            || f.signature.inputs.iter().map(boxed).any(|b| b == Ok(true))
-        {
-            return Err(unsupported("reference to a box parameter or result"));
-        }
-        // A `safe fn` in an `unsafe extern "C"` block is a declaration
-        // without a body, whose calls a sidecar `extern fn` contract states.
-        let abi = if matches!(f.body, a::Body::Extern(_)) {
-            a::Abi::C
+        Ok(())
+    })()
+    .map_err(|error| {
+        if error.starts_with(&format!("{source}:")) {
+            error
         } else {
-            a::Abi::Rust
-        };
-        if f.signature.is_unsafe
-            || f.signature.abi != abi
-            || f.signature.is_variadic
-            || (!f.generics.types.is_empty()
-                && (crate_config.is_none()
-                    || adapter
-                        .callable_type_parameters(&f.generics)?
-                        .iter()
-                        .any(Option::is_none)))
-            || !f.generics.const_generics.is_empty()
-        {
-            return Err(unsupported("unsafe, foreign, or generic function"));
+            format!("{source}:{item_line}: {error}")
         }
-        adapter.functions.insert(id, name);
-    }
+    })?;
     // A `Drop` implementation runs before the glue drops the fields; a
     // struct with both is later work.
     if adapter
@@ -2947,9 +3118,16 @@ pub(super) fn decode_crate(
             .ok_or_else(|| unsupported("missing struct field layout"))?;
         let mut fields = Vec::new();
         for (field_id, field) in adapter.fields(*id)?.iter_enumerated() {
-            let ty = adapter.ty(&field.ty)?;
+            let located = |error: String| {
+                format!(
+                    "{source}:{} in struct `{name}`, field `{}`: {error}",
+                    field.span.data().beg.line,
+                    field.name,
+                )
+            };
+            let ty = adapter.ty(&field.ty).map_err(located)?;
             if matches!(ty, Type::Record { .. } | Type::Unit) {
-                return Err(unsupported("nested owned field"));
+                return Err(located(unsupported("nested owned field")));
             }
             fields.push(out::Field {
                 name: field.name.clone(),
@@ -3210,7 +3388,9 @@ pub(super) fn decode_crate(
                 value_type: if iterator_discriminants.contains_key(&local.index) {
                     Type::Bool
                 } else {
-                    adapter.ty(&local.ty)?
+                    adapter.ty(&local.ty).map_err(|error| {
+                        format!("{source}:{} in {name}: {error}", local.span.data().beg.line)
+                    })?
                 },
                 span: span(local.span),
             };
@@ -3300,7 +3480,12 @@ pub(super) fn decode_crate(
         protocol::split_next_branches(&mut blocks)?;
         functions.push(out::Function {
             name: name.clone(),
-            return_type: adapter.ty(&f.signature.output)?,
+            return_type: adapter.ty(&f.signature.output).map_err(|error| {
+                format!(
+                    "{source}:{} in {name}: {error}",
+                    f.item_meta.span.data().beg.line
+                )
+            })?,
             parameters,
             body: vec![],
             mir: Some(out::MirBody { locals, blocks }),
@@ -3308,6 +3493,7 @@ pub(super) fn decode_crate(
             captures: captures.as_ref().map_or(0, Vec::len),
             implements: adapter.trait_impl_methods.get(id).cloned(),
             instance_of: None,
+            core_method: None,
             span: span(f.item_meta.span),
         });
     }
@@ -3366,9 +3552,16 @@ pub(super) fn decode_crate(
             captures: 0,
             implements: None,
             instance_of: Some(generic_name.clone()),
+            core_method: None,
             span: generic.span.clone(),
         };
         functions.push(instance);
+    }
+    for (name, function) in adapter.core_methods.borrow().iter() {
+        if used_names.contains(name) {
+            return Err(unsupported("colliding proof function names"));
+        }
+        functions.push(function.clone());
     }
     for imp in krate.trait_impls.iter() {
         let id = imp.impl_trait.id;

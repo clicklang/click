@@ -1280,7 +1280,8 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
 /// to_integer(y)`, is the native check `x <= MAX - y` because the machine
 /// difference is in range. A bound that leaves `y` free is refused, and the
 /// refusal names, as its goal, the condition the implicit `auto` tried, over
-/// the function's operands, not the assertion's false-path obligation `0 == 1`.
+/// the function's operands with the machine difference read as an Integer,
+/// not the assertion's false-path obligation `0 == 1`.
 /// (A bound one short, `x <= 18446744073709551614u64 - y`, is an exact
 /// `Integer` difference too, so it implies the check.)
 #[test]
@@ -1325,7 +1326,7 @@ fn charon_refused_panic_check_names_its_condition() {
     assert!(error.contains("Rust add panic check"), "{error}");
     assert!(!error.contains("goal: 0 == 1"), "{error}");
     assert!(
-        error.contains("goal: x <= 18446744073709551615u64 - y"),
+        error.contains("goal: x <= to_integer(18446744073709551615u64 - y)"),
         "{error}"
     );
 }
@@ -2730,6 +2731,67 @@ fn rust_enum_claims_are_checked_and_step_names_the_match_split() {
         ),
         "{error}"
     );
+}
+
+const SIGNED_MATCH_SIDECAR: &str =
+    include_str!("fixtures/rust-verification/enum-signed-match/e.click");
+
+fn signed_match_project() -> Project {
+    let p = Project::from_fixture("tests/fixtures/rust-verification/enum-signed-match");
+    fs::write(p.root.join("borrow.click"), SIGNED_MATCH_SIDECAR).unwrap();
+    p
+}
+
+#[test]
+fn rust_enum_signed_match_arithmetic_verifies() {
+    let p = signed_match_project();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(SIGNED_MATCH_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn rust_enum_signed_match_wrong_arm_is_an_unproved_goal() {
+    let p = signed_match_project();
+    let prepared = p.prepared().unwrap();
+    let invalid = SIGNED_MATCH_SIDECAR.replace("0i32 - x", "1i32 - x");
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("the wrong arm must fail")
+        .to_string();
+    assert!(!error.contains("could not lower"), "{error}");
+    assert!(error.contains("goal:"), "{error}");
+}
+
+#[test]
+fn rust_enum_signed_match_explicit_split_verifies() {
+    let p = signed_match_project();
+    let prepared = p.prepared().unwrap();
+    let explicit = format!(
+        "{} by {{ match amount {{ Amount::Credit(x) => {{ step_until(function.exit); solve(); }}, Amount::Debit(x) => {{ step_until(function.exit); have result == -1i32 * x by {{ solve(); }} have match amount {{ Amount::Credit(y) => y as i32, Amount::Debit(y) => 0i32 - y }} == 0i32 - x by {{ rewrite(amount == Amount::Debit(x)); normalize(); }} solve(); }} }} }}",
+        SIGNED_MATCH_SIDECAR.trim()
+    );
+    C0VerificationSession::new_program_prepared(&explicit, &prepared)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+#[ignore = "nightly: checked proof expansion"]
+fn rust_enum_signed_match_expansion_checks_without_search() {
+    let p = signed_match_project();
+    let prepared = p.prepared().unwrap();
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        SIGNED_MATCH_SIDECAR,
+        &prepared,
+        "value.ensures_0",
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    click::surface::without_implicit_auto_for_claim("value.ensures_0", || {
+        C0VerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -5392,6 +5454,10 @@ mod array_values;
 mod capturing_closures;
 #[path = "rust_import/closures.rs"]
 mod closures;
+#[path = "rust_import/core_methods.rs"]
+mod core_methods;
+#[path = "rust_import/early_exits.rs"]
+mod early_exits;
 #[path = "rust_import/enumerate.rs"]
 mod enumerate;
 #[path = "rust_import/extern_functions.rs"]
@@ -5410,6 +5476,8 @@ mod loop_control;
 mod parameterized_contracts;
 #[path = "rust_import/ranges.rs"]
 mod ranges;
+#[path = "rust_import/refusals.rs"]
+mod refusals;
 #[path = "rust_import/scalar_slices.rs"]
 mod scalar_slices;
 #[path = "rust_import/signed_arithmetic.rs"]
@@ -5776,3 +5844,51 @@ fn charon_project_crate_unit_serves_every_sidecar_of_the_crate() {
 #[cfg(not(feature = "fast-gate"))]
 #[path = "rust_import/frontend.rs"]
 mod installed_frontend;
+
+const COUNTDOWN_SIDECAR: &str =
+    include_str!("fixtures/rust-verification/recursive-countdown/r.click");
+
+fn countdown_project() -> Project {
+    let p = Project::from_fixture("tests/fixtures/rust-verification/recursive-countdown");
+    fs::write(p.root.join("borrow.click"), COUNTDOWN_SIDECAR).unwrap();
+    p
+}
+
+#[test]
+fn rust_recursive_countdown_ranks_checked_temporaries() {
+    let p = countdown_project();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(COUNTDOWN_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[test]
+fn rust_recursive_countdown_refuses_unchanged_argument() {
+    let p = countdown_project();
+    let prepared = p.prepared().unwrap();
+    let invalid = COUNTDOWN_SIDECAR.replace("fn countdown(", "fn unchanged(");
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("unchanged recursion must not certify termination")
+        .to_string();
+    assert!(error.contains("decreas"), "{error}");
+}
+
+#[test]
+#[ignore = "nightly: checked proof expansion"]
+fn rust_recursive_countdown_expansion_checks_without_search() {
+    let p = countdown_project();
+    let prepared = p.prepared().unwrap();
+    let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+        COUNTDOWN_SIDECAR,
+        &prepared,
+        "countdown.ensures_0",
+    )
+    .unwrap_or_else(|error| panic!("{error}"));
+    click::surface::without_implicit_auto_for_claim("countdown.ensures_0", || {
+        C0VerificationSession::new_program_prepared(&expanded, &prepared)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}

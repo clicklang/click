@@ -594,9 +594,30 @@ struct SharedIntegerNode {
     id: u64,
     term: IntegerTerm,
     literal_arithmetic: bool,
+    kernel_term: OnceLock<KernelTerm>,
+}
+
+/// Weak reverse migration link: the common tree must not keep its source
+/// alive when that source already owns the converted tree.
+#[derive(Clone, Default)]
+pub(crate) struct WeakIntegerTerm(Weak<SharedIntegerNode>);
+impl WeakIntegerTerm {
+    pub(crate) fn upgrade(&self) -> Option<SharedIntegerTerm> {
+        self.0.upgrade().map(SharedIntegerTerm)
+    }
 }
 
 impl SharedIntegerTerm {
+    pub(crate) fn kernel_term(&self) -> Option<&KernelTerm> {
+        self.0.kernel_term.get()
+    }
+    pub(crate) fn remember_kernel_term(&self, term: KernelTerm) {
+        let _ = self.0.kernel_term.set(term);
+    }
+    pub(crate) fn downgrade(&self) -> WeakIntegerTerm {
+        WeakIntegerTerm(Arc::downgrade(&self.0))
+    }
+
     /// Cached from immediate children when the node is introduced. Numeric
     /// checking can leave symbolic nonlinear operands opaque without a walk.
     pub(crate) fn is_literal_arithmetic(&self) -> bool {
@@ -916,27 +937,6 @@ impl IntegerTerm {
             {
                 return Self::from_machine(source, *operand);
             }
-            // A narrow load's word is the zero- or sign-extension of the
-            // value read, so a 32-bit type that contains the load's type
-            // observes the value read, as it does a converted byte.
-            Bitvector32Term::MemoryLoad(_, _, kind)
-                if let Some(loaded) = narrow_load_type(&kind)
-                    && loaded != ty
-                    && ty.format().bits() <= 32
-                    && ty.format().contains(loaded.format()) =>
-            {
-                return Self::from_machine(loaded, value);
-            }
-            Bitvector32Term::Variable(variable)
-                if let Some(loaded) =
-                    crate::kernel::registered_load_kind_for_variable(&variable)
-                        .and_then(|kind| narrow_load_type(&kind))
-                    && loaded != ty
-                    && ty.format().bits() <= 32
-                    && ty.format().contains(loaded.format()) =>
-            {
-                return Self::from_machine(loaded, value);
-            }
             value => value,
         };
         if matches!(
@@ -1069,6 +1069,7 @@ impl IntegerInterner {
             id,
             term,
             literal_arithmetic,
+            kernel_term: OnceLock::new(),
         });
         self.nodes
             .entry(fingerprint)
@@ -1495,17 +1496,6 @@ impl ConditionTerm {
             }
             _ => Self::IntegerNotEqual(left.into(), right.into()),
         }
-    }
-}
-
-/// The type a narrow load reads, whose zero- or sign-extension its word is.
-fn narrow_load_type(kind: &LoadKind) -> Option<MachineIntegerType> {
-    match kind {
-        LoadKind::Int8 => Some(MachineIntegerType::Int8),
-        LoadKind::UInt8 => Some(MachineIntegerType::UInt8),
-        LoadKind::Int16 => Some(MachineIntegerType::Int16),
-        LoadKind::UInt16 => Some(MachineIntegerType::UInt16),
-        _ => None,
     }
 }
 

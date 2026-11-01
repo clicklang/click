@@ -455,14 +455,18 @@ theorem only_element(v: int32, x: int32) {
                     crate::surface::verify_click_theorems(&source).unwrap();
                 });
             });
+            // An 8- or 16-bit binder is a value of its own format, so its
+            // range is the format's and intro states no bound fact; what the
+            // census records is spelled.
             let facts = lines
                 .iter()
                 .filter(|line| line.split('\t').nth(1) == Some("fact"))
                 .collect::<Vec<_>>();
-            assert!(facts.len() >= 2, "{ty}: {lines:#?}");
+            assert!(facts.is_empty(), "{ty}: {facts:#?}");
+            assert!(!lines.is_empty(), "{ty}");
             assert!(
-                facts.iter().all(|line| line.starts_with("spelled\t")),
-                "{ty}: {facts:#?}"
+                lines.iter().all(|line| line.starts_with("spelled\t")),
+                "{ty}: {lines:#?}"
             );
         }
     }

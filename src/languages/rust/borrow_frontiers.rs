@@ -824,6 +824,7 @@ mod tests {
             captures: 0,
             implements: None,
             instance_of: None,
+            core_method: None,
             span: Span { line: 1, column: 1 },
             mir: Some(MirBody {
                 locals: vec![

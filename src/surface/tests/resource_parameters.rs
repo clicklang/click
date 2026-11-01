@@ -214,6 +214,19 @@ fn elements_separation_applies_and_expands_without_implicit_search() {
     for (fixture, labels) in [
         ("mdtests/separation_elements.md", vec!["keep.contract"]),
         (
+            "mdtests/separation_elements_signed_store.md",
+            vec!["keep.contract"],
+        ),
+        (
+            "mdtests/separation_elements_signed.md",
+            vec![
+                "signed_bytes.ensures_0",
+                "signed_words.ensures_0",
+                "negative_byte.ensures_0",
+                "unsigned_zero.ensures_0",
+            ],
+        ),
+        (
             "mdtests/separation_elements_types.md",
             vec!["words.ensures_0", "pointers.ensures_0", "inspect.contract"],
         ),
@@ -233,19 +246,21 @@ fn elements_separation_applies_and_expands_without_implicit_search() {
 
 #[test]
 fn elements_separation_requires_distinct_indices() {
-    for (requirement, arguments) in [("", "i, j"), ("requires i != j;", "i, i")] {
-        let source = format!(
-            r#"
+    for ty in ["int32", "int64", "uint64"] {
+        for (requirement, arguments) in [("", "i, j"), ("requires i != j;", "i, i")] {
+            let source = format!(
+                r#"
             import click::separation;
-            theorem invalid(p: uint8*, i: uint64, j: uint64) {{
+            theorem invalid(p: uint8*, i: {ty}, j: {ty}) {{
                 {requirement}
                 ensures separate(memory(p[i]), memory(p[j])) by {{
                     apply(separation::elements(p, {arguments})) using {{}};
                 }}
             }}
         "#
-        );
-        assert!(without_implicit_auto(|| verify_click_theorems(&source)).is_err());
+            );
+            assert!(without_implicit_auto(|| verify_click_theorems(&source)).is_err());
+        }
     }
 }
 
@@ -268,4 +283,18 @@ fn equal_array_base_separation_restricts_and_replays_without_search() {
         "ensures separate(A, memory(q[cap]))",
     );
     assert!(without_implicit_auto(|| verify_c0_sources(&out_of_range, &sources)).is_err());
+}
+
+#[test]
+fn elements_separation_does_not_widen_byte_cells() {
+    let source = r#"
+        import click::separation;
+        theorem invalid(p: uint8*, i: int32, j: int32) {
+            requires i != j;
+            ensures separate(memory(p[i..i+4]), memory(p[j])) by {
+                apply(separation::elements(p, i, j)) using { i != j; };
+            }
+        }
+    "#;
+    assert!(without_implicit_auto(|| verify_click_theorems(source)).is_err());
 }

@@ -198,35 +198,61 @@ fn mathematical_lowering_keeps_repeated_squares_shared_without_evaluation() {
         Box::new(ContractExpression::Binding("selected".into())),
         Box::new(ContractExpression::Binding("selected".into())),
     );
-    let mut costs = Vec::new();
-    for size in [16, 64, 256, 1024] {
-        let mut bindings = crate::persistent::PersistentMap::default();
-        for index in 0..size {
-            bindings = bindings.with_inserted(
-                format!("unused{index}"),
-                SpecIntegerExpression::Term(IntegerTerm::constant_i64(index)),
-            );
+    let state = CState::new();
+    let snapshots = RecordedSnapshots::new();
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let (mut lowerer, mut context) = fixed_state_elaboration(
+        BTreeMap::new(),
+        BTreeMap::new(),
+        &state,
+        BTreeMap::new(),
+        BTreeMap::new(),
+        None,
+        &snapshots,
+        SpecDefinitions::new(&predicates, &functions),
+        BTreeSet::new(),
+        BTreeMap::new(),
+    );
+    for ordinary in [false, true] {
+        let mut costs = Vec::new();
+        for size in [16, 64, 256, 1024] {
+            let mut bindings = crate::persistent::PersistentMap::default();
+            for index in 0..size {
+                bindings = bindings.with_inserted(
+                    format!("unused{index}"),
+                    SpecIntegerExpression::Term(IntegerTerm::constant_i64(index)),
+                );
+            }
+            let mut value = IntegerTerm::constant_i64(2);
+            for _ in 0..size {
+                bindings = bindings.with_inserted(
+                    "selected".into(),
+                    SpecIntegerExpression::Term(value.clone()),
+                );
+                context.integer_values = bindings.clone();
+                let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    if ordinary {
+                        lowerer
+                            .lower_contract_integer_to_spec(&expression, &context)
+                            .unwrap()
+                    } else {
+                        lower_contract_integer_to_spec(&expression, &bindings).unwrap()
+                    }
+                });
+                let SpecIntegerExpression::Term(IntegerTerm::Multiply(left, right)) = lowered
+                else {
+                    panic!("lowering must retain the multiplication instead of evaluating it");
+                };
+                assert_eq!(left, right, "the two operands share one retained DAG");
+                assert_eq!(left.as_ref(), &value);
+                value = IntegerTerm::Multiply(left, right);
+                // The first operation interns constants; all subsequent reads are
+                // shallow DAG roots, independent of depth and unrelated bindings.
+                assert!(work < 64, "size={size}, work={work}");
+                costs.push(work);
+            }
         }
-        let mut value = IntegerTerm::constant_i64(2);
-        for _ in 0..size {
-            bindings = bindings.with_inserted(
-                "selected".into(),
-                SpecIntegerExpression::Term(value.clone()),
-            );
-            let (lowered, work) = crate::instrumentation::measure_deterministic_work(|| {
-                lower_contract_integer_to_spec(&expression, &bindings).unwrap()
-            });
-            let SpecIntegerExpression::Term(IntegerTerm::Multiply(left, right)) = lowered else {
-                panic!("lowering must retain the multiplication instead of evaluating it");
-            };
-            assert_eq!(left, right, "the two operands share one retained DAG");
-            assert_eq!(left.as_ref(), &value);
-            value = IntegerTerm::Multiply(left, right);
-            // The first operation interns constants; all subsequent reads are
-            // shallow DAG roots, independent of depth and unrelated bindings.
-            assert!(work < 64, "size={size}, work={work}");
-            costs.push(work);
-        }
+        assert!(costs.iter().max().unwrap() <= &64);
     }
-    assert!(costs.iter().max().unwrap() <= &64);
 }

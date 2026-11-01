@@ -76,7 +76,8 @@ pub(in crate::kernel) fn narrowed_cast_identity(
     // than `false`; a symbolic one keeps the established spelling.
     let constant = value.as_const().is_some()
         || value.int64_as_const().is_some()
-        || value.uint64_as_const().is_some();
+        || value.uint64_as_const().is_some()
+        || source.constant_from_term(value).is_some();
     let signed_ge = |v: &Bitvector32Term, b: i64| {
         if constant {
             ConditionTerm::Compare {
@@ -146,7 +147,13 @@ pub(in crate::kernel) fn narrowed_cast_identity(
             ConditionTerm::uint64_less_equal(v.clone(), Bitvector32Term::UInt64Constant(b as u64))
         }
     };
-    let value = value.clone();
+    // An 8- or 16-bit operand is native: its bounds and carrier read its
+    // 32-bit widening, the word C's promotion gives it.
+    let value = if source_bits < 32 {
+        Bitvector32Term::machine_integer_cast(source, Ty::Int32, value.clone())
+    } else {
+        value.clone()
+    };
     let (lower, upper, carrier) = match source {
         Ty::Int8 | Ty::Int16 | Ty::Int32 => (
             vec![signed_ge(&value, lo)],
@@ -190,17 +197,21 @@ pub(in crate::kernel) fn narrowed_cast_identity(
 }
 
 impl PureFactContext {
-    /// The carrier a narrowing conversion equals when the context decides
-    /// every range condition of [`narrowed_cast_identity`].
+    /// The 32-bit word the widening of a narrowing conversion,
+    /// `widen(conv(v))` into `int32` or `uint32`, equals when the context
+    /// decides every range condition of [`narrowed_cast_identity`]: the
+    /// operand's own word. The narrowing itself is a value of its own width
+    /// and has no other carrier; its widening is where C reads it as a word.
     pub(in crate::kernel) fn narrowed_cast_carrier(
         &self,
         term: &Bitvector32Term,
     ) -> Option<Bitvector32Term> {
+        let (_, narrowed) = term.narrow_widening32_operand()?;
         let Bitvector32Term::MachineIntegerCast {
             value,
             source,
             destination,
-        } = term
+        } = narrowed
         else {
             return None;
         };
@@ -325,9 +336,17 @@ mod tests {
                     if inside {
                         let converted =
                             Bitvector32Term::machine_integer_cast(source, destination, term);
+                        // The narrowing is native; its widening is the
+                        // operand's word.
                         assert_eq!(
-                            PureFactContext::new().simplify_bitvector_under_assumptions(&carrier),
-                            converted,
+                            PureFactContext::new()
+                                .simplify_bitvector_under_assumptions(&carrier)
+                                .into_word32(),
+                            Bitvector32Term::machine_integer_cast(
+                                destination,
+                                Ty::Int32,
+                                converted.clone()
+                            ),
                             "{source:?} -> {destination:?} at {value}"
                         );
                         assert_eq!(converted, constant(destination, value).unwrap());
@@ -356,7 +375,12 @@ mod tests {
     fn a_narrowed_cast_is_its_operand_only_when_the_context_proves_the_range() {
         let _session = crate::kernel::VerificationSession::enter();
         let x = Bitvector32Term::Variable(Variable(170_001));
-        let byte = Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::UInt8, x.clone());
+        // The narrowing's widening is its word.
+        let byte = Bitvector32Term::machine_integer_cast(
+            Ty::UInt8,
+            Ty::Int32,
+            Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::UInt8, x.clone()),
+        );
         let is_x = ConditionTerm::equal(byte.clone(), x.clone());
         let at_least_zero =
             ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::Constant(0));
@@ -401,7 +425,12 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         let y = Bitvector32Term::Variable(Variable(170_020));
         let result = Bitvector32Term::Variable(Variable(170_021));
-        let byte = Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::UInt8, y.clone());
+        // The narrowing's widening is its word.
+        let byte = Bitvector32Term::machine_integer_cast(
+            Ty::UInt8,
+            Ty::Int32,
+            Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::UInt8, y.clone()),
+        );
         let bounded = |upper: u32| {
             PureFactContext::new()
                 .assume_condition(
@@ -475,7 +504,11 @@ mod tests {
     fn cited_bounds_reduce_a_narrowed_cast_and_missing_ones_do_not() {
         let _session = crate::kernel::VerificationSession::enter();
         let x = Bitvector32Term::Variable(Variable(170_003));
-        let short = Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::Int16, x.clone());
+        let short = Bitvector32Term::machine_integer_cast(
+            Ty::Int16,
+            Ty::Int32,
+            Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::Int16, x.clone()),
+        );
         let goal = Proposition::ConditionIs(ConditionTerm::equal(short, x.clone()), true);
         let lower = ConditionTerm::signed_greater_equal(
             x.clone(),

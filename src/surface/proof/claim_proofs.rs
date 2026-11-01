@@ -3080,7 +3080,7 @@ pub(super) fn finish_ordered_proof<'a>(
         .core
         .validate_execution_evidence_shapes()
         .map_err(|message| ClickError::new(format!("{proof_label}: {message}")))?;
-    let retained_surface = {
+    let mut retained_surface = {
         let record = &proof_execution.presentation.surface_record;
         let mut retained = ProofCertificateBuilder {
             path_choices: record.path_choices.clone(),
@@ -3739,7 +3739,14 @@ pub(super) fn finish_ordered_proof<'a>(
                     // A capture belongs only to paths that actually reach its
                     // source occurrence, including through newly decided arms.
                     let mut visits_selected_capture = false;
-                    let mut surface_post_choices = Vec::new();
+                    let mut surface_post_choices =
+                        match direct_view.terminal_statement_choices(path_index) {
+                            Ok(choices) => choices,
+                            Err(message) => {
+                                retained_surface.block(message);
+                                Vec::new()
+                            }
+                        };
                     let mut batch_previous_capture = None;
                     // Consecutive assumption closers only discharge claims;
                     // they do not change the outcome or its ambient facts.

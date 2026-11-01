@@ -23,5 +23,5 @@ int32 run(int32 value) {
 ```
 
 ```expect
-fail: goal: value + 2 == value + 1
+fail: goal: to_integer(value + 2) == to_integer(value + 1)
 ```

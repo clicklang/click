@@ -22,8 +22,9 @@ use crate::kernel::{CompareRelation, OverflowOperation};
 /// The word a format's values ride in, which decides its nodes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Word {
-    /// 8, 16 and 32 bits: the 32-bit word, a narrow value as its canonical
-    /// extension.
+    /// 8 and 16 bits: a native value of its own width.
+    Narrow,
+    /// 32 bits: the 32-bit word.
     Bits32,
     /// `int64`.
     Signed64,
@@ -36,7 +37,8 @@ enum Word {
 fn word(ty: MachineIntegerType) -> Word {
     let format = ty.format();
     match (format.bits(), format.is_signed()) {
-        (8 | 16 | 32, _) => Word::Bits32,
+        (8 | 16, _) => Word::Narrow,
+        (32, _) => Word::Bits32,
         (64, true) => Word::Signed64,
         (64, false) => Word::Unsigned64,
         _ => Word::Bits128,
@@ -44,11 +46,12 @@ fn word(ty: MachineIntegerType) -> Word {
 }
 
 /// The width of the word whose arithmetic `ty`'s ring operations reduce
-/// modulo: 32 for 8-, 16- and 32-bit formats, whose operations are 32-bit
-/// word operations, 64 for 64-bit formats, and `None` at 128 bits, which has
-/// no operations.
+/// modulo: its own width for 8-, 16-, 32- and 64-bit formats, whose
+/// operations are native nodes of that width, and `None` at 128 bits, which
+/// has no operations.
 pub(crate) fn word_bits(ty: MachineIntegerType) -> Option<u32> {
     match word(ty) {
+        Word::Narrow => Some(ty.format().bits()),
         Word::Bits32 => Some(32),
         Word::Signed64 | Word::Unsigned64 => Some(64),
         Word::Bits128 => None,
@@ -65,7 +68,7 @@ pub(crate) fn word_bits(ty: MachineIntegerType) -> Option<u32> {
 fn operator_format(ty: MachineIntegerType) -> Option<MachineIntegerType> {
     match word(ty) {
         Word::Bits32 => Some(MachineIntegerType::Int32),
-        Word::Signed64 | Word::Unsigned64 => Some(ty),
+        Word::Narrow | Word::Signed64 | Word::Unsigned64 => Some(ty),
         Word::Bits128 => None,
     }
 }
@@ -167,9 +170,8 @@ pub(crate) fn is_ring_operation(value: &Bitvector32Term) -> bool {
 
 /// The native comparison `left REL right` at `ty`, with the truth it is
 /// filed at (`!=` is a false equality), built by the folding constructor
-/// (`ConditionTerm::machine_compare`). A narrow value's word is its
-/// canonical extension, which the signed 32-bit order compares exactly, as
-/// C's promotion to `int` does.
+/// (`ConditionTerm::machine_compare`). A narrow comparison is native at its
+/// own format.
 pub(crate) fn comparison(
     ty: MachineIntegerType,
     relation: Relation,
@@ -229,6 +231,11 @@ pub(crate) fn comparison_readings(
         (Ty::Int128, false) => &[Ty::Int128],
         (Ty::Int128, true) => &[Ty::Int128, Ty::UInt128],
         (Ty::UInt128, false) => &[Ty::UInt128],
+        // A native narrow comparison reads its operands at its own format.
+        (Ty::Int8, _) => &[Ty::Int8],
+        (Ty::UInt8, _) => &[Ty::UInt8],
+        (Ty::Int16, _) => &[Ty::Int16],
+        (Ty::UInt16, _) => &[Ty::UInt16],
         _ => return None,
     };
     Some((left, right, types))
@@ -382,19 +389,21 @@ pub(crate) fn narrow_carrier_mask(ty: MachineIntegerType) -> Option<(u32, Option
     Some((mask, format.is_signed().then_some(1u32 << (bits - 1))))
 }
 
-/// Rule K7 (`design/machine-integers.md`, Decisions, 2026-10-26): the
-/// 32-bit word of `Cast(source -> destination, value)` into an 8- or 16-bit
-/// format, from a source of at most 64 bits. With `w` the operand's word
-/// (`value` itself up to 32 bits, its low word `UInt32From64(value)` at 64),
+/// Rule K7' (`design/machine-integers.md`, Decisions, 2026-10-26, restated
+/// 2026-10-30): the 32-bit word of the widening of `Cast(source ->
+/// destination, value)` into an 8- or 16-bit format, from a source of at
+/// most 64 bits. The cast is a value of its own width; its `int32` and
+/// `uint32` widenings have this word. With `w` the operand's word (an 8- or
+/// 16-bit operand's `int32` widening, a 32-bit `value` itself, a 64-bit
+/// one's low word `UInt32From64(value)`),
 /// `m = 2^bits - 1` and `s = 2^(bits - 1)`:
 ///
 /// - unsigned destination: `w & m`;
 /// - signed destination: `((w & m) ^ s) - s`.
 ///
 /// Soundness: the cast denotes `n mod 2^bits` read in the destination, `n`
-/// the operand's value, and by the narrow-value invariant
-/// (`docs/internals/kernel.md`, "One meaning for a narrow value") its word
-/// is the zero or sign extension of those low bits. The operand's word, or
+/// the operand's value, and its widening is the zero or sign extension of
+/// those low bits. The operand's word, or
 /// low word, is `n mod 2^32`, whose low `bits` bits are `n mod 2^bits`. The
 /// mask zero-extends them; for `b` those bits, `(b ^ s) - s` is `b` when
 /// `b < s` and `b - 2^bits` otherwise, with no 32-bit wrap, which is their
@@ -410,7 +419,8 @@ pub(crate) fn narrow_cast_word(
 ) -> Option<Bitvector32Term> {
     let (mask, sign) = narrow_carrier_mask(destination)?;
     let word = match source.format().bits() {
-        8 | 16 | 32 => value,
+        8 | 16 => Bitvector32Term::machine_integer_cast(source, MachineIntegerType::Int32, value),
+        32 => value,
         64 => Bitvector32Term::uint32_from_64(value),
         _ => return None,
     };

@@ -87,7 +87,7 @@ fn store_byte(memory: CMemory, offset: i64, byte: CValue, byte_order: ByteOrder)
 }
 
 fn uint8_constant(value: u32) -> CExpressionOutcome {
-    CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::Constant(value)))
+    CExpressionOutcome::Value(crate::kernel::uint8(value))
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn byte_stores_complete_declared_uint32_and_preserve_byte_observations() {
         memory = store_byte(
             memory,
             offset,
-            CValue::UInt8(byte.into()),
+            crate::kernel::uint8(byte),
             ByteOrder::Little,
         );
         assert!(!matches!(
@@ -109,7 +109,7 @@ fn byte_stores_complete_declared_uint32_and_preserve_byte_observations() {
     memory = store_byte(
         memory,
         2,
-        CValue::Int8(0xFFFF_FFEEu32.into()),
+        crate::kernel::int8(0xFFFF_FFEEu32),
         ByteOrder::Little,
     );
     assert_eq!(
@@ -123,7 +123,7 @@ fn byte_stores_complete_declared_uint32_and_preserve_byte_observations() {
             uint8_constant(byte)
         );
     }
-    memory = store_byte(memory, 1, CValue::UInt8(7u32.into()), ByteOrder::Little);
+    memory = store_byte(memory, 1, crate::kernel::uint8(7u32), ByteOrder::Little);
     assert_eq!(
         memory.known_value(&word(0)),
         Some(CValue::UInt32(0xFFEE_0711u32.into()))
@@ -135,12 +135,12 @@ fn byte_assembly_refuses_untyped_other_types_missing_bytes_and_other_orders() {
     use crate::kernel::eval::assemble_declared_uint32_after_byte_store as assemble;
     let prefix = |mut memory: CMemory| {
         for byte in 0..3 {
-            memory = memory.store(word(byte), CValue::UInt8(1u32.into()));
+            memory = memory.store(word(byte), crate::kernel::uint8(1u32));
         }
         memory
     };
     let typed = prefix(CMemory::new().with_declared_scalar_block(word(0).block, 4, CType::UInt32));
-    let incoming = CValue::UInt8(2u32.into());
+    let incoming = crate::kernel::uint8(2u32);
     assert!(assemble(&typed, &word(3), &incoming, Some(ByteOrder::Little)).is_some());
     for order in [None, Some(ByteOrder::Big)] {
         assert!(assemble(&typed, &word(3), &incoming, order).is_none());
@@ -151,7 +151,7 @@ fn byte_assembly_refuses_untyped_other_types_missing_bytes_and_other_orders() {
         prefix(CMemory::new().with_declared_scalar_block(word(0).block, 8, CType::UInt64)),
         CMemory::new()
             .with_declared_scalar_block(word(0).block, 4, CType::UInt32)
-            .store(word(0), CValue::UInt8(1u32.into())),
+            .store(word(0), crate::kernel::uint8(1u32)),
         typed.without_local_block(&word(0).block),
     ] {
         assert!(assemble(&memory, &word(3), &incoming, Some(ByteOrder::Little)).is_none());
@@ -173,7 +173,7 @@ fn byte_assembly_refuses_untyped_other_types_missing_bytes_and_other_orders() {
 fn is_constant_byte(outcome: &CExpressionOutcome) -> bool {
     matches!(
         outcome,
-        CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::Constant(_)))
+        CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::MachineIntegerConstant(_)))
     )
 }
 
@@ -220,16 +220,16 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
     let memory = CMemory::new().store(word(0), CValue::UInt32(value.clone()));
     assert_eq!(
         load_byte(&memory, 2, CType::UInt8, Some(ByteOrder::Little)),
-        CExpressionOutcome::Value(CValue::UInt8(binary_node!(
-            Int32,
-            BitwiseAnd,
-            Box::new(binary_node!(
+        // A byte view is the byte's native `uint8` term.
+        CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::machine_integer_cast(
+            MachineIntegerType::UInt32,
+            MachineIntegerType::UInt8,
+            binary_node!(
                 UInt32,
                 ShiftRight,
                 Box::new(value.clone()),
                 Box::new(Bitvector32Term::UInt32Constant(16)),
-            )),
-            Box::new(Bitvector32Term::Constant(0xFF)),
+            ),
         )))
     );
 
@@ -237,19 +237,16 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
     let memory = CMemory::new().store(word(0), CValue::UInt64(wide.clone()));
     assert_eq!(
         load_byte(&memory, 5, CType::UInt8, Some(ByteOrder::Little)),
-        CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::UInt32From64(Box::new(
+        CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::machine_integer_cast(
+            MachineIntegerType::UInt64,
+            MachineIntegerType::UInt8,
             Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::BitwiseAnd,
-                left: Box::new(Bitvector32Term::Binary {
-                    format: MachineIntegerType::UInt64,
-                    op: MachineBinaryOp::ShiftRight,
-                    left: Box::new(wide),
-                    right: Box::new(Bitvector32Term::UInt64Constant(40))
-                }),
-                right: Box::new(Bitvector32Term::UInt64Constant(0xFF))
-            }
-        ))))
+                op: MachineBinaryOp::ShiftRight,
+                left: Box::new(wide),
+                right: Box::new(Bitvector32Term::UInt64Constant(40))
+            },
+        )))
     );
 
     // The same extraction folds to the byte once the value is known.
@@ -260,7 +257,10 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
     };
     assert_eq!(
         integer_cell_byte(&cell.value, cell.byte),
-        Some(Bitvector32Term::Constant(0xC3))
+        Some(Bitvector32Term::narrow_constant(
+            MachineIntegerType::UInt8,
+            0xC3
+        ))
     );
 }
 
@@ -269,11 +269,11 @@ fn signed_byte_loads_sign_extend_a_constant_byte_and_refuse_a_symbolic_one() {
     let memory = CMemory::new().store(word(0), CValue::UInt32(0x0000_7F80.into()));
     assert_eq!(
         load_byte(&memory, 0, CType::Int8, Some(ByteOrder::Little)),
-        CExpressionOutcome::Value(CValue::Int8(Bitvector32Term::Constant(0xFFFF_FF80)))
+        CExpressionOutcome::Value(crate::kernel::int8(0xFFFF_FF80))
     );
     assert_eq!(
         load_byte(&memory, 1, CType::Int8, Some(ByteOrder::Little)),
-        CExpressionOutcome::Value(CValue::Int8(Bitvector32Term::Constant(0x7F)))
+        CExpressionOutcome::Value(crate::kernel::int8(0x7F))
     );
     let symbolic = CMemory::new().store(
         word(0),
@@ -299,7 +299,7 @@ fn byte_stores_update_the_containing_uint32_cell_in_place() {
         let after = store_byte(
             memory,
             offset,
-            CValue::UInt8(0xAB.into()),
+            crate::kernel::uint8(0xABu32),
             ByteOrder::Little,
         );
         assert_eq!(
@@ -326,7 +326,7 @@ fn byte_stores_update_the_containing_uint64_cell_in_place() {
             word(0),
             CValue::UInt64(Bitvector32Term::UInt64Constant(bits)),
         );
-        let after = store_byte(memory, offset, CValue::UInt8(0.into()), ByteOrder::Little);
+        let after = store_byte(memory, offset, crate::kernel::uint8(0), ByteOrder::Little);
         assert_eq!(
             after.known_value(&word(0)),
             Some(CValue::UInt64(Bitvector32Term::UInt64Constant(
@@ -341,7 +341,7 @@ fn byte_stores_update_the_containing_uint64_cell_in_place() {
 fn byte_stores_into_a_symbolic_uint32_cell_keep_the_other_bytes() {
     let value = Bitvector32Term::Variable(Variable(7304));
     let memory = CMemory::new().store(word(0), CValue::UInt32(value.clone()));
-    let after = store_byte(memory, 1, CValue::UInt8(0x5A.into()), ByteOrder::Little);
+    let after = store_byte(memory, 1, crate::kernel::uint8(0x5Au32), ByteOrder::Little);
     assert_eq!(
         after.known_value(&word(0)),
         Some(CValue::UInt32(binary_node!(
@@ -375,11 +375,11 @@ fn big_endian_and_uninstalled_byte_orders_have_no_byte_view() {
         assert_eq!(containing_integer_cell(&memory, &word(1), byte_order), None);
     }
     // A big-endian store keeps today's behavior: the wider cell is forgotten.
-    let after = store_byte(memory, 1, CValue::UInt8(0xAB.into()), ByteOrder::Big);
+    let after = store_byte(memory, 1, crate::kernel::uint8(0xABu32), ByteOrder::Big);
     assert_eq!(after.known_value(&word(0)), None);
     assert_eq!(
         after.known_value(&word(1)),
-        Some(CValue::UInt8(Bitvector32Term::Constant(0xAB)))
+        Some(crate::kernel::uint8(0xAB))
     );
 }
 
@@ -401,13 +401,13 @@ fn pointer_cells_have_no_byte_view() {
             assert!(is_load_type_mismatch(&outcome), "{outcome:?}");
         }
     }
-    let after = store_byte(memory, 1, CValue::UInt8(0.into()), ByteOrder::Little);
+    let after = store_byte(memory, 1, crate::kernel::uint8(0), ByteOrder::Little);
     assert_eq!(after.known_value(&word(0)), None);
 }
 
 #[test]
 fn a_one_byte_cell_is_read_as_its_own_access() {
-    let memory = CMemory::new().store(word(1), CValue::UInt8(9.into()));
+    let memory = CMemory::new().store(word(1), crate::kernel::uint8(9));
     assert_eq!(
         containing_integer_cell(&memory, &word(1), Some(ByteOrder::Little)),
         None
@@ -473,8 +473,8 @@ fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
 /// its own term, never a fresh unrelated value.
 #[test]
 fn character_loads_read_a_one_byte_cell_of_the_other_signedness_as_its_bits() {
-    let int8 = |value: i8| CValue::Int8(Bitvector32Term::Constant(value as i32 as u32));
-    let uint8 = |value: u8| CValue::UInt8(Bitvector32Term::Constant(u32::from(value)));
+    let int8 = |value: i8| crate::kernel::int8(value as i32 as u32);
+    let uint8 = |value: u8| crate::kernel::uint8(u32::from(value));
     for byte in [0u8, 1, 0x7F, 0x80, 0xC8, 0xFF] {
         assert_eq!(CType::UInt8.read_cell(&int8(byte as i8)), Some(uint8(byte)));
         assert_eq!(CType::Int8.read_cell(&uint8(byte)), Some(int8(byte as i8)));
@@ -512,13 +512,13 @@ fn character_loads_read_a_one_byte_cell_of_the_other_signedness_as_its_bits() {
     // byte view, and bool, pointer, and float cells stay refused. A wider
     // load reads only a cell of its own width.
     for (load, stored) in [
-        (CType::UInt8, CValue::Int16(Bitvector32Term::Constant(1))),
-        (CType::Int8, CValue::Bool(Bitvector32Term::Constant(1))),
+        (CType::UInt8, crate::kernel::int16(1)),
+        (CType::Int8, CValue::bool_constant(true)),
         (CType::UInt8, CValue::Float32(Bitvector32Term::Constant(0))),
-        (CType::Int16, CValue::UInt8(Bitvector32Term::Constant(1))),
-        (CType::Int32, CValue::Int16(Bitvector32Term::Constant(1))),
+        (CType::Int16, crate::kernel::uint8(1)),
+        (CType::Int32, crate::kernel::int16(1)),
         (CType::UInt64, CValue::UInt32(Bitvector32Term::Constant(1))),
-        (CType::UInt16, CValue::Int8(Bitvector32Term::Constant(1))),
+        (CType::UInt16, crate::kernel::int8(1)),
     ] {
         assert_eq!(load.read_cell(&stored), None, "{load:?} of {stored:?}");
     }
@@ -531,8 +531,8 @@ fn character_loads_read_a_one_byte_cell_of_the_other_signedness_as_its_bits() {
 /// other tag, and a 64-bit word uses the bit-preserving carrier conversion.
 #[test]
 fn integer_loads_read_a_cell_of_the_other_signedness_as_its_bits() {
-    let int16 = |value: i16| CValue::Int16(Bitvector32Term::Constant(value as i32 as u32));
-    let uint16 = |value: u16| CValue::UInt16(Bitvector32Term::Constant(u32::from(value)));
+    let int16 = |value: i16| crate::kernel::int16(value as i32 as u32);
+    let uint16 = |value: u16| crate::kernel::uint16(u32::from(value));
     for half in [0u16, 1, 0x7FFF, 0x8000, 0xFFC8, 0xFFFF] {
         assert_eq!(
             CType::UInt16.read_cell(&int16(half as i16)),
@@ -608,18 +608,15 @@ fn integer_loads_read_a_cell_of_the_other_signedness_as_its_bits() {
 #[test]
 fn execution_loads_read_character_cells_of_the_other_signedness() {
     let memory = CMemory::new()
-        .store(
-            word(0),
-            CValue::Int8(Bitvector32Term::Constant(-56i32 as u32)),
-        )
-        .store(word(1), CValue::UInt8(Bitvector32Term::Constant(200)));
+        .store(word(0), crate::kernel::int8(-56i32 as u32))
+        .store(word(1), crate::kernel::uint8(200));
     assert_eq!(
         load_byte(&memory, 0, CType::UInt8, Some(ByteOrder::Little)),
-        CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::Constant(200)))
+        CExpressionOutcome::Value(crate::kernel::uint8(200))
     );
     assert_eq!(
         load_byte(&memory, 1, CType::Int8, Some(ByteOrder::Little)),
-        CExpressionOutcome::Value(CValue::Int8(Bitvector32Term::Constant(-56i32 as u32)))
+        CExpressionOutcome::Value(crate::kernel::int8(-56i32 as u32))
     );
 }
 

@@ -83,6 +83,92 @@ checked. Each one costs completeness, expansion, or a readable report.
 A fact that exists only inside one kernel step, and never becomes a proof
 state's fact or goal, needs no spelling.
 
+## Shared term migration
+
+`SurfaceTerm` is the source expression AST; `ContractExpression` remains a
+compatibility alias. `KernelTerm` is an immutable typed expression DAG whose
+arithmetic and call operands are themselves `KernelTerm`s. Its structural
+identity is independent of equality-graph classes: constructing `1 + 1`
+does not construct `2`. Nodes retain their result type, and checked arithmetic
+constructors reject the wrong operand type or arity.
+
+Specification-side Integer certificate arithmetic (`lower_surface_integer_term`)
+and ordinary Integer arithmetic on existing values construct the shared tree.
+Ordinary negation, addition, subtraction, multiplication, and constant-nonzero-
+divisor quotient/remainder use the same constructor. Expressions still requiring
+evaluation retain their `SpecIntegerExpression` forms and scoped obligations;
+a symbolic divisor still needs its nonzero check. Integer arithmetic and
+pure-call raising consume the shared tree through `raise_kernel_term`. The existing
+checker still receives `IntegerTerm` through a lossless, memoized export;
+other producers enter through the memoized import. Neither bridge reads facts
+or simplifies terms. These are migration boundaries, not a second semantics.
+Machine-integer arguments now import into typed shared literal, variable,
+binary, complement and explicit-cast nodes. The result type and operator
+format are distinct: a `uint32` result may contain a sign-free `int32` word
+operation. Literal payload tags survive exactly. Export builds the explicit
+boxed checker output once, without cloning every intermediate subtree.
+This is a bridge migration for argument spelling; machine execution and
+lowering producers still construct the old representation. Shifts use the
+same shared binary nodes: lowering has already converted a count to the
+left operand's carrier width, and the bridge preserves that explicit conversion
+without reinterpreting it from the result's signedness. Widening spellings explicitly retain the source `int32`/`uint32`
+interpretation: zero-extending signed `x` prints as `(x as uint32) as uint64`,
+so lowering cannot replace zero extension with sign extension. Pointer-carrying
+integers retain their complete metadata, even though their C type is numeric.
+The six specialized 32/64-bit extensions and low-word conversions also use
+shared cast nodes. A transitional encoding tag distinguishes their exact
+legacy constructors from a generic cast with the same formats; import/export
+never silently normalizes one into another. Low-word extraction interprets
+its operand as unsigned bits, independent of the source C signedness.
+Machine raising currently uses one exact export to the existing speller.
+Mathematical observations of machine values (`to_integer`) now have a shared
+`MachineObservation` node with the interpretation format and machine operand.
+Signed and unsigned interpretations remain distinct. Raising retains the observation's interpretation inside any snapshot selector;
+a local's name must not silently choose a different signedness. Narrow values retain their
+existing load/conversion spelling: adding another narrowing or promotion cast
+changes the structural observation, particularly under quantified binders.
+Observation casts use `SurfaceTerm::CUnary` with the Surface operand retained;
+projecting a resource field or scoped name into a C fragment loses its binding. The checker bridge reconstructs
+the exact `IntegerTerm::Machine` payload without folding arithmetic.
+Mathematical-Integer-to-machine conversions use an `IntegerToMachine` shared
+node with an Integer operand and explicit destination format. Raising uses the
+existing `to_int32`, `to_uint64`, etc. calls; exporting reconstructs the original
+conversion without evaluating the operand or consulting range facts.
+Wide symbolic cast chains retain their intermediate nodes. Collapsing
+`(x as int128) as int64` used to create a generic `int32`-to-`int64` cast,
+while its direct spelling lowered to `Int64From32`. Retaining the chain
+restores the round trip. The existing 32-bit word-cast conventions remain.
+The speller now handles explicit wide casts and wide literal payloads.
+Cast-composition equalities, including 128-bit intermediates, are maintained
+by the equality graph's indexed machine relations. A full-width source's
+conversion through a no-narrower intermediate can be related to its direct
+modular conversion; a lossy intermediate does not restore the original value.
+No stored cast node is replaced by that equality.
+The `Legacy` leaf retains complete unmigrated values, including pointer
+metadata, array snapshots, and scoped binders. Those families do not yet have
+unified constructors or total raising. Boolean-to-machine conversions
+now have a shared `BoolCast` node with a logical `Bool` child. Boolean literals,
+variables, machine comparisons, equality, conditionals and calls have structural
+nodes; other conditions retain an exact `LegacyBool` payload. Import/export does
+not use condition fact equality: signed and unsigned equality comparisons keep
+their original format even where the fact store identifies them. Raising a
+conversion writes `b as int32` (or its destination type), retaining the Surface
+operand through `CUnary`. Legacy call
+arguments retain their producer identity and exact payload: semantic pointer
+equality must not select a different auxiliary qualifier or evidence record.
+This change
+does not settle the C pointer field design or close the remaining census misses.
+
+Shared nodes use shallow child identities, cached key hashes, and bounded
+interner cleanup. Converted Integer nodes cache their common term; reverse
+links are weak to avoid reference cycles. Repeated lowering reuses those
+links rather than revisiting the growing expression behind a binding.
+Bridge tests grow shared DAGs and unrelated nodes separately; surface tests
+check arithmetic and nested calls through raising, printing, parsing, and
+ordinary structural lowering. The certificate operand test compares the
+resulting `KernelTerm` identity directly. Subsequent migrations should remove
+legacy leaves and adapters family by family rather than adding parallel trees.
+
 ## Kernel authority
 
 Some kernel propositions are checked context, not proof-state facts: a
@@ -233,6 +319,26 @@ spelling of its own: no Click text lowers back to it there, so `lower(raise(x))
 cell holding its own read (a materialization), which reads as that read. C
 evaluation still computes with stored values: a function's `result` is the
 value its statements produced.
+
+A logical 32-bit read through a model-pointer alias keeps that same read
+term. When the published footprint index selects an equal address with a
+stored word, the read returns a path-local equation to that word. The
+selection uses the address-class index and one exact cell lookup; it grants
+no access permission and does not search other aliases or snapshots.
+`logical_read_through_an_alias_retains_the_stored_word` checks the equation,
+missing-alias and changed-cell controls; its nightly scaling companion keeps
+the work bounds as aliases and unrelated frames grow.
+
+Quantified `defined` facts over a direct automatic object use that object's
+producer-recorded memory version. A store to another automatic object preserves
+the key; a store to the selected object changes it. The version is a persistent
+map lookup, not a scan of intervening stores. Lifetime changes, unknown-address
+writes and other unhandled effects keep an exact new snapshot identity. Cache
+forgetting alone preserves the version because it changes knowledge, not the
+object's initialization or lifetime. This identity is for definedness facts,
+not general snapshot equality or permission to access memory.
+`mdtests/local_array_quantified_definedness_survives_disjoint_store.md` covers
+`assumption()` after a store to an unrelated local.
 
 A scalar read handle retains its structural descriptor (memory version,
 address, and read kind) in the load registry. A generated read-definition fact

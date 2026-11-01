@@ -27,7 +27,7 @@ fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
             for index in 0..size {
                 memory = memory.store(
                     Pointer::symbolic(Variable(242_000 + index)),
-                    CValue::UInt8(Bitvector32Term::Constant(7)),
+                    crate::kernel::uint8(7),
                 );
                 facts = facts.with_fact(integer_equality(
                     IntegerTerm::var(Variable(244_000 + index)),
@@ -53,9 +53,7 @@ fn pointer_rewrite_integer_reads_preserves_snapshot_kind_and_scales() {
                     &crate::kernel::intern_c_memory(memory.clone()),
                 ));
             let target = read(&memory, &q, LoadKind::UInt8);
-            let later = memory
-                .clone()
-                .store(q.clone(), CValue::UInt8(Bitvector32Term::Constant(99)));
+            let later = memory.clone().store(q.clone(), crate::kernel::uint8(99));
             let other_snapshot = read(&later, &q, LoadKind::UInt8);
             let other_kind = read(&memory, &q, LoadKind::Int8);
             let mut work = 0;
@@ -1054,6 +1052,101 @@ fn pointer_read_chain_rewrites_ignore_surrounding_storage() {
         assert!(
             samples.iter().all(|work| *work <= samples[0] + 64),
             "{native}: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn machine_readings_of_selected_integer_facts_ignore_ambient_facts() {
+    let mut samples = Vec::new();
+    for size in [4u64, 64, 256, 1024] {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let n = Bitvector32Term::Variable(Variable(249_000));
+        let r = Bitvector32Term::Variable(Variable(249_001));
+        let observe = |word| IntegerTerm::from_machine(ty, word).unwrap();
+        let difference = IntegerTerm::subtract(observe(n.clone()), observe(r.clone()));
+        let bound = Proposition::ConditionIs(
+            ConditionTerm::integer_less_than(difference.clone(), observe(n.clone())),
+            true,
+        );
+        let range =
+            Proposition::ConditionIs(ConditionTerm::uint64_less_equal(r.clone(), n.clone()), true);
+        let equality = integer_equality(difference, observe(n.clone()));
+        let word = Bitvector32Term::uint64_subtract(n.clone(), r.clone());
+        let goal = Proposition::ConditionIs(ConditionTerm::uint64_less_than(word, n.clone()), true);
+        let mut facts = ProofFacts::default().with_fact(equality.clone());
+        for index in 0..size {
+            facts = facts.with_fact(Proposition::Predicate {
+                name: format!("unrelated_machine_reading_{index}"),
+                arguments: vec![],
+            });
+        }
+        let no_range = facts.clone();
+        let facts = facts.with_fact(range);
+        let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                assert!(no_range.native_operation_reading(&bound).is_none());
+                assert_eq!(facts.native_operation_reading(&bound), Some(goal.clone()));
+                let rewritten = facts.check_equality_rewrite(&goal, &equality).unwrap();
+                assert_eq!(
+                    rewritten.proposition(),
+                    &Proposition::ConditionIs(
+                        ConditionTerm::uint64_less_than(n.clone(), n.clone()),
+                        true,
+                    )
+                );
+                assert!(
+                    ProofFacts::default()
+                        .check_equality_rewrite(&goal, &equality)
+                        .is_err()
+                );
+            })
+        });
+        samples.push((work, map_work));
+    }
+    assert!(
+        samples[3].0 <= samples[0].0 * 2 + 32,
+        "ambient scan: {samples:?}"
+    );
+    assert!(
+        samples[3].1 <= samples[0].1 * 4 + 64,
+        "ambient map scan: {samples:?}"
+    );
+}
+
+#[test]
+fn modular_integer_rewrite_work_tracks_the_cited_expression() {
+    let mut samples = Vec::new();
+    for depth in [2u64, 4, 8, 16] {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let n = Bitvector32Term::Variable(Variable(250_000));
+        let target = Bitvector32Term::Variable(Variable(250_001));
+        let observe = |word| IntegerTerm::from_machine(ty, word).unwrap();
+        let mut exact = observe(n.clone());
+        let mut word = n.clone();
+        for index in 0..depth {
+            let operand = Bitvector32Term::Variable(Variable(251_000 + index));
+            exact = IntegerTerm::subtract(exact, observe(operand.clone()));
+            word = Bitvector32Term::uint64_subtract(word, operand);
+        }
+        let cited = integer_equality(exact, observe(target.clone()));
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        let goal = Proposition::ConditionIs(ConditionTerm::uint64_less_than(word, n.clone()), true);
+        let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.check_equality_rewrite(&goal, &cited)
+        });
+        assert_eq!(
+            checked.unwrap().proposition(),
+            &Proposition::ConditionIs(ConditionTerm::uint64_less_than(target, n), true,)
+        );
+        samples.push(work);
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 3 + 64,
+            "rewrite grew superlinearly: {samples:?}"
         );
     }
 }

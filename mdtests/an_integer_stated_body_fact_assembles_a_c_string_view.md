@@ -40,6 +40,7 @@ int32 copy_name(char buf[], int32 n) {
     step();
     step();
     have n as uint64 + 1 <= 18446744073709551615;
+    have tmp[n as uint64] == 0u8 by { solve(); }
     have forall (k: uint64) { 0u64 <= k and k < 2u64 implies tmp[k] != 0u8 } by { enumerate(); }
     have forall (k: uint64) { 0u64 <= k and k < 3u64 implies defined(tmp[k]) } by { enumerate(); }
     have forall (k: uint64) { 0u64 <= k and k < n as uint64 implies tmp[k] != 0u8 } by {

@@ -4,57 +4,68 @@
 
 use super::*;
 
+/// A narrow value's 32-bit widening is identified with the value in work
+/// independent of the ambient premises, when the certificate cites bounds on
+/// the value inside its own format; bounds past that format, a premise that
+/// is not a bound, and a 32-bit word that is not the value's widening are
+/// refused.
 #[test]
-fn integer_cast_identity_promotes_only_canonical_unsigned_subword_carriers() {
+fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
     let word = Bitvector32Term::Variable(Variable(168_010));
     let observation = |ty, value| IntegerTerm::from_machine(ty, value).unwrap();
-    let claim = |source, destination, carrier: Bitvector32Term| {
-        let original = observation(source, carrier.clone());
-        let goal = Proposition::ConditionIs(
-            ConditionTerm::integer_equal(observation(destination, carrier), original.clone()),
-            true,
-        );
-        let premises = vec![
-            le(IntegerTerm::constant_i64(0), original.clone()),
-            le(original, IntegerTerm::constant_i64(65535)),
-        ];
-        (premises, goal)
-    };
-    for source in [Ty::UInt8, Ty::UInt16] {
+    let equal =
+        |left, right| Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true);
+    for source in [Ty::UInt8, Ty::UInt16, Ty::Int8, Ty::Int16] {
+        let narrow = Bitvector32Term::machine_integer_cast(Ty::Int32, source, word.clone());
+        let original = observation(source, narrow.clone());
+        let bounds = |lo: num_bigint::BigInt, hi: num_bigint::BigInt| {
+            vec![
+                le(IntegerTerm::constant(lo), original.clone()),
+                le(original.clone(), IntegerTerm::constant(hi)),
+            ]
+        };
+        let (lo, hi) = source.format().bounds();
         let mask = (1u32 << source.format().bits()) - 1;
         for destination in [Ty::Int32, Ty::UInt32] {
-            for reversed in [false, true] {
-                let carrier = if reversed {
-                    Bitvector32Term::bitwise_and(Bitvector32Term::Constant(mask), word.clone())
-                } else {
-                    Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask))
-                };
-                let (mut premises, goal) = claim(source, destination, carrier);
-                let mut costs = Vec::new();
-                for ambient in [0, 16, 64, 256, 1024] {
-                    premises.resize_with(ambient + 2, || {
-                        Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_011)), true)
-                    });
-                    let cert = certificate(goal.clone(), vec![0, 1]);
-                    let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-                        cert.check(&goal, &premises)
-                    });
-                    result.unwrap();
-                    costs.push(work);
-                    assert!(
-                        certificate(goal.clone(), vec![0, 2])
-                            .check(&goal, &premises)
-                            .is_err()
-                    );
-                }
-                assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+            if !destination.format().contains(source.format()) {
+                continue;
             }
-            // A bare variable, or a mask of one by anything but the
-            // format's mask, is a carrier only through a binder's stated
-            // range, which bounds on the narrow observation do not give. A
-            // word built by 32-bit arithmetic is not a carrier at all.
+            let widened =
+                Bitvector32Term::machine_integer_cast(source, destination, narrow.clone());
+            let goal = equal(observation(destination, widened), original.clone());
+            let mut premises = bounds(lo.clone(), hi.clone());
+            let mut costs = Vec::new();
+            for ambient in [0, 16, 64, 256, 1024] {
+                premises.resize_with(ambient + 2, || {
+                    Proposition::ConditionIs(ConditionTerm::Variable(Variable(168_011)), true)
+                });
+                let cert = certificate(goal.clone(), vec![0, 1]);
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    cert.check(&goal, &premises)
+                });
+                result.unwrap();
+                costs.push(work);
+                assert!(
+                    certificate(goal.clone(), vec![0, 2])
+                        .check(&goal, &premises)
+                        .is_err()
+                );
+            }
+            assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+            for (lower, upper) in [(lo.clone() - 1, hi.clone()), (lo.clone(), hi.clone() + 1)] {
+                assert!(
+                    certificate(goal.clone(), vec![0, 1])
+                        .check(&goal, &bounds(lower, upper))
+                        .is_err(),
+                    "{source:?} -> {destination:?}"
+                );
+            }
+            // A bare word, a mask of it by anything but the format's mask,
+            // or a word built by 32-bit arithmetic is no widening of the
+            // value, whatever bounds are cited.
             for carrier in [
                 word.clone(),
+                Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask)),
                 Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask + 1)),
                 Bitvector32Term::add(word.clone(), Bitvector32Term::Constant(1)),
                 Bitvector32Term::add(
@@ -62,48 +73,16 @@ fn integer_cast_identity_promotes_only_canonical_unsigned_subword_carriers() {
                     Bitvector32Term::Constant(1),
                 ),
             ] {
-                let (premises, goal) = claim(source, destination, carrier);
+                let goal = equal(observation(destination, carrier), original.clone());
                 assert!(
                     certificate(goal.clone(), vec![0, 1])
-                        .check(&goal, &premises)
-                        .is_err()
-                );
-            }
-            // A binder widens when the certificate cites its stated range,
-            // the `int32` bounds of its word inside the source's range, and
-            // not when those bounds reach past that range.
-            let (_, goal) = claim(source, destination, word.clone());
-            let int32_word = observation(Ty::Int32, word.clone());
-            for (upper, holds) in [(mask, true), (mask + 1, false)] {
-                let premises = vec![
-                    le(IntegerTerm::constant_i64(0), int32_word.clone()),
-                    le(
-                        int32_word.clone(),
-                        IntegerTerm::constant_i64(i64::from(upper)),
-                    ),
-                ];
-                assert_eq!(
-                    certificate(goal.clone(), vec![0, 1])
-                        .check(&goal, &premises)
-                        .is_ok(),
-                    holds,
-                    "{source:?} -> {destination:?} up to {upper}"
+                        .check(&goal, &bounds(lo.clone(), hi.clone()))
+                        .is_err(),
+                    "{source:?} -> {destination:?}"
                 );
             }
         }
     }
-    // A signed sub-word observation of 0xffff is negative, while a raw
-    // word promotion of that mask is positive. Never admit that retagging.
-    let (premises, goal) = claim(
-        Ty::Int16,
-        Ty::Int32,
-        Bitvector32Term::bitwise_and(word, Bitvector32Term::Constant(65535)),
-    );
-    assert!(
-        certificate(goal.clone(), vec![0, 1])
-            .check(&goal, &premises)
-            .is_err()
-    );
 }
 
 #[test]

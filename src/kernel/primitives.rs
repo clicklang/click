@@ -65,6 +65,13 @@ pub(crate) use contracts::{
     stated_separation_extent_guards, wide_loadable_element_count, wide_range_bounds,
 };
 mod integer;
+pub(crate) use integer::WeakIntegerTerm;
+mod kernel_term;
+pub use kernel_term::{
+    KernelIntegerOperator, KernelLegacyTerm, KernelMachineCastEncoding, KernelMachineLiteral,
+    KernelTerm, KernelTermNode, KernelType,
+};
+pub(crate) use kernel_term::{KernelTermExport, KernelTermImport};
 mod machine_integer;
 pub(crate) use machine_integer::is_narrow_widening32;
 pub use machine_integer::{
@@ -8034,6 +8041,31 @@ impl SharedCMemory {
         })
     }
 
+    /// Snapshot identity for definedness of a direct automatic object.
+    /// A producer updates only the local it stores; every other transition
+    /// starts a fresh identity unless it merely forgets cached values.
+    pub(crate) fn local_read_definedness_identity(&self, pointer: &Pointer) -> (u32, u32) {
+        if !pointer.block.is_local_block() {
+            return self.arena_id();
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        C_MEMORY_ARENA.with(|arena| {
+            let arena = arena.borrow();
+            if arena.0 != self.arena {
+                return self.arena_id();
+            }
+            let versions = &arena.1.local_definedness_versions[self.id as usize];
+            (
+                self.arena,
+                versions
+                    .changed
+                    .get(&pointer.block)
+                    .copied()
+                    .unwrap_or(versions.base),
+            )
+        })
+    }
+
     /// The producer-retained source of unchanged physical bytes. This is
     /// read congruence only: callers must retain the current snapshot for
     /// initialization, lifetime and permission checks.
@@ -8498,6 +8530,23 @@ struct CMemoryArena {
     /// Immutable load-congruence keys. Producers reuse the base's key only
     /// for an unconditional byte-preserving transition. No history is queried.
     read_identities: Vec<u32>,
+    /// Producer-maintained local-object versions; queries never walk history.
+    local_definedness_versions: Vec<LocalDefinednessVersions>,
+}
+
+#[derive(Clone)]
+struct LocalDefinednessVersions {
+    base: u32,
+    changed: crate::persistent::PersistentMap<PointerBlock, u32>,
+}
+
+impl LocalDefinednessVersions {
+    fn fresh(base: u32) -> Self {
+        Self {
+            base,
+            changed: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -8670,6 +8719,30 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
             return;
         }
         let arena = &mut arena.1;
+        // Set once, before a newly interned snapshot can escape this producer.
+        // A concrete local store cannot affect another automatic object.
+        // Forgetting cached values changes knowledge, not initialized bytes
+        // or lifetimes. All other effects conservatively retain a fresh key.
+        if interned_here {
+            let versions = match derivation.as_ref() {
+                CMemoryDerivation::Store { base, pointer, .. }
+                    if pointer.block.is_local_block() =>
+                {
+                    let mut versions = arena.local_definedness_versions[base.id as usize].clone();
+                    versions.changed = versions
+                        .changed
+                        .with_inserted(pointer.block.clone(), derived.id);
+                    Some(versions)
+                }
+                CMemoryDerivation::CellsForgotten { base } => {
+                    Some(arena.local_definedness_versions[base.id as usize].clone())
+                }
+                _ => None,
+            };
+            if let Some(versions) = versions {
+                arena.local_definedness_versions[derived.id as usize] = versions;
+            }
+        }
         let Some(slot) = arena.derivations.get_mut(derived.id as usize) else {
             return;
         };
@@ -8827,6 +8900,9 @@ pub fn intern_c_memory(memory: CMemory) -> SharedCMemory {
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
         arena.read_identities.push(id);
+        arena
+            .local_definedness_versions
+            .push(LocalDefinednessVersions::fresh(id));
         SharedCMemory {
             arena: *token,
             id,
@@ -8911,6 +8987,9 @@ fn intern_c_memory_ref_with_read_identity(
             .insert(shallow_identity, (id, content_hash));
         arena.memories.push(stored.clone());
         arena.derivations.push(None);
+        arena
+            .local_definedness_versions
+            .push(LocalDefinednessVersions::fresh(id));
         arena.read_identities.push(
             read_identity
                 .filter(|(source_arena, source)| *source_arena == *token && *source < id)

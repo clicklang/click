@@ -11,6 +11,12 @@ own termination evidence (`mdtests/unreachable_owned_loops_terminate.md`).
 Loops require summaries. Click cannot prove a symbolic loop by unrolling it
 forever.
 
+When a sidecar is parsed against its C or Rust source, an unbound value name
+in a loop specification is a type error naming the clause. This includes
+invariants, decreases, resources, and initialize/preserve proofs; C locals and
+lexically scoped proof binders remain valid names
+(`mdtests/loop_unknown_name_in_invariant.md`).
+
 A loop invariant is a fact that must hold:
 
 - before the first iteration,
@@ -368,8 +374,10 @@ start an iteration, and the body is proved once against every entry path. So
 the entry paths export their join too: everything they all state, plus the
 disjunction of what each one states alone, here `a > 0 or b > 0`, in the
 guard's short-circuit order rather than the order the paths were enumerated.
-One written `preserve` body then serves every entry path, because `cases` over
-that disjunction reads the same way on all of them:
+Each entry path checks the written `preserve` body under its own guard facts.
+Its tactics may produce different certificates on different paths; retained
+proofs and expansions keep those certificates under the corresponding entry
+guards. A proof can also use `cases` over the common entry disjunction:
 
 <!-- verified-example: mdtests/loop_disjunctive_guard_entry_join.md -->
 ```click

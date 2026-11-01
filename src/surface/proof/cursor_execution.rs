@@ -2723,6 +2723,8 @@ fn execute_step_from_frontier_position_selecting_path(
                 })
         });
         let mut completed_outcomes = Vec::new();
+        let mut terminal_cases = Vec::new();
+        let retain_terminal_cases = matches!(step_statement, CStatement::Return(_));
         for transition in transitions {
             let return_assumptions = transition.pure_facts.context();
             let case_outcomes =
@@ -2740,6 +2742,7 @@ fn execute_step_from_frontier_position_selecting_path(
                 for fact in case_facts {
                     completed_execution_facts.push(ExecutionPureFact::new(fact));
                 }
+                terminal_cases.push(transition.path_facts.clone());
                 completed_outcomes.push((
                     outcome,
                     completed_execution_facts,
@@ -2750,6 +2753,16 @@ fn execute_step_from_frontier_position_selecting_path(
                     ),
                 ));
             }
+        }
+        if retain_terminal_cases {
+            execution.retain_terminal_statement_cases(
+                terminal_cases,
+                current_state.clone(),
+                ProgramPointRef {
+                    region: CodeRegionRef::Region(statement_index),
+                    kind: ProgramPointKind::Entry,
+                },
+            );
         }
         append_pending_loop_returns(&mut execution.core, &mut completed_outcomes);
         let state: &mut CState = &mut execution.core.state;
@@ -3953,13 +3966,13 @@ fn describe_path_case_split_guidance(
 ) -> String {
     let split = match split_condition {
         Some(condition) => format!(
-            "Split the proof on the case condition first, then step each case:\n  if {} {{\n      step(); ...\n  }} else {{\n      step(); ...\n  }}\n",
+            "Split the proof on the case condition first, then step each case:\n  if {} {{\n      step(); ...\n  }} else {{\n      step(); ...\n  }}\nThe implicit tail makes this split itself where the script ends.\n",
             crate::surface::diagnostics::describe_click_proposition(condition)
         ),
-        None => "No case condition has a Click spelling, so the cases cannot yet be split in source terms.\n".to_string(),
+        None => "Click could not express a case condition in proof syntax, so the implicit tail cannot make this split. Use explicit cases and `step()` to expose the remaining obligation; a different source-level case split may work. The missing spelling is a tooling limitation.\n".to_string(),
     };
     format!(
-        "These successors are {} cases of one C operation, told apart only by the conditions above; a simple step never splits the proof. {split}The implicit tail makes this split itself where the script ends.\n",
+        "These successors are {} cases of one C operation, told apart only by the conditions above; a simple step never splits the proof. {split}",
         case_count,
     )
 }

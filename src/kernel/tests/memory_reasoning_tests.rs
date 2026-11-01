@@ -3622,52 +3622,37 @@ fn store_and_union_cells_never_coexist_at_one_pointer() {
     let overlay_over_store = base.clone().store(cell.clone(), int32(42)).store_union(
         cell.clone(),
         CType::UInt8,
-        CValue::UInt8(Bitvector32Term::Constant(7)),
+        crate::kernel::uint8(7),
     );
     assert_eq!(overlay_over_store.known_value(&cell), None);
     assert!(overlay_over_store.has_union_overlay_at(&cell));
-    let replacement = overlay_over_store.store_union(
-        cell.clone(),
-        CType::Int16,
-        CValue::Int16(Bitvector32Term::Constant(9)),
-    );
+    let replacement =
+        overlay_over_store.store_union(cell.clone(), CType::Int16, crate::kernel::int16(9));
     assert_eq!(replacement.known_union_value(&cell, CType::UInt8), None);
     assert_eq!(
         replacement.known_union_value(&cell, CType::Int16),
-        Some(CValue::Int16(Bitvector32Term::Constant(9))),
+        Some(crate::kernel::int16(9)),
     );
 
     let same_image_views = base.clone().store_union_views(
         cell.clone(),
         4,
         vec![
-            (
-                cell.clone(),
-                CType::UInt8,
-                CValue::UInt8(Bitvector32Term::Constant(7)),
-            ),
-            (
-                cell.clone(),
-                CType::Int16,
-                CValue::Int16(Bitvector32Term::Constant(7)),
-            ),
+            (cell.clone(), CType::UInt8, crate::kernel::uint8(7)),
+            (cell.clone(), CType::Int16, crate::kernel::int16(7)),
         ],
     );
     assert_eq!(
         same_image_views.known_union_value(&cell, CType::UInt8),
-        Some(CValue::UInt8(Bitvector32Term::Constant(7))),
+        Some(crate::kernel::uint8(7)),
     );
     assert_eq!(
         same_image_views.known_union_value(&cell, CType::Int16),
-        Some(CValue::Int16(Bitvector32Term::Constant(7))),
+        Some(crate::kernel::int16(7)),
     );
 
     let store_over_overlay = base
-        .store_union(
-            cell.clone(),
-            CType::UInt8,
-            CValue::UInt8(Bitvector32Term::Constant(7)),
-        )
+        .store_union(cell.clone(), CType::UInt8, crate::kernel::uint8(7))
         .store(cell.clone(), int32(42));
     assert_eq!(store_over_overlay.known_value(&cell), Some(int32(42)));
     assert!(!store_over_overlay.has_union_overlay_at(&cell));
@@ -6969,7 +6954,10 @@ fn memory_resolution_requires_the_loaded_cell_width() {
     );
     assert_eq!(
         assumptions.resolve_memory_load_term(&Bitvector32Term::Variable(narrow)),
-        Some(Bitvector32Term::Constant(7))
+        Some(Bitvector32Term::narrow_constant(
+            MachineIntegerType::UInt16,
+            7
+        ))
     );
     // The shared load name conservatively widens when another access is
     // recorded; it can no longer resolve through the narrow stored cell.

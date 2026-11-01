@@ -9742,11 +9742,7 @@ mod union_store_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let memory = CMemory::new()
-            .store_union(
-                base.clone(),
-                CType::UInt8,
-                CValue::UInt8(Bitvector32Term::Constant(0xAA)),
-            )
+            .store_union(base.clone(), CType::UInt8, crate::kernel::uint8(0xAA))
             .store_union(
                 base.clone(),
                 CType::Int32,

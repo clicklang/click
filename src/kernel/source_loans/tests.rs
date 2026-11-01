@@ -53,6 +53,7 @@ fn export() -> r::RustExport {
             captures: 0,
             implements: None,
             instance_of: None,
+            core_method: None,
             span: r::Span { line: 1, column: 1 },
             mir: Some(r::MirBody {
                 locals: vec![place("child", reference_type()), place("x", Type::I32)],
@@ -572,15 +573,15 @@ fn source_scalar_lease_explicit_unsigned_widths_preserve_current_values() {
             "u8",
             CType::UInt8,
             CType::UInt8Pointer,
-            CValue::UInt8(4.into()),
-            CValue::UInt8(8.into()),
+            crate::kernel::uint8(4),
+            crate::kernel::uint8(8),
         ),
         (
             "u16",
             CType::UInt16,
             CType::UInt16Pointer,
-            CValue::UInt16(4.into()),
-            CValue::UInt16(8.into()),
+            crate::kernel::uint16(4),
+            crate::kernel::uint16(8),
         ),
         (
             "u32",

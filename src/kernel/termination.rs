@@ -2499,17 +2499,29 @@ struct RankingMachineTerm {
 
 impl RankingMachineTerm {
     fn from_value(value: &CValue) -> Option<Self> {
+        // An 8- or 16-bit value is ranked by its `int32` widening, which
+        // keeps its value, and a `Bool` by its cast at `int32` (rule C1).
         let (machine_type, term) = match value.numeric_value() {
             CValue::PointerInteger(_) => unreachable!("numeric projection"),
-            CValue::Bool(term)
-            | CValue::Int8(term)
+            CValue::Bool(term) => (
+                RankingMachineType::Int32,
+                Bitvector32Term::bool_word_as(MachineIntegerType::Int32, term),
+            ),
+            narrow @ (CValue::Int8(term)
             | CValue::Int16(term)
-            | CValue::Int32(term)
             | CValue::UInt8(term)
-            | CValue::UInt16(term) => (RankingMachineType::Int32, term),
-            CValue::UInt32(term) => (RankingMachineType::UInt32, term),
-            CValue::Int64(term) => (RankingMachineType::Int64, term),
-            CValue::UInt64(term) => (RankingMachineType::UInt64, term),
+            | CValue::UInt16(term)) => (
+                RankingMachineType::Int32,
+                Bitvector32Term::machine_integer_cast(
+                    MachineIntegerType::from_c_type(narrow.c_type())?,
+                    MachineIntegerType::Int32,
+                    term.clone(),
+                ),
+            ),
+            CValue::Int32(term) => (RankingMachineType::Int32, term.clone()),
+            CValue::UInt32(term) => (RankingMachineType::UInt32, term.clone()),
+            CValue::Int64(term) => (RankingMachineType::Int64, term.clone()),
+            CValue::UInt64(term) => (RankingMachineType::UInt64, term.clone()),
             CValue::Int128(_)
             | CValue::UInt128(_)
             | CValue::Void
@@ -2518,10 +2530,7 @@ impl RankingMachineTerm {
             | CValue::Pointer(_)
             | CValue::Parameter(_) => return None,
         };
-        Some(Self {
-            machine_type,
-            term: term.clone(),
-        })
+        Some(Self { machine_type, term })
     }
 
     /// This value converted to `target`, as C converts an integer.
@@ -5950,7 +5959,8 @@ mod ranking_member_tests {
     }
 
     /// A `uint8` operand is promoted to `int`, as C promotes it, so a measure
-    /// over a `uint8` counter is an int32 measure and owes the signed members.
+    /// over a `uint8` counter is an int32 measure over the counter's `int32`
+    /// widening and owes the signed members.
     #[test]
     fn a_narrow_unsigned_component_is_promoted_to_int32() {
         let value = Bitvector32Term::Variable(Variable(22));
@@ -5960,7 +5970,14 @@ mod ranking_member_tests {
         assert_eq!(
             members[0],
             Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value),
+                ConditionTerm::signed_less_equal(
+                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::machine_integer_cast(
+                        MachineIntegerType::UInt8,
+                        MachineIntegerType::Int32,
+                        value
+                    ),
+                ),
                 true,
             )
         );

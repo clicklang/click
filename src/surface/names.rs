@@ -205,11 +205,22 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/separation.click",
     "library/nat.click",
     "library/list.click",
+    "library/option.click",
     "library/bytes.click",
     "library/cstr.click",
     "library/permutation.click",
     "library/integer.click",
     "library/format.click",
+    "library/rust/i8.click",
+    "library/rust/i16.click",
+    "library/rust/i32.click",
+    "library/rust/i64.click",
+    "library/rust/isize.click",
+    "library/rust/u8.click",
+    "library/rust/u16.click",
+    "library/rust/u32.click",
+    "library/rust/u64.click",
+    "library/rust/usize.click",
 ];
 
 /// Whether the library declaration `name` in module `identity` is known to
@@ -425,7 +436,12 @@ fn library_path_at(
     let Some(Token::Ident(first)) = tokens.get(start) else {
         return Ok(None);
     };
-    if tokens.get(start + 1) != Some(&Token::ColonColon) {
+    // The tail of a longer path, `core::u32::min`, is no library path.
+    if tokens.get(start + 1) != Some(&Token::ColonColon)
+        || start
+            .checked_sub(1)
+            .is_some_and(|previous| tokens.get(previous) == Some(&Token::ColonColon))
+    {
         return Ok(None);
     }
     let mut segments = vec![first.as_str()];

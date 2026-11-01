@@ -2542,6 +2542,38 @@ fn synthesize_surface_atomic_proposition(
             ClickProposition::Not(Box::new(comparison))
         });
     }
+    // A native 8- or 16-bit comparison is spelled as the Integer comparison
+    // of its operands' values, which lowers back to it (the Integer form of
+    // exact observations of one format is its native comparison).
+    if let ConditionTerm::Compare {
+        format:
+            format @ (MachineIntegerType::Int8
+            | MachineIntegerType::UInt8
+            | MachineIntegerType::Int16
+            | MachineIntegerType::UInt16),
+        relation,
+        left,
+        right,
+    } = condition
+    {
+        let observe = |term: &Bitvector32Term| -> Option<crate::kernel::SharedIntegerTerm> {
+            crate::kernel::IntegerTerm::from_machine(*format, term.clone()).map(Into::into)
+        };
+        let (l, r) = (observe(left)?, observe(right)?);
+        let integer = match relation {
+            CompareRelation::LessThan => ConditionTerm::IntegerLessThan(l, r),
+            CompareRelation::LessEqual => ConditionTerm::IntegerLessEqual(l, r),
+            CompareRelation::GreaterThan => ConditionTerm::IntegerGreaterThan(l, r),
+            CompareRelation::GreaterEqual => ConditionTerm::IntegerGreaterEqual(l, r),
+            CompareRelation::Equal => ConditionTerm::IntegerEqual(l, r),
+        };
+        return synthesize_surface_atomic_proposition(
+            &Proposition::ConditionIs(integer, *value),
+            parameter_binding,
+            state,
+            bound_variables,
+        );
+    }
     let (left, operator, right) = match condition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -2706,63 +2738,186 @@ fn synthesize_surface_integer(
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
-    use crate::kernel::IntegerTerm;
-    let _frame = SurfaceSynthesisFrame::enter("integer")?;
-    let recurse = |term: &IntegerTerm| {
-        synthesize_surface_integer(term, parameter_binding, state, bound_variables).map(Box::new)
+    let term = crate::kernel::KernelTermImport::default().integer(&term.clone().into());
+    raise_kernel_term(&term, parameter_binding, state, bound_variables)
+}
+
+/// The shared term-to-surface boundary. Arithmetic and calls have common
+/// children; the legacy leaf dispatch is temporary and never projects away
+/// part of a value. Scoped binders retain their old refusal until migrated.
+fn raise_kernel_term(
+    term: &crate::kernel::KernelTerm,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    use crate::kernel::{KernelIntegerOperator as Op, KernelTermNode as Node, KernelType};
+    if term.ty() == &KernelType::Bool {
+        let condition = crate::kernel::KernelTermExport::condition(term).ok()?;
+        return synthesize_surface_bool(&condition, parameter_binding, state, bound_variables);
+    }
+    let category = if term.ty() == &KernelType::Integer {
+        "integer"
+    } else {
+        "function-call"
     };
-    Some(match term {
-        IntegerTerm::Constant(value) if value.sign() == num_bigint::Sign::Minus => {
-            ContractExpression::Negate(Box::new(ContractExpression::IntegerLiteral(
-                (-value).to_string(),
-            )))
+    let _frame = SurfaceSynthesisFrame::enter(category)?;
+    let recurse = |term| raise_kernel_term(term, parameter_binding, state, bound_variables);
+    Some(match term.node() {
+        Node::IntegerLiteral(value) if value.sign() == num_bigint::Sign::Minus => {
+            SurfaceTerm::Negate(Box::new(SurfaceTerm::IntegerLiteral((-value).to_string())))
         }
-        IntegerTerm::Constant(value) => ContractExpression::IntegerLiteral(value.to_string()),
-        IntegerTerm::Variable(variable) => {
-            ContractExpression::Binding(bound_variables.get(variable)?.clone())
+        Node::IntegerLiteral(value) => SurfaceTerm::IntegerLiteral(value.to_string()),
+        Node::Variable(variable) if term.ty() == &KernelType::Integer => {
+            SurfaceTerm::Binding(bound_variables.get(variable)?.clone())
         }
-        IntegerTerm::Machine(machine) => ContractExpression::Call {
-            name: "to_integer".into(),
-            arguments: vec![synthesize_surface_bitvector(
-                machine.value(),
-                parameter_binding,
-                state,
-                bound_variables,
-            )?],
-        },
-        IntegerTerm::Negate(inner) => {
-            ContractExpression::Negate(Box::new(integer_typed_expression(
-                synthesize_surface_integer(inner, parameter_binding, state, bound_variables)?,
-            )))
-        }
-        IntegerTerm::Add(left, right) => ContractExpression::Add(recurse(left)?, recurse(right)?),
-        IntegerTerm::Subtract(left, right) => {
-            ContractExpression::Subtract(recurse(left)?, recurse(right)?)
-        }
-        IntegerTerm::Multiply(left, right) => {
-            ContractExpression::Multiply(recurse(left)?, recurse(right)?)
-        }
-        IntegerTerm::PureFunctionApplication(application) => synthesize_surface_call(
-            application.name(),
-            application.arguments(),
-            parameter_binding,
-            state,
-            bound_variables,
-        )?,
-        IntegerTerm::TruncatingQuotient(left, right)
-        | IntegerTerm::TruncatingRemainder(left, right) => ContractExpression::Call {
-            name: if matches!(term, IntegerTerm::TruncatingQuotient(..)) {
-                "truncating_quotient"
-            } else {
-                "truncating_remainder"
+        Node::IntegerOperation {
+            operator,
+            arguments,
+        } => {
+            let mut arguments = arguments
+                .iter()
+                .map(recurse)
+                .collect::<Option<Vec<_>>>()?
+                .into_iter();
+            let left = arguments.next()?;
+            match operator {
+                Op::Negate => SurfaceTerm::Negate(Box::new(integer_typed_expression(left))),
+                Op::Add => SurfaceTerm::Add(Box::new(left), Box::new(arguments.next()?)),
+                Op::Subtract => SurfaceTerm::Subtract(Box::new(left), Box::new(arguments.next()?)),
+                Op::Multiply => SurfaceTerm::Multiply(Box::new(left), Box::new(arguments.next()?)),
+                Op::TruncatingQuotient | Op::TruncatingRemainder => SurfaceTerm::Call {
+                    name: if *operator == Op::TruncatingQuotient {
+                        "truncating_quotient"
+                    } else {
+                        "truncating_remainder"
+                    }
+                    .into(),
+                    arguments: vec![left, arguments.next()?],
+                },
             }
-            .into(),
-            arguments: vec![
-                synthesize_surface_integer(left, parameter_binding, state, bound_variables)?,
-                synthesize_surface_integer(right, parameter_binding, state, bound_variables)?,
-            ],
+        }
+        Node::Call { name, arguments } => SurfaceTerm::Call {
+            name: generic_instance_source_name(name).into(),
+            arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
         },
-        _ => return None,
+        Node::BoolLiteral(_)
+        | Node::BoolCompare { .. }
+        | Node::BoolEqual { .. }
+        | Node::BoolIf { .. }
+        | Node::LegacyBool(_) => unreachable!("Bool sorts handled above"),
+        Node::BoolCast {
+            destination,
+            operand,
+        } => synthesize_observation_operand(recurse(operand)?, destination.c_type())?,
+        Node::IntegerToMachine {
+            destination,
+            operand,
+        } => SurfaceTerm::Call {
+            name: integer_conversion_name(*destination).into(),
+            arguments: vec![recurse(operand)?],
+        },
+        Node::MachineObservation { format, operand } => {
+            let value = crate::kernel::KernelTermExport::default()
+                .argument(operand)
+                .ok()?;
+            let crate::kernel::PureFunctionArgument::Value(value) = value else {
+                return None;
+            };
+            let (crate::kernel::integer_c_value!(bits)) = value else {
+                return None;
+            };
+            let expression =
+                synthesize_surface_bitvector(&bits, parameter_binding, state, bound_variables)?;
+            SurfaceTerm::Call {
+                name: "to_integer".into(),
+                arguments: vec![match format {
+                    // Narrow loads and conversions already spell their
+                    // extended carrier. Adding a narrowing or promotion
+                    // cast changes scoped observation nodes.
+                    crate::kernel::MachineIntegerType::Int8
+                    | crate::kernel::MachineIntegerType::UInt8
+                    | crate::kernel::MachineIntegerType::Int16
+                    | crate::kernel::MachineIntegerType::UInt16 => expression,
+                    _ => synthesize_observation_operand(expression, format.c_type())?,
+                }],
+            }
+        }
+        Node::Legacy(legacy) => match legacy.value() {
+            crate::kernel::PureFunctionArgument::Integer(_) => return None,
+            value => {
+                synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
+            }
+        },
+        Node::MachineLiteral(_) => {
+            let crate::kernel::PureFunctionArgument::Value(value) =
+                crate::kernel::KernelTermExport::default()
+                    .argument(term)
+                    .ok()?
+            else {
+                return None;
+            };
+            SurfaceTerm::CFragment(CExpression::Value(value))
+        }
+        Node::MachineBinary { .. }
+        | Node::MachineUnary { .. }
+        | Node::MachineCast { .. }
+        | Node::Variable(_) => {
+            // Machine producers still use the old checker representation.
+            // One exact export preserves its established typed spelling;
+            // there is no fact-aware alternative or normalization here.
+            let value = crate::kernel::KernelTermExport::default()
+                .argument(term)
+                .ok()?;
+            synthesize_legacy_call_argument(&value, parameter_binding, state, bound_variables)?
+        }
+    })
+}
+
+fn integer_conversion_name(format: crate::kernel::MachineIntegerType) -> &'static str {
+    use crate::kernel::MachineIntegerType::*;
+    match format {
+        Int8 => "to_int8",
+        UInt8 => "to_uint8",
+        Int16 => "to_int16",
+        UInt16 => "to_uint16",
+        Int32 => "to_int32",
+        UInt32 => "to_uint32",
+        Int64 => "to_int64",
+        UInt64 => "to_uint64",
+        Int128 => "to_int128",
+        UInt128 => "to_uint128",
+    }
+}
+
+/// Keep the observation's interpretation inside its snapshot selector.
+fn synthesize_observation_operand(expression: SurfaceTerm, format: CType) -> Option<SurfaceTerm> {
+    Some(match expression {
+        SurfaceTerm::At {
+            selector,
+            expression,
+        } => SurfaceTerm::At {
+            selector,
+            expression: Box::new(synthesize_observation_operand(*expression, format)?),
+        },
+        SurfaceTerm::Old(expression) => SurfaceTerm::Old(Box::new(synthesize_observation_operand(
+            *expression,
+            format,
+        )?)),
+        expression => SurfaceTerm::CUnary {
+            operand: Box::new(expression),
+            // CUnary's Surface operand is authoritative. A C fragment
+            // would discard resource fields and scoped binding information.
+            lowered: CExpression::Cast {
+                expression: Box::new(CExpression::Value(int32(0))),
+                target_type: format,
+                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            },
+        },
     })
 }
 
@@ -3501,11 +3656,45 @@ fn synthesize_surface_bitvector(
                 synthesize_int32_operand(operand)
             }
         }
-        Bitvector32Term::MachineIntegerCast { .. } => None,
-        // TODO(stage5): synthesize `b as int32`.
-        Bitvector32Term::BoolCast { .. } => None,
+        Bitvector32Term::MachineIntegerCast {
+            value, destination, ..
+        } => {
+            let operand =
+                synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
+            Some(ContractExpression::CFragment(CExpression::Cast {
+                expression: Box::new(contract_expression_to_c_fragment(&operand)?),
+                target_type: destination.c_type(),
+                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            }))
+        }
+        Bitvector32Term::BoolCast { to, value } => {
+            // synthesize_surface_bool uses the uint8 carrier to name an
+            // unbound Bool variable. Naming above exhausted that route;
+            // do not recurse back into the same unnamed variable.
+            if *to == MachineIntegerType::UInt8
+                && matches!(value.as_ref(), ConditionTerm::Variable(variable) if !bound_variables.contains_key(variable))
+            {
+                return None;
+            }
+            let operand = crate::kernel::KernelTermImport::default().condition(value);
+            let term = crate::kernel::KernelTerm::bool_cast(*to, operand).ok()?;
+            raise_kernel_term(&term, parameter_binding, state, bound_variables)
+        }
 
-        Bitvector32Term::MachineIntegerConstant(_) => None,
+        Bitvector32Term::MachineIntegerConstant(value) => {
+            let value = if value.format() == MachineIntegerType::Int128.format() {
+                CValue::Int128(term.clone())
+            } else if value.format() == MachineIntegerType::UInt128.format() {
+                CValue::UInt128(term.clone())
+            } else {
+                return None;
+            };
+            Some(ContractExpression::CFragment(CExpression::Value(value)))
+        }
         Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
             unreachable!("constants returned above")
         }
@@ -3868,37 +4057,37 @@ fn synthesize_surface_bitvector(
         Bitvector32Term::UInt64Constant(value) => Some(ContractExpression::CFragment(
             CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(*value))),
         )),
-        Bitvector32Term::Int64From32(value) | Bitvector32Term::Int64FromUInt32(value) => {
-            Some(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(contract_expression_to_c_fragment(
-                    &synthesize_surface_bitvector(
-                        value,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?,
-                )?),
-                target_type: CType::Int64,
-                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
-                pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
-                explicit_qualification: false,
-            }))
-        }
-        Bitvector32Term::UInt64From32(value)
+        Bitvector32Term::Int64From32(value)
+        | Bitvector32Term::Int64FromUInt32(value)
+        | Bitvector32Term::UInt64From32(value)
         | Bitvector32Term::UInt64FromInt32(value)
         | Bitvector32Term::UInt64FromInt64(value) => {
+            let mut operand =
+                synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
+            // Widening interprets the source word's signedness. Its name
+            // alone may have a different type (e.g. zero-extending int32 x
+            // after `x as uint32`). Preserve that interpretation explicitly.
+            if !matches!(term, Bitvector32Term::UInt64FromInt64(_)) {
+                let unsigned_source = matches!(
+                    term,
+                    Bitvector32Term::Int64FromUInt32(_) | Bitvector32Term::UInt64From32(_)
+                );
+                if unsigned_source {
+                    operand = synthesize_uint32_operand(operand)?;
+                } else {
+                    operand = synthesize_int32_operand(operand)?;
+                }
+            }
             Some(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(contract_expression_to_c_fragment(
-                    &synthesize_surface_bitvector(
-                        value,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?,
-                )?),
-                target_type: CType::UInt64,
+                expression: Box::new(contract_expression_to_c_fragment(&operand)?),
+                target_type: if matches!(
+                    term,
+                    Bitvector32Term::Int64From32(_) | Bitvector32Term::Int64FromUInt32(_)
+                ) {
+                    CType::Int64
+                } else {
+                    CType::UInt64
+                },
                 integer_mode: crate::kernel::CIntegerCastMode::CConversion,
                 pointee_struct: None,
                 pointee_volatile: false,
@@ -3965,7 +4154,12 @@ fn synthesize_surface_bitvector(
             name,
             arguments: values,
         } => synthesize_surface_call(name, values, parameter_binding, state, bound_variables),
-        Bitvector32Term::AlgebraicMatch { .. } | Bitvector32Term::IntegerToMachine { .. } => None,
+        Bitvector32Term::IntegerToMachine { value, destination } => {
+            let operand = crate::kernel::KernelTermImport::default().integer(value);
+            let term = crate::kernel::KernelTerm::integer_to_machine(*destination, operand).ok()?;
+            raise_kernel_term(&term, parameter_binding, state, bound_variables)
+        }
+        Bitvector32Term::AlgebraicMatch { .. } => None,
     }
 }
 
@@ -3982,76 +4176,88 @@ fn synthesize_surface_call(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("function-call")?;
-    let mut result = Vec::with_capacity(values.len());
-    for value in values {
-        if !consume_surface_synthesis_work("function-argument") {
-            return None;
+    let mut importer = crate::kernel::KernelTermImport::default();
+    let arguments = values
+        .iter()
+        .map(|value| {
+            if !consume_surface_synthesis_work("function-argument") {
+                return None;
+            }
+            raise_kernel_term(
+                &importer.argument(value),
+                parameter_binding,
+                state,
+                bound_variables,
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(SurfaceTerm::Call {
+        name: generic_instance_source_name(name).into(),
+        arguments,
+    })
+}
+
+fn synthesize_legacy_call_argument(
+    value: &crate::kernel::PureFunctionArgument,
+    parameter_binding: ParameterBinding<'_>,
+    state: &CState,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<SurfaceTerm> {
+    Some(match value {
+        crate::kernel::PureFunctionArgument::Value(CValue::Bool(word)) => synthesize_surface_bool(
+            &ConditionTerm::truth_of_bool_word(word),
+            parameter_binding,
+            state,
+            bound_variables,
+        )?,
+        // A word argument's term carries its own width; the candidate's
+        // round trip confirms the call lowers it at the parameter's type.
+        crate::kernel::PureFunctionArgument::Value(
+            CValue::Int32(value)
+            | CValue::UInt32(value)
+            | CValue::Int64(value)
+            | CValue::UInt64(value)
+            | CValue::Int128(value)
+            | CValue::UInt128(value),
+        ) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
+        crate::kernel::PureFunctionArgument::Integer(value) => {
+            synthesize_surface_integer(value, parameter_binding, state, bound_variables)?
         }
-        let expression = match value {
-            crate::kernel::PureFunctionArgument::Value(CValue::Bool(word)) => {
-                synthesize_surface_bool(
-                    &ConditionTerm::truth_of_bool_word(word),
+        crate::kernel::PureFunctionArgument::Algebraic(value) => {
+            synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
+        }
+        crate::kernel::PureFunctionArgument::ArrayRef {
+            memory,
+            pointer: CValue::Pointer(pointer),
+            ..
+        } => {
+            let snapshot = crate::kernel::intern_c_memory_ref(memory);
+            if snapshot == crate::kernel::intern_c_memory_ref(state.memory()) {
+                synthesize_surface_pointer_expression(
+                    pointer,
                     parameter_binding,
                     state,
                     bound_variables,
                 )?
+            } else {
+                SYNTHESIS_ENTRY_STATE
+                    .with(|slot| slot.borrow().clone())
+                    .and_then(|entry| {
+                        if snapshot != crate::kernel::intern_c_memory_ref(entry.memory()) {
+                            return None;
+                        }
+                        Some(ContractExpression::Old(Box::new(
+                            synthesize_surface_pointer_expression(
+                                pointer,
+                                parameter_binding,
+                                &entry,
+                                bound_variables,
+                            )?,
+                        )))
+                    })?
             }
-            // A word argument's term carries its own width; the candidate's
-            // round trip confirms the call lowers it at the parameter's type.
-            crate::kernel::PureFunctionArgument::Value(
-                CValue::Int32(value)
-                | CValue::UInt32(value)
-                | CValue::Int64(value)
-                | CValue::UInt64(value)
-                | CValue::Int128(value)
-                | CValue::UInt128(value),
-            ) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
-            crate::kernel::PureFunctionArgument::Integer(value) => {
-                synthesize_surface_integer(value, parameter_binding, state, bound_variables)?
-            }
-            crate::kernel::PureFunctionArgument::Algebraic(value) => {
-                synthesize_surface_algebraic(value, parameter_binding, state, bound_variables)?
-            }
-            crate::kernel::PureFunctionArgument::ArrayRef {
-                memory,
-                pointer: CValue::Pointer(pointer),
-                ..
-            } => {
-                let snapshot = crate::kernel::intern_c_memory_ref(memory);
-                if snapshot == crate::kernel::intern_c_memory_ref(state.memory()) {
-                    synthesize_surface_pointer_expression(
-                        pointer,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?
-                } else {
-                    SYNTHESIS_ENTRY_STATE
-                        .with(|slot| slot.borrow().clone())
-                        .and_then(|entry| {
-                            if snapshot != crate::kernel::intern_c_memory_ref(entry.memory()) {
-                                return None;
-                            }
-                            Some(ContractExpression::Old(Box::new(
-                                synthesize_surface_pointer_expression(
-                                    pointer,
-                                    parameter_binding,
-                                    &entry,
-                                    bound_variables,
-                                )?,
-                            )))
-                        })?
-                }
-            }
-            _ => return None,
-        };
-        result.push(expression);
-    }
-    Some(ContractExpression::Call {
-        // Instance names are kernel identities, not declared Surface names.
-        // The typed arguments reconstruct the same generic instance.
-        name: generic_instance_source_name(name).into(),
-        arguments: result,
+        }
+        _ => return None,
     })
 }
 

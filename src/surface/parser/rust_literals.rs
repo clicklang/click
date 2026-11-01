@@ -187,11 +187,11 @@ impl IntegerLiteral {
         };
         let narrow = Bitvector32Term::Constant(bits as u32);
         Ok(match suffix {
-            IntegerSuffix::I8 => CValue::Int8(narrow),
-            IntegerSuffix::I16 => CValue::Int16(narrow),
+            IntegerSuffix::I8 => crate::kernel::int8(narrow),
+            IntegerSuffix::I16 => crate::kernel::int16(narrow),
             IntegerSuffix::I32 => CValue::Int32(narrow),
-            IntegerSuffix::U8 => CValue::UInt8(narrow),
-            IntegerSuffix::U16 => CValue::UInt16(narrow),
+            IntegerSuffix::U8 => crate::kernel::uint8(narrow),
+            IntegerSuffix::U16 => crate::kernel::uint16(narrow),
             IntegerSuffix::U32 => crate::kernel::uint32(narrow),
             IntegerSuffix::I64 | IntegerSuffix::Isize => {
                 CValue::Int64(Bitvector32Term::Int64Constant(bits as i64))
@@ -259,6 +259,27 @@ impl IntegerLiteral {
             } else {
                 CValue::UInt64(Bitvector32Term::UInt64Constant(magnitude))
             }
+        };
+        // A narrow value's constant is native; its literal reads its value.
+        let value = match &value {
+            CValue::Int8(term)
+            | CValue::UInt8(term)
+            | CValue::Int16(term)
+            | CValue::UInt16(term) => {
+                let ty = crate::kernel::MachineIntegerType::from_c_type(value.c_type())
+                    .expect("a narrow integer type");
+                let word = ty
+                    .constant_from_term(term)
+                    .and_then(crate::kernel::MachineIntegerConstant::to_i128)
+                    .expect("literal constants") as i32 as u32;
+                match value {
+                    CValue::Int8(_) => CValue::Int8(Bitvector32Term::Constant(word)),
+                    CValue::UInt8(_) => CValue::UInt8(Bitvector32Term::Constant(word)),
+                    CValue::Int16(_) => CValue::Int16(Bitvector32Term::Constant(word)),
+                    _ => CValue::UInt16(Bitvector32Term::Constant(word)),
+                }
+            }
+            _ => value,
         };
         Ok(match value {
             CValue::Int32(

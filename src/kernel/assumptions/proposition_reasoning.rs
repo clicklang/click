@@ -3454,6 +3454,25 @@ impl PureFactContext {
                 ) if left_kind == right_kind => {
                     collect_pointer_candidates(left_pointer, right_pointer, bound, candidates)
                 }
+                // A conversion is one structural node: the same conversion on
+                // both sides matches through its operand, so a promoted
+                // comparison of a narrow read (`widen(p[k]) != 121`)
+                // instantiates as the read itself does. Constant work per
+                // matched node.
+                (
+                    Bitvector32Term::MachineIntegerCast {
+                        value: left,
+                        source: left_source,
+                        destination: left_destination,
+                    },
+                    Bitvector32Term::MachineIntegerCast {
+                        value: right,
+                        source: right_source,
+                        destination: right_destination,
+                    },
+                ) if left_source == right_source && left_destination == right_destination => {
+                    collect_term_candidates(left, right, bound, candidates)
+                }
                 (left, right) => {
                     if let (Some((left_a, left_b)), Some((right_a, right_b))) =
                         (binary(left), binary(right))

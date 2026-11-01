@@ -3,6 +3,62 @@ use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
+fn implicit_tail_retains_unspellable_statement_cases() {
+    let c = r#"int32 unsigned_index(uint32 x) {
+        int32 values[4] = {1, 2, 3, 4};
+        int32 r;
+        r = 1;
+        if (x < 4u) { r = values[x]; }
+        return r;
+    }"#;
+    let source = r#"verifying "unsigned.c";
+        int32 unsigned_index(uint32 x) { ensures result == result; }"#;
+    let sources = [("unsigned.c", c)];
+    let check_report = |report: &str| {
+        for expected in [
+            "the implicit tail could not split the cases",
+            "r = values[x]",
+            "got 4",
+            "undecided condition",
+            "could not express a case condition",
+            "Use explicit cases and `step()`",
+            "tooling limitation",
+        ] {
+            assert!(report.contains(expected), "missing {expected}: {report}");
+        }
+        assert!(!report.contains("no checked path"), "{report}");
+        assert!(
+            !report.contains("The implicit tail makes this split"),
+            "{report}"
+        );
+    };
+    check_report(&verify_c0_sources(source, &sources).unwrap_err().message());
+    with_proof_trace("unsigned_index", || {
+        let error = verify_c0_sources(source, &sources).unwrap_err();
+        check_report(&error.message());
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("r = values[x]"), "{trace}");
+    });
+    // Explicit index cases discharge this operation without changing the C.
+    let explicit = format!(
+        "{source} by {{
+            step(); step(); step(); step(); step(); step(); step();
+            if x < 4u32 {{
+                step();
+                if x == 0u32 {{ step(); step(); solve(); }} else {{
+                    if x == 1u32 {{ step(); step(); solve(); }} else {{
+                        if x == 2u32 {{ step(); step(); solve(); }} else {{
+                            step(); step(); solve();
+                        }}
+                    }}
+                }}
+            }} else {{ step(); step(); step(); solve(); }}
+        }}"
+    );
+    verify_c0_sources(&explicit, &sources).unwrap();
+}
+
+#[test]
 fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
     let source = r#"verifying "f.c";
         int32 f(int32 x) { ensures result == x; } by {
@@ -3785,28 +3841,37 @@ mod scaling_tests {
 #[test]
 #[ignore = "nightly: repeated-retain source diagnostic took 0.63s in parallel"]
 fn a_failed_retain_names_the_population_count_requirement() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/repeated_child_retains_require_enough_count_capacity.md");
-    let markdown = std::fs::read_to_string(&path).unwrap();
-    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
-    let sources = fixture
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
-        .expect_err("the caller does not establish the helper's stricter count bound");
-    let (report, _) = error.concise_report_parts();
-    assert!(
-        report.contains("precondition clause 1 of `child_retain`"),
-        "{report}"
-    );
-    // The callee's precondition refers to the population before the call.
-    assert!(
-        report.contains("old(count(child_ref(obj))) < 8"),
-        "{report}"
-    );
-    assert!(!report.contains("*obj"), "{report}");
+    for (name, requirement) in [
+        (
+            "repeated_child_retains_require_enough_count_capacity.md",
+            "old(count(child_ref(obj))) < 8",
+        ),
+        (
+            "repeated_child_retains_grown_count_requirement.md",
+            "to_integer(old(count(child_ref(obj))) + 1) < 8",
+        ),
+    ] {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests")
+            .join(name);
+        let markdown = std::fs::read_to_string(&path).unwrap();
+        let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+        let sources = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let error = verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources)
+            .expect_err("the caller does not establish the helper's stricter count bound");
+        let (report, _) = error.concise_report_parts();
+        assert!(
+            report.contains("precondition clause 1 of `child_retain`"),
+            "{report}"
+        );
+        // The second call observes the machine sum, not the exact Integer sum.
+        assert!(report.contains(requirement), "{report}");
+        assert!(!report.contains("*obj"), "{report}");
+    }
 }
 
 /// A `have` miss keeps the same checked prefix as other have failures.

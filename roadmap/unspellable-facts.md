@@ -12,6 +12,154 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Shared SurfaceTerm and KernelTerm migration (2026-10-31)
+
+The user approved a staged unification of source expressions and kernel
+expression trees, rather than implementing round-tripping independently for
+each term family. The first slice is on `codex/unified-terms`:
+
+- `SurfaceTerm` is the source expression enum; `ContractExpression` is a
+  compatibility alias.
+- `KernelTerm` is a typed immutable DAG. Integer arithmetic and calls have
+  `KernelTerm` children. Construction preserves operations and does not read
+  assumed equalities or prove definedness.
+- Integer certificate arithmetic and ordinary Integer arithmetic on existing
+  values construct this tree; Integer and pure-call raising consume it. The current checker still receives the old terms
+  through lossless bridges. Converted shared nodes cache the bridge, with
+  weak reverse links, so repeated steps do not rewalk growing expressions.
+- Explicit legacy leaves retain unmigrated values, including complete pointer
+  payloads and their auxiliary qualifiers. These leaves and their adapters
+  are temporary, not completion of the unification.
+
+The first slice merged as PR #2192 (`710258f93`). The ordinary-Integer
+follow-up is on `codex/unified-terms-ordinary`, integrated onto that master.
+
+The updated full gate passed: 6,957 unit/API/import/scaling tests, 58 examples, and
+4,935 mdtests. It took 10m15s, exceeding the ten-minute target by 15 seconds;
+no limits changed and no nightly suite ran. The first slice's full mdtest
+fact-stability audit passed with zero differences. The ordinary-Integer
+follow-up's focused `integer` audit found a pre-existing failure in
+`integer_sum_range_fold`: its entry proof used `assumption()` for a bound
+containing `-1000 * 0`, relying on the old lowering-time simplification.
+The same failure reproduced at the first slice's commit `fc5dc0d81`.
+The fixture now proves each initial multiplication equals zero and combines
+that equality with its existing bound using an arithmetic certificate. Its
+termination certificates also now prove mathematical Integer differences,
+rather than the former machine subtraction. The focused `integer` rerun
+passed all 248 selected fixtures with zero fact-dependent lowerings.
+The rewrite scaling regression now uses fresh selected variables at each size
+so all samples start cold; its exact work-equality assertion remains intact.
+
+The follow-up increment migrates ordinary Integer negation, addition,
+subtraction, multiplication and constant-nonzero-divisor quotient/remainder.
+Deferred operands and symbolic-divisor obligations retain their evaluation
+forms. The repeated-squares scaling test now covers ordinary lowering too.
+
+The ordinary-Integer follow-up merged as PR #2196 (`170c72d43`). The next
+slice, on `codex/kernel-machine-terms`, migrates machine argument bridges:
+shared nodes for exact literals, variables, non-shift binary operations,
+complement and casts. Result types remain distinct from operation formats.
+Pointer-carrying integer records stay intact. Shifts, loads and binders remain
+legacy leaves; machine lowering/execution producers have not migrated yet.
+Machine export is linear in the explicit boxed output, with no cache that
+clones every intermediate subtree. Round-trip coverage exposed a cast-chain
+collapse defect: `(x as int128) as int64` lost its intermediate cast and
+produced a generic cast that direct syntax lowered to `Int64From32` instead.
+Keep wide symbolic chains intact, retain the established 32-bit word rules,
+and spell wide casts and literals structurally. The C++ round-trip contract
+then exposed a reliance on constructor folding; extend the existing indexed
+e-graph cast-composition rules to 128-bit intermediates instead. A regression
+keeps the cast syntax distinct while proving the equality, rejects lossy
+round trips, and scales selected chains beside unrelated classes.
+The normal gate passed: 6,979 unit/API/import/scaling tests, 58 examples and
+4,936 mdtests (10m06s, with the ten-minute timing warning). The subsequent
+fact-stability audit exposed diagnostic work consuming the proof budget:
+alpha comparison was charged, and the existing uncharged scope suppressed
+explicit records but not checkpoints. Both paths now exclude audit work;
+limits and ordinary verification charges are unchanged. All 27 focused
+accounting tests passed, and the full 4,936-fixture fact-stability audit
+passed with zero lowering differences. No nightly suite or limits were changed.
+
+The shift follow-up extends those binary nodes to both shift operators.
+The old shift producer already converts counts to the left operand's carrier
+width; preserve the conversion structurally rather than assigning a new source
+count type. Coverage includes narrower and wider counts with both signednesses,
+plus mixed arithmetic/shift chains beside unrelated terms. The mixed signedness
+case exposed a pre-existing spelling defect: zero-extending the word of signed
+`x` printed as `x as uint64`, which sign-extends instead. Widening spellings
+now explicitly retain the source `int32`/`uint32` interpretation before the
+64-bit cast. Validation: 76 focused tests passed; shift-fixture fact-stability
+audit passed with zero differences; full gate passed in 9m50s (6,981 unit/import/
+scaling tests, 58 examples, 4,936 mdtests). PR #2202 entered the merge queue
+while this follow-up was validating, then left it after the Rust scalar-slice
+integration test hit its 30-second limit. Its three negative mutations had
+reverified every unrelated function. Keep the full positive check, but check
+each mutation against its affected independent function. Separate the full
+positive suite and negative proof search into ordinary gate tests, retaining
+every case and the 30-second bound. They took 11.1s and 10.3s respectively in
+the integrated parallel gate. No limits or cases are removed. The follow-ups
+update the same PR.
+
+The next local increment migrates all six specialized 32/64-bit conversions
+to shared cast nodes. Their source/destination formats and operands are explicit;
+a transitional encoding tag preserves the exact old constructor, distinct from
+a generic cast. Tests cover all six encodings, repeated import identity, typed
+children, and linear cast-chain work beside unrelated terms. All 78 focused
+bridge/spelling tests passed. After merging current master (`aece82749`), the
+full gate passed: 6,998 unit/import/scaling tests, 58 examples, 4,948 mdtests.
+Elapsed 13m07s included a 3m05s rebuild; unit and fixture phases totaled about
+9m46s, and the overall gate emitted its ten-minute timing warning. The focused
+machine-fixture fact-stability audit passed with zero differences. No nightly
+suite was run.
+
+PR #2212 merged. The next slice, `codex/kernel-bool-conversions`, introduces a
+logical Bool sort in the shared tree and migrates Boolean-to-machine conversions.
+Their conditions expose literals, variables, machine comparisons, equality,
+conditionals and calls as typed children. Other condition sorts keep complete
+legacy payloads, including pointer metadata; this does not migrate all condition
+producers. Comparison format remains structural even when fact equality ignores
+signedness. Raising writes the existing Boolean cast syntax with the Surface
+operand retained. Validation: all 134 focused bridge, spelling and conversion tests passed.
+`scripts/check.sh --no-fail-fast` passed 7,022 unit/import/scaling tests,
+58 examples and 4,953 mdtests in 11m14s, with the ten-minute timing warning.
+The separate fact-stability audits passed 20 bool and 248 integer fixtures
+with zero differences. No nightly suite ran and no limits changed.
+
+PR #2211 subsequently merged as `617ab6c8a`. The next slice on
+`codex/kernel-boolean-integers` migrates the reverse direction: mathematical
+Integer-to-machine conversions. A shared node retains the explicit destination
+and Integer child, and the speller emits the existing `to_int32`, `to_uint64`,
+etc. calls. This also fills the old bitvector speller's explicit refusal for
+these conversions. Boolean conversions still require migrating their condition
+operand; no condition or pointer semantics change in this slice.
+Validation: `scripts/check.sh --no-fail-fast` passed all 7,024 unit/import/scaling
+tests, 58 examples and 4,953 mdtests in 10m37s (ten-minute timing warning).
+All 17 focused bridge/spelling tests passed. The focused integer fact-stability
+audit passed 248 fixtures with zero differences, matching the pre-change audit.
+No nightly suite ran and no limits changed.
+
+PR #2202 merged as `5211102e4`. On `codex/kernel-integer-observations`, the
+next increment moves `IntegerTerm::Machine` observations into shared typed
+nodes. Source interpretation is explicit, including signedness, and raising
+keeps the required cast inside snapshot selectors. Exact bridge reconstruction
+is tested after dropping the old source; scaling grows the selected machine
+operand beside unrelated terms. Boolean casts and Integer-to-machine conversion
+remain separate migrations. Narrow observations keep their existing spelling;
+added narrowing/promotion casts change their structure. Observation casts use
+Surface CUnary operands, preserving resource fields and scoped names instead
+of projecting them into C fragments. The full gate passed: 7,015 tests, 58
+examples and 4,949 mdtests in 10m12s (timing warning). All 83 focused tests and
+248 integer-fixture fact-stability audits passed, with zero differences.
+No nightly suite ran and no limits were raised.
+
+Next: migrate the remaining ordinary expression producers and machine arithmetic onto the
+shared tree, then replace checker adapters with typed views. Algebraic values,
+binders, full pointers and loads follow; facts and goals should ultimately
+have common term operands. Keep definedness as separately scoped obligations.
+The proposed three-field `CPointer` representation is not settled. This first
+slice changes no pointer semantics and does not claim to resolve #2179 or the
+remaining census misses. See [the migration boundary](../docs/internals/spellability.md#shared-term-migration).
+
 ## Structural mathematical arithmetic (2026-10-31)
 
 The next two Integer defects are constant folding during lowering and missing
