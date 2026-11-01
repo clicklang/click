@@ -53,10 +53,10 @@ fn split_on_undefined_behavior(
         Some(false) => defined(facts, obligations),
         None => {
             let mut defined_facts = facts.clone();
-            add_condition_path_fact(&mut defined_facts, assumptions, undefined.clone(), false)
+            add_arithmetic_branch_fact(&mut defined_facts, assumptions, undefined.clone(), false)
                 .expect("an undecided undefined-behavior condition should be consistent");
             let mut undefined_facts = facts;
-            add_condition_path_fact(&mut undefined_facts, assumptions, undefined, true)
+            add_arithmetic_branch_fact(&mut undefined_facts, assumptions, undefined, true)
                 .expect("an undecided undefined-behavior condition should be consistent");
             let mut paths = defined(defined_facts, obligations.clone());
             paths.push(CExpressionPath {
@@ -67,6 +67,56 @@ fn split_on_undefined_behavior(
             paths
         }
     }
+}
+
+/// Publish arithmetic branch evidence using ordinary propositions. The old
+/// overflow query remains an implementation detail of the interval checker.
+fn add_arithmetic_branch_fact(
+    facts: &mut ExecutionFacts,
+    assumptions: &PureFactContext,
+    condition: ConditionTerm,
+    value: bool,
+) -> Option<()> {
+    if let Some(inner) = condition.bool_negation_operand() {
+        return add_condition_path_fact(facts, assumptions, inner.clone(), !value);
+    }
+    if let ConditionTerm::Overflows {
+        format,
+        op,
+        left,
+        right,
+    } = &condition
+    {
+        let domain = match op {
+            OverflowOperation::Add | OverflowOperation::Subtract | OverflowOperation::Multiply => {
+                let op = match op {
+                    OverflowOperation::Add => MachineBinaryOp::Add,
+                    OverflowOperation::Subtract => MachineBinaryOp::Subtract,
+                    _ => MachineBinaryOp::Multiply,
+                };
+                Some(Proposition::signed_arithmetic_domain(
+                    *format, op, left, right,
+                ))
+            }
+            OverflowOperation::ShiftLeft => Some(Proposition::ConditionIs(
+                ConditionTerm::signed_shift_result_fits(*format, *left.clone(), *right.clone()),
+                true,
+            )),
+            _ => None,
+        };
+        if let Some(domain) = domain {
+            return add_path_fact(
+                facts,
+                assumptions,
+                if value {
+                    Proposition::Not(Box::new(domain))
+                } else {
+                    domain
+                },
+            );
+        }
+    }
+    add_condition_path_fact(facts, assumptions, condition, value)
 }
 
 fn pointer_types_compatible(left: &CPointerValue, right: &CPointerValue) -> bool {
@@ -3353,7 +3403,7 @@ fn apply_pointer_formation_guards(
                 }),
                 None => {
                     let mut valid_facts = path.facts.clone();
-                    add_condition_path_fact(
+                    add_arithmetic_branch_fact(
                         &mut valid_facts,
                         assumptions,
                         guard.condition.clone(),
@@ -3368,7 +3418,7 @@ fn apply_pointer_formation_guards(
 
                     let invalid_value = !guard.value;
                     let mut invalid_facts = path.facts;
-                    add_condition_path_fact(
+                    add_arithmetic_branch_fact(
                         &mut invalid_facts,
                         assumptions,
                         guard.condition.clone(),
@@ -3416,7 +3466,7 @@ fn owed_guard_paths(
             Some(_) => return None,
             None => {
                 let mut refused_facts = facts.persistent_facts();
-                add_condition_path_fact(
+                add_arithmetic_branch_fact(
                     &mut refused_facts,
                     assumptions,
                     guard.condition,
@@ -3485,11 +3535,11 @@ pub(in crate::kernel) fn apply_c_int32_add(
         }],
         None => {
             let mut normal_facts = facts.clone();
-            add_condition_path_fact(&mut normal_facts, assumptions, overflow.clone(), false)
+            add_arithmetic_branch_fact(&mut normal_facts, assumptions, overflow.clone(), false)
                 .expect("unknown overflow fact should be consistent");
 
             let mut overflow_facts = facts;
-            add_condition_path_fact(&mut overflow_facts, assumptions, overflow, true)
+            add_arithmetic_branch_fact(&mut overflow_facts, assumptions, overflow, true)
                 .expect("unknown overflow fact should be consistent");
 
             vec![
@@ -4244,7 +4294,11 @@ fn apply_c_int64_shift_left_nonnegative(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let overflow = ConditionTerm::int64_signed_shift_left_overflows(left.clone(), right.clone());
+    let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
+        MachineIntegerType::Int64,
+        left.clone(),
+        right.clone(),
+    ));
     split_on_undefined_behavior(
         overflow,
         CUndefinedBehavior::SignedOverflow,
@@ -4554,7 +4608,11 @@ fn apply_c_int32_shift_left_nonnegative(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let overflow = ConditionTerm::signed_shift_left_overflows(left.clone(), right.clone());
+    let overflow = ConditionTerm::bool_not(ConditionTerm::signed_shift_result_fits(
+        MachineIntegerType::Int32,
+        left.clone(),
+        right.clone(),
+    ));
     split_on_undefined_behavior(
         overflow,
         CUndefinedBehavior::SignedOverflow,

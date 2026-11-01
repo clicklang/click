@@ -950,14 +950,19 @@ fn symbolic_execution_reports_overflow_facts() {
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
     let statement = c_return(c_add(c_variable("left"), c_variable("right")));
-    let overflow = ConditionTerm::signed_add_overflows(left_bits.clone(), right_bits.clone());
+    let domain = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        &left_bits,
+        &right_bits,
+    );
     let execution =
         prove_symbolic_c_execution_paths(state.clone(), statement.clone(), PureFactContext::new());
 
     assert_eq!(execution.paths().len(), 2);
     assert_eq!(
         execution.paths()[0].facts(),
-        &[ExecutionPureFact::condition(overflow.clone(), false)]
+        &[ExecutionPureFact::new(domain.clone())]
     );
     assert_eq!(
         execution.paths()[0].obligations(),
@@ -966,7 +971,7 @@ fn symbolic_execution_reports_overflow_facts() {
     assert_eq!(
         execution.paths()[0].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(overflow.clone(), false)),
+            Box::new(domain.clone()),
             Box::new(Proposition::CStatementExecutes {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement.clone()),
@@ -985,7 +990,9 @@ fn symbolic_execution_reports_overflow_facts() {
 
     assert_eq!(
         execution.paths()[1].facts(),
-        &[ExecutionPureFact::condition(overflow.clone(), true)]
+        &[ExecutionPureFact::new(Proposition::Not(Box::new(
+            domain.clone()
+        )))]
     );
     assert_eq!(
         execution.paths()[1].obligations(),
@@ -994,7 +1001,7 @@ fn symbolic_execution_reports_overflow_facts() {
     assert_eq!(
         execution.paths()[1].theorem().proposition(),
         &Proposition::Implies(
-            Box::new(Proposition::ConditionIs(overflow, true)),
+            Box::new(Proposition::Not(Box::new(domain))),
             Box::new(Proposition::CStatementExecutes {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
@@ -4917,10 +4924,17 @@ fn call_requirement_obligations_carry_their_lowering_record() {
         recorded.is_empty(),
         "arithmetic debts do not introduce guards"
     );
-    assert!(path.obligations().iter().any(|debt| matches!(
-        debt.proposition(),
-        Proposition::ConditionIs(ConditionTerm::Overflows { .. }, false)
-    )));
+    let domain = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        &Bitvector32Term::Variable(Variable(31_000)),
+        &Bitvector32Term::Constant(1),
+    );
+    assert!(
+        path.obligations()
+            .iter()
+            .any(|debt| debt.proposition() == &domain)
+    );
 }
 
 /// A self-recursive function that declares an expression `decreases` measure.

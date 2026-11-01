@@ -223,6 +223,16 @@ impl Interner {
         KernelTerm(value)
     }
 }
+thread_local! {
+    // The bridge links preserve structural identity across sessions, but their
+    // use as a shortcut must not depend on an earlier verification's cache.
+    static SESSION_INTEGER_BRIDGES: std::cell::RefCell<std::collections::HashSet<u64>> = Default::default();
+}
+
+pub(crate) fn clear_integer_bridge_memo() {
+    SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow_mut().clear());
+}
+
 impl KernelTerm {
     fn legacy_integer(&self) -> Option<SharedIntegerTerm> {
         self.0
@@ -230,8 +240,12 @@ impl KernelTerm {
             .lock()
             .expect("term bridge poisoned")
             .upgrade()
+            .filter(|integer| {
+                SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow().contains(&integer.id()))
+            })
     }
     fn remember_integer(&self, integer: &SharedIntegerTerm) {
+        SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow_mut().insert(integer.id()));
         *self.0.integer.lock().expect("term bridge poisoned") = integer.downgrade();
         // A legacy leaf owns its old value. Caching it on that same value
         // would create a cycle; only genuinely migrated nodes cache both ways.
@@ -397,7 +411,9 @@ impl KernelTermImport {
         }
     }
     pub(crate) fn integer(&mut self, term: &SharedIntegerTerm) -> KernelTerm {
-        if let Some(value) = term.kernel_term() {
+        if SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow().contains(&term.id()))
+            && let Some(value) = term.kernel_term()
+        {
             return value.clone();
         }
         if let Some(value) = self.integers.get(term) {
@@ -462,6 +478,46 @@ impl KernelTermImport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retained_integer_bridges_have_session_local_work() {
+        use crate::instrumentation::measure_deterministic_work;
+        let source: SharedIntegerTerm = IntegerTerm::add(
+            IntegerTerm::Variable(Variable(87654329)),
+            IntegerTerm::constant(17.into()),
+        )
+        .into();
+        let import = || {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (term, cold) =
+                measure_deterministic_work(|| KernelTermImport::default().integer(&source));
+            let (again, warm) =
+                measure_deterministic_work(|| KernelTermImport::default().integer(&source));
+            assert_eq!(term, again);
+            assert!(cold > warm);
+            (term, cold)
+        };
+        let first = import();
+        let second = import();
+        assert_eq!(
+            first, second,
+            "retained nodes must not change a later run's work or identity"
+        );
+        let export = || {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (value, cold) = measure_deterministic_work(|| {
+                KernelTermExport::default().integer(&first.0).unwrap()
+            });
+            let (again, warm) = measure_deterministic_work(|| {
+                KernelTermExport::default().integer(&first.0).unwrap()
+            });
+            assert_eq!(value, again);
+            assert_eq!(value, source);
+            assert!(cold > warm);
+            cold
+        };
+        assert_eq!(export(), export());
+    }
+
     #[test]
     fn reverse_bridge_does_not_keep_the_source_node_alive() {
         let source: SharedIntegerTerm = IntegerTerm::Variable(Variable(87654321)).into();

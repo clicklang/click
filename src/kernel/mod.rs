@@ -145,7 +145,6 @@ pub(crate) use eval::canonical_condition_fact;
 pub(crate) use eval::canonical_form_of_load;
 pub(crate) use eval::canonical_term;
 pub(crate) use eval::canonicalized_offset_index_term;
-pub(crate) use eval::comparison_form;
 #[cfg(test)]
 pub(crate) use eval::count_canonical_at_creation_violations;
 #[cfg(test)]
@@ -174,6 +173,7 @@ pub(crate) use eval::terms_have_same_canonical_form;
 pub(crate) use eval::{
     CUndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
+pub(crate) use eval::{arithmetic_comparison_form, comparison_form};
 #[cfg(test)]
 pub(crate) use eval::{
     load_variable_registry_len, with_load_variable_range, with_load_variable_registry_capacity,
@@ -375,6 +375,7 @@ impl VerificationSession {
             reasoning::memory_resolution::clear_canonical_memory_cache();
             reasoning::memory_resolution::clear_memory_resolution_memos();
             assumptions::clear_assumption_memos();
+            primitives::clear_integer_bridge_memo();
             api::clear_borrowed_input_root_memo();
             reasoning::variable_collection::clear_shared_memory_variables();
             functions::clear_automatic_lifetime_retirement();
@@ -445,6 +446,7 @@ impl VerificationSession {
         reasoning::memory_resolution::clear_canonical_memory_cache();
         reasoning::memory_resolution::clear_memory_resolution_memos();
         assumptions::clear_assumption_memos();
+        primitives::clear_integer_bridge_memo();
         api::clear_borrowed_input_root_memo();
         reasoning::variable_collection::clear_shared_memory_variables();
         functions::clear_automatic_lifetime_retirement();

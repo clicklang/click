@@ -24,7 +24,14 @@ pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType
         return None;
     };
     let ty = machine.ty();
-    let resolved = crate::kernel::eval::read_over_write_value(machine.value());
+    // An explicit operation's identity refers to its actual operands. Only
+    // an observation of a stored read needs the read-over-write adapter;
+    // recursively expanding an explicit operation changes the identity the
+    // source expression asks for.
+    let resolved = representation::word_operation(machine.ty(), machine.value())
+        .is_none()
+        .then(|| crate::kernel::eval::read_over_write_value(machine.value()))
+        .flatten();
     let (operation, left, right) =
         representation::word_operation(ty, resolved.as_ref().unwrap_or(machine.value()))?;
     let left = IntegerTerm::from_machine(ty, left.clone())?;
@@ -40,7 +47,14 @@ pub(crate) fn additive_mathematical(
     let IntegerTerm::Machine(machine) = observed else {
         return None;
     };
-    let resolved = crate::kernel::eval::read_over_write_value(machine.value());
+    // An explicit operation's identity refers to its actual operands. Only
+    // an observation of a stored read needs the read-over-write adapter;
+    // recursively expanding an explicit operation changes the identity the
+    // source expression asks for.
+    let resolved = representation::word_operation(machine.ty(), machine.value())
+        .is_none()
+        .then(|| crate::kernel::eval::read_over_write_value(machine.value()))
+        .flatten();
     match representation::word_operation(
         machine.ty(),
         resolved.as_ref().unwrap_or(machine.value()),
@@ -187,4 +201,44 @@ pub(crate) fn machine_operation_of_integer_value(
         });
     }
     Some((observed, bounds))
+}
+
+#[test]
+fn explicit_operation_identity_keeps_its_read_operands() {
+    use crate::kernel::{CMemory, CValue, LoadKind, Pointer, Variable};
+    let _session = crate::kernel::VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let x = Bitvector32Term::Variable(Variable(989_773));
+    let y = Bitvector32Term::Variable(Variable(989_774));
+    let address = Pointer::symbolic(Variable(989_775));
+    let stored = Bitvector32Term::logical_machine_binary(
+        format,
+        crate::kernel::MachineBinaryOp::Add,
+        x.clone(),
+        Bitvector32Term::Constant(1),
+    );
+    let memory = CMemory::new().store(address.clone(), CValue::Int32(stored));
+    let read = crate::kernel::canonical_form_of_load(
+        crate::kernel::intern_c_memory_ref(&memory),
+        address,
+        LoadKind::Int32,
+    );
+    let observe = |value| IntegerTerm::from_machine(format, value).unwrap();
+    let sum = observe(Bitvector32Term::logical_machine_binary(
+        format,
+        crate::kernel::MachineBinaryOp::Add,
+        read.clone(),
+        y.clone(),
+    ));
+    assert_eq!(
+        mathematical(&sum),
+        Some((format, IntegerTerm::add(observe(read.clone()), observe(y))))
+    );
+    assert_eq!(
+        mathematical(&observe(read)),
+        Some((
+            format,
+            IntegerTerm::add(observe(x), IntegerTerm::constant(1.into()))
+        ))
+    );
 }

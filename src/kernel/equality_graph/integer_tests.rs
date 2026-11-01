@@ -184,3 +184,40 @@ fn literal_integer_identities_join_classes_without_rewriting_terms() {
         )));
     }
 }
+
+#[test]
+fn fold_endpoint_congruence_keeps_the_bound_body_exact() {
+    use crate::kernel::{IntegerRangeFoldIndex, MachineBinaryOp as Op};
+    let _session = crate::kernel::VerificationSession::enter();
+    let endpoint = Bitvector32Term::Variable(Variable(989_781));
+    let predecessor = Bitvector32Term::logical_machine_binary(
+        M::Int32,
+        Op::Subtract,
+        endpoint.clone(),
+        Bitvector32Term::Constant(1),
+    );
+    let restored = Bitvector32Term::logical_machine_binary(
+        M::Int32,
+        Op::Add,
+        predecessor,
+        Bitvector32Term::Constant(1),
+    );
+    let body = I::Variable(Variable(989_782));
+    let fold = |end: Bitvector32Term, body: I| I::RangeFold {
+        index: IntegerRangeFoldIndex::Int32 {
+            start: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
+            end: crate::kernel::SharedIntegerRangeEndpoint::intern(end),
+        },
+        initial: I::constant_i64(0).into(),
+        accumulator: Variable(989_782),
+        item: Variable(989_783),
+        body: body.into(),
+    };
+    let graph = EqualityGraph::default();
+    assert!(graph.are_int32_equal(&restored, &endpoint));
+    assert!(graph.are_integer_equal(
+        &fold(restored.clone(), body.clone()),
+        &fold(endpoint.clone(), body.clone())
+    ));
+    assert!(!graph.are_integer_equal(&fold(restored, body), &fold(endpoint, I::constant_i64(1))));
+}

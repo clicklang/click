@@ -72,6 +72,8 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
     let mut depths = Vec::new();
     let mut contexts = Vec::new();
     for size in [8, 16, 32, 64] {
+        // Compare cold contexts; a preceding size must not warm this query.
+        let _session = crate::kernel::VerificationSession::enter();
         let left = nested(size, 100);
         let right = nested(size, 1000);
         let (matches, work) = crate::instrumentation::measure_deterministic_work(|| {

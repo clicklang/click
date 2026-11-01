@@ -2379,6 +2379,8 @@ pub(crate) fn load_substitution_term_visits() -> usize {
 }
 
 pub(crate) fn clear_load_canonicalization_caches() {
+    crate::kernel::proof::term_rewrite::clear_arithmetic_comparison_cache();
+    COMPARISON_FORMS.with(|cache| cache.borrow_mut().clear());
     STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
     MEMORY_SHOWN_CELLS.with(|cache| cache.borrow_mut().clear());
     LOAD_VARIABLE_CACHE.with(|cache| cache.borrow_mut().clear());
@@ -2443,6 +2445,8 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
 }
 
 pub(crate) fn clear_load_variable_registry() {
+    crate::kernel::proof::term_rewrite::clear_arithmetic_comparison_cache();
+    COMPARISON_FORMS.with(|cache| cache.borrow_mut().clear());
     STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
     MEMORY_SHOWN_CELLS.with(|cache| cache.borrow_mut().clear());
     POINTER_READ_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
@@ -2515,6 +2519,11 @@ fn stored_pointer_address(address: &Pointer) -> Option<Pointer> {
     })
 }
 
+thread_local! {
+    static COMPARISON_FORMS: std::cell::RefCell<std::collections::HashMap<Proposition, Option<Proposition>>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 /// The comparison form of `proposition`: each read of a stored cell
 /// replaced by the value stored there (the read-over-write authority,
 /// [`read_over_write_value`]), or `None` when it reads none.
@@ -2529,7 +2538,29 @@ fn stored_pointer_address(address: &Pointer) -> Option<Pointer> {
 /// kernel rule that compares a stated term with the one it derives compares
 /// their comparison forms. This is the one place the authority enters
 /// matching; a check does not resolve reads on its own.
+
 pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> {
+    if crate::instrumentation::deadline_exceeded_with_work(0) {
+        return None;
+    }
+    if let Some(result) = COMPARISON_FORMS.with(|cache| cache.borrow().get(proposition).cloned()) {
+        return result;
+    }
+    let result = comparison_form_uncached(proposition);
+    if crate::instrumentation::deadline_exceeded_with_work(0) {
+        return None;
+    }
+    COMPARISON_FORMS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= 4096 {
+            cache.clear();
+        }
+        cache.insert(proposition.clone(), result.clone());
+    });
+    result
+}
+
+fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     // Memory snapshots stay opaque: only the proposition's own terms are
     // visited, never the cells of a snapshot a read names.
     let mut collector =
@@ -2607,6 +2638,16 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
         }
     }
     (&resolved != proposition).then_some(resolved)
+}
+
+/// Arithmetic congruence for selected comparison queries. Unlike the
+/// read-over-write form, this is not an additional fact to publish or index.
+pub(crate) fn arithmetic_comparison_form(proposition: &Proposition) -> Option<Proposition> {
+    let resolved = comparison_form(proposition);
+    crate::kernel::proof::term_rewrite::TermRewrite::arithmetic_comparison(
+        resolved.as_ref().unwrap_or(proposition),
+    )
+    .or(resolved)
 }
 
 /// The read-over-write authority for a pointer read: the pointer stored at
@@ -8198,4 +8239,61 @@ mod pointer_read_value_definition_tests {
             true,
         ));
     }
+}
+
+#[test]
+fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_terms() {
+    use crate::kernel::{MachineBinaryOp, MachineIntegerType};
+    let _session = crate::kernel::VerificationSession::enter();
+    let index = Bitvector32Term::Variable(Variable(989_784));
+    let written = Bitvector32Term::logical_machine_binary(
+        MachineIntegerType::UInt64,
+        MachineBinaryOp::Add,
+        Bitvector32Term::UInt64Constant(0),
+        index.clone(),
+    );
+    let pointer = |value| Pointer {
+        block: Pointer::symbolic(Variable(989_785)).block,
+        offset: PointerOffsetTerm::Int64Scaled {
+            value: Box::new(value),
+            byte_width: 4,
+            unsigned: true,
+        },
+    };
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let read = |memory, value| {
+        crate::kernel::canonical_form_of_load(memory, pointer(value), LoadKind::Int32)
+    };
+    let original = read(memory.clone(), written.clone());
+    let simple = read(memory.clone(), index.clone());
+    let equality = |left, right| Proposition::ConditionIs(ConditionTerm::equal(left, right), true);
+    let fact = equality(original.clone(), simple.clone());
+    let comparison =
+        arithmetic_comparison_form(&fact).expect("the addresses have an arithmetic identity");
+    assert!(
+        crate::kernel::proposition_holds_without_facts(&comparison),
+        "{comparison:?}"
+    );
+    assert_ne!(
+        original, simple,
+        "the original read must retain its written address"
+    );
+    assert!(matches!(
+        written,
+        Bitvector32Term::Binary {
+            op: MachineBinaryOp::Add,
+            ..
+        }
+    ));
+    let changed = CMemory::new().store(
+        pointer(index.clone()),
+        CValue::Int32(Bitvector32Term::Constant(17)),
+    );
+    let different_snapshot = equality(
+        original,
+        read(crate::kernel::intern_c_memory(changed), index),
+    );
+    assert!(!crate::kernel::proposition_holds_without_facts(
+        &comparison_form(&different_snapshot).unwrap_or(different_snapshot)
+    ));
 }

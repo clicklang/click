@@ -599,7 +599,10 @@ impl PropositionSearch for PureFactContext {
                 return evidence.map(|evidence| (candidate, premises_id, evidence));
             }
         }
-        let condition_goal = match proposition {
+        let interval_query =
+            crate::kernel::machine_integer::definedness::interval_query_form(proposition);
+        let selection_goal = interval_query.as_ref().unwrap_or(proposition);
+        let condition_goal = match selection_goal {
             Proposition::ConditionIs(_, _) => true,
             Proposition::Not(body) => matches!(body.as_ref(), Proposition::ConditionIs(_, _)),
             _ => false,
@@ -637,8 +640,14 @@ impl PropositionSearch for PureFactContext {
             return None;
         }
         if condition_goal {
-            let (selected, _, _, _) =
-                connected_atomic_premises(self, proposition, &[], false, true, exclude_exact_goal)?;
+            let (selected, _, _, _) = connected_atomic_premises(
+                self,
+                selection_goal,
+                &[],
+                false,
+                true,
+                exclude_exact_goal,
+            )?;
             if let Some(found) = connected_trial(self, &selected, proposition, extended_rules) {
                 return Some(found);
             }
@@ -988,6 +997,15 @@ impl PropositionSearch for PureFactContext {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
+        // Range conjunctions are also conclusions of the signed arithmetic
+        // theorems. Try those whole-goal certificates before splitting the
+        // two bounds; retain the ordinary conjunction as their conclusion.
+        if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
+            .is_some()
+            && let Some(rule) = self.derive_atomic_rule(proposition, extended_rules)
+        {
+            return Some(rule);
+        }
         match proposition {
             Proposition::And(left, right) => self.derive_and_rule(left, right, extended_rules),
             Proposition::Or(left, right) => self.derive_or_rule(left, right, extended_rules),

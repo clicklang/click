@@ -411,6 +411,11 @@ struct GuardedTermSpeller<'v, 'p> {
 
 impl GuardedTermSpeller<'_, '_> {
     fn guard(&self, guard: &Proposition) -> Option<ClickProposition> {
+        // Complete ordinary range guards name the same operation as the
+        // former private overflow query. Keep model-field snapshot names on
+        // its operands; the caller checks the full domain's round trip.
+        let query = crate::kernel::machine_integer::definedness::interval_query_form(guard);
+        let guard = query.as_ref().unwrap_or(guard);
         match guard {
             Proposition::And(left, right) => Some(ClickProposition::And(
                 Box::new(self.guard(left)?),

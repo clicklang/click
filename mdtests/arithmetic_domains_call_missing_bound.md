@@ -17,5 +17,5 @@ int32 unbounded(int32 x) {
 ```
 
 ```expect
-fail: x <= 2147483646
+fail: to_integer(x) + 1 <= 2147483647 and to_integer(x) + 1 >= -2147483648
 ```

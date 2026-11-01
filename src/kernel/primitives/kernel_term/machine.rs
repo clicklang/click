@@ -2,6 +2,37 @@
 //! separate: a uint32 value can contain a sign-free int32 word operation.
 use super::*;
 
+impl KernelTerm {
+    /// Construct one unsigned operation structurally from shared children.
+    /// Definedness is separate; this total fragment has no domain debt.
+    pub(crate) fn unsigned_binary(
+        format: MachineIntegerType,
+        operator: MachineBinaryOp,
+        arguments: [Self; 2],
+    ) -> Result<Self, &'static str> {
+        if !matches!(
+            format,
+            MachineIntegerType::UInt32 | MachineIntegerType::UInt64
+        ) || !matches!(
+            operator,
+            MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply
+        ) || arguments
+            .iter()
+            .any(|arg| arg.ty() != &KernelType::C(format.c_type()))
+        {
+            return Err("unsigned arithmetic requires matching uint32 or uint64 operands");
+        }
+        Ok(Self::intern(
+            KernelType::C(format.c_type()),
+            KernelTermNode::MachineBinary {
+                format,
+                operator,
+                arguments,
+            },
+        ))
+    }
+}
+
 /// Exact legacy literal form, including the uint32-at-rest tag. Converting
 /// through a mathematical value would erase that structural distinction.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]

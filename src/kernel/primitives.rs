@@ -71,7 +71,7 @@ pub use kernel_term::{
     KernelIntegerOperator, KernelLegacyTerm, KernelMachineCastEncoding, KernelMachineLiteral,
     KernelTerm, KernelTermNode, KernelType,
 };
-pub(crate) use kernel_term::{KernelTermExport, KernelTermImport};
+pub(crate) use kernel_term::{KernelTermExport, KernelTermImport, clear_integer_bridge_memo};
 mod machine_integer;
 pub(crate) use machine_integer::is_narrow_widening32;
 pub use machine_integer::{

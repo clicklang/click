@@ -265,3 +265,52 @@ fn wide_cast_composition_is_an_equality_without_erasing_the_terms() {
     let restored = cast(Ty::Int128, Ty::Int64, wide);
     assert!(!EqualityGraph::default().are_uint64_equal(&restored, &original));
 }
+
+#[test]
+fn explicit_wide_add_sub_nodes_cancel_in_the_comparison_graph() {
+    let _session = VerificationSession::enter();
+    use crate::kernel::MachineBinaryOp as Op;
+    for format in [Ty::Int64, Ty::UInt64] {
+        let base = var(989_779);
+        let literal = |n| {
+            crate::kernel::machine_integer::range::constant_word(
+                format,
+                &num_bigint::BigInt::from(n),
+            )
+            .unwrap()
+        };
+        let sum =
+            Bitvector32Term::logical_machine_binary(format, Op::Add, base.clone(), literal(1));
+        let difference = |n| {
+            Bitvector32Term::logical_machine_binary(format, Op::Subtract, sum.clone(), literal(n))
+        };
+        let graph = EqualityGraph::default();
+        for (op, left, right, expected) in [
+            (Op::Add, literal(0), base.clone(), base.clone()),
+            (Op::Add, base.clone(), literal(0), base.clone()),
+            (Op::Subtract, base.clone(), literal(0), base.clone()),
+            (Op::Subtract, base.clone(), base.clone(), literal(0)),
+            (Op::Multiply, base.clone(), literal(0), literal(0)),
+            (Op::Multiply, base.clone(), literal(1), base.clone()),
+        ] {
+            let term = Bitvector32Term::logical_machine_binary(format, op, left, right);
+            assert!(
+                graph.are_uint64_equal(&term, &expected),
+                "{format:?} {op:?}: {term:?} != {expected:?}"
+            );
+            assert!(matches!(term, Bitvector32Term::Binary { .. }));
+        }
+        assert!(graph.are_uint64_equal(&difference(1), &base));
+        assert!(!graph.are_uint64_equal(&difference(2), &base));
+        assert!(
+            matches!(
+                difference(1),
+                Bitvector32Term::Binary {
+                    op: Op::Subtract,
+                    ..
+                }
+            ),
+            "the comparison identity must not replace the term"
+        );
+    }
+}
