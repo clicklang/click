@@ -73,3 +73,86 @@ fn charon_whole_record_owns_covers_a_64_bit_field_load() {
         .expect("a changed untouched field must be refused");
     assert!(format!("{error:?}").contains("deposit"), "{error:?}");
 }
+
+fn check_remainder_guards(ty: &str, maximum: &str, controls: bool) {
+    let p = Project::from_fixture("design/charon-trial/narrow-remainder");
+    fs::write(p.root.join("borrow.click"), "verifying \"widths.rs\";").unwrap();
+    let prepared = p.prepared().unwrap();
+    for (name, result, ensures) in [
+        (
+            format!("parity_{ty}"),
+            format!(" -> {ty}"),
+            format!("result == 1{ty}"),
+        ),
+        (format!("even_{ty}"), String::new(), "true".into()),
+    ] {
+        // Keep the original branch reproduction in the gate; the assertion
+        // and mutation controls run together in the named nightly checks.
+        if !controls && name.starts_with("even_") {
+            continue;
+        }
+        let claim = format!(
+            "verifying \"widths.rs\"; fn {name}(x: {ty}){result} {{ requires x % 2{ty} == 0{ty}; ensures {ensures}; }}"
+        );
+        C0VerificationSession::new_program_prepared(&claim, &prepared)
+            .unwrap_or_else(|error| panic!("{claim}: {error:?}"));
+        if controls {
+            let invalid = claim.replace(&format!("requires x % 2{ty} == 0{ty};"), "");
+            assert!(
+                C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+    if !controls {
+        return;
+    }
+    let odd = format!(
+        "verifying \"widths.rs\"; fn parity_{ty}(x: {ty}) -> {ty} {{ requires x == {maximum}{ty}; ensures result == 0{ty}; }}"
+    );
+    C0VerificationSession::new_program_prepared(&odd, &prepared).unwrap();
+}
+
+#[test]
+fn charon_u8_remainder_guards_match_contracts() {
+    check_remainder_guards("u8", "255", false);
+}
+
+#[test]
+fn charon_u16_remainder_guards_match_contracts() {
+    check_remainder_guards("u16", "65535", false);
+}
+
+#[test]
+#[ignore = "nightly: remainder boundary and missing-premise controls take 0.75s"]
+fn charon_u32_remainder_guards_keep_unsigned_semantics() {
+    check_remainder_guards("u32", "4294967295", true);
+}
+
+#[test]
+#[ignore = "nightly: variable-divisor and zero-divisor controls take 0.86s"]
+fn charon_narrow_remainder_keeps_variable_divisor_and_zero_checks() {
+    let p = Project::from_fixture("design/charon-trial/narrow-remainder");
+    fs::write(p.root.join("borrow.click"), "verifying \"widths.rs\";").unwrap();
+    let prepared = p.prepared().unwrap();
+    for ty in ["u8", "u16"] {
+        let claim = format!(
+            "verifying \"widths.rs\"; fn remainder_{ty}(x: {ty}, y: {ty}) -> {ty} {{ requires y != 0{ty}; ensures result == x % y; }}"
+        );
+        C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
+        let invalid = format!(
+            "verifying \"widths.rs\"; fn remainder_{ty}(x: {ty}, y: {ty}) -> {ty} {{ ensures true; }}"
+        );
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a possible zero divisor must be refused");
+        assert!(error.to_string().contains("zero"), "{error:?}");
+    }
+}
+
+#[test]
+#[ignore = "nightly: narrow remainder boundary and missing-premise controls take 1.9s"]
+fn charon_narrow_remainder_guards_reject_missing_premises_and_keep_boundaries() {
+    check_remainder_guards("u8", "255", true);
+    check_remainder_guards("u16", "65535", true);
+}
