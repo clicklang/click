@@ -4604,11 +4604,18 @@ impl<'a> TermRewrite<'a> {
                                 return exhausted_pointer();
                             }
                         }
-                        let result =
-                            PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
-                                application.name().to_string(),
-                                arguments,
-                            ));
+                        let rewritten = SharedPureApplication::intern(
+                            application.name().to_string(),
+                            arguments,
+                        );
+                        // A checked substitution can clear every address bit.
+                        // Use the same null representation as the original
+                        // cast, keeping the displacement outside this block.
+                        let result = if let Some(bits) = rewritten.integer_address_bits() {
+                            Pointer::integer_address(bits.clone()).block
+                        } else {
+                            PointerBlock::PureFunctionApplication(rewritten)
+                        };
                         self.pointer_application_cache.insert(key, result.clone());
                         result
                     }

@@ -223,3 +223,78 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
         }
     }
 }
+
+#[test]
+fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
+    let word = Bitvector32Term::Variable(Variable(912));
+    let replacement = Bitvector32Term::UInt64Constant(1);
+    let mut costs = Vec::new();
+    for depth in [8, 16, 32] {
+        let mut input = Pointer::integer_address(Bitvector32Term::uint64_bitwise_and(
+            word.clone(),
+            Bitvector32Term::UInt64Constant(!3),
+        ));
+        for _ in 0..depth {
+            input = call("pair", vec![argument(input.clone()), argument(input)]);
+        }
+        let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut rewrite = TermRewrite::for_bits(&word, &replacement);
+            let output = rewrite.pointer(&input);
+            assert_eq!(rewrite.refusal(), None);
+            output
+        });
+        // Rewriting retains each C pointer's extent metadata; constructing
+        // a fresh typed null would instead introduce a known null extent.
+        // Check the shared application's shape and selected numeric leaf.
+        let mut leaf = &output;
+        for _ in 0..depth {
+            let PointerBlock::PureFunctionApplication(application) = &leaf.block else {
+                panic!("lost a shared application")
+            };
+            assert_eq!(application.name(), "pair");
+            let [
+                PureFunctionArgument::Value(CValue::Pointer(left)),
+                PureFunctionArgument::Value(CValue::Pointer(right)),
+            ] = application.arguments()
+            else {
+                panic!("lost pointer arguments")
+            };
+            assert!(left == right, "the shared branches must stay identical");
+            leaf = left.pointer();
+        }
+        assert_eq!(leaf, &Pointer::null());
+        costs.push(work);
+    }
+    assert!(costs[0] > 0);
+    for pair in costs.windows(2) {
+        assert!(pair[1] <= 3 * pair[0] + 32, "{costs:?}");
+    }
+}
+
+#[test]
+fn integer_address_rewrite_ignores_unrelated_interned_applications() {
+    let word = Bitvector32Term::Variable(Variable(913));
+    let input = Pointer::integer_address(Bitvector32Term::uint64_bitwise_and(
+        word.clone(),
+        Bitvector32Term::UInt64Constant(!3),
+    ));
+    let replacement = Bitvector32Term::UInt64Constant(1);
+    let mut costs = Vec::new();
+    for size in [0, 64, 256] {
+        let _unrelated = (0..size)
+            .map(|i| {
+                call(
+                    "unrelated",
+                    vec![argument(Pointer::symbolic(Variable(20_000 + i)))],
+                )
+            })
+            .collect::<Vec<_>>();
+        let (output, work) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::for_bits(&word, &replacement).pointer(&input)
+        });
+        assert_eq!(output, Pointer::null());
+        costs.push(work);
+    }
+    assert!(costs[0] > 0);
+    assert_eq!(costs, vec![costs[0]; 3]);
+}

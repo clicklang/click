@@ -526,6 +526,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             assumption();
                                         }
                                         let { sibling: cs, up: cu } = unfold(c);
+                                        have parent != 0 by {
+                                            rewrite(parent == cid);
+                                            assumption();
+                                        }
                                         contradiction(parent == 0);
                                     },
                                     Context::Right(cid, cgp, ccolor, csib, cup) => {
@@ -540,6 +544,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                             assumption();
                                         }
                                         let { sibling: cs, up: cu } = unfold(c);
+                                        have parent != 0 by {
+                                            rewrite(parent == cid);
+                                            assumption();
+                                        }
                                         contradiction(parent == 0);
                                     },
                                     Context::Top => {
@@ -606,10 +614,16 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                         let { left: l, right: r } = unfold(t);
                                         step();
                                         step();
+                                        have node->__rb_parent_color == 1 by { assumption(); }
                                         have (node->__rb_parent_color & 1)
                                             == color_bit(Color::Black) by {
+                                            rewrite(node->__rb_parent_color == 1);
                                             unfold(color_bit(Color::Black));
-                                            solve();
+                                            normalize();
+                                        }
+                                        have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
+                                            rewrite(node->__rb_parent_color == 1);
+                                            normalize();
                                         }
                                         let t = fold(rb_at(node),
                                             { model: RbTree::Node(nid, 0, Color::Black, nleft, nright) },
@@ -714,6 +728,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         ctx_rb(Context::Left(cid, cgp, Color::Black, csib, cup), black_height(t.model), rb_color(t.model)) == 1;
                                                     };
                                                     assumption();
+                                                }
+                                                have (parent->__rb_parent_color & 1) != 0 by {
+                                                    rewrite((parent->__rb_parent_color & 1) == 1);
+                                                    normalize();
                                                 }
                                                 step();
                                                 let c = fold(ctx_at(node, root),
@@ -2337,6 +2355,10 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                         ctx_rb(Context::Right(cid, cgp, Color::Black, csib, cup), black_height(t.model), rb_color(t.model)) == 1;
                                                     };
                                                     assumption();
+                                                }
+                                                have (parent->__rb_parent_color & 1) != 0 by {
+                                                    rewrite((parent->__rb_parent_color & 1) == 1);
+                                                    normalize();
                                                 }
                                                 step();
                                                 let c = fold(ctx_at(node, root),

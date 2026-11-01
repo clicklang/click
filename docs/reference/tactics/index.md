@@ -2111,6 +2111,12 @@ the current goal. The goal becomes the rewritten proposition; no fact changes.
   observed snapshot and load type. An equality whose left side is a whole
   symbolic pointer (`p == q`, `p == 0`) replaces that pointer everywhere,
   including inside `p as uint64`; null's address is the integer zero.
+- Rewriting the word inside an integer-derived pointer rebuilds the pointer
+  in the cast's canonical form. If the rewritten address is constant zero,
+  it becomes null, with any byte displacement preserved. Thus rewriting a
+  stored tagged word to `1` lets `normalize()` close its cleared pointer's
+  equality to null
+  ([`a_rewritten_tagged_null_pointer_normalizes.md`](https://github.com/clicklang/click/blob/master/mdtests/a_rewritten_tagged_null_pointer_normalizes.md)).
 - When exact substitution misses an atomic native equality goal, its two
   operands may match `L` through checked corresponding read leaves, for both
   32-bit and 64-bit reads inside matching arithmetic operators. Alias and

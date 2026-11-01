@@ -36,3 +36,34 @@ proof relied on, or the proof needs updating to state it.
 - The nightly example run passes for `rbtree-insert`, and the cause of the
   `rbtree-erase` and `rbtree-augmented` refusals is either fixed in the same
   change or filed separately.
+
+## Progress after the explicit pointer proof repair
+
+The initial null-parent contradictions now establish `parent != 0` by
+rewriting `parent == cid` and using the unfolded context's `cid != 0`.
+The root recoloring case states the masked parent-pointer fact explicitly.
+Checked rewriting now rebuilds an integer-derived zero address as canonical
+null, which lets that proof normalize
+(`mdtests/a_rewritten_tagged_null_pointer_normalizes.md`). The two black-parent
+branches also state the nonzero condition consumed by the C branch.
+`rbtree_null_parent_helper_verifies` checks the unchanged C helper
+that writes the tagged null parent; the C and contract are unchanged.
+
+The full example still fails later, in the first rotation branch:
+
+```text
+`transport` found no frame evidence carrying its source fact to the target's state
+source: at(before_grandparent_links,
+    ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp)
+target: ((gparent->__rb_parent_color & ~3) as (struct rb_node *)) == ugp
+```
+
+The read is eight bytes at `gparent`. Its two framing walks cross seven and
+seventeen memory steps, then reach the loop-effect snapshot without proving
+the queried bytes separate. The trace also contains the later pointer-field
+stores and four-byte cells seeded by unfolding resources. Whether this is
+another instance of
+[`pointer-field-cells-are-cached-as-words-a-pointer-read-cannot-use.md`](pointer-field-cells-are-cached-as-words-a-pointer-read-cannot-use.md)
+or needs an explicit frame premise is not yet established. Keep this report
+open until the whole insertion example passes; the erase and augmented
+reports remain open too.
