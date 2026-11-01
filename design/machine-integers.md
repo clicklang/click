@@ -686,7 +686,34 @@ Progress:
      of their width over narrow atoms keyed by their bits
      (`Node::MachineNarrow`). The difference graph's narrow domains and the
      widening and narrowing relations land with the producers that need
-     them. No output changes.
+     them. No output changes. The second PR (2026-10-31) makes 8- and
+     16-bit values native: constants, binders (no range facts; the range
+     is the format's), loads (each at its own type, byte R-mem relating
+     the two reads of one byte, a narrow read a load application of its
+     snapshot, address and kind, equal to a stored value of its width) and
+     byte views; K7' (a narrow cast's `int32` and `uint32` widenings meet
+     its masked word, and the two 32-bit widenings of any narrow value are
+     one word, rule K1); the minimal `from_machine` widening relation (a
+     widening's Integer observation is its operand's); and the `Bool`
+     8-bit carrier, whose equality is decided through the two truths
+     (rule L-Eq), a cast's operand or C's `w != 0` at `uint8`. A 32-bit
+     comparison that reads a narrow value reads its widening, and the
+     `int32` certificate reads an 8- or 16-bit comparison as the `int32`
+     comparison of the widenings. Equality-graph width reads are root-only
+     (`root_width`). A promoted `int32` comparison of widenings has one
+     Integer reading, the comparison of its sides' values (`0 <= widen(x)`
+     is `0 <= to_integer(x)`), which the Integer engines, the certificate
+     premise check and `solve` read like any native comparison's. An 8- or
+     16-bit read of a canonical projection is joined to the same read of its
+     recorded source by one indexed edge (`Node::NarrowRead`), as a
+     four-byte read is. Specification and Rust narrow comparisons stay
+     promoted in this PR (maintainer direction, 2026-11-01): they are
+     `int32` comparisons of the widenings, as on master. Native
+     specification and Rust narrow comparisons come in the next PR,
+     together with order and interval reasoning that reads a native narrow
+     fact as a bound on its widening; without that reasoning, interval
+     facts filed on `int32` terms do not see native narrow facts (Rust's
+     `0i16 <= i` against `(i as i32 - 1) as i16`).
   8. Rust native narrow `+ - * & | ^ ! <<` (G4).
   9. The 64-bit relations and the legacy conversions merged into `Cast`.
   10. Generic `T: intn` / `T: uintn` library theorems.
@@ -1200,3 +1227,36 @@ Maintainer direction, 2026-10-30 (native narrow values):
   and `to_integer(widen(v)) == to_integer(v)` is a relation the solver
   knows, O(1) like K8's. Its other normalizations are audited under the
   same principle.
+
+Maintainer direction, 2026-10-31 (native narrow values, PR 2):
+
+- **A `Bool` is carried in 8 bits** (option (i)): its cast `b as uint8`, or
+  the `uint8` constants 0 and 1. A reader that needs a word uses C1's cast
+  at its format (`b as int32`); a carrier that is not a cast or a constant
+  (a loop havoc's variable, a `match` or conditional of carriers) is tested
+  with C's `w != 0` at `uint8`, not normalized. C `_Bool` from an integer is
+  the `BoolCast` of `x != 0`, the test made at the integer's own format.
+- **Byte R-mem.** The `int8` and `uint8` reads of one byte are two loads,
+  each with its own name; the equality graph relates them by the native
+  8-bit sign cast, `s == Cast(UInt8 -> Int8, u)`, when the signed read is
+  interned (one queued entry, no scan). The former "signed read = cast of
+  the unsigned read" encoding is gone. Because 8- and 16-bit values are
+  native, R0 and R-comp apply at every width.
+- **A premise that holds by its format's range alone is available**
+  (`holds_by_format_range`, O(1) at the root): a comparison of one machine
+  value with a constant that every value of its format meets, the value's
+  range being its own format's or, for a 32-bit widening of an 8- or 16-bit
+  value, its source's (`widen(x) >= -128` for an `int8` `x`). A bound past
+  the range is not implied; the context's facts are not consulted.
+
+Maintainer direction, 2026-11-01 (native narrow values, PR 2 scope):
+
+- **Native specification and Rust narrow comparisons are deferred to the
+  next PR.** In PR 2 a specification or Rust comparison of 8- or 16-bit
+  values stays promoted: the signed `int32` comparison of the operands'
+  widenings, the structure master has today. The next PR makes them native
+  together with the order and interval reasoning that reads a native
+  narrow fact as a bound on its widening; the two land together because a
+  native comparison that no interval rule reads loses facts the promoted
+  one supplies (the guarded-definedness transport fixtures, `snprintf`,
+  `memset`, and Rust's `countdown`).
