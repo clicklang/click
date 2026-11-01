@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: 0.6s in the parallel gate"]
 fn unfolded_member_quantifier_keeps_written_pointer_arguments_in_expansion() {
     let source = r#"
         verifying "filled.c";
