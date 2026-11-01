@@ -6197,13 +6197,13 @@ impl ResourceContext {
         if !fact.has_valid_exclusive_access() {
             return false;
         }
+        if self.storage.index.exact.contains_key(fact) {
+            return true;
+        }
         if fact
             .owned_quantity_term()
             .is_some_and(|quantity| resource_quantity_is_zero(quantity, assumptions))
         {
-            return true;
-        }
-        if self.storage.index.exact.contains_key(fact) {
             return true;
         }
         // Exact ownership of a resource definitionally includes its exact

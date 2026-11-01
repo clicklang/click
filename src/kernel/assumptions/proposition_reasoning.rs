@@ -3770,18 +3770,6 @@ impl PureFactContext {
             }
         }
 
-        let fact_comparison =
-            crate::kernel::proof::term_rewrite::TermRewrite::arithmetic_condition_comparison(fact);
-        let target_comparison =
-            crate::kernel::proof::term_rewrite::TermRewrite::arithmetic_condition_comparison(
-                target,
-            );
-        let fact = fact_comparison.as_ref().unwrap_or(fact);
-        let target = target_comparison.as_ref().unwrap_or(target);
-        if fact == target {
-            return true;
-        }
-
         match (fact, target) {
             (
                 ConditionTerm::IntegerEqual(fact_left, fact_right),

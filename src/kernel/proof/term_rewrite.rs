@@ -1610,19 +1610,14 @@ impl<'a> TermRewrite<'a> {
     fn for_arithmetic_comparison() -> Self {
         let mut rewrite = Self::empty();
         rewrite.comparison_arithmetic = true;
+        rewrite.enforce_integer_work_limit = true;
+        // Comparison introduces no substitution or fresh binder.
+        rewrite.source_variables_reserved = true;
         // Normalize the selected scalar read's address too. The read's
         // snapshot and loaded-pointer identities stay opaque; the existing
         // per-scope registry memo shares repeated address terms.
         rewrite.resolve_registered_loads = true;
         rewrite
-    }
-
-    pub(crate) fn arithmetic_condition_comparison(
-        condition: &ConditionTerm,
-    ) -> Option<ConditionTerm> {
-        let mut rewrite = Self::for_arithmetic_comparison();
-        let result = rewrite.condition(condition);
-        (rewrite.refusal().is_none() && result != *condition).then_some(result)
     }
 
     pub(crate) fn arithmetic_comparison(proposition: &Proposition) -> Option<Proposition> {
@@ -3480,6 +3475,9 @@ impl<'a> TermRewrite<'a> {
             }
             IntegerTerm::Machine(value) => {
                 let bits = self.bits(value.value());
+                if self.checked_work_exhausted() {
+                    return exhausted_integer(shared.as_ref());
+                }
                 // The mathematical observation of a machine *constant* is that
                 // constant: `from_machine` folds it and keeps the carrier
                 // whenever the bits are still symbolic. Without this, a rewrite
@@ -5461,8 +5459,22 @@ impl<'a> TermRewrite<'a> {
                     {
                         crate::kernel::machine_integer::range::constant_word(format, &0.into())
                             .expect("zero fits every machine format")
-                    } else {
+                    } else if matches!(
+                        op,
+                        crate::kernel::BitvectorBinaryOp::Machine(
+                            _,
+                            MachineBinaryOp::Add
+                                | MachineBinaryOp::Subtract
+                                | MachineBinaryOp::Multiply
+                                | MachineBinaryOp::Divide
+                                | MachineBinaryOp::Remainder
+                                | MachineBinaryOp::ShiftLeft
+                                | MachineBinaryOp::ShiftRight
+                        )
+                    ) {
                         op.build(left, right)
+                    } else {
+                        op.build_raw(left, right)
                     }
                 }
                 (Some((op, left, right)), _) => op.build_raw(self.bits(left), self.bits(right)),

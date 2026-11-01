@@ -2942,8 +2942,6 @@ fn term_interval_proves(
 }
 
 fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
-    let comparison = crate::kernel::comparison_form(proposition);
-    let proposition = comparison.as_ref().unwrap_or(proposition);
     let (condition, value) = match proposition {
         Proposition::ConditionIs(condition, value) => (condition, *value),
         Proposition::Not(body) => match body.as_ref() {
@@ -3274,6 +3272,13 @@ fn trivially_true_claims(left: &SignedArithmeticClaim, right: &SignedArithmeticC
 }
 
 fn conclusion_matches(value: &CheckedValue, goal: &Proposition) -> bool {
+    if conclusion_matches_exact(value, goal) {
+        return true;
+    }
+    crate::kernel::comparison_form(goal).is_some_and(|goal| conclusion_matches_exact(value, &goal))
+}
+
+fn conclusion_matches_exact(value: &CheckedValue, goal: &Proposition) -> bool {
     match value {
         CheckedValue::Affine(claim) => affine_claim(goal).is_some_and(|expected| {
             charge_claim_pair_work(&expected, claim)

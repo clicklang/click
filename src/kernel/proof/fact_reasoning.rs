@@ -1266,6 +1266,9 @@ pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposit
     if !atomic(left) || !atomic(right) {
         return false;
     }
+    if polarity_equivalent_by(left, right, canonical_order_condition) {
+        return true;
+    }
     let left_comparison = crate::kernel::comparison_form(left);
     let right_comparison = crate::kernel::comparison_form(right);
     polarity_equivalent_by(
@@ -1490,8 +1493,8 @@ pub(crate) fn quantified_equivalent_available_fact(
 }
 
 pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Proposition) -> bool {
-    let left_comparison = crate::kernel::comparison_form(left);
-    let right_comparison = crate::kernel::comparison_form(right);
+    let left_comparison = super::term_rewrite::TermRewrite::arithmetic_comparison(left);
+    let right_comparison = super::term_rewrite::TermRewrite::arithmetic_comparison(right);
     let left = left_comparison.as_ref().unwrap_or(left);
     let right = right_comparison.as_ref().unwrap_or(right);
     // A guarded quantifier matches when the guards are identical and the

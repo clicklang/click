@@ -6124,8 +6124,11 @@ pub(crate) fn listed_premise_holds(
     premise: &Proposition,
     available: impl Fn(&Proposition) -> bool,
 ) -> bool {
-    let comparison = crate::kernel::comparison_form(premise);
-    listed_premise_holds_with(comparison.as_ref().unwrap_or(premise), &available)
+    if listed_premise_holds_with(premise, &available) {
+        return true;
+    }
+    crate::kernel::comparison_form(premise)
+        .is_some_and(|comparison| listed_premise_holds_with(&comparison, &available))
 }
 
 fn listed_premise_holds_with(
