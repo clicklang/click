@@ -176,9 +176,17 @@ fn charge_map_insert(offset: &PointerOffsetTerm, map_len: usize) -> bool {
 /// Charges a 32-bit order premise, signed or `uint32`, and refuses any other
 /// premise.
 fn charge_signed_bound(proposition: &Proposition) -> bool {
+    // A native 8- or 16-bit order is the same fact as the `int32` order of
+    // its widenings (rule K8), which the bound context files with it.
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format:
+                MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16,
             relation:
                 CompareRelation::LessThan
                 | CompareRelation::LessEqual
@@ -451,7 +459,49 @@ fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&Pointer, u64
     condition.as_pointer_alignment()
 }
 
+/// [`condition_identity_as_written`] at fact identity. An Integer
+/// comparison of exact observations reads as its native comparison
+/// (`native_comparison_of_integer_observation`), so a conclusion and a goal
+/// that spell one fact in the two sorts match. Two comparisons at an 8- or
+/// 16-bit identity compare by [`ConditionTerm::comparison_fact`], which
+/// reads a native comparison and the `int32` comparison of its widenings as
+/// one fact (rule K8). Root matches and the charged side comparisons.
 fn condition_identity(left: &ConditionTerm, right: &ConditionTerm) -> bool {
+    let native = |condition: &ConditionTerm| {
+        match crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
+            condition, true,
+        ) {
+            Some((native, true)) => Some(native),
+            _ => None,
+        }
+    };
+    let (left_native, right_native) = (native(left), native(right));
+    let left = left_native.as_ref().unwrap_or(left);
+    let right = right_native.as_ref().unwrap_or(right);
+    if let (Some(left_fact), Some(right_fact)) = (left.comparison_fact(), right.comparison_fact())
+        && (left_fact.0.format().bits() < 32 || right_fact.0.format().bits() < 32)
+    {
+        let side = |left: crate::kernel::primitives::ComparisonSide<'_>,
+                    right: crate::kernel::primitives::ComparisonSide<'_>| {
+            use crate::kernel::primitives::ComparisonSide as S;
+            match (left, right) {
+                (S::Term(left), S::Term(right)) => {
+                    charge_bitvector(left)
+                        && charge_bitvector(right)
+                        && bitvector_equal(left, right)
+                }
+                (left, right) => left == right,
+            }
+        };
+        return left_fact.0 == right_fact.0
+            && left_fact.1 == right_fact.1
+            && side(left_fact.2, right_fact.2)
+            && side(left_fact.3, right_fact.3);
+    }
+    condition_identity_as_written(left, right)
+}
+
+fn condition_identity_as_written(left: &ConditionTerm, right: &ConditionTerm) -> bool {
     match (left, right) {
         (ConditionTerm::PointerValueEqual(a, b), ConditionTerm::PointerValueEqual(c, d)) => {
             charge_pointer(a.pointer())

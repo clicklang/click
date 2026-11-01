@@ -441,6 +441,19 @@ impl PureFactContext {
                         self.condition_facts.get(condition) == Some(value)
                             || self.proves_condition_from_derived_order_facts(condition, *value)
                     }
+                    // A native 8- or 16-bit comparison holds as the signed
+                    // `int32` comparison of its operands' widenings does
+                    // (`narrow_comparison_as_int32`), which the 32-bit
+                    // routes above prove.
+                    || crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(
+                        condition,
+                    )
+                    .is_some_and(|widened| {
+                        self.proves_atomic_without_search_in(
+                            &Proposition::ConditionIs(widened, *value),
+                            premises,
+                        )
+                    })
             }
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::ConditionIs(condition, value) => {
@@ -3667,7 +3680,20 @@ impl PureFactContext {
         ) {
             match proposition {
                 Proposition::ConditionIs(pattern, _) => {
-                    collect_condition_candidates(pattern, target, bound, candidates)
+                    collect_condition_candidates(pattern, target, bound, candidates);
+                    // A native 8- or 16-bit comparison and the `int32`
+                    // comparison of its widenings are one fact (rule K8):
+                    // match the two in their common 32-bit spelling.
+                    let widened =
+                        crate::kernel::machine_integer::comparison::narrow_comparison_as_int32;
+                    if let (Some(_), _) | (_, Some(_)) = (widened(pattern), widened(target)) {
+                        collect_condition_candidates(
+                            &widened(pattern).unwrap_or_else(|| pattern.clone()),
+                            &widened(target).unwrap_or_else(|| target.clone()),
+                            bound,
+                            candidates,
+                        );
+                    }
                 }
                 Proposition::And(left, right) => {
                     collect_proposition_condition_candidates(left, target, bound, candidates);
@@ -3684,10 +3710,10 @@ impl PureFactContext {
         if !matches!(
             condition,
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
+                format,
                 ..
-            }
+            } if format.format().bits() <= 32
         ) {
             let mut variables = BTreeSet::new();
             collect_condition_bitvector_variables(condition, &mut variables);
@@ -3708,6 +3734,19 @@ impl PureFactContext {
     ) -> bool {
         if fact == target {
             return true;
+        }
+        // A native 8- or 16-bit comparison matches as the `int32`
+        // comparison of its operands' widenings, the fact it is one with
+        // (rule K8), as `condition_match_key` files it.
+        let widened = crate::kernel::machine_integer::comparison::narrow_comparison_as_int32;
+        match (widened(fact), widened(target)) {
+            (None, None) => {}
+            (fact_widened, target_widened) => {
+                return self.condition_matches(
+                    fact_widened.as_ref().unwrap_or(fact),
+                    target_widened.as_ref().unwrap_or(target),
+                );
+            }
         }
 
         match (fact, target) {

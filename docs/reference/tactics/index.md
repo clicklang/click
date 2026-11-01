@@ -3855,9 +3855,10 @@ close the exact invariant value and safety obligations, and the ranking
 obligations a `decreases` clause adds after them, as
 `close_invariants() by { ... }` with `solve()` on each member: the bundle's
 conjunctions and guards are descended by `both` and `intro`, and every member
-is closed by `solve()` alone. A member `solve()` does not close as spelled over
-the back edge is stated once more at the iteration entry and closed by
-`solve()` there, which closes an unsigned or 64-bit bound from the guard
+is closed by `solve()` alone, spelled as its clause writes it: the descent
+member of `decreases m` is `m < at(<iteration entry>, m)`, and a tuple's the
+disjunction over pivots with the earlier components tied. This closes an
+unsigned or 64-bit bound and its descent from the guard
 ([`back_edge_closes_an_unsigned_bound_from_the_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md)).
 
 A `preserve` path whose tactics stop inside the body first runs the rest of it

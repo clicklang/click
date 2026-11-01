@@ -434,9 +434,14 @@ fn is_rewrite_equality(kernel: &Proposition) -> bool {
         kernel,
         Proposition::ConditionIs(
             ConditionTerm::Compare {
+                // An 8- or 16-bit equality rewrites at its own width.
                 format: MachineIntegerType::Int32
                     | MachineIntegerType::UInt32
-                    | MachineIntegerType::Int64,
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16,
                 relation: CompareRelation::Equal,
                 ..
             },
@@ -656,8 +661,15 @@ impl<'a> Proof<'a> {
             }
             Proposition::ConditionIs(
                 condition @ (ConditionTerm::IntegerEqual(..)
+                // An 8- or 16-bit equality is the same fact as the `int32`
+                // equality of its widenings (rule K8).
                 | ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    format: MachineIntegerType::Int32
+                        | MachineIntegerType::UInt32
+                        | MachineIntegerType::Int8
+                        | MachineIntegerType::UInt8
+                        | MachineIntegerType::Int16
+                        | MachineIntegerType::UInt16,
                     relation: CompareRelation::Equal,
                     ..
                 }

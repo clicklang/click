@@ -153,6 +153,11 @@ impl PureFactContext {
     }
 
     fn sign_bit_equivalents(&self, condition: &ConditionTerm) -> Option<Vec<ConditionTerm>> {
+        // A native 8- or 16-bit comparison is read as the `int32`
+        // comparison of its operands' widenings, the same fact (rule K8).
+        let widened =
+            crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition);
+        let condition = widened.as_ref().unwrap_or(condition);
         let ConditionTerm::Compare {
             format,
             relation,
@@ -320,8 +325,9 @@ impl ConditionTerm {
     /// Whether this is an `int32` comparison of an 8- or 16-bit conversion
     /// between the two signednesses of one width. One match on the root.
     pub(crate) fn names_narrow_signedness_cast(&self) -> bool {
+        // A native 8- or 16-bit comparison names the cast at its own format.
         let ConditionTerm::Compare {
-            format: Ty::Int32,
+            format,
             left,
             right,
             ..
@@ -329,6 +335,9 @@ impl ConditionTerm {
         else {
             return false;
         };
+        if *format != Ty::Int32 && format.format().bits() >= 32 {
+            return false;
+        }
         let sign_cast = |term: &Bitvector32Term| {
             matches!(
                 term,

@@ -1927,6 +1927,14 @@ impl EqualityGraph {
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
+        // A native 8- or 16-bit comparison is also admitted as the `int32`
+        // comparison of its widenings, the same fact (rule K8), so a
+        // rebuild from the admitted inputs restores both truths.
+        if let Some(widened) =
+            crate::kernel::machine_integer::comparison::narrow_fact_widening(condition)
+        {
+            self.add_condition(&widened, value);
+        }
         if let ConditionTerm::IntegerEqual(a, b) = condition
             && value
         {

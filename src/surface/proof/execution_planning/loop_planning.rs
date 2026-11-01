@@ -85,6 +85,27 @@ fn loop_invariant_surfaces(
         })
 }
 
+/// The loop's declared `decreases` components, as the resolved clause holds
+/// them. Empty when no clause declares a ranking measure or a clause's
+/// bindings do not resolve; the descent member then has no written spelling.
+fn loop_ranking_surfaces(
+    environment: &ExecutionProofEnvironment<'_>,
+    loop_index: usize,
+) -> Vec<ContractExpression> {
+    environment
+        .function_block
+        .structural_clauses()
+        .for_loop(loop_index)
+        .into_iter()
+        .filter_map(|clause| clause.resolved().ok())
+        .find_map(|clause| {
+            clause
+                .decreases()
+                .map(|measure| measure.components().to_vec())
+        })
+        .unwrap_or_default()
+}
+
 /// Pair the kernel's selected loop-head clauses with generated spellings that
 /// explicitly read the iteration-entry snapshot. The written, unqualified
 /// clauses retain their source meaning in the enclosing presentation map.
@@ -1090,6 +1111,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             })),
             checks: invariant_checks.to_vec(),
             ranking_measures: ranking_measures.to_vec(),
+            ranking_surfaces: loop_ranking_surfaces(environment, loop_index),
             structural_measure: structural_measure.map(str::to_string),
             declared_invariant_surfaces: invariant_surfaces.clone(),
             loop_head_premises: Vec::new(),

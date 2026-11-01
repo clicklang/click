@@ -229,11 +229,12 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
         terms_equal_with_load_atoms(ll, rl, loads_match)
             && terms_equal_with_load_atoms(lr, rr, loads_match)
     };
-    if let (Some((left_operator, ll, lr)), Some((right_operator, rl, rr))) = (
-        left.as_bitvector_comparison(),
-        right.as_bitvector_comparison(),
-    ) {
-        return left_operator == right_operator && terms(ll, rl, lr, rr);
+    // Compared at the fact identity: a native 8- or 16-bit comparison and
+    // the `int32` comparison of its widenings are one fact.
+    if let (Some((left_operator, ll, lr)), Some((right_operator, rl, rr))) =
+        (left.as_fact_comparison(), right.as_fact_comparison())
+    {
+        return left_operator == right_operator && terms(&ll, &rl, &lr, &rr);
     }
     match (left, right) {
         (ConditionTerm::PointerOffsetEqual(ll, lr), ConditionTerm::PointerOffsetEqual(rl, rr)) => {
@@ -386,6 +387,17 @@ pub(in crate::kernel) fn condition_match_key(
     condition: &ConditionTerm,
 ) -> Option<crate::kernel::primitives::ConditionMatchKey> {
     use crate::kernel::primitives::ConditionMatchKey;
+    // A native 8- or 16-bit comparison is keyed as the `int32` comparison
+    // of its operands' widenings: the two are one fact (rule K8), so both
+    // spellings share a bucket.
+    if let Some(widened) =
+        crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition)
+    {
+        return match widened {
+            ConditionTerm::Compare { .. } => condition_match_key(&widened),
+            _ => None,
+        };
+    }
     let canonical = crate::kernel::eval::canonical_term;
     let ordered = |left: Bitvector32Term, right: Bitvector32Term| {
         if left <= right {
@@ -2828,7 +2840,24 @@ impl PureFactContext {
         self.content_fingerprint = fingerprint;
     }
 
+    /// [`Self::adjust_signed_order_bound_spelled`] for the fact, and for a native 8- or
+    /// 16-bit comparison also for the `int32` comparison of its widenings,
+    /// the same fact (rule K8), which the index reads.
     fn adjust_signed_order_bound(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
+        self.adjust_signed_order_bound_spelled(condition, value, insert);
+        if let Some(widened) =
+            crate::kernel::machine_integer::comparison::narrow_fact_widening(condition)
+        {
+            self.adjust_signed_order_bound_spelled(&widened, value, insert);
+        }
+    }
+
+    fn adjust_signed_order_bound_spelled(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+    ) {
         self.checked_order_bounds.adjust(condition, value, insert);
         self.order_facts_by_lower.adjust(condition, value, insert);
         self.signed_variable_chains.adjust(condition, value, insert);
@@ -3647,7 +3676,24 @@ impl PureFactContext {
         self.equality_graph.are_uint64_equal(left, right)
     }
 
+    /// [`Self::adjust_int32_graph_equality_spelled`] for the fact, and for a native 8- or
+    /// 16-bit comparison also for the `int32` comparison of its widenings,
+    /// the same fact (rule K8), which the index reads.
     fn adjust_int32_graph_equality(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+    ) {
+        self.adjust_int32_graph_equality_spelled(condition, value, insert);
+        if let Some(widened) =
+            crate::kernel::machine_integer::comparison::narrow_fact_widening(condition)
+        {
+            self.adjust_int32_graph_equality_spelled(&widened, value, insert);
+        }
+    }
+
+    fn adjust_int32_graph_equality_spelled(
         &mut self,
         condition: &ConditionTerm,
         value: bool,
@@ -4724,7 +4770,24 @@ impl PureFactContext {
     /// used to read them from a scan: the left side names the right side's
     /// constant, and the right side, unless it is the left side itself,
     /// names the left side's.
+    /// [`Self::adjust_exact_constant_equality_spelled`] for the fact, and for a native 8- or
+    /// 16-bit comparison also for the `int32` comparison of its widenings,
+    /// the same fact (rule K8), which the index reads.
     fn adjust_exact_constant_equality(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+    ) {
+        self.adjust_exact_constant_equality_spelled(condition, value, insert);
+        if let Some(widened) =
+            crate::kernel::machine_integer::comparison::narrow_fact_widening(condition)
+        {
+            self.adjust_exact_constant_equality_spelled(&widened, value, insert);
+        }
+    }
+
+    fn adjust_exact_constant_equality_spelled(
         &mut self,
         condition: &ConditionTerm,
         value: bool,
@@ -4957,7 +5020,24 @@ impl PureFactContext {
         self.equality_graph.recorded_uint64_equals(term)
     }
 
+    /// [`Self::adjust_scalar_evidence_input_spelled`] for the fact, and for a native 8- or
+    /// 16-bit comparison also for the `int32` comparison of its widenings,
+    /// the same fact (rule K8), which the index reads.
     fn adjust_scalar_evidence_input(
+        &mut self,
+        condition: &ConditionTerm,
+        value: bool,
+        insert: bool,
+    ) {
+        self.adjust_scalar_evidence_input_spelled(condition, value, insert);
+        if let Some(widened) =
+            crate::kernel::machine_integer::comparison::narrow_fact_widening(condition)
+        {
+            self.adjust_scalar_evidence_input_spelled(&widened, value, insert);
+        }
+    }
+
+    fn adjust_scalar_evidence_input_spelled(
         &mut self,
         condition: &ConditionTerm,
         value: bool,

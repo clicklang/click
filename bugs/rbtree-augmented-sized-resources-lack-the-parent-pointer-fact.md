@@ -120,3 +120,21 @@ read. All three selected proofs in
 `rbtree_size_insert_mirrored_color_flip.click` verify as well. Its C, contracts,
 resources, and verifier are unchanged by this repair. The other sidecars and
 full-directory audit still leave this broader report open.
+
+## Root rotation
+
+All three selected proofs in `rbtree_size_insert_rotation.click` now verify.
+The proof carries the newly null left child across the following child-link
+store and parent-update helper, and frames the unchanged right child and
+promoted node's left link across the rotation. The saved old left-child alias
+identifies the helper's write target. Empty child resources use the established
+null pointer directly, and the promoted root's typed null-parent equality is
+rewritten from its tag value of one before folding the rotated tree.
+
+The mirrored right-right root rotation now has the corresponding explicit
+framing, with left and right exchanged and the old right-child alias identifying
+the parent. All three selected proofs in
+`rbtree_size_insert_mirrored_rotation.click` verify too.
+
+These repairs leave the C, contracts, resources, and verifier unchanged. The
+other insertion sidecars and full-directory audit still leave this report open.
