@@ -55,13 +55,7 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
     {
         return None;
     }
-    let as_byte = |value: &CValue| match value {
-        CValue::UInt8(bits) | CValue::Int8(bits) => Some(Bitvector32Term::bitwise_and(
-            bits.clone(),
-            Bitvector32Term::Constant(0xFF),
-        )),
-        _ => None,
-    };
+    let as_byte = byte_word;
     let incoming = as_byte(stored)?;
     let start = Pointer {
         block: pointer.block.clone(),
@@ -81,6 +75,25 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
         );
     }
     Some((start, CValue::UInt32(assembled)))
+}
+
+/// The 32-bit word of a stored byte, `0..=255`: the zero extension of its
+/// eight bits, `uint8` read directly and `int8` through its conversion to
+/// `uint8`. `None` for a value that is not a byte.
+fn byte_word(value: &CValue) -> Option<Bitvector32Term> {
+    use crate::kernel::MachineIntegerType as Ty;
+    let byte = match value {
+        CValue::UInt8(bits) => bits.clone(),
+        CValue::Int8(bits) => {
+            Bitvector32Term::machine_integer_cast(Ty::Int8, Ty::UInt8, bits.clone())
+        }
+        _ => return None,
+    };
+    Some(Bitvector32Term::machine_integer_cast(
+        Ty::UInt8,
+        Ty::Int32,
+        byte,
+    ))
 }
 
 /// An integer cell that contains a one-byte access without starting at it.
@@ -178,38 +191,46 @@ pub(in crate::kernel) fn containing_integer_cell(
 }
 
 /// Byte `byte` of an integer cell's little-endian representation, as the
-/// zero-extended 32-bit term of an `unsigned char`: `(v >> 8k) & 0xFF`.
+/// `unsigned char` it is: the conversion to `uint8` of `v >> 8k`, a native
+/// 8-bit term. A 16-bit value is read through its 32-bit widening, whose
+/// low sixteen bits are its representation whatever its signedness.
 pub(in crate::kernel) fn integer_cell_byte(value: &CValue, byte: u32) -> Option<Bitvector32Term> {
+    use crate::kernel::MachineIntegerType as Ty;
     let value = value.numeric_value();
     let width = integer_cell_width(value)?;
     if byte >= width {
         return None;
     }
     let shift = 8 * byte;
+    let word = |term: Bitvector32Term| {
+        let shifted = if shift == 0 {
+            term
+        } else {
+            Bitvector32Term::logical_shift_right(term, Bitvector32Term::Constant(shift))
+        };
+        Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, shifted)
+    };
     Some(match value {
-        CValue::Int16(term) | CValue::UInt16(term) | CValue::Int32(term) | CValue::UInt32(term) => {
-            // A 16-bit value's 32-bit term is its sign or zero extension, so
-            // its low sixteen bits are its representation either way.
-            Bitvector32Term::bitwise_and(
-                Bitvector32Term::logical_shift_right(
-                    term.clone(),
-                    Bitvector32Term::Constant(shift),
-                ),
-                Bitvector32Term::Constant(0xFF),
-            )
-        }
+        CValue::Int16(term) | CValue::UInt16(term) => word(Bitvector32Term::machine_integer_cast(
+            Ty::from_c_type(value.c_type())?,
+            Ty::UInt32,
+            term.clone(),
+        )),
+        CValue::Int32(term) | CValue::UInt32(term) => word(term.clone()),
         CValue::Int64(term) | CValue::UInt64(term) => {
             let bits = match value {
                 CValue::Int64(_) => Bitvector32Term::uint64_from_int64(term.clone()),
                 _ => term.clone(),
             };
-            Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_bitwise_and(
+            let shifted = if shift == 0 {
+                bits
+            } else {
                 Bitvector32Term::uint64_logical_shift_right(
                     bits,
                     Bitvector32Term::UInt64Constant(u64::from(shift)),
-                ),
-                Bitvector32Term::UInt64Constant(0xFF),
-            ))
+                )
+            };
+            Bitvector32Term::machine_integer_cast(Ty::UInt64, Ty::UInt8, shifted)
         }
         _ => return None,
     })
@@ -217,18 +238,23 @@ pub(in crate::kernel) fn integer_cell_byte(value: &CValue, byte: u32) -> Option<
 
 /// The value a one-byte load of `value_type` reads from byte `byte` of an
 /// integer cell. An `unsigned char` reads the byte; a `signed char` reads its
-/// sign extension, which is decided here only for a constant byte. A
-/// symbolic signed byte has no sign-extension term to use, so it is refused.
+/// two's-complement reading, which is decided here only for a constant
+/// byte; a symbolic signed byte view is refused, as before native bytes.
 pub(in crate::kernel) fn byte_view_load_value(
     cell: &ContainingIntegerCell,
     value_type: CType,
 ) -> Option<CValue> {
+    use crate::kernel::MachineIntegerType as Ty;
     let byte = integer_cell_byte(&cell.value, cell.byte)?;
     match value_type {
         CType::UInt8 => Some(CValue::UInt8(byte)),
-        CType::Int8 => byte
-            .as_const()
-            .map(|byte| CValue::Int8(Bitvector32Term::Constant(byte as u8 as i8 as i32 as u32))),
+        CType::Int8 => Ty::UInt8.constant_from_term(&byte).map(|_| {
+            CValue::Int8(Bitvector32Term::machine_integer_cast(
+                Ty::UInt8,
+                Ty::Int8,
+                byte,
+            ))
+        }),
         _ => None,
     }
 }
@@ -249,13 +275,7 @@ pub(in crate::kernel) fn integer_cell_with_byte(
     if width <= 1 || cell.byte >= width {
         return None;
     }
-    let byte = match stored {
-        CValue::UInt8(term) => term.clone(),
-        CValue::Int8(term) => {
-            Bitvector32Term::bitwise_and(term.clone(), Bitvector32Term::Constant(0xFF))
-        }
-        _ => return None,
-    };
+    let byte = byte_word(stored)?;
     let shift = 8 * cell.byte;
     // `byte < width <= 8`, so the 64-bit shift is in range; the 32-bit mask
     // is only used by cells of at most four bytes, where it is too.
@@ -267,8 +287,18 @@ pub(in crate::kernel) fn integer_cell_with_byte(
             Bitvector32Term::unsigned_shift_left(byte.clone(), Bitvector32Term::Constant(shift)),
         )
     };
+    use crate::kernel::MachineIntegerType as Ty;
     Some(match cell.value.numeric_value() {
-        CValue::UInt16(term) => CValue::UInt16(update32(term)),
+        // A 16-bit cell is updated in its 32-bit widening and converted back.
+        CValue::UInt16(term) => CValue::UInt16(Bitvector32Term::machine_integer_cast(
+            Ty::UInt32,
+            Ty::UInt16,
+            update32(&Bitvector32Term::machine_integer_cast(
+                Ty::UInt16,
+                Ty::UInt32,
+                term.clone(),
+            )),
+        )),
         CValue::Int32(term) => CValue::Int32(update32(term)),
         CValue::UInt32(term) => CValue::UInt32(update32(term)),
         CValue::UInt64(term) => CValue::UInt64(Bitvector32Term::uint64_bitwise_or(
@@ -282,9 +312,10 @@ pub(in crate::kernel) fn integer_cell_with_byte(
             ),
         )),
         CValue::Int16(term) => {
-            let (value, byte) = (term.as_const()?, byte.as_const()?);
+            let value = Ty::Int16.constant_from_term(term)?.bits() as u32;
+            let byte = byte.as_const()?;
             let bits = (value & 0xFFFF & mask32) | ((byte & 0xFF) << shift);
-            CValue::Int16(Bitvector32Term::Constant(bits as u16 as i16 as i32 as u32))
+            crate::kernel::int16(bits as u16 as i16 as i32 as u32)
         }
         CValue::Int64(term) => {
             let (value, byte) = (term.int64_as_const()?, byte.as_const()?);

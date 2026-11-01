@@ -478,14 +478,14 @@ fn scalar_lease_supported_unsigned_widths_execute_and_recover_current_contents()
         (
             CType::UInt8,
             CType::UInt8Pointer,
-            CValue::UInt8(1.into()),
-            CValue::UInt8(7.into()),
+            crate::kernel::uint8(1),
+            crate::kernel::uint8(7),
         ),
         (
             CType::UInt16,
             CType::UInt16Pointer,
-            CValue::UInt16(1.into()),
-            CValue::UInt16(7.into()),
+            crate::kernel::uint16(1),
+            crate::kernel::uint16(7),
         ),
         (
             CType::UInt32,

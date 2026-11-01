@@ -226,7 +226,7 @@ fn wide_scalar_boolean_cast_observes_high_bits_without_narrowing() {
     ] {
         assert_eq!(
             evaluated(c_cast(input, CType::Bool)),
-            CExpressionOutcome::Value(CValue::Bool(Bitvector32Term::Constant(expected)))
+            CExpressionOutcome::Value(CValue::bool_constant(expected == 1))
         );
     }
 }

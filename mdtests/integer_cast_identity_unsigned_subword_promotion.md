@@ -25,8 +25,6 @@ void store_lane(uint16 *out, uint32 value) {
         premise 1: to_integer(old(value)) <= 65535 => to_integer(old(value)) <= 65535;
         integer_cast_identity bounds [0, 1] => to_integer(*out) == to_integer(old(value)); conclusion 0;
     } }
-    have 0 <= to_integer(*out) by { rewrite(to_integer(*out) == to_integer(old(value))); assumption(); }
-    have to_integer(*out) <= 65535 by { rewrite(to_integer(*out) == to_integer(old(value))); assumption(); }
     have to_integer(*out as int32) == to_integer(*out) by { arithmetic_certificate rules {
         premise 0: 0 <= to_integer(*out) => 0 <= to_integer(*out);
         premise 1: to_integer(*out) <= 65535 => to_integer(*out) <= 65535;

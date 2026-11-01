@@ -103,8 +103,13 @@ pub(crate) fn overflow_fact_of_integer_bound(
                     source: machine.ty(),
                     destination: ty,
                 };
-                [word, widened]
+                // A value of another width is never `ty`'s word as written:
+                // its word in `ty` is its widening, a node of its own.
+                let as_written =
+                    (machine.ty().format().bits() == ty.format().bits()).then_some(word);
+                as_written
                     .into_iter()
+                    .chain([widened])
                     .find(|word| IntegerTerm::from_machine(ty, word.clone()).as_ref() == Some(side))
             }
             IntegerTerm::Constant(value) => range::constant_word(ty, value),

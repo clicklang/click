@@ -130,7 +130,15 @@ fn truncation_of_promoted_arithmetic_is_linear() {
         });
         work.push(units);
     }
-    assert_linear("narrow truncation", &work, 150);
+    // About 211 units per element at every size step (measured
+    // 2026-10-31). Each level of each chain interns, beside its 32-bit
+    // operator, a native 8-bit cast of its own width, the R-dist 8-bit
+    // operator over the casts of its operands, and for each new cast its
+    // `int32` and `uint32` widenings joined with its rule-K7' masked word.
+    // Under the former 32-bit carrier the cast was one node joined with its
+    // word, so the slope was below 150. The added work is those nodes'
+    // interning, unions and reindexing, constant per node.
+    assert_linear("narrow truncation", &work, 230);
 }
 
 #[test]

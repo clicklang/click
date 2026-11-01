@@ -10,7 +10,12 @@ use super::*;
 fn narrowed_cast_identity_work_is_independent_of_unrelated_facts() {
     let _session = crate::kernel::VerificationSession::enter();
     let x = Bitvector32Term::Variable(Variable(170_004));
-    let byte = Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::UInt8, x.clone());
+    // The narrowing's widening is its word.
+    let byte = Bitvector32Term::machine_integer_cast(
+        Ty::UInt8,
+        Ty::Int32,
+        Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::UInt8, x.clone()),
+    );
     let mut work = Vec::new();
     for unrelated in [4u32, 64, 1024] {
         let mut context = PureFactContext::new()

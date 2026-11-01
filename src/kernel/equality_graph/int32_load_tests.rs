@@ -414,9 +414,10 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
     );
 }
 
-/// Rule K8 as a relation: a sum of the 32-bit widenings of `n` narrow
-/// loads is interned with constant work per widening (one node and one
-/// union each), and equals the sum of the loads' words, at every size.
+/// Rule K8 as a relation: a sum of the `int32` widenings of `n` narrow
+/// loads is interned with constant work per widening (its node and its
+/// `uint32` sibling's, one union each, rule K1), and equals the sum of the
+/// loads' `uint32` widenings, the same words, at every size.
 #[test]
 fn widening_chains_are_related_with_constant_work_per_widening() {
     let _session = crate::kernel::VerificationSession::enter();
@@ -437,11 +438,16 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
     let sizes = [8_u64, 32, 128, 512];
     let mut samples = Vec::new();
     for size in sizes {
+        let word = |value: Bitvector32Term| Bitvector32Term::MachineIntegerCast {
+            value: Box::new(value),
+            source: MachineIntegerType::UInt8,
+            destination: MachineIntegerType::UInt32,
+        };
         let mut widened = widen(read(0));
-        let mut words = read(0);
+        let mut words = word(read(0));
         for index in 1..size {
             widened = binary_node!(Int32, Add, Box::new(widened), Box::new(widen(read(index))));
-            words = binary_node!(Int32, Add, Box::new(words), Box::new(read(index)));
+            words = binary_node!(Int32, Add, Box::new(words), Box::new(word(read(index))));
         }
         let mut graph = EqualityGraph::default();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {

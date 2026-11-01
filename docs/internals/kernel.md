@@ -590,100 +590,63 @@ comparisons, shifts, and bitwise operators, assignments, and returns.
 
 ### One meaning for a narrow value
 
-A term of an 8- or 16-bit format (`int8`, `uint8`, `int16`, `uint16`) has a
-32-bit carrier word that is the canonical
-element of its format: the sign extension of a signed value, the zero
-extension of an unsigned one. `to_integer` of the term is that value, and no
-rule reads "the low bits of a word". Producers keep the invariant; readers
-rely on it:
+A term of an 8- or 16-bit format (`int8`, `uint8`, `int16`, `uint16`) is a
+value of its own width (`CarrierWidth::Bits8`, `Bits16`), not a 32-bit word
+(step 7 of `design/machine-integers.md`; maintainer directions of
+2026-10-30, 2026-10-31 and 2026-11-01). `to_integer` of it is its value in
+its format, and its range is its format's: no range fact is filed for it.
 
-- a constant is its extended word;
-- a load of a narrow kind, or the variable naming one, reads the extension
-  of the stored value;
-- every conversion into a narrow format is a `MachineIntegerCast` node (or
-  `IntegerToMachine` from an Integer), whose word is the extension of the
-  converted value. C, a specification's cast, and C++20 or Rust `as`
-  convert modulo 2^N and owe nothing, and all of them build the same node,
-  from the conversion table (`machine_integer::conversion::lower`,
-  `convert_term`). Its word is the mask of its operand's word (rule K7,
-  below), which the e-graph knows with no fact. A checked (`Standard`)
-  narrowing, which Rust's checked narrow arithmetic lowers to, owes the
-  destination range as obligations and files, beside them, the certified
-  identity `to_integer(conv(w)) == to_integer(w)`, which holds exactly where
-  the obligations do (`checked_narrowing_identity`). For an operand of at
-  most 32 bits, which is its own value's extension, it also files the word
-  identity `conv(w) == w`, the form a comparison of words takes, so Rust's
-  `ensures result == x / y` on `i8` closes as it did when the result was
-  the operand's word;
-- a narrow binder (a parameter, a theorem or quantifier binder, or a value
-  a loop or call produced) is a fresh variable whose range is stated where
-  it is introduced, below; that range makes its word the canonical carrier.
+- A constant is a native `MachineIntegerConstant` of its format; the
+  equality graph keys narrow constant atoms by their bits at the unsigned
+  format, so `int8` -56 and `uint8` 200 are one node, and folds a cast of a
+  constant class to the destination's constant.
+- A binder (a parameter, a theorem or quantifier binder, a value a loop or
+  call produced) is a variable at its format; its range is its format's.
+  A premise that holds by that range alone (`0 <= x` for a `uint8` `x`, or
+  `widen(x) >= -128` for an `int8` `x`) is available to every `using` list
+  (`holds_by_format_range`, one match at the root); a goal that holds by
+  it is closed by `normalize()`.
+- Every narrow load is its own load at its own type: the read's variable is
+  registered at its kind, the equality graph names it by its exact cell,
+  and it is a load application of its snapshot, address and kind
+  (`Application::NarrowLoad`), equal to a stored value of its width
+  (`CellRead::Narrow`). The `int8` and `uint8` reads of one byte are two
+  loads related by the 8-bit sign cast (byte R-mem). A read of a canonical
+  projection is joined to the same read of its recorded source by one
+  indexed edge (`Node::NarrowRead`), as a four-byte read is. Byte views
+  produce `(v >> 8k)` as `uint8`.
+- Every conversion into a narrow format is a `MachineIntegerCast` node (or
+  `IntegerToMachine` from an Integer), from the conversion table
+  (`machine_integer::conversion::lower`, `convert_term`). A checked
+  (`Standard`) narrowing owes the destination range as obligations and
+  files the certified identity `to_integer(conv(w)) == to_integer(w)`
+  beside them (`checked_narrowing_identity`).
+- A 32-bit view of a narrow value is its widening, `Cast(S -> int32, v)`,
+  related to `v` by value (K8, a relation across widths), never merged with
+  it: `IntegerTerm::from_machine` reads a widening's observation as its
+  operand's, and `integer_cast_identity` accepts the reflexive
+  `to_integer(widened) == to_integer(x)` with its bounds checked at the
+  observation's own format.
 
-A word canonical for a narrow format is canonical for every format of at
-most 32 bits that contains it, so widening needs no premise: a promotion
-into `int32` or `uint32` is a `MachineIntegerCast` whose word is its
-operand's (rule K8, peeled by `word32` as σ is), and a 64-bit widening
-extends the word. `integer_cast_identity`
-accepts `to_integer(widened) == to_integer(x)` for a narrow `x` read at a
-containing format through the same word or its 32-to-64-bit extension,
-when that word is built as one of the forms above, so a term that merely
-claims a narrow format is not promoted (a zero-extended `0xffff` read as
-`int16` is negative, not `65535`). The kernel does not take a binder's
-canonicity on trust: a widening of an unregistered variable cites, as its
-two bounds, the range facts the binder's introduction filed, the native
-comparisons `w >= lo` and `w <= hi` (written `x as int32 >= lo`), which the
-checker reads as `lo <= int32(w)` and `int32(w) <= hi` and requires inside
-the source's range; bounds on the narrow observation alone are refused, and
-a variable nested inside another form is not a carrier to this rule
-(`narrow_word_is_syntactic_carrier`, `narrow_binder_range_facts`). `solve`
-and the planner cite those facts exactly as filed, and plan the identity
-by matching the word
-(`mdtests/auto_widens_a_narrow_value_into_a_containing_type.md`,
-`mdtests/auto_widens_a_narrow_value_to_64_bits.md`,
-`mdtests/integer_cast_identity_widens_a_narrow_value.md`). A narrowing still
-needs its operand's range
-(`mdtests/a_narrowing_conversion_without_its_range_is_not_its_operand.md`),
-and a conversion into a type that does not contain the source is not a
-widening
-(`mdtests/a_sign_changing_conversion_of_a_narrow_value_is_not_a_widening.md`).
+C compares narrow values through their promotions, which is its structure:
+a C comparison of bytes is the signed `int32` comparison of the widenings.
+In this PR a specification or Rust comparison of narrow values is promoted
+the same way (maintainer direction, 2026-11-01); native specification and
+Rust comparisons come with the order and interval reasoning that reads a
+native narrow fact as a bound on its widening. A promoted comparison of
+widenings has one Integer reading, the comparison of its sides' values
+(`machine_integer::comparison::integer_readings_with_promotions`):
+`0 <= widen(x)` is `0 <= to_integer(x)`. The Integer engines
+(`integer_affine_claims`), the certificate's premise check and the smart
+planner's spelling read it like a native comparison's reading. The
+certificate checker reads an 8- or 16-bit comparison as the `int32`
+comparison of the widenings (`narrow_comparison_as_int32`).
 
-Debug builds check the invariant where values and conditions enter the
-kernel's state, beside the width checks above
-(`src/kernel/primitives/term_width/narrow.rs`): a narrow value, a narrow
-observation inside a condition, or the narrow operand of a conversion
-whose word is not built as one of the forms above is refused. A variable at
-a narrow format is accepted as a binder; its range comes from its
-introduction.
+A universal over a promoted comparison of a read instantiates against a
+goal's read through the widening: `guided_forall_condition_candidates`
+matches a conversion node against the same conversion structurally, one
+node per step (`mdtests/byte_slice_range_predicates.md`).
 
-A narrow comparison takes the native 32-bit form only when that form's
-Integer reading, an `int32` observation of the word, normalizes back to the
-same narrow observation (`IntegerTerm::from_machine` does so for a narrow
-load or conversion). A binder's word does not record its format, so a
-comparison of a narrow binder keeps its Integer form; this is a spelling
-choice, not a soundness condition.
-
-The range (`0 <= x` and `x <= 255` for `uint8`, with the unsigned bound
-beside them for an unsigned type) has one definition,
-`c_narrow_integer_range_facts`, and is stated where the value is introduced,
-never where it is used:
-
-- a narrow parameter's range is an entry fact of the function, so a claim
-  may name the parameter without any C use of it (a `bool` parameter is a
-  `Bool` binder, and its cast's C1b range facts are filed the same way by
-  `c_bool_cast_range_facts`);
-- every other narrow value a program expression holds (a loaded cell, a local
-  a loop or a call gave a fresh value) enters it through the lvalue read
-  (`read_c_lvalue_paths`) or as a value the kernel substituted into the
-  expression (`CExpression::Value`). Those two points file the range as
-  certified path facts unless the context already holds or decides it.
-
-The read's facts are certified: the step's theorem concludes them, and no
-reader of the step owes a derivation of them. They are also public, so a
-prerequisite a step leaves to the proof (a file-scope subscript check, the
-owned-footprint check of a store) reads the range beside the source's own
-tests. A specification read names a value the program produced and files
-nothing. Promotions, casts, and the return conversion state no range of their
-own.
 Scalar `uint32`
 addition, subtraction, and multiplication use the same 32-bit operator
 nodes as `int32`, without signed overflow obligations: the operators read
@@ -760,9 +723,11 @@ the widths a rule supports; it asks the module
 | Conversion | `conversion::cast` and the narrow-widening helpers | a cast preserves a value its destination holds; a widening needs no premise |
 | Conversion table | `conversion::lower`, `convert_term`, `convert_value` | the node a conversion from `S` to `F` builds in every language, and whether a specification's conversion owes the range |
 | Usual arithmetic conversions | `conversion::usual_arithmetic_format` | C11 6.3.1.8 in LP64: the format two integer operands are converted to, after promoting narrow formats to `int32` |
-| Narrow-widening word (K8, a relation) | `primitives::is_narrow_widening32`, `Bitvector32Term::narrow_widening32_operand`; the e-graph's `Int32Unary::Cast` union, the difference graph's `link_parts` and `structural_interval`; still peeled by `is_word_cast32`, `Bitvector32Term::word32` inside operators until the peel goes | the word of `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` is `v`'s: the widening node is in `v`'s class, and either 32-bit reading of it is the same reading of `v` |
-| Native narrow nodes | `CarrierWidth::Bits8`, `Bits16`, `CarrierWidth::native`, `is_native_narrow_operator`; `Bitvector32Term::narrow_constant`, `machine_binary`, `machine_unary`; the e-graph's `Node::MachineNarrow` | an 8- or 16-bit operator `+ - * & \| ^ << ~` or constant is a value of its own width, `(a op b) mod 2^N`; nothing produces one yet |
-| Narrow-cast word (K7) | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node` | the word of `Cast(S -> F, x)` into an 8- or 16-bit `F` is `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word |
+| Narrow widening (K8, a relation) | `primitives::is_narrow_widening32`, `Bitvector32Term::narrow_widening32_operand`; the e-graph's value link and `join_widening_sibling`; the difference graph's `link_parts` and `structural_interval`; `IntegerTerm::from_machine` | `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` has `v`'s value: `to_integer(widen(v)) == to_integer(v)`, a link with `v`'s range, never a union across widths; the `int32` and `uint32` widenings of one value are one word (K1) |
+| Native narrow nodes | `CarrierWidth::Bits8`, `Bits16`, `CarrierWidth::native`, `is_native_narrow_operator`; `Bitvector32Term::narrow_constant`, `machine_binary`, `machine_unary`; the e-graph's `Node::MachineNarrow` and `narrow_constants` | an 8- or 16-bit operator `+ - * & \| ^ << ~`, constant, binder or load is a value of its own width, `(a op b) mod 2^N`; narrow constant atoms are keyed by their unsigned bits, a cast of a constant class folds to the destination's constant, and a narrow equation is decided by one class (true) or two different constants (false) |
+| Narrow-cast word (K7') | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node`, `narrow_cast_word` | the `int32` and `uint32` widenings of `Cast(S -> F, x)` into an 8- or 16-bit `F` meet `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word (a narrow operand is widened first) |
+| Narrow loads and byte R-mem | `Application::NarrowLoad`, `CellRead::Narrow`, `Node::NarrowRead`, `enqueue_narrow_load`, `enqueue_signed_byte_read` | an 8- or 16-bit read is a load application of its snapshot, address and kind, equal to a stored value of its width and, for a canonical projection, to the same read of its recorded source (one indexed edge); the `int8` read of a byte is `Cast(UInt8 -> Int8, u)` of its `uint8` read `u` |
+| Promoted comparison reading | `comparison::integer_readings_with_promotions`, `integer_comparisons_of_widenings`; `integer_affine_claims` | a signed `int32` comparison whose sides are narrow widenings or constants is the Integer comparison of the sides' values (`0 <= widen(x)` is `0 <= to_integer(x)`) |
 | Cross-format relations (R0, R-dist, R-comp) | the e-graph's `terms/machine_relations.rs`: `relate_machine_application`, `merge_machine_relations` | a conversion to a format no wider than its source distributes over `+ - * & \| ^ ~` and a constant `<<` below the destination's width; a conversion of a value-preserving conversion it reads exactly, or one keeping no more bits than either, is one conversion; a same-width conversion of at least 32 bits has its inverse in its operand's class |
 | `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
 | `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |

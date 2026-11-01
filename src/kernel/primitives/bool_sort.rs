@@ -231,32 +231,57 @@ impl crate::kernel::Bitvector32Term {
     /// value, 0 or 1 at every format; a cast is recast at `to`; and any other
     /// word reaches `Bool` by `w != 0` first ([`ConditionTerm::truth_of_bool_word`]).
     pub(crate) fn bool_word_as(to: crate::kernel::MachineIntegerType, word: &Self) -> Self {
-        match word {
-            Self::Constant(value) | Self::UInt32Constant(value) => {
-                Self::bool_cast(to, ConditionTerm::Constant(*value != 0))
+        Self::bool_cast(to, ConditionTerm::truth_of_bool_word(word))
+    }
+
+    /// The truth a `Bool` constant carrier holds: the `uint8` constant 0 or
+    /// 1 (rule C1). `None` for every other term. One match on the root.
+    pub(crate) fn bool_constant_value(&self) -> Option<bool> {
+        match self {
+            Self::MachineIntegerConstant(constant)
+                if constant.format() == crate::kernel::MachineIntegerType::UInt8.format() =>
+            {
+                match constant.to_i128()? {
+                    0 => Some(false),
+                    1 => Some(true),
+                    _ => None,
+                }
             }
-            word => Self::bool_cast(to, ConditionTerm::truth_of_bool_word(word)),
+            _ => None,
         }
     }
 }
 
 impl ConditionTerm {
-    /// The `Bool` a `CValue::Bool` word carries. A specification `Bool`
-    /// travels as its cast `b as uint8` (rule C1), whose operand is `b`; a
-    /// constant is its truth; and any other word, a C `bool` value this
-    /// stage still holds as an integer, reaches `Bool` by C's test
-    /// `w != 0`.
+    /// The `Bool` a `CValue::Bool` carrier holds. The carrier is 8 bits: a
+    /// `Bool` travels as its cast `b as uint8` (rule C1), whose operand is
+    /// `b`, or as the `uint8` constant 0 or 1, whose truth it is. Any other
+    /// 8-bit term (a variable, a conditional of carriers) reaches `Bool` by
+    /// C's test `w != 0` at `uint8`.
     pub(crate) fn truth_of_bool_word(word: &crate::kernel::Bitvector32Term) -> Self {
-        use crate::kernel::Bitvector32Term;
         if let Some(value) = word.bool_cast_operand() {
             return value.clone();
         }
-        match word {
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-                Self::Constant(*value != 0)
-            }
-            word => Self::bool_not(Self::equal(word.clone(), Bitvector32Term::Constant(0))),
+        if let Some(value) = word.bool_constant_value() {
+            return Self::Constant(value);
         }
+        Self::nonzero_bool_word(word)
+    }
+
+    /// C's test `w != 0` at `uint8` of a `Bool` carrier, whatever its form:
+    /// the truth of any carrier (rule C1), and for a cast `c as uint8`
+    /// exactly `c` (rule C1a). One node over the word.
+    pub(crate) fn nonzero_bool_word(word: &crate::kernel::Bitvector32Term) -> Self {
+        use crate::kernel::MachineIntegerType;
+        Self::bool_not(Self::narrow_compare(
+            MachineIntegerType::UInt8,
+            crate::kernel::CompareRelation::Equal,
+            word.clone(),
+            crate::kernel::Bitvector32Term::bool_cast(
+                MachineIntegerType::UInt8,
+                Self::Constant(false),
+            ),
+        ))
     }
 
     /// `not value` as a `Bool` value, the conditional
@@ -319,7 +344,23 @@ impl ConditionTerm {
             crate::kernel::integer64_c_value!(word) if word.bool_cast_operand().is_some() => {
                 return word.bool_cast_operand().cloned();
             }
-            crate::kernel::integer32_c_value!(word) => {
+            // An 8- or 16-bit integer is tested at its own format.
+            narrow @ (CValue::Int8(word)
+            | CValue::Int16(word)
+            | CValue::UInt8(word)
+            | CValue::UInt16(word)) => {
+                let format = MachineIntegerType::from_c_type(narrow.c_type())?;
+                Self::narrow_compare(
+                    format,
+                    crate::kernel::CompareRelation::Equal,
+                    word.clone(),
+                    format.constant_term(crate::kernel::MachineIntegerConstant::from_unsigned(
+                        format.format(),
+                        0,
+                    )?)?,
+                )
+            }
+            CValue::Int32(word) | CValue::UInt32(word) => {
                 Self::equal(word.clone(), Bitvector32Term::Constant(0))
             }
             CValue::Int64(word) => {
@@ -354,6 +395,11 @@ impl crate::kernel::CValue {
         ))
     }
 
+    /// The C `bool` constant `value`: the `uint8` constant 1 or 0 (rule C1).
+    pub(crate) fn bool_constant(value: bool) -> Self {
+        Self::of_bool(ConditionTerm::Constant(value))
+    }
+
     /// The scalar value of type `c_type` whose word is `term`; `None` for a
     /// type that is not a scalar.
     pub(crate) fn from_bitvector_term(
@@ -363,11 +409,11 @@ impl crate::kernel::CValue {
         use crate::kernel::CType;
         Some(match c_type {
             CType::Bool => Self::Bool(term),
-            CType::Int8 => Self::Int8(term),
-            CType::Int16 => Self::Int16(term),
+            CType::Int8 => crate::kernel::int8(term),
+            CType::Int16 => crate::kernel::int16(term),
             CType::Int32 => Self::Int32(term),
-            CType::UInt8 => Self::UInt8(term),
-            CType::UInt16 => Self::UInt16(term),
+            CType::UInt8 => crate::kernel::uint8(term),
+            CType::UInt16 => crate::kernel::uint16(term),
             CType::UInt32 => crate::kernel::uint32(term),
             CType::Int64 => Self::Int64(term),
             CType::UInt64 => Self::UInt64(term),

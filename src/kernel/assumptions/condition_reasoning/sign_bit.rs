@@ -176,7 +176,48 @@ impl PureFactContext {
         };
         let constant = |value: i64| Bitvector32Term::Constant(value as u32);
         // An 8- or 16-bit conversion between the two signednesses of one
-        // width, read in an `int32` comparison.
+        // width, read in an `int32` comparison through its widening. Its
+        // operand is a native value of its format, in that format's range,
+        // and is read through its own widening.
+        if format == Ty::Int32
+            && let Bitvector32Term::MachineIntegerCast {
+                value: converted,
+                source: widened_from,
+                destination: Ty::Int32,
+            } = &operand
+            && let Bitvector32Term::MachineIntegerCast {
+                value: inner,
+                source,
+                destination,
+            } = converted.as_ref()
+            && widened_from == destination
+            && source.format().bits() == destination.format().bits()
+            && source.format().bits() < 32
+            && source.format().is_signed() != destination.format().is_signed()
+        {
+            let maximum = signed_maximum(source.format().bits());
+            let inner =
+                Bitvector32Term::machine_integer_cast(*source, Ty::Int32, inner.as_ref().clone());
+            return Some(match test(relation, value, maximum)? {
+                Test::Sign { negative } if destination.format().is_signed() => {
+                    vec![if negative {
+                        ConditionTerm::signed_greater_than(inner, constant(maximum))
+                    } else {
+                        ConditionTerm::signed_less_equal(inner, constant(maximum))
+                    }]
+                }
+                Test::Half { above } if !destination.format().is_signed() => {
+                    vec![if above {
+                        ConditionTerm::signed_less_than(inner, constant(0))
+                    } else {
+                        ConditionTerm::signed_less_equal(constant(0), inner)
+                    }]
+                }
+                _ => return None,
+            });
+        }
+        // The same conversion of a 32-bit carrier, read in an `int32`
+        // comparison directly.
         if format == Ty::Int32
             && let Bitvector32Term::MachineIntegerCast {
                 value: inner,
@@ -288,14 +329,26 @@ impl ConditionTerm {
         else {
             return false;
         };
-        [left, right].into_iter().any(|side| {
+        let sign_cast = |term: &Bitvector32Term| {
             matches!(
-                side.as_ref(),
+                term,
                 Bitvector32Term::MachineIntegerCast { source, destination, .. }
                     if source.format().bits() == destination.format().bits()
                         && source.format().bits() < 32
                         && source.format().is_signed() != destination.format().is_signed()
             )
+        };
+        // The cast itself, or its `int32` widening.
+        [left, right].into_iter().any(|side| {
+            sign_cast(side)
+                || matches!(
+                    side.as_ref(),
+                    Bitvector32Term::MachineIntegerCast {
+                        value,
+                        destination: Ty::Int32,
+                        ..
+                    } if sign_cast(value)
+                )
         })
     }
 }

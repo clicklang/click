@@ -2667,10 +2667,49 @@ impl ConditionTerm {
         }
     }
 
+    /// The native comparison `left REL right` of two 8- or 16-bit values of
+    /// `format`, at that format: two constants fold, and a value compared
+    /// with itself decides by the relation. One match on each root.
+    pub(crate) fn narrow_compare(
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        left: Bitvector32Term,
+        right: Bitvector32Term,
+    ) -> Self {
+        use CompareRelation as R;
+        crate::instrumentation::record_deterministic_work(1);
+        let value = |term: &Bitvector32Term| {
+            format
+                .constant_from_term(term)
+                .and_then(crate::kernel::MachineIntegerConstant::to_i128)
+        };
+        if let (Some(a), Some(b)) = (value(&left), value(&right)) {
+            return Self::Constant(match relation {
+                R::LessThan => a < b,
+                R::LessEqual => a <= b,
+                R::GreaterThan => a > b,
+                R::GreaterEqual => a >= b,
+                R::Equal => a == b,
+            });
+        }
+        if left == right {
+            return Self::Constant(matches!(
+                relation,
+                R::LessEqual | R::GreaterEqual | R::Equal
+            ));
+        }
+        Self::Compare {
+            format,
+            relation,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+
     /// The comparison `left REL right` at `format`, through the folding
     /// constructor of its width (`signed_less_than`, `uint64_less_than`,
-    /// ...). A narrow comparison is the `int32` comparison of its canonical
-    /// words.
+    /// ...). An 8- or 16-bit comparison is a native comparison of its own
+    /// format ([`Self::narrow_compare`]).
     pub(crate) fn machine_compare(
         format: MachineIntegerType,
         relation: CompareRelation,
@@ -2680,21 +2719,14 @@ impl ConditionTerm {
         use CompareRelation as R;
         use MachineIntegerType as Ty;
         match (format, relation) {
-            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::LessThan) => {
-                Self::signed_less_than(left, right)
+            (Ty::Int8 | Ty::Int16 | Ty::UInt8 | Ty::UInt16, relation) => {
+                Self::narrow_compare(format, relation, left, right)
             }
-            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::LessEqual) => {
-                Self::signed_less_equal(left, right)
-            }
-            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::GreaterThan) => {
-                Self::signed_greater_than(left, right)
-            }
-            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::GreaterEqual) => {
-                Self::signed_greater_equal(left, right)
-            }
-            (Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16, R::Equal) => {
-                Self::equal(left, right)
-            }
+            (Ty::Int32, R::LessThan) => Self::signed_less_than(left, right),
+            (Ty::Int32, R::LessEqual) => Self::signed_less_equal(left, right),
+            (Ty::Int32, R::GreaterThan) => Self::signed_greater_than(left, right),
+            (Ty::Int32, R::GreaterEqual) => Self::signed_greater_equal(left, right),
+            (Ty::Int32, R::Equal) => Self::equal(left, right),
             (Ty::UInt32, R::Equal) => Self::uint32_equal(left, right),
             (Ty::UInt32, R::LessThan) => Self::unsigned_less_than(left, right),
             (Ty::UInt32, R::LessEqual) => Self::unsigned_less_equal(left, right),
@@ -5870,6 +5902,116 @@ pub(crate) fn proposition_holds_without_facts(proposition: &Proposition) -> bool
     }
 }
 
+/// Whether `proposition` holds by the range of its operand's format alone:
+/// a comparison of one machine value with a constant that every value of
+/// the format meets (maintainer direction, 2026-10-31). The value's range is
+/// its own format's, or for the 32-bit widening of an 8- or 16-bit value
+/// its source's: `widen(x) >= -128` for an `int8` `x`, `0 <= to_integer(b)`
+/// for a `uint8` `b`. A bound past the range is not implied, and a fact the
+/// context states is not consulted. One match on the root and its operands.
+pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
+    use CompareRelation as R;
+    let Proposition::ConditionIs(condition, value) = proposition else {
+        return false;
+    };
+    // The range of a machine operand read at `format`.
+    fn machine_range(term: &Bitvector32Term, format: MachineIntegerType) -> Option<(i128, i128)> {
+        let bounds = |ty: MachineIntegerType| {
+            let (lo, hi) = ty.format().bounds();
+            Some((i128::try_from(lo).ok()?, i128::try_from(hi).ok()?))
+        };
+        match term.narrow_widening32_operand() {
+            // A 32-bit comparison reads a widened narrow value as its source
+            // value, except an `int8`/`int16` value read unsigned.
+            Some((source, _)) if format.format().bits() == 32 => (format.format().is_signed()
+                || !source.format().is_signed())
+            .then(|| bounds(source))
+            .flatten(),
+            _ if format.format().bits() < 32 && format.format().bits() > 0 => bounds(format),
+            _ => None,
+        }
+    }
+    let decide = |(lo, hi): (i128, i128), relation: R, constant: i128, flipped: bool| {
+        // `x REL c`, or `c REL x` when `flipped`.
+        let (low_true, high_true) = match (relation, flipped) {
+            (R::LessThan, false) | (R::GreaterThan, true) => (hi < constant, lo >= constant),
+            (R::LessEqual, false) | (R::GreaterEqual, true) => (hi <= constant, lo > constant),
+            (R::GreaterThan, false) | (R::LessThan, true) => (lo > constant, hi <= constant),
+            (R::GreaterEqual, false) | (R::LessEqual, true) => (lo >= constant, hi < constant),
+            (R::Equal, _) => (
+                lo == constant && hi == constant,
+                constant < lo || constant > hi,
+            ),
+        };
+        // `low_true`: every value meets it; `high_true`: none does.
+        if low_true {
+            Some(true)
+        } else if high_true {
+            Some(false)
+        } else {
+            None
+        }
+    };
+    let truth = match condition {
+        ConditionTerm::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } => {
+            let constant = |term: &Bitvector32Term| {
+                format
+                    .constant_from_term(term)
+                    .and_then(MachineIntegerConstant::to_i128)
+            };
+            match (constant(left), constant(right)) {
+                (None, Some(c)) => machine_range(left, *format)
+                    .and_then(|range| decide(range, *relation, c, false)),
+                (Some(c), None) => machine_range(right, *format)
+                    .and_then(|range| decide(range, *relation, c, true)),
+                _ => None,
+            }
+        }
+        ConditionTerm::IntegerLessThan(left, right)
+        | ConditionTerm::IntegerLessEqual(left, right)
+        | ConditionTerm::IntegerGreaterThan(left, right)
+        | ConditionTerm::IntegerGreaterEqual(left, right) => {
+            let relation = match condition {
+                ConditionTerm::IntegerLessThan(..) => R::LessThan,
+                ConditionTerm::IntegerLessEqual(..) => R::LessEqual,
+                ConditionTerm::IntegerGreaterThan(..) => R::GreaterThan,
+                _ => R::GreaterEqual,
+            };
+            let range = |term: &IntegerTerm| match term {
+                IntegerTerm::Machine(machine) => machine
+                    .value()
+                    .narrow_widening32_operand()
+                    .map_or(machine.ty(), |(source, _)| source)
+                    .format()
+                    .bounds(),
+                _ => (num_bigint::BigInt::from(1), num_bigint::BigInt::from(0)),
+            };
+            let constant =
+                |term: &IntegerTerm| term.as_const().and_then(|c| i128::try_from(c).ok());
+            let in_range = |(lo, hi): (num_bigint::BigInt, num_bigint::BigInt)| {
+                Some((i128::try_from(lo).ok()?, i128::try_from(hi).ok()?))
+                    .filter(|(lo, hi)| lo <= hi)
+            };
+            match (constant(left), constant(right)) {
+                (None, Some(c)) => {
+                    in_range(range(left)).and_then(|range| decide(range, relation, c, false))
+                }
+                (Some(c), None) => {
+                    in_range(range(right)).and_then(|range| decide(range, relation, c, true))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    truth == Some(*value)
+}
+
 /// An equality or disequality with its sides swapped. `have a == b` and
 /// `have b == a` establish one fact, so a `using` premise may name either spelling of the
 /// fact the proof holds.
@@ -5941,6 +6083,7 @@ fn listed_premise_holds_with(
     available: &impl Fn(&Proposition) -> bool,
 ) -> bool {
     proposition_holds_without_facts(premise)
+        || holds_by_format_range(premise)
         || available(premise)
         || mirrored_equality(premise).is_some_and(|mirrored| available(&mirrored))
         // A conjunction holds when each conjunct does. A theorem's
@@ -6162,4 +6305,69 @@ fn named_pointer_read(
         crate::kernel::eval::record_pointer_load_source(*identity, variable);
     }
     read
+}
+
+#[cfg(test)]
+mod format_range_premise_tests {
+    use super::*;
+
+    fn widen(source: MachineIntegerType, id: u64) -> Bitvector32Term {
+        Bitvector32Term::machine_integer_cast(
+            source,
+            MachineIntegerType::Int32,
+            Bitvector32Term::Variable(Variable(id)),
+        )
+    }
+
+    fn holds(relation: CompareRelation, left: Bitvector32Term, bound: i32) -> bool {
+        holds_by_format_range(&Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation,
+                left: Box::new(left),
+                right: Box::new(Bitvector32Term::Constant(bound as u32)),
+            },
+            true,
+        ))
+    }
+
+    /// A premise its operand's format range implies is available at every
+    /// narrow width; a bound one step past the range is not.
+    #[test]
+    fn a_premise_within_the_format_range_holds_and_one_past_it_does_not() {
+        use CompareRelation::{GreaterEqual, LessEqual};
+        for (source, lo, hi) in [
+            (MachineIntegerType::Int8, -128, 127),
+            (MachineIntegerType::UInt8, 0, 255),
+            (MachineIntegerType::Int16, -32768, 32767),
+            (MachineIntegerType::UInt16, 0, 65535),
+        ] {
+            assert!(holds(GreaterEqual, widen(source, 7), lo), "{source:?}");
+            assert!(holds(LessEqual, widen(source, 7), hi), "{source:?}");
+            assert!(!holds(GreaterEqual, widen(source, 7), lo + 1), "{source:?}");
+            assert!(!holds(LessEqual, widen(source, 7), hi - 1), "{source:?}");
+            // The Integer reading of the narrow value has the same range.
+            let observed: SharedIntegerTerm =
+                IntegerTerm::from_machine(source, Bitvector32Term::Variable(Variable(8)))
+                    .unwrap()
+                    .into();
+            let at_least = |bound: i64| {
+                holds_by_format_range(&Proposition::ConditionIs(
+                    ConditionTerm::IntegerLessEqual(
+                        IntegerTerm::constant_i64(bound).into(),
+                        observed.clone(),
+                    ),
+                    true,
+                ))
+            };
+            assert!(at_least(lo as i64), "{source:?}");
+            assert!(!at_least(lo as i64 + 1), "{source:?}");
+        }
+        // A 32-bit value's word has no narrower range to lend.
+        assert!(!holds(
+            GreaterEqual,
+            Bitvector32Term::Variable(Variable(9)),
+            -128
+        ));
+    }
 }

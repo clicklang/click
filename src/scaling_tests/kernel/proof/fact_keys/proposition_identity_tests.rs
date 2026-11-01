@@ -43,7 +43,7 @@ fn local_definedness_identity_ignores_unrelated_store_history() {
         for index in 0..size {
             memory = memory.with_block(format!("local:defined-unrelated-{index}"), 4);
         }
-        memory = memory.store(array, CValue::UInt8(7u32.into()));
+        memory = memory.store(array, crate::kernel::uint8(7u32));
         let key = proposition_identity_key(&local_definedness_fact(&memory, 82_000)).unwrap();
         for index in 0..size {
             memory = memory.store(

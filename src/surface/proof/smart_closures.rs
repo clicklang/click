@@ -294,6 +294,22 @@ fn signed_surface_terms_equal(
                 crate::kernel::Bitvector32Term::UInt32From64(left),
                 crate::kernel::Bitvector32Term::UInt32From64(right),
             ) => pending.push((left, right)),
+            // A conversion, such as an 8- or 16-bit value's `int32`
+            // widening, is the same term when its formats and operand are.
+            (
+                crate::kernel::Bitvector32Term::MachineIntegerCast {
+                    value: left,
+                    source: left_source,
+                    destination: left_destination,
+                },
+                crate::kernel::Bitvector32Term::MachineIntegerCast {
+                    value: right,
+                    source: right_source,
+                    destination: right_destination,
+                },
+            ) if left_source == right_source && left_destination == right_destination => {
+                pending.push((left, right))
+            }
             _ => {
                 use crate::kernel::BitvectorBinaryOp as Op;
                 let (Some((operator, left, right)), Some((other, other_left, other_right))) =
@@ -332,6 +348,51 @@ fn signed_surface_terms_equal(
         }
     }
     true
+}
+
+/// The spelling of a certificate's `int32` atom by a source expression that
+/// names it. An 8- or 16-bit value's atom is its `int32` widening, so an
+/// expression of the narrow value is spelled with its explicit cast,
+/// `(x as int32)`: arithmetic over the narrow expression itself would
+/// re-lower at its own width, not as the certificate's `int32` arithmetic.
+/// An expression that already is a cast to `int32` is kept.
+fn int32_widening_spelling(
+    term: &crate::kernel::Bitvector32Term,
+    candidate: ContractExpression,
+) -> ContractExpression {
+    let widening = matches!(
+        term,
+        crate::kernel::Bitvector32Term::MachineIntegerCast {
+            source,
+            destination: crate::kernel::MachineIntegerType::Int32,
+            ..
+        } if source.format().bits() < 32
+    );
+    let already_cast = matches!(
+        &candidate,
+        ContractExpression::CUnary {
+            lowered: CExpression::Cast {
+                target_type: crate::kernel::CType::Int32,
+                ..
+            },
+            ..
+        }
+    );
+    if !widening || already_cast {
+        return candidate;
+    }
+    ContractExpression::CUnary {
+        operand: Box::new(candidate),
+        lowered: CExpression::Cast {
+            expression: Box::new(CExpression::Value(crate::kernel::int32(0))),
+            target_type: crate::kernel::CType::Int32,
+            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        },
+    }
 }
 
 /// Whether a written operand is an exact observation, `to_integer(x)`, or
@@ -414,9 +475,10 @@ pub(super) fn observed_native_surface_comparison(
         },
         _ => kernel,
     };
-    // The kernel form is a native comparison with an Integer reading, or
-    // that Integer reading itself, spelled by the native fact it reads.
-    if crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(kernel)
+    // The kernel form is a native comparison with an Integer reading (a
+    // promoted comparison of widenings among them), or that Integer reading
+    // itself, spelled by the native fact it reads.
+    if crate::kernel::machine_integer::comparison::integer_readings_with_promotions(kernel)
         .is_empty()
         && crate::kernel::assumptions::native_reading_of_integer_observation_fact(kernel).is_none()
     {
@@ -1733,7 +1795,7 @@ impl<'a> Proof<'a> {
                 || (left.as_ref().as_const() == Some(0)
                     && signed_surface_terms_equal(right.as_ref(), term));
             if names_term && self.signed_surface_term_is_int32(candidate, term) {
-                return Some((*candidate).clone());
+                return Some(int32_widening_spelling(term, (*candidate).clone()));
             }
         }
         None
@@ -3553,52 +3615,20 @@ impl<'a> Proof<'a> {
                 }
                 _ => return Ok(Err(failed.clone())),
             };
-            // A widened narrow binder is a carrier only through the range
-            // its introduction filed, so the certificate cites those facts
-            // as filed, `x as int32 >= lo` and `x as int32 <= hi`, which need
-            // no proof of their own.
-            let binder = if cast {
-                crate::kernel::machine_integer::conversion::narrow_binder_word(observed, value)
-            } else {
-                None
-            };
-            let (lower, upper) = if let Some((_, source)) = &binder {
-                let (min, max) = source.bounds();
-                let word = native_int32_split_operand(match spelled_value.clone() {
-                    ContractExpression::Call {
-                        name,
-                        mut arguments,
-                    } if name == "to_integer" && arguments.len() == 1 => arguments.remove(0),
-                    operand => operand,
-                });
-                (
-                    ClickProposition::Comparison {
-                        left: word.clone(),
-                        operator: ComparisonOperator::GreaterEqual,
-                        right: surface_signed_integer_literal(&min),
-                    },
-                    ClickProposition::Comparison {
-                        left: word,
-                        operator: ComparisonOperator::LessEqual,
-                        right: surface_signed_integer_literal(&max),
-                    },
-                )
-            } else {
-                let (min, max) = machine.ty().format().bounds();
-                (
-                    ClickProposition::Comparison {
-                        left: surface_signed_integer_literal(&min),
-                        operator: ComparisonOperator::LessEqual,
-                        right: spelled_value.clone(),
-                    },
-                    ClickProposition::Comparison {
-                        left: spelled_value.clone(),
-                        operator: ComparisonOperator::LessEqual,
-                        right: surface_signed_integer_literal(&max),
-                    },
-                )
-            };
-            for bound in [&lower, &upper].into_iter().filter(|_| binder.is_none()) {
+            let (min, max) = machine.ty().format().bounds();
+            let (lower, upper) = (
+                ClickProposition::Comparison {
+                    left: surface_signed_integer_literal(&min),
+                    operator: ComparisonOperator::LessEqual,
+                    right: spelled_value.clone(),
+                },
+                ClickProposition::Comparison {
+                    left: spelled_value.clone(),
+                    operator: ComparisonOperator::LessEqual,
+                    right: surface_signed_integer_literal(&max),
+                },
+            );
+            for bound in [&lower, &upper] {
                 let scope = proof.begin_have(bound.clone())?;
                 let closed = if let Some(listed) = listed {
                     let mut premises = listed.to_vec();

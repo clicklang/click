@@ -31,7 +31,7 @@ theorem high_word() {
 theorem byte_range() {
     ensures forall (x: uint8) { x >= 0 and x <= 255 } by {
         intro();
-        both { assumption(); } and { assumption(); }
+        both { normalize(); } and { normalize(); }
     }
 }
 

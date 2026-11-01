@@ -603,7 +603,7 @@ pub(crate) fn integer_affine_machine_values(
         condition,
         crate::kernel::integer_comparison_condition!(_, _)
     ) && let Some(reading) =
-        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+        crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
             &Proposition::ConditionIs(condition.clone(), value),
         )
         .into_iter()
@@ -708,7 +708,9 @@ fn fold_atom_for_claim(
 /// Every Integer affine claim `proposition` holds exactly when. A native
 /// equality of 32- or 64-bit words does not say whether its operands are
 /// signed, and both readings are exact, so it has two; any other proposition
-/// has at most one. The kernel accepts a premise or goal as any of them.
+/// has at most one. A promoted `int32` comparison of widenings (C's
+/// comparison of an 8- or 16-bit value) is the Integer comparison of its
+/// sides' values. The kernel accepts a premise or goal as any of them.
 pub(crate) fn integer_affine_claims(proposition: &Proposition) -> Vec<IntegerAffineClaim> {
     let mut context = IntegerAffineCollectionContext::default();
     integer_affine_claims_with_context(proposition, &mut context)
@@ -725,7 +727,7 @@ fn integer_affine_claims_with_context(
                 crate::kernel::integer_comparison_condition!(_, _)
             ) =>
         {
-            crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+            crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                 proposition,
             )
         }
@@ -754,15 +756,17 @@ pub(crate) fn written_integer_affine_claim(proposition: &Proposition) -> bool {
     let native = match proposition {
         Proposition::Not(inner) => match inner.as_ref() {
             Proposition::ConditionIs(condition, value) => {
-                !crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+                !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
                     &Proposition::ConditionIs(condition.clone(), !value),
                 )
                 .is_empty()
             }
             _ => false,
         },
-        _ => !crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(proposition)
-            .is_empty(),
+        _ => !crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
+            proposition,
+        )
+        .is_empty(),
     };
     !native && integer_affine_claim(proposition).is_some()
 }
@@ -791,7 +795,7 @@ fn integer_affine_claim_with_context(
         condition,
         crate::kernel::integer_comparison_condition!(_, _) | ConditionTerm::Constant(_)
     ) && let Some(reading) =
-        crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
+        crate::kernel::machine_integer::comparison::integer_readings_with_promotions(
             &Proposition::ConditionIs(condition.clone(), value),
         )
         .into_iter()

@@ -23,7 +23,7 @@
 
 use super::representation;
 use crate::kernel::binary_term;
-use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType, Proposition};
+use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType};
 
 /// What a language conversion asks of its operand.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -82,7 +82,7 @@ pub(crate) fn lower(
     let (from, to) = (source.format(), destination.format());
     let lowering = if source == destination {
         L::Identity
-    } else if from.bits() == 128 || to.bits() == 128 || to.bits() < 32 {
+    } else if from.bits() == 128 || to.bits() == 128 || to.bits() < 32 || from.bits() < 32 {
         L::Cast
     } else if to.bits() == 32 {
         match from.bits() {
@@ -282,20 +282,10 @@ pub(crate) fn widened_narrow_word(observed: &IntegerTerm) -> Option<&Bitvector32
 }
 
 /// Whether `observed` reads the narrow value `original` at a format that
-/// contains it: the same word, or the C widening conversion of that word.
-///
-/// A narrow value's word is the canonical carrier of its format, its sign
-/// or zero extension (`docs/internals/kernel.md`), so a containing format of
-/// at most 32 bits reads the same value from the same word, and a 64-bit
-/// one reads it from the sign extension of the word, or for an unsigned
-/// value from its zero extension. No bounds are needed for the identity;
-/// the certificate's two bounds are still checked as for any cast.
-///
-/// The kernel does not assume the invariant of a term merely at a narrow
-/// format. The word is either built as a carrier
-/// ([`narrow_word_is_syntactic_carrier`](crate::kernel::primitives::narrow_word_is_syntactic_carrier)),
-/// or it is a binder, an unregistered variable, whose range the
-/// certificate's bounds must then state ([`narrow_binder_word`]).
+/// contains it: its widening, which holds the same value (rule K8, a
+/// relation across widths). A narrow value is a value of its own format, so
+/// its widening needs no bounds; the certificate's two bounds are still
+/// checked as for any cast.
 pub(crate) fn narrow_widening(observed: &IntegerTerm, original: &IntegerTerm) -> bool {
     let (IntegerTerm::Machine(machine), IntegerTerm::Machine(operand)) = (observed, original)
     else {
@@ -306,85 +296,14 @@ pub(crate) fn narrow_widening(observed: &IntegerTerm, original: &IntegerTerm) ->
         return false;
     }
     let word = operand.value();
-    if !crate::kernel::primitives::narrow_word_is_syntactic_carrier(operand.ty(), word)
-        && binder_word(word).is_none()
-    {
-        return false;
-    }
     match machine.value() {
-        // The widening node, whose word is its operand's (rule K8, a
-        // relation), or the bare word.
-        value if destination.bits() <= 32 => {
-            value.word32() == word
-                || value
-                    .narrow_widening32_operand()
-                    .is_some_and(|(_, operand)| operand == word)
-        }
-        Bitvector32Term::Int64From32(inner) | Bitvector32Term::UInt64FromInt32(inner) => {
-            inner.as_ref() == word
-        }
-        Bitvector32Term::Int64FromUInt32(inner) | Bitvector32Term::UInt64From32(inner) => {
-            !source.is_signed() && inner.as_ref() == word
-        }
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source: from,
+            ..
+        } => *from == operand.ty() && value.as_ref() == word,
         _ => false,
     }
-}
-
-/// A word that is a binder: a variable that is not a registered load.
-fn binder_word(word: &Bitvector32Term) -> Option<&Bitvector32Term> {
-    match word {
-        Bitvector32Term::Variable(variable)
-            if crate::kernel::registered_load_kind_for_variable(variable).is_none() =>
-        {
-            Some(word)
-        }
-        _ => None,
-    }
-}
-
-/// For a widening ([`narrow_widening`]) of a narrow binder, the `int32`
-/// observation of its word and the narrow range it must be bounded in.
-///
-/// A binder's word is the canonical carrier only through the range its
-/// introduction states, `lo <= w` and `w <= hi` read at `int32`
-/// (`c_narrow_integer_range_facts`). So a widening of one cites those two
-/// facts as its bounds, inside the source's range, instead of bounds on the
-/// narrow observation, which say nothing of an unextended word.
-pub(crate) fn narrow_binder_word(
-    observed: &IntegerTerm,
-    original: &IntegerTerm,
-) -> Option<(IntegerTerm, crate::kernel::primitives::MachineIntegerFormat)> {
-    let IntegerTerm::Machine(operand) = original else {
-        return None;
-    };
-    let word = binder_word(operand.value())?;
-    if !narrow_widening(observed, original)
-        || crate::kernel::primitives::narrow_word_is_syntactic_carrier(operand.ty(), word)
-    {
-        return None;
-    }
-    let observation = IntegerTerm::from_machine(MachineIntegerType::Int32, word.clone())?;
-    Some((observation, operand.ty().format()))
-}
-
-/// For a widening of a narrow binder, the lower and upper range facts its
-/// introduction filed (`c_narrow_integer_range_facts`), exactly as filed:
-/// the native `int32` comparisons `w >= lo` and `w <= hi`. A certificate
-/// cites these as the widening's bounds; the checker reads each as its
-/// `int32` observation, `lo <= int32(w)` and `int32(w) <= hi`.
-pub(crate) fn narrow_binder_range_facts(
-    observed: &IntegerTerm,
-    original: &IntegerTerm,
-) -> Option<(Proposition, Proposition)> {
-    narrow_binder_word(observed, original)?;
-    let IntegerTerm::Machine(operand) = original else {
-        return None;
-    };
-    let mut facts = crate::kernel::c_narrow_integer_range_facts(
-        &operand.ty().value_from_term(operand.value().clone()),
-    )?
-    .into_iter();
-    Some((facts.next()?, facts.next()?))
 }
 
 pub(crate) fn cast(

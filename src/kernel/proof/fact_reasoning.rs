@@ -608,7 +608,13 @@ pub(crate) fn normalize_using_conditions(
     }
     if let Some((
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format:
+                MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16
+                | MachineIntegerType::Int32
+                | MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left,
             right,
@@ -1347,7 +1353,11 @@ fn order_condition_parts(condition: &ConditionTerm) -> Option<(OrderOperator, Or
     Some(match condition {
         ConditionTerm::Compare {
             format:
-                format @ (MachineIntegerType::Int32
+                format @ (MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16
+                | MachineIntegerType::Int32
                 | MachineIntegerType::UInt32
                 | MachineIntegerType::Int64
                 | MachineIntegerType::UInt64),

@@ -235,6 +235,7 @@ fn written_order_queries_are_flat_beside_a_high_degree_bound() {
                 Domain::Int64 => MachineIntegerType::Int64,
                 Domain::UInt64 => MachineIntegerType::UInt64,
                 Domain::UInt32 => MachineIntegerType::UInt32,
+                Domain::Narrow(format) => format,
             },
             relation: if strict {
                 CompareRelation::LessThan

@@ -2504,7 +2504,9 @@ fn typed_intro_records_bound_spellings_without_scanning_ambient_facts() {
         let (next, work) = crate::instrumentation::measure_deterministic_work(|| {
             root.apply_intro(Some("bound")).unwrap()
         });
-        assert_eq!(next.state().added_facts().len(), 3);
+        // A `uint8` binder is a value of its own format: its range is the
+        // format's, so intro adds no bound fact to spell.
+        assert_eq!(next.state().added_facts().len(), 0);
         for fact in next.state().added_facts() {
             assert_eq!(next.locals().surface_facts.surfaces(fact).count(), 1);
         }

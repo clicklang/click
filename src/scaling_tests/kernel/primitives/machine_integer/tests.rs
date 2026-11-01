@@ -189,11 +189,11 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
     }
 }
 
-/// The widening of a narrow value into 32 bits (rule K8) is built and read
-/// as σ is: building it, and reading its word through `word32`, inspect
-/// only the operand's root, so the work is the same for operands of 16 to
-/// 1,024 nodes, and a 32-bit operator over the widening is the operator
-/// over its operand.
+/// The widening of a narrow value into 32 bits (rule K8, a relation) is a
+/// node of its own: building it, and reading its operand through
+/// `narrow_widening32_operand`, inspect only the operand's root, so the work
+/// is the same for operands of 16 to 1,024 nodes. Its word is not peeled to
+/// the operand, so a 32-bit operator over the widening keeps the widening.
 #[test]
 fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands() {
     use crate::kernel::Variable;
@@ -223,14 +223,15 @@ fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands
             });
             assert_eq!(work, 1, "size {size}");
             let ((), read_work) = crate::instrumentation::measure_deterministic_work(|| {
-                assert!(std::ptr::eq(
-                    cast.word32(),
-                    cast.word_cast32_operand().unwrap().1
-                ));
+                assert_eq!(
+                    cast.narrow_widening32_operand(),
+                    Some((MachineIntegerType::UInt8, &operand))
+                );
+                assert!(std::ptr::eq(cast.word32(), &cast));
+                assert_eq!(cast.word_cast32_operand(), None);
             });
             assert_eq!(read_work, 0, "size {size}");
-            assert_eq!(cast.word32(), &operand, "size {size}");
-            assert_eq!(
+            assert_ne!(
                 Bitvector32Term::add(cast.clone(), Bitvector32Term::Constant(1)),
                 Bitvector32Term::add(operand.clone(), Bitvector32Term::Constant(1)),
                 "size {size}"

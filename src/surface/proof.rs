@@ -2097,14 +2097,12 @@ pub(super) fn initial_claim_context_with_caller_owner(
             _ => None,
         })
         .collect::<Vec<_>>();
-    // Each narrow integer parameter's type range, such as `0 <= x` and
-    // `x <= 255` for a `uint8`, is likewise a derived entry fact the kernel
-    // states from the parameter's value. It is filed here once, where the
-    // value is introduced, so no use of the parameter has to restate it.
+    // A `bool` parameter's cast range is likewise a derived entry fact the
+    // kernel states from the parameter's value (rule C1b). A narrow integer
+    // parameter is a value of its own format, whose range is the format's.
     for argument in &arguments {
         if let CExpression::Value(value) = argument
-            && let Some(facts) = crate::kernel::c_narrow_integer_range_facts(value)
-                .or_else(|| crate::kernel::c_bool_cast_range_facts(value))
+            && let Some(facts) = crate::kernel::c_bool_cast_range_facts(value)
         {
             requirement_pure_facts.extend(facts);
         }

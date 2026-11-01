@@ -5300,7 +5300,7 @@ mod seeded_interval_adjacency_tests {
             block: base.block.clone(),
             offset: PointerOffsetTerm::Constant(-0x8000_0000),
         };
-        let memory = memory.store(wrong, CValue::UInt8(Bitvector32Term::Constant(7)));
+        let memory = memory.store(wrong, crate::kernel::uint8(7));
         let context = PureFactContext::new();
         assert!(
             context
@@ -5311,10 +5311,7 @@ mod seeded_interval_adjacency_tests {
                 )
                 .is_none()
         );
-        let memory = memory.store(
-            base.offset_by_bytes(0x8000_0000),
-            CValue::UInt8(Bitvector32Term::Constant(9)),
-        );
+        let memory = memory.store(base.offset_by_bytes(0x8000_0000), crate::kernel::uint8(9));
         assert!(
             context
                 .adjacent_loadable_region_facts(

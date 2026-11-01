@@ -1091,7 +1091,7 @@ fn kernel_integer_literal_value(
 ) -> Option<crate::kernel::CValue> {
     Some(match c_type {
         C0Type::Bool => {
-            crate::kernel::bool_value(u32::from(initializer_integer_bits(initializer)? != 0))
+            crate::kernel::CValue::bool_constant(initializer_integer_bits(initializer)? != 0)
         }
         C0Type::Float32 => match initializer {
             C0Expression::Float32Literal(bits) => {
@@ -1464,9 +1464,9 @@ impl C0StaticLocal {
                 }
                 _ => return None,
             },
-            C0Type::Bool => crate::kernel::bool_value(u32::from(
+            C0Type::Bool => crate::kernel::CValue::bool_constant(
                 initializer_integer_bits(&self.initializer)? != 0,
-            )),
+            ),
             C0Type::Int8 => crate::kernel::int8(initializer_integer_bits(&self.initializer)?),
             C0Type::Int16 => crate::kernel::int16(initializer_integer_bits(&self.initializer)?),
             C0Type::Int32 => crate::kernel::int32(initializer_integer_bits(&self.initializer)?),

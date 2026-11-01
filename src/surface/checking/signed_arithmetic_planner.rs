@@ -633,14 +633,8 @@ fn decomposed_affine_difference(
             }
             // The kernel decomposes a conversion only through interval
             // evidence that its operand is inside the destination range.
-            Bitvector32Term::MachineIntegerCast {
-                value,
-                source,
-                destination,
-            } if crate::kernel::proof::signed_arithmetic::narrowed_word_cast(
-                *source,
-                *destination,
-            ) =>
+            term if let Some((value, _, _)) =
+                crate::kernel::proof::signed_arithmetic::widened_narrowed_cast(term) =>
             {
                 pending.push((value, coefficient));
             }
@@ -924,14 +918,10 @@ fn contains_machine_operation(root: &Bitvector32Term) -> bool {
     false
 }
 
-/// A C conversion the checked `IntervalNarrowedCast` node can relate to its
-/// operand.
+/// The 32-bit reading of a C conversion the checked `IntervalNarrowedCast`
+/// node can relate to its operand: its `int32` widening.
 fn is_narrowed_word_cast(term: &Bitvector32Term) -> bool {
-    matches!(
-        term,
-        Bitvector32Term::MachineIntegerCast { source, destination, .. }
-            if crate::kernel::proof::signed_arithmetic::narrowed_word_cast(*source, *destination)
-    )
+    crate::kernel::proof::signed_arithmetic::widened_narrowed_cast(term).is_some()
 }
 
 fn scale_factor(source: &SignedArithmeticClaim, target: &SignedArithmeticClaim) -> Option<BigInt> {
@@ -2404,6 +2394,13 @@ impl<'a> Planner<'a> {
                 Bitvector32Term::PureFunctionApplication { arguments, .. } => {
                     pending.extend(arguments.iter());
                 }
+                // The `int32` widening of an 8- or 16-bit value, an opaque
+                // value as the checker reads it (`is_opaque_root`).
+                Bitvector32Term::MachineIntegerCast {
+                    value,
+                    source,
+                    destination: crate::kernel::MachineIntegerType::Int32,
+                } if source.format().bits() < 32 => pending.push(value),
                 _ => return false,
             }
         }
@@ -2458,14 +2455,8 @@ impl<'a> Planner<'a> {
                         tasks.push(Task::Build(term));
                         tasks.push(Task::Visit(operand, allow_direct));
                     }
-                    Bitvector32Term::MachineIntegerCast {
-                        value,
-                        source,
-                        destination,
-                    } if crate::kernel::proof::signed_arithmetic::narrowed_word_cast(
-                        *source,
-                        *destination,
-                    ) =>
+                    term if let Some((value, _, _)) =
+                        crate::kernel::proof::signed_arithmetic::widened_narrowed_cast(term) =>
                     {
                         if allow_direct && let Some(index) = self.interval_atom(term) {
                             results.push(index);
@@ -2586,16 +2577,14 @@ impl<'a> Planner<'a> {
             // A conversion whose operand stays inside the destination range
             // is that operand (`narrowed_cast_identity`); outside it the
             // planner has no evidence to offer.
-            Bitvector32Term::MachineIntegerCast {
-                source,
-                destination,
-                ..
-            } => {
+            term if let Some((_, source, destination)) =
+                crate::kernel::proof::signed_arithmetic::widened_narrowed_cast(term) =>
+            {
                 let operand = right_index?;
                 let interval = self.interval_at(operand)?;
                 let (lo, hi) = destination.format().bounds();
                 let (lo, hi) = (i64::try_from(lo).ok()?, i64::try_from(hi).ok()?);
-                let floor = if *source == crate::kernel::MachineIntegerType::UInt32 {
+                let floor = if source == crate::kernel::MachineIntegerType::UInt32 {
                     lo.max(0)
                 } else {
                     lo
@@ -2604,8 +2593,8 @@ impl<'a> Planner<'a> {
                 self.push_interval(
                     SignedArithmeticNode::IntervalNarrowedCast {
                         operand,
-                        source: *source,
-                        destination: *destination,
+                        source,
+                        destination,
                         result: interval.clone(),
                     },
                     interval,

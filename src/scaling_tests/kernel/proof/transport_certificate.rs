@@ -108,10 +108,20 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
                 value_type.byte_width(),
             )));
             *result = proposition.clone();
+            // A byte read is compared through its `int32` widening, as C
+            // promotes it.
             let read = |memory: &SharedCMemory| {
-                Box::new(
-                    integer_bits(tests::observe(memory.memory(), &address, value_type)).unwrap(),
-                )
+                let bits =
+                    integer_bits(tests::observe(memory.memory(), &address, value_type)).unwrap();
+                Box::new(if value_type == CType::UInt8 {
+                    Bitvector32Term::machine_integer_cast(
+                        MachineIntegerType::UInt8,
+                        MachineIntegerType::Int32,
+                        bits,
+                    )
+                } else {
+                    bits
+                })
             };
             let goal = Proposition::ConditionIs(
                 ConditionTerm::Compare {

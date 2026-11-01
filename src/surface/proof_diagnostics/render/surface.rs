@@ -1540,6 +1540,12 @@ impl Printer<'_> {
             });
         }
         match value {
+            // An 8- or 16-bit constant reads as its value, as the 32-bit
+            // carrier of a narrow value did; its type, where printed, comes
+            // from the value it is (`typed`).
+            B::MachineIntegerConstant(value) if value.format().bits() < 32 => {
+                Some(atom(value.to_integer().to_string()))
+            }
             B::MachineIntegerConstant(value) => Some(atom(format!(
                 "{}{}128",
                 value.to_integer(),
@@ -2268,10 +2274,10 @@ impl Printer<'_> {
         use crate::kernel::CValue;
         if !self.source_mode() {
             return match value {
-                CValue::Bool(Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => {
+                CValue::Bool(value) if value.bool_constant_value() == Some(false) => {
                     Some(atom("false"))
                 }
-                CValue::Bool(Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => {
+                CValue::Bool(value) if value.bool_constant_value() == Some(true) => {
                     Some(atom("true"))
                 }
                 CValue::Bool(value) | CValue::Int64(value) | CValue::UInt64(value) => {
@@ -2293,7 +2299,9 @@ impl Printer<'_> {
         let typed = |printer: &mut Self, value: &Bitvector32Term, hint: Hint, suffix: &str| {
             let spelled_value = printer.bitvector(value, Some(hint), depth)?;
             Some(match value {
-                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+                Bitvector32Term::Constant(_)
+                | Bitvector32Term::UInt32Constant(_)
+                | Bitvector32Term::MachineIntegerConstant(_)
                     if !suffix.is_empty() =>
                 {
                     atom(typed_literal(spelled_value.text, suffix))
@@ -2305,12 +2313,10 @@ impl Printer<'_> {
             CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Parameter(term) => self.algebraic(term, depth),
             CValue::Void => Some(atom("void")),
-            CValue::Bool(Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => {
+            CValue::Bool(value) if value.bool_constant_value() == Some(false) => {
                 Some(atom("false"))
             }
-            CValue::Bool(Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => {
-                Some(atom("true"))
-            }
+            CValue::Bool(value) if value.bool_constant_value() == Some(true) => Some(atom("true")),
             CValue::Bool(value) => {
                 self.bitvector(value, Some(Hint::Narrow { signed: false }), depth)
             }

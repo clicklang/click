@@ -3382,7 +3382,7 @@ mod tests {
                             1 => {
                                 let constant = Bitvector32Term::Constant(stream.next(2) as u32);
                                 with_mode(RunValueMode::Constant(if width == 1 {
-                                    CValue::UInt8(constant)
+                                    crate::kernel::uint8(constant)
                                 } else {
                                     CValue::Int32(constant)
                                 }))

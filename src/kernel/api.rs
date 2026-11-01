@@ -128,13 +128,13 @@ pub fn int32(bits: impl Into<Bitvector32Term>) -> CValue {
     CValue::Int32(bits.into())
 }
 
-/// The C `bool` value of the 32-bit word `bits`: C's conversion to `bool`,
-/// the `Bool` `bits != 0` (Stage 5), carried as its cast (rule C1).
-pub fn bool_value(bits: impl Into<Bitvector32Term>) -> CValue {
-    CValue::of_bool(ConditionTerm::bool_not(ConditionTerm::equal(
-        bits.into(),
-        Bitvector32Term::Constant(0),
-    )))
+/// The C `bool` value of a `bool` cell whose byte is the `uint8` term
+/// `byte`: the byte rule (Stage 5), the `Bool` `byte != 0` at `uint8`,
+/// carried as its cast (rule C1).
+pub fn bool_value(byte: impl Into<Bitvector32Term>) -> CValue {
+    CValue::of_bool(ConditionTerm::truth_of_bool_word(
+        &byte.into().in_narrow_format(MachineIntegerType::UInt8),
+    ))
 }
 
 /// Rule C1b: the range of a `Bool`'s integer cast, `0 <= c`, `c <= 1` and
@@ -161,6 +161,31 @@ pub(crate) fn c_bool_cast_range_facts(value: &CValue) -> Option<Vec<Proposition>
     let Bitvector32Term::BoolCast { to, .. } = &cast else {
         return None;
     };
+    // An 8- or 16-bit cast states its range in its own format.
+    if to.format().bits() < 32 {
+        let constant = |value| {
+            to.constant_term(crate::kernel::MachineIntegerConstant::from_unsigned(
+                to.format(),
+                value,
+            )?)
+        };
+        let (zero, one) = (constant(0)?, constant(1)?);
+        let compare = |relation, constant: &Bitvector32Term| {
+            Proposition::ConditionIs(
+                ConditionTerm::machine_compare(*to, relation, cast.clone(), constant.clone()),
+                true,
+            )
+        };
+        use crate::kernel::CompareRelation as R;
+        return Some(vec![
+            compare(R::GreaterEqual, &zero),
+            compare(R::LessEqual, &one),
+            Proposition::Or(
+                Box::new(compare(R::Equal, &zero)),
+                Box::new(compare(R::Equal, &one)),
+            ),
+        ]);
+    }
     let wide = to.format().bits() == 64;
     let (zero, one) = if wide {
         if to.format().is_signed() {
@@ -218,74 +243,25 @@ pub(crate) fn c_narrow_integer_range(value: &CValue) -> Option<(&Bitvector32Term
     }
 }
 
-/// The type range `lower <= value` and `value <= upper` of a narrow integer
-/// value that is not a constant, as the facts every reader of the value may
-/// use.
-///
-/// Every conversion into a narrow type lands in the type's range: C's
-/// conversion reduces its operand modulo 2^N into it, and a specification's
-/// owes the range. So a narrow value is in range wherever one exists. A
-/// parameter's entry value is one such value (the caller's argument was
-/// converted to the parameter's type), so its range is an entry fact of the
-/// function, stated once where the value is introduced instead of at each
-/// use.
-pub(crate) fn c_narrow_integer_range_facts(value: &CValue) -> Option<Vec<Proposition>> {
-    let (term, lower, upper) = c_narrow_integer_range(value)?;
-    if term.as_const().is_some() {
-        return None;
-    }
-    let mut facts = vec![
-        Proposition::ConditionIs(
-            ConditionTerm::signed_greater_equal(
-                term.clone(),
-                Bitvector32Term::Constant(lower as u32),
-            ),
-            true,
-        ),
-        Proposition::ConditionIs(
-            ConditionTerm::signed_less_equal(term.clone(), Bitvector32Term::Constant(upper as u32)),
-            true,
-        ),
-    ];
-    // An unsigned type's range is also an unsigned bound. The closers do
-    // not yet bridge the signed pair to it, and a widening to `uint32` is
-    // read in that order, so it is stated beside them, of the widening (a
-    // node of its own, rule K8 a relation).
-    if lower == 0 {
-        let narrow = if matches!(value, CValue::UInt8(_)) {
-            MachineIntegerType::UInt8
-        } else {
-            MachineIntegerType::UInt16
-        };
-        facts.push(Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_equal(
-                Bitvector32Term::machine_integer_cast(
-                    narrow,
-                    MachineIntegerType::UInt32,
-                    term.clone(),
-                ),
-                Bitvector32Term::Constant(upper as u32),
-            ),
-            true,
-        ));
-    }
-    Some(facts)
-}
-
+/// An `int8` value. A 32-bit constant given for it is read as its value's
+/// word (`Bitvector32Term::in_narrow_format`).
 pub fn int8(bits: impl Into<Bitvector32Term>) -> CValue {
-    CValue::Int8(bits.into())
+    CValue::Int8(bits.into().in_narrow_format(MachineIntegerType::Int8))
 }
 
+/// An `int16` value; see [`int8`].
 pub fn int16(bits: impl Into<Bitvector32Term>) -> CValue {
-    CValue::Int16(bits.into())
+    CValue::Int16(bits.into().in_narrow_format(MachineIntegerType::Int16))
 }
 
+/// A `uint8` value; see [`int8`].
 pub fn uint8(bits: impl Into<Bitvector32Term>) -> CValue {
-    CValue::UInt8(bits.into())
+    CValue::UInt8(bits.into().in_narrow_format(MachineIntegerType::UInt8))
 }
 
+/// A `uint16` value; see [`int8`].
 pub fn uint16(bits: impl Into<Bitvector32Term>) -> CValue {
-    CValue::UInt16(bits.into())
+    CValue::UInt16(bits.into().in_narrow_format(MachineIntegerType::UInt16))
 }
 
 /// A `uint32` value. A root 32-bit constant takes the `uint32` format

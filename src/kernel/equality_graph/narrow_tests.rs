@@ -138,3 +138,8 @@ fn narrow_operator_chains_intern_with_constant_work_per_node() {
         }
     }
 }
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/equality_graph/narrow_tests.rs");
+}

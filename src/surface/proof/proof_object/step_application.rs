@@ -2995,27 +2995,31 @@ impl<'a> Proof<'a> {
     ) -> Result<KernelProofHandle, ClickError> {
         use crate::kernel::proof::integer_arithmetic::{
             IntegerArithmeticCertificate, IntegerArithmeticNode, integer_affine_claim,
+            integer_affine_claims,
         };
 
         // Source premise nodes are the only way a certificate imports facts.
         // Keep their explicit indices and reject holes or conflicting duplicate
         // declarations before handing anything to the kernel checker.
         let mut source_premises = std::collections::BTreeMap::new();
+        // A proposition with several exact Integer readings (a 32-bit word
+        // equality, or a promoted comparison of widenings, which reads both
+        // as written and as its sides' values) declares the same claim as
+        // another when some reading of each agrees: at most two per side.
         let same_integer_claim =
-            |left: &crate::kernel::Proposition, right: &crate::kernel::Proposition| match (
-                integer_affine_claim(left),
-                integer_affine_claim(right),
-            ) {
-                (Some(left), Some(right)) => {
-                    !crate::instrumentation::deadline_exceeded_with_work(
-                        left.terms
-                            .len()
-                            .saturating_add(right.terms.len())
-                            .saturating_add(left.constant.bits() as usize + 1)
-                            .saturating_add(right.constant.bits() as usize + 1),
-                    ) && left == right
-                }
-                _ => false,
+            |left: &crate::kernel::Proposition, right: &crate::kernel::Proposition| {
+                let (left, right) = (integer_affine_claims(left), integer_affine_claims(right));
+                left.iter().any(|left| {
+                    right.iter().any(|right| {
+                        !crate::instrumentation::deadline_exceeded_with_work(
+                            left.terms
+                                .len()
+                                .saturating_add(right.terms.len())
+                                .saturating_add(left.constant.bits() as usize + 1)
+                                .saturating_add(right.constant.bits() as usize + 1),
+                        ) && left == right
+                    })
+                })
             };
         // A disequality an excluded bound cites is a premise too; it has no
         // affine claim, so two declarations of it agree by the bound.

@@ -97,7 +97,7 @@ fn native_existential_domains_scale_with_claims_not_ambient_facts() {
                         destination: MachineIntegerType::UInt8,
                     },
                     operator: CComparisonOperator::Equal,
-                    right: SpecExpression::Value(CValue::UInt8(255u32.into())),
+                    right: SpecExpression::Value(crate::kernel::uint8(255u32)),
                 }),
             }
         };
