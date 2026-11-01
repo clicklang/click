@@ -24,6 +24,7 @@ run_quality_checks() {
     # (`docs/internals/testing.md`, "Scaling tests").
     find src/scaling_tests -name '*.rs' -print0 | xargs -0 rustfmt --edition 2024 --check
     scripts/test-setup-environment.sh
+    python3 -I scripts/test-check-nightly.py
     scripts/mdbook-build.sh
     scripts/docs-lint.sh
 }
@@ -179,10 +180,14 @@ fi
 # per-test thread stack on otherwise healthy runners.
 export RUST_MIN_STACK="${RUST_MIN_STACK:-8388608}"
 
+clippy_status=0
 if [[ -z "$ci_artifacts" ]]; then
     run_quality_checks
     if [[ -n "$nightly" ]]; then
-        cargo clippy --all-targets -- -D warnings
+        cargo clippy --all-targets -- -D warnings || clippy_status=$?
+        if [[ "$clippy_status" -ne 0 ]]; then
+            echo "warning: Clippy failed; continuing with nightly tests" >&2
+        fi
     fi
 fi
 
@@ -284,7 +289,7 @@ if [[ -n "$ci_artifacts" ]]; then
     exit 0
 fi
 
-suite_status=0
+suite_status=$clippy_status
 if [[ -n "$nightly" ]]; then
     # Report both nightly selections even when the first one fails.
     cargo nextest run "${unit_targets[@]}" --filterset "$unit_filter" "${nextest_args[@]}" \
