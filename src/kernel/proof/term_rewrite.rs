@@ -24,6 +24,17 @@ mod integer_conditional_tests;
 mod pointer_application_tests;
 mod spec_rewrite;
 
+thread_local! {
+    // Completed arithmetic comparisons depend only on immutable terms and
+    // their registered read identities. Reset with the load-origin session.
+    static ARITHMETIC_COMPARISONS: std::cell::RefCell<HashMap<Proposition, Option<Proposition>>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+pub(crate) fn clear_arithmetic_comparison_cache() {
+    ARITHMETIC_COMPARISONS.with(|cache| cache.borrow_mut().clear());
+}
+
 #[derive(Clone, Default)]
 struct RewriteScope {
     c: BTreeMap<Variable, Variable>,
@@ -1621,9 +1632,28 @@ impl<'a> TermRewrite<'a> {
     }
 
     pub(crate) fn arithmetic_comparison(proposition: &Proposition) -> Option<Proposition> {
+        if crate::instrumentation::deadline_exceeded_with_work(0) {
+            return None;
+        }
+        if let Some(result) =
+            ARITHMETIC_COMPARISONS.with(|cache| cache.borrow().get(proposition).cloned())
+        {
+            return result;
+        }
         let mut rewrite = Self::for_arithmetic_comparison();
         let result = rewrite.proposition(proposition);
-        (rewrite.refusal().is_none() && result != *proposition).then_some(result)
+        if rewrite.refusal().is_some() || crate::instrumentation::deadline_exceeded_with_work(0) {
+            return None;
+        }
+        let result = (result != *proposition).then_some(result);
+        ARITHMETIC_COMPARISONS.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            if cache.len() >= 4096 {
+                cache.clear();
+            }
+            cache.insert(proposition.clone(), result.clone());
+        });
+        result
     }
 
     pub(crate) fn normalize_algebraic(term: &AlgebraicTerm) -> Option<AlgebraicTerm> {

@@ -145,7 +145,6 @@ pub(crate) use eval::canonical_condition_fact;
 pub(crate) use eval::canonical_form_of_load;
 pub(crate) use eval::canonical_term;
 pub(crate) use eval::canonicalized_offset_index_term;
-pub(crate) use eval::comparison_form;
 #[cfg(test)]
 pub(crate) use eval::count_canonical_at_creation_violations;
 #[cfg(test)]
@@ -174,6 +173,7 @@ pub(crate) use eval::terms_have_same_canonical_form;
 pub(crate) use eval::{
     CUndefinedBehaviorSite, locate_undefined_behavior, locate_undefined_behavior_in_condition,
 };
+pub(crate) use eval::{arithmetic_comparison_form, comparison_form};
 #[cfg(test)]
 pub(crate) use eval::{
     load_variable_registry_len, with_load_variable_range, with_load_variable_registry_capacity,

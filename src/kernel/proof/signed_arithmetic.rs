@@ -3275,7 +3275,8 @@ fn conclusion_matches(value: &CheckedValue, goal: &Proposition) -> bool {
     if conclusion_matches_exact(value, goal) {
         return true;
     }
-    crate::kernel::comparison_form(goal).is_some_and(|goal| conclusion_matches_exact(value, &goal))
+    crate::kernel::arithmetic_comparison_form(goal)
+        .is_some_and(|goal| conclusion_matches_exact(value, &goal))
 }
 
 fn conclusion_matches_exact(value: &CheckedValue, goal: &Proposition) -> bool {

@@ -6127,7 +6127,7 @@ pub(crate) fn listed_premise_holds(
     if listed_premise_holds_with(premise, &available) {
         return true;
     }
-    crate::kernel::comparison_form(premise)
+    crate::kernel::arithmetic_comparison_form(premise)
         .is_some_and(|comparison| listed_premise_holds_with(&comparison, &available))
 }
 

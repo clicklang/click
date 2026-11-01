@@ -1269,8 +1269,8 @@ pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposit
     if polarity_equivalent_by(left, right, canonical_order_condition) {
         return true;
     }
-    let left_comparison = crate::kernel::comparison_form(left);
-    let right_comparison = crate::kernel::comparison_form(right);
+    let left_comparison = crate::kernel::arithmetic_comparison_form(left);
+    let right_comparison = crate::kernel::arithmetic_comparison_form(right);
     polarity_equivalent_by(
         left_comparison.as_ref().unwrap_or(left),
         right_comparison.as_ref().unwrap_or(right),

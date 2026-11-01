@@ -52,7 +52,10 @@ congruence, without creating facts or changing lowering.
 Shared comparison-form normalization handles arithmetic identities in exact
 premise lists, arithmetic claims, fold alpha keys, and selected scalar-read
 addresses. It preserves the original terms and snapshots; comparisons do not
-walk memory history or search ambient facts.
+walk memory history or search ambient facts. Arithmetic comparison is a query
+operation: it does not file normalized aliases as additional facts. Completed
+comparison queries are memoized within the load-origin session; budget refusals
+are not retained, and a fresh verification starts with cold comparison caches.
 The all-operators gate and after-migration stability audits are pending.
 The ordinary obligations also exposed a retained-proof bug: a post-execution
 `have` can retain prerequisite proofs before its own certificate. Replay now
