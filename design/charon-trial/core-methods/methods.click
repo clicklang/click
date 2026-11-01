@@ -74,6 +74,38 @@ fn or_default(o: Option<u32>) -> u32 {
 }
 
 // Each definition is Rust's at the edge of its type.
+
+// `<[T]>::swap` owns the slice, requires both indices in bounds (Rust
+// panics otherwise), exchanges the two elements and keeps every other.
+fn exchange(xs: &mut [u32], a: usize, b: usize) {
+    owns *xs;
+    requires a < xs.len();
+    requires b < xs.len();
+    ensures xs[a] == old(xs[b]);
+    ensures xs[b] == old(xs[a]);
+    ensures forall (k: usize) { k < xs.len() and k != a and k != b implies xs[k] == old(xs[k]) };
+}
+
+fn swap_bytes(bytes: &mut [u8]) {
+    owns *bytes;
+    ensures bytes.len() >= 2 implies bytes[0] == old(bytes[1]);
+}
+
+// An element the call keeps is the contract's frame at that index.
+fn reverse_three(xs: &mut [i64]) {
+    owns *xs;
+    requires xs.len() == 3;
+    ensures xs[0] == old(xs[2]);
+    ensures xs[1] == old(xs[1]);
+    ensures xs[2] == old(xs[0]);
+} by {
+    step_until(function.exit);
+    have 1u64 < xs.len() by { solve(); }
+    have xs[1] == old(xs[1]) by {
+        instantiate(forall (k: usize) { k < xs.len() and k != 0u64 and k != 2u64 implies xs[k] == old(xs[k]) }, 1u64);
+    }
+}
+
 theorem i8_wrapping_add_wraps() {
     ensures i8::wrapping_add(127i8, 1i8) == -128i8 by {
         unfold(i8::wrapping_add(127i8, 1i8));
