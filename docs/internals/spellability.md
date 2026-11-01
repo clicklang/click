@@ -107,8 +107,15 @@ binary, complement and explicit-cast nodes. The result type and operator
 format are distinct: a `uint32` result may contain a sign-free `int32` word
 operation. Literal payload tags survive exactly. Export builds the explicit
 boxed checker output once, without cloning every intermediate subtree.
-This is a bridge migration for argument spelling; machine execution and
-lowering producers still construct the old representation. Shifts use the
+Ordinary specification evaluation now constructs shared nodes directly for
+same-format `uint32`/`uint64` addition, subtraction and multiplication over
+already available values. Children stay shared until one final checker export.
+These total wrapping operations owe no domain obligation. The evaluator retains
+its existing literal-only evaluation; the shared constructor itself does not
+fold. A mixed-format or deferred operand retains the legacy evaluator, and one
+rejected preparation disables further attempts inside that selected tree.
+Signed arithmetic and the other partial operators still use legacy producers
+with separate obligations. C execution has not migrated. Shifts use the
 same shared binary nodes: lowering has already converted a count to the
 left operand's carrier width, and the bridge preserves that explicit conversion
 without reinterpreting it from the result's signedness. Widening spellings explicitly retain the source `int32`/`uint32`

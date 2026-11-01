@@ -29,6 +29,7 @@ fn with_integer_comparisons_preserved<T>(preserve: bool, operation: impl FnOnce(
 mod existential;
 pub(in crate::kernel) mod predicate_dependencies;
 mod quantifier_polarity;
+mod shared_machine;
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (CResource, ExecutionFacts, Vec<ProofObligation>);
@@ -118,6 +119,7 @@ struct SpecEvaluation<'a> {
     /// well-formed logical calls' nominal argument requirements.
     recover_resource_call_types: bool,
     pointer_cast_operand: bool,
+    machine_preparation_disabled: bool,
     integer_bindings: BTreeMap<Variable, IntegerTerm>,
 }
 
@@ -128,6 +130,7 @@ impl<'a> SpecEvaluation<'a> {
             checked_reads: false,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
+            machine_preparation_disabled: false,
             integer_bindings: BTreeMap::new(),
         }
     }
@@ -137,6 +140,7 @@ impl<'a> SpecEvaluation<'a> {
             checked_reads: true,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
+            machine_preparation_disabled: false,
             integer_bindings: BTreeMap::new(),
         }
     }
@@ -5623,6 +5627,42 @@ fn evaluate_spec_expression_paths_with_loop_entry_in(
 }
 
 fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
+    scope: SpecScope<'_>,
+    expression: &SpecExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    // Attempt one complete arithmetic tree. If it contains a deferred operand,
+    // do not repeatedly prepare its growing prefixes during legacy evaluation.
+    let candidate = !budget.machine_preparation_disabled
+        && matches!(
+            expression,
+            SpecExpression::Add(..) | SpecExpression::Subtract(..) | SpecExpression::Multiply(..)
+        );
+    if candidate {
+        if let Some(value) = shared_machine::prepare(expression, budget)? {
+            let PureFunctionArgument::Value(value) = KernelTermExport::default()
+                .argument(&value)
+                .map_err(|_| ExecutionLimit::Paths)?
+            else {
+                unreachable!()
+            };
+            return Ok(vec![SpecExpressionPath {
+                value,
+                facts: Vec::new().into(),
+                obligations: Vec::new(),
+            }]);
+        }
+        budget.machine_preparation_disabled = true;
+    }
+    let paths = evaluate_spec_expression_dispatch(scope, expression, assumptions, budget);
+    if candidate {
+        budget.machine_preparation_disabled = false;
+    }
+    paths
+}
+
+fn evaluate_spec_expression_dispatch(
     scope: SpecScope<'_>,
     expression: &SpecExpression,
     assumptions: &PureFactContext,
