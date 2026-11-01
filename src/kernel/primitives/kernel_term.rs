@@ -30,6 +30,10 @@ pub enum KernelIntegerOperator {
 pub enum KernelTermNode {
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
+    MachineObservation {
+        format: MachineIntegerType,
+        operand: KernelTerm,
+    },
     MachineBinary {
         format: MachineIntegerType,
         operator: MachineBinaryOp,
@@ -235,7 +239,8 @@ impl KernelTerm {
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. } => arguments,
-            KernelTermNode::MachineUnary { operand, .. }
+            KernelTermNode::MachineObservation { operand, .. }
+            | KernelTermNode::MachineUnary { operand, .. }
             | KernelTermNode::MachineCast { operand, .. } => std::slice::from_ref(operand),
             _ => &[],
         }
@@ -337,6 +342,13 @@ impl KernelTermImport {
         let value = match term.as_ref() {
             IntegerTerm::Constant(value) => KernelTerm::integer_literal(value.clone()),
             IntegerTerm::Variable(variable) => KernelTerm::variable(KernelType::Integer, *variable),
+            IntegerTerm::Machine(machine) => KernelTerm::intern(
+                KernelType::Integer,
+                KernelTermNode::MachineObservation {
+                    format: machine.ty(),
+                    operand: self.machine(machine.ty(), machine.value()),
+                },
+            ),
             IntegerTerm::Negate(inner) => {
                 KernelTerm::integer_operation(Op::Negate, vec![self.integer(inner)]).unwrap()
             }
@@ -375,7 +387,7 @@ impl KernelTermImport {
                     .collect();
                 KernelTerm::checked_call(KernelType::Integer, application.name().into(), arguments)
             }
-            // Binders, machine observations and their scoped obligations keep
+            // Binders and their scoped obligations keep
             // their exact old representation until their own migration.
             _ => KernelTerm::legacy(PureFunctionArgument::Integer(term.clone())),
         };
@@ -398,6 +410,35 @@ mod tests {
         assert_eq!(common.ty(), &KernelType::Integer);
         let reconstructed = KernelTermExport::default().integer(&common).unwrap();
         assert_eq!(reconstructed.kernel_term(), Some(&common));
+    }
+
+    #[test]
+    fn machine_observation_retains_its_format_and_reconstructs_after_source_drop() {
+        let word = Bitvector32Term::Variable(Variable(87654322));
+        let mut observations = Vec::new();
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let machine = SharedMachineIntegerTerm::intern(format, word.clone());
+            let source: SharedIntegerTerm = IntegerTerm::Machine(machine.clone()).into();
+            let common = KernelTermImport::default().integer(&source);
+            assert!(
+                matches!(common.node(), KernelTermNode::MachineObservation { format: actual, .. } if *actual == format)
+            );
+            assert_eq!(common.ty(), &KernelType::Integer);
+            assert_eq!(common.children()[0].ty(), &KernelType::C(format.c_type()));
+            drop(source);
+            let restored = KernelTermExport::default().integer(&common).unwrap();
+            assert!(
+                matches!(restored.as_ref(), IntegerTerm::Machine(actual) if actual.id() == machine.id())
+            );
+            observations.push(common);
+        }
+        assert_ne!(observations[0], observations[1]);
+        assert_ne!(observations[2], observations[3]);
     }
 
     #[test]
@@ -562,6 +603,15 @@ impl KernelTermExport {
             }
             KernelTermNode::Variable(variable) if term.ty() == &KernelType::Integer => {
                 PureFunctionArgument::Integer(IntegerTerm::Variable(*variable).into())
+            }
+            KernelTermNode::MachineObservation { format, operand } => {
+                PureFunctionArgument::Integer(
+                    IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                        *format,
+                        Self::machine(operand)?,
+                    ))
+                    .into(),
+                )
             }
             KernelTermNode::IntegerOperation {
                 operator,

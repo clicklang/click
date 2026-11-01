@@ -2765,19 +2765,34 @@ fn raise_kernel_term(
             name: generic_instance_source_name(name).into(),
             arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
         },
+        Node::MachineObservation { format, operand } => {
+            let value = crate::kernel::KernelTermExport::default()
+                .argument(operand)
+                .ok()?;
+            let crate::kernel::PureFunctionArgument::Value(value) = value else {
+                return None;
+            };
+            let (crate::kernel::integer_c_value!(bits)) = value else {
+                return None;
+            };
+            let expression =
+                synthesize_surface_bitvector(&bits, parameter_binding, state, bound_variables)?;
+            SurfaceTerm::Call {
+                name: "to_integer".into(),
+                arguments: vec![match format {
+                    // Narrow loads and conversions already spell their
+                    // extended carrier. Adding a narrowing or promotion
+                    // cast changes scoped observation nodes.
+                    crate::kernel::MachineIntegerType::Int8
+                    | crate::kernel::MachineIntegerType::UInt8
+                    | crate::kernel::MachineIntegerType::Int16
+                    | crate::kernel::MachineIntegerType::UInt16 => expression,
+                    _ => synthesize_observation_operand(expression, format.c_type())?,
+                }],
+            }
+        }
         Node::Legacy(legacy) => match legacy.value() {
-            crate::kernel::PureFunctionArgument::Integer(value) => match value.as_ref() {
-                crate::kernel::IntegerTerm::Machine(machine) => SurfaceTerm::Call {
-                    name: "to_integer".into(),
-                    arguments: vec![synthesize_surface_bitvector(
-                        machine.value(),
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?],
-                },
-                _ => return None,
-            },
+            crate::kernel::PureFunctionArgument::Integer(_) => return None,
             value => {
                 synthesize_legacy_call_argument(value, parameter_binding, state, bound_variables)?
             }
@@ -2804,6 +2819,37 @@ fn raise_kernel_term(
                 .ok()?;
             synthesize_legacy_call_argument(&value, parameter_binding, state, bound_variables)?
         }
+    })
+}
+
+/// Keep the observation's interpretation inside its snapshot selector.
+fn synthesize_observation_operand(expression: SurfaceTerm, format: CType) -> Option<SurfaceTerm> {
+    Some(match expression {
+        SurfaceTerm::At {
+            selector,
+            expression,
+        } => SurfaceTerm::At {
+            selector,
+            expression: Box::new(synthesize_observation_operand(*expression, format)?),
+        },
+        SurfaceTerm::Old(expression) => SurfaceTerm::Old(Box::new(synthesize_observation_operand(
+            *expression,
+            format,
+        )?)),
+        expression => SurfaceTerm::CUnary {
+            operand: Box::new(expression),
+            // CUnary's Surface operand is authoritative. A C fragment
+            // would discard resource fields and scoped binding information.
+            lowered: CExpression::Cast {
+                expression: Box::new(CExpression::Value(int32(0))),
+                target_type: format,
+                integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+                pointee_struct: None,
+                pointee_volatile: false,
+                pointee_constant: false,
+                explicit_qualification: false,
+            },
+        },
     })
 }
 

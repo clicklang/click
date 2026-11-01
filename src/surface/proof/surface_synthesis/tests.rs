@@ -3584,6 +3584,11 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
     let declarations = "function foo(x: int32) -> Integer { to_integer(x) } function foo_wide(x: int64) -> Integer { to_integer(x) } function bar(x: Integer) -> Integer { x + 1 }";
     for expression in [
         "to_integer(x) + foo(x)",
+        "to_integer(x as uint32) + foo(x)",
+        "to_integer(x as int8) + foo(x)",
+        "to_integer(x as uint8) + foo(x)",
+        "to_integer(x as int64) + foo(x)",
+        "to_integer(x as uint64) + foo(x)",
         "bar(foo(x) + 1) * (foo(x) - 2)",
         "-foo(x)",
         "foo(x + 1)",

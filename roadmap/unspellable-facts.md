@@ -112,6 +112,20 @@ Elapsed 13m07s included a 3m05s rebuild; unit and fixture phases totaled about
 machine-fixture fact-stability audit passed with zero differences. No nightly
 suite was run.
 
+PR #2202 merged as `5211102e4`. On `codex/kernel-integer-observations`, the
+next increment moves `IntegerTerm::Machine` observations into shared typed
+nodes. Source interpretation is explicit, including signedness, and raising
+keeps the required cast inside snapshot selectors. Exact bridge reconstruction
+is tested after dropping the old source; scaling grows the selected machine
+operand beside unrelated terms. Boolean casts and Integer-to-machine conversion
+remain separate migrations. Narrow observations keep their existing spelling;
+added narrowing/promotion casts change their structure. Observation casts use
+Surface CUnary operands, preserving resource fields and scoped names instead
+of projecting them into C fragments. The full gate passed: 7,015 tests, 58
+examples and 4,949 mdtests in 10m12s (timing warning). All 83 focused tests and
+248 integer-fixture fact-stability audits passed, with zero differences.
+No nightly suite ran and no limits were raised.
+
 Next: migrate the remaining ordinary expression producers and machine arithmetic onto the
 shared tree, then replace checker adapters with typed views. Algebraic values,
 binders, full pointers and loads follow; facts and goals should ultimately
