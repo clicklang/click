@@ -121,6 +121,15 @@ legacy constructors from a generic cast with the same formats; import/export
 never silently normalizes one into another. Low-word extraction interprets
 its operand as unsigned bits, independent of the source C signedness.
 Machine raising currently uses one exact export to the existing speller.
+Mathematical observations of machine values (`to_integer`) now have a shared
+`MachineObservation` node with the interpretation format and machine operand.
+Signed and unsigned interpretations remain distinct. Raising retains the observation's interpretation inside any snapshot selector;
+a local's name must not silently choose a different signedness. Narrow values retain their
+existing load/conversion spelling: adding another narrowing or promotion cast
+changes the structural observation, particularly under quantified binders.
+Observation casts use `SurfaceTerm::CUnary` with the Surface operand retained;
+projecting a resource field or scoped name into a C fragment loses its binding. The checker bridge reconstructs
+the exact `IntegerTerm::Machine` payload without folding arithmetic.
 Wide symbolic cast chains retain their intermediate nodes. Collapsing
 `(x as int128) as int64` used to create a generic `int32`-to-`int64` cast,
 while its direct spelling lowered to `Int64From32`. Retaining the chain
@@ -132,7 +141,7 @@ conversion through a no-narrower intermediate can be related to its direct
 modular conversion; a lossy intermediate does not restore the original value.
 No stored cast node is replaced by that equality.
 The `Legacy` leaf retains complete unmigrated values, including pointer
-metadata, machine observations, array snapshots, and scoped binders. Those
+metadata, Boolean conversions, array snapshots, and scoped binders. Those
 families do not yet have unified constructors or total raising. Legacy call
 arguments retain their producer identity and exact payload: semantic pointer
 equality must not select a different auxiliary qualifier or evidence record.

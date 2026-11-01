@@ -89,3 +89,37 @@ fn specialized_cast_bridge_is_linear_beside_unrelated_terms() {
         }
     }
 }
+
+#[test]
+fn machine_observation_bridge_scales_with_its_explicit_operand() {
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|i| KernelTerm::variable(KernelType::Integer, Variable(940_000 + i)))
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut bits = Bitvector32Term::Variable(Variable(941_000));
+            for _ in 0..size {
+                bits = Bitvector32Term::Binary {
+                    format: MachineIntegerType::Int32,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(bits),
+                    right: Box::new(Bitvector32Term::Constant(1)),
+                };
+            }
+            let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, bits);
+            let source: SharedIntegerTerm = IntegerTerm::Machine(machine.clone()).into();
+            let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let term = KernelTermImport::default().integer(&source);
+                drop(source);
+                KernelTermExport::default().integer(&term).unwrap()
+            });
+            assert!(
+                matches!(restored.as_ref(), IntegerTerm::Machine(actual) if actual.id() == machine.id())
+            );
+            assert!(
+                work <= 8 * (size + 2),
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}
