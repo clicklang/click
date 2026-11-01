@@ -451,7 +451,7 @@ impl PropositionSource for ProofFacts {
         self.assumptions().clone()
     }
     fn exact_available(&self, required: &Proposition) -> bool {
-        self.contains(required)
+        self.contains(required) || self.matching_quantified_fact(required).is_some()
     }
 }
 

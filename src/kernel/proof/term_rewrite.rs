@@ -1492,6 +1492,9 @@ fn bounded_uint64_indices(
 }
 
 pub(crate) struct TermRewrite<'a> {
+    // Comparison only: rebuild arithmetic through its assumption-free
+    // identities. Ordinary equality rewrites retain the written nodes.
+    comparison_arithmetic: bool,
     algebraic: Option<(&'a AlgebraicTerm, &'a AlgebraicTerm)>,
     bitvector: Option<(&'a Bitvector32Term, &'a Bitvector32Term)>,
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
@@ -1604,6 +1607,30 @@ impl<'a> TermRewrite<'a> {
         self.integer_work_exhausted
     }
 
+    fn for_arithmetic_comparison() -> Self {
+        let mut rewrite = Self::empty();
+        rewrite.comparison_arithmetic = true;
+        // Normalize the selected scalar read's address too. The read's
+        // snapshot and loaded-pointer identities stay opaque; the existing
+        // per-scope registry memo shares repeated address terms.
+        rewrite.resolve_registered_loads = true;
+        rewrite
+    }
+
+    pub(crate) fn arithmetic_condition_comparison(
+        condition: &ConditionTerm,
+    ) -> Option<ConditionTerm> {
+        let mut rewrite = Self::for_arithmetic_comparison();
+        let result = rewrite.condition(condition);
+        (rewrite.refusal().is_none() && result != *condition).then_some(result)
+    }
+
+    pub(crate) fn arithmetic_comparison(proposition: &Proposition) -> Option<Proposition> {
+        let mut rewrite = Self::for_arithmetic_comparison();
+        let result = rewrite.proposition(proposition);
+        (rewrite.refusal().is_none() && result != *proposition).then_some(result)
+    }
+
     pub(crate) fn normalize_algebraic(term: &AlgebraicTerm) -> Option<AlgebraicTerm> {
         if !term.is_well_formed() {
             return None;
@@ -1634,6 +1661,7 @@ impl<'a> TermRewrite<'a> {
 
     fn empty() -> Self {
         Self {
+            comparison_arithmetic: false,
             conditions: None,
             cited_conditions: None,
             bounded_uint64_indices: None,
@@ -1721,6 +1749,7 @@ impl<'a> TermRewrite<'a> {
             .map(|variable| variable.0)
             .max();
         let mut rewrite = Self {
+            comparison_arithmetic: false,
             conditions: None,
             cited_conditions: None,
             bounded_uint64_indices: None,
@@ -1873,6 +1902,7 @@ impl<'a> TermRewrite<'a> {
 
     pub(crate) fn for_conditions(conditions: &'a HashMap<ConditionTerm, bool>) -> Self {
         Self {
+            comparison_arithmetic: false,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2005,6 +2035,7 @@ impl<'a> TermRewrite<'a> {
 
     pub(crate) fn for_pointer_variable(from: Variable, to: &'a Pointer) -> Self {
         Self {
+            comparison_arithmetic: false,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2095,6 +2126,7 @@ impl<'a> TermRewrite<'a> {
             .max();
         let integer_renaming_max = renamings.values().map(|variable| variable.0).max();
         let mut walker = Self {
+            comparison_arithmetic: false,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2279,6 +2311,7 @@ impl<'a> TermRewrite<'a> {
         algebraic: &'a BTreeMap<Variable, AlgebraicTerm>,
     ) -> Self {
         Self {
+            comparison_arithmetic: false,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2859,6 +2892,44 @@ impl<'a> TermRewrite<'a> {
                     Proposition::Not(Box::new(body))
                 }
             }
+            // Comparison introduces no substitution or fresh variable, so it
+            // preserves binder scopes while visiting each connective once.
+            Proposition::And(left, right) if self.comparison_arithmetic => Proposition::And(
+                Box::new(self.proposition(left)),
+                Box::new(self.proposition(right)),
+            ),
+            Proposition::Or(left, right) if self.comparison_arithmetic => Proposition::Or(
+                Box::new(self.proposition(left)),
+                Box::new(self.proposition(right)),
+            ),
+            Proposition::Implies(left, right) if self.comparison_arithmetic => {
+                Proposition::Implies(
+                    Box::new(self.proposition(left)),
+                    Box::new(self.proposition(right)),
+                )
+            }
+            Proposition::ForAll {
+                name,
+                var,
+                sort,
+                body,
+            } if self.comparison_arithmetic => Proposition::ForAll {
+                name: name.clone(),
+                var: *var,
+                sort: sort.clone(),
+                body: Box::new(self.proposition(body)),
+            },
+            Proposition::Exists {
+                name,
+                var,
+                sort,
+                body,
+            } if self.comparison_arithmetic => Proposition::Exists {
+                name: name.clone(),
+                var: *var,
+                sort: sort.clone(),
+                body: Box::new(self.proposition(body)),
+            },
             // Binder-bearing and compound propositions require their own explicit proof steps.
             _ => {
                 if self.integer_variables.is_some()
@@ -5379,6 +5450,21 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             term => match (term.as_binary(), term.as_unary()) {
+                (Some((op, left, right)), _) if self.comparison_arithmetic => {
+                    let left = self.bits(left);
+                    let right = self.bits(right);
+                    if let crate::kernel::BitvectorBinaryOp::Machine(
+                        format,
+                        MachineBinaryOp::Subtract,
+                    ) = op
+                        && left == right
+                    {
+                        crate::kernel::machine_integer::range::constant_word(format, &0.into())
+                            .expect("zero fits every machine format")
+                    } else {
+                        op.build(left, right)
+                    }
+                }
                 (Some((op, left, right)), _) => op.build_raw(self.bits(left), self.bits(right)),
                 // A width conversion of a substituted constant is that
                 // constant in the destination type, as for the casts above.

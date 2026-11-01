@@ -26,7 +26,7 @@ propositions; the int32 remainder bridge theorem uses the same conjunction.
 The full exclusion is checked by indexed assumption membership, with existing
 atomic checks deciding its two comparisons. Unknown execution records an Or
 on the normal branch and an And of equalities on the exceptional branch.
-The follow-up `codex/ordinary-arithmetic-domains` consolidates the supported
+The follow-up `codex/arithmetic-ordinary-propositions` consolidates the supported
 arithmetic operators in one PR: signed add/subtract/multiply use exact
 Integer range bounds, division/remainder conjoin both requirements, and
 shifts conjoin their language-specific requirements. Unary negation inherits
@@ -41,7 +41,7 @@ Arithmetic observation planning selects the complete domain's recorded source,
 including historical anchors. Integer bridge shortcuts are now session-local:
 retained terms preserve identity without changing a later verification's work.
 Logical machine arithmetic also preserves symbolic cancellation and identity
-nodes. Their equalities belong to comparison, including literal wide
+nodes. Their equalities belong to comparison, including wide literal identities and
 `(x + c) - c` cancellation in the equality graph. Store equations publish the
 registered read name at the stored value's actual width. Static scalar reads
 use declaration names, including historical reads. Arithmetic identity
@@ -49,6 +49,10 @@ planning retains explicit operands and orders selected dependencies before
 their users; a same-cell frame is tried before stored-value search. False
 scalar equalities are refused using ordinary affine cancellation and word
 congruence, without creating facts or changing lowering.
+Shared comparison-form normalization handles arithmetic identities in exact
+premise lists, arithmetic claims, fold alpha keys, and selected scalar-read
+addresses. It preserves the original terms and snapshots; comparisons do not
+walk memory history or search ambient facts.
 The all-operators gate and after-migration stability audits are pending.
 The ordinary obligations also exposed a retained-proof bug: a post-execution
 `have` can retain prerequisite proofs before its own certificate. Replay now

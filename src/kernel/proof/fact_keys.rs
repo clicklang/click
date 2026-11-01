@@ -785,7 +785,8 @@ pub(crate) fn integer_condition_alpha_key(
     {
         return None;
     }
-    snapshot_alpha_proposition_key(proposition)
+    let comparison = crate::kernel::comparison_form(proposition);
+    snapshot_alpha_proposition_key(comparison.as_ref().unwrap_or(proposition))
         .map(|(key, work_units)| IntegerConditionAlphaKey { key, work_units })
 }
 
@@ -3517,8 +3518,13 @@ pub(crate) fn quantified_equivalence_index_key(
     ) {
         return None;
     }
-    alpha_proposition_key::<true>(proposition, &mut BTreeMap::new(), &mut 0)
-        .map(QuantifiedEquivalenceKey)
+    let comparison = crate::kernel::comparison_form(proposition);
+    alpha_proposition_key::<true>(
+        comparison.as_ref().unwrap_or(proposition),
+        &mut BTreeMap::new(),
+        &mut 0,
+    )
+    .map(QuantifiedEquivalenceKey)
 }
 
 /// The final consequent of a (possibly empty) implication chain. The walk

@@ -1212,6 +1212,10 @@ pub(crate) fn separation_bridged_fact_is_available(
 
 pub(crate) fn exact_fact_contains_conjunct(fact: &Proposition, required: &Proposition) -> bool {
     condition_polarity_equivalent(fact, required)
+        || matches!((fact, required),
+            (Proposition::ForAll { .. }, Proposition::ForAll { .. })
+            | (Proposition::Exists { .. }, Proposition::Exists { .. })
+            if quantified_binder_equivalent(fact, required))
         || matches!(fact, Proposition::And(left, right)
             if exact_fact_contains_conjunct(left, required)
                 || exact_fact_contains_conjunct(right, required))
@@ -1244,7 +1248,31 @@ pub(crate) fn propositions_are_exact_negations(left: &Proposition, right: &Propo
 /// availability path and planner accepts; [`order_claim_equivalent`] extends
 /// it to the other order families for the explicit closers.
 pub(crate) fn condition_polarity_equivalent(left: &Proposition, right: &Proposition) -> bool {
-    polarity_equivalent_by(left, right, canonical_order_condition)
+    if left == right {
+        return true;
+    }
+    // Compound membership descends through its leaves. Do not normalize
+    // the whole remaining conjunction at every recursive membership step.
+    let atomic = |mut proposition: &Proposition| {
+        while let Proposition::Not(body) = proposition {
+            proposition = body;
+        }
+        matches!(
+            proposition,
+            Proposition::ConditionIs(..)
+                | Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        )
+    };
+    if !atomic(left) || !atomic(right) {
+        return false;
+    }
+    let left_comparison = crate::kernel::comparison_form(left);
+    let right_comparison = crate::kernel::comparison_form(right);
+    polarity_equivalent_by(
+        left_comparison.as_ref().unwrap_or(left),
+        right_comparison.as_ref().unwrap_or(right),
+        canonical_order_condition,
+    )
 }
 
 /// [`condition_polarity_equivalent`] over every order family the kernel
@@ -1462,6 +1490,10 @@ pub(crate) fn quantified_equivalent_available_fact(
 }
 
 pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Proposition) -> bool {
+    let left_comparison = crate::kernel::comparison_form(left);
+    let right_comparison = crate::kernel::comparison_form(right);
+    let left = left_comparison.as_ref().unwrap_or(left);
+    let right = right_comparison.as_ref().unwrap_or(right);
     // A guarded quantifier matches when the guards are identical and the
     // quantified conclusions are binder-equivalent. A guard can itself
     // quantify variables; its typed alpha identity preserves its snapshots,

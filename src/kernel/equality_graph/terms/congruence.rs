@@ -88,28 +88,24 @@ pub(in crate::kernel::equality_graph) fn has_machine_operands(term: &T) -> bool 
         || matches!(term, T::Variable(variable) if crate::kernel::is_load_variable(variable))
 }
 
-/// A local wrapping identity used only by the comparison graph. The source
-/// term remains `(x + c) - c`; graph registration identifies its class with
-/// x's. Literal matching is constant work and requires no ambient facts.
-fn wide_add_sub_cancel_operand(term: &T) -> Option<&T> {
+/// A local wrapping identity used only by the comparison graph. Literal
+/// matching examines two operation roots and leaves their source terms intact.
+fn add_sub_cancel_operand(term: &T) -> Option<&T> {
     let T::Binary {
         format,
-        op: MachineBinaryOp::Subtract,
+        op,
         left,
         right,
     } = term
     else {
         return None;
     };
-    if !matches!(
-        format,
-        MachineIntegerType::Int64 | MachineIntegerType::UInt64
-    ) {
+    if !matches!(format.format().bits(), 32 | 64) {
         return None;
     }
     let T::Binary {
         format: inner_format,
-        op: MachineBinaryOp::Add,
+        op: inner_op,
         left: base,
         right: added,
     } = left.as_ref()
@@ -117,7 +113,15 @@ fn wide_add_sub_cancel_operand(term: &T) -> Option<&T> {
         return None;
     };
     (format == inner_format
-        && matches!(added.as_ref(), T::Int64Constant(_) | T::UInt64Constant(_))
+        && matches!(
+            (op, inner_op),
+            (MachineBinaryOp::Add, MachineBinaryOp::Subtract)
+                | (MachineBinaryOp::Subtract, MachineBinaryOp::Add)
+        )
+        && matches!(
+            added.as_ref(),
+            T::Constant(_) | T::UInt32Constant(_) | T::Int64Constant(_) | T::UInt64Constant(_)
+        )
         && added == right)
         .then_some(base.as_ref())
 }
@@ -410,7 +414,41 @@ impl TermClasses {
                                 .extend(application.arguments().iter().rev().map(Work::Argument));
                             continue;
                         }
-                        // Binder-bearing match/fold terms retain their complete,
+                        I::RangeFold {
+                            index,
+                            initial,
+                            accumulator,
+                            item,
+                            body,
+                        } => {
+                            // Keep the bound body opaque and exact. Endpoints
+                            // and initial value are outside its binding scope,
+                            // so ordinary congruence applies to those children.
+                            let head = self.intern_node(Node::IntegerFold(
+                                index.machine_item_type(),
+                                *accumulator,
+                                *item,
+                                body.clone(),
+                            ));
+                            pending.push(Work::Call(head, 3));
+                            pending.push(Work::Integer(initial));
+                            match index {
+                                crate::kernel::IntegerRangeFoldIndex::Int32 { start, end } => {
+                                    pending.push(Work::Machine(end.value(), W::Bits32));
+                                    pending.push(Work::Machine(start.value(), W::Bits32));
+                                }
+                                crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
+                                    pending.push(Work::Machine(end.value(), W::Bits64));
+                                    pending.push(Work::Machine(start.value(), W::Bits64));
+                                }
+                                crate::kernel::IntegerRangeFoldIndex::Integer { start, end } => {
+                                    pending.push(Work::Integer(end));
+                                    pending.push(Work::Integer(start));
+                                }
+                            }
+                            continue;
+                        }
+                        // Other binder-bearing terms retain their complete,
                         // shallow interned identity.
                         _ => Node::IntegerAtom(shared),
                     }
@@ -547,11 +585,16 @@ impl TermClasses {
                             continue;
                         }
                         if *op == MachineBinaryOp::Subtract && left == right {
-                            values.push(self.intern_typed_machine(&T::UInt64Constant(0), width));
+                            let zero = if *format == MachineIntegerType::Int64 {
+                                T::Int64Constant(0)
+                            } else {
+                                T::UInt64Constant(0)
+                            };
+                            values.push(self.intern_typed_machine(&zero, width));
                             continue;
                         }
                     }
-                    if wide && let Some(base) = wide_add_sub_cancel_operand(term) {
+                    if let Some(base) = add_sub_cancel_operand(term) {
                         pending.push(Work::Machine(base, width));
                         continue;
                     }

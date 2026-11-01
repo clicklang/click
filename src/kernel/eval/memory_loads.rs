@@ -2606,6 +2606,14 @@ pub(crate) fn comparison_form(proposition: &Proposition) -> Option<Proposition> 
             resolved = Proposition::ConditionIs(condition, *value);
         }
     }
+    // Keep arithmetic identities in the shared comparison representation,
+    // including endpoints of binder-bearing terms. Never change the retained
+    // proposition or the term produced by lowering.
+    if let Some(arithmetic) =
+        crate::kernel::proof::term_rewrite::TermRewrite::arithmetic_comparison(&resolved)
+    {
+        resolved = arithmetic;
+    }
     (&resolved != proposition).then_some(resolved)
 }
 
@@ -8141,4 +8149,60 @@ mod pointer_read_value_definition_tests {
             true,
         ));
     }
+}
+
+#[test]
+fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_terms() {
+    use crate::kernel::{MachineBinaryOp, MachineIntegerType};
+    let _session = crate::kernel::VerificationSession::enter();
+    let index = Bitvector32Term::Variable(Variable(989_784));
+    let written = Bitvector32Term::logical_machine_binary(
+        MachineIntegerType::UInt64,
+        MachineBinaryOp::Add,
+        Bitvector32Term::UInt64Constant(0),
+        index.clone(),
+    );
+    let pointer = |value| Pointer {
+        block: Pointer::symbolic(Variable(989_785)).block,
+        offset: PointerOffsetTerm::Int64Scaled {
+            value: Box::new(value),
+            byte_width: 4,
+            unsigned: true,
+        },
+    };
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let read = |memory, value| {
+        crate::kernel::canonical_form_of_load(memory, pointer(value), LoadKind::Int32)
+    };
+    let original = read(memory.clone(), written.clone());
+    let simple = read(memory.clone(), index.clone());
+    let equality = |left, right| Proposition::ConditionIs(ConditionTerm::equal(left, right), true);
+    let fact = equality(original.clone(), simple.clone());
+    let comparison = comparison_form(&fact).expect("the addresses have an arithmetic identity");
+    assert!(
+        crate::kernel::proposition_holds_without_facts(&comparison),
+        "{comparison:?}"
+    );
+    assert_ne!(
+        original, simple,
+        "the original read must retain its written address"
+    );
+    assert!(matches!(
+        written,
+        Bitvector32Term::Binary {
+            op: MachineBinaryOp::Add,
+            ..
+        }
+    ));
+    let changed = CMemory::new().store(
+        pointer(index.clone()),
+        CValue::Int32(Bitvector32Term::Constant(17)),
+    );
+    let different_snapshot = equality(
+        original,
+        read(crate::kernel::intern_c_memory(changed), index),
+    );
+    assert!(!crate::kernel::proposition_holds_without_facts(
+        &comparison_form(&different_snapshot).unwrap_or(different_snapshot)
+    ));
 }

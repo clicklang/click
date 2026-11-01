@@ -2942,6 +2942,8 @@ fn term_interval_proves(
 }
 
 fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
+    let comparison = crate::kernel::comparison_form(proposition);
+    let proposition = comparison.as_ref().unwrap_or(proposition);
     let (condition, value) = match proposition {
         Proposition::ConditionIs(condition, value) => (condition, *value),
         Proposition::Not(body) => match body.as_ref() {

@@ -384,6 +384,14 @@ memory, never facts, so it holds at every program point. It enters checking
 only through the comparison form (`kernel::comparison_form`): the proposition
 with each read of a stored cell replaced by the value stored there.
 
+That shared comparison form also normalizes assumption-free arithmetic
+identities, including fold endpoints and the selected address of a registered
+scalar read. It leaves the retained proposition and lowered operation nodes
+unchanged. Read-address normalization keeps snapshots and loaded-pointer
+identities opaque and memoizes the selected registry DAG within the traversal.
+Exact premise lists, signed arithmetic claims, and fold alpha keys use this
+same form; they do not add tactic-specific fact searches.
+
 - The fact stores file each fact under its comparison form too
   (`ProofFacts::with_fact`, `PureFactContext::assume_condition_once`), and an
   exact lookup also looks up the comparison form of what it looks up.

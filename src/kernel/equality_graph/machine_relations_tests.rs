@@ -294,7 +294,10 @@ fn explicit_wide_add_sub_nodes_cancel_in_the_comparison_graph() {
             (Op::Multiply, base.clone(), literal(1), base.clone()),
         ] {
             let term = Bitvector32Term::logical_machine_binary(format, op, left, right);
-            assert!(graph.are_uint64_equal(&term, &expected));
+            assert!(
+                graph.are_uint64_equal(&term, &expected),
+                "{format:?} {op:?}: {term:?} != {expected:?}"
+            );
             assert!(matches!(term, Bitvector32Term::Binary { .. }));
         }
         assert!(graph.are_uint64_equal(&difference(1), &base));
