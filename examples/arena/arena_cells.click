@@ -1311,7 +1311,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 next: i
             });
             have to_integer(i) == to_integer(at(opened, i)) + 1;
-            have 0 <= to_integer(end) - to_integer(i);
+            have 0 <= to_integer(end) - to_integer(i) by {
+                arithmetic_certificate {
+                    premise 0: to_integer(i) <= to_integer(end) =>
+                        0 <= to_integer(end) - to_integer(i);
+                    conclusion 0;
+                }
+            }
             have to_integer(end) - to_integer(i) < to_integer(end) - to_integer(at(opened, i));
             close_invariants() by {
                 both { solve(); } and {
