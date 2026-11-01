@@ -4197,25 +4197,23 @@ pub(super) fn finish_ordered_proof<'a>(
                                         "`{proof_label}` path {path_index}, tactic {tactic_index}: checked outcome `have` did not retain a complete certificate",
                                     )));
                                 };
-                                let tactics = certificate.to_proof_tactics();
-                                let [surface_have] = tactics.as_slice() else {
-                                    return Err(ClickError::new(format!(
-                                        "`{proof_label}` path {path_index}, tactic {tactic_index}: checked smart `have` did not retain one `have` certificate"
-                                    )));
-                                };
-                                let surface_have = surface_have.clone();
                                 if active_claim.is_none() {
                                     outcome_surface_propositions
                                         .record_lowering(&have.proposition, &fact)?;
                                 }
-                                record_post_execution_surface_tactic(
-                                    &mut path_surface_post_tactics,
-                                    &mut path_deferred_capture_tactics,
-                                    path_capture,
-                                    post_execution_index,
-                                    *tactic_index,
-                                    surface_have,
-                                );
+                                // Beginning the source `have` may first prove
+                                // its lowering obligations. Keep those checked
+                                // prerequisites along with the final `have`.
+                                for tactic in certificate.to_proof_tactics() {
+                                    record_post_execution_surface_tactic(
+                                        &mut path_surface_post_tactics,
+                                        &mut path_deferred_capture_tactics,
+                                        path_capture,
+                                        post_execution_index,
+                                        *tactic_index,
+                                        tactic,
+                                    );
+                                }
                             }
                             PostExecutionTactic::Transport { source, target }
                             | PostExecutionTactic::Leaf(ProofTactic::TransportUsing {
