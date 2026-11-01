@@ -544,6 +544,89 @@ fn a_sixty_four_bit_index_is_an_element_index_only_where_it_is_pinned() {
     );
 }
 
+/// Exact wide strides retain native index comparisons in both branches.
+#[test]
+fn wide_offset_branches_publish_full_width_index_facts() {
+    let index = Bitvector32Term::Variable(Variable(93_675));
+    for unsigned in [false, true] {
+        for (stride, target) in [(4, 0), (4, 8), (1, i64::MAX), (-4, -8)] {
+            for reversed in [false, true] {
+                for value in [false, true] {
+                    let scaled = PointerOffsetTerm::Int64Scaled {
+                        value: Box::new(index.clone()),
+                        byte_width: stride,
+                        unsigned,
+                    };
+                    let constant = PointerOffsetTerm::Constant(target);
+                    let (left, right) = if reversed {
+                        (constant, scaled)
+                    } else {
+                        (scaled, constant)
+                    };
+                    let mut facts = crate::kernel::ExecutionFacts::new();
+                    crate::kernel::reasoning::add_pointer_offset_equality_execution_pure_facts(
+                        &mut facts,
+                        &PureFactContext::new(),
+                        left,
+                        right,
+                        value,
+                    )
+                    .unwrap();
+                    let element = target / stride;
+                    let condition = if unsigned {
+                        ConditionTerm::uint64_equal(
+                            index.clone(),
+                            Bitvector32Term::UInt64Constant(element as u64),
+                        )
+                    } else {
+                        ConditionTerm::int64_equal(
+                            index.clone(),
+                            Bitvector32Term::Int64Constant(element),
+                        )
+                    };
+                    assert!(facts.iter().any(|fact| fact.proposition()
+                        == &Proposition::ConditionIs(condition.clone(), value)));
+                    // Even a constant whose low word is -1 must not produce
+                    // a 32-bit comparison of this wide index.
+                    assert!(!facts.iter().any(|fact| matches!(
+                        fact.proposition(),
+                        Proposition::ConditionIs(
+                            ConditionTerm::Compare {
+                                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                                ..
+                            },
+                            _
+                        )
+                    )));
+                }
+            }
+        }
+    }
+    for (stride, target, unsigned) in [
+        (0, 1, true),
+        (4, 1, true),
+        (4, -4, true),
+        (-1, i64::MIN, false),
+    ] {
+        let mut facts = crate::kernel::ExecutionFacts::new();
+        let _ = crate::kernel::reasoning::add_pointer_offset_equality_execution_pure_facts(
+            &mut facts,
+            &PureFactContext::new(),
+            PointerOffsetTerm::Int64Scaled {
+                value: Box::new(index.clone()),
+                byte_width: stride,
+                unsigned,
+            },
+            PointerOffsetTerm::Constant(target),
+            false,
+        );
+        assert!(!facts.iter().any(|fact| matches!(
+            fact.proposition(),
+            Proposition::ConditionIs(ConditionTerm::Compare { .. }, _)
+        )));
+    }
+}
+
 /// A decided pointer-offset equality is also a statement about element
 /// indices, and the two directions are not the same statement. The index a
 /// byte offset folds to is the offset divided by the element width *modulo*
