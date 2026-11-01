@@ -6693,6 +6693,63 @@ mod tests {
     }
 
     #[test]
+    fn explicit_numeric_word_frame_does_not_supply_pointer_origin() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(210_194));
+        let target = Pointer::symbolic(Variable(210_195));
+        let pointer = CPointerValue::new(target.clone(), CType::Int32Pointer).with_extent(Some(
+            SubobjectExtent {
+                start: target.clone(),
+                width: 4u32.into(),
+            },
+        ));
+        let stored = CValue::PointerInteger(PointerIntegerValue {
+            numeric: Box::new(CValue::UInt64(Bitvector32Term::pointer_address(target))),
+            pointer: Box::new(pointer.clone()),
+            kind: PointerIntegerKind::Exact,
+        });
+        let before = CMemory::new().store(field.clone(), stored);
+        // Forgetting a cache is not a write to the program's memory.
+        let after = before.clone().without_possible_aliasing_cells(
+            &Pointer::symbolic(Variable(210_196)),
+            8,
+            &PureFactContext::new(),
+        );
+        let (_, new, equality) = crate::kernel::tests::explicit_frame(
+            &before,
+            &after,
+            &field,
+            CType::UInt64,
+            &[Proposition::CMemoryMutatesOnly {
+                before: before.clone(),
+                after: after.clone(),
+                writes: vec![],
+            }],
+            &PureFactContext::new(),
+        )
+        .expect("the explicit empty footprint preserves the numeric word");
+        let facts = PureFactContext::new().assume_proposition(equality);
+        // Deliberately discard the representation record: a complete read
+        // of unchanged memory legitimately retains it, independently of the
+        // numeric equality. Only the bits are under test here.
+        let recovered = super::cast_c_value_to_type(
+            new.numeric_value().clone(),
+            CType::Int32Pointer,
+            super::IntegerConversion::Modular,
+            &mut Vec::new(),
+            &facts,
+        );
+        match recovered {
+            Err(CRuntimeError::PointerConversion(_)) => {}
+            Ok(CValue::Pointer(recovered)) => assert!(
+                !facts.pointer_designations_match(&recovered, &pointer),
+                "numeric equality alone cannot supply the original pointer bounds"
+            ),
+            other => panic!("unexpected numeric cast result: {other:?}"),
+        }
+    }
+
+    #[test]
     fn a_cached_scalar_prefix_recovers_only_the_complete_stored_pointer() {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer {

@@ -88,11 +88,15 @@ int32 vector_copy(
     step();
     loop {
         decreases length - i;
+        invariant forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) };
         invariant 0 <= i;
         invariant i <= length;
         invariant forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) };
         owns dst[0..length];
         initialize by {
+            have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
+                intro(); intro(); normalize();
+            }
             have 0 <= i;
             have i <= length;
             have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
@@ -119,24 +123,12 @@ int32 vector_copy(
         };
         assumption();
     }
-    step();
     have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
-        intro();
-        intro();
-        extract(0 <= k);
-        extract(k < length);
-        transport(old(src[k]) == old(src[k]), src[k] == old(src[k])) using {
-            0 <= length;
-            0 <= k;
-            k < length;
-            length <= dst_capacity;
-            length <= src_capacity;
-            1 <= dst_capacity;
-            1 <= src_capacity;
-            separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity]));
-        };
+        intro(); intro();
+        instantiate(at(loop(0).exit, forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }), k) using { 0 <= k and k < length; };
         assumption();
     }
+    step();
     have forall (k: int32) { 0 <= k and k < length implies dst[k] == old(src[k]) } by {
         assumption();
     }

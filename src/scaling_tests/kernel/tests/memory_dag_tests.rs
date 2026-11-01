@@ -96,35 +96,50 @@ fn rewritten_goal_comparison_visits_only_the_selected_proposition() {
 }
 
 #[test]
-fn rewritten_store_witness_work_scales_with_selected_memory_path() {
+fn rewritten_store_witness_work_scales_with_explicit_adjacent_equalities() {
     crate::kernel::eval::declare_load_access_width(&arc_pointer(4), 4);
+    let mut samples = Vec::new();
     for size in [1, 2, 4, 8] {
         let value = Bitvector32Term::Constant(17);
         let mut memory = CMemory::new()
             .with_block("arg-memory", 128)
             .store(arc_pointer(4), CValue::Int32(value.clone()));
-        for index in 0..size {
-            memory = memory.with_block(format!("unrelated-{size}-{index}"), 4);
-        }
-        let load = Bitvector32Term::MemoryLoad(
-            crate::kernel::intern_c_memory_ref(&memory),
-            Box::new(arc_pointer(4)),
-            crate::kernel::LoadKind::Int32,
-        );
+        let load = |memory: &CMemory| {
+            Bitvector32Term::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(arc_pointer(4)),
+                crate::kernel::LoadKind::Int32,
+            )
+        };
         let assumptions = PureFactContext::new();
         let capture = CheckedLoadEqualityCapture::start();
-        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            checked_stored_origin_equality(&value, &load, &assumptions)
+        assert!(checked_stored_origin_equality(
+            &value,
+            &load(&memory),
+            &assumptions
+        ));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 0..size {
+                let previous = load(&memory);
+                memory = memory.with_block(format!("unrelated-{size}-{index}"), 4);
+                assert!(checked_atomic_load_equality(
+                    &load(&memory),
+                    &previous,
+                    &assumptions
+                ));
+            }
         });
-        assert!(equal);
-        assert!(
-            work >= size && work <= 40 * (size + 1),
-            "size {size}: {work}"
-        );
+        samples.push((size, work));
         let witnesses = capture.finish();
-        assert_eq!(witnesses.len(), 1);
-        assert!(witnesses[0].checks(&assumptions));
+        assert_eq!(witnesses.len(), size + 1);
+        assert!(witnesses.iter().all(|witness| witness.checks(&assumptions)));
     }
+    assert!(
+        samples
+            .iter()
+            .all(|(size, work)| *work <= samples[0].1 * size),
+        "explicit selected edges: {samples:?}"
+    );
 }
 
 #[test]
@@ -568,15 +583,15 @@ fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
         let mut previous_work = None;
         for size in [16, 256, 4096, 65536] {
             let original = intern_c_memory(CMemory::new());
-            let first = original.memory().clone().with_seeded_cells(
+            let first = intern_c_memory(original.memory().clone().with_seeded_cells(
                 anchor.clone(),
                 width,
                 element_type,
                 0,
                 size,
                 original.clone(),
-            );
-            let current = intern_c_memory(first.with_seeded_cells(
+            ));
+            let current = intern_c_memory(first.memory().clone().with_seeded_cells(
                 anchor.offset_by_bytes(size * width),
                 width,
                 element_type,
@@ -590,25 +605,22 @@ fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
             let MemoryDagCell::Unwritten { node, path } = cell else {
                 panic!("naming must not invent a stored value for the other address");
             };
-            assert_eq!(node, original);
-            // The version walk crosses both seeded edges by itself: one hop.
+            assert_eq!(node, first);
+            // Each explicit query crosses one cache-only edge.
             assert!(matches!(
                 path.as_slice(),
-                [hop] if hop.justification == MemoryDagHopJustification::SameVersion {
-                    oldest: original.clone(),
-                }
+                [hop] if hop.justification == MemoryDagHopJustification::SeededLoadsOfBase
             ));
-            let mut edge = current.clone();
-            while let Some(derivation) = edge.derivation() {
+            let earlier = memory_dag_cell_source(&first, &other, 4, &assumptions, false).unwrap();
+            assert_eq!(earlier.node(), &original);
+            for edge in [&current, &first] {
                 assert_eq!(
                     seeded_edge_justification(&edge, &other, 4, &assumptions),
                     MemoryDagHopJustification::SeededLoadsOfBase
                 );
-                edge = derivation.base().clone();
             }
             assert!(work < 100, "size={size}, work={work}");
-            // The first read also walks the shared empty base; later ones find
-            // it memoized, so the work never grows with the run.
+            // Run length does not change the cost of one selected edge.
             if let Some(previous) = previous_work {
                 assert!(
                     work <= previous,
@@ -650,17 +662,14 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
         assert_eq!(node, original);
         assert!(matches!(
             path.as_slice(),
-            [hop] if hop.justification == MemoryDagHopJustification::SameVersion {
-                oldest: original.clone(),
-            }
+            [hop] if hop.justification == MemoryDagHopJustification::SeededLoadsOfBase
         ));
         assert_eq!(
             seeded_edge_justification(&current, &pointer, 8, &assumptions),
             MemoryDagHopJustification::SeededLoadsOfBase
         );
         assert!(work < 100, "count={count}, work={work}");
-        // The first read also walks the shared empty base; later ones find
-        // it memoized, so the work never grows with the run.
+        // Run length does not change the cost of one selected edge.
         if let Some(previous) = previous_work {
             assert!(work <= previous, "count={count}: {work} > {previous}");
         }
@@ -684,6 +693,10 @@ fn seeded_scalar_slots_preserve_overlapping_wide_reads() {
         ));
         let (cell, stop) =
             memory_dag_cell_source_with_stop(&cached, &pointer, 8, &assumptions, false).unwrap();
+        assert_eq!(cell.node(), &changed);
+        assert_eq!(stop, CellWalkStop::NotShownSeparate);
+        let (cell, stop) =
+            memory_dag_cell_source_with_stop(&changed, &pointer, 8, &assumptions, false).unwrap();
         assert_eq!(cell.node(), &changed);
         assert_eq!(stop, CellWalkStop::Affected);
     }

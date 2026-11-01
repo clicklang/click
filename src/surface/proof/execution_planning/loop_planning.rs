@@ -85,6 +85,27 @@ fn loop_invariant_surfaces(
         })
 }
 
+/// The loop's declared `decreases` components, as the resolved clause holds
+/// them. Empty when no clause declares a ranking measure or a clause's
+/// bindings do not resolve; the descent member then has no written spelling.
+fn loop_ranking_surfaces(
+    environment: &ExecutionProofEnvironment<'_>,
+    loop_index: usize,
+) -> Vec<ContractExpression> {
+    environment
+        .function_block
+        .structural_clauses()
+        .for_loop(loop_index)
+        .into_iter()
+        .filter_map(|clause| clause.resolved().ok())
+        .find_map(|clause| {
+            clause
+                .decreases()
+                .map(|measure| measure.components().to_vec())
+        })
+        .unwrap_or_default()
+}
+
 /// Pair the kernel's selected loop-head clauses with generated spellings that
 /// explicitly read the iteration-entry snapshot. The written, unqualified
 /// clauses retain their source meaning in the enclosing presentation map.
@@ -637,130 +658,6 @@ impl CheckedLoopInitialization {
 /// `preserve` proof.
 pub(in crate::surface::proof) struct AutomaticLoopBody {
     pub(in crate::surface::proof) certificate: ProofCertificate,
-    /// Whether the arms of some C `if` ended in different states and were
-    /// joined keeping only what both agree on, so a later failure to close
-    /// an invariant may be for want of what one arm established.
-    pub(in crate::surface::proof) joined_apart: bool,
-}
-
-/// The automatic walk of one loop body: its step budget, and the C `if`s
-/// it has found to have an arm that does not fall through.
-struct AutomaticBodySearch<'c> {
-    claim_label: &'c str,
-    steps: usize,
-    /// Statement indexes of the `if`s whose arms could not be joined, so an
-    /// `if` is tried at most once however it is reached again.
-    diverging: BTreeSet<usize>,
-    /// Whether some `if`'s arms ended apart and were joined keeping only
-    /// what both agree on.
-    joined_apart: bool,
-}
-
-impl AutomaticBodySearch<'_> {
-    fn charge_step(&mut self) -> Result<(), ClickError> {
-        if self.steps == BOUNDED_EXECUTE_STEP_LIMIT {
-            return Err(ClickError::new(format!(
-                "`{}` automatic preservation exhausted its {BOUNDED_EXECUTE_STEP_LIMIT}-step budget",
-                self.claim_label
-            )));
-        }
-        self.steps += 1;
-        Ok(())
-    }
-
-    fn at_source_branch(&self, proof: &Proof<'_>) -> Result<bool, ClickError> {
-        let view = proof.execution_view()?;
-        Ok(view
-            .context
-            .constants
-            .source_layout
-            .statement(view.frontier.next_statement_index)
-            .is_some_and(|region| matches!(region.kind, SourceStatementKind::If { .. })))
-    }
-
-    /// Runs both arms of the C `if` at the frontier to the end of the `if`
-    /// and joins them there, as a written `branch` does. `None` when an arm
-    /// leaves another way, in which case the arms are separate paths.
-    ///
-    /// Arms that end in one state join as they are. Arms that end apart
-    /// join keeping what both agree on: the one path that continues knows
-    /// nothing either arm alone established. A loop whose invariants need more than that is not
-    /// closed here; its body is written out with `branch ensuring { ... }`.
-    fn join_source_branch<'a>(
-        &mut self,
-        proof: &Proof<'a>,
-    ) -> Result<Option<Proof<'a>>, ClickError> {
-        let statement = proof.execution_view()?.frontier.next_statement_index;
-        if self.diverging.contains(&statement) {
-            return Ok(None);
-        }
-        let (split, record) = proof.split_focused_execution_branch()?;
-        let steps_before = self.steps;
-        let mut advanced = split;
-        for take_then in [true, false] {
-            if record.arm_id(take_then).is_none() {
-                continue;
-            }
-            let arm = advanced.focus_split_arm(&record, take_then)?;
-            let Some(arm) = self.run_arm(arm)? else {
-                self.diverging.insert(statement);
-                return Ok(None);
-            };
-            advanced = arm;
-        }
-        let falls_through = [true, false].into_iter().all(|take_then| {
-            record.arm_id(take_then).is_none()
-                || (advanced.arm_loop_control(&record, take_then) == LoopControlExit::BodyEnd
-                    && !advanced.arm_at_function_exit(&record, take_then))
-        });
-        if !falls_through {
-            self.diverging.insert(statement);
-            return Ok(None);
-        }
-        let empty = self.steps == steps_before;
-        // A bare `branch` joins arms that end in one state as they are and
-        // arms that end apart keeping what both agree on. Arms the join
-        // refuses have no one state to continue from, so they stay separate
-        // paths, like arms that leave different ways.
-        let apart = !empty && advanced.split_arms_end_apart(&record)?;
-        match advanced.join_focused_execution_split(&record, empty, None) {
-            Ok(joined) => {
-                self.joined_apart |= apart;
-                Ok(Some(joined))
-            }
-            Err(_) => {
-                self.diverging.insert(statement);
-                Ok(None)
-            }
-        }
-    }
-
-    /// Walks one arm to the end of its `if`. `None` when an `if` nested in
-    /// it has an arm that leaves another way, so the arm is not one path.
-    fn run_arm<'a>(&mut self, mut proof: Proof<'a>) -> Result<Option<Proof<'a>>, ClickError> {
-        loop {
-            if proof.is_at_region_boundary()
-                || proof.execution_view()?.frontier.is_at_function_exit()
-            {
-                return Ok(Some(proof));
-            }
-            self.charge_step()?;
-            if self.at_source_branch(&proof)? {
-                let Some(joined) = self.join_source_branch(&proof)? else {
-                    return Ok(None);
-                };
-                proof = joined;
-            } else {
-                // A statement that splits into path cases leaves the arm as
-                // more than one path, so the `if` is not joined.
-                let mut paths = preservation_step_paths(&proof)?;
-                if paths.len() != 1 {
-                    return Ok(None);
-                }
-                proof = paths.pop().expect("one path");
-            }
-        }
-    }
 }
 
 pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
@@ -852,7 +749,7 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
         environment.theorem_environment,
     )
     .with_surface_local_scope(&phase_proof_scope(environment));
-    let (completed, joined_apart) = walk_loop_body(&claim_label, root)?;
+    let completed = walk_loop_body(root)?;
     let mut paths = Vec::new();
     for leaf in completed {
         let context_execution = leaf.execution_view()?.execution.clone();
@@ -884,73 +781,59 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
     }
     Ok(AutomaticLoopBody {
         certificate: merge_phase_path_aligned_certificates(&claim_label, paths)?,
-        joined_apart,
     })
 }
 
-/// Walks a loop body from `root` to its ends, one smart step at a time,
-/// as the automatic closer does: a C `if` with more of the body after it
-/// whose arms both fall through is run and joined, and any other `if`
-/// splits into separate paths. Returns the paths that reached one of the
-/// body's ends or function exit, and whether some join kept only what its
-/// arms agree on.
+/// Walks a loop body from `root` to its ends, one smart step at a time, as a
+/// function's implicit tail walks its body: each C `if` whose condition the
+/// path does not decide splits, and each arm runs on as its own path to the
+/// back edge, a `break`, a `continue` or function exit, where it closes the
+/// bundle with everything it established. The walk shares the implicit
+/// tail's step and split budgets and its refusal past them, which names the
+/// explicit join, `branch ensuring { ... }`. Returns the paths that reached
+/// one of the body's ends or function exit.
 pub(in crate::surface::proof) fn walk_loop_body<'a>(
-    claim_label: &str,
     root: Proof<'a>,
-) -> Result<(Vec<Proof<'a>>, bool), ClickError> {
+) -> Result<Vec<Proof<'a>>, ClickError> {
     let mut pending = vec![root];
     let mut completed = Vec::new();
-    let mut search = AutomaticBodySearch {
-        claim_label,
-        steps: 0,
-        diverging: BTreeSet::new(),
-        joined_apart: false,
-    };
+    let mut steps = 0usize;
+    let mut splits = 0usize;
     while let Some(proof) = pending.pop() {
         if proof.is_at_region_boundary() || proof.execution_view()?.frontier.is_at_function_exit() {
             completed.push(proof);
             continue;
         }
-        search.charge_step()?;
-        if !search.at_source_branch(&proof)? {
+        proof.charge_execute_step(&mut steps, splits)?;
+        let view = proof.execution_view()?;
+        let at_branch = view
+            .context
+            .constants
+            .source_layout
+            .statement(view.frontier.next_statement_index)
+            .is_some_and(|region| matches!(region.kind, SourceStatementKind::If { .. }));
+        if !at_branch {
             pending.extend(preservation_step_paths(&proof)?);
             continue;
         }
-        let view = proof.execution_view()?;
         let FrontierPosition::StatementEntry { remaining } = &view.frontier.position else {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` automatic preservation branch is not at a statement entry"
-            )));
+            return Err(
+                proof.step_error("automatic preservation branch is not at a statement entry")
+            );
         };
-        let (source_statement, rest) =
+        let (source_statement, _) =
             split_next_source_operation(remaining).map_err(ClickError::new)?;
         let CStatement::If { condition, .. } = source_statement else {
-            return Err(ClickError::new(format!(
-                "`{claim_label}` source branch does not match the lowered statement"
-            )));
+            return Err(proof.step_error("source branch does not match the lowered statement"));
         };
-        // A C `if` with more of the body after it, whose arms both fall
-        // through, is one path: the arms are run and joined where they
-        // meet, and the rest of the body is walked once. Walking it once
-        // per arm instead would double the work at every such `if`.
-        //
-        // Two kinds of `if` keep their arms as separate paths. One with an
-        // arm that leaves another way (a `break`, a `continue`, a
-        // `return`) has two places to go. And the body's last statement has
-        // nothing after it to walk twice, so its arms each close the
-        // invariants with everything they know.
-        let body_continues = rest.is_some() || !view.frontier.continuations.is_empty();
-        if body_continues && let Some(joined) = search.join_source_branch(&proof)? {
-            pending.push(joined);
-            continue;
-        }
         let condition = surface_c_condition(&condition, view.state)?;
         let (split, ids) = proof.split_preservation_case(&condition, 0)?;
+        splits += 1;
         for id in ids.into_iter().flatten() {
             pending.extend(preservation_step_paths(&split.focus_branch(id)?)?);
         }
     }
-    Ok((completed, search.joined_apart))
+    Ok(completed)
 }
 
 /// Steps the statement at the frontier. A statement whose successors are
@@ -1090,6 +973,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             })),
             checks: invariant_checks.to_vec(),
             ranking_measures: ranking_measures.to_vec(),
+            ranking_surfaces: loop_ranking_surfaces(environment, loop_index),
             structural_measure: structural_measure.map(str::to_string),
             declared_invariant_surfaces: invariant_surfaces.clone(),
             loop_head_premises: Vec::new(),

@@ -1,12 +1,10 @@
 # An interface fact needs its terms defined in each arm
 
-This is `bubble_pass3_max_suffix` without `have defined(j + 1)` in the arms.
-Each arm proves `p[j] <= p[j + 1]`, and the join still refuses the interface:
-a fact holds in an arm only together with what its terms need to denote a
-value, and `p[j + 1]` needs `j + 1` not to overflow. Each arm's own bounds
-on `j` give that, but the join carries only the interface's facts, so the
-successor does not hold it and the arms have to state it. The refusal says
-so.
+This is `bubble_pass3_max_suffix` without `defined(j + 1)` in the interface
+or its arms. Both arms establish the stated ordering facts, including explicit
+preservation of earlier cells across the swap. The join refuses the interface:
+`p[j + 1]` requires `j + 1` not to overflow, and that condition must be carried
+along with the ordering facts.
 
 ```c filename=bubble_pass3.c
 int32 bubble_pass3(int32 p[3]) {
@@ -26,6 +24,7 @@ int32 bubble_pass3(int32 p[3]) {
 ```
 
 ```click
+import click::separation;
 verifying "bubble_pass3.c";
 
 predicate all_le_range(p: int32[], lo: int32, hi: int32, x: int32) {
@@ -59,8 +58,46 @@ int32 bubble_pass3(int32 p[3]) {
                 step();
                 have p[j] <= p[j + 1];
                 have all_le_range(p, 0, j, p[j + 1]) by {
-                    unfold(all_le_range);
-                    solve();
+                    if j == 0 {
+                        unfold(all_le_range);
+                        solve();
+                    } else {
+                        have j == 1 by solve();
+                        have separate(memory(p[1]), memory(p[0])) by {
+                            apply(separation::elements(p, 1 as uint64, 0 as uint64)) using {};
+                        }
+                        have separate(memory(p[2]), memory(p[0])) by {
+                            apply(separation::elements(p, 2 as uint64, 0 as uint64)) using {};
+                        }
+                        have separate(memory(p[j]), memory(p[0])) by { rewrite(j == 1); assumption(); }
+                        have separate(memory(p[j + 1]), memory(p[0])) by { rewrite(j == 1); assumption(); }
+                        have separate(loop(0).statement(0).statement(1).footprint, memory(p[0])) by {
+                            normalize() using { separate(memory(p[j]), memory(p[0])); };
+                        }
+                        have at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]) by {
+                            transport_certificate {
+                                premise 0: separate(loop(0).statement(0).statement(1).footprint, memory(p[0]))
+                                    => separate(loop(0).statement(0).statement(1).footprint, memory(p[0]));
+                                preserve 0 => at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]);
+                                conclusion 1;
+                            }
+                        }
+                        have separate(loop(0).statement(0).statement(2).footprint, memory(p[0])) by {
+                            normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
+                        }
+                        have at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]) by {
+                            transport_certificate {
+                                premise 0: separate(loop(0).statement(0).statement(2).footprint, memory(p[0]))
+                                    => separate(loop(0).statement(0).statement(2).footprint, memory(p[0]));
+                                preserve 0 => at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]);
+                                conclusion 1;
+                            }
+                        }
+                        unfold(all_le_range);
+                        intro(); intro();
+                        have k == 0 by solve();
+                        solve();
+                    }
                 }
             } else {
                 have p[j] <= p[j + 1];

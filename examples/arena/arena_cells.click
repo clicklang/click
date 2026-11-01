@@ -1,5 +1,11 @@
 import click::integer;
 
+resource preserved_cell(p: int32*) {
+    field value: int32;
+    owns *p;
+    fact *p == value;
+}
+
 resource arena_initialized_storage(
     data: int32*,
     occupied: int32*,
@@ -2991,7 +2997,16 @@ int32 arena_pipeline(
     }
     have second->arena->data[second->start + 0] == 22;
     mark m3;
+    let { live: kept_live, capacity: kept_capacity } = unfold(s0);
+    let { start: kept_start, end: kept_end } = unfold(r2);
+    // Keep the value in a framed resource, using the owned range's index.
+    let kept = fold(preserved_cell(second->arena->data + kept_start), { value: 22 });
+    let s0 = fold(arena_state(arena), { live: kept_live, capacity: kept_capacity });
     step(arena_read, { r: r1, st: s0 });
+    let { live: returned_live, capacity: returned_capacity } = unfold(s0);
+    unfold(kept);
+    have second->arena->data[second->start + 0] == 22;
+    let s0 = fold(arena_state(arena), { live: returned_live, capacity: returned_capacity });
     have r1.start == at(m3, r1.start);
     have at(m3, r1.start) == at(z1, first->start);
     have r1.start == at(z1, first->start) by {
@@ -3007,15 +3022,15 @@ int32 arena_pipeline(
     have s0.live == 2 by {
         normalize() using { s0.live == at(m3, s0.live); at(m3, s0.live) == 2; };
     }
-    have r2.start == at(m3, r2.start);
-    have at(m3, r2.start) == at(z2, second->start);
-    have r2.start == at(z2, second->start) by {
-        normalize() using { r2.start == at(m3, r2.start); at(m3, r2.start) == at(z2, second->start); };
+    have kept_start == at(m3, kept_start);
+    have at(m3, kept_start) == at(z2, second->start);
+    have kept_start == at(z2, second->start) by {
+        normalize() using { kept_start == at(m3, kept_start); at(m3, kept_start) == at(z2, second->start); };
     }
-    have r2.end == at(m3, r2.end);
-    have at(m3, r2.end) == at(z2, second->end);
-    have r2.end == at(z2, second->end) by {
-        normalize() using { r2.end == at(m3, r2.end); at(m3, r2.end) == at(z2, second->end); };
+    have kept_end == at(m3, kept_end);
+    have at(m3, kept_end) == at(z2, second->end);
+    have kept_end == at(z2, second->end) by {
+        normalize() using { kept_end == at(m3, kept_end); at(m3, kept_end) == at(z2, second->end); };
     }
     have first_value == 11;
     have first->arena == arena by {
@@ -3099,21 +3114,20 @@ int32 arena_pipeline(
     have second->arena->data == first->arena->data;
     have at(m3, first->arena->data) == at(m3, second->arena->data);
     have second->arena->data == at(m3, second->arena->data);
-    have second->arena->data[second->start + 0] == at(m3, second->arena->data[second->start + 0]) by {
-        transport(
-            at(m3, second->arena->data[second->start + 0]) == at(m3, second->arena->data[second->start + 0]),
-            second->arena->data[second->start + 0] == at(m3, second->arena->data[second->start + 0])
-        ) using {
-            second->arena->data == at(m3, second->arena->data);
-            second->start == at(m3, second->start);
-        };
-    }
-    have second->arena->data[second->start + 0] == 22 by {
+    have second->arena->data[second->start + 0] == 22 by { assumption(); }
+    have at(m3, second->arena->data) + at(m3, second->start) == second->arena->data + kept_start by {
         normalize() using {
-            second->arena->data[second->start + 0] == at(m3, second->arena->data[second->start + 0]);
-            at(m3, second->arena->data[second->start + 0]) == 22;
+            second->arena->data == at(m3, second->arena->data);
+            at(m3, second->start) == kept_start;
         };
     }
+    have at(m3, second->arena->data) + (at(m3, second->start) + 1) == second->arena->data + (kept_start + 1) by {
+        normalize() using {
+            second->arena->data == at(m3, second->arena->data);
+            at(m3, second->start) == kept_start;
+        };
+    }
+    let r2 = fold(arena_region(second), { start: kept_start, end: kept_end });
     have r2.end <= s0.capacity;
     mark m4;
     step(arena_read, { r: r2, st: s0 });

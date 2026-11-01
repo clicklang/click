@@ -1231,7 +1231,11 @@ impl CheckedLoadEquality {
         } else if allow_canonical_fallback
             && crate::kernel::eval::canonical_term(left)
                 == crate::kernel::eval::canonical_term(right)
-            && !crate::kernel::reasoning::load_equality_refuted_by_history(left, right, assumptions)
+            && !crate::kernel::reasoning::load_equality_lacks_recorded_evidence(
+                left,
+                right,
+                assumptions,
+            )
         {
             CheckedLoadEqualityEvidence::Canonical
         } else {
@@ -1750,7 +1754,7 @@ pub(crate) fn checked_origin_load_equality(
     // map does not record the stores it dropped. Ask the history about the
     // endpoints this comparison is about to take as equal.
     if left_endpoint.pointer == right_endpoint.pointer
-        && crate::kernel::reasoning::loads_separated_by_recorded_history(
+        && crate::kernel::reasoning::loads_lack_recorded_equality(
             &left_endpoint.memory,
             &right_endpoint.memory,
             &left_endpoint.pointer,
@@ -3071,16 +3075,24 @@ pub(in crate::kernel) fn complete_pointer_carrier_read_value(
             true,
         )
     })?;
-    // A walk stopped by an affecting edge can retain a scalar-prefix cache.
-    // Only a reached whole-pointer store supplies the complete value.
-    let MemoryDagCell::Stored {
-        value: value @ (CValue::Pointer(_) | CValue::PointerInteger(_)),
-        ..
-    } = cell
-    else {
-        return None;
+    // At the hop limit, the endpoint can itself be the exact whole-value
+    // store. Inspect that one endpoint's record without crossing another
+    // edge. Its cache alone is insufficient: a partial store can leave an
+    // older overlapping cache entry behind.
+    let value = match cell {
+        MemoryDagCell::Stored { value, .. } => value,
+        MemoryDagCell::Unwritten { node, .. } => {
+            let derivation = node.derivation()?;
+            let CMemoryDerivation::Store { pointer, value, .. } = derivation.as_ref() else {
+                return None;
+            };
+            if pointer != &read.defining_address || value.byte_width() != C_POINTER_BYTE_WIDTH {
+                return None;
+            }
+            value.clone()
+        }
     };
-    Some(value)
+    matches!(value, CValue::Pointer(_) | CValue::PointerInteger(_)).then_some(value)
 }
 
 /// Explicit pointer read-value normalization follows at most 64 recorded
@@ -3851,7 +3863,8 @@ pub(in crate::kernel) enum LoadHistory {
     /// No structural route may call the two loads equal; a stated or assumed
     /// equality fact still can, and is consulted before this ever is.
     DifferentVersions,
-    /// The recorded history decides neither. Every other route may speak.
+    /// The bounded history query decides neither. Explicit facts can still
+    /// establish equality; matching snapshot representations cannot.
     Undecided,
 }
 
@@ -5014,7 +5027,11 @@ pub(crate) fn wide_loads_have_same_canonical_value(
         return false;
     }
     crate::kernel::canonical_term(&left) == crate::kernel::canonical_term(&right)
-        && !crate::kernel::reasoning::load_equality_refuted_by_history(&left, &right, assumptions)
+        && !crate::kernel::reasoning::load_equality_lacks_recorded_evidence(
+            &left,
+            &right,
+            assumptions,
+        )
 }
 
 /// Check a wide read against its recorded value under explicitly selected
@@ -7159,6 +7176,86 @@ fn directly_matched_effect_endpoint(
 mod opaque_pointer_frame_tests {
     use super::*;
 
+    // Exercise the same explicit primitive as a Surface preserve node: observe
+    // both endpoints, narrow the supplied separation, and apply one effect.
+    fn explicit_pointer_store_frame(
+        before: &CMemory,
+        after: &CMemory,
+        field: &Pointer,
+        write: &Pointer,
+        facts: &PureFactContext,
+    ) -> Option<(CPointerValue, Proposition)> {
+        use crate::kernel::proof::transport_certificate::{TransportCertificate, TransportNode};
+        let resource = |p: Pointer, bytes| {
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                p,
+                0u32.into(),
+                1u32.into(),
+                bytes,
+            ))
+        };
+        let changed = resource(write.clone(), 4);
+        let kept = resource(field.clone(), 8);
+        if !facts.proves_resource_separate(&changed, &kept) {
+            return None;
+        }
+        let observe = |memory: &CMemory| {
+            let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
+                memory,
+                field.clone(),
+                CType::Int32Pointer,
+                Default::default(),
+                Vec::new(),
+                &PureFactContext::new(),
+            );
+            let [path] = paths.as_slice() else {
+                panic!("one logical read")
+            };
+            let CExpressionOutcome::Value(CValue::Pointer(value)) = &path.outcome else {
+                panic!("pointer observation")
+            };
+            value.clone()
+        };
+        let before_value = observe(before);
+        let after_value = observe(after);
+        let result = Proposition::ConditionIs(
+            ConditionTerm::pointer_value_equal(after_value.clone(), before_value),
+            true,
+        );
+        let effect = Proposition::CMemoryMutatesOnly {
+            before: before.clone(),
+            after: after.clone(),
+            writes: vec![(write.clone(), 4)],
+        };
+        let separation = Proposition::CResourceSeparate {
+            left: Box::new(changed),
+            right: Box::new(kept),
+        };
+        let premise = |p: &Proposition| TransportNode::Premise {
+            proposition: p.clone(),
+            result: p.clone(),
+        };
+        let certificate = TransportCertificate {
+            nodes: vec![
+                premise(&effect),
+                premise(&separation),
+                TransportNode::Preserve {
+                    field: None,
+                    effect: Some(0),
+                    separation: 1,
+                    result,
+                },
+            ],
+            conclusion: 2,
+        };
+        Some((
+            after_value,
+            certificate
+                .apply(|p| p == &effect || p == &separation)
+                .unwrap(),
+        ))
+    }
+
     #[test]
     fn complete_pointer_domains_follow_numeric_storage_equality_only() {
         let _session = crate::kernel::VerificationSession::enter();
@@ -7354,6 +7451,7 @@ mod opaque_pointer_frame_tests {
     #[test]
     fn copied_pointer_value_uses_explicit_whole_header_separation() {
         let _session = crate::kernel::VerificationSession::enter();
+        let _reads = crate::kernel::TransportReadScope::enter();
         let header = Pointer::symbolic(Variable(9_880_420));
         let field = header.clone().offset_by_bytes(8);
         let buffer = Pointer::symbolic(Variable(9_880_421));
@@ -7364,13 +7462,13 @@ mod opaque_pointer_frame_tests {
                 width: 4u32.into(),
             },
         ));
+        let before = CMemory::new().store(field.clone(), CValue::Pointer(stored.clone()));
+        let write = buffer.clone().offset_by_bytes(4);
         let memory = intern_c_memory(
-            CMemory::new()
-                .store(field.clone(), CValue::Pointer(stored.clone()))
-                .store(
-                    buffer.clone().offset_by_bytes(4),
-                    CValue::Int32(7u32.into()),
-                ),
+            before
+                .clone()
+                .without_possible_aliasing_cells(&write, 4, &PureFactContext::new())
+                .store(write.clone(), CValue::Int32(7u32.into())),
         );
         let read = |memory: &SharedCMemory| {
             CPointerValue::from_read(
@@ -7395,8 +7493,17 @@ mod opaque_pointer_frame_tests {
         let empty = PureFactContext::new();
         assert!(!empty.pointer_designations_match(&read(&memory), &stored));
         let context = empty.clone().assume_proposition(separation(4));
-        assert!(context.pointer_designations_match(&read(&memory), &stored));
+        let (observed, equality) =
+            explicit_pointer_store_frame(&before, memory.memory(), &field, &write, &context)
+                .unwrap();
+        let context = context.assume_proposition(equality);
+        assert!(context.pointer_designations_match(&observed, &stored));
+        // Designation matching includes the complete pointer's subobject extent.
         let too_short = empty.assume_proposition(separation(1));
+        assert!(
+            explicit_pointer_store_frame(&before, memory.memory(), &field, &write, &too_short)
+                .is_none()
+        );
         assert!(!too_short.pointer_designations_match(&read(&memory), &stored));
         let partial = intern_c_memory(
             memory

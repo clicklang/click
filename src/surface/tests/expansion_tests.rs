@@ -1,6 +1,43 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: 0.6s in the parallel gate"]
+fn unfolded_member_quantifier_keeps_written_pointer_arguments_in_expansion() {
+    let source = r#"
+        verifying "filled.c";
+        resource filled(p: int32*) {
+            owns p[0..2];
+            fact forall (i: int32) { 0 <= i and i < 2 implies p[i] == 7 };
+        }
+        extern void fill(int *p) {
+            consumes p[0..2];
+            produces filled(p);
+        }
+        int first(int *p) {
+            owns p[0..2];
+            ensures result == 7;
+        } by {
+            step();
+            unfold(filled(p));
+            have p[0] == 7;
+            step();
+            assumption();
+        }
+    "#;
+    let sources = [(
+        "filled.c",
+        "void fill(int *p); int first(int *p) { fill(p); return p[0]; }",
+    )];
+    let verified = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "first").unwrap();
+    assert!(expanded.contains("instantiate(forall"), "{expanded}");
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let wrong = expanded.replace("ensures result == 7;", "ensures result == 8;");
+    assert_ne!(wrong, expanded);
+    assert!(without_implicit_auto(|| verify_c0_sources(&wrong, &sources)).is_err());
+}
+
+#[test]
 fn unsigned_array_read_cases_expand_without_implicit_search() {
     let (source, sources) = mdtest_sources("mdtests/unsigned_array_read_cases_are_spellable.md");
     let sources = sources
@@ -15733,13 +15770,12 @@ fn expansion_names_a_resource_witness_through_the_checked_return_pointer() {
 
 #[test]
 fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
-    // The automatic preservation the `loop` keyword owns walks this body
-    // once: each of the two sibling C `if`s has both arms fall through to
-    // more of the body, so its arms are joined as a `branch` and the rest is
-    // not walked once per arm. It used to split each `if` into its own proof
-    // case and walk four paths, which is what first exposed the
-    // certificate-offset bug this test was written for; the expansion is now
-    // two `branch` steps and must still reverify on its own.
+    // The automatic preservation the `loop` keyword owns walks this body as
+    // a function's implicit tail does: each of the two sibling C `if`s
+    // splits into its own proof case, so the rest of the body runs on four
+    // paths. Those cases are what first exposed the certificate-offset bug
+    // this test was written for; the expansion splits on both conditions
+    // and must reverify on its own.
     let c_source = r#"
         int32 two_ifs(int32 n) {
             int32 i = 0;
@@ -15790,14 +15826,9 @@ fn omitted_preservation_over_two_sibling_c_ifs_expands_and_reverifies() {
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)
             .expect("the automatic preservation should expand");
-    assert_eq!(
-        expanded.matches("branch ").count(),
-        2,
-        "both sibling C `if`s should expand to joined branches: {expanded}"
-    );
     assert!(
-        !expanded.contains("if x == 0") && !expanded.contains("if y == 0"),
-        "neither `if` should be walked as separate proof cases: {expanded}"
+        expanded.contains("if x == 0") && expanded.contains("if y == 0"),
+        "both sibling C `if`s should expand to proof cases: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
         panic!("the expanded preservation should independently reverify: {error:?}\n{expanded}")

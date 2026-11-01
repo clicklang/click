@@ -793,29 +793,53 @@ fn byte_store_does_not_change_a_proven_distinct_byte_load() {
     crate::kernel::eval::declare_load_access_width(&read, 1);
     let before = CMemory::new();
     let after = before.clone().store(written.clone(), uint8(7));
-    let assumptions = PureFactContext::new()
-        .assume_condition(ConditionTerm::equal(i, j), false)
-        .assume_proposition(Proposition::CMemoryMutatesOnly {
-            before: before.clone(),
-            after: after.clone(),
-            writes: vec![(written, 1)],
-        });
-
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            Bitvector32Term::MemoryLoad(
-                crate::kernel::intern_c_memory(after),
-                Box::new(read.clone()),
-                crate::kernel::LoadKind::Int32,
-            ),
-            Bitvector32Term::MemoryLoad(
-                crate::kernel::intern_c_memory(before),
-                Box::new(read),
-                crate::kernel::LoadKind::Int32,
-            ),
-        ),
-        true,
-    )));
+    let assumptions =
+        PureFactContext::new().assume_condition(ConditionTerm::equal(i.clone(), j.clone()), false);
+    let assumptions = explicit_signed_elements(base, CType::UInt8, i, j, assumptions);
+    let effect = Proposition::CMemoryMutatesOnly {
+        before: before.clone(),
+        after: after.clone(),
+        writes: vec![(written, 1)],
+    };
+    let (_, _, equality) = explicit_frame(
+        &before,
+        &after,
+        &read,
+        CType::UInt8,
+        &[effect.clone()],
+        &assumptions,
+    )
+    .expect("distinct byte cells have an explicit frame");
+    assert!(
+        assumptions
+            .clone()
+            .assume_proposition(equality.clone())
+            .contains_known(&equality)
+    );
+    assert!(
+        explicit_frame(
+            &before,
+            &after,
+            &read,
+            CType::Int32,
+            &[effect.clone()],
+            &assumptions
+        )
+        .is_none(),
+        "unequal byte indices do not separate an overlapping four-byte read"
+    );
+    assert!(
+        explicit_frame(
+            &before,
+            &after,
+            &read,
+            CType::UInt8,
+            &[effect],
+            &PureFactContext::new()
+        )
+        .is_none(),
+        "an unknown alias cannot be framed"
+    );
 }
 
 #[test]
@@ -1776,7 +1800,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         offset: PointerOffsetTerm::scale_int32(
             Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(execution_memory.clone()),
-                Box::new(owner_data_cell),
+                Box::new(owner_data_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             ),
             4,
@@ -1795,7 +1819,7 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(index, capacity.clone()),
+            ConditionTerm::signed_less_than(index.clone(), capacity.clone()),
             true,
         )
         .assume_proposition(Proposition::CResourceSeparate {
@@ -1805,32 +1829,170 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
                 Bitvector32Term::Constant(4),
             ))),
             right: Box::new(CResource::Memory(CMemoryRange::new(
-                resource_data,
+                resource_data.clone(),
                 Bitvector32Term::Constant(0),
-                capacity,
+                capacity.clone(),
             ))),
         })
         .assume_proposition(Proposition::CMemoryMutatesOnly {
             before: execution_memory.clone(),
             after: after_memory.clone(),
-            writes: vec![(written_cell, 4)],
+            writes: vec![(written_cell.clone(), 4)],
         });
 
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            Bitvector32Term::MemoryLoad(
-                crate::kernel::intern_c_memory(after_memory),
-                Box::new(metadata_cell.clone()),
-                crate::kernel::LoadKind::Int32,
-            ),
-            Bitvector32Term::MemoryLoad(
-                crate::kernel::intern_c_memory(execution_memory),
-                Box::new(metadata_cell),
-                crate::kernel::LoadKind::Int32
-            ),
-        ),
+    let (_, _, base_equality) = super::explicit_frame(
+        &base_memory,
+        &execution_memory,
+        &owner_data_cell,
+        CType::Int32,
+        &[Proposition::CMemoryMutatesOnly {
+            before: base_memory.clone(),
+            after: execution_memory.clone(),
+            writes: vec![(CMemory::local_pointer("data"), 4)],
+        }],
+        &assumptions,
+    )
+    .expect("initializing the local preserves the owner's data field");
+    // First connect the two explicit spellings of the array base.
+    let address_equality = Proposition::ConditionIs(
+        ConditionTerm::pointer_equal(execution_data.clone(), resource_data.clone()),
         true,
-    )));
+    );
+    let base_premises = [base_equality.clone()];
+    assert!(
+        crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            &address_equality,
+            &base_premises,
+            &crate::kernel::proof::ProofFacts::from_ordered(&base_premises),
+        )
+        .is_ok(),
+        "the preserved field gives equal array addresses"
+    );
+    let owner_range = CResource::Memory(CMemoryRange::new(owner.clone(), 0u32.into(), 4u32.into()));
+    let old_data_range = CResource::Memory(CMemoryRange::new(
+        resource_data.clone(),
+        0u32.into(),
+        capacity.clone(),
+    ));
+    let parent_separation = Proposition::CResourceSeparate {
+        left: Box::new(owner_range.clone()),
+        right: Box::new(old_data_range),
+    };
+    assert!(assumptions.proves_exact(&parent_separation));
+    let rewritten = crate::kernel::proof::term_rewrite::TermRewrite::for_pointer_exact(
+        &resource_data,
+        &execution_data,
+    )
+    .proposition(&parent_separation);
+    let mut assumptions = assumptions
+        .assume_proposition(base_equality)
+        .assume_proposition(address_equality)
+        .assume_proposition(rewritten);
+
+    // Solve only the written arithmetic bounds, then instantiate subrange.
+    let next = Bitvector32Term::add(index.clone(), 1u32.into());
+    let bounds = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_than(index.clone(), capacity.clone()),
+            true,
+        );
+    for condition in [
+        ConditionTerm::signed_less_equal(index.clone(), next.clone()),
+        ConditionTerm::signed_less_equal(next.clone(), capacity.clone()),
+    ] {
+        let fact = Proposition::ConditionIs(condition, true);
+        assert!(bounds.proves(&fact), "selected index bounds imply {fact:?}");
+        assumptions = assumptions.assume_proposition(fact);
+    }
+    fn apply_law(law: Theorem, facts: &mut PureFactContext) -> Proposition {
+        let mut result = law.proposition();
+        while let Proposition::Implies(premise, body) = result {
+            assert!(
+                facts.proves_exact(premise),
+                "explicit law premise: {premise:?}"
+            );
+            result = body;
+        }
+        let result = result.clone();
+        *facts = facts.clone().assume_proposition(result.clone());
+        result
+    }
+    apply_law(
+        crate::kernel::prove_separation_subrange(
+            CPointerValue::new(execution_data.clone(), CType::Int32Pointer),
+            4,
+            0u32.into(),
+            capacity.clone(),
+            index.clone(),
+            next.clone(),
+        ),
+        &mut assumptions,
+    );
+    let metadata = CResource::Memory(CMemoryRange::new(owner.clone(), 0u32.into(), 1u32.into()));
+    let data_range = CResource::Memory(CMemoryRange::new(
+        execution_data.clone(),
+        0u32.into(),
+        capacity,
+    ));
+    let window = CResource::Memory(CMemoryRange::new(execution_data, index, next));
+    let cell = CResource::Memory(CMemoryRange::new(
+        written_cell.clone(),
+        0u32.into(),
+        1u32.into(),
+    ));
+    for (parent, child) in [
+        (owner_range.clone(), metadata.clone()),
+        (metadata.clone(), metadata.clone()),
+        (window.clone(), cell.clone()),
+    ] {
+        let fact = Proposition::CResourceContains {
+            parent: Box::new(parent),
+            child: Box::new(child),
+        };
+        assert!(
+            crate::kernel::proof::fact_reasoning::normalizes_context_free_leaf(&fact),
+            "explicit descriptor containment: {fact:?}"
+        );
+        assumptions = assumptions.assume_proposition(fact);
+    }
+    apply_law(
+        crate::kernel::prove_separation_restrict(
+            owner_range,
+            data_range,
+            metadata.clone(),
+            window.clone(),
+        ),
+        &mut assumptions,
+    );
+    let cell_separation = apply_law(
+        crate::kernel::prove_separation_restrict(metadata.clone(), window, metadata, cell),
+        &mut assumptions,
+    );
+    let assumptions = assumptions.assume_proposition(
+        crate::kernel::region_footprint::byte_premise(&cell_separation).unwrap(),
+    );
+    let (_, _, equality) = super::explicit_frame(
+        &execution_memory,
+        &after_memory,
+        &metadata_cell,
+        CType::Int32,
+        &[Proposition::CMemoryMutatesOnly {
+            before: execution_memory.clone(),
+            after: after_memory.clone(),
+            writes: vec![(written_cell, 4)],
+        }],
+        &assumptions,
+    )
+    .expect("the selected data element is separate from owner metadata");
+    assert!(
+        assumptions
+            .assume_proposition(equality.clone())
+            .contains_known(&equality)
+    );
 }
 
 #[test]

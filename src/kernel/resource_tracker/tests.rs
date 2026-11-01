@@ -1037,10 +1037,11 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     };
     let three = CValue::Int32(Bitvector32Term::Constant(3));
     let no_facts = PureFactContext::new();
-    let after = entry_memory()
-        .store(cell.clone(), three.clone())
+    let before = entry_memory().store(cell.clone(), three.clone());
+    let after = before
+        .clone()
         .without_possible_aliasing_cells(&written, 4, &no_facts)
-        .store(written, CValue::Int32(Bitvector32Term::Constant(7)));
+        .store(written.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
     assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
     let after = intern_c_memory(after);
     let index_is_zero = |value| {
@@ -1051,7 +1052,54 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     };
     assert_eq!(
         cell_value_on_path(&after, &cell, 4, &index_is_zero(false)),
-        Some(three)
+        None,
+        "source discovery does not cross the cache-forgetting and store edges"
+    );
+    let effect = Proposition::CMemoryMutatesOnly {
+        before: before.clone(),
+        after: after.memory().clone(),
+        writes: vec![(written, 4)],
+    };
+    let (old, new, equality) = crate::kernel::tests::explicit_frame(
+        &before,
+        after.memory(),
+        &cell,
+        crate::kernel::CType::Int32,
+        &[effect],
+        &crate::kernel::tests::explicit_signed_elements(
+            cell.clone(),
+            crate::kernel::CType::Int32,
+            index.clone(),
+            Bitvector32Term::Constant(0),
+            index_is_zero(false),
+        ),
+    )
+    .expect("explicit separation preserves the stored value");
+    let (CValue::Int32(old), CValue::Int32(new), CValue::Int32(three)) = (old, new, three) else {
+        panic!("complete int32 observations");
+    };
+    let source = Proposition::ConditionIs(ConditionTerm::equal(old, three.clone()), true);
+    assert!(crate::kernel::eval::holds_by_read_over_write(&source));
+    let premises = [source, equality];
+    let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+    let condition = ConditionTerm::equal(new, three);
+    assert!(
+        crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            &Proposition::ConditionIs(condition.clone(), true),
+            &premises,
+            &facts,
+        )
+        .is_ok(),
+        "the explicit frame preserves the stored value 3"
+    );
+    assert!(
+        crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            &Proposition::ConditionIs(condition, false),
+            &premises,
+            &facts,
+        )
+        .is_err(),
+        "preservation cannot establish a different stored value"
     );
     assert_eq!(
         cell_value_on_path(&after, &cell, 4, &index_is_zero(true)),
@@ -1269,7 +1317,10 @@ fn transport_diagnostic_retains_the_actual_cell_walk_and_scope() {
                 let inner = take_transport_cell_walk_diagnostics();
                 assert_eq!(inner.len(), 1);
                 assert_eq!(inner[0].stopped_at, entry);
-                assert_eq!(inner[0].reason, "oldest recorded snapshot reached");
+                assert_eq!(
+                    inner[0].reason,
+                    "step not proved separate from the queried bytes"
+                );
                 panic!("restore outer collector");
             });
         }));
@@ -1285,7 +1336,7 @@ fn transport_diagnostic_retains_the_actual_cell_walk_and_scope() {
         assert_eq!(walk.pointer, pointer);
         assert_eq!(walk.bytes, 4);
         assert_eq!(walk.crossed, 1);
-        assert_eq!(walk.reason, "step affects the queried bytes");
+        assert_eq!(walk.reason, "hop limit reached");
     });
     assert!(take_transport_cell_walk_diagnostics().is_empty());
 }

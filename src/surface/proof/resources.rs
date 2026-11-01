@@ -3032,6 +3032,7 @@ pub(super) struct CheckedResourceUnfold {
 pub(super) fn unfold_composite_resource_for_proof(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
+    source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: CState,
     facts: ProofFacts,
@@ -3044,6 +3045,7 @@ pub(super) fn unfold_composite_resource_for_proof(
     unfold_composite_resource_for_proof_with_access(
         resource_environment,
         resource,
+        source_resource,
         parameter_binding,
         state,
         facts,
@@ -3071,6 +3073,7 @@ pub(super) fn open_composite_resource_for_proof(
     unfold_composite_resource_for_proof_with_access(
         resource_environment,
         resource,
+        resource,
         parameter_binding,
         state,
         facts,
@@ -3087,6 +3090,7 @@ pub(super) fn open_composite_resource_for_proof(
 fn unfold_composite_resource_for_proof_with_access(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
+    source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     state: CState,
     facts: ProofFacts,
@@ -3101,6 +3105,7 @@ fn unfold_composite_resource_for_proof_with_access(
     let unfolded = unfold_composite_resource_with_facts(
         resource_environment,
         resource,
+        source_resource,
         parameter_binding,
         state,
         &mut facts,
@@ -3193,6 +3198,7 @@ fn decided_by_kernel_condition_decision(
 fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     resource_environment: &ResourceEnvironment,
     resource: &ResourceClause,
+    source_resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
     mut state: CState,
     available_pure_facts: &mut F,
@@ -3227,6 +3233,13 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         spec_definitions,
         None,
     )?;
+    let mut spelling_substitutions = substitutions.clone();
+    spelling_substitutions.extend(resource_argument_substitutions(
+        definition,
+        source_resource,
+        claim_label,
+        tactic_index,
+    )?);
     let body_active = composite_resource_body_is_active_with_assumptions(
         definition,
         &substitutions,
@@ -3598,6 +3611,8 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         })
         .flatten();
     for fact in body_facts {
+        let written =
+            substitute_click_proposition(fact, &spelling_substitutions).map_err(ClickError::new)?;
         let fact = substitute_click_proposition(fact, &substitutions).map_err(|message| {
                 ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: could not instantiate `unfold({})` fact: {message}",
@@ -3715,7 +3730,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
                 describe_click_proposition(&fact),
             )));
         }
-        surface_propositions.record_lowering(&fact, &lowered_fact)?;
+        surface_propositions.record_lowering(&written, &lowered_fact)?;
         for fact in lowering_facts {
             available_pure_facts.insert(fact);
         }

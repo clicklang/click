@@ -112,3 +112,59 @@ fn a_resource_delta_refusal_does_not_walk_the_shared_past() {
     });
     assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
 }
+
+#[test]
+fn returned_symbolic_cell_rejoins_without_scanning_unrelated_ownership() {
+    let mut samples = Vec::new();
+    for size in [4_u64, 16, 64, 256] {
+        let base = Pointer::symbolic(Variable(987_400));
+        let index = Bitvector32Term::Variable(Variable(987_401));
+        let middle = Bitvector32Term::add(index.clone(), 1u32.into());
+        let end = Bitvector32Term::add(index.clone(), 2u32.into());
+        let range = |base, start, end| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(base, start, end, 4))
+        };
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(0u32.into(), index.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(index.clone(), 100u32.into()),
+                true,
+            );
+        let mut resources = ResourceContext::new_with_equalities(&facts);
+        for item in 0..size {
+            resources = resources.unchecked_with_fact(range(
+                Pointer::symbolic(Variable(988_000 + item)),
+                0u32.into(),
+                2u32.into(),
+            ));
+        }
+        let cell = range(
+            base.offset_by_elements(index.clone(), 4),
+            0u32.into(),
+            1u32.into(),
+        );
+        let remainder = range(base.clone(), middle, end.clone());
+        resources = resources
+            .unchecked_with_fact(cell.clone())
+            .unchecked_with_fact(remainder);
+        resources.synchronize_memory_equalities(&facts);
+        let required = range(base, index, end);
+        let (consumed, work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources
+                .clone()
+                .without_fact_incrementally(&required, &facts)
+        });
+        let consumed = consumed.expect("the returned cell and adjacent residue rejoin");
+        assert_eq!(consumed.facts().len(), size as usize);
+        // Consumption forks the resource context; the original retains the cell.
+        assert!(resources.contains_exact_representation(&cell));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work <= samples[0] + 64),
+        "{samples:?}"
+    );
+}

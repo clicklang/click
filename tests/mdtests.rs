@@ -46,6 +46,10 @@ const NIGHTLY: &[&str] = &[
     "a_decreases_measure_sum_is_an_integer.md", // 2.4s: original disjunctive-guard regression
     // 9.7s in a debug build: eleven sequential branches reach the split limit.
     "execute_stops_at_its_split_limit_on_sequential_branches.md",
+    // 16s in a debug build: the loop closer's eleven branches reach the same
+    // limit; `an_automatically_closed_loop_splits_at_its_c_branches.md`
+    // keeps loop-body splitting in the gate.
+    "a_loop_body_stops_at_the_split_limit.md",
     // 1.9s focused; the named scaling regression also checks its work.
     "refuted_implication_after_stack_pop.md",
     // 2.60s in its focused harness run; the unit regression stays in the gate.

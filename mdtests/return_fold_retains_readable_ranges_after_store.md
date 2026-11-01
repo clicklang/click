@@ -143,13 +143,19 @@ void arena_write(struct region* region, int32 index, int32 value) {
         rewrite(region->start == s);
         assumption();
     }
+    have defined(s + index + 1);
+    have defined(region->start + index + 1) by {
+        rewrite(region->start == s);
+        assumption();
+    }
     have to_integer(region->start + index + 1) <= to_integer(e) by {
         rewrite(region->start == s);
         assumption();
     }
     have 0 <= to_integer(region->start + index) by {
         rewrite(region->start == s);
-        have 0 <= (s + index);
+        have 0 <= to_integer(s + index);
+        assumption();
     }
     have to_integer(s + index) < to_integer(c);
     have region->arena->capacity == c by {

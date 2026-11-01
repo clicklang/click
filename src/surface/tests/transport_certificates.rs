@@ -216,6 +216,41 @@ fn region_footprint_free_and_call_certificates_expand_without_search() {
     }
 }
 
+#[test]
+#[ignore = "nightly: expands and replays complete memory proofs"]
+fn cell_source_removal_repairs_expand_and_replay_without_implicit_search() {
+    for (fixture, claim) in [
+        (
+            "mdtests/execute_in_a_proof_if_arm_splits_alias_cases_inside_a_c_if.md",
+            "f",
+        ),
+        (
+            "mdtests/failed_allocation_preserves_existing_loads.md",
+            "failed_allocation_preserves_existing_loads",
+        ),
+        (
+            "mdtests/loop_node_link_frames_across_parent_link_store.md",
+            "rotate",
+        ),
+        ("mdtests/bubble_pass3_max_suffix.md", "bubble_pass3"),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c0_claim_source(&source, &sources, claim, CProofClaim::Grouped)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(expanded.contains("transport_certificate"), "{fixture}");
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap_or_else(|error| {
+            panic!(
+                "{fixture}: {}\nExpanded source:\n{expanded}",
+                error.report()
+            )
+        });
+    }
+}
+
 fn check_resource_field_certificate(ty: &str) {
     let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
     let source = source
