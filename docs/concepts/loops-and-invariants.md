@@ -1215,12 +1215,14 @@ that ran.
 A bare `close_invariants()` closes the bundle as `close_invariants() by { ... }`
 with `solve()` on each member: it descends the bundle's conjunctions and each
 member's guards with `both` and `intro`, and closes every member with `solve()`
-alone, which reads the facts in scope like any other `solve()`. A member
-`solve()` does not close as spelled over the back edge is stated once more at
-the iteration entry, `at(<entry>, 0 <= i - 1)`, so the step sees the
-difference the body took, and closed by `solve()` there. That closes an
+alone, which reads the facts in scope like any other `solve()`. Each member
+is spelled as its clause writes it, as a function's exit closes each `ensures`
+as written: an invariant over the back-edge locals, and the descent member of
+`decreases m` as `m < at(<iteration entry>, m)`, a tuple's as the
+disjunction over pivots with the earlier components tied. That closes an
 unsigned or 64-bit bound such as `i <= n` after `i += 1` from the guard
-`i < n` (`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`,
+`i < n`, and the descent of `n - i`
+(`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`,
 `mdtests/a_64_bit_countdown_closes_its_back_edge.md`). A member `solve()`
 misses is named in the refusal; prove it by hand in a
 `close_invariants() by { ... }` body.

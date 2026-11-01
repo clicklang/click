@@ -90,6 +90,11 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     pub(in crate::surface::proof) iteration_entry_selector: Option<SnapshotSelector>,
     pub(in crate::surface::proof) checks: Vec<CLoopInvariantCheck>,
     pub(in crate::surface::proof) ranking_measures: Vec<crate::kernel::CRankingComponent>,
+    /// The declared `decreases` components as the loop head writes them, in
+    /// the order of `ranking_measures`. The back edge's descent member is
+    /// spelled from them, `m < at(<iteration entry>, m)`, as a contract's
+    /// `ensures` with `old(m)` is spelled by its author.
+    pub(in crate::surface::proof) ranking_surfaces: Vec<ContractExpression>,
     /// The loop's structural `decreases` binder, when the clause named one
     /// instead of int32 components (D6). It is not a bundle member: the back
     /// edge decides the descent against the loop head.
