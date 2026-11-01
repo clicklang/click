@@ -112,5 +112,11 @@ node aliases, retains the grandparent's typed null-parent fact across the two
 child recolorings, and states the resulting `parent == 0` before recoloring
 the root. All three selected proofs in `rbtree_size_insert_color_flip.click`
 verify, with the C, contracts, resources, and verifier unchanged by this proof
-repair. The other sidecars and full-directory audit still leave this broader
-report open.
+repair.
+
+The mirrored color-flip sidecar now uses the same explicit framing for the
+opposite insertion branch, taking its snapshot after the extra left-child
+read. All three selected proofs in
+`rbtree_size_insert_mirrored_color_flip.click` verify as well. Its C, contracts,
+resources, and verifier are unchanged by this repair. The other sidecars and
+full-directory audit still leave this broader report open.
