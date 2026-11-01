@@ -97,3 +97,15 @@ Paired runs of all 14 callers on `e7cb3ca08` and with this repair reach the
 same existing failing statements and goals; none fails earlier. The broader
 report remains open: the complete insertion sidecars and directory audit do
 not yet pass.
+
+## Color-flip initial resource unfolding
+
+`rbtree_size_insert_color_flip.click` now gets past its first `unfold(state)`
+at line 106. A held resource's constructor-valued facts retain nominal pointer
+domains, matching the existing handling of typed logical calls. The reduced
+`held_resource_constructor_pointer_domain.md` proof unfolds and refolds the
+same model successfully, and its expansion audit passes.
+
+On `6ce743031` plus this constructor-domain fix, the unchanged color-flip
+sidecar reaches the `Done` fold at line 157, where `root->rb_node == x` is not
+established. The full sidecar and broader report remain unresolved.
