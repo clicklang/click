@@ -329,23 +329,32 @@ pub(in crate::surface) fn asserted_condition_goal(
     condition: &CExpression,
 ) -> Option<Proposition> {
     // Over no facts, so the evaluation splits on the condition rather than
-    // deciding it from the false path's own assumption.
+    // deciding it from the false path's own assumption. The goal is the
+    // fact on the path where the condition holds, with that path's
+    // polarity: `x > 0` may be recorded as `x <= 0` being false.
     let evaluation = crate::kernel::prove_symbolic_c_condition_evaluation(
         state.clone(),
         condition.clone(),
         crate::kernel::PureFactContext::new(),
     );
-    evaluation.paths().iter().find_map(|path| {
-        path.facts()
-            .iter()
-            .rev()
-            .find_map(|fact| match fact.proposition() {
-                Proposition::ConditionIs(condition, _) => {
-                    Some(Proposition::ConditionIs(condition.clone(), true))
-                }
-                _ => None,
-            })
-    })
+    evaluation
+        .paths()
+        .iter()
+        .filter(|path| {
+            matches!(
+                path.outcome(),
+                crate::kernel::CConditionOutcome::Value(true)
+            )
+        })
+        .find_map(|path| {
+            path.facts()
+                .iter()
+                .rev()
+                .find_map(|fact| match fact.proposition() {
+                    Proposition::ConditionIs(..) => Some(fact.proposition().clone()),
+                    _ => None,
+                })
+        })
 }
 
 /// A condition as a proof states it: a conjunction joined by `&&` without

@@ -485,6 +485,12 @@ pub struct MirBlock {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MirStatement {
+    /// A Rust panic guarded by `condition`, `assert!(condition)`: the
+    /// verifier proves `condition` holds. `message` names the panic.
+    Assert {
+        condition: Expression,
+        message: String,
+    },
     SliceSplit {
         slice: Expression,
         midpoint: Expression,
@@ -610,6 +616,11 @@ pub enum MirTerminator {
     },
     Return,
     Unreachable,
+    /// A Rust panic, `assert!` or `panic!`: the verifier proves the block is
+    /// never reached. `message` names the panic in a refusal.
+    Panic {
+        message: String,
+    },
     /// `destination = Box::new(source)`: allocate the record on the heap,
     /// move the record local `source` into it, and make `destination` its
     /// address. A failed allocation aborts the process, so it never returns.

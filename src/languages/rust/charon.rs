@@ -17,6 +17,7 @@ mod option_take_tests;
 mod option_try;
 #[cfg(test)]
 mod option_try_tests;
+mod panics;
 mod protocol;
 mod ranges;
 mod referent_match;
@@ -2471,11 +2472,16 @@ impl BodyAdapter<'_, '_> {
                     let a::PlaceKind::Local(destination) = call.dest.kind else {
                         return Err(unsupported("projected call destination"));
                     };
+                    // `expect`'s message is not passed on.
+                    let passed = self.adapter.core_methods.borrow()[&function]
+                        .parameters
+                        .len();
                     return Ok(T::Call {
                         function,
                         arguments: call
                             .args
                             .iter()
+                            .take(passed)
                             .map(|argument| self.operand(argument))
                             .collect::<Result<_, _>>()?,
                         owned_arguments: Vec::new(),
@@ -3237,6 +3243,15 @@ pub(super) fn decode_crate(
         } else {
             body
         };
+        // A block that can only reach a panic is one obligation.
+        let panic_body;
+        let (body, panic_messages, panic_pruned) = if let Some(rewritten) = adapter.panic_body(body)
+        {
+            panic_body = rewritten.body;
+            (&panic_body, rewritten.messages, rewritten.pruned)
+        } else {
+            (body, BTreeMap::new(), BTreeSet::new())
+        };
         let try_body;
         let body = if let Some(rewritten) = adapter
             .option_try_body(body)
@@ -3329,6 +3344,7 @@ pub(super) fn decode_crate(
         for local in &body.locals.locals {
             if plumbing.elided.contains(&local.index)
                 || enum_discriminants.contains_key(&local.index)
+                || panic_pruned.contains(&local.index)
             {
                 continue;
             }
@@ -3418,7 +3434,17 @@ pub(super) fn decode_crate(
         };
         let mut blocks = Vec::new();
         let mut coercions = Vec::new();
-        for block in &b.body.body {
+        for (id, block) in b.body.body.iter_enumerated() {
+            if let Some(message) = panic_messages.get(&id) {
+                coercions.push((blocks.len(), Vec::new()));
+                blocks.push(out::MirBlock {
+                    statements: Vec::new(),
+                    terminator: T::Panic {
+                        message: message.clone(),
+                    },
+                });
+                continue;
+            }
             let mut statements: Vec<S> = block
                 .statements
                 .iter()
@@ -3478,6 +3504,7 @@ pub(super) fn decode_crate(
         }
         traits::wrap_object_coercions(&mut blocks, coercions)?;
         protocol::split_next_branches(&mut blocks)?;
+        panics::assert_branches(&mut blocks);
         functions.push(out::Function {
             name: name.clone(),
             return_type: adapter.ty(&f.signature.output).map_err(|error| {

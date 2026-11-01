@@ -13987,6 +13987,7 @@ pub struct SymbolicCConditionEvaluation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SymbolicCConditionEvaluationPath {
+    pub(super) outcome: CConditionOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) theorem: Theorem,

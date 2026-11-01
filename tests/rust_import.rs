@@ -5472,6 +5472,8 @@ mod impl_fn;
 mod integer_widths;
 #[path = "rust_import/loop_control.rs"]
 mod loop_control;
+#[path = "rust_import/panics.rs"]
+mod panics;
 #[path = "rust_import/parameterized_contracts.rs"]
 mod parameterized_contracts;
 #[path = "rust_import/ranges.rs"]
