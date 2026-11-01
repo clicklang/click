@@ -58,12 +58,14 @@ facts do not establish flat cost as the queried class or bucket grows.
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 
-The next removal target is the pointer-specific history traversal in
-`pointer_read_value_recursive` and its frame fallback. The combined experiment
-is on `codex/memory-walk-removal-current`; use its deterministic
-`repeated_pointer_frame_queries_have_near_linear_total_work` regression when
-isolating that next change. Removing only the general cell-source traversal
-does not fix that end-to-end quadratic example.
+The next removal target is `typed_reads_share_memory_source`, reached by
+complete-pointer equality and provenance comparison. Its alternating history
+walk is separate from the now-bounded general cell-source lookup. Use
+`repeated_pointer_frame_queries_have_near_linear_total_work` and its adjacent
+and explicit-composition controls in
+`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`. Investigate the related
+read-initialization loop `typed_read_has_same_memory_source` with its own
+checking regression before widening the removal.
 
 Repair affected proofs with explicit separation and transport certificates,
 preserving C and contracts. Structural read equality needs positive evidence;
