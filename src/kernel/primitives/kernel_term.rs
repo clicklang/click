@@ -40,6 +40,10 @@ pub enum KernelTermNode {
         relation: CompareRelation,
         arguments: [KernelTerm; 2],
     },
+    IntegerCompare {
+        operator: IntegerComparisonOperator,
+        arguments: [KernelTerm; 2],
+    },
     BoolEqual {
         arguments: [KernelTerm; 2],
     },
@@ -264,6 +268,7 @@ impl KernelTerm {
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
+            | KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => arguments,
             KernelTermNode::BoolIf { arguments } => arguments,
             KernelTermNode::BoolCast { operand, .. }
@@ -435,11 +440,7 @@ impl KernelTermImport {
                     .enumerate()
                     .map(|(index, arg)| match arg {
                         PureFunctionArgument::Integer(value) => self.integer(value),
-                        PureFunctionArgument::Value(value)
-                            if matches!(value, integer_c_value!(_)) =>
-                        {
-                            self.argument(arg)
-                        }
+                        PureFunctionArgument::Value(integer_c_value!(_)) => self.argument(arg),
                         _ => KernelTerm::legacy_at(
                             arg.clone(),
                             LegacyIdentity::ApplicationArgument(application.clone(), index),

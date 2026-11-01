@@ -5123,7 +5123,13 @@ impl Pointer {
             }
             _ => None,
         };
-        if let Some(read) = own_read(&source).or_else(|| own_read(&canonical)) {
+        // The selected snapshot can restore a checked loop-frame observation
+        // without changing its byte identity. Inspect its cache before stripping
+        // observation edges; the byte source need not retain that knowledge.
+        if let Some(read) = own_read(memory)
+            .or_else(|| own_read(&source))
+            .or_else(|| own_read(&canonical))
+        {
             return Ok(read);
         }
         // A static-storage cell never written since its block was declared

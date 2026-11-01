@@ -585,7 +585,7 @@ fn split_execution_proof_branch_contexts(
                 case_path: {
                     let mut case_path = context.case_path.clone();
                     case_path.push(ProofCaseChoice {
-                        condition: surface_c_condition(condition, &context.state),
+                        condition: surface_c_condition(condition, &context.state)?,
                         value: transition.is_true,
                         match_arm: None,
                     });
@@ -786,7 +786,7 @@ fn advance_execution_proof_statement(
                     if let CStatement::While { condition, .. } = statement {
                         let exit_condition = ClickProposition::Not(Box::new(surface_c_condition(
                             condition, exit_state,
-                        )));
+                        )?));
                         let lowered_exit_condition = lower_fixed_state_proposition(
                             &exit_condition,
                             &transition.pure_facts,

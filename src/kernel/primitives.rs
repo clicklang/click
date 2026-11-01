@@ -125,6 +125,7 @@ mod memory_equality_index;
 mod resource_algebra;
 #[cfg(test)]
 pub(crate) use resource_algebra::take_whole_normalization_facts;
+mod arithmetic_domains;
 mod term_operations;
 mod term_shape;
 mod term_width;
@@ -8858,8 +8859,7 @@ pub(crate) fn record_c_memory_derivation(result: &mut CMemory, derivation: CMemo
             if matches!(run.value_mode(), cell_store::RunValueMode::Load)
                 && (run.element_width() == run.value_width()
                     || (run.element_width() > run.value_width()
-                        && run.element_type() != CType::Bool
-                        && !run.element_type().is_pointer()))
+                        && run.element_type() != CType::Bool))
                 && base.read_identity() == run.source().read_identity() =>
         {
             // Copying the same bytes already in the base is materialization,
@@ -14151,6 +14151,7 @@ pub struct SymbolicCConditionEvaluation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SymbolicCConditionEvaluationPath {
+    pub(super) outcome: CConditionOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) theorem: Theorem,

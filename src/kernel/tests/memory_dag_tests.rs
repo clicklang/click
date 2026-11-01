@@ -3890,7 +3890,23 @@ fn seeded_scalar_no_write_witness_rejects_changed_or_represented_values() {
     let assumptions = PureFactContext::new();
     let witness = MemoryDagHopJustification::SeededLoadsOfBase;
     for (source, mode, ty, width) in [
-        (changed, RunValueMode::Load, CType::Int32, 4),
+        (changed.clone(), RunValueMode::Load, CType::Int32, 4),
+        (changed, RunValueMode::Load, CType::Int32Pointer, 8),
+        (original.clone(), RunValueMode::Load, CType::Int32Pointer, 4),
+        (
+            original.clone(),
+            RunValueMode::Constant(CValue::typed_pointer(other.clone(), CType::Int32Pointer)),
+            CType::Int32Pointer,
+            8,
+        ),
+        (
+            original.clone(),
+            RunValueMode::Copy {
+                source_base: other.clone(),
+            },
+            CType::Int32Pointer,
+            8,
+        ),
         (
             original.clone(),
             RunValueMode::Constant(int32(7)),

@@ -52,12 +52,13 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
         };
         require_false(zero);
     }
-    if matches!(width, ScalarWidth::Int32 | ScalarWidth::Int64) {
+    if matches!(width, ScalarWidth::Int32 | ScalarWidth::Int64)
+        && !matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder)
+    {
         let overflow = match op {
             MachineBinaryOp::Add => OverflowOperation::Add,
             MachineBinaryOp::Subtract => OverflowOperation::Subtract,
             MachineBinaryOp::Multiply => OverflowOperation::Multiply,
-            MachineBinaryOp::Divide | MachineBinaryOp::Remainder => OverflowOperation::Divide,
             _ => unreachable!("arithmetic operator"),
         };
         require_false(ConditionTerm::machine_overflows(
@@ -66,6 +67,22 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
             left.clone(),
             right.clone(),
         ));
+    }
+    if matches!(width, ScalarWidth::Int32 | ScalarWidth::Int64)
+        && matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder)
+    {
+        let [minimum, minus_one] =
+            ConditionTerm::signed_division_exception_tests(format, &left, &right);
+        if !matches!(minimum, ConditionTerm::Constant(false))
+            && !matches!(minus_one, ConditionTerm::Constant(false))
+        {
+            obligations.push(
+                ProofObligation::evaluation_domain(Proposition::signed_division_exclusion(
+                    format, &left, &right,
+                ))
+                .with_context("arithmetic expression is defined"),
+            );
+        }
     }
     let term = Bitvector32Term::machine_binary(format, op, left, right);
     Some(CExpressionPath {

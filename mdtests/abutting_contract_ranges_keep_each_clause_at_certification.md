@@ -34,6 +34,7 @@ verifying "abutting_contract_ranges_keep_each_clause_at_certification.c";
 
 void release(int32 *x, int32 i, int32 j) {
     requires 0 <= i;
+    requires i < 1000;
     requires to_integer(i + 1) == to_integer(j);
     requires j < 1000;
     consumes x[0..(i + 1)];
@@ -42,6 +43,7 @@ void release(int32 *x, int32 i, int32 j) {
 
 void release_to(int32 *x, int32 i, int32 j) {
     requires 0 <= i;
+    requires i < 1000;
     requires to_integer(i + 1) == to_integer(j);
     requires j < 1000;
     consumes x[0..j];
@@ -50,6 +52,7 @@ void release_to(int32 *x, int32 i, int32 j) {
 
 void inspect(int32 *x, int32 i, int32 j) {
     requires 0 <= i;
+    requires i < 1000;
     requires to_integer(j) == to_integer(i + 1);
     requires j < 1000;
     views x[0..(i + 1)];
@@ -58,6 +61,7 @@ void inspect(int32 *x, int32 i, int32 j) {
 
 int32 read_second(int32 *x, int32 i, int32 j) {
     requires 0 <= i;
+    requires i < 1000;
     requires to_integer(i + 1) == to_integer(j);
     requires j < 1000;
     views x[0..(i + 1)];

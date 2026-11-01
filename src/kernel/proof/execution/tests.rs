@@ -3079,3 +3079,41 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/proof/execution/tests.rs");
 }
+
+#[test]
+fn named_pointer_cell_requires_its_complete_read_and_provenance() {
+    use crate::kernel::{CMemory, LoadKind, Pointer, VerificationSession};
+    let _session = VerificationSession::enter();
+    let address = Pointer::symbolic(Variable(986_101));
+    let memory = CMemory::new();
+    let name = crate::kernel::canonical_form_of_load(
+        crate::kernel::intern_c_memory(memory.clone()),
+        address.clone(),
+        LoadKind::Int32,
+    );
+    let value = crate::kernel::cell_run_value(CType::Int32Pointer, name.clone());
+    assert!(super::cell_value_is_exactly_load(&value, &name));
+    let CValue::Pointer(pointer) = value else {
+        panic!("pointer cell")
+    };
+    for wrong in [
+        CValue::typed_pointer(pointer.pointer().offset_by_bytes(4), CType::Int32Pointer),
+        CValue::typed_pointer(address.clone(), CType::Int32Pointer),
+        CValue::Pointer(
+            pointer
+                .clone()
+                .with_designation(std::sync::Arc::new(address.clone())),
+        ),
+    ] {
+        assert!(!super::cell_value_is_exactly_load(&wrong, &name));
+    }
+    let changed = memory.store(address.offset_by_bytes(4), CValue::Int32(7.into()));
+    let next = crate::kernel::canonical_form_of_load(
+        crate::kernel::intern_c_memory(changed),
+        address,
+        LoadKind::Int32,
+    );
+    // Even where the scalar prefix is unchanged, a pointer covers eight bytes.
+    let later = crate::kernel::cell_run_value(CType::Int32Pointer, next);
+    assert!(!super::cell_value_is_exactly_load(&later, &name));
+}

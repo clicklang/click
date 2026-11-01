@@ -2108,6 +2108,31 @@ fn owned_string_actual_len_load_equation_round_trips() {
 }
 
 #[test]
+fn signed_division_domain_propositions_round_trip_at_both_widths() {
+    for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        let left = Bitvector32Term::Variable(Variable(972_001));
+        let right = Bitvector32Term::Variable(Variable(972_002));
+        let wrap = |word| {
+            if format == MachineIntegerType::Int32 {
+                CValue::Int32(word)
+            } else {
+                CValue::Int64(word)
+            }
+        };
+        let state = CState::new()
+            .with_local("a", wrap(left.clone()))
+            .with_local("b", wrap(right.clone()));
+        let domain = Proposition::signed_division_defined(format, &left, &right);
+        let surface = synthesize_surface_proposition(&domain, ParameterBinding::default(), &state)
+            .expect("ordinary division domain spelling");
+        assert_eq!(
+            relower_written_proposition(&surface, &state).unwrap(),
+            domain
+        );
+    }
+}
+
+#[test]
 fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
         for op in [
@@ -3585,6 +3610,12 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
     for expression in [
         "to_integer(x) + foo(x)",
         "foo(positive(x) as int32)",
+        "foo((if foo(x) + 1 < foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 <= foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 > foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 >= foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 == foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 != foo(x) { true } else { false }) as int32)",
         "foo_wide(positive(x) as int64)",
         "to_integer(positive(x) as uint64) + foo(x)",
         "foo((if x > 0 { true } else { false }) as int32)",

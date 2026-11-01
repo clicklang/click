@@ -867,7 +867,8 @@ integer type, and `unsigned_abs` of a signed one, by the callee's identity and
 signature. A `checked_*` result is the library's `Option`. `o.unwrap_or(d)` of
 an `Option` of a scalar calls `Option::unwrap_or` the same way, whose contract
 states its result with `option::unwrap_or(o, d)`; that module is implicit, so
-a sidecar needs no import. The library
+a sidecar needs no import. `unwrap` and `expect` are described under
+[Panics](#panics). The library
 function is opaque until `unfold` gives its definition, so a claim that needs
 the value, `result <= a`, unfolds it, and a proof of one arm states the value
 there: `have u32::min(a, b) == a by { unfold(u32::min(a, b)); solve(); }`.
@@ -927,6 +928,12 @@ reinterpreted at the operand's width. A signed right shift is arithmetic. An
 exact claim such as `result == (x << n)` proves at `i32`, and `result == (x >>
 n)` at `i32` and `i64`; at `i8`, `i16` and a 64-bit left shift the
 reinterpreted result is not yet related to the spec's shift.
+At `u8` and `u16`, remainder uses the same signed 32-bit promotion as its
+contract expression; both operands fit that range and remain nonnegative.
+A precondition such as `x % 2u8 == 0u8` therefore proves the corresponding
+branch or `assert!` guard without an explicit proof. The nonzero-divisor
+obligation still applies
+([`design/charon-trial/narrow-remainder`](https://github.com/clicklang/click/blob/master/design/charon-trial/narrow-remainder/widths.click)).
 A narrow signed quotient or remainder is bounded only for a nonnegative
 dividend and positive divisor; with negative operands its range is not yet
 provable
@@ -980,6 +987,28 @@ for an update.
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
 cargo run --bin click -- verify examples/rust-unsigned/arithmetic.click
 ```
+
+## Panics
+
+A Rust panic is an obligation: Click proves no call reaches it. A block that
+can only reach a call of `core::panicking`, the target of `assert!`,
+`assert_eq!`, `assert_ne!`, `panic!`, `unreachable!`, `todo!` and
+`unimplemented!`, is one obligation
+named by the panic's message, ``Rust panic `assertion failed: x > 3` ``; the
+statements that build the message, `format_args!` included, are not modeled,
+because a block shown unreachable has no effect. A branch whose one side
+panics is the assertion of the other side's condition, so after
+`assert!(x > 3)` the fact `x > 3` holds, and a refusal names the condition as
+its goal, ``could not show `x > 3u32` ``. A message with formatted arguments is
+named `formatted message`. `o.unwrap()` and `o.expect("...")` of an `Option` of
+a scalar call `Option::unwrap<T>` and `Option::expect<T>`, whose contract
+requires `o != Option<T>::None` and ensures `o == Option<T>::Some(result)`;
+`expect`'s message is not passed. `assert_eq!(a, b)` asserts `a == b` and
+`assert_ne!(a, b)` asserts `a != b` of scalar operands, named ``Rust panic
+`assertion left == right failed` `` or `left != right` whatever their own
+message; the pair of borrows the macro compares through, `(&a, &b)`, reads
+the operands themselves
+([`design/charon-trial/panics`](https://github.com/clicklang/click/blob/master/design/charon-trial/panics/panics.click)).
 
 ## Byte slices and indexing
 

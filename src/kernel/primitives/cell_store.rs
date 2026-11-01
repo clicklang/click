@@ -742,8 +742,8 @@ impl BlockKeyed for RunKey {
 
 /// The value a seeded cell of type `element_type` at `pointer` holds when its
 /// load is `load`: the load itself for a scalar, the load's truth for a
-/// `bool`, a pointer into the cell's own block scaled by the pointee for an
-/// object pointer, and the load's function identity for a function pointer.
+/// `bool`, a complete typed read for an object pointer, and the load's function
+/// identity for a function pointer.
 pub(crate) fn cell_run_value(element_type: CType, load: Bitvector32Term) -> CValue {
     match element_type {
         // The byte rule (Stage 5): the `Bool` `load != 0`.

@@ -23,6 +23,23 @@ fn slice_swap_contract(function: &super::schema::Function) -> String {
     )
 }
 
+/// The `core_method` of `Option::unwrap` and `Option::expect`, which Rust
+/// panics on at `None`.
+pub(super) const OPTION_UNWRAP: &str = "option::unwrap";
+
+/// `Option::unwrap(o)`'s contract: Rust panics unless `o` is `Some`, whose
+/// payload is the result.
+fn option_unwrap_contract(function: &super::schema::Function) -> String {
+    let payload = function
+        .return_type
+        .scalar_name()
+        .expect("a scalar payload");
+    format!(
+        "\nextern fn {}(o: Option<{payload}>) -> {payload} {{\n    requires o != Option<{payload}>::None;\n    ensures o == Option<{payload}>::Some(result);\n}}\n",
+        function.name
+    )
+}
+
 /// The `extern fn` contract of each core method `export` declares.
 pub(super) fn contracts(export: &RustExport) -> String {
     let mut source = String::new();
@@ -32,6 +49,10 @@ pub(super) fn contracts(export: &RustExport) -> String {
         };
         if specification == SLICE_SWAP {
             source.push_str(&slice_swap_contract(function));
+            continue;
+        }
+        if specification == OPTION_UNWRAP {
+            source.push_str(&option_unwrap_contract(function));
             continue;
         }
         // An `Option` is of the type of the method's scalar parameter:

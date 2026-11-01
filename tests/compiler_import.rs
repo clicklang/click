@@ -2360,6 +2360,7 @@ fn project_unit_verifies_an_external_tree_in_place() {
 
 /// The files and directories under `root`, by relative path, with each file's
 /// bytes: the inventory a run must leave unchanged.
+#[cfg(not(feature = "fast-gate"))]
 fn tree_inventory(root: &Path) -> std::collections::BTreeMap<PathBuf, Option<Vec<u8>>> {
     let mut inventory = std::collections::BTreeMap::new();
     let mut pending = vec![root.to_path_buf()];
@@ -2379,6 +2380,7 @@ fn tree_inventory(root: &Path) -> std::collections::BTreeMap<PathBuf, Option<Vec
 }
 
 /// Sets every file and directory under `root` read-only, or writable again.
+#[cfg(not(feature = "fast-gate"))]
 fn set_tree_writable(root: &Path, writable: bool) {
     use std::os::unix::fs::PermissionsExt;
     let mut pending = vec![root.to_path_buf()];

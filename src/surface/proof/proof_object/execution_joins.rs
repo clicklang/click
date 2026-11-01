@@ -109,12 +109,16 @@ impl<'a> Proof<'a> {
             region: CodeRegionRef::Region(statement_index),
             kind: ProgramPointKind::Entry,
         };
-        let checked = surface_at_snapshot(
-            &surface_c_condition(&condition, &current_state),
-            &entry_point,
-        )?;
+        let source_condition = surface_c_condition(&condition, &current_state)?;
+        let checked = surface_at_snapshot(&source_condition, &entry_point)?;
         if checked == *surface_condition {
             return Ok(true);
+        }
+        // A current source condition follows the ordinary proof-if path.
+        // Call results contain a region reference without being a condition
+        // anchored at a different statement entry.
+        if source_condition == *surface_condition {
+            return Ok(false);
         }
         if proposition_contains_at_expression(surface_condition)
             && surface_at_snapshot(surface_condition, &entry_point)
@@ -187,7 +191,7 @@ impl<'a> Proof<'a> {
             else_branch: else_branch.clone(),
         };
         let surface_condition = surface_at_snapshot(
-            &surface_c_condition(&condition, &current_state),
+            &surface_c_condition(&condition, &current_state)?,
             &ProgramPointRef {
                 region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
@@ -220,7 +224,7 @@ impl<'a> Proof<'a> {
                 .count()
                 > 1
         });
-        let source_condition = surface_c_condition(&condition, &current_state);
+        let source_condition = surface_c_condition(&condition, &current_state)?;
         let mut operand_condition = &source_condition;
         while let ClickProposition::Not(inner) = operand_condition {
             operand_condition = inner;
@@ -671,7 +675,7 @@ impl<'a> Proof<'a> {
             );
         };
         let surface_condition = surface_at_snapshot(
-            &surface_c_condition(&condition, &current_state),
+            &surface_c_condition(&condition, &current_state)?,
             &ProgramPointRef {
                 region: CodeRegionRef::Region(statement_index),
                 kind: ProgramPointKind::Entry,
@@ -1505,7 +1509,7 @@ impl<'a> Proof<'a> {
             };
             (
                 surface_at_snapshot(
-                    &surface_c_condition(&condition, &current_state),
+                    &surface_c_condition(&condition, &current_state)?,
                     &ProgramPointRef {
                         region: CodeRegionRef::Region(statement_index),
                         kind: ProgramPointKind::Entry,
@@ -3577,7 +3581,7 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("expanded execution branch root is not a C `if`"));
         };
         let checked_condition = surface_at_snapshot(
-            &surface_c_condition(&condition, &current_state),
+            &surface_c_condition(&condition, &current_state)?,
             &ProgramPointRef {
                 region: CodeRegionRef::Region(record.statement_index),
                 kind: ProgramPointKind::Entry,
