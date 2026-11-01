@@ -56,8 +56,9 @@ cannot break this directory unseen.
 Resource-argument identity now ignores the view a cast selects, so
 `compute_size(old, 0)` accepts a held `size_metadata(rb_old)`. The sidecars
 stopped by that refusal moved to later proof obligations.
-Current checks against `1044b6034` plus the rotation and leaf-propagation
-proof repairs:
+Rotation and leaf-propagation checks were made against `1044b6034` plus
+their proof repairs; ancestor propagation was rechecked on `ded997547` plus
+the repair below:
 
 - `rbtree_size_rotate.click` now verifies both the callback and its contract
   theorem. The proof stops immediately before the metadata copy, states the
@@ -65,9 +66,11 @@ proof repairs:
   inequalities across that store. It then states the `container_of` alias and
   the child inequalities in the C local's spelling required by `compute_size`.
   The C and contracts are unchanged. All 18 smart sites pass expansion audit.
-- `rbtree_size_propagate_tree.click`, tactic@97:56: `normalize()` leaves
-  `rb == rb`, with a cell walk that does not separate a step from an 8-byte
-  read.
+- `rbtree_size_propagate_tree.click` now verifies both proofs. It cites the
+  available parent equality with `assumption()`, transports the explicitly
+  typed packed-parent read across the read-only `rb_parent` helper, and
+  extracts the loop-exit disjunction before matching and unfolding the walk
+  changes its model spelling. C, contracts, and verifier are unchanged.
 - `rbtree_size_propagate.click` now verifies. After the `container_of`
   expansion, its proof states that the C local denotes the original node and
   uses that equality with the unfolded leaf facts to establish both null-child

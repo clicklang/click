@@ -93,8 +93,14 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 }
                                 have parent == sized_context_parent(sized_path_context(path_model), stop);
                                 let { metadata: metadata, left: left, right: right } = unfold(repaired);
+                                have ((load_uint64(&child_node->rb) & ~3) as (struct rb_node *)) == parent by { assumption(); }
+                                mark before_parent;
                                 step(); step();
-                                have rb == parent by { normalize(); }
+                                have rb == parent by { assumption(); }
+                                transport(at(before_parent, ((load_uint64(&child_node->rb) & ~3) as (struct rb_node *))) == parent,
+                                          ((load_uint64(&child_node->rb) & ~3) as (struct rb_node *)) == parent) using {
+                                    at(before_parent, ((load_uint64(&child_node->rb) & ~3) as (struct rb_node *))) == parent;
+                                };
                                 let sub = fold(sized_at(&child_node->rb), { model: SizedTree::Node(identity, parent, color, value, left_model, right_model) }, { metadata: metadata, left: left, right: right });
                                 have rb == sized_context_parent(sized_path_context(path.model), stop) by {
                                     rewrite(rb == parent);
@@ -126,6 +132,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             }
         }
     }
+    extract(address(rb) == address(stop) or sized_walk_pending(walk.model) == 0);
     mark joined;
     match walk.model {
         SizedWalk::Active(previous, sub_model, path_model) => {
@@ -135,7 +142,6 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             }
             let { focus: focus, path: path } = unfold(walk);
             have sized_walk_pending(at(joined, walk.model)) == 0 by {
-                extract(address(rb) == address(stop) or sized_walk_pending(at(joined, walk.model)) == 0);
                 cases {
                     address(rb) == address(stop) => {
                         contradiction(address(rb) == address(stop));
