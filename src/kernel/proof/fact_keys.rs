@@ -2826,7 +2826,7 @@ mod proposition_identity_tests {
         let before = CMemory::new()
             .with_uninitialized_block(array.block.clone(), 4)
             .with_uninitialized_block(other.block.clone(), 4)
-            .store(array.clone(), CValue::UInt8(7u32.into()));
+            .store(array.clone(), crate::kernel::uint8(7u32));
         let key = proposition_identity_key(&local_definedness_fact(&before, 81_001)).unwrap();
         let disjoint = before.clone().store(other, CValue::Int32(9u32.into()));
         assert_eq!(
@@ -2835,7 +2835,7 @@ mod proposition_identity_tests {
         );
         let affected = before
             .clone()
-            .store(array.clone(), CValue::UInt8(8u32.into()));
+            .store(array.clone(), crate::kernel::uint8(8u32));
         let retired = before.without_local_block(&array.block);
         let resized = before.clone().with_block(array.block.clone(), 8);
         let unknown_write = before.clone().store(

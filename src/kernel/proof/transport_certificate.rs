@@ -152,7 +152,11 @@ fn read_type(result: &Proposition) -> Option<ReadType> {
             true,
         ) if matches!(
             format,
-            MachineIntegerType::Int32
+            MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16
+                | MachineIntegerType::Int32
                 | MachineIntegerType::UInt32
                 | MachineIntegerType::Int64
                 | MachineIntegerType::UInt64
@@ -198,8 +202,8 @@ fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> O
     } else {
         return None;
     };
-    let kind = observation_type(kind, bytes.as_const()?)?;
-    observation_equality(before, after, address, kind)
+    let observed = observation_type(kind, bytes.as_const()?)?;
+    observation_equality(before, after, address, observed, kind)
 }
 
 fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Proposition> {
@@ -215,8 +219,8 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
         return None;
     }
     let (address, bytes) = kept.byte_footprint();
-    let kind = observation_type(kind, bytes.as_const()?)?;
-    observation_equality(&footprint.before, &footprint.after, address, kind)
+    let observed = observation_type(kind, bytes.as_const()?)?;
+    observation_equality(&footprint.before, &footprint.after, address, observed, kind)
 }
 
 // Resource field values are retained by the persistent resource contexts.
@@ -265,9 +269,12 @@ fn preserve_field(
         {
             ConditionTerm::pointer_value_equal(a.clone(), b.clone())
         }
-        (AlgebraicValue::C(CValue::Int32(a)), AlgebraicValue::C(CValue::Int32(b)))
-        | (AlgebraicValue::C(CValue::UInt8(a)), AlgebraicValue::C(CValue::UInt8(b))) => {
+        (AlgebraicValue::C(CValue::Int32(a)), AlgebraicValue::C(CValue::Int32(b))) => {
             ConditionTerm::equal(a.clone(), b.clone())
+        }
+        // An 8-bit field value is native: its equality is at its own format.
+        (AlgebraicValue::C(CValue::UInt8(a)), AlgebraicValue::C(CValue::UInt8(b))) => {
+            integer_equality(MachineIntegerType::UInt8, a.clone(), b.clone())?
         }
         (AlgebraicValue::C(CValue::UInt32(a)), AlgebraicValue::C(CValue::UInt32(b))) => {
             ConditionTerm::uint32_equal(a.clone(), b.clone())
@@ -283,9 +290,12 @@ fn preserve_field(
     Some(Proposition::ConditionIs(condition, true))
 }
 
-// C promotes an unsigned byte comparison to int32, but the selected resource
-// still describes one byte. Select that exact producer record, not a four-byte
-// read or a search for an alternative observation.
+// A comparison selects the read of its own format, and an 8- or 16-bit read
+// compared natively is that read. C promotes an unsigned byte comparison to
+// int32, comparing the reads' widenings, while the selected resource still
+// describes one byte: that comparison selects the byte's `uint8` read. Select
+// that exact producer record, not a four-byte read or a search for an
+// alternative observation.
 fn observation_type(comparison: ReadType, bytes: u32) -> Option<ReadType> {
     match (comparison, bytes) {
         (ReadType::Integer(MachineIntegerType::Int32), 1) => {
@@ -301,9 +311,22 @@ fn observation_equality(
     after: &CMemory,
     address: Pointer,
     kind: ReadType,
+    comparison: ReadType,
 ) -> Option<Proposition> {
     let after = typed_reads::get(after, &address, kind)?;
     let before = typed_reads::get(before, &address, kind)?;
+    // A promoted comparison of a byte read compares the reads' widenings.
+    if let (ReadType::Integer(narrow), ReadType::Integer(MachineIntegerType::Int32)) =
+        (kind, comparison)
+        && narrow != MachineIntegerType::Int32
+    {
+        let widen =
+            |value| Bitvector32Term::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
+        return Some(Proposition::ConditionIs(
+            ConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
+            true,
+        ));
+    }
     let condition = match (kind, after, before) {
         (ReadType::Pointer(_), CValue::Pointer(a), CValue::Pointer(b)) => {
             ConditionTerm::pointer_value_equal(a, b)
@@ -326,7 +349,10 @@ fn observation_equality(
 
 fn integer_bits(value: CValue) -> Option<Bitvector32Term> {
     match value {
-        CValue::UInt8(t)
+        CValue::Int8(t)
+        | CValue::UInt8(t)
+        | CValue::Int16(t)
+        | CValue::UInt16(t)
         | CValue::Int32(t)
         | CValue::UInt32(t)
         | CValue::Int64(t)
@@ -341,7 +367,13 @@ fn integer_equality(
     right: Bitvector32Term,
 ) -> Option<ConditionTerm> {
     Some(match format {
-        MachineIntegerType::UInt8 | MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
+        MachineIntegerType::Int8
+        | MachineIntegerType::UInt8
+        | MachineIntegerType::Int16
+        | MachineIntegerType::UInt16 => {
+            ConditionTerm::machine_compare(format, CompareRelation::Equal, left, right)
+        }
+        MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
         MachineIntegerType::UInt32 => ConditionTerm::uint32_equal(left, right),
         MachineIntegerType::Int64 | MachineIntegerType::UInt64 => {
             ConditionTerm::int64_equal(left, right)

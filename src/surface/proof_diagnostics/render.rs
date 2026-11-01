@@ -2077,6 +2077,14 @@ impl Renderer<'_> {
                 self.fmt(format_args!("{v}"))
             }
             Bitvector32Term::Int64Constant(v) => self.fmt(format_args!("{v}i64")),
+            Bitvector32Term::MachineIntegerConstant(constant) => {
+                let format = constant.format();
+                let sign = if format.is_signed() { 'i' } else { 'u' };
+                match constant.to_i128() {
+                    Some(value) => self.fmt(format_args!("{value}{sign}{}", format.bits())),
+                    None => self.fmt(format_args!("{}{sign}{}", constant.bits(), format.bits())),
+                }
+            }
             Bitvector32Term::UInt64Constant(v) => self.fmt(format_args!("{v}u64")),
             // A model-field variable is a name for one field of one instance,
             // and the field is the part a reader compares. The id is kept
