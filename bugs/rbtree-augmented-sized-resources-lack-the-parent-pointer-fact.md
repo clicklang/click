@@ -54,14 +54,26 @@ cannot break this directory unseen.
 ## Three sidecars after resource-argument view matching
 
 Resource-argument identity now ignores the view a cast selects, so
-`compute_size(old, 0)` accepts a held `size_metadata(rb_old)`. The three
-sidecars stopped by that refusal now stop later, cause unconfirmed:
+`compute_size(old, 0)` accepts a held `size_metadata(rb_old)`. The sidecars
+stopped by that refusal moved to later proof obligations.
+Current checks against `1044b6034` plus the rotation and leaf-propagation
+proof repairs:
 
-- `rbtree_size_rotate.click`, tactic@68: precondition clause 10 of
-  `compute_size` (`node->rb.rb_left != node as (void *) as (struct rb_node *)`), goal
-  `old(old[4]) != __click_call_result0`.
+- `rbtree_size_rotate.click` now verifies both the callback and its contract
+  theorem. The proof stops immediately before the metadata copy, states the
+  source/target separation, and transports the source value and child
+  inequalities across that store. It then states the `container_of` alias and
+  the child inequalities in the C local's spelling required by `compute_size`.
+  The C and contracts are unchanged. All 18 smart sites pass expansion audit.
 - `rbtree_size_propagate_tree.click`, tactic@97:56: `normalize()` leaves
   `rb == rb`, with a cell walk that does not separate a step from an 8-byte
   read.
-- `rbtree_size_propagate.click`, tactic@52: `have propagate_remaining(rb,
-  stop) == 1` lowers to no path. This one is unchanged by the view rule.
+- `rbtree_size_propagate.click` now verifies. After the `container_of`
+  expansion, its proof states that the C local denotes the original node and
+  uses that equality with the unfolded leaf facts to establish both null-child
+  guards in the local's spelling. The C, contracts, and verifier are unchanged.
+
+`rbtree_size_metadata.click` also verifies both selected proofs. The sized
+resources already state the parent-pointer facts described above. Keep this
+report open: the remaining sidecars and full-directory audit have not met the
+acceptance criteria.

@@ -34,8 +34,44 @@ void sized_rotate(struct rb_node* rb_old, struct rb_node* rb_new) {
 } by {
     unfold(source);
     unfold(target);
-    // Both container_of expansions and the metadata copy.
-    step_until(region(15));
+    // Both container_of expansions, then the metadata copy.
+    step_until(statement(2));
+    have old->size == old(source.value);
+    have separate(memory(old->size), memory(new->size));
+    have old->rb.rb_left != rb_old;
+    have old->rb.rb_right != rb_old;
+    have separate(memory(old->rb.rb_left), memory(new->size));
+    have separate(memory(old->rb.rb_right), memory(new->size));
+    mark before_copy;
+    step();
+    transport(at(before_copy, old->size) == old(source.value),
+              old->size == old(source.value)) using {
+        at(before_copy, old->size) == old(source.value);
+        separate(memory(old->size), memory(new->size));
+    };
+    transport(at(before_copy, old->rb.rb_left) != rb_old,
+              old->rb.rb_left != rb_old) using {
+        at(before_copy, old->rb.rb_left) != rb_old;
+        separate(memory(old->rb.rb_left), memory(new->size));
+    };
+    transport(at(before_copy, old->rb.rb_right) != rb_old,
+              old->rb.rb_right != rb_old) using {
+        at(before_copy, old->rb.rb_right) != rb_old;
+        separate(memory(old->rb.rb_right), memory(new->size));
+    };
+    have old as (void *) as (struct rb_node *) == rb_old;
+    have old->rb.rb_left != old as (void *) as (struct rb_node *) by {
+        normalize() using {
+            old->rb.rb_left != rb_old;
+            old as (void *) as (struct rb_node *) == rb_old;
+        };
+    }
+    have old->rb.rb_right != old as (void *) as (struct rb_node *) by {
+        normalize() using {
+            old->rb.rb_right != rb_old;
+            old as (void *) as (struct rb_node *) == rb_old;
+        };
+    }
     fold(source);
     let target = fold(size_metadata(rb_new), { value: old(source.value) });
     apply(size_sum_defined(left.value, right.value));
