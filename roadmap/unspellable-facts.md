@@ -56,7 +56,13 @@ walk memory history or search ambient facts. Arithmetic comparison is a query
 operation: it does not file normalized aliases as additional facts. Completed
 comparison queries are memoized within the load-origin session; budget refusals
 are not retained, and a fresh verification starts with cold comparison caches.
-The all-operators gate and after-migration stability audits are pending.
+Validation of the all-operators migration: `scripts/check.sh --no-fail-fast`
+passed 7,060 unit/API/import/scaling tests, 58 examples, and 4,958 mdtests in
+10m38s (38 seconds over the ten-minute target; no limits changed and no
+nightly run). Targeted fact-stability audits passed 124 arithmetic, 17 division,
+and 24 shift fixtures with zero differences. Arithmetic adds one fixture to
+its zero-difference 123-fixture baseline; the 24-fixture shift baseline and
+the merged division slice's 17-fixture audit were also zero.
 The ordinary obligations also exposed a retained-proof bug: a post-execution
 `have` can retain prerequisite proofs before its own certificate. Replay now
 keeps that complete sequence rather than requiring a single step.
