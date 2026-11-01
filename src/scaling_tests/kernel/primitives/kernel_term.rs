@@ -152,3 +152,35 @@ fn integer_conversion_bridge_scales_with_shared_operand() {
         }
     }
 }
+
+#[test]
+fn boolean_conversion_bridge_is_linear_in_explicit_conditions() {
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|i| KernelTerm::variable(KernelType::Integer, Variable(962_000 + i)))
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut condition = ConditionTerm::Variable(Variable(963_000));
+            for _ in 0..size {
+                condition = ConditionTerm::BoolIf {
+                    condition: Box::new(ConditionTerm::Variable(Variable(963_001))),
+                    then_condition: Box::new(condition),
+                    else_condition: Box::new(ConditionTerm::Constant(false)),
+                };
+            }
+            let source = PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::BoolCast {
+                to: MachineIntegerType::Int32,
+                value: Box::new(condition),
+            }));
+            let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let term = KernelTermImport::default().argument(&source);
+                KernelTermExport::default().argument(&term).unwrap()
+            });
+            assert_eq!(restored, source);
+            assert!(
+                work <= 24 * (size + 2),
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}

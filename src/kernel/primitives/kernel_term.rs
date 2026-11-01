@@ -2,6 +2,7 @@
 //! explicitly named Legacy leaf is a lossless boundary for unmigrated sorts.
 //! No constructor consults facts, evaluates arithmetic, or unfolds a call.
 use super::*;
+mod boolean;
 mod machine;
 pub use machine::{KernelMachineCastEncoding, KernelMachineLiteral};
 use num_bigint::BigInt;
@@ -10,6 +11,7 @@ use std::sync::{Mutex, Weak};
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum KernelType {
+    Bool,
     Integer,
     C(CType),
     Algebraic(AlgebraicType),
@@ -28,6 +30,24 @@ pub enum KernelIntegerOperator {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum KernelTermNode {
+    BoolLiteral(bool),
+    BoolCast {
+        destination: MachineIntegerType,
+        operand: KernelTerm,
+    },
+    BoolCompare {
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        arguments: [KernelTerm; 2],
+    },
+    BoolEqual {
+        arguments: [KernelTerm; 2],
+    },
+    BoolIf {
+        arguments: [KernelTerm; 3],
+    },
+    /// Exact condition payload at the temporary migration boundary.
+    LegacyBool(KernelLegacyTerm),
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
     IntegerToMachine {
@@ -242,13 +262,33 @@ impl KernelTerm {
         match self.node() {
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
-            KernelTermNode::MachineBinary { arguments, .. } => arguments,
-            KernelTermNode::IntegerToMachine { operand, .. }
+            KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::BoolCompare { arguments, .. }
+            | KernelTermNode::BoolEqual { arguments } => arguments,
+            KernelTermNode::BoolIf { arguments } => arguments,
+            KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
             | KernelTermNode::MachineUnary { operand, .. }
             | KernelTermNode::MachineCast { operand, .. } => std::slice::from_ref(operand),
             _ => &[],
         }
+    }
+
+    pub(crate) fn bool_cast(
+        destination: MachineIntegerType,
+        operand: KernelTerm,
+    ) -> Result<Self, &'static str> {
+        if operand.ty() != &KernelType::Bool {
+            return Err("Boolean conversion requires a Bool operand");
+        }
+        Ok(Self::intern(
+            KernelType::C(destination.c_type()),
+            KernelTermNode::BoolCast {
+                destination,
+                operand,
+            },
+        ))
     }
 
     pub(crate) fn integer_to_machine(
