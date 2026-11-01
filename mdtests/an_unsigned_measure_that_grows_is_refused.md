@@ -1,8 +1,9 @@
 # An unsigned measure that grows is refused
 
 `while (x < 4u) x++;` declares `decreases x` over the `uint32` counter, but
-the body moves `x` up. The decrease member is `x + 1 <u x` at the entry
-value of `x`, which is false under the guard `x <u 4`, so it stays open. The
+the body moves `x` up. The decrease member is spelled as the clause writes
+it, `x < at(<iteration entry>, x)`; the back edge's `x` is the entry value
+plus one, so the member is false under the guard `x <u 4` and stays open. The
 unsigned carrier waives only nonnegativity, which every unsigned value has;
 the strict descent is owed exactly as an int32 measure owes it.
 
@@ -33,5 +34,5 @@ int32 fill(uint32 x) {
 ```
 
 ```expect
-fail: `to_integer(at(statement(0).statement(0).entry, x) + 1u32) < at(statement(0).statement(0).entry, x)` remained open; this loop declares `decreases`, so the bundle also has `0 <= x` at the back edge, `x` decreases at the back edge
+fail: `x < at(statement(0).statement(0).entry, x)` remained open; this loop declares `decreases`, so the bundle also has `0 <= x` at the back edge, `x` decreases at the back edge
 ```

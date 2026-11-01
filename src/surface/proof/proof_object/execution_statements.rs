@@ -270,7 +270,7 @@ impl<'a> Proof<'a> {
             }
             return Ok(result);
         }
-        let result = self.close_bundle_member_by_solve(goal)?;
+        let result = self.close_bundle_member_by_solve()?;
         if result.is_none() {
             // Keep one bounded, lazy diagnostic for the actual kernel leaf.
             // It is recorded only after `solve()` has declined; it does not
@@ -284,35 +284,14 @@ impl<'a> Proof<'a> {
         Ok(result)
     }
 
-    /// One bundle member, closed by `solve()`. A member is spelled over the
-    /// back edge's locals, `0 <= i` after `i -= 1`, while the loop head's
-    /// premises name the iteration entry, and a ranking member synthesized
-    /// from `decreases` may have no back-edge spelling at all. So when
-    /// `solve()` does not close the member as spelled, it is stated once more
-    /// as a `have` in its spelling at the iteration entry,
-    /// `at(<iteration entry>, 0 <= i - 1)`, proved by `solve()`, and the
-    /// member closed by `assumption`. Both are fixed presentations of the
-    /// same goal, not a search over premises.
-    fn close_bundle_member_by_solve(&self, goal: &Proposition) -> Result<Option<Self>, ClickError> {
-        if let Some(closed) = self
-            .with_synthesized_bundle_member_surface()
-            .try_solve_closure()?
-        {
-            return Ok(Some(closed));
-        }
-        let Some(surface) = self.iteration_entry_bundle_member_surface(goal) else {
-            return Ok(None);
-        };
-        let Some(have) = attempt::candidate_outcome(self.begin_have(surface))? else {
-            return Ok(None);
-        };
-        let Some(proved) = have.try_solve_closure()? else {
-            return Ok(None);
-        };
-        let Some(joined) = attempt::candidate_outcome(proved.join())? else {
-            return Ok(None);
-        };
-        attempt::candidate_outcome(joined.apply_step(ProofStep::Assumption))
+    /// One bundle member, closed by `solve()` as the member is spelled: a
+    /// declared invariant as written, read at the back edge, and a ranking
+    /// member as its `decreases` clause writes it
+    /// ([`ranking_descent_surface`]), as a function's exit closes each
+    /// `ensures` as written.
+    fn close_bundle_member_by_solve(&self) -> Result<Option<Self>, ClickError> {
+        self.with_synthesized_bundle_member_surface()
+            .try_solve_closure()
     }
 
     /// Restores presentation metadata for one generated bundle leaf from the
@@ -361,48 +340,6 @@ impl<'a> Proof<'a> {
             }
         }
         Some(lowered)
-    }
-
-    /// One bundle member synthesized over the iteration entry state alone
-    /// and read there, `at(<iteration entry>, P)`: every local names its
-    /// value at the iteration entry, so a member the back edge changed is
-    /// spelled through the change, `0 <= i - 1` rather than `0 <= i`. Kept
-    /// only when it lowers alpha-equivalently to `goal`.
-    fn iteration_entry_bundle_member_surface(
-        &self,
-        goal: &Proposition,
-    ) -> Option<ClickProposition> {
-        let context = self.execution_context()?;
-        let execution = self.execution()?;
-        let bundle = context.constants.invariant_body_context.as_deref()?;
-        let selector = bundle.iteration_entry_selector.as_ref()?;
-        let synthesize = || {
-            crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
-                goal,
-                context.parameter_binding(),
-                context.old_reference_state(&execution.core.frontier, &execution.core.state),
-                &bundle.iteration_entry_state,
-                None,
-            )
-        };
-        let inner = if bundle.binder_names.is_empty() {
-            synthesize()
-        } else {
-            crate::surface::proof::surface_synthesis::with_synthesis_binder_names(
-                &bundle.binder_names,
-                synthesize,
-            )
-        }?;
-        let surface = ClickProposition::At {
-            selector: selector.clone(),
-            proposition: Box::new(inner),
-        };
-        self.lower_surface_goal(&surface, "loop invariant bundle member")
-            .ok()
-            .is_some_and(|lowered| {
-                crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal)
-            })
-            .then_some(surface)
     }
 
     fn with_synthesized_bundle_member_surface(&self) -> Self {
@@ -497,6 +434,17 @@ impl<'a> Proof<'a> {
                     .loop_entry_selector
                     .as_ref()
                     .and_then(|selector| synthesize_at(&bundle.loop_entry_state, selector))
+            })
+            .or_else(|| {
+                let written = ranking_descent_surface(bundle)?;
+                (!checked
+                    || self
+                        .lower_surface_goal(&written, "loop invariant bundle member")
+                        .ok()
+                        .is_some_and(|lowered| {
+                            crate::kernel::proof::propositions_are_alpha_equal(&lowered, goal)
+                        }))
+                .then_some(written)
             })
     }
 
@@ -2854,4 +2802,46 @@ pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
 struct FrontierCall {
     callee: String,
     arguments: Vec<CExpression>,
+}
+
+/// The descent member of a ranked loop as its `decreases` clause writes it:
+/// `m < at(<iteration entry>, m)` for one component, and for a tuple the
+/// right-nested disjunction over pivots the kernel builds, each pivot strictly
+/// smaller with every earlier component tied, `m == at(<iteration entry>, m)`.
+/// The member reads its `pre` values at the iteration entry, as an `ensures`
+/// reads them through `old`, so it is spelled the way its author would write
+/// it, not reconstructed from the lowered goal.
+fn ranking_descent_surface(bundle: &InvariantBodyContext) -> Option<ClickProposition> {
+    let selector = bundle.iteration_entry_selector.as_ref()?;
+    let components = &bundle.ranking_surfaces;
+    if components.is_empty() || components.len() != bundle.ranking_measures.len() {
+        return None;
+    }
+    let compare = |component: &ContractExpression, operator: ComparisonOperator| {
+        ClickProposition::Comparison {
+            left: component.clone(),
+            operator,
+            right: ContractExpression::At {
+                selector: selector.clone(),
+                expression: Box::new(component.clone()),
+            },
+        }
+    };
+    let arm = |pivot: usize| {
+        (0..pivot).rev().fold(
+            compare(&components[pivot], ComparisonOperator::LessThan),
+            |rest, index| {
+                ClickProposition::And(
+                    Box::new(compare(&components[index], ComparisonOperator::Equal)),
+                    Box::new(rest),
+                )
+            },
+        )
+    };
+    (0..components.len()).rev().fold(None, |rest, pivot| {
+        Some(match rest {
+            None => arm(pivot),
+            Some(rest) => ClickProposition::Or(Box::new(arm(pivot)), Box::new(rest)),
+        })
+    })
 }
