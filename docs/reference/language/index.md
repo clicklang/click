@@ -1678,9 +1678,18 @@ way, and the label names it where a failure reports it: "loop 0 invariant
 proposition with `obtain (...) { ... };`.
 
 `viewable(base[start..end])` and `memory(base[start..end])` use half-open
-`int32` element ranges. The byte count is derived from the base pointer's
+integer element ranges. The byte count is derived from the base pointer's
 element type: four bytes for `int32[]`, one byte for `uint8[]`. This `..`
 syntax is Click contract syntax, not C fragment syntax.
+
+A memory descriptor also accepts a saved pointer base:
+`memory(old(p)[i..j])`, `memory(at(mark, p)[i..j])`, or the single-cell form
+`memory(old(p)[i])`. Only the base selects the saved state; the indices are
+evaluated in the surrounding state. This differs from
+`old(memory(p[i..j]))`, which selects the earlier state for the whole descriptor.
+The descriptor grants no ownership and discovers no preservation facts.
+See `mdtests/saved_memory_bases_keep_current_indices.md` and
+`mdtests/saved_memory_indices_do_not_freeze_at_entry.md`.
 
 `viewable(base[start..end])` is the proposition form of memory viewability
 for a segment. Use it when the fact needs to appear where Click expects a

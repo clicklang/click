@@ -68,7 +68,15 @@ fn addressed_result_members_bind_the_builtin_and_preserve_explicit_c_names() {
             .expect("the selected member address lowers in the result scope");
         assert_eq!(
             lowered,
-            SpecExpression::CExpression(CExpression::AddressOf(Box::new(member(expected)))),
+            SpecExpression::Let {
+                name: "<spec-address-operand>".into(),
+                value: Box::new(SpecExpression::CExpression(CExpression::Variable(
+                    expected.into()
+                ))),
+                body: Box::new(SpecExpression::CExpression(CExpression::AddressOf(
+                    Box::new(member("<spec-address-operand>"))
+                ))),
+            },
         );
     }
 }

@@ -36,6 +36,7 @@ int32 replace_cells(struct cell_owner* owner) {
 resource allocated_cells(owner: struct cell_owner*) {
     owns owner->cap;
     owns owner->data;
+    fact defined(owner->cap * 4);
     owns allocation(owner->data, owner->cap * 4);
     owns owner->data[0..owner->cap];
 }

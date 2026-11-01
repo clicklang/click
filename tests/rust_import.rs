@@ -5474,6 +5474,8 @@ mod function_pointers;
 mod generic_traits;
 #[path = "rust_import/impl_fn.rs"]
 mod impl_fn;
+#[path = "rust_import/inclusive_ranges.rs"]
+mod inclusive_ranges;
 #[path = "rust_import/integer_widths.rs"]
 mod integer_widths;
 #[path = "rust_import/loop_control.rs"]

@@ -37,7 +37,69 @@ void probe(struct node *p, struct node *q) {
         Tag::At(id, cm) => {
             let {kid: kid} = unfold(a);
             have p == id by assumption();
-            step(); step(); step();
+            have separate(memory(q->next), memory(id->other));
+            have separate(memory(q->tag), memory(id->other));
+            have separate(memory(q->other), memory(id->other));
+            mark before_0;
+            step();
+            have separate(statement(0).footprint, memory(id->other)) by {
+                normalize() using { separate(memory(q->next), memory(id->other)); };
+            }
+            have id->other == at(before_0, id->other) by {
+                transport_certificate {
+                    premise 0: separate(statement(0).footprint, memory(id->other))
+                        => separate(statement(0).footprint, memory(id->other));
+                    preserve 0 => id->other == at(before_0, id->other);
+                    conclusion 1;
+                }
+            }
+            mark before_1;
+            step();
+            have separate(statement(1).footprint, memory(id->other)) by {
+                normalize() using { separate(memory(q->tag), memory(id->other)); };
+            }
+            have id->other == at(before_1, id->other) by {
+                transport_certificate {
+                    premise 0: separate(statement(1).footprint, memory(id->other))
+                        => separate(statement(1).footprint, memory(id->other));
+                    preserve 0 => id->other == at(before_1, id->other);
+                    conclusion 1;
+                }
+            }
+            have id->other == at(before_0, id->other) by {
+                transport_certificate {
+                    premise 0: id->other == at(before_1, id->other)
+                        => id->other == at(before_1, id->other);
+                    premise 1: at(before_1, id->other) == at(before_0, id->other)
+                        => at(before_1, id->other) == at(before_0, id->other);
+                    transitive 0, 1 => id->other == at(before_0, id->other);
+                    conclusion 2;
+                }
+            }
+            mark before_2;
+            step();
+            have separate(statement(2).footprint, memory(id->other)) by {
+                normalize() using { separate(memory(q->other), memory(id->other)); };
+            }
+            have id->other == at(before_2, id->other) by {
+                transport_certificate {
+                    premise 0: separate(statement(2).footprint, memory(id->other))
+                        => separate(statement(2).footprint, memory(id->other));
+                    preserve 0 => id->other == at(before_2, id->other);
+                    conclusion 1;
+                }
+            }
+            have id->other == at(before_0, id->other) by {
+                transport_certificate {
+                    premise 0: id->other == at(before_2, id->other)
+                        => id->other == at(before_2, id->other);
+                    premise 1: at(before_2, id->other) == at(before_0, id->other)
+                        => at(before_2, id->other) == at(before_0, id->other);
+                    transitive 0, 1 => id->other == at(before_0, id->other);
+                    conclusion 2;
+                }
+            }
+
             let b = fold(frame(p), {model: Tag::At(id, cm)}, {kid: kid});
             step_until(function.exit); solve();
         },

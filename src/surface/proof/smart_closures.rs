@@ -2667,10 +2667,72 @@ impl<'a> Proof<'a> {
             .facts()
             .contains_discharged_implication_consequent(goal)
         {
-            return Ok(None);
+            return self.try_discharged_consequent_conjunct_closure(goal, surface);
         }
         Ok(
             attempt::candidate_outcome(self.apply_step(ProofStep::Extract(surface.clone())))?
+                .filter(Self::focused_discharged),
+        )
+    }
+
+    /// A goal that is one conjunct of a discharged implication's
+    /// consequent, `c` from `a` and `a implies (b and c)`: `extract` the
+    /// whole consequent, spelled as the implication fact is written, and
+    /// then the goal, now a proper conjunct of an available fact. The
+    /// implication is selected by one probe of the conjunct index
+    /// (`ProofFacts::discharged_implication_containing`); both steps are
+    /// checked as written, and expansion prints them.
+    fn try_discharged_consequent_conjunct_closure(
+        &self,
+        goal: &Proposition,
+        surface: &ClickProposition,
+    ) -> Result<Option<Self>, ClickError> {
+        let Some((fact, whole)) = self.facts().discharged_implication_containing(goal) else {
+            return Ok(None);
+        };
+        let Some(mut spelled) = self.spelled_goal_for_search(&fact) else {
+            return Ok(None);
+        };
+        // A fact recorded at a snapshot is spelled `at(selector, ...)`; its
+        // consequent is read at the same snapshot.
+        let selector = match spelled {
+            ClickProposition::At {
+                selector,
+                proposition,
+            } => {
+                spelled = *proposition;
+                Some(selector)
+            }
+            _ => None,
+        };
+        let mut kernel = &fact;
+        while let Proposition::Implies(_, consequent) = kernel {
+            let ClickProposition::Implies(_, rest) = spelled else {
+                return Ok(None);
+            };
+            spelled = *rest;
+            kernel = consequent;
+            if kernel == &whole {
+                break;
+            }
+        }
+        let spelled = match selector {
+            Some(selector) => ClickProposition::At {
+                selector,
+                proposition: Box::new(spelled),
+            },
+            None => spelled,
+        };
+        let Some(extracted) =
+            attempt::candidate_outcome(self.apply_step(ProofStep::Extract(spelled)))?
+        else {
+            return Ok(None);
+        };
+        if extracted.is_complete() || extracted.focused_discharged() {
+            return Ok(Some(extracted));
+        }
+        Ok(
+            attempt::candidate_outcome(extracted.apply_step(ProofStep::Extract(surface.clone())))?
                 .filter(Self::focused_discharged),
         )
     }

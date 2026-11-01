@@ -63,9 +63,47 @@ void overwrite(struct node* p, struct node* q) {
 } by {
     let { tag: t, side: s } = unfold(h);
     unfold(hop(p));
+    mark before_word_0;
     step();
+    have separate(statement(0).region(0).footprint, memory(p->word)) by {
+        normalize() using { };
+    }
+    have p->word == at(before_word_0, p->word) by {
+        transport_certificate {
+            premise 0: separate(statement(0).region(0).footprint, memory(p->word))
+                => separate(statement(0).region(0).footprint, memory(p->word));
+            preserve 0 => p->word == at(before_word_0, p->word);
+            conclusion 1;
+        }
+    }
+    mark before_word_1;
     step();
+    have separate(statement(0).region(1).footprint, memory(p->word)) by {
+        normalize() using { };
+    }
+    have p->word == at(before_word_1, p->word) by {
+        transport_certificate {
+            premise 0: separate(statement(0).region(1).footprint, memory(p->word))
+                => separate(statement(0).region(1).footprint, memory(p->word));
+            preserve 0 => p->word == at(before_word_1, p->word);
+            conclusion 1;
+        }
+    }
+    mark before_word_2;
+    have separate(memory((&next->value)[0..1]), memory(p->word));
     step();
+    have separate(statement(1).footprint, memory(p->word)) by {
+        normalize() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
+    }
+    have p->word == at(before_word_2, p->word) by {
+        transport_certificate {
+            premise 0: separate(statement(1).footprint, memory(p->word))
+                => separate(statement(1).footprint, memory(p->word));
+            preserve 0 => p->word == at(before_word_2, p->word);
+            conclusion 1;
+        }
+    }
+
     fold(hop(p));
     let h = fold(holder(p, q), { tag: t }, { side: s });
 }
@@ -77,9 +115,47 @@ int32 caller(struct node* p, struct node* q) {
 } by {
     let { tag: t, side: s } = unfold(h);
     unfold(hop(p));
+    mark before_word_0;
     step();
+    have separate(statement(0).region(0).footprint, memory(p->word)) by {
+        normalize() using { };
+    }
+    have p->word == at(before_word_0, p->word) by {
+        transport_certificate {
+            premise 0: separate(statement(0).region(0).footprint, memory(p->word))
+                => separate(statement(0).region(0).footprint, memory(p->word));
+            preserve 0 => p->word == at(before_word_0, p->word);
+            conclusion 1;
+        }
+    }
+    mark before_word_1;
     step();
+    have separate(statement(0).region(1).footprint, memory(p->word)) by {
+        normalize() using { };
+    }
+    have p->word == at(before_word_1, p->word) by {
+        transport_certificate {
+            premise 0: separate(statement(0).region(1).footprint, memory(p->word))
+                => separate(statement(0).region(1).footprint, memory(p->word));
+            preserve 0 => p->word == at(before_word_1, p->word);
+            conclusion 1;
+        }
+    }
+    mark before_word_2;
+    have separate(memory((&next->value)[0..1]), memory(p->word));
     step();
+    have separate(statement(1).footprint, memory(p->word)) by {
+        normalize() using { separate(memory((&next->value)[0..1]), memory(p->word)); };
+    }
+    have p->word == at(before_word_2, p->word) by {
+        transport_certificate {
+            premise 0: separate(statement(1).footprint, memory(p->word))
+                => separate(statement(1).footprint, memory(p->word));
+            preserve 0 => p->word == at(before_word_2, p->word);
+            conclusion 1;
+        }
+    }
+
     have next->value == 0 by solve();
     fold(hop(p));
     let h = fold(holder(p, q), { tag: t }, { side: s });

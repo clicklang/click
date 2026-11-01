@@ -2091,6 +2091,14 @@ pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
         ResourceSubject::Memory(segment) => {
             format!("memory({})", describe_contract_segment(segment))
         }
+        ResourceSubject::SavedMemory { base, start, end } => {
+            let start = describe_contract_expression(start);
+            let bounds = match end {
+                Some(end) => format!("{start}..{}", describe_contract_expression(end)),
+                None => start,
+            };
+            format!("memory({}[{bounds}])", describe_contract_expression(base))
+        }
         ResourceSubject::Declared {
             name, arguments, ..
         } => format!(
@@ -5409,7 +5417,12 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             base: ContractExpression::CFragment(CExpression::AddressOf(place)),
             start: ContractExpression::CFragment(CExpression::Value(start)),
             end: ContractExpression::CFragment(CExpression::Value(end)),
-        } if *start == int32(0) && *end == int32(1) => describe_c_expression(place),
+        } if *start == int32(0)
+            && *end == int32(1)
+            && !matches!(place.as_ref(), CExpression::Variable(_)) =>
+        {
+            describe_c_expression(place)
+        }
         ContractSegmentSurface::Range {
             base:
                 ContractExpression::CUnary {
@@ -5418,7 +5431,17 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
                 },
             start: ContractExpression::CFragment(CExpression::Value(start)),
             end: ContractExpression::CFragment(CExpression::Value(end)),
-        } if *start == int32(0) && *end == int32(1) => describe_contract_expression(operand),
+        } if *start == int32(0)
+            && *end == int32(1)
+            && !matches!(
+                operand.as_ref(),
+                ContractExpression::Binding(_)
+                    | ContractExpression::CBinding(_)
+                    | ContractExpression::CFragment(CExpression::Variable(_))
+            ) =>
+        {
+            describe_contract_expression(operand)
+        }
         ContractSegmentSurface::Range { base, start, end }
         | ContractSegmentSurface::StructRange {
             base, start, end, ..
@@ -5430,9 +5453,7 @@ pub(super) fn describe_contract_segment(segment: &ContractSegment) -> String {
             );
             // The same place once its base is an address value.
             match rendered_base.strip_prefix('&') {
-                Some(name) if start == "0" && end == "1" && is_place_spelling(name) => {
-                    name.to_string()
-                }
+                Some(_) => format!("({rendered_base})[{start}..{end}]"),
                 _ => format!("{rendered_base}[{start}..{end}]"),
             }
         }

@@ -179,16 +179,12 @@ template<class T> void Stack<T>::push(T value) {
             solve();
         },
         List::Cons(top, below) => {
+            // Keep the old list packaged while constructing its new head.
             let { tail: rest } = unfold(state);
+            let prior = fold(nodes<T>(this->head), { items: List::Cons(top, below) }, { tail: rest });
             step_until(function.exit);
             have this->head->next == old(this->head);
-            have this->head->next->value == old(this->head)->value by {
-                rewrite(this->head->next == old(this->head));
-                normalize();
-            }
-            have old(this->head)->value == top;
-            let tail = fold(nodes<T>(this->head->next), { items: List::Cons(top, below) }, { tail: rest });
-            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)) }, { tail: tail });
+            let state = fold(nodes<T>(this->head), { items: List::Cons(value, List::Cons(top, below)) }, { tail: prior });
             unfold(length(List::Cons(value, List::Cons(top, below))));
             have to_integer(old(this->count) + 1u64) == to_integer(old(this->count)) + to_integer(1u64);
             solve();

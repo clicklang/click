@@ -48,7 +48,20 @@ void set_up_word(struct node* c) {
             unfold(f);
             step();
             step();
+            have separate(memory(p->word), memory(c->up));
+            mark before_store;
             step();
+            have separate(statement(2).footprint, memory(c->up)) by {
+                normalize() using { separate(memory(p->word), memory(c->up)); };
+            }
+            have c->up == at(before_store, c->up) by {
+                transport_certificate {
+                    premise 0: separate(statement(2).footprint, memory(c->up))
+                        => separate(statement(2).footprint, memory(c->up));
+                    preserve 0 => c->up == at(before_store, c->up);
+                    conclusion 1;
+                }
+            }
             have p == id;
             have p->word == 5;
             have id->word == 5;

@@ -37,13 +37,43 @@ void probe(struct node *p, struct node *q) {
         Tag::At(id, cm) => {
             let {kid: kid} = unfold(a);
             have p == id by assumption();
-            step(); mark before; step(); step();
+            step();
+            have separate(memory(p->other), memory(q->tag));
+            mark before;
+            step();
+            have separate(statement(1).footprint, memory(p->other)) by {
+                normalize() using { separate(memory(p->other), memory(q->tag)); };
+            }
             have p->other == at(before, p->other) by {
-                transport(at(before, p->other) == at(before, p->other), p->other == at(before, p->other)) using {
-                    separate(memory(p->other), memory(q->next));
-                    separate(memory(p->other), memory(q->other));
-                    p == id;
-                };
+                transport_certificate {
+                    premise 0: separate(statement(1).footprint, memory(p->other))
+                        => separate(statement(1).footprint, memory(p->other));
+                    preserve 0 => p->other == at(before, p->other);
+                    conclusion 1;
+                }
+            }
+            mark after_call;
+            step();
+            have separate(statement(2).footprint, memory(p->other)) by {
+                normalize() using { separate(memory(p->other), memory(q->other)); };
+            }
+            have p->other == at(after_call, p->other) by {
+                transport_certificate {
+                    premise 0: separate(statement(2).footprint, memory(p->other))
+                        => separate(statement(2).footprint, memory(p->other));
+                    preserve 0 => p->other == at(after_call, p->other);
+                    conclusion 1;
+                }
+            }
+            have p->other == at(before, p->other) by {
+                transport_certificate {
+                    premise 0: p->other == at(after_call, p->other)
+                        => p->other == at(after_call, p->other);
+                    premise 1: at(after_call, p->other) == at(before, p->other)
+                        => at(after_call, p->other) == at(before, p->other);
+                    transitive 0, 1 => p->other == at(before, p->other);
+                    conclusion 2;
+                }
             }
             step_until(function.exit); solve();
         },

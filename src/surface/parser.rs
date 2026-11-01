@@ -6421,6 +6421,22 @@ impl Parser {
         if self.peek_ident() == Some("memory") && self.peek_next() == Some(&Token::LParen) {
             self.position += 1;
             self.expect(Token::LParen)?;
+            if matches!(self.peek_ident(), Some("at" | "old"))
+                && self.peek_next() == Some(&Token::LParen)
+            {
+                let base = self.parse_contract_primary()?;
+                self.expect(Token::LBracket)?;
+                let start = self.parse_contract_expression()?;
+                let end = if self.peek() == Some(&Token::DotDot) {
+                    self.position += 1;
+                    Some(self.parse_contract_expression()?)
+                } else {
+                    None
+                };
+                self.expect(Token::RBracket)?;
+                self.expect(Token::RParen)?;
+                return Ok(ResourceSubject::SavedMemory { base, start, end });
+            }
             let segment = self.parse_current_contract_segment()?;
             self.expect(Token::RParen)?;
             return Ok(ResourceSubject::Memory(segment));

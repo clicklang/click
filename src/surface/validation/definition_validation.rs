@@ -2250,6 +2250,20 @@ fn collect_resource_fact_reads_from_resource_subject(
             reads,
             resource_name,
         ),
+        ResourceSubject::SavedMemory { base, start, end } => {
+            for argument in [base, start].into_iter().chain(end.iter()) {
+                collect_resource_fact_reads_from_contract_expression(
+                    argument,
+                    predicate_definitions,
+                    click_function_definitions,
+                    visited_predicates,
+                    visited_functions,
+                    reads,
+                    resource_name,
+                )?;
+            }
+            Ok(())
+        }
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
                 collect_resource_fact_reads_from_contract_expression(

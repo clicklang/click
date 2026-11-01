@@ -1289,8 +1289,19 @@ Invariants are written over the bounds: `decreases iter_end - iter_start`
 ranks the loop, and after it the exit guard gives `iter_start >= iter_end`.
 [`design/charon-trial/ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/ranges/ranges.click)
 verifies counts over `u32`, `i32` `a..b` and `i64` ranges, the last byte a
-loop over `0..bytes.len()` reads, and nested ranges. Inclusive ranges `a..=b`, `.rev()`, `.step_by()` and other
-range adapters remain later work.
+loop over `0..bytes.len()` reads, and nested ranges.
+
+An inclusive range `a..=b`, which the compiler builds with
+`RangeInclusive::new`, also holds `iter_done`, whether it has yielded `b`.
+It yields while `iter_done == 0 and iter_start <= iter_end`; each iteration
+yields `iter_start` and then, as an ordinary branch of the loop body,
+advances it while `iter_start < iter_end` and sets `iter_done` at
+`iter_end`, so `iter_start` never passes the end, even at the type's
+maximum. `decreases iter_end - iter_start + 1 - iter_done` ranks the loop,
+and `total == iter_start + iter_done` is the count of values yielded
+([`design/charon-trial/inclusive-ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/inclusive-ranges/inclusive.click),
+including `0u8..=255`). `.rev()`, `.step_by()` and other range adapters
+remain later work.
 
 ## Primitive unsigned conversions
 
