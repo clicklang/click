@@ -5994,7 +5994,12 @@ fn evaluate_resource_count_paths(
                             quantity.clone(),
                             Bitvector32Term::Constant(symbolic.delta as u32),
                         );
-                        let no_overflow = Proposition::ConditionIs(overflow.clone(), false);
+                        let no_overflow = Proposition::signed_arithmetic_domain(
+                            MachineIntegerType::Int32,
+                            MachineBinaryOp::Add,
+                            &quantity,
+                            &Bitvector32Term::Constant(symbolic.delta as u32),
+                        );
                         if !path_assumptions.proves_exact(&no_overflow)
                             && PureFactContext::decide_intrinsically(&overflow) != Some(false)
                             && path_assumptions.decide(&overflow) != Some(false)
@@ -6013,7 +6018,12 @@ fn evaluate_resource_count_paths(
                                 entry.clone(),
                                 quantity.clone(),
                             );
-                            let no_overflow = Proposition::ConditionIs(overflow.clone(), false);
+                            let no_overflow = Proposition::signed_arithmetic_domain(
+                                MachineIntegerType::Int32,
+                                MachineBinaryOp::Add,
+                                &entry,
+                                &quantity,
+                            );
                             let bounded = path_assumptions.assume_proposition(minimum);
                             if !bounded.proves_exact(&no_overflow)
                                 && PureFactContext::decide_intrinsically(&overflow) != Some(false)
@@ -6071,13 +6081,14 @@ fn evaluate_resource_count_paths(
                 if let Some((base, quantity)) =
                     creation.observed_symbolic_batch(&anchor.block, name)
                 {
-                    facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
-                        ConditionTerm::signed_add_overflows(
-                            Bitvector32Term::Constant(base),
-                            quantity,
+                    facts.push(ExecutionPureFact::certified(
+                        Proposition::signed_arithmetic_domain(
+                            MachineIntegerType::Int32,
+                            MachineBinaryOp::Add,
+                            &Bitvector32Term::Constant(base),
+                            &quantity,
                         ),
-                        false,
-                    )));
+                    ));
                 }
                 Ok(SpecExpressionPath {
                     value: CValue::Int32(count),

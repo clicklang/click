@@ -88,6 +88,40 @@ pub(in crate::kernel::equality_graph) fn has_machine_operands(term: &T) -> bool 
         || matches!(term, T::Variable(variable) if crate::kernel::is_load_variable(variable))
 }
 
+/// A local wrapping identity used only by the comparison graph. The source
+/// term remains `(x + c) - c`; graph registration identifies its class with
+/// x's. Literal matching is constant work and requires no ambient facts.
+fn wide_add_sub_cancel_operand(term: &T) -> Option<&T> {
+    let T::Binary {
+        format,
+        op: MachineBinaryOp::Subtract,
+        left,
+        right,
+    } = term
+    else {
+        return None;
+    };
+    if !matches!(
+        format,
+        MachineIntegerType::Int64 | MachineIntegerType::UInt64
+    ) {
+        return None;
+    }
+    let T::Binary {
+        format: inner_format,
+        op: MachineBinaryOp::Add,
+        left: base,
+        right: added,
+    } = left.as_ref()
+    else {
+        return None;
+    };
+    (format == inner_format
+        && matches!(added.as_ref(), T::Int64Constant(_) | T::UInt64Constant(_))
+        && added == right)
+        .then_some(base.as_ref())
+}
+
 impl TermClasses {
     /// Walk mixed-width machine applications once. In particular, a nested
     /// pure call does not recursively canonicalize every enclosing subtree.
@@ -479,6 +513,48 @@ impl TermClasses {
                         term
                     };
                     let wide = width == W::Bits64;
+                    // Structural arithmetic stays intact in logical terms.
+                    // Register its total word identities only for comparison.
+                    if wide
+                        && let T::Binary {
+                            format,
+                            op,
+                            left,
+                            right,
+                        } = term
+                        && matches!(
+                            format,
+                            MachineIntegerType::Int64 | MachineIntegerType::UInt64
+                        )
+                    {
+                        let zero = |t: &T| matches!(t, T::Int64Constant(0) | T::UInt64Constant(0));
+                        let one = |t: &T| matches!(t, T::Int64Constant(1) | T::UInt64Constant(1));
+                        let identity = match op {
+                            MachineBinaryOp::Add if zero(left) => Some(right.as_ref()),
+                            MachineBinaryOp::Add | MachineBinaryOp::Subtract if zero(right) => {
+                                Some(left.as_ref())
+                            }
+                            MachineBinaryOp::Multiply if zero(left) || one(right) => {
+                                Some(left.as_ref())
+                            }
+                            MachineBinaryOp::Multiply if zero(right) || one(left) => {
+                                Some(right.as_ref())
+                            }
+                            _ => None,
+                        };
+                        if let Some(base) = identity {
+                            pending.push(Work::Machine(base, width));
+                            continue;
+                        }
+                        if *op == MachineBinaryOp::Subtract && left == right {
+                            values.push(self.intern_typed_machine(&T::UInt64Constant(0), width));
+                            continue;
+                        }
+                    }
+                    if wide && let Some(base) = wide_add_sub_cancel_operand(term) {
+                        pending.push(Work::Machine(base, width));
+                        continue;
+                    }
 
                     let binary = if wide {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))

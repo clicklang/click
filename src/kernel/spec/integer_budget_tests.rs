@@ -1,6 +1,6 @@
 use super::*;
-use crate::kernel::binary_node;
 use crate::kernel::CompareRelation;
+use crate::kernel::binary_node;
 use num_bigint::BigInt;
 use num_traits::One;
 
@@ -57,18 +57,20 @@ fn from_machine_requires_c_overflow_path_fact() {
         &mut SpecEvaluation::logical(&mut ExecutionBudget::default()),
     )
     .expect("symbolic machine addition should produce paths");
-    let overflow = ConditionTerm::signed_add_overflows(left_bits, right_bits);
+    let domain = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        &left_bits,
+        &right_bits,
+    );
     assert_eq!(paths.len(), 1);
     assert!(
         paths[0]
             .facts
-            .contains(&ExecutionPureFact::condition(overflow.clone(), false))
+            .contains(&ExecutionPureFact::new(domain.clone()))
     );
     assert_eq!(paths[0].obligations.len(), 1);
-    assert_eq!(
-        paths[0].obligations[0].proposition,
-        Proposition::ConditionIs(overflow, false)
-    );
+    assert_eq!(paths[0].obligations[0].proposition, domain);
     assert!(!paths[0].obligations[0].assumable);
 }
 
@@ -133,7 +135,10 @@ fn integer_existential_scopes_definedness_with_its_witness() {
     };
     assert_eq!(*var, witness);
     let overflow = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, &left_bits, &right_bits,
+        MachineIntegerType::Int32,
+        crate::kernel::MachineBinaryOp::Add,
+        &left_bits,
+        &right_bits,
     );
     assert!(
         contains(body, &overflow),
@@ -1046,12 +1051,13 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
     )
     .expect("child expression effects should be preserved");
     assert_eq!(paths.len(), 1);
-    assert!(paths[0].facts.contains(&ExecutionPureFact::condition(
-        ConditionTerm::signed_add_overflows(
-            Bitvector32Term::Variable(left),
-            Bitvector32Term::Variable(right),
-        ),
-        false,
+    assert!(paths[0].facts.contains(&ExecutionPureFact::new(
+        Proposition::signed_arithmetic_domain(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Add,
+            &Bitvector32Term::Variable(left),
+            &Bitvector32Term::Variable(right),
+        )
     )));
     assert_eq!(paths[0].obligations.len(), 3);
     assert!(
@@ -1065,12 +1071,11 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
             .obligations
             .iter()
             .any(|obligation| obligation.proposition()
-                == &Proposition::ConditionIs(
-                    ConditionTerm::signed_add_overflows(
-                        Bitvector32Term::Variable(left),
-                        Bitvector32Term::Variable(right)
-                    ),
-                    false
+                == &Proposition::signed_arithmetic_domain(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    &Bitvector32Term::Variable(left),
+                    &Bitvector32Term::Variable(right),
                 ))
     );
 }

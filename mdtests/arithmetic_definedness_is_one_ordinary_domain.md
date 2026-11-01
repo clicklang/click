@@ -15,6 +15,7 @@ theorem add32_domain(a: int32, b: int32) {
 }
 theorem add32_bounds(a: int32, b: int32) {
     requires defined(a + b);
+    ensures to_integer(a + b) == to_integer(a) + to_integer(b);
     ensures to_integer(a) + to_integer(b) <= 2147483647;
     ensures to_integer(a) + to_integer(b) >= -2147483648;
 }
@@ -28,6 +29,7 @@ theorem subtract32_domain(a: int32, b: int32) {
 }
 theorem subtract32_bounds(a: int32, b: int32) {
     requires defined(a - b);
+    ensures to_integer(a - b) == to_integer(a) - to_integer(b);
     ensures to_integer(a) - to_integer(b) <= 2147483647;
     ensures to_integer(a) - to_integer(b) >= -2147483648;
 }
@@ -53,7 +55,7 @@ theorem shifts32(a: int32, n: int32) {
     ensures defined(a >> n);
 }
 theorem negate32(a: int32) {
-    requires a != -2147483648;
+    requires a > -2147483648;
     ensures defined(-a);
 }
 
@@ -66,6 +68,7 @@ theorem add64_domain(a: int64, b: int64) {
 }
 theorem add64_bounds(a: int64, b: int64) {
     requires defined(a + b);
+    ensures to_integer(a + b) == to_integer(a) + to_integer(b);
     ensures to_integer(a) + to_integer(b) <= 9223372036854775807;
     ensures to_integer(a) + to_integer(b) >= -9223372036854775808;
 }
@@ -79,6 +82,7 @@ theorem subtract64_domain(a: int64, b: int64) {
 }
 theorem subtract64_bounds(a: int64, b: int64) {
     requires defined(a - b);
+    ensures to_integer(a - b) == to_integer(a) - to_integer(b);
     ensures to_integer(a) - to_integer(b) <= 9223372036854775807;
     ensures to_integer(a) - to_integer(b) >= -9223372036854775808;
 }
@@ -104,7 +108,7 @@ theorem shifts64(a: int64, n: int64) {
     ensures defined(a >> n);
 }
 theorem negate64(a: int64) {
-    requires a != -9223372036854775808i64;
+    requires a > -9223372036854775808i64;
     ensures defined(-a);
 }
 

@@ -743,6 +743,10 @@ fn condition_identity_as_written(left: &ConditionTerm, right: &ConditionTerm) ->
         | (
             ConditionTerm::IntegerLessEqual(left_first, left_second),
             ConditionTerm::IntegerLessEqual(right_first, right_second),
+        )
+        | (
+            ConditionTerm::IntegerGreaterEqual(left_first, left_second),
+            ConditionTerm::IntegerGreaterEqual(right_first, right_second),
         ) => left_first == right_first && left_second == right_second,
         _ => false,
     }

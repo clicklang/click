@@ -82,8 +82,10 @@ pub(super) fn apply(
         }
     };
     if let Some(domain) = Proposition::arithmetic_domain(domain) {
-        obligations.push(ProofObligation::evaluation_domain(domain)
-            .with_context("wide arithmetic expression is defined"));
+        obligations.push(
+            ProofObligation::evaluation_domain(domain)
+                .with_context("wide arithmetic expression is defined"),
+        );
     }
     let term = result
         .as_const()

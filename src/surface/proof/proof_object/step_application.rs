@@ -1676,15 +1676,18 @@ impl<'a> Proof<'a> {
         // the arithmetic claim from the actual goal and the root's indexed
         // parameter values, without scanning parameters at every step.
         let synthesized_goal = self.surface_goal().is_none().then(|| {
-            let ProofContext::Pure(context) = self.context.as_ref() else {
-                return None;
-            };
-            crate::surface::proof::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
+            match self.context.as_ref() {
+            ProofContext::Pure(context) => crate::surface::proof::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(
                 self.goal()?,
                 ParameterBinding::new(&[], &[]),
                 &context.source_state,
                 &context.source_names,
-            )
+            ),
+            ProofContext::FixedState(context) => crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
+                self.goal()?, context.parameter_binding, context.fixed_state.state,
+            ),
+            ProofContext::Execution(_) => None,
+            }
         }).flatten();
         let surface_goal = self.surface_goal().or(synthesized_goal.as_ref());
         use crate::kernel::proof::integer_arithmetic::IntegerArithmeticNode;

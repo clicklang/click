@@ -2671,9 +2671,11 @@ fn interval_remainder(
 }
 
 fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool {
-    let ordinary = crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
-        .map(|condition| Proposition::ConditionIs(condition, false));
-    let Proposition::ConditionIs(condition, false) = ordinary.as_ref().unwrap_or(proposition) else {
+    let ordinary =
+        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
+            .map(|condition| Proposition::ConditionIs(condition, false));
+    let Proposition::ConditionIs(condition, false) = ordinary.as_ref().unwrap_or(proposition)
+    else {
         return false;
     };
     match (condition, term) {
@@ -3155,9 +3157,11 @@ pub(crate) fn signed_arithmetic_source_matches(left: &Proposition, right: &Propo
     ) {
         return charge_claim_pair_work(&left, &right) && left == right;
     }
+    let left_query = crate::kernel::machine_integer::definedness::interval_query_form(left);
+    let right_query = crate::kernel::machine_integer::definedness::interval_query_form(right);
     match (
-        exact_definedness_parts(left),
-        exact_definedness_parts(right),
+        exact_definedness_parts(left_query.as_ref().unwrap_or(left)),
+        exact_definedness_parts(right_query.as_ref().unwrap_or(right)),
     ) {
         (
             Some((left_operator, left_left, left_right)),

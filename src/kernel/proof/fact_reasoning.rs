@@ -461,8 +461,13 @@ pub(crate) fn normalize_using_conditions(
         {
             return Err(ConditionalNormalizationError::UnavailablePremise(index));
         }
-        let (condition, value) = crate::kernel::spec::proposition_as_single_condition(premise)
-            .ok_or(ConditionalNormalizationError::UnsupportedPremise(index))?;
+        // A cited complete range domain supplies the same bounded arithmetic
+        // normalization query. Availability above checks the ordinary premise;
+        // the private query never becomes an extra proof-state fact.
+        let query = crate::kernel::machine_integer::definedness::interval_query_form(premise);
+        let (condition, value) =
+            crate::kernel::spec::proposition_as_single_condition(query.as_ref().unwrap_or(premise))
+                .ok_or(ConditionalNormalizationError::UnsupportedPremise(index))?;
         let previous = conditions.insert(condition.clone(), value);
         if previous.is_some_and(|previous| previous != value) {
             return Err(ConditionalNormalizationError::UnsupportedPremise(index));

@@ -906,6 +906,8 @@ pub(super) fn spell_signed_goal(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<ClickProposition> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let mut operands: Vec<(&Bitvector32Term, ContractExpression)> = Vec::new();
     for (kernel, surface) in premise_pairs {
         let parts = signed_strict_parts(kernel)

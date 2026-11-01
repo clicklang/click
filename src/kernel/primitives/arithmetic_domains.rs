@@ -69,12 +69,14 @@ impl Proposition {
     pub(crate) fn arithmetic_result_range(format: MachineIntegerType, exact: IntegerTerm) -> Self {
         let (minimum, maximum) = format.format().bounds();
         Self::And(
-            Box::new(Self::ConditionIs(ConditionTerm::integer_less_equal(
-                exact.clone(), IntegerTerm::constant(maximum),
-            ), true)),
-            Box::new(Self::ConditionIs(ConditionTerm::integer_greater_equal(
-                exact, IntegerTerm::constant(minimum),
-            ), true)),
+            Box::new(Self::ConditionIs(
+                ConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
+                true,
+            )),
+            Box::new(Self::ConditionIs(
+                ConditionTerm::integer_greater_equal(exact, IntegerTerm::constant(minimum)),
+                true,
+            )),
         )
     }
 
@@ -101,21 +103,29 @@ impl Proposition {
         fn retain(part: Proposition) -> Option<Proposition> {
             match part {
                 Proposition::ConditionIs(ref condition, value)
-                    if PureFactContext::decide_intrinsically(condition) == Some(value) => None,
+                    if PureFactContext::decide_intrinsically(condition) == Some(value) =>
+                {
+                    None
+                }
                 Proposition::And(left, right) => match (retain(*left), retain(*right)) {
-                    (Some(left), Some(right)) => Some(Proposition::And(Box::new(left), Box::new(right))),
+                    (Some(left), Some(right)) => {
+                        Some(Proposition::And(Box::new(left), Box::new(right)))
+                    }
                     (left, right) => left.or(right),
                 },
                 Proposition::Or(left, right) => match (retain(*left), retain(*right)) {
-                    (Some(left), Some(right)) => Some(Proposition::Or(Box::new(left), Box::new(right))),
+                    (Some(left), Some(right)) => {
+                        Some(Proposition::Or(Box::new(left), Box::new(right)))
+                    }
                     _ => None,
                 },
                 part => Some(part),
             }
         }
-        parts.into_iter().filter_map(retain).reduce(|left, right| {
-            Self::And(Box::new(left), Box::new(right))
-        })
+        parts
+            .into_iter()
+            .filter_map(retain)
+            .reduce(|left, right| Self::And(Box::new(left), Box::new(right)))
     }
 }
 
@@ -128,14 +138,26 @@ impl ConditionTerm {
         left: Bitvector32Term,
         count: Bitvector32Term,
     ) -> Self {
-        let constant = |n: u64| crate::kernel::machine_integer::range::constant_word(
-            format, &n.into(),
-        ).expect("shift bound fits");
+        let constant = |n: u64| {
+            crate::kernel::machine_integer::range::constant_word(format, &n.into())
+                .expect("shift bound fits")
+        };
         let bits = format.format().bits();
-        let masked = Bitvector32Term::bitwise_and_at(format, count, constant((bits - 1).into()));
+        let masked = Bitvector32Term::machine_binary(
+            format,
+            MachineBinaryOp::BitwiseAnd,
+            count,
+            constant((bits - 1).into()),
+        );
         let bound = Bitvector32Term::machine_binary(
-            format, MachineBinaryOp::ShiftRight,
-            constant(if bits == 32 { i32::MAX as u64 } else { i64::MAX as u64 }), masked,
+            format,
+            MachineBinaryOp::ShiftRight,
+            constant(if bits == 32 {
+                i32::MAX as u64
+            } else {
+                i64::MAX as u64
+            }),
+            masked,
         );
         Self::machine_compare(format, CompareRelation::LessEqual, left, bound)
     }

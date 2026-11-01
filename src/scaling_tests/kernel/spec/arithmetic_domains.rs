@@ -314,18 +314,28 @@ fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
             let value = Bitvector32Term::Variable(Variable(780_000 + size * 4));
             let mut context = PureFactContext::new();
             for i in 0..size {
-                context = context.assume_condition(ConditionTerm::equal(
-                    value.clone(), Bitvector32Term::Variable(Variable(790_000 + i)),
-                ), true);
+                context = context.assume_condition(
+                    ConditionTerm::equal(
+                        value.clone(),
+                        Bitvector32Term::Variable(Variable(790_000 + i)),
+                    ),
+                    true,
+                );
             }
             if established {
-                context = context.assume_condition(ConditionTerm::signed_less_than(
-                    value.clone(), Bitvector32Term::Constant(i32::MAX as u32),
-                ), true);
+                context = context.assume_condition(
+                    ConditionTerm::signed_less_than(
+                        value.clone(),
+                        Bitvector32Term::Constant(i32::MAX as u32),
+                    ),
+                    true,
+                );
             }
             let domain = Proposition::signed_arithmetic_domain(
                 crate::kernel::MachineIntegerType::Int32,
-                crate::kernel::MachineBinaryOp::Add, &value, &Bitvector32Term::Constant(1),
+                crate::kernel::MachineBinaryOp::Add,
+                &value,
+                &Bitvector32Term::Constant(1),
             );
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 context.settles_exactly(&domain)
@@ -333,6 +343,9 @@ fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
             assert_eq!(proved, established);
             costs.push(work);
         }
-        assert!(costs.iter().all(|work| *work == costs[0]), "established={established}: {costs:?}");
+        assert!(
+            costs.iter().all(|work| *work == costs[0]),
+            "established={established}: {costs:?}"
+        );
     }
 }

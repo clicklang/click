@@ -32,20 +32,32 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
     let mut domain = Vec::new();
     if matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder) {
         let zero = crate::kernel::machine_integer::range::constant_word(format, &0.into())?;
-        domain.push(Proposition::ConditionIs(ConditionTerm::machine_compare(
-            format, crate::kernel::CompareRelation::Equal, right.clone(), zero,
-        ), false));
+        domain.push(Proposition::ConditionIs(
+            ConditionTerm::machine_compare(
+                format,
+                crate::kernel::CompareRelation::Equal,
+                right.clone(),
+                zero,
+            ),
+            false,
+        ));
         if format.format().is_signed() {
-            domain.push(Proposition::signed_division_exclusion(format, &left, &right));
+            domain.push(Proposition::signed_division_exclusion(
+                format, &left, &right,
+            ));
         }
     } else if format.format().is_signed() {
-        domain.push(Proposition::signed_arithmetic_domain(format, op, &left, &right));
+        domain.push(Proposition::signed_arithmetic_domain(
+            format, op, &left, &right,
+        ));
     }
     if let Some(domain) = Proposition::arithmetic_domain(domain) {
-        obligations.push(ProofObligation::evaluation_domain(domain)
-            .with_context("arithmetic expression is defined"));
+        obligations.push(
+            ProofObligation::evaluation_domain(domain)
+                .with_context("arithmetic expression is defined"),
+        );
     }
-    let term = Bitvector32Term::machine_binary(format, op, left, right);
+    let term = Bitvector32Term::logical_machine_binary(format, op, left, right);
     Some(CExpressionPath {
         outcome: CExpressionOutcome::Value(match width {
             ScalarWidth::Int32 => CValue::Int32(term),
@@ -185,15 +197,17 @@ fn apply_spec_shift_with_count_width(
             left.clone(),
             constant(width.format(), 0),
         ));
-        domain.push(Proposition::ConditionIs(ConditionTerm::signed_shift_result_fits(
-            width.format(), left.clone(), count.clone(),
-        ), true));
+        domain.push(Proposition::ConditionIs(
+            ConditionTerm::signed_shift_result_fits(width.format(), left.clone(), count.clone()),
+            true,
+        ));
     }
     if let Some(domain) = Proposition::arithmetic_domain(domain) {
-        obligations.push(ProofObligation::evaluation_domain(domain)
-            .with_context("shift expression is defined"));
+        obligations.push(
+            ProofObligation::evaluation_domain(domain).with_context("shift expression is defined"),
+        );
     }
-    let term = Bitvector32Term::machine_binary(width.format(), op, left, count);
+    let term = Bitvector32Term::logical_machine_binary(width.format(), op, left, count);
     Some(CExpressionPath {
         outcome: CExpressionOutcome::Value(match width {
             ScalarWidth::Int32 => CValue::Int32(term),
@@ -387,9 +401,57 @@ mod tests {
                 );
                 let division = matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder);
                 let shift = matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight);
-                assert_eq!(path.obligations.len(), usize::from(signed || division || shift));
+                assert_eq!(
+                    path.obligations.len(),
+                    usize::from(signed || division || shift)
+                );
                 assert!(path.obligations.iter().all(|debt| !debt.is_assumable()));
             }
+        }
+    }
+
+    #[test]
+    fn symbolic_arithmetic_retains_cancellation_and_identity_nodes() {
+        let x = Bitvector32Term::Variable(Variable(991_100));
+        let one = Bitvector32Term::Constant(1);
+        let sum = Bitvector32Term::logical_machine_binary(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Add,
+            x.clone(),
+            one.clone(),
+        );
+        for (op, left, right) in [
+            (MachineBinaryOp::Subtract, sum, x.clone()),
+            (MachineBinaryOp::Subtract, x.clone(), x.clone()),
+            (
+                MachineBinaryOp::Add,
+                x.clone(),
+                Bitvector32Term::Constant(0),
+            ),
+            (
+                MachineBinaryOp::Multiply,
+                x.clone(),
+                Bitvector32Term::Constant(0),
+            ),
+            (MachineBinaryOp::Divide, x, one),
+        ] {
+            let path = apply_spec_machine_arithmetic(
+                op,
+                &CValue::Int32(left.clone()),
+                &CValue::Int32(right.clone()),
+                &ExecutionFacts::default(),
+                &[],
+            )
+            .unwrap();
+            assert_eq!(
+                path.outcome,
+                CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Binary {
+                    format: MachineIntegerType::Int32,
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                }))
+            );
         }
     }
 

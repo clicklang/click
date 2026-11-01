@@ -19,18 +19,41 @@ propositions, rather than adding an `overflows<type>(...)` surface primitive.
 The proposed shared-overflow-node slice remains a local checkpoint on
 `codex/kernel-overflow-conditions` and is not being landed.
 
-The first replacement slice is `codex/division-domain-propositions`: signed
+The first replacement slice merged as #2230: signed
 32/64-bit division and remainder require nonzero divisor plus the ordinary
 MIN/-1 exclusion. Both specification evaluation and C execution use ordinary
 propositions; the int32 remainder bridge theorem uses the same conjunction.
 The full exclusion is checked by indexed assumption membership, with existing
 atomic checks deciding its two comparisons. Unknown execution records an Or
 on the normal branch and an And of equalities on the exceptional branch.
-Other operations and legacy internal overflow reasoning remain to migrate.
+The follow-up `codex/ordinary-arithmetic-domains` consolidates the supported
+arithmetic operators in one PR: signed add/subtract/multiply use exact
+Integer range bounds, division/remainder conjoin both requirements, and
+shifts conjoin their language-specific requirements. Unary negation inherits
+subtraction; unsigned wrapping arithmetic has no overflow obligation.
+Supported 128-bit operators also retain one complete domain. C execution,
+including pointer-formation arithmetic, publishes ordinary branch facts.
+Builtin theorem statements and certificate results use the same propositions.
+Private structural adapters let existing interval reasoning consume the new
+representation without inserting opaque overflow facts in the proof state.
+These adapters are not new Surface terms or fact-dependent lowering.
+Arithmetic observation planning selects the complete domain's recorded source,
+including historical anchors. Integer bridge shortcuts are now session-local:
+retained terms preserve identity without changing a later verification's work.
+Logical machine arithmetic also preserves symbolic cancellation and identity
+nodes. Their equalities belong to comparison, including literal wide
+`(x + c) - c` cancellation in the equality graph. Store equations publish the
+registered read name at the stored value's actual width. Static scalar reads
+use declaration names, including historical reads. Arithmetic identity
+planning retains explicit operands and orders selected dependencies before
+their users; a same-cell frame is tried before stored-value search. False
+scalar equalities are refused using ordinary affine cancellation and word
+congruence, without creating facts or changing lowering.
+The all-operators gate and after-migration stability audits are pending.
 The ordinary obligations also exposed a retained-proof bug: a post-execution
 `have` can retain prerequisite proofs before its own certificate. Replay now
 keeps that complete sequence rather than requiring a single step.
-Validation: `scripts/check.sh --no-fail-fast` passed 7,038 unit/API/import/
+Validation of the merged division slice (#2230): `scripts/check.sh --no-fail-fast` passed 7,038 unit/API/import/
 scaling tests, 58 examples, and 4,954 mdtests in 12m02s (over the ten-minute
 target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching

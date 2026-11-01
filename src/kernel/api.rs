@@ -6246,6 +6246,8 @@ fn checked_int32_reassociated_add_domain_as_written(
     assumptions: &PureFactContext,
     goal: &Proposition,
 ) -> bool {
+    let query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -8095,7 +8097,10 @@ pub fn prove_int32_increment_below_max_is_defined(value: Bitvector32Term) -> The
         true,
     );
     let conclusion = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32, MachineBinaryOp::Add, &value, &Bitvector32Term::Constant(1),
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        &value,
+        &Bitvector32Term::Constant(1),
     );
     implication([premise], conclusion)
 }
@@ -8874,7 +8879,10 @@ pub fn prove_int32_nonnegative_add_within_max_is_defined(
         true,
     );
     let conclusion = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32, MachineBinaryOp::Add, &value, &amount,
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        &value,
+        &amount,
     );
     implication([amount_is_nonnegative, within_headroom], conclusion)
 }
@@ -8894,7 +8902,10 @@ pub fn prove_int32_nonnegative_subtract_within_value_is_defined(
         true,
     );
     let conclusion = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32, MachineBinaryOp::Subtract, &value, &amount,
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Subtract,
+        &value,
+        &amount,
     );
     implication([amount_is_nonnegative, amount_within_value], conclusion)
 }
@@ -8944,9 +8955,15 @@ fn prove_signed_operation_defined_by_integer_bounds(
     } else {
         IntegerTerm::Add(observed_left, observed_right).into()
     };
-    let domain = Proposition::signed_arithmetic_domain(ty,
-        if subtract { MachineBinaryOp::Subtract } else { MachineBinaryOp::Add },
-        &left, &right,
+    let domain = Proposition::signed_arithmetic_domain(
+        ty,
+        if subtract {
+            MachineBinaryOp::Subtract
+        } else {
+            MachineBinaryOp::Add
+        },
+        &left,
+        &right,
     );
     let (minimum, maximum) = match ty {
         MachineIntegerType::Int32 => (i64::from(i32::MIN), i64::from(i32::MAX)),
@@ -9806,10 +9823,17 @@ fn prove_signed_operation_to_integer(
         IntegerTerm::from_machine(ty, value)
             .expect("typed operands have exact Integer interpretations")
     };
-    let op = if subtract { MachineBinaryOp::Subtract } else { MachineBinaryOp::Add };
+    let op = if subtract {
+        MachineBinaryOp::Subtract
+    } else {
+        MachineBinaryOp::Add
+    };
     let domain = Proposition::signed_arithmetic_domain(ty, op, &left, &right);
     let machine = Bitvector32Term::Binary {
-        format: ty, op, left: Box::new(left.clone()), right: Box::new(right.clone()),
+        format: ty,
+        op,
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
     };
     let mathematical = if subtract {
         IntegerTerm::Subtract(observe(left).into(), observe(right).into())

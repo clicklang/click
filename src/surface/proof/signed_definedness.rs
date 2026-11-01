@@ -2,7 +2,7 @@
 //! operands' bounds.
 //!
 //! `defined(a + b)` and `defined(a - b)` over `int32` or `int64` lower to the
-//! negated signed-overflow condition of that width. The checked
+//! conjunction of ordinary exact-result range bounds. The checked
 //! `int32_defined` / `int64_defined` rule of the `rules` arithmetic
 //! certificate family establishes it from each operand's width range and
 //! cited constant bounds. This closer only selects those bounds: the constant

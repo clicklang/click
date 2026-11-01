@@ -5983,33 +5983,27 @@ pub(crate) fn certified_store_equations(
                     return None;
                 }
             };
-            // What the store wrote is the read of its own kind there. An 8-
-            // or 16-bit value (a `Bool` is carried in 8 bits) is a value of
-            // its own format, equated at it.
+            // What the store wrote is the read of its own kind there,
+            // equated at the stored value's format. Bool uses its byte carrier.
             let kind = LoadKind::of_value(&store.value)?;
-            let read = Bitvector32Term::memory_read(
+            // The store record establishes the value of this exact read.
+            // Publish its registered version name, the same term logical
+            // lowering constructs at the post-store snapshot. The private
+            // store record retains the raw memory relation; no history or
+            // ambient fact search is needed to name its read.
+            let read = crate::kernel::canonical_form_of_load(
                 crate::kernel::intern_c_memory(store.after.clone()),
                 store.pointer.clone(),
                 kind,
             );
-            let narrow = match store.value.numeric_value() {
-                CValue::Bool(_) | CValue::UInt8(_) => Some(MachineIntegerType::UInt8),
-                CValue::Int8(_) => Some(MachineIntegerType::Int8),
-                CValue::Int16(_) => Some(MachineIntegerType::Int16),
-                CValue::UInt16(_) => Some(MachineIntegerType::UInt16),
-                _ => None,
+            let format = match store.value.numeric_value() {
+                CValue::Bool(_) => MachineIntegerType::UInt8,
+                value => MachineIntegerType::from_c_type(value.c_type())?,
             };
-            let condition = match narrow {
-                Some(format) => {
-                    ConditionTerm::machine_compare(format, CompareRelation::Equal, read, value)
-                }
-                None => ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(read),
-                    right: Box::new(value),
-                },
-            };
+            // Use the language comparison constructor as well as its width:
+            // 64/128-bit equality has one sign-free, signed-format spelling.
+            let condition =
+                ConditionTerm::machine_compare(format, CompareRelation::Equal, read, value);
             Some(Proposition::ConditionIs(condition, true))
         })
         .collect()
@@ -8347,5 +8341,65 @@ mod direct_unchanged_scaling_tests {
             "a direct unchanged check grew with unrelated effect facts \
              (size, work, effect facts visited): {samples:?}"
         );
+    }
+}
+
+#[test]
+fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
+    use crate::kernel::{ExecutionFacts, ExecutionPureFact};
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let address = Pointer::symbolic(Variable(989_777));
+        let before = CMemory::new();
+        let one = crate::kernel::machine_integer::range::constant_word(format, &1.into()).unwrap();
+        let term = Bitvector32Term::logical_machine_binary(
+            format,
+            crate::kernel::MachineBinaryOp::Add,
+            Bitvector32Term::Variable(Variable(989_778)),
+            one,
+        );
+        let value = match format {
+            MachineIntegerType::Int32 => CValue::Int32(term.clone()),
+            MachineIntegerType::UInt32 => CValue::UInt32(term.clone()),
+            MachineIntegerType::Int64 => CValue::Int64(term.clone()),
+            MachineIntegerType::UInt64 => CValue::UInt64(term.clone()),
+            _ => unreachable!(),
+        };
+        let after = before.clone().store(address.clone(), value.clone());
+        let named = crate::kernel::canonical_form_of_load(
+            crate::kernel::intern_c_memory_ref(&after),
+            address.clone(),
+            LoadKind::of_value(&value).unwrap(),
+        );
+        let facts: ExecutionFacts = vec![ExecutionPureFact::certified_store(
+            before, after, address, value, None,
+        )]
+        .into();
+        let equations = certified_store_equations(&facts);
+        assert_eq!(
+            equations,
+            vec![Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: if format == MachineIntegerType::UInt64 {
+                        MachineIntegerType::Int64
+                    } else {
+                        format
+                    },
+                    relation: CompareRelation::Equal,
+                    left: Box::new(named),
+                    right: Box::new(term),
+                },
+                true
+            )]
+        );
+        let Proposition::ConditionIs(condition, _) = &equations[0] else {
+            unreachable!()
+        };
+        assert!(crate::kernel::condition_variable_widths(condition).is_ok());
     }
 }

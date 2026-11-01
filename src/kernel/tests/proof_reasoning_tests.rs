@@ -1023,7 +1023,10 @@ fn int32_increment_below_max_is_defined_axiom_has_the_exact_implication() {
         true,
     );
     let conclusion = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32, MachineBinaryOp::Add, &value, &Bitvector32Term::Constant(1),
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        &value,
+        &Bitvector32Term::Constant(1),
     );
 
     assert_eq!(
@@ -1305,7 +1308,10 @@ fn int32_nonnegative_add_within_max_is_defined_axiom_has_the_exact_implication()
         true,
     );
     let defined = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32, MachineBinaryOp::Add, &value, &amount,
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        &value,
+        &amount,
     );
 
     assert_eq!(
@@ -6194,7 +6200,10 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
     else {
         panic!("wrong upper bound")
     };
-    assert_eq!(result.as_ref(), &Proposition::And(upper.clone(), lower.clone()));
+    assert_eq!(
+        result.as_ref(),
+        &Proposition::And(upper.clone(), lower.clone())
+    );
     for a in [i32::MIN, -1, 0, 1, i32::MAX] {
         for b in [i32::MIN, -1, 0, 1, i32::MAX] {
             let in_range = integer(exact_lower, a, b) >= integer(min, a, b)
@@ -6219,10 +6228,14 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
         let Proposition::And(upper, lower) = guard.as_ref() else {
             panic!("expected ordinary range conjunction")
         };
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(exact, max), true) = upper.as_ref() else {
+        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(exact, max), true) =
+            upper.as_ref()
+        else {
             panic!("expected upper bound")
         };
-        let Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(same_exact, min), true) = lower.as_ref() else {
+        let Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(same_exact, min), true) =
+            lower.as_ref()
+        else {
             panic!("expected lower bound")
         };
         assert_eq!(exact, same_exact);
@@ -6237,7 +6250,11 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
             for b in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
                 let exact = integer(exact, a, b);
                 let in_range = integer(min, a, b) <= exact && exact <= integer(max, a, b);
-                assert_eq!(in_range, (num_bigint::BigInt::from(i32::MIN)..=num_bigint::BigInt::from(i32::MAX)).contains(&exact));
+                assert_eq!(
+                    in_range,
+                    (num_bigint::BigInt::from(i32::MIN)..=num_bigint::BigInt::from(i32::MAX))
+                        .contains(&exact)
+                );
                 let equality = integer(left, a, b) == integer(right, a, b);
                 if in_range {
                     defined += 1;
@@ -7579,13 +7596,15 @@ fn int64_subtract_bridge_matches_independent_overflow_boundary_model() {
     let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
         panic!("missing native definedness premise");
     };
-    let native = ConditionTerm::Overflows {
-        format: MachineIntegerType::Int64,
-        op: OverflowOperation::Subtract,
-        left: Box::new(left.clone()),
-        right: Box::new(right.clone()),
-    };
-    assert_eq!(premise.as_ref(), &Proposition::ConditionIs(native, false));
+    assert_eq!(
+        premise.as_ref(),
+        &Proposition::signed_arithmetic_domain(
+            MachineIntegerType::Int64,
+            MachineBinaryOp::Subtract,
+            &left,
+            &right,
+        )
+    );
     let Proposition::ConditionIs(ConditionTerm::IntegerEqual(observed, exact), true) =
         conclusion.as_ref()
     else {
@@ -7642,10 +7661,16 @@ fn int64_subtract_bridge_matches_independent_overflow_boundary_model() {
             let Proposition::Implies(guard, _) = theorem.proposition() else {
                 unreachable!()
             };
-            assert_eq!(
-                guard.as_ref(),
-                &Proposition::ConditionIs(ConditionTerm::Constant(!fits), false)
-            );
+            let Proposition::And(upper, lower) = guard.as_ref() else {
+                panic!("missing range bounds")
+            };
+            let holds = |bound: &Proposition| {
+                matches!(
+                    bound,
+                    Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+                )
+            };
+            assert_eq!(holds(upper) && holds(lower), fits);
         }
     }
 }

@@ -47,11 +47,12 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
         pointer_object_identity_condition(&right, &left),
         true,
     )));
-    assert!(paths[0].facts.contains(&ExecutionPureFact::condition(
-        ConditionTerm::signed_subtract_overflows(
-            Bitvector32Term::Variable(Variable(32_001)),
-            Bitvector32Term::Variable(Variable(32_000)),
-        ),
-        false,
+    assert!(paths[0].facts.contains(&ExecutionPureFact::new(
+        Proposition::signed_arithmetic_domain(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Subtract,
+            &Bitvector32Term::Variable(Variable(32_001)),
+            &Bitvector32Term::Variable(Variable(32_000)),
+        )
     )));
 }

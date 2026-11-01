@@ -418,7 +418,7 @@ impl PureFactContext {
             crate::kernel::machine_integer::definedness::definedness_of_integer_bound(
                 &Proposition::ConditionIs(condition.clone(), true),
             )
-            && self.decide_from_overflow_facts(&overflow) == Some(false)
+            && self.decide_unrecorded(&overflow) == Some(false)
         {
             return Some(true);
         }
@@ -1458,13 +1458,19 @@ impl PureFactContext {
             let bounds = crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
                 &Proposition::ConditionIs(condition.clone(), false),
             );
-            if !bounds.is_empty() && bounds.iter().all(|bound| {
-                let Proposition::ConditionIs(condition, true) = bound else { return false; };
-                Self::decide_intrinsically(condition) == Some(true)
-                    || integer_order_spellings(condition).into_iter().any(|condition| {
-                        self.contains_known(&Proposition::ConditionIs(condition, true))
-                    })
-            }) {
+            if !bounds.is_empty()
+                && bounds.iter().all(|bound| {
+                    let Proposition::ConditionIs(condition, true) = bound else {
+                        return false;
+                    };
+                    Self::decide_intrinsically(condition) == Some(true)
+                        || integer_order_spellings(condition)
+                            .into_iter()
+                            .any(|condition| {
+                                self.contains_known(&Proposition::ConditionIs(condition, true))
+                            })
+                })
+            {
                 return Some(false);
             }
         }
