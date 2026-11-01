@@ -1280,7 +1280,8 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
 /// to_integer(y)`, is the native check `x <= MAX - y` because the machine
 /// difference is in range. A bound that leaves `y` free is refused, and the
 /// refusal names, as its goal, the condition the implicit `auto` tried, over
-/// the function's operands, not the assertion's false-path obligation `0 == 1`.
+/// the function's operands with the machine difference read as an Integer,
+/// not the assertion's false-path obligation `0 == 1`.
 /// (A bound one short, `x <= 18446744073709551614u64 - y`, is an exact
 /// `Integer` difference too, so it implies the check.)
 #[test]
@@ -1325,7 +1326,7 @@ fn charon_refused_panic_check_names_its_condition() {
     assert!(error.contains("Rust add panic check"), "{error}");
     assert!(!error.contains("goal: 0 == 1"), "{error}");
     assert!(
-        error.contains("goal: x <= 18446744073709551615u64 - y"),
+        error.contains("goal: x <= to_integer(18446744073709551615u64 - y)"),
         "{error}"
     );
 }
