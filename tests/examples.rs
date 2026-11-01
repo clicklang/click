@@ -3056,9 +3056,11 @@ fn cell_source_repair_vector_copy_replays() {
 }
 
 #[test]
-#[ignore = "nightly: pointer-history arena allocation proof expansion and replay"]
-fn pointer_history_repair_arena_alloc_replays() {
-    click::surface::with_proof_trace("arena_alloc", || {
-        replay_cell_source_example("arena", "arena_cells.click", "arena_alloc.contract");
-    });
+#[ignore = "nightly: pointer-history arena proof expansion and replay"]
+fn pointer_history_repair_arena_replays() {
+    for name in ["arena_alloc", "arena_free"] {
+        click::surface::with_proof_trace(name, || {
+            replay_cell_source_example("arena", "arena_cells.click", &format!("{name}.contract"));
+        });
+    }
 }

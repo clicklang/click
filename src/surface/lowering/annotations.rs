@@ -8109,8 +8109,39 @@ impl AnnotationLowerer<'_> {
             // Bind only that operand, then use the existing address operation
             // to retain its designation, extent, and qualifiers.
             let name = "<spec-address-operand>".to_string();
+            fn bind_address_base<'a>(
+                pointer: &'a CExpression,
+                name: &str,
+            ) -> (&'a CExpression, CExpression) {
+                match pointer {
+                    CExpression::Subobject { pointer, width } => {
+                        let (base, pointer) = bind_address_base(pointer, name);
+                        (
+                            base,
+                            CExpression::Subobject {
+                                pointer: Box::new(pointer),
+                                width: *width,
+                            },
+                        )
+                    }
+                    CExpression::PointerOffsetBytes { pointer, bytes } => {
+                        let (base, pointer) = bind_address_base(pointer, name);
+                        (
+                            base,
+                            CExpression::PointerOffsetBytes {
+                                pointer: Box::new(pointer),
+                                bytes: *bytes,
+                            },
+                        )
+                    }
+                    base => (base, CExpression::Variable(name.into())),
+                }
+            }
+            // C member selection records a designation, not merely an extent.
+            // Retain that selected syntax around the snapshot-bound base.
+            let (base, pointer) = bind_address_base(pointer, &name);
             let target = Box::new(CExpression::TypedLoad {
-                pointer: Box::new(CExpression::Variable(name.clone())),
+                pointer: Box::new(pointer),
                 value_type: *value_type,
                 volatile: *volatile,
                 pointee_constant: *pointee_constant,
@@ -8123,7 +8154,7 @@ impl AnnotationLowerer<'_> {
             };
             return Ok(SpecExpression::Let {
                 name,
-                value: Box::new(self.lower_c_fragment_to_spec(pointer, environment)?),
+                value: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
                 body: Box::new(SpecExpression::CExpression(address)),
             });
         }
@@ -8737,6 +8768,13 @@ impl AnnotationLowerer<'_> {
         }
         match expression {
             CExpression::Value(CValue::Pointer(pointer)) => pointer.c_type().pointee_type(),
+            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+                match target.as_ref() {
+                    CExpression::TypedLoad { value_type, .. } => Some(*value_type),
+                    CExpression::Variable(name) => self.c_variable_type(name),
+                    _ => None,
+                }
+            }
             CExpression::Cast { target_type, .. } => target_type.pointee_type(),
             CExpression::Variable(name) => environment
                 .array_refs

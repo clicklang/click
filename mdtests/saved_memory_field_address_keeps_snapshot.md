@@ -12,6 +12,8 @@ void redirect(struct link *r, struct box *q) { r->ptr = q; }
 verifying "saved_field.c";
 void redirect(struct link *r, struct box *q) {
     owns *r;
+    views r->ptr->value;
+    views *q;
     requires separate(memory(r->ptr->value), memory(q->value));
 } by {
     mark before;
