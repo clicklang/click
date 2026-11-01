@@ -30,6 +30,10 @@ pub enum KernelIntegerOperator {
 pub enum KernelTermNode {
     IntegerLiteral(BigInt),
     MachineLiteral(KernelMachineLiteral),
+    IntegerToMachine {
+        destination: MachineIntegerType,
+        operand: KernelTerm,
+    },
     MachineObservation {
         format: MachineIntegerType,
         operand: KernelTerm,
@@ -239,11 +243,28 @@ impl KernelTerm {
             KernelTermNode::IntegerOperation { arguments, .. }
             | KernelTermNode::Call { arguments, .. } => arguments,
             KernelTermNode::MachineBinary { arguments, .. } => arguments,
-            KernelTermNode::MachineObservation { operand, .. }
+            KernelTermNode::IntegerToMachine { operand, .. }
+            | KernelTermNode::MachineObservation { operand, .. }
             | KernelTermNode::MachineUnary { operand, .. }
             | KernelTermNode::MachineCast { operand, .. } => std::slice::from_ref(operand),
             _ => &[],
         }
+    }
+
+    pub(crate) fn integer_to_machine(
+        destination: MachineIntegerType,
+        operand: KernelTerm,
+    ) -> Result<Self, &'static str> {
+        if operand.ty() != &KernelType::Integer {
+            return Err("machine conversion requires an Integer operand");
+        }
+        Ok(Self::intern(
+            KernelType::C(destination.c_type()),
+            KernelTermNode::IntegerToMachine {
+                destination,
+                operand,
+            },
+        ))
     }
 
     pub fn integer_literal(value: BigInt) -> Self {

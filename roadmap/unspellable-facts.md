@@ -112,6 +112,19 @@ Elapsed 13m07s included a 3m05s rebuild; unit and fixture phases totaled about
 machine-fixture fact-stability audit passed with zero differences. No nightly
 suite was run.
 
+PR #2211 subsequently merged as `617ab6c8a`. The next slice on
+`codex/kernel-boolean-integers` migrates the reverse direction: mathematical
+Integer-to-machine conversions. A shared node retains the explicit destination
+and Integer child, and the speller emits the existing `to_int32`, `to_uint64`,
+etc. calls. This also fills the old bitvector speller's explicit refusal for
+these conversions. Boolean conversions still require migrating their condition
+operand; no condition or pointer semantics change in this slice.
+Validation: `scripts/check.sh --no-fail-fast` passed all 7,024 unit/import/scaling
+tests, 58 examples and 4,953 mdtests in 10m37s (ten-minute timing warning).
+All 17 focused bridge/spelling tests passed. The focused integer fact-stability
+audit passed 248 fixtures with zero differences, matching the pre-change audit.
+No nightly suite ran and no limits changed.
+
 PR #2202 merged as `5211102e4`. On `codex/kernel-integer-observations`, the
 next increment moves `IntegerTerm::Machine` observations into shared typed
 nodes. Source interpretation is explicit, including signedness, and raising
