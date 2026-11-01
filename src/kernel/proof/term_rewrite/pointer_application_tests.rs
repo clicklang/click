@@ -516,3 +516,36 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
         })
     );
 }
+
+#[test]
+fn rewriting_integer_address_zero_keeps_canonical_null_and_displacement() {
+    let word = Bitvector32Term::Variable(Variable(911));
+    let bits =
+        Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::UInt64Constant(!3));
+    for value in [0, 1, 2, 3, 4, 5, u64::MAX] {
+        for displacement in [0, 8] {
+            let mut input = Pointer::integer_address(bits.clone());
+            input.offset = PointerOffsetTerm::Constant(displacement);
+            let replacement = Bitvector32Term::UInt64Constant(value);
+            let mut rewrite = TermRewrite::for_bits(&word, &replacement);
+            let output = rewrite.pointer(&input);
+            assert_eq!(rewrite.refusal(), None);
+            assert_eq!(output.offset, input.offset);
+            if value < 4 {
+                assert_eq!(output.block, Pointer::null().block);
+            } else {
+                assert_ne!(output.block, Pointer::null().block);
+                let PointerBlock::PureFunctionApplication(application) = output.block else {
+                    panic!("a nonzero integer must retain its opaque address")
+                };
+                assert_eq!(
+                    application
+                        .integer_address_bits()
+                        .unwrap()
+                        .uint64_as_const(),
+                    Some(value & !3)
+                );
+            }
+        }
+    }
+}

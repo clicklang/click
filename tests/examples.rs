@@ -564,6 +564,47 @@ fn rbtree_auto_recolor_expansion_rechecks() {
     );
 }
 
+/// Check the unchanged C helper that writes the root's tagged null parent.
+#[test]
+#[ignore = "nightly: checks the original rbtree C bundle's null-parent helper"]
+fn rbtree_null_parent_helper_verifies() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let path = root.join("examples/rbtree/rbtree-insert/rbtree_insert.click");
+    let source = r#"
+verifying "rb_insert_color.c";
+void rb_set_parent_color(struct rb_node* rb, struct rb_node* p, int32 color) {
+    owns rb->__rb_parent_color;
+    requires p == 0;
+    requires color == 1;
+    ensures ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == 0;
+} by {
+    step();
+    have rb->__rb_parent_color == (address(p) | color) by { assumption(); }
+    have rb->__rb_parent_color == 1 by {
+        rewrite(rb->__rb_parent_color == (address(p) | color));
+        rewrite(p == 0);
+        rewrite(color == 1);
+        normalize();
+    }
+    have ((rb->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
+        rewrite(rb->__rb_parent_color == 1);
+        normalize();
+    }
+    step();
+    solve();
+}
+"#;
+    let c_sources = read_verifying_sources(&path, source).unwrap();
+    let project = read_click_project(&path, source).unwrap();
+    limits::spawn(
+        "rbtree null parent",
+        "click-rbtree-null-parent".into(),
+        move || click::surface::verify_c0_project(&project, &source_refs(&c_sources)),
+    )
+    .unwrap()
+    .expect("the unchanged helper must produce a tagged null parent");
+}
+
 /// Nested execution matches must retain their own branch's shared tactics.
 #[test]
 #[ignore = "nightly: whole rbtree insert expansion and cold verification exceed the gate budget"]
@@ -728,8 +769,8 @@ fn check_sized_context_rotation_retained_expansion(sidecar: &str) {
 
 /// The insert proof against a copy of the C whose root case skips its
 /// recolour, `rb_set_parent_color(node, NULL, RB_BLACK)`. The proof claims the
-/// root's colour bit is black at that `break`, which the C no longer makes
-/// true, and that claim is refused; the files on disk are not changed.
+/// root's packed word is one at that `break`, which the C no longer makes
+/// true, and the exact stored-value premise is refused; the files on disk are not changed.
 #[test]
 #[ignore = "nightly: 5s in the parallel gate"]
 fn rbtree_insert_refuses_a_skipped_recolour() {
@@ -758,7 +799,10 @@ fn rbtree_insert_refuses_a_skipped_recolour() {
     .expect_err("the insert proof must refuse C that skips the root recolour");
     let message = error.message();
     assert!(
-        message.contains("could not establish `(node->__rb_parent_color & 1) == (1 as int32)`"),
+        (message.contains("`have` failed for `node->__rb_parent_color == 1`")
+            || message.contains("`have` failed for `load_uint64(node) == 1`"))
+            && message.contains("assumption")
+            && !message.contains("budget exhausted"),
         "unexpected refusal: {message}"
     );
 }
