@@ -192,6 +192,25 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
             left: b.clone(),
             right: a.clone(),
         },
+        // A native 8- or 16-bit equality reverses at its own format.
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format:
+                    format @ (MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16),
+                relation: CompareRelation::Equal,
+                left: a,
+                right: b,
+            },
+            true,
+        ) => ConditionTerm::Compare {
+            format: *format,
+            relation: CompareRelation::Equal,
+            left: b.clone(),
+            right: a.clone(),
+        },
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
@@ -1668,6 +1687,18 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         left: Box::new(rewrite_term(goal_left)),
                         right: Box::new(rewrite_term(goal_right)),
                     },
+                    // A native 8- or 16-bit comparison keeps its format.
+                    ConditionTerm::Compare {
+                        format,
+                        relation,
+                        left: goal_left,
+                        right: goal_right,
+                    } if format.format().bits() < 32 => ConditionTerm::Compare {
+                        format: *format,
+                        relation: *relation,
+                        left: Box::new(rewrite_term(goal_left)),
+                        right: Box::new(rewrite_term(goal_right)),
+                    },
                     _ => {
                         return pointer_congruence_rewrite(goal, left, right).ok_or_else(|| {
                             AtomicRewriteRefusal::Absent(
@@ -1714,6 +1745,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
             (left, right)
         }
         Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true) => {
+            (left, right)
+        }
+        // A native 8- or 16-bit equality equates two values of its width.
+        Proposition::ConditionIs(ConditionTerm::Compare { format, relation: CompareRelation::Equal, left, right }, true)
+            if format.format().bits() < 32 =>
+        {
             (left, right)
         }
         _ => return Err("`rewrite` expects a mathematical Integer, native 32-bit/64-bit, pointer, or algebraic equality".into()),

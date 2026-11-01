@@ -411,11 +411,13 @@ fn snapshot_blind_memory_range_key(range: &CMemoryRange) -> Box<SnapshotBlindMem
 }
 
 fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindConditionKey {
-    if let Some((operator, left, right)) = condition.as_bitvector_comparison() {
+    // Keyed at the fact identity: a native 8- or 16-bit comparison and the
+    // `int32` comparison of its widenings are one fact.
+    if let Some((operator, left, right)) = condition.as_fact_comparison() {
         return SnapshotBlindConditionKey::Comparison(
             operator,
-            snapshot_blind_bitvector_key(left),
-            snapshot_blind_bitvector_key(right),
+            snapshot_blind_bitvector_key(&left),
+            snapshot_blind_bitvector_key(&right),
         );
     }
     match condition {
@@ -2457,11 +2459,13 @@ fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
     next_binder: &mut usize,
 ) -> Option<AlphaConditionKey> {
     alpha_work_checkpoint(bindings, 1)?;
-    if let Some((operator, left, right)) = condition.as_bitvector_comparison() {
+    // Keyed at the fact identity: a native 8- or 16-bit comparison and the
+    // `int32` comparison of its widenings are one fact.
+    if let Some((operator, left, right)) = condition.as_fact_comparison() {
         return Some(AlphaConditionKey::Binary(
             operator,
-            alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(left, bindings, next_binder)?,
-            alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(right, bindings, next_binder)?,
+            alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(&left, bindings, next_binder)?,
+            alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(&right, bindings, next_binder)?,
         ));
     }
     Some(match condition {

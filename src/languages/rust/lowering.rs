@@ -2093,11 +2093,20 @@ impl Context<'_> {
             } => {
                 let mut l = self.expr(left)?;
                 let r = self.expr(right)?;
+                // A Rust comparison of two 8- or 16-bit values is native
+                // at their type (`design/machine-integers.md`, Decisions
+                // 2026-11-01): its operands keep their width, and the `bool`
+                // value below reads the comparison at it.
+                let narrow_comparison =
+                    matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16)
+                        && matches!(operator.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge");
                 // Keep the RHS at its source width. The shared shift evaluator
                 // checks signed/nonnegative and full-width upper bounds before
                 // forming its word-sized shift term. Narrowing here would lose
                 // the exact relation to Rust's already checked count.
-                if matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16) {
+                if !narrow_comparison
+                    && matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16)
+                {
                     // Rust narrow arithmetic is a 32-bit operation and a
                     // cast back (`design/machine-integers.md`, Stage 4).
                     crate::kernel::machine_integer::format_audit::record(
@@ -2105,7 +2114,8 @@ impl Context<'_> {
                         std::panic::Location::caller(),
                     );
                 }
-                if matches!(left_type, Type::U8 | Type::U16) {
+                if narrow_comparison {
+                } else if matches!(left_type, Type::U8 | Type::U16) {
                     // Narrow unsigned remainder fits in signed int, matching
                     // the promotion used by its contract expression. Other
                     // operations keep unsigned words (notably u16 multiply).

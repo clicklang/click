@@ -360,6 +360,11 @@ fn condition_target_reaches(context: &PureFactContext, target: &Proposition) -> 
             *value,
             &|premise| transport_premise_holds(context, premise),
         )
+        // A native 8- or 16-bit comparison reaches as the signed `int32`
+        // comparison of its operands' widenings, which has its truth
+        // (`narrow_comparison_as_int32`).
+        || crate::kernel::machine_integer::comparison::narrow_proposition_as_int32(target)
+            .is_some_and(|widened| condition_target_reaches(context, &widened))
 }
 
 /// A premise of a quantified fact `transport` instantiates: each conjunct

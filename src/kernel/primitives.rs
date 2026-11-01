@@ -1086,8 +1086,8 @@ enum ConditionIdentity<'a> {
     Compare {
         format: MachineIntegerType,
         relation: CompareRelation,
-        left: &'a Bitvector32Term,
-        right: &'a Bitvector32Term,
+        left: ComparisonSide<'a>,
+        right: ComparisonSide<'a>,
     },
     Overflows {
         format: MachineIntegerType,
@@ -1116,6 +1116,108 @@ enum ConditionIdentity<'a> {
     BoolLoad(&'a SharedCMemory, &'a Pointer),
 }
 
+/// A comparison side as its fact identity reads it
+/// ([`ConditionTerm::comparison_fact`]): a term, or the value of a
+/// constant of the comparison's 8- or 16-bit identity format.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum ComparisonSide<'a> {
+    Term(&'a Bitvector32Term),
+    Value(i128),
+}
+
+impl<'a> ComparisonSide<'a> {
+    /// The side as a term of its comparison's identity `format`: a term as
+    /// itself, a value as that format's native constant.
+    pub(crate) fn term(self, format: MachineIntegerType) -> std::borrow::Cow<'a, Bitvector32Term> {
+        match self {
+            Self::Term(term) => std::borrow::Cow::Borrowed(term),
+            Self::Value(value) => std::borrow::Cow::Owned(Bitvector32Term::MachineIntegerConstant(
+                MachineIntegerConstant::from_signed(format.format(), value)
+                    .expect("an identity value lies in its narrow format's range"),
+            )),
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Calls of [`comparison_identity`], for its scaling test.
+    static COMPARISON_IDENTITY_VISITS: std::cell::Cell<usize> = const {
+        std::cell::Cell::new(0)
+    };
+}
+
+/// The identity of the comparison `left REL right` at `format`. A native
+/// 8- or 16-bit comparison and the signed `int32` comparison of its
+/// operands' widenings are one fact (rule K8 at the fact level, as K6
+/// makes a 32-bit equality one fact at either signedness): the promoted
+/// comparison whose sides are widenings from one narrow format `S`, or
+/// constants of `S`'s range, is identified at `S` over the widenings'
+/// operands. Terms keep their written spelling; only identity, hashing,
+/// order and the fact keys read this form. One match on each side; no
+/// clone.
+fn comparison_identity<'a>(
+    format: MachineIntegerType,
+    relation: CompareRelation,
+    left: &'a Bitvector32Term,
+    right: &'a Bitvector32Term,
+) -> (MachineIntegerType, ComparisonSide<'a>, ComparisonSide<'a>) {
+    #[cfg(test)]
+    COMPARISON_IDENTITY_VISITS.with(|visits| visits.set(visits.get() + 1));
+    let format = ConditionTerm::fact_format(format, relation);
+    let bits = format.format().bits();
+    if bits < 32 {
+        let side = |term: &'a Bitvector32Term| match term {
+            Bitvector32Term::MachineIntegerConstant(constant)
+                if constant.format() == format.format() =>
+            {
+                constant
+                    .to_i128()
+                    .map_or(ComparisonSide::Term(term), ComparisonSide::Value)
+            }
+            _ => ComparisonSide::Term(term),
+        };
+        return (format, side(left), side(right));
+    }
+    if format == MachineIntegerType::Int32 {
+        let source = left
+            .narrow_widening32_operand()
+            .or_else(|| right.narrow_widening32_operand())
+            .map(|(source, _)| source);
+        if let Some(source) = source {
+            let (low, high) = {
+                let narrow = source.format();
+                let bits = narrow.bits();
+                if narrow.is_signed() {
+                    (-(1i128 << (bits - 1)), (1i128 << (bits - 1)) - 1)
+                } else {
+                    (0, (1i128 << bits) - 1)
+                }
+            };
+            let side = |term: &'a Bitvector32Term| match term {
+                Bitvector32Term::Constant(value) => {
+                    let value = i128::from(*value as i32);
+                    (low <= value && value <= high).then_some(ComparisonSide::Value(value))
+                }
+                term => match term.narrow_widening32_operand() {
+                    Some((operand_source, operand)) if operand_source == source => {
+                        Some(ComparisonSide::Term(operand))
+                    }
+                    _ => None,
+                },
+            };
+            if let (Some(left), Some(right)) = (side(left), side(right)) {
+                return (source, left, right);
+            }
+        }
+    }
+    (
+        format,
+        ComparisonSide::Term(left),
+        ComparisonSide::Term(right),
+    )
+}
+
 impl ConditionTerm {
     /// The format a comparison is filed at as a fact: a 32-bit equality is
     /// filed at `int32` whichever signedness reads it (rule K6); every other
@@ -1142,12 +1244,15 @@ impl ConditionTerm {
                 relation,
                 left,
                 right,
-            } => I::Compare {
-                format: Self::fact_format(*format, *relation),
-                relation: *relation,
-                left,
-                right,
-            },
+            } => {
+                let (format, left, right) = comparison_identity(*format, *relation, left, right);
+                I::Compare {
+                    format,
+                    relation: *relation,
+                    left,
+                    right,
+                }
+            }
             Self::Overflows {
                 format,
                 op,
@@ -1183,6 +1288,64 @@ impl ConditionTerm {
             Self::BoolEqual(left, right) => I::BoolEqual(left, right),
             Self::BoolLoad(memory, pointer) => I::BoolLoad(memory, pointer),
         }
+    }
+}
+
+impl ConditionTerm {
+    /// A machine comparison as its fact identity reads it: its identity
+    /// format, relation and sides ([`comparison_identity`]). A native 8- or
+    /// 16-bit comparison and the `int32` comparison of its operands'
+    /// widenings give the same reading. `None` for every other condition.
+    /// One match on the root and each side; no clone.
+    pub(crate) fn comparison_fact(
+        &self,
+    ) -> Option<(
+        MachineIntegerType,
+        CompareRelation,
+        ComparisonSide<'_>,
+        ComparisonSide<'_>,
+    )> {
+        let Self::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } = self
+        else {
+            return None;
+        };
+        let (format, left, right) = comparison_identity(*format, *relation, left, right);
+        Some((format, *relation, left, right))
+    }
+
+    /// [`ConditionTerm::as_bitvector_comparison`] at the condition's fact
+    /// identity: the comparison a structural fact key files. A promoted
+    /// comparison of widenings from one narrow format reads as the native
+    /// comparison of their operands (a constant as that format's native
+    /// constant), so both spellings of one fact share a key. The only
+    /// allocation is a narrow constant side.
+    pub(crate) fn as_fact_comparison(
+        &self,
+    ) -> Option<(
+        crate::kernel::primitives::BitvectorComparisonOp,
+        std::borrow::Cow<'_, Bitvector32Term>,
+        std::borrow::Cow<'_, Bitvector32Term>,
+    )> {
+        if let Some((format, relation, left, right)) = self.comparison_fact() {
+            return Some((
+                crate::kernel::primitives::BitvectorComparisonOp::Compare(format, relation),
+                left.term(format),
+                right.term(format),
+            ));
+        }
+        self.as_bitvector_comparison()
+            .map(|(operator, left, right)| {
+                (
+                    operator,
+                    std::borrow::Cow::Borrowed(left),
+                    std::borrow::Cow::Borrowed(right),
+                )
+            })
     }
 }
 
@@ -14323,4 +14486,9 @@ impl TypeParameterName {
     pub fn is_enum(self) -> bool {
         !TYPE_PARAMETER_NAMES.lock().expect("type parameter names")[self.0 as usize].rigid
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../scaling_tests/kernel/primitives.rs");
 }

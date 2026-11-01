@@ -708,12 +708,22 @@ Progress:
      recorded source by one indexed edge (`Node::NarrowRead`), as a
      four-byte read is. Specification and Rust narrow comparisons stay
      promoted in this PR (maintainer direction, 2026-11-01): they are
-     `int32` comparisons of the widenings, as on master. Native
-     specification and Rust narrow comparisons come in the next PR,
-     together with order and interval reasoning that reads a native narrow
-     fact as a bound on its widening; without that reasoning, interval
-     facts filed on `int32` terms do not see native narrow facts (Rust's
-     `0i16 <= i` against `(i as i32 - 1) as i16`).
+     `int32` comparisons of the widenings, as on master. The third PR
+     (2026-11-01) makes specification and Rust comparisons of two 8- or
+     16-bit values of one type native at that type, while C comparisons
+     stay promoted and a written `x as int32 == 7` stays an `int32`
+     comparison; an untyped or `int32` literal compared with a narrow value
+     takes the value's format when it fits. A native comparison and the
+     `int32` comparison of its operands' widenings are one fact at the
+     fact-identity and lookup-key level only (`ConditionTerm::comparison_fact`,
+     O(1)): identity, hashing and order, the snapshot-blind, alpha and
+     identity keys, `condition_match_key`, and the structural condition
+     matchers read both as one. A native fact is also filed, inside each
+     32-bit index's own adjuster, under its `int32` spelling
+     (`narrow_fact_widening`), so order, interval and equality reasoning on
+     32-bit terms sees it, and the Integer readings of a native comparison
+     are those of its promoted spelling. Terms are built and printed as
+     written.
   8. Rust native narrow `+ - * & | ^ ! <<` (G4).
   9. The 64-bit relations and the legacy conversions merged into `Cast`.
   10. Generic `T: intn` / `T: uintn` library theorems.
@@ -1260,3 +1270,27 @@ Maintainer direction, 2026-11-01 (native narrow values, PR 2 scope):
   native comparison that no interval rule reads loses facts the promoted
   one supplies (the guarded-definedness transport fixtures, `snprintf`,
   `memset`, and Rust's `countdown`).
+
+Maintainer direction, 2026-11-01 (native narrow comparisons, PR 3):
+
+- **Lowering is faithful to each surface language.** A specification or
+  Rust comparison of two values of one 8- or 16-bit type is native at that
+  type. A C comparison is promoted, as C's usual arithmetic conversions
+  make it: the `int32` comparison of the operands' widenings. A written
+  `x as int32 == 7` compares `int32` values and stays promoted in every
+  language.
+- **Literals.** An untyped or `int32` literal compared with a narrow value
+  takes the value's format when it fits (`byte < 255` is `byte <_u8
+  255u8`); one that does not fit leaves the comparison promoted.
+- **One fact, two spellings, at the reasoning level only.** A native
+  narrow comparison and the `int32` comparison of its operands' widenings
+  are the same fact for fact identity and lookup keys. This is a
+  reasoning-level equivalence, not a lowering collapse: terms are built and
+  printed as written. It is centralized in one O(1) reading,
+  `ConditionTerm::comparison_fact`, which identity, hashing, order and every
+  structural fact key use, as K6 makes a 32-bit equality one fact at either
+  signedness. The 32-bit indexes also file a native fact under its `int32`
+  spelling, each inside its own adjuster so that assuming, forgetting and
+  rebuilding agree. A consumer that unifies a pattern with binders against
+  a fact (quantified-premise candidate matching) reads both sides in their
+  `int32` spelling, since a key cannot bind a pattern variable.

@@ -2937,33 +2937,6 @@ fn term_interval_proves(
         if tokens.iter().any(|token| matches!(token, SignedArithmeticAtomToken::Constant(value) if *value <= 31)))
 }
 
-/// The `int32` reading of an 8- or 16-bit comparison: the same comparison
-/// of its sides' `int32` widenings, which keep every value of those
-/// formats. `None` for any other condition. One match on the root.
-pub(crate) fn narrow_comparison_as_int32(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::Compare {
-        format,
-        relation,
-        left,
-        right,
-    } = condition
-    else {
-        return None;
-    };
-    if format.format().bits() >= 32 {
-        return None;
-    }
-    let widen = |term: &Bitvector32Term| {
-        Bitvector32Term::machine_integer_cast(*format, MachineIntegerType::Int32, term.clone())
-    };
-    Some(ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
-        relation: *relation,
-        left: Box::new(widen(left)),
-        right: Box::new(widen(right)),
-    })
-}
-
 fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
     let (condition, value) = match proposition {
         Proposition::ConditionIs(condition, value) => (condition, *value),
@@ -2973,7 +2946,7 @@ fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
         },
         _ => return None,
     };
-    let widened = narrow_comparison_as_int32(condition);
+    let widened = crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition);
     let condition = widened.as_ref().unwrap_or(condition);
     let (relation, left, right, strict) = match (condition, value) {
         (

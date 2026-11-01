@@ -8716,6 +8716,26 @@ pub(super) fn c_value_comparison_proposition(
         ));
     }
 
+    // Two values of one 8- or 16-bit format compare natively at it: a
+    // specification comparison retains its operands' format. An `int32`
+    // literal compared with a narrow value takes that value's format when
+    // it fits (`x == 0` on a `uint8` is `x == 0u8`); a written conversion
+    // (`x as int32 == 7`) is an `int32` operand and stays promoted. Only a
+    // C expression promotes narrow operands (`apply_c_comparison`).
+    if let Some((format, a, b)) = native_narrow_comparison_operands(left, right) {
+        let (relation, value) = match operator {
+            CComparisonOperator::Equal => (CompareRelation::Equal, true),
+            CComparisonOperator::NotEqual => (CompareRelation::Equal, false),
+            CComparisonOperator::LessThan => (CompareRelation::LessThan, true),
+            CComparisonOperator::LessEqual => (CompareRelation::LessEqual, true),
+            CComparisonOperator::GreaterThan => (CompareRelation::GreaterThan, true),
+            CComparisonOperator::GreaterEqual => (CompareRelation::GreaterEqual, true),
+        };
+        return Some(Proposition::ConditionIs(
+            ConditionTerm::machine_compare(format, relation, a, b),
+            value,
+        ));
+    }
     let unsigned = matches!(left, CValue::UInt32(_)) || matches!(right, CValue::UInt32(_));
     let left = c_value_int32_term(left)?;
     let right = c_value_int32_term(right)?;
@@ -8767,6 +8787,40 @@ pub(super) fn c_value_comparison_proposition(
 /// The word an integer operand of at most 32 bits has at the comparison's
 /// 32-bit format: its own word, a narrow value's widening to `int32`, or a
 /// `Bool`'s cast (rule C1), as C's promotion reads them.
+/// The format and operands of a specification comparison made natively at
+/// 8 or 16 bits: two values of one narrow format, or a narrow value and an
+/// `int32` literal its format holds, which becomes that format's constant.
+/// One match on each side.
+fn native_narrow_comparison_operands(
+    left: &CValue,
+    right: &CValue,
+) -> Option<(MachineIntegerType, Bitvector32Term, Bitvector32Term)> {
+    let narrow = |value: &CValue| match value {
+        CValue::Int8(term) | CValue::UInt8(term) | CValue::Int16(term) | CValue::UInt16(term) => {
+            Some((
+                MachineIntegerType::from_c_type(value.c_type())?,
+                term.clone(),
+            ))
+        }
+        _ => None,
+    };
+    let literal = |format: MachineIntegerType, value: &CValue| match value {
+        CValue::Int32(Bitvector32Term::Constant(bits)) => {
+            let value = i128::from(*bits as i32);
+            let (low, high) = format.format().bounds();
+            (num_bigint::BigInt::from(value) >= low && num_bigint::BigInt::from(value) <= high)
+                .then(|| Bitvector32Term::narrow_constant(format, value as u128))
+        }
+        _ => None,
+    };
+    match (narrow(left), narrow(right)) {
+        (Some((format, a)), Some((other, b))) => (format == other).then_some((format, a, b)),
+        (Some((format, a)), None) => Some((format, a, literal(format, right)?)),
+        (None, Some((format, b))) => Some((format, literal(format, left)?, b)),
+        (None, None) => None,
+    }
+}
+
 fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
