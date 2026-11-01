@@ -28,6 +28,152 @@ fn checked_memory_load_equality(
     )
 }
 
+/// Instantiate the explicit elements law and discharge its written premise.
+pub(in crate::kernel) fn explicit_signed_elements(
+    base: Pointer,
+    ty: CType,
+    i: Bitvector32Term,
+    j: Bitvector32Term,
+    facts: PureFactContext,
+) -> PureFactContext {
+    let law = crate::kernel::prove_separation_elements(
+        CPointerValue::new(base, ty.pointer_to().unwrap()),
+        ty.byte_width(),
+        MachineIntegerType::Int32,
+        i,
+        j,
+    );
+    let Proposition::Implies(premise, conclusion) = law.proposition() else {
+        panic!("elements law has one premise");
+    };
+    assert!(
+        facts.proves_exact(premise),
+        "elements requires unequal indices"
+    );
+    facts.assume_proposition(
+        crate::kernel::region_footprint::byte_premise(conclusion)
+            .expect("element separation has byte coordinates"),
+    )
+}
+
+/// Apply the same explicit footprint-preservation primitive as a written
+/// certificate. Tests supply the selected transition and prove its separation;
+/// the logical read producers provide both observations without reconstruction.
+pub(in crate::kernel) fn explicit_frame(
+    before: &CMemory,
+    after: &CMemory,
+    address: &Pointer,
+    ty: CType,
+    effects: &[Proposition],
+    facts: &PureFactContext,
+) -> Option<(CValue, CValue, Proposition)> {
+    use crate::kernel::eval::typed_reads::ReadScope;
+    use crate::kernel::proof::transport_certificate::{TransportCertificate, TransportNode};
+    let entry = CState::new().with_memory(before.clone());
+    let exit = entry.clone().with_memory(after.clone());
+    let effects = effects
+        .iter()
+        .cloned()
+        .map(ExecutionPureFact::certified)
+        .collect::<Vec<_>>();
+    let footprint = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+        "selected transition".into(),
+        &entry,
+        &exit,
+        &effects,
+    ));
+    let kept = CResource::Memory(CMemoryRange::new_with_element_width(
+        address.clone(),
+        0u32.into(),
+        1u32.into(),
+        ty.byte_width(),
+    ));
+    // Establish each explicitly selected member's separation, then apply the
+    // footprint rule to those facts, as normalize(using: [...]) does.
+    let CResource::Footprint(region) = &footprint else {
+        unreachable!()
+    };
+    let mut selected = PureFactContext::new();
+    for member in &region.members {
+        let member = crate::kernel::region_footprint::byte_resource(member)?;
+        let kept = crate::kernel::region_footprint::byte_resource(&kept)?;
+        if !facts.proves_resource_separate(&member, &kept) {
+            return None;
+        }
+        selected = selected.assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(member),
+            right: Box::new(kept),
+        });
+    }
+    if !crate::kernel::region_footprint::separate_using(&footprint, &kept, &selected) {
+        return None;
+    }
+    let separation = Proposition::CResourceSeparate {
+        left: Box::new(footprint),
+        right: Box::new(kept),
+    };
+    let _reads = ReadScope::enter();
+    let observe = |memory: &CMemory| {
+        let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
+            memory,
+            address.clone(),
+            ty,
+            Default::default(),
+            Vec::new(),
+            &PureFactContext::new(),
+        );
+        let [path] = paths.as_slice() else {
+            panic!("one logical observation");
+        };
+        let CExpressionOutcome::Value(value) = &path.outcome else {
+            panic!("logical read produces a value");
+        };
+        value.clone()
+    };
+    let old = observe(before);
+    let new = observe(after);
+    let condition = match (new.numeric_value(), old.numeric_value()) {
+        (CValue::Parameter(a), CValue::Parameter(b)) => {
+            ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
+        }
+        (CValue::Pointer(a), CValue::Pointer(b)) => {
+            ConditionTerm::pointer_value_equal(a.clone(), b.clone())
+        }
+        (CValue::Int32(a), CValue::Int32(b)) => ConditionTerm::equal(a.clone(), b.clone()),
+        (CValue::UInt8(a), CValue::UInt8(b)) => ConditionTerm::machine_compare(
+            MachineIntegerType::UInt8,
+            CompareRelation::Equal,
+            a.clone(),
+            b.clone(),
+        ),
+        (CValue::UInt64(a), CValue::UInt64(b)) => ConditionTerm::uint64_equal(a.clone(), b.clone()),
+        other => panic!("unsupported test observation: {other:?}"),
+    };
+    let result = Proposition::ConditionIs(condition, true);
+    let certificate = TransportCertificate {
+        nodes: vec![
+            TransportNode::Premise {
+                proposition: separation.clone(),
+                result: separation.clone(),
+            },
+            TransportNode::Preserve {
+                field: None,
+                effect: None,
+                separation: 0,
+                result,
+            },
+        ],
+        conclusion: 1,
+    };
+    Some((
+        old,
+        new,
+        certificate
+            .apply(|p| p == &separation)
+            .expect("explicit frame certificate"),
+    ))
+}
+
 mod canonicalization_tests;
 mod contract_execution_tests;
 mod execution_tests;

@@ -47,13 +47,24 @@ void traverse(int32 *next, int32 *visited) diverges {
             solve();
         }
         preserve by {
+            have separate(memory(visited[cur]), memory(next[0])) by {
+                rewrite(cur == 0);
+                assumption();
+            }
             mark before_visit;
             step();
-            transport(at(before_visit, next[0]) == 0, next[0] == 0) using {
-                at(before_visit, next[0]) == 0;
-                at(before_visit, cur) == 0;
-                separate(memory(next[0..1]), memory(visited[0..1]));
-            };
+            mark after_visit;
+            have next[0] == at(before_visit, next[0]) by {
+                transport_certificate {
+                    premise 0: changes_only(before_visit, after_visit, memory(visited[cur]))
+                        => changes_only(before_visit, after_visit, memory(visited[cur]));
+                    premise 1: at(before_visit, separate(memory(visited[cur]), memory(next[0])))
+                        => at(before_visit, separate(memory(visited[cur]), memory(next[0])));
+                    preserve 0, 1 => next[0] == at(before_visit, next[0]);
+                    conclusion 2;
+                }
+            }
+            have next[0] == 0;
             step();
             have exists (fuel: Nat) { walk(next, 0, fuel) == cur } by {
                 witness { fuel: Nat::Succ(Nat::Zero) };

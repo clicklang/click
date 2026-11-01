@@ -12,10 +12,13 @@ earlier cell is at most `p[j + 1]`. Each arm proves both from what it did,
 and the rest of the iteration is checked once on the path that leaves the
 `if`.
 
-Each arm also proves `defined(j + 1)`. An interface fact holds in an arm
-only together with what its terms need to denote a value, and `p[j + 1]`
-needs `j + 1` not to overflow
+The interface includes `defined(j + 1)`, proved in both arms. Its facts
+can use `p[j + 1]` only while carrying the condition that `j + 1` does not
+overflow
 ([`an_interface_fact_needs_its_terms_defined_in_each_arm.md`](an_interface_fact_needs_its_terms_defined_in_each_arm.md)).
+
+The swap arm explicitly preserves earlier cells across each store using
+element separation and transport certificates.
 
 ```c filename=bubble_pass3.c
 int32 bubble_pass3(int32 p[3]) {
@@ -35,6 +38,7 @@ int32 bubble_pass3(int32 p[3]) {
 ```
 
 ```click
+import click::separation;
 verifying "bubble_pass3.c";
 
 predicate all_le_range(p: int32[], lo: int32, hi: int32, x: int32) {
@@ -60,6 +64,7 @@ int32 bubble_pass3(int32 p[3]) {
         }
         preserve by {
             branch ensuring {
+                fact defined(j + 1);
                 fact p[j] <= p[j + 1];
                 fact all_le_range(p, 0, j, p[j + 1]);
             } then {
@@ -69,8 +74,46 @@ int32 bubble_pass3(int32 p[3]) {
                 have defined(j + 1);
                 have p[j] <= p[j + 1];
                 have all_le_range(p, 0, j, p[j + 1]) by {
-                    unfold(all_le_range);
-                    solve();
+                    if j == 0 {
+                        unfold(all_le_range);
+                        solve();
+                    } else {
+                        have j == 1 by solve();
+                        have separate(memory(p[1]), memory(p[0])) by {
+                            apply(separation::elements(p, 1 as uint64, 0 as uint64)) using {};
+                        }
+                        have separate(memory(p[2]), memory(p[0])) by {
+                            apply(separation::elements(p, 2 as uint64, 0 as uint64)) using {};
+                        }
+                        have separate(memory(p[j]), memory(p[0])) by { rewrite(j == 1); assumption(); }
+                        have separate(memory(p[j + 1]), memory(p[0])) by { rewrite(j == 1); assumption(); }
+                        have separate(loop(0).statement(0).statement(1).footprint, memory(p[0])) by {
+                            normalize() using { separate(memory(p[j]), memory(p[0])); };
+                        }
+                        have at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]) by {
+                            transport_certificate {
+                                premise 0: separate(loop(0).statement(0).statement(1).footprint, memory(p[0]))
+                                    => separate(loop(0).statement(0).statement(1).footprint, memory(p[0]));
+                                preserve 0 => at(loop(0).statement(0).statement(1).exit, p[0]) == at(loop(0).statement(0).statement(1).entry, p[0]);
+                                conclusion 1;
+                            }
+                        }
+                        have separate(loop(0).statement(0).statement(2).footprint, memory(p[0])) by {
+                            normalize() using { separate(memory(p[j + 1]), memory(p[0])); };
+                        }
+                        have at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]) by {
+                            transport_certificate {
+                                premise 0: separate(loop(0).statement(0).statement(2).footprint, memory(p[0]))
+                                    => separate(loop(0).statement(0).statement(2).footprint, memory(p[0]));
+                                preserve 0 => at(loop(0).statement(0).statement(2).exit, p[0]) == at(loop(0).statement(0).statement(2).entry, p[0]);
+                                conclusion 1;
+                            }
+                        }
+                        unfold(all_le_range);
+                        intro(); intro();
+                        have k == 0 by solve();
+                        solve();
+                    }
                 }
             } else {
                 have defined(j + 1);

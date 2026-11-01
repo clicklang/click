@@ -150,6 +150,7 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
 fn copied_pointer_frames_ignore_unrelated_separations() {
     let costs = [16u64, 64, 256, 1024].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
+        let _reads = crate::kernel::TransportReadScope::enter();
         let separation = |a: Pointer, a_words: u32, b: Pointer| Proposition::CResourceSeparate {
             left: Box::new(CResource::Memory(CMemoryRange::new(
                 a,
@@ -180,23 +181,18 @@ fn copied_pointer_frames_ignore_unrelated_separations() {
                 width: 4u32.into(),
             },
         ));
-        let memory = intern_c_memory(
-            CMemory::new()
-                .store(field.clone(), CValue::Pointer(stored.clone()))
-                .store(
-                    buffer.clone().offset_by_bytes(4),
-                    CValue::Int32(7u32.into()),
-                ),
-        );
+        let before = CMemory::new().store(field.clone(), CValue::Pointer(stored.clone()));
+        let write = buffer.clone().offset_by_bytes(4);
+        let after = before
+            .clone()
+            .without_possible_aliasing_cells(&write, 4, &PureFactContext::new())
+            .store(write.clone(), CValue::Int32(7u32.into()));
         facts = facts.assume_proposition(separation(header, 4, buffer));
-        let read = CPointerValue::from_read(
-            stored.pointer().clone(),
-            CType::Int32Pointer,
-            &memory,
-            &field,
-        );
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
-            facts.pointer_designations_match(&read, &stored)
+            let (read, equality) =
+                explicit_pointer_store_frame(&before, &after, &field, &write, &facts).unwrap();
+            let derived = facts.clone().assume_proposition(equality);
+            derived.pointer_designations_match(&read, &stored)
         });
         assert!(holds);
         work
@@ -424,6 +420,51 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
         ));
         assert!(!narrow_read_has_recorded_value(&wide, &right, &facts));
     }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
+    let samples = [4u64, 16, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer {
+            block: "global:word-carrier".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let context = PureFactContext::new();
+        let mut memory = CMemory::new();
+        for index in 0..size {
+            memory = memory.store(
+                Pointer {
+                    block: format!("local:carrier-noise-{index}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::Int32(7u32.into()),
+            );
+        }
+        let target = Pointer::symbolic(Variable(9_887_001));
+        let value = CValue::PointerInteger(PointerIntegerValue {
+            numeric: Box::new(CValue::UInt64(Bitvector32Term::pointer_address(
+                target.clone(),
+            ))),
+            pointer: Box::new(CPointerValue::new(target, CType::Int32Pointer)),
+            kind: PointerIntegerKind::Exact,
+        });
+        let memory = memory
+            .store(field.clone(), value.clone())
+            .without_possible_aliasing_cells(&Pointer::symbolic(Variable(9_887_002)), 8, &context);
+        assert!(memory.known_value(&field).is_none());
+        let read = Pointer::loaded_value(&intern_c_memory(memory), &field);
+        let (recovered, work) = crate::instrumentation::measure_deterministic_work(|| {
+            complete_pointer_carrier_read_value(&read, &context)
+        });
+        assert_eq!(recovered, Some(value));
+        assert!(work > 0);
+        work
+    });
     assert!(
         samples.windows(2).all(|pair| pair[0] == pair[1]),
         "{samples:?}"

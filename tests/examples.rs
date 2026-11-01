@@ -2986,3 +2986,65 @@ fn written_store_alias_frame_expands_and_rechecks() {
     )
     .unwrap();
 }
+
+fn replay_cell_source_example(example: &str, sidecar: &str, claim: &str) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join(example);
+    let path = root.join(sidecar);
+    let source = fs::read_to_string(&path).unwrap();
+    let project = read_click_project_at_root(&path, &source, &root).unwrap();
+    let CInput::Bundle(inputs) = read_c_inputs_for_project(&path, &source, &project).unwrap()
+    else {
+        panic!("C bundle expected");
+    };
+    let sources = source_refs(&inputs);
+    let expanded = click::surface::expand_project_claim_source_by_label(
+        &project,
+        &ProgramInputs::Bundle(sources.clone()),
+        claim,
+    )
+    .unwrap_or_else(|error| panic!("{example}: {}", error.report()));
+    click::surface::without_implicit_auto_for_claim(claim, || {
+        click::surface::verify_project_functions(
+            &project.with_entry_source(expanded),
+            &ProgramInputs::Bundle(sources.clone()),
+            [claim.strip_suffix(".contract").unwrap().to_string()],
+        )
+        .map(|_| ())
+        .map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{example}: {error}"));
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-replays the complete arena pipeline"]
+fn cell_source_repair_arena_replays() {
+    replay_cell_source_example("arena", "arena_cells.click", "arena_pipeline.contract");
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-replays the complete pool pipeline"]
+fn cell_source_repair_pool_replays() {
+    replay_cell_source_example(
+        "bounded-pool",
+        "bounded_pool.click",
+        "pool_pipeline.contract",
+    );
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-replays the fork/join contract"]
+fn cell_source_repair_fork_join_replays() {
+    replay_cell_source_example(
+        "concurrency-fork-join",
+        "fork_join.click",
+        "fill_parallel.contract",
+    );
+}
+
+#[test]
+#[ignore = "nightly: expands and cold-replays the vector-copy contract"]
+fn cell_source_repair_vector_copy_replays() {
+    replay_cell_source_example("owned-vector", "vector.click", "vector_copy.contract");
+}

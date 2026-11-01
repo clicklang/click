@@ -251,7 +251,7 @@ impl<'a> Proof<'a> {
                 self.step_error(message)
             })?;
         let added_facts = if !produce && !compiled_definition.facts().is_empty() {
-            crate::kernel::instantiate_private_member_body_facts(
+            let instantiated = crate::kernel::instantiate_private_member_body_facts(
                 &selected,
                 compiled_definition,
                 &execution.core.state,
@@ -259,8 +259,25 @@ impl<'a> Proof<'a> {
             )
             .ok_or_else(|| {
                 self.step_error("Requires ownership of every cell read by member body facts")
-            })?
-            .propositions
+            })?;
+            // Keep the written arguments with the facts this operation
+            // introduces. Resolved pointer values are checking operands, not
+            // source spellings for a later quantified instantiation.
+            let substitutions = resource_argument_substitutions(
+                definition,
+                source_resource,
+                context.claim_label,
+                context.tactic_index,
+            )?;
+            for (index, kernel) in &instantiated.declared {
+                let surface = substitute_click_proposition(&body.facts[*index], &substitutions)
+                    .map_err(|message| self.step_error(message))?;
+                execution
+                    .presentation
+                    .surface_propositions
+                    .record_lowering(&surface, kernel)?;
+            }
+            instantiated.propositions
         } else {
             Vec::new()
         };
@@ -2372,7 +2389,7 @@ impl<'a> Proof<'a> {
             context.claim_label,
             context.tactic_index,
         )?;
-        let mut transition = self.apply_execution_resource_unfold(resource)?;
+        let mut transition = self.apply_execution_resource_unfold(resource, resource)?;
         for (slot, name) in names {
             let Some((_, value)) = witnesses.iter().find(|(witness, _)| witness == slot) else {
                 let known = witnesses
@@ -2413,6 +2430,7 @@ impl<'a> Proof<'a> {
     pub(super) fn apply_execution_resource_unfold(
         &self,
         resource: &ResourceClause,
+        source_resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if self.execution().is_some()
             && !matches!(resource, ResourceClause::Named { .. })
@@ -2421,7 +2439,11 @@ impl<'a> Proof<'a> {
             && !self.is_authority_transfer_wrapper(resource)
             && !self.names_unauthorized_family(resource)
         {
-            return self.apply_execution_population_member_exchange(resource, resource, false);
+            return self.apply_execution_population_member_exchange(
+                resource,
+                source_resource,
+                false,
+            );
         }
         if let ResourceClause::Named { binding, .. } = resource {
             return self.apply_instance_rewrite(binding, resource, true);
@@ -2445,6 +2467,7 @@ impl<'a> Proof<'a> {
         let checked = unfold_composite_resource_for_proof(
             context.resource_environment,
             resource,
+            source_resource,
             context.parameter_binding(),
             (*execution.core.state).clone(),
             self.facts().clone(),
@@ -2585,6 +2608,7 @@ impl<'a> Proof<'a> {
     pub(super) fn apply_outcome_resource_unfold(
         &self,
         resource: &ResourceClause,
+        source_resource: &ResourceClause,
     ) -> Result<CheckedFocusedTransition, ClickError> {
         if self.execution().is_some()
             && !self.is_authority_transfer_wrapper(resource)
@@ -2625,6 +2649,7 @@ impl<'a> Proof<'a> {
         let checked = unfold_composite_resource_for_proof(
             context.resource_environment,
             &resource,
+            source_resource,
             context.parameter_binding(),
             (*data.core.state).clone(),
             self.facts().clone(),
