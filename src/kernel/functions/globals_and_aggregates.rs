@@ -885,7 +885,7 @@ pub(super) fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32,
                 CType::Parameter(_) | CType::ParameterPointer(_) => {
                     unreachable!("an array element is a machine type")
                 }
-                CType::Bool => CValue::Bool(Bitvector32Term::Constant(0)),
+                CType::Bool => CValue::bool_constant(false),
                 CType::Int8 => int8(0),
                 CType::Int16 => int16(0),
                 CType::Int32 => int32(0),

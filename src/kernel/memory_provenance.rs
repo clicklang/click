@@ -5230,8 +5230,20 @@ pub(crate) fn narrow_read_has_recorded_value(
         Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
         _ => None,
     };
-    let stored_value_matches = |read: Option<Bitvector32Term>, other: &Bitvector32Term| {
-        let Some(Bitvector32Term::MemoryLoad(memory, pointer, kind)) = read else {
+    // A read compared through its 32-bit widening (as C promotes it) has
+    // its stored value compared through the same widening.
+    let stored_value_matches = |term: &Bitvector32Term, other: &Bitvector32Term| {
+        let (term, widening) = match term {
+            Bitvector32Term::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } if source.format().bits() < 32 && destination.format().bits() == 32 => {
+                (value.as_ref(), Some((*source, *destination)))
+            }
+            term => (term, None),
+        };
+        let Some(Bitvector32Term::MemoryLoad(memory, pointer, kind)) = origin(term) else {
             return false;
         };
         if !matches!(
@@ -5256,15 +5268,27 @@ pub(crate) fn narrow_read_has_recorded_value(
             | CValue::UInt32(word) => word,
             _ => return false,
         };
+        // The comparison's format: the widening's, or a narrow read's own.
+        let (word, format) = match (widening, kind) {
+            (Some((source, destination)), _) => (
+                Bitvector32Term::machine_integer_cast(source, destination, word),
+                MachineIntegerType::Int32,
+            ),
+            (None, LoadKind::Int8) => (word, MachineIntegerType::Int8),
+            (None, LoadKind::UInt8) => (word, MachineIntegerType::UInt8),
+            (None, LoadKind::Int16) => (word, MachineIntegerType::Int16),
+            (None, LoadKind::UInt16) => (word, MachineIntegerType::UInt16),
+            (None, _) => (word, MachineIntegerType::Int32),
+        };
         &word == other
             || assumptions.decide(&ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format,
                 relation: CompareRelation::Equal,
                 left: Box::new(word),
                 right: Box::new(other.clone()),
             }) == Some(true)
     };
-    stored_value_matches(origin(left), right) || stored_value_matches(origin(right), left)
+    stored_value_matches(left, right) || stored_value_matches(right, left)
 }
 
 /// Whether the read of `value_type` at `pointer` in `memory` ends, by the
@@ -5959,21 +5983,34 @@ pub(crate) fn certified_store_equations(
                     return None;
                 }
             };
-            // What the store wrote is the read of its own kind there.
+            // What the store wrote is the read of its own kind there. An 8-
+            // or 16-bit value (a `Bool` is carried in 8 bits) is a value of
+            // its own format, equated at it.
             let kind = LoadKind::of_value(&store.value)?;
-            Some(Proposition::ConditionIs(
-                ConditionTerm::Compare {
+            let read = Bitvector32Term::memory_read(
+                crate::kernel::intern_c_memory(store.after.clone()),
+                store.pointer.clone(),
+                kind,
+            );
+            let narrow = match store.value.numeric_value() {
+                CValue::Bool(_) | CValue::UInt8(_) => Some(MachineIntegerType::UInt8),
+                CValue::Int8(_) => Some(MachineIntegerType::Int8),
+                CValue::Int16(_) => Some(MachineIntegerType::Int16),
+                CValue::UInt16(_) => Some(MachineIntegerType::UInt16),
+                _ => None,
+            };
+            let condition = match narrow {
+                Some(format) => {
+                    ConditionTerm::machine_compare(format, CompareRelation::Equal, read, value)
+                }
+                None => ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::memory_read(
-                        crate::kernel::intern_c_memory(store.after.clone()),
-                        store.pointer.clone(),
-                        kind,
-                    )),
+                    left: Box::new(read),
                     right: Box::new(value),
                 },
-                true,
-            ))
+            };
+            Some(Proposition::ConditionIs(condition, true))
         })
         .collect()
 }
@@ -6837,10 +6874,9 @@ mod exact_load_normalization_tests {
             pointer.clone(),
             CValue::Int32(Bitvector32Term::Constant(256)),
         );
-        let signed_byte = CMemory::new().with_block("kind-checked-cell", 4).store(
-            pointer.clone(),
-            CValue::Int8(Bitvector32Term::Constant(u32::MAX)),
-        );
+        let signed_byte = CMemory::new()
+            .with_block("kind-checked-cell", 4)
+            .store(pointer.clone(), crate::kernel::int8(u32::MAX));
         let context = PureFactContext::new();
         for (memory, own, other, value) in [
             (
@@ -6853,7 +6889,7 @@ mod exact_load_normalization_tests {
                 &signed_byte,
                 LoadKind::Int8,
                 LoadKind::UInt8,
-                Bitvector32Term::Constant(u32::MAX),
+                Bitvector32Term::narrow_constant(MachineIntegerType::Int8, 0xFF),
             ),
         ] {
             assert_eq!(
