@@ -785,6 +785,23 @@ spec enum Option<T> {
 this value in a contract: `ensures result == Option<u32>::Some(x);`. The
 importer lays the Rust value out itself; a contract never reads that layout.
 
+### `option::unwrap_or`
+
+```click
+function unwrap_or<T>(o: Option<T>, default: T) -> T {
+    match o {
+        Option::Some(value) => value,
+        Option::None => default,
+    }
+}
+```
+
+**Meaning:** Rust's `Option::unwrap_or`: the payload of `Some`, else
+`default`. A call `o.unwrap_or(d)` in imported Rust calls an external function
+whose contract is `ensures result == click::option::unwrap_or(o, d);`. The
+module is implicit, so a sidecar writes `option::unwrap_or(o, d)` with no
+import.
+
 **Verified use:** [`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click).
 
 ## Signed `int32` theorems

@@ -4076,3 +4076,7 @@ path = "reference/library/index.md#usizechecked_sub"
 [[item]]
 id = "library.function.usize::abs_diff"
 path = "reference/library/index.md#usizeabs_diff"
+
+[[item]]
+id = "library.function.option::unwrap_or"
+path = "reference/library/index.md#optionunwrap_or"
