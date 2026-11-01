@@ -423,6 +423,15 @@ impl PureFactContext {
         {
             return Some(value == truth);
         }
+        // A native 8- or 16-bit comparison has the truth of the signed
+        // `int32` comparison of its operands' widenings, which the 32-bit
+        // reasoning below decides (`narrow_comparison_as_int32`).
+        if let Some(widened) =
+            crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition)
+            && let Some(value) = self.decide(&widened)
+        {
+            return Some(value);
+        }
         if let Some(value) = self.decide_uint64_constant_order_bounds(condition) {
             return Some(value);
         }

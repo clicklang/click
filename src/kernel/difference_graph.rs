@@ -61,33 +61,6 @@ impl Domain {
     }
 }
 
-/// An 8- or 16-bit comparison as the `int32` comparison of its operands'
-/// widenings, which hold the same values: the graph orders narrow values
-/// through their widenings. One match on the root.
-fn widened_narrow_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
-    let ConditionTerm::Compare {
-        format,
-        relation,
-        left,
-        right,
-    } = condition
-    else {
-        return None;
-    };
-    if format.format().bits() >= 32 {
-        return None;
-    }
-    let widen = |term: &Bitvector32Term| {
-        Bitvector32Term::machine_integer_cast(*format, MachineIntegerType::Int32, term.clone())
-    };
-    Some(ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
-        relation: *relation,
-        left: Box::new(widen(left)),
-        right: Box::new(widen(right)),
-    })
-}
-
 type NodeId = u32;
 
 /// `2^32`, the distance between a negative 32-bit word's signed and
@@ -235,7 +208,9 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
-        if let Some(widened) = widened_narrow_comparison(condition) {
+        if let Some(widened) =
+            crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition)
+        {
             return self.assume_condition(&widened, value);
         }
         if let ConditionTerm::PointerValueEqual(a, b) = condition {
@@ -968,7 +943,9 @@ impl DifferenceGraph {
         if let C::Constant(value) = condition {
             return Some(*value);
         }
-        if let Some(widened) = widened_narrow_comparison(condition) {
+        if let Some(widened) =
+            crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition)
+        {
             return self.decide(&widened);
         }
         if let C::PointerOffsetEqual(a, b) = condition

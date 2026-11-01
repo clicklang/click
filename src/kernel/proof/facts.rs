@@ -2546,6 +2546,18 @@ fn index_bitvector_equality_fact(
             },
             true,
         ) => (left.as_ref(), right.as_ref()),
+        // A native 8- or 16-bit equality is the same fact as the `int32`
+        // equality of its operands' widenings (rule K8), whose atoms are its
+        // operands' atoms; it is filed under them as that equality is.
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) if format.format().bits() < 32 => (left.as_ref(), right.as_ref()),
         // A pointer-offset equality between two scaled offsets (how a
         // pointer-valued field's preservation is recorded) is indexed by the
         // same atoms so the load-variable chain bridge can select it.

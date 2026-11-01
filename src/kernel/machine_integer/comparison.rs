@@ -223,15 +223,95 @@ pub(crate) fn native_comparison_through_integer_operations(
 
 /// The Integer readings of a native comparison fact
 /// ([`integer_observations_of_native_comparison`]), and of a promoted
-/// comparison of widenings ([`integer_comparisons_of_widenings`]).
+/// comparison of widenings ([`integer_comparisons_of_widenings`]). A native
+/// 8- or 16-bit comparison is the same fact as the `int32` comparison of
+/// its operands' widenings (rule K8, [`narrow_comparison_as_int32`]), so it
+/// has that comparison's readings.
 pub(crate) fn integer_readings_with_promotions(proposition: &Proposition) -> Vec<Proposition> {
     if let Proposition::ConditionIs(condition, value) = proposition {
-        let widened = integer_comparisons_of_widenings(condition, *value);
+        let promoted = narrow_comparison_as_int32(condition);
+        let widened =
+            integer_comparisons_of_widenings(promoted.as_ref().unwrap_or(condition), *value);
         if !widened.is_empty() {
             return widened;
         }
     }
     integer_observations_of_native_comparison(proposition)
+}
+
+/// A native 8- or 16-bit comparison as the signed `int32` comparison of its
+/// operands' widenings, which hold the same values (rule K8): `a <=_u8 b`
+/// holds exactly when `widen(a) <= widen(b)` does. Order and interval
+/// reasoning keeps its facts on 32-bit terms; this is its one bridge to a
+/// native narrow fact, filed beside it and consulted for a native goal. The
+/// comparison is built by the folding constructor, so it is the same term a
+/// promoted comparison of the widenings is. `None` for any other condition.
+/// One match on the root and two widenings.
+pub(crate) fn narrow_comparison_as_int32(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::Compare {
+        format,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return None;
+    };
+    if format.format().bits() >= 32 {
+        return None;
+    }
+    let widen = |term: &Bitvector32Term| {
+        super::conversion::convert_term(*format, MachineIntegerType::Int32, term.clone())
+    };
+    Some(ConditionTerm::machine_compare(
+        MachineIntegerType::Int32,
+        *relation,
+        widen(left),
+        widen(right),
+    ))
+}
+
+/// The `int32` spelling a native 8- or 16-bit comparison fact is also filed
+/// under by the 32-bit indexes (order bounds, the `int32` equality graph,
+/// scalar evidence, exact constants, truth nodes), which read that
+/// spelling: [`narrow_comparison_as_int32`], unless it folds to a constant.
+/// Each index files it inside its own adjuster, so assuming, forgetting and
+/// rebuilding a fact agree.
+pub(crate) fn narrow_fact_widening(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    narrow_comparison_as_int32(condition)
+        .filter(|widened| !matches!(widened, ConditionTerm::Constant(_)))
+}
+
+/// The native 8- or 16-bit comparison a promoted `int32` comparison of
+/// widenings from one narrow format is the same fact as (rule K8), spelled
+/// natively: the reverse of [`narrow_comparison_as_int32`], read through
+/// [`ConditionTerm::comparison_fact`]. A Rust comparison of two narrow
+/// values states this native comparison. `None` for any other condition.
+pub(crate) fn native_narrow_comparison(condition: &ConditionTerm) -> Option<ConditionTerm> {
+    let ConditionTerm::Compare {
+        format: MachineIntegerType::Int32,
+        ..
+    } = condition
+    else {
+        return None;
+    };
+    let (format, relation, left, right) = condition.comparison_fact()?;
+    (format.format().bits() < 32).then(|| {
+        ConditionTerm::narrow_compare(
+            format,
+            relation,
+            left.term(format).into_owned(),
+            right.term(format).into_owned(),
+        )
+    })
+}
+
+/// [`narrow_comparison_as_int32`] of a condition fact, with its truth.
+pub(crate) fn narrow_proposition_as_int32(proposition: &Proposition) -> Option<Proposition> {
+    let Proposition::ConditionIs(condition, value) = proposition else {
+        return None;
+    };
+    narrow_comparison_as_int32(condition).map(|widened| Proposition::ConditionIs(widened, *value))
 }
 
 /// C compares an 8- or 16-bit value through its widening to `int32`
