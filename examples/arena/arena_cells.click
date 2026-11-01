@@ -2999,6 +2999,14 @@ int32 arena_pipeline(
     mark m3;
     let { live: kept_live, capacity: kept_capacity } = unfold(s0);
     let { start: kept_start, end: kept_end } = unfold(r2);
+    have ((second->start + 0) as int32) == (kept_start as int32) by {
+        rewrite(second->start == kept_start);
+        normalize();
+    }
+    have second->arena->data[kept_start] == 22 by {
+        rewrite((kept_start as int32) == ((second->start + 0) as int32));
+        assumption();
+    }
     // Keep the value in a framed resource, using the owned range's index.
     let kept = fold(preserved_cell(second->arena->data + kept_start), { value: 22 });
     let s0 = fold(arena_state(arena), { live: kept_live, capacity: kept_capacity });

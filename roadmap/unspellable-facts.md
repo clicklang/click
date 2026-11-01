@@ -63,6 +63,18 @@ nightly run). Targeted fact-stability audits passed 124 arithmetic, 17 division,
 and 24 shift fixtures with zero differences. Arithmetic adds one fixture to
 its zero-difference 123-fixture baseline; the 24-fixture shift baseline and
 the merged division slice's 17-fixture audit were also zero.
+Integration with upstream `e929bd000` exposed two proof dependencies in CI.
+`copy3_array_demo` now states separation from the actual pre-store index,
+using the explicit Integer observation of the machine `i - 1`. `arena_pipeline`
+now rewrites its known load through an explicitly typed machine-index equality
+before folding the retained cell resource. Both focused fixtures pass; these
+repairs change neither C nor contracts. The integrated full gate passed 7,065
+unit/API/import/scaling tests, 58 examples and 4,963 mdtests in 10m49s
+(49 seconds over the ten-minute target; no limits changed and no nightly run).
+The machine-arithmetic producer migration
+is still pending: the shared machine nodes currently serve bridges, while
+ordinary specification arithmetic still constructs legacy machine values.
+
 The ordinary obligations also exposed a retained-proof bug: a post-execution
 `have` can retain prerequisite proofs before its own certificate. Replay now
 keeps that complete sequence rather than requiring a single step.

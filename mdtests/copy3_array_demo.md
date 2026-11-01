@@ -80,9 +80,18 @@ int32 copy3(int32 dst[3], int32 src[3]) {
                             conclusion 5;
                         }
                     }
+                    have to_integer((i - 1)) == to_integer(at(region(3).entry, i)) by { normalize(); }
+                    have to_integer(k) < to_integer(at(region(3).entry, i)) by {
+                        rewrite(to_integer(at(region(3).entry, i)) == to_integer((i - 1)));
+                        assumption();
+                    }
+                    have k != at(region(3).entry, i) by {
+                        solve() using { to_integer(k) < to_integer(at(region(3).entry, i)); };
+                    }
                     instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k]) == old(src[k]) }, k);
                     transport(at(region(3).entry, dst[k]) == old(src[k]), dst[k] == old(src[k])) using {
                         at(region(3).entry, dst[k]) == old(src[k]);
+                        k != at(region(3).entry, i);
                     };
                 } else {
                     have to_integer(k) == to_integer((i - 1)) by {
