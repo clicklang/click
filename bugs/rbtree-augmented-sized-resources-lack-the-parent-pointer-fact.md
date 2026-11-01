@@ -98,7 +98,7 @@ same existing failing statements and goals; none fails earlier. The broader
 report remains open: the complete insertion sidecars and directory audit do
 not yet pass.
 
-## Color-flip initial resource unfolding
+## Color-flip insertion
 
 `rbtree_size_insert_color_flip.click` now gets past its first `unfold(state)`
 at line 106. A held resource's constructor-valued facts retain nominal pointer
@@ -106,6 +106,11 @@ domains, matching the existing handling of typed logical calls. The reduced
 `held_resource_constructor_pointer_domain.md` proof unfolds and refolds the
 same model successfully, and its expansion audit passes.
 
-On `6ce743031` plus this constructor-domain fix, the unchanged color-flip
-sidecar reaches the `Done` fold at line 157, where `root->rb_node == x` is not
-established. The full sidecar and broader report remain unresolved.
+The remaining color-flip proof now explicitly frames the root pointer and all
+six child links across the three color-word stores. It names the C locals'
+node aliases, retains the grandparent's typed null-parent fact across the two
+child recolorings, and states the resulting `parent == 0` before recoloring
+the root. All three selected proofs in `rbtree_size_insert_color_flip.click`
+verify, with the C, contracts, resources, and verifier unchanged by this proof
+repair. The other sidecars and full-directory audit still leave this broader
+report open.
