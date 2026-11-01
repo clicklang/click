@@ -101,12 +101,12 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
                 unreachable!()
             };
             let (address, _) = range.byte_footprint();
-            *right = Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            **right = CResource::Memory(CMemoryRange::new_with_element_width(
                 address.clone(),
                 0u32.into(),
                 1u32.into(),
                 value_type.byte_width(),
-            )));
+            ));
             *result = proposition.clone();
             // A byte read is compared through its `int32` widening, as C
             // promotes it.

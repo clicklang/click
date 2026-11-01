@@ -104,7 +104,7 @@ fn c_branch_condition_at_frontier(
     else {
         return Ok(None);
     };
-    if surface_c_condition(&source, &execution.core.state) != *condition {
+    if surface_c_condition(&source, &execution.core.state)? != *condition {
         return Ok(None);
     }
     Ok(Some(surface_at_snapshot(

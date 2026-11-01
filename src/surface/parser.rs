@@ -14379,15 +14379,14 @@ impl Parser {
 
     fn parse_contract_primary(&mut self) -> Result<ContractExpression, ClickError> {
         let start = self.position;
-        if let Ok(region) = self.parse_code_region_ref() {
-            if self.peek() == Some(&Token::Dot)
-                && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "footprint")
-            {
-                self.position += 2;
-                return Ok(ContractExpression::Resource(Box::new(
-                    ResourceSubject::Footprint(region),
-                )));
-            }
+        if let Ok(region) = self.parse_code_region_ref()
+            && self.peek() == Some(&Token::Dot)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "footprint")
+        {
+            self.position += 2;
+            return Ok(ContractExpression::Resource(Box::new(
+                ResourceSubject::Footprint(region),
+            )));
         }
         self.position = start;
         // A proof may need the previous binding of a name shadowed by an
