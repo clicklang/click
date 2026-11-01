@@ -10955,6 +10955,14 @@ pub(crate) fn canonical_observation_form(proposition: &Proposition) -> Propositi
     observation_comparison_form(proposition, false)
 }
 
+/// [`canonical_observation_form`] with each observation also read through
+/// its value relations (rule W) and literal arithmetic evaluated, as
+/// checking reads a comparison: `to_integer(d as int128) == -1` is `d == -1`.
+/// A lookup form only; nothing is built or printed from it.
+pub(crate) fn read_observation_form(proposition: &Proposition) -> Proposition {
+    observation_comparison_form(proposition, true)
+}
+
 fn observation_comparison_form(proposition: &Proposition, evaluate: bool) -> Proposition {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {

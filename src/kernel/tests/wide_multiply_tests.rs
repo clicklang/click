@@ -265,13 +265,18 @@ fn wide_multiply_checked_product_bounds_certificate_discharges_native_guards() {
     .unwrap();
     assert_eq!(paths.len(), 1);
     assert!(paths[0].obligations.is_empty());
-    assert_eq!(
-        paths[0].outcome,
-        CExpressionOutcome::Value(CValue::Int128(Bitvector32Term::IntegerToMachine {
-            value: product.into(),
-            destination: MachineIntegerType::Int128
-        }))
-    );
+    // The product keeps the operands' widenings to `int128` as written; it
+    // reads (rule W) as the product of the operands' own observations.
+    let CExpressionOutcome::Value(CValue::Int128(Bitvector32Term::IntegerToMachine {
+        value,
+        destination: MachineIntegerType::Int128,
+    })) = &paths[0].outcome
+    else {
+        panic!("{:?}", paths[0].outcome)
+    };
+    let product = crate::kernel::SharedIntegerTerm::from(product);
+    assert_ne!(value, &product);
+    assert_eq!(value.read_through_ref(), &product);
 }
 
 #[test]

@@ -1427,6 +1427,11 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
                 let Some(operand) = operand else {
                     continue;
                 };
+                // A widening's value is its operand's (rule W), which the
+                // Integer engines read with no identity to prove.
+                if operand.value_read() == observed.value_read() {
+                    continue;
+                }
                 operand.clone()
             }
         };
@@ -3615,7 +3620,12 @@ impl<'a> Proof<'a> {
                 }
                 _ => return Ok(Err(failed.clone())),
             };
-            let (min, max) = machine.ty().format().bounds();
+            // The identity is checked at the format of the observation's
+            // value reading (rule W).
+            let (min, max) = match observed.value_read() {
+                IntegerTerm::Machine(read) => read.ty().format().bounds(),
+                _ => machine.ty().format().bounds(),
+            };
             let (lower, upper) = (
                 ClickProposition::Comparison {
                     left: surface_signed_integer_literal(&min),
@@ -3912,7 +3922,7 @@ impl<'a> Proof<'a> {
                     spelling
                 }
             };
-            let (min, max) = machine.ty().format().bounds();
+            let (min, max) = crate::kernel::machine_integer::range::observation_range(machine);
             let bound = if upper {
                 ClickProposition::Comparison {
                     left: spelling,

@@ -47,7 +47,13 @@ pub(crate) fn native_comparison_of_integer_observation(
 ) -> Option<(ConditionTerm, bool)> {
     // Numeric evaluation belongs in the checking comparison form. Surface
     // lowering uses the structural reading below, retaining arithmetic.
+    // An observation is read through its value relations (rule W):
+    // `to_integer(d as int128) != 0` is `d != 0`.
     let operand = |term: &SharedIntegerTerm| -> Option<SharedIntegerTerm> {
+        let read = term.value_read();
+        if !std::ptr::eq(read, term.as_ref()) {
+            return Some(read.clone().into());
+        }
         if !term.is_literal_arithmetic() || term.as_const().is_some() {
             return Some(term.clone());
         }
@@ -169,7 +175,12 @@ pub(crate) fn native_comparison_through_integer_operations(
         | ConditionTerm::IntegerGreaterThan(left, right)
         | ConditionTerm::IntegerGreaterEqual(left, right)
         | ConditionTerm::IntegerEqual(left, right)
-        | ConditionTerm::IntegerNotEqual(left, right) => (&**left, &**right),
+        | ConditionTerm::IntegerNotEqual(left, right) => {
+            // Each side is read through its observations' value relations
+            // (rule W), so `to_integer(x as uint32) + 1` is an operation on
+            // `x`'s own format. Both readings are cached on the sides.
+            (&**left.read_through_ref(), &**right.read_through_ref())
+        }
         _ => return None,
     };
     let operation =
@@ -318,10 +329,10 @@ pub(crate) fn narrow_proposition_as_int32(proposition: &Proposition) -> Option<P
 /// (rule C2): a signed 32-bit comparison whose sides are each such a
 /// widening or a constant, at least one a widening, is the Integer
 /// comparison of the sides' values, which a widening preserves (K8):
-/// `0 <= widen(x)` is `0 <= to_integer(x)`. The widening's own `int32`
-/// observation, `to_integer(x as int32)`, is that same Integer term
-/// (`IntegerTerm::from_machine` reads a widening as its operand), so there
-/// is one reading. One match on the two sides.
+/// `0 <= widen(x)` is `0 <= to_integer(x as int32)`, which the Integer
+/// engines read as `0 <= to_integer(x)` (rule W: a widening's observation is
+/// built as written and read through to its operand's), so there is one
+/// reading. One match on the two sides.
 fn integer_comparisons_of_widenings(condition: &ConditionTerm, value: bool) -> Vec<Proposition> {
     use crate::kernel::CompareRelation as R;
     let ConditionTerm::Compare {

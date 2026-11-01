@@ -376,7 +376,9 @@ fn cast_identity_bounds(goal: &Proposition, premises: &[Proposition]) -> Option<
         .find(|(observed, original)| {
             narrow_widening(observed, original) || cast_operands(observed).contains(original)
         })?;
-    let IntegerTerm::Machine(machine) = observed else {
+    // The identity's destination is the format of the observation's value
+    // reading (rule W), as `integer_cast_identity` checks it.
+    let IntegerTerm::Machine(machine) = observed.value_read() else {
         return None;
     };
     let (min, max) = machine.ty().format().bounds();

@@ -1165,13 +1165,33 @@ fn collect_integer_affine_terms(
             | IntegerTerm::TruncatingRemainder(_, _) => {
                 let atom = match node.as_ref() {
                     IntegerTerm::Variable(variable) => IntegerAffineAtom::Variable(*variable),
-                    IntegerTerm::Machine(source) => IntegerAffineAtom::Machine(source.clone()),
+                    // An observation is the atom of its value reading
+                    // (rule W): `to_integer(widen(v))` and `to_integer(v)`
+                    // are one atom. One cached lookup per observation.
+                    IntegerTerm::Machine(source) => match source.value_reading() {
+                        Some(IntegerTerm::Machine(read)) => {
+                            IntegerAffineAtom::Machine(read.clone())
+                        }
+                        Some(IntegerTerm::Constant(value)) => {
+                            if !charge_integer_product(&weight, value) {
+                                return None;
+                            }
+                            *constant += &weight * value;
+                            continue;
+                        }
+                        _ => IntegerAffineAtom::Machine(source.clone()),
+                    },
                     IntegerTerm::AlgebraicMatch { .. } => return None,
                     // An unresolved conditional is an opaque atom by its
                     // shared identity, as a quotient is.
+                    IntegerTerm::If { .. } => IntegerAffineAtom::Nonlinear(node.id()),
+                    // A quotient or remainder is keyed by its reading through
+                    // its observations' value relations (rule W), so its two
+                    // spellings are one atom.
                     IntegerTerm::TruncatingQuotient(_, _)
-                    | IntegerTerm::TruncatingRemainder(_, _)
-                    | IntegerTerm::If { .. } => IntegerAffineAtom::Nonlinear(node.id()),
+                    | IntegerTerm::TruncatingRemainder(_, _) => {
+                        IntegerAffineAtom::Nonlinear(node.read_through().id())
+                    }
                     IntegerTerm::PureFunctionApplication(application) => {
                         IntegerAffineAtom::Application(application.id())
                     }
@@ -1212,7 +1232,12 @@ fn collect_integer_affine_terms(
                 {
                     (left, value)
                 } else {
-                    add_atom_weight(terms, IntegerAffineAtom::Nonlinear(node.id()), weight)?;
+                    // A symbolic product is keyed by its reading (rule W).
+                    add_atom_weight(
+                        terms,
+                        IntegerAffineAtom::Nonlinear(node.read_through().id()),
+                        weight,
+                    )?;
                     continue;
                 };
                 if !charge_integer_product(&weight, factor) {

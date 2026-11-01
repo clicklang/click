@@ -39,7 +39,7 @@ pub(super) fn check(
     } else {
         return Err(invalid());
     };
-    if stated.as_ref() != &value {
+    if !crate::kernel::machine_integer::identity::same_exact_value(&value, stated) {
         return Err(invalid());
     }
     let lower = premises
