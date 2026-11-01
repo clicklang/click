@@ -2687,8 +2687,8 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                             // whole one, and each path it reaches closes its
                             // back edge like a written one. A rest that does not
                             // run reports the frontier the script reached.
-                            match walk_loop_body(claim_label, proof.clone()) {
-                                Ok((completed, _)) => leaves.extend(completed),
+                            match walk_loop_body(proof.clone()) {
+                                Ok(completed) => leaves.extend(completed),
                                 Err(error) => unfinished.push(UnfinishedPreservationPath {
                                     proof: proof.clone(),
                                     last_tactic,
