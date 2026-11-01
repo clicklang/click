@@ -42,11 +42,7 @@ impl KernelTermImport {
                     .enumerate()
                     .map(|(index, arg)| match arg {
                         PureFunctionArgument::Integer(_) => self.argument(arg),
-                        PureFunctionArgument::Value(value)
-                            if matches!(value, integer_c_value!(_)) =>
-                        {
-                            self.argument(arg)
-                        }
+                        PureFunctionArgument::Value(integer_c_value!(_)) => self.argument(arg),
                         _ => KernelTerm::legacy_at(
                             arg.clone(),
                             LegacyIdentity::ApplicationArgument(application.clone(), index),

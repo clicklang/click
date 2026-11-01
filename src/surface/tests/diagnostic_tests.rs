@@ -32,10 +32,10 @@ fn implicit_tail_retains_unspellable_statement_cases() {
             "{report}"
         );
     };
-    check_report(&verify_c0_sources(source, &sources).unwrap_err().message());
+    check_report(verify_c0_sources(source, &sources).unwrap_err().message());
     with_proof_trace("unsigned_index", || {
         let error = verify_c0_sources(source, &sources).unwrap_err();
-        check_report(&error.message());
+        check_report(error.message());
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("r = values[x]"), "{trace}");
     });
