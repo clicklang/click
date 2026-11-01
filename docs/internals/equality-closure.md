@@ -1825,21 +1825,26 @@ checked graph. The existing direct anchor lookup stays first. Every retrieved
 candidate still needs membership evidence covering both complete byte ranges,
 and an overlapping numeric address relation rejects the frame.
 
-### Resource logical call domains
+### Resource logical call and constructor domains
 
 Opening an active selected resource body retains the nominal pointer domains of
-its logical calls as explicit `object_type[CLASS](pointer)` facts. These facts
+its logical calls and algebraic constructor fields as explicit
+`object_type[CLASS](pointer)` facts. These facts
 use the existing supported pointer-type buckets and their ordinary scope and
 withdrawal rules. They are produced along the selected lowering path, rather
 than recovered from annotations in opaque interned call arguments. An inactive
 body exports none. Folding uses ordinary lowering: it must establish every
-nominal call domain before the proposed resource can be constructed. Merely
+nominal call or constructor field domain before the proposed resource can be
+constructed. Incompatible positive pointer evidence is never replaced. Merely
 naming a struct pointer parameter in an empty resource supplies no evidence.
 
 The executable controls are `model_pointer_resource_call_domains.md`,
 `model_pointer_resource_fold_requires_call_domains.md`,
 `model_pointer_empty_resource_does_not_type_parameter.md`, and
 `model_pointer_resource_inactive_call_domains.md` in `mdtests/`.
+`held_resource_constructor_pointer_domain.md` checks unfolding and refolding
+a constructor-bearing fact; kernel controls check missing, withdrawn, and
+incompatible evidence.
 
 Complete C pointer-to-integer copies retain nominal type receipts in the
 `PointerInteger` representation record. A numeric `PointerAddress` observation
