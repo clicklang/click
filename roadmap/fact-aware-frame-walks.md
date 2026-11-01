@@ -1,96 +1,47 @@
-# One fact-aware frame query instead of scattered history walks
+# Remove implicit memory-history searches from checking
 
 Priority: P1.
 
-Soundness: not soundness. This is performance and design: every walk named
-here is checked, and none is known to accept a false claim. The issue is
-that one question is answered by several different searches, at different
-costs, from many places in simple checking.
+## Remaining targets
 
-## The question and how it is answered today
+First finish the cell-source removal candidate and its remaining
+unit-test repairs listed in [Smart tactics](smart-tactics.md). Do not land it
+with a smart proof that cannot replay.
 
-"Does cell `c` hold the same value at points `P` and `Q` on this path?" has
-two answers in the kernel. The version walk (`resource_tracker::last_same_point`)
-answers it without facts: it walks back from a snapshot, crosses every step
-that provably does not write `c`'s bytes, and is memoized per (snapshot,
-address, width). Lowering uses only this walk, and it is cheap.
+The subsequent pointer-specific traversal in `pointer_read_value_recursive` and its frame
+fallback still searches recorded memory history during ordinary checking.
+`repeated_pointer_frame_queries_have_near_linear_total_work` in the combined
+experiment (`codex/memory-walk-removal-current`) demonstrates quadratic total
+work from repeated pointer-frame queries. Keep that regression with the pointer
+removal; restricting the general cell-source lookup alone does not make it pass.
 
-When the answer needs the path's facts (a `separate` premise, ownership, an
-alias equality), the fact-aware walk (`memory_dag_cell_source` with the
-path's assumptions) answers it. Its result depends on facts, so it is not
-memoized by snapshot. It resumes the memoized version walk at every step and
-applies facts only where that walk stopped, recording the crossed prefix as
-one `SameVersion` hop (the scaling regression
-`a_fact_aware_cell_walk_resumes_the_memoized_version_walk` measured it
-quadratic in history length before). C program reads
-(`resource_tracker::cell_value_on_path`) go through it. It is still reached
-through several entry points with three other walk modes:
+The general `memory_dag_cell_source` entry now inspects one transition. Its
+bounded variants may reuse already memoized version summaries but must not
+start a cold version walk. An inconclusive query is not preservation evidence.
+Do not reintroduce source discovery to recover automatic proof coverage.
 
-- full walk with extended bridging and an explicit DAG check, exempt from
-  the resume (`cell_source::resumes_version_walk`):
-  `memory_provenance::complete_pointer_read_value` and
-  `complete_pointer_carrier_read_value`. This is the logical-read fold that
-  naming pointer reads by version deletes
-  ([unspellable-facts.md](unspellable-facts.md));
-- bounded to 64 steps: `memory_provenance::bounded_recorded_cell_resolution`.
-  Under a hop limit, the walk jumps only over a prefix the version walk has
-  already memoized;
-- checked-endpoint packaging: `checked_pointer_read_endpoint`,
-  `checked_pointer_read_stored_value`, and the derivation searches
-  `explicit_atomic_equality_from_memory_derivations`,
-  `resolve_load_along_memory_derivations` and
-  `checked_call_load_equality_evidence`.
+## Design and build cycle
 
-Their callers are spread through simple checking:
+For each remaining checking caller:
 
-- C execution: `evaluate_c_memory_load_case` (through
-  `cell_value_recorded_on_path`), `canonicalized_pointer_value_from_int_cell`,
-  `canonicalized_symbolic_load_value_with_identity`, and
-  `add_normalized_verified_ensure_facts` after a call;
-- exact fact lookup: `ProofFacts::with_checked_rewritten_loads`
-  (`checked_stored_origin_equality`);
-- the equality-graph rebuild: `rebuild_algebraic_graph_equalities` through
-  `PureFactContext::pointer_designations_match`;
-- resource matching: `memory_fact_candidates`, `graph_for_memory_query`,
-  `loads_bridged`, `bitvectors_match_for_resource_check`, and
-  `resource_body_fact_is_established`;
-- frames: `quantified_frame::loads_unchanged`;
-- contract certification: `names_of_one_cell_framed` and
-  `pointer_offsets_equal_with_resolved_atoms`;
-- wide reads: `wide_read_observations_have_value`,
-  `narrow_read_has_recorded_value`, and `read_is_of_a_recorded_store`.
+1. Isolate its history traversal with a deterministic scaling regression,
+   including cold queries and misses.
+2. State the needed preservation argument with explicit separation, a recorded
+   statement `.footprint`, and `transport_certificate` links. Use the producer's
+   typed reads and exact entry/exit snapshots. Do not reconstruct read identities
+   or search for intermediate states while applying a link.
+3. Remove the traversal and repair affected proofs without changing the C or
+   weakening contracts. Discuss a missing primitive before extending the kernel.
+4. Verify ordinary proofs and affected expansion/replay checks with the search
+   disabled. Retain width, provenance, aliasing, partial-overwrite and freed-cell
+   rejection controls.
 
-So whether two reads are related, and what it costs to find out, depends on
-which check asks. The [verification efficiency
-contract](../docs/internals/verification-efficiency.md) requires simple
-checking to scale with the relevant state delta; with four walk modes that
-is hard to state, let alone test.
+Search that discovers these explicit links belongs in budgeted, expandable
+planning. Applying a certificate must cost approximately its explicit size,
+independent of unrelated history. A memo cache does not justify an unbounded
+cold search in simple checking.
 
-## Relation to pointer reads named by version
-
-[Spellability](../docs/internals/spellability.md) requires a logical pointer
-read to lower to the read at its version, never to the pointer a cell
-stores. [unspellable-facts.md](unspellable-facts.md) tracks that work.
-Removing the fold exposes the frames it supplied silently: the `pop` of a
-recursive stack needs `self.head` related across a `free` the fact-free
-version walk cannot cross.
-
-Adding fact-aware walks inside individual checks to keep the old proof text
-working is the scattering this item removes, and must not be done. The user
-has allowed recording a step's own frame decision as a fact or equality-graph
-link, as long as finding it is cheap: stepping through n statements must stay
-near linear. That item records where this stands, including the open
-question about the two rules for a `free`.
-
-## Intended regression and acceptance criteria
-
-- One function answers the frame question for a cell between two points on
-  a path, in the resume-the-version-walk form: the memoized version walk
-  crosses what it can without facts, and facts are applied only at the steps
-  where it stopped.
-- Every call site above routes through it, one group at a time, and the
-  other entry points and walk modes are deleted as their callers move.
-- A deterministic scaling regression in `src/scaling_tests/` measures the
-  function across history lengths and unrelated state sizes, and shows work
-  bounded by the steps where the version walk stops, not by history length.
-- No check calls a fact-aware walk except through the one function.
+Coordinate this work with [Smart tactics](smart-tactics.md) and
+[Spellability](../docs/internals/spellability.md). Keep the compact-run store
+experiment separate. Do not replace these removals with a consolidated implicit
+history search.

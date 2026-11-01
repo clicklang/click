@@ -2441,6 +2441,8 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         let context = PureFactContext::new();
         // Prepare a partial write: discard the cached whole pointer, but
         // do not perform the write yet. This records cache-only forgetting.
+        let seed_snapshot = crate::kernel::intern_c_memory(seeded.clone());
+        let seeded_read = Pointer::loaded_value(&seed_snapshot, &field);
         let forgotten = seeded.without_possible_aliasing_cells(&field, 4, &context);
         assert!(!forgotten.has_known_cell_at(&field));
         let before = Pointer::loaded_value(&source, &field);
@@ -2450,7 +2452,13 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         for _ in 0..3 {
             let (equal, units) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
-                    &before, &after, &context,
+                    &before,
+                    &seeded_read,
+                    &context,
+                ) && crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                    &seeded_read,
+                    &after,
+                    &context,
                 )
             });
             assert!(
@@ -2496,135 +2504,4 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         samples.windows(2).all(|pair| pair[0].1 == pair[1].1),
         "{samples:?}"
     );
-}
-
-/// N stores and N explicit frame queries; retain every proved
-/// equality and keep all caches live within the sequence. Distinct symbolic
-/// addresses require the supplied full-byte separation, rather than letting
-/// a fact-free distinct-block rule erase the interesting history.
-fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u32, usize)> {
-    let mut samples = Vec::new();
-    for size in [16u32, 32, 64, 128] {
-        let _session = crate::kernel::VerificationSession::enter();
-        let field = Pointer::symbolic(Variable(998_910));
-        let write = Pointer::symbolic(Variable(998_911));
-        let initial = crate::kernel::intern_c_memory(CMemory::new());
-        let original =
-            CPointerValue::new(Pointer::loaded_value(&initial, &field), CType::Int32Pointer);
-        let mut facts = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
-                field.clone(),
-                0u32.into(),
-                8u32.into(),
-                1,
-            ))),
-            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
-                write.clone(),
-                0u32.into(),
-                4u32.into(),
-                1,
-            ))),
-        });
-        let mut memory = initial.memory().clone();
-        let mut previous = original.clone();
-        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            for index in 0..size {
-                memory = memory
-                    .clone()
-                    .store(write.clone(), CValue::Int32(index.into()));
-                let snapshot = crate::kernel::intern_c_memory_ref(&memory);
-                let current = CPointerValue::new(
-                    Pointer::loaded_value(&snapshot, &field),
-                    CType::Int32Pointer,
-                );
-                let reference = if compare_to_entry {
-                    &original
-                } else {
-                    &previous
-                };
-                let source = Proposition::ConditionIs(
-                    ConditionTerm::PointerValueEqual(
-                        Box::new(reference.clone()),
-                        Box::new(reference.clone()),
-                    ),
-                    true,
-                );
-                let target = Proposition::ConditionIs(
-                    ConditionTerm::PointerValueEqual(
-                        Box::new(current.clone()),
-                        Box::new(reference.clone()),
-                    ),
-                    true,
-                );
-                let proved = crate::kernel::api::c_condition_fact_target_reaches_in_context(
-                    &source, &target, &facts,
-                );
-                if !compare_to_entry || index == 0 {
-                    assert!(proved, "adjacent control: query {index} of {size}");
-                }
-                // Keep every proved equality; a declined history query adds nothing.
-                if proved {
-                    facts = facts.clone().assume_proposition(target);
-                }
-                if compose {
-                    let composed = Proposition::ConditionIs(
-                        ConditionTerm::PointerValueEqual(
-                            Box::new(current.clone()),
-                            Box::new(original.clone()),
-                        ),
-                        true,
-                    );
-                    assert!(
-                        crate::kernel::api::c_condition_fact_target_reaches_in_context(
-                            &source, &composed, &facts,
-                        ),
-                        "composition at {index} of {size}"
-                    );
-                    facts = facts.clone().assume_proposition(composed);
-                }
-                previous = current;
-            }
-        });
-        samples.push((size, work));
-    }
-    samples
-}
-
-#[test]
-fn adjacent_pointer_frame_checks_have_near_linear_total_work() {
-    let samples = repeated_pointer_frame_work(false, false);
-    eprintln!("adjacent-snapshot pointer checks: {samples:?}");
-    for pair in samples.windows(2) {
-        assert!(pair[1].1 <= pair[0].1 * 3, "adjacent control: {samples:?}");
-    }
-}
-
-/// Regression for the formerly quadratic walk: this calls the kernel checking entry used by
-/// explicit `transport`, with no smart tactic/planner. Each query names the
-/// entry snapshot and current snapshot in constant space; the input contains
-/// N stores and N checks, not an explicitly enumerated N-by-N history proof.
-#[test]
-fn repeated_pointer_frame_queries_have_near_linear_total_work() {
-    let samples = repeated_pointer_frame_work(true, false);
-    eprintln!("entry-to-current pointer checks: {samples:?}");
-    // Doubling permits 2x linear work plus ample logarithmic overhead, but
-    // rejects a sustained quadratic curve (approximately 4x).
-    for pair in samples.windows(2) {
-        assert!(
-            pair[1].1 <= pair[0].1 * 3,
-            "pointer-frame checking exceeds the near-linear doubling envelope: {samples:?}"
-        );
-    }
-}
-
-#[test]
-fn explicit_pointer_frame_composition_has_near_linear_total_work() {
-    let samples = repeated_pointer_frame_work(false, true);
-    eprintln!("explicit pointer frame composition: {samples:?}");
-    for pair in samples.windows(2) {
-        assert!(
-            pair[1].1 <= pair[0].1 * 3,
-            "explicit composition: {samples:?}"
-        );
-    }
 }

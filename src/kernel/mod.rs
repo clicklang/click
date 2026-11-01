@@ -32,7 +32,9 @@ mod difference_graph;
 pub(crate) mod effective_type;
 mod equality_graph;
 mod eval;
-pub(crate) use eval::typed_reads::ReadScope as TransportReadScope;
+pub(crate) use eval::typed_reads::{
+    FieldScope as TransportFieldScope, ReadScope as TransportReadScope,
+};
 pub(crate) mod fact_collections;
 pub(crate) mod fact_stability;
 mod fold_read_summary;
@@ -483,3 +485,5 @@ mod execution_facts;
 #[cfg(test)]
 pub(crate) use execution_facts::indexed_execution_facts;
 pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIter};
+
+pub(crate) use eval::typed_reads::record_field as record_transport_field;

@@ -29,6 +29,7 @@ fn elements_law_does_not_walk_the_index_distance() {
                 crate::kernel::prove_separation_elements(
                     CPointerValue::new(Pointer::symbolic(Variable(8_390_001)), CType::Int64Pointer),
                     width,
+                    MachineIntegerType::UInt64,
                     Bitvector32Term::Int64Constant(0),
                     Bitvector32Term::Int64Constant(distance),
                 )

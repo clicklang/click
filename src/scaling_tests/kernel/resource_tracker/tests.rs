@@ -118,11 +118,9 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
 }
 
 #[test]
-fn a_fact_aware_cell_walk_resumes_the_memoized_version_walk() {
-    // Stepping asks about a cell again after each statement. A fact-aware
-    // walk that resumes the memoized version walk pays for each statement's
-    // own step, so asking after every one of `size` unrelated stores costs
-    // work linear in `size`, not one full walk per statement.
+fn adjacent_cell_preservation_costs_only_the_selected_edge() {
+    // An explicit chain names the previous snapshot at every store. Each
+    // query establishes exactly that adjacent equality, never its prefix.
     let mut samples = Vec::new();
     for size in [16i64, 64, 256] {
         let cell = at(block("global:g"), 0);
@@ -130,6 +128,7 @@ fn a_fact_aware_cell_walk_resumes_the_memoized_version_walk() {
         let assumptions = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 0..size {
+                let previous = intern_c_memory(memory.clone());
                 memory = memory
                     .clone()
                     .store(at(block("global:unrelated"), index * 4), one());
@@ -141,7 +140,15 @@ fn a_fact_aware_cell_walk_resumes_the_memoized_version_walk() {
                     false,
                 )
                 .expect("no lookup of this cell is in progress");
-                assert!(matches!(source, cell_source::MemoryDagCell::Stored { .. }));
+                let cell_source::MemoryDagCell::Unwritten { node, path } = source else {
+                    panic!("one selected edge cannot recover the older stored value");
+                };
+                assert_eq!(node, previous);
+                assert_eq!(path.len(), 1);
+                assert_eq!(
+                    path[0].justification,
+                    cell_source::MemoryDagHopJustification::StoreDistinctBlocks
+                );
             }
         });
         samples.push((size, work));
@@ -333,5 +340,79 @@ fn loop_kept_pointer_frame_ignores_unrelated_owners_and_ambiguous_buckets() {
     assert!(
         samples.windows(2).all(|pair| pair[0] == pair[1]),
         "{samples:?}"
+    );
+}
+
+#[test]
+fn cold_cell_source_lookup_does_not_search_older_stores() {
+    let mut costs = Vec::new();
+    for size in [4i64, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = at(block("global:kept"), 0);
+        let mut memory = entry_memory().store(cell.clone(), one());
+        for index in 0..size {
+            memory = memory.store(at(block("global:other"), index * 4), one());
+        }
+        let memory = intern_c_memory(memory);
+        let facts = PureFactContext::new();
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            cell_source::memory_dag_cell_source(&memory, &cell, 4, &facts, false).unwrap()
+        });
+        assert!(
+            matches!(answer, cell_source::MemoryDagCell::Unwritten { ref path, .. } if path.len() == 1)
+        );
+        costs.push(work);
+        // N fresh cell queries after N stores must be linear in N, including
+        // cells whose value was never stored. Each query is cold for its address.
+        let (_, total) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 1..=size {
+                let answer = cell_source::memory_dag_cell_source(
+                    &memory,
+                    &at(block("global:kept"), index * 4),
+                    4,
+                    &facts,
+                    false,
+                )
+                .unwrap();
+                assert!(
+                    matches!(answer, cell_source::MemoryDagCell::Unwritten { ref path, .. }
+                    if path.len() == 1)
+                );
+            }
+        });
+        assert_eq!(total, size as usize * work);
+        // The same history can be followed when the caller explicitly names
+        // a hop budget. This control exposes the work the default query avoids.
+        let (answer, walked) = crate::instrumentation::measure_deterministic_work(|| {
+            cell_source::memory_dag_cell_source_with_hop_limit(
+                &memory,
+                &cell,
+                4,
+                &facts,
+                size as usize + 1,
+            )
+            .unwrap()
+        });
+        assert!(
+            matches!(answer, cell_source::MemoryDagCell::Stored { value, .. } if value == one())
+        );
+        assert!(walked >= size as usize, "size={size}: {walked}");
+        let latest = intern_c_memory(
+            memory
+                .memory()
+                .clone()
+                .store(cell.clone(), CValue::Int32(2u32.into())),
+        );
+        assert!(
+            matches!(cell_source::memory_dag_cell_source(&latest, &cell, 4, &facts, false), Some(cell_source::MemoryDagCell::Stored { value, .. }) if value == CValue::Int32(2u32.into()))
+        );
+        assert!(!matches!(
+            cell_source::memory_dag_cell_source(&latest, &cell, 8, &facts, false),
+            Some(cell_source::MemoryDagCell::Stored { .. })
+        ));
+    }
+    assert!(
+        costs[0] > 0 && costs.iter().all(|cost| *cost == costs[0]),
+        "{costs:?}"
     );
 }

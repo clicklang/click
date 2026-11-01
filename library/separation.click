@@ -7,7 +7,7 @@ theorem restrict(A: Resource, B: Resource, a: Resource, b: Resource) {
 }
 
 // Unequal indices describe disjoint complete elements, including padding.
-theorem elements<T>(p: T*, i: uint64, j: uint64) {
+theorem elements<T, I>(p: T*, i: I, j: I) {
     requires i != j;
     ensures separate(memory(p[i]), memory(p[j]));
 }

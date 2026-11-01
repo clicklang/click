@@ -215,3 +215,154 @@ fn region_footprint_free_and_call_certificates_expand_without_search() {
         }
     }
 }
+
+#[test]
+#[ignore = "nightly: expands and replays complete memory proofs"]
+fn cell_source_removal_repairs_expand_and_replay_without_implicit_search() {
+    for (fixture, claim) in [
+        (
+            "mdtests/execute_in_a_proof_if_arm_splits_alias_cases_inside_a_c_if.md",
+            "f",
+        ),
+        (
+            "mdtests/failed_allocation_preserves_existing_loads.md",
+            "failed_allocation_preserves_existing_loads",
+        ),
+        (
+            "mdtests/loop_node_link_frames_across_parent_link_store.md",
+            "rotate",
+        ),
+        ("mdtests/bubble_pass3_max_suffix.md", "bubble_pass3"),
+    ] {
+        let (source, sources) = mdtest_sources(fixture);
+        let sources = sources
+            .iter()
+            .map(|(name, source)| (name.as_str(), source.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c0_claim_source(&source, &sources, claim, CProofClaim::Grouped)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        assert!(expanded.contains("transport_certificate"), "{fixture}");
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap_or_else(|error| {
+            panic!(
+                "{fixture}: {}\nExpanded source:\n{expanded}",
+                error.report()
+            )
+        });
+    }
+}
+
+fn check_resource_field_certificate(ty: &str) {
+    let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
+    let source = source
+        .replace(
+            "abstract resource model()",
+            "spec enum ModelValue { Empty, Value(int32) }\nabstract resource model()",
+        )
+        .replace("field value: int32;", &format!("field value: {ty};"));
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    without_implicit_auto(|| verify_c0_sources(&source, &sources))
+        .unwrap_or_else(|e| panic!("{ty}: {}", e.report()));
+    let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn transport_certificate_preserves_named_resource_field() {
+    check_resource_field_certificate("int32");
+}
+#[test]
+fn transport_certificate_preserves_integer_resource_field() {
+    check_resource_field_certificate("Integer");
+}
+#[test]
+fn transport_certificate_preserves_wide_resource_field() {
+    check_resource_field_certificate("uint64");
+}
+#[test]
+fn transport_certificate_preserves_pointer_resource_field() {
+    check_resource_field_certificate("int32*");
+}
+#[test]
+fn transport_certificate_preserves_algebraic_resource_field() {
+    check_resource_field_certificate("ModelValue");
+}
+
+#[test]
+fn transport_certificate_resource_descriptors_follow_call_bindings() {
+    let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
+    let caller = format!(
+        "{source}\n{}",
+        r#"
+        void call_keep(int *p) {
+            owns *p;
+            owns other: model();
+            requires separate(memory(*p), other);
+        } by { step(); step(); }
+    "#
+    );
+    let c = format!("{}\nvoid call_keep(int *p) {{ keep(p); }}", sources[0].1);
+    without_implicit_auto(|| verify_c0_sources(&caller, &[("resource_frame.c", &c)]))
+        .unwrap_or_else(|e| panic!("{}", e.report()));
+}
+
+#[test]
+fn transport_certificate_refuses_other_or_modified_resource() {
+    let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let wrong_instance = source
+        .replace("owns m: model();", "owns m: model(); owns n: model();")
+        .replace("m.value", "n.value");
+    let error = without_implicit_auto(|| verify_c0_sources(&wrong_instance, &sources)).unwrap_err();
+    assert!(
+        error.report().contains("selected field"),
+        "{}",
+        error.report()
+    );
+    let changed_source = source.replace(
+        "void keep(int *p) {",
+        "extern void update(int *p) { owns m: model(); }\nvoid keep(int *p) {",
+    );
+    let changed_c = "void update(int *p); void keep(int *p) { update(p); }";
+    let error = without_implicit_auto(|| {
+        verify_c0_sources(&changed_source, &[("resource_frame.c", changed_c)])
+    })
+    .unwrap_err();
+    assert!(error.report().contains("normalize"), "{}", error.report());
+}
+
+#[test]
+fn transport_certificate_named_resource_is_a_theorem_argument() {
+    let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
+    let source = format!(
+        "{}\n{source}",
+        r#"
+        theorem keep_separation(A: Resource, B: Resource) {
+            requires separate(A, B);
+            ensures separate(A, B) by { assumption(); }
+        }
+    "#
+    )
+    .replacen(
+        "    step();",
+        r#"
+        have separate(memory(*p), m) by {
+            apply(keep_separation(memory(*p), m)) using { separate(memory(*p), m); };
+        }
+        step();"#,
+        1,
+    );
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    without_implicit_auto(|| verify_c0_sources(&source, &sources))
+        .unwrap_or_else(|e| panic!("{}", e.report()));
+    let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}

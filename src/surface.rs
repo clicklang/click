@@ -1947,6 +1947,10 @@ pub struct ResourceFieldAccess {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceSubject {
+    Instance {
+        name: String,
+        identity: crate::kernel::Variable,
+    },
     Footprint(CodeRegionRef),
     Parameter {
         name: String,
@@ -2627,7 +2631,7 @@ fn collect_current_resource_subject_variables(
 ) {
     match subject {
         ResourceSubject::Footprint(_) => {}
-        ResourceSubject::Parameter { name, .. } => {
+        ResourceSubject::Parameter { name, .. } | ResourceSubject::Instance { name, .. } => {
             names.insert(name.clone());
         }
         ResourceSubject::Captured { .. } => {}

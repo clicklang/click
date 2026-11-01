@@ -4495,6 +4495,10 @@ pub enum SequenceTermNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecResource {
+    Instance {
+        identity: Variable,
+        at_entry: bool,
+    },
     Value(CResource),
     Memory {
         base: SpecExpression,

@@ -1,10 +1,9 @@
 # The implicit tail in a proof `if` arm splits alias cases inside a C `if`
 
-The alias split of
-`mdtests/execute_in_a_proof_if_arm_splits_a_loads_alias_cases.md`, reached
-inside the arm of a C `if`: the tail that ends the `buf == 0` false arm
-splits on each alias case, and each case escapes the C arm and runs to the
-function exit on its own.
+The buffer write either overwrites cell zero or preserves it. The proof splits
+that alias case explicitly and uses element separation plus a transport
+certificate in the preserving arm. Both paths then execute the nested C `if`
+and return, without recovering cell zero's value from older stores.
 
 ```c filename=execute_in_a_proof_if_arm_splits_alias_cases_inside_a_c_if.c
 int32 f(int32 u, int32 w) {
@@ -26,6 +25,7 @@ int32 f(int32 u, int32 w) {
 ```
 
 ```click
+import click::separation;
 verifying "execute_in_a_proof_if_arm_splits_alias_cases_inside_a_c_if.c";
 
 int32 f(int32 u, int32 w) {
@@ -38,6 +38,46 @@ int32 f(int32 u, int32 w) {
     step();
     if buf == 0 {
     } else {
+        step_until(statement(5));
+        have buf[0] == 3 by normalize();
+        mark before_store;
+        step();
+        if u == 0 {
+            if w > 0 { step_until(function.exit); } else { step_until(function.exit); }
+        } else {
+            have 1 <= u by { solve() using { u != 0; 0 <= u; }; }
+            have separate(memory(buf[1]), memory(buf[0])) by { apply(separation::elements(buf, 1 as uint64, 0 as uint64)) using {}; }
+            have separate(memory(buf[2]), memory(buf[0])) by { apply(separation::elements(buf, 2 as uint64, 0 as uint64)) using {}; }
+            have separate(memory(buf[3]), memory(buf[0])) by { apply(separation::elements(buf, 3 as uint64, 0 as uint64)) using {}; }
+            have separate(memory(buf[u]), memory(buf[0])) by {
+                if u == 1 {
+                    rewrite(u == 1); assumption();
+                } else {
+                    if u == 2 {
+                        rewrite(u == 2); assumption();
+                    } else {
+                        have u == 3 by { solve() using { 1 <= u; u < 4; u != 1; u != 2; }; }
+                        rewrite(u == 3); assumption();
+                    }
+                }
+            }
+            have separate(statement(5).footprint, memory(buf[0])) by {
+                normalize() using { separate(memory(buf[u]), memory(buf[0])); };
+            }
+            have buf[0] == at(before_store, buf[0]) by {
+                transport_certificate {
+                    premise 0: separate(statement(5).footprint, memory(buf[0]))
+                        => separate(statement(5).footprint, memory(buf[0]));
+                    preserve 0 => buf[0] == at(before_store, buf[0]);
+                    conclusion 1;
+                }
+            }
+            have buf[0] == 3 by {
+                rewrite(buf[0] == at(before_store, buf[0]));
+                normalize();
+            }
+            if w > 0 { step_until(function.exit); } else { step_until(function.exit); }
+        }
     }
 }
 ```

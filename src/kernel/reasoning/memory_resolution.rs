@@ -3179,8 +3179,22 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
         "a fresh allocation cannot affect a load through another concrete block"
     );
     assert!(
-        loads_proven_equal(&concrete_memory, &with_unrelated_heap, &concrete),
-        "the matcher still ignores heap metadata this pointer cannot observe"
+        !loads_proven_equal(&concrete_memory, &with_unrelated_heap, &concrete),
+        "unrelated snapshots need explicit preservation evidence"
+    );
+    let (_, _, equality) = crate::kernel::tests::explicit_frame(
+        &concrete_memory,
+        &with_unrelated_heap,
+        &concrete,
+        CType::Int32,
+        &[],
+        &PureFactContext::new(),
+    )
+    .expect("the allocation footprint is separate from this concrete block");
+    assert!(
+        PureFactContext::new()
+            .assume_proposition(equality.clone())
+            .contains_known(&equality)
     );
 
     let pending_base = Pointer {

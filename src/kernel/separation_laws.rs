@@ -7,15 +7,22 @@ use super::prelude::*;
 pub(crate) fn prove_separation_elements(
     base: CPointerValue,
     width: u32,
+    format: MachineIntegerType,
     i: Bitvector32Term,
     j: Bitvector32Term,
 ) -> Theorem {
     assert!(width > 0, "elements require a nonzero storage width");
+    let (unsigned, wide) = match format {
+        MachineIntegerType::Int32 => (false, false),
+        MachineIntegerType::Int64 => (false, true),
+        MachineIntegerType::UInt64 => (true, true),
+        _ => panic!("elements indices require int32, int64, or uint64"),
+    };
     crate::instrumentation::record_deterministic_work(1);
     let element = |index: Bitvector32Term| {
         let address = base
             .pointer()
-            .offset_by_typed_elements(index, width, true, true);
+            .offset_by_typed_elements(index, width, unsigned, wide);
         CResource::Memory(CMemoryRange::from_pointer_value(
             &base.clone().with_address(address),
             0u32.into(),
@@ -25,7 +32,11 @@ pub(crate) fn prove_separation_elements(
     };
     Theorem::new(Proposition::Implies(
         Box::new(Proposition::ConditionIs(
-            ConditionTerm::int64_equal(i.clone(), j.clone()),
+            if wide {
+                ConditionTerm::int64_equal(i.clone(), j.clone())
+            } else {
+                ConditionTerm::equal(i.clone(), j.clone())
+            },
             false,
         )),
         Box::new(Proposition::CResourceSeparate {

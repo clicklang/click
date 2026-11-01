@@ -2025,7 +2025,13 @@ fn evaluate_spec_integer_expression_paths_in(
             };
             let Some(AlgebraicValue::Integer(value)) = snapshot
                 .resource_instance_at_path(projection.identity, &projection.children)
-                .and_then(|instance| instance.fields().get(projection.field_index))
+                .and_then(|instance| {
+                    crate::kernel::eval::typed_reads::record_field(
+                        instance,
+                        projection.field_index,
+                    );
+                    instance.fields().get(projection.field_index)
+                })
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
             };
@@ -3579,7 +3585,13 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
             };
             let Some(AlgebraicValue::Algebraic(value)) = snapshot
                 .resource_instance_at_path(projection.identity, &projection.children)
-                .and_then(|instance| instance.fields().get(projection.field_index))
+                .and_then(|instance| {
+                    crate::kernel::eval::typed_reads::record_field(
+                        instance,
+                        projection.field_index,
+                    );
+                    instance.fields().get(projection.field_index)
+                })
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
             };
@@ -4610,6 +4622,18 @@ fn evaluate_spec_resource_at_state_in(
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<EvaluatedSpecResource>> {
     let (expressions, build): (Vec<SpecExpression>, SpecResourceBuilder) = match resource {
+        SpecResource::Instance { identity, at_entry } => {
+            let state = if *at_entry {
+                scope.loop_entry_state.ok_or(ExecutionLimit::Paths)?
+            } else {
+                scope.state
+            };
+            let instance = state
+                .resource_instance_at_path(*identity, &[])
+                .ok_or(ExecutionLimit::ResourceFieldInstanceUnavailable)?;
+            let value = CResource::Instance(instance.clone());
+            (vec![], Box::new(move |_| Some(value.clone())))
+        }
         SpecResource::Value(value) => {
             let value = value.clone();
             (vec![], Box::new(move |_| Some(value.clone())))
@@ -6101,7 +6125,13 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             };
             let Some(AlgebraicValue::C(value)) = snapshot
                 .resource_instance_at_path(projection.identity, &projection.children)
-                .and_then(|instance| instance.fields().get(projection.field_index))
+                .and_then(|instance| {
+                    crate::kernel::eval::typed_reads::record_field(
+                        instance,
+                        projection.field_index,
+                    );
+                    instance.fields().get(projection.field_index)
+                })
             else {
                 return Err(ExecutionLimit::ResourceFieldInstanceUnavailable);
             };

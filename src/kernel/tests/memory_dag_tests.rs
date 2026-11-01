@@ -1787,7 +1787,7 @@ fn conditions_equal_modulo_proven_snapshots_needs_frame_evidence() {
 
     // With an effect summary whose mutable range misses the loaded pointer,
     // the two snapshots provably agree there and the forms match.
-    let framed = PureFactContext::new().assume_proposition(Proposition::CMemoryEffectSummary {
+    let effect = Proposition::CMemoryEffectSummary {
         before: before.clone(),
         after: after.clone(),
         mutable_ranges: vec![CMemoryRange::new(
@@ -1795,10 +1795,27 @@ fn conditions_equal_modulo_proven_snapshots_needs_frame_evidence() {
             Bitvector32Term::Constant(0),
             Bitvector32Term::Constant(1),
         )],
-    });
+    };
+    let (_, _, equality) = explicit_frame(
+        &before,
+        &after,
+        &loaded,
+        CType::Int32,
+        &[effect],
+        &PureFactContext::new(),
+    )
+    .expect("the selected call footprint is separate");
+    let source = Proposition::ConditionIs(condition(&before), true);
+    let premises = vec![source, equality];
+    let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
     assert!(
-        framed.conditions_equal_modulo_proven_snapshots(&condition(&before), &condition(&after)),
-        "a framed load should match across the effect"
+        crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            &Proposition::ConditionIs(condition(&after), true),
+            &premises,
+            &facts,
+        )
+        .is_ok(),
+        "the explicit read equality transports the compound condition"
     );
 
     // Framing never relaxes the structure: a different condition stays
@@ -1814,7 +1831,14 @@ fn conditions_equal_modulo_proven_snapshots_needs_frame_evidence() {
             Bitvector32Term::Constant(1),
         ),
     );
-    assert!(!framed.conditions_equal_modulo_proven_snapshots(&condition(&before), &other));
+    assert!(
+        crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            &Proposition::ConditionIs(other, true),
+            &premises,
+            &facts,
+        )
+        .is_err()
+    );
 }
 
 /// A soundness property: load canonicalization may follow materialization
@@ -4544,25 +4568,41 @@ fn an_abstract_value_fact_carries_across_snapshots_only_with_frame_evidence() {
         "an unframed call havoc must not carry the value"
     );
 
-    let framed = stated(PureFactContext::new().assume_proposition(
-        Proposition::CMemoryEffectSummary {
-            before: before.clone(),
-            after: after.clone(),
-            mutable_ranges: vec![CMemoryRange::new(
-                Pointer {
-                    block: "other-memory".into(),
-                    offset: PointerOffsetTerm::Constant(0),
-                },
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
-            )],
-        },
-    ));
-    assert!(
-        framed.proves_algebraic_condition_modulo_snapshots(&read(&after), true),
-        "a framed field should carry its value across the effect"
-    );
-    assert!(!framed.proves_algebraic_condition_modulo_snapshots(&read(&after), false));
+    let effect = Proposition::CMemoryEffectSummary {
+        before: before.clone(),
+        after: after.clone(),
+        mutable_ranges: vec![CMemoryRange::new(
+            Pointer {
+                block: "other-memory".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            0u32.into(),
+            1u32.into(),
+        )],
+    };
+    let (_, _, equality) = super::explicit_frame(
+        &before,
+        &after,
+        &field,
+        CType::Parameter(parameter),
+        &[effect],
+        &PureFactContext::new(),
+    )
+    .expect("the explicit footprint preserves the abstract typed read");
+    let premises = vec![Proposition::ConditionIs(read(&before), true), equality];
+    let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
+    for expected in [true, false] {
+        let result = crate::kernel::proof::fact_reasoning::normalize_using_conditions(
+            &Proposition::ConditionIs(read(&after), expected),
+            &premises,
+            &facts,
+        );
+        assert_eq!(
+            result.is_ok(),
+            expected,
+            "explicit abstract equality must transport only the stated value"
+        );
+    }
 }
 
 #[test]

@@ -928,7 +928,7 @@ fn collect_resource_subject_binding_names(
 ) {
     match resource {
         ResourceSubject::Footprint(_) => {}
-        ResourceSubject::Parameter { name, .. } => {
+        ResourceSubject::Parameter { name, .. } | ResourceSubject::Instance { name, .. } => {
             names.insert(name.clone());
         }
         ResourceSubject::Captured { .. } => {}
@@ -1307,7 +1307,8 @@ fn rewrite_resource_subject_exact(
     preserve_snapshots: bool,
 ) -> (ResourceSubject, bool) {
     match subject {
-        ResourceSubject::Footprint(_)
+        ResourceSubject::Instance { .. }
+        | ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
         | ResourceSubject::Captured { .. } => (subject.clone(), false),
         ResourceSubject::Memory(segment) => (ResourceSubject::Memory(segment.clone()), false),
@@ -1899,7 +1900,7 @@ fn substitute_resource_subject(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ResourceSubject, String> {
     match resource {
-        ResourceSubject::Footprint(_) => Ok(resource.clone()),
+        ResourceSubject::Instance { .. } | ResourceSubject::Footprint(_) => Ok(resource.clone()),
         ResourceSubject::Parameter { name, .. } => match substitutions.values.get(name) {
             Some(ContractExpression::Resource(subject)) => Ok(subject.as_ref().clone()),
             Some(_) => Err(format!(
@@ -2057,7 +2058,8 @@ fn apply_contract_lets_to_resource_subject(
     bindings: &[ContractLetBinding],
 ) -> Result<ResourceSubject, String> {
     match resource {
-        ResourceSubject::Footprint(_)
+        ResourceSubject::Instance { .. }
+        | ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
         | ResourceSubject::Captured { .. } => Ok(resource),
         ResourceSubject::Memory(segment) => Ok(ResourceSubject::Memory(
@@ -2708,7 +2710,8 @@ fn collect_resource_subject_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match subject {
-        ResourceSubject::Footprint(_)
+        ResourceSubject::Instance { .. }
+        | ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
         | ResourceSubject::Captured { .. } => {}
         ResourceSubject::Declared { arguments, .. } => {

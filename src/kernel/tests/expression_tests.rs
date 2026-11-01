@@ -4049,8 +4049,9 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let a = Pointer::symbolic(Variable(22_111));
     let b = Pointer::symbolic(Variable(22_112));
     let stored = subobject_pointer(0, 0, 4);
-    let memory = CMemory::new()
-        .store(a.clone(), CValue::Pointer(stored.clone()))
+    let before_b = CMemory::new().store(a.clone(), CValue::Pointer(stored.clone()));
+    let memory = before_b
+        .clone()
         .store(b.clone(), CValue::Pointer(stored.clone()));
     let read = |memory: &CMemory, address: &Pointer| {
         CPointerValue::from_read(
@@ -4060,10 +4061,31 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
             address,
         )
     };
-    let context = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(memory_range(a.clone(), 0, 2))),
-        right: Box::new(CResource::Memory(memory_range(b.clone(), 0, 2))),
-    });
+    let separation = |left: CMemoryRange, right: CMemoryRange| {
+        crate::kernel::region_footprint::byte_premise(&Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(left)),
+            right: Box::new(CResource::Memory(right)),
+        })
+        .unwrap()
+    };
+    let context = PureFactContext::new().assume_proposition(separation(
+        memory_range(a.clone(), 0, 2),
+        memory_range(b.clone(), 0, 2),
+    ));
+    let (_, _, equality) = super::explicit_frame(
+        &before_b,
+        &memory,
+        &a,
+        CType::Int32Pointer,
+        &[Proposition::CMemoryMutatesOnly {
+            before: before_b.clone(),
+            after: memory.clone(),
+            writes: vec![(b.clone(), 8)],
+        }],
+        &context,
+    )
+    .expect("separate pointer cell survives the selected write");
+    let context = context.assume_proposition(equality);
     let first = read(&memory, &a);
     let second = read(&memory, &b);
     assert!(context.pointer_designations_match(&first, &stored));
@@ -4079,19 +4101,33 @@ fn complete_pointer_reads_keep_stored_bounds_across_different_cells() {
     let c = Pointer::symbolic(Variable(22_113));
     let before = CMemory::new();
     let original = read(&before, &c);
-    let changed = before.store(b.clone(), int32(1));
+    let changed = before.clone().store(b.clone(), int32(1));
     let later = read(&changed, &c);
-    let copied = changed.store(a.clone(), CValue::Pointer(later));
+    let copied = changed.clone().store(a.clone(), CValue::Pointer(later));
     let framed = context
         .clone()
-        .assume_proposition(Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(memory_range(c.clone(), 0, 2))),
-            right: Box::new(CResource::Memory(memory_range(b.clone(), 0, 1))),
-        })
-        .assume_proposition(Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(memory_range(c, 0, 2))),
-            right: Box::new(CResource::Memory(memory_range(a.clone(), 0, 2))),
-        });
+        .assume_proposition(separation(
+            memory_range(c.clone(), 0, 2),
+            memory_range(b.clone(), 0, 1),
+        ))
+        .assume_proposition(separation(
+            memory_range(c.clone(), 0, 2),
+            memory_range(a.clone(), 0, 2),
+        ));
+    let (_, _, equality) = super::explicit_frame(
+        &before,
+        &changed,
+        &c,
+        CType::Int32Pointer,
+        &[Proposition::CMemoryMutatesOnly {
+            before: before.clone(),
+            after: changed.clone(),
+            writes: vec![(b.clone(), 4)],
+        }],
+        &framed,
+    )
+    .expect("the selected write preserves the copied pointer's source");
+    let framed = framed.assume_proposition(equality);
     assert!(framed.pointer_designations_match(&read(&copied, &a), &original));
     assert!(!context.pointer_designations_match(&first, &stored.clone().with_root_extent()));
     let partial = memory.store(a.clone().offset_by_bytes(4), int32(0));

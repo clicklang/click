@@ -55,32 +55,50 @@ facts do not establish flat cost as the queried class or bucket grows.
    selected resource or footprint from an implicit candidate bucket.
    Measure ambiguous buckets and refusals as well as exact hits.
 
-Memory-history traversal and frame-query consolidation are tracked in
-[Fact-aware frame walks](fact-aware-frame-walks.md). Coordinate overlapping
-fixes there. Before removing the pointer-history and cell-source fallback
-walks, complete the explicit-certificate proof repairs. The removal experiment
-still affects ordinary fixtures, including negative fixtures that refuse
-earlier. Structural read equality must require positive preservation evidence:
-an undecided bounded history query must not authorize equality merely because
-snapshot representations match. Keep the freed-pointee rejection regression
-when changing this boundary.
+Memory-history traversal is also tracked in
+[Fact-aware frame walks](fact-aware-frame-walks.md). Finish the general
+cell-source removal candidate on `codex/cell-source-walk-removal` before
+starting the pointer-specific removal. Its remaining delivery blockers are:
 
-Complete the `.footprint` extension before landing the removal. A recorded
-statement footprint and explicit separation feed a single `preserve` node;
-retain the free-positive and freed-cell-negative fixtures. Finish producer
-integration for joined branches and loops without deriving effects from history,
-and add explicit composition before supporting whole-region separation checks.
-Simple normalization must not scan a region's transition sequence. Extend the
-observation rule beyond memory only with a concrete proof need and an explicit
-primitive design.
+- Validate the pointer-carrier read repair: a bounded cell-source lookup may
+  stop at a snapshot containing the complete stored value without identifying
+  its store edge (`MemoryDagCell::Unwritten`). Inspect that endpoint's actual
+  store record, requiring the exact address and a complete pointer or
+  pointer-carrying integer. Do not trust its cache alone: partial stores can
+  leave stale overlapping cache entries. Do not cross another history edge
+  or reconstruct provenance from numeric bits.
+  Keep exact/tagged recovery, partial-overwrite and numeric-only controls, and
+  deterministic scaling coverage as unrelated cells/history grow.
+  No additional separation axiom or transport-certificate form is needed for
+  this cache-forgetting regression. Actual writes still require preservation
+  evidence; this does not finish the pointer-specific history removal below.
+- Rerun affected unit, ordinary corpus, and expansion checks on the completed
+  candidate, with the source search disabled.
 
-Use the producer's recorded typed reads in explicit certificates; do not rebuild
-pointer values or search memory history to apply a preservation node. Keep these
-repairs separate from the compact-run experiment above. Rerun the ordinary
-corpus, scaling controls, and affected expansion checks with the walks actually
-disabled before landing removal. Existing scaling controls that require implicit
-copied/seeded-read framing or resuming the old cell-source walk need explicit
-certificate counterparts, retaining their width, aliasing, and overlap coverage.
+The next removal target is the pointer-specific history traversal in
+`pointer_read_value_recursive` and its frame fallback. The combined experiment
+is on `codex/memory-walk-removal-current`; use its deterministic
+`repeated_pointer_frame_queries_have_near_linear_total_work` regression when
+isolating that next change. Removing only the general cell-source traversal
+does not fix that end-to-end quadratic example.
+
+Repair affected proofs with explicit separation and transport certificates,
+preserving C and contracts. Structural read equality needs positive evidence;
+an undecided bounded query cannot authorize equality. Retain freed-pointee,
+partial-overwrite, provenance, and width refusals in every removal.
+
+Keep certificate equalities at the footprint's exact entry/exit snapshots;
+connect later observations with separate explicit normalization or preservation
+steps. Use recorded typed reads, without reconstruction or history discovery.
+Finish footprint producer integration for joined branches and loops only with
+a concrete proof need; support whole-region separation by explicit composition,
+not a transition scan. Extend observations beyond memory only with an explicit
+primitive design and a concrete use.
+
+Keep this work separate from the compact-run experiment above. Before landing
+the pointer removal, rerun the ordinary corpus and affected expansion/replay
+checks with that traversal actually disabled. Migrate any remaining implicit
+framing tests to explicit proofs, retaining their aliasing and overlap controls.
 This item does not require a general audit of all history upkeep, diagnostics,
 or verifier code before closure.
 

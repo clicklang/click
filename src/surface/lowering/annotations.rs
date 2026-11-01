@@ -4997,7 +4997,10 @@ impl AnnotationLowerer<'_> {
         if let Some(state) = environment.snapshot_state.as_ref() {
             return state
                 .resource_instance_at_path(access.identity, &access.children)
-                .and_then(|instance| instance.fields().get(access.field_index))
+                .and_then(|instance| {
+                    crate::kernel::record_transport_field(instance, access.field_index);
+                    instance.fields().get(access.field_index)
+                })
                 .cloned()
                 .map(Some)
                 .ok_or_else(|| {
@@ -7592,6 +7595,22 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecResource, String> {
         match resource {
+            ResourceSubject::Instance { identity, name } => {
+                if let Some(state) = environment.snapshot_state.as_ref() {
+                    let instance =
+                        state
+                            .resource_instance_at_path(*identity, &[])
+                            .ok_or_else(|| {
+                                format!("resource instance `{name}` is not owned at this snapshot")
+                            })?;
+                    Ok(SpecResource::Value(CResource::Instance(instance.clone())))
+                } else {
+                    Ok(SpecResource::Instance {
+                        identity: *identity,
+                        at_entry: environment.at_function_entry,
+                    })
+                }
+            }
             ResourceSubject::Footprint(region) => Ok(SpecResource::Value(
                 self.snapshots
                     .ok_or("region footprint requires execution snapshots")?

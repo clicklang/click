@@ -1856,7 +1856,16 @@ rule. Empty memory ranges, distinct storage blocks, and token/memory pairs
 are disjoint directly. This simple rule does not walk a region containing several transitions: write individual
 preservation nodes and compose their equalities with `transitive`.
 
-`preserve` supports complete pointer, `uint8`, or 32/64-bit integer observations.
+`preserve` supports complete pointer, `uint8`, 32/64-bit integer, and abstract
+typed memory observations. It also preserves a selected field of a named owned
+resource: cite `separate(region.footprint, r)` and write
+`preserve N => r.field == at(region.entry, r.field);`.
+Field lowering supplies the instance identity and field selector. The primitive
+reads that field from the footprint's persistent entry and exit resource contexts
+by identity; it does not unfold the resource or enumerate its other fields.
+Split expressions involving different resource fields into individual links.
+Supported field values include algebraic values, mathematical `Integer`,
+abstract C values, pointers, and the integer types listed above.
 A byte read retains its one-byte storage extent even though C promotes its
 equality to `int32`; separating one byte never licenses a four-byte read. The
 result is oriented after-to-before. Logical read producers
@@ -1870,11 +1879,10 @@ checking does not retain these observations. Missing observations fail locally;
 no alias or history fallback runs.
 Pointer preservation also accepts address equality when the pointer domains
 already agree. `transitive` supports pointer-value, pointer-address, and native
-machine-integer equalities.
+machine-integer, algebraic, and mathematical `Integer` equalities.
 Footprints can record non-memory resources, symbolic release extents, and
-multiple mutable call resources. The observation rule currently establishes
-memory-read equalities; transport of non-memory model fields and wide-index
-memory ranges is not yet supported. Joined branch/loop footprints still need
+multiple mutable call resources. Wide-index memory ranges are not yet supported.
+Joined branch/loop footprints still need
 producer integration; use recorded individual transitions where available.
 An unavailable premise, unsupported rule, or mismatched endpoint fails locally.
 

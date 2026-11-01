@@ -10,6 +10,7 @@ pub(crate) enum TransportNode {
         result: Proposition,
     },
     Preserve {
+        field: Option<typed_reads::FieldSelection>,
         effect: Option<usize>,
         separation: usize,
         result: Proposition,
@@ -50,13 +51,17 @@ impl TransportCertificate {
                     (proposition.clone(), result)
                 }
                 TransportNode::Preserve {
+                    field,
                     effect,
                     separation,
                     result,
                 } => {
                     let separation = prior(*separation)?;
                     if effect.is_none() {
-                        let derived = if matches!(
+                        let derived = if let Some(field) = field {
+                            preserve_field(separation, *field)
+                                .ok_or("preserve requires the selected field of a resource separated from the footprint")?
+                        } else if matches!(
                             result,
                             Proposition::ConditionIs(ConditionTerm::Constant(true), true)
                         ) {
@@ -125,6 +130,11 @@ impl TransportCertificate {
 // never used to manufacture the primitive's conclusion.
 fn read_type(result: &Proposition) -> Option<ReadType> {
     match result {
+        Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true)
+            if a.algebraic_type == b.algebraic_type =>
+        {
+            Some(ReadType::Abstract)
+        }
         Proposition::ConditionIs(ConditionTerm::PointerEqual(..), true) => {
             Some(ReadType::PointerAddress)
         }
@@ -209,6 +219,70 @@ fn preserve_footprint(separation: &Proposition, kind: ReadType) -> Option<Propos
     observation_equality(&footprint.before, &footprint.after, address, kind)
 }
 
+// Resource field values are retained by the persistent resource contexts.
+// Select one identity and one field from each endpoint; never unfold the
+// resource, enumerate its other fields, or replay its modifications.
+fn preserve_field(
+    separation: &Proposition,
+    field: typed_reads::FieldSelection,
+) -> Option<Proposition> {
+    let Proposition::CResourceSeparate { left, right } = separation else {
+        return None;
+    };
+    let (footprint, kept) = match (left.as_ref(), right.as_ref()) {
+        (CResource::Footprint(fp), CResource::Instance(kept))
+        | (CResource::Instance(kept), CResource::Footprint(fp)) => (fp, kept),
+        _ => return None,
+    };
+    if kept.identity() != field.identity {
+        return None;
+    }
+    crate::instrumentation::record_deterministic_work(2);
+    let before = footprint.before_resources.owned_instance(field.identity)?;
+    let after = footprint.after_resources.owned_instance(field.identity)?;
+    let a = after.fields().get(field.index)?;
+    let b = before.fields().get(field.index)?;
+    let condition = match (a, b) {
+        (AlgebraicValue::Algebraic(a), AlgebraicValue::Algebraic(b))
+            if a.algebraic_type == b.algebraic_type =>
+        {
+            return Some(if a == b {
+                Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+            } else {
+                Proposition::Equal(Term::Algebraic(a.clone()), Term::Algebraic(b.clone()))
+            });
+        }
+        (AlgebraicValue::Integer(a), AlgebraicValue::Integer(b)) => {
+            ConditionTerm::integer_equal(a.clone(), b.clone())
+        }
+        (AlgebraicValue::C(CValue::Parameter(a)), AlgebraicValue::C(CValue::Parameter(b)))
+            if a.algebraic_type == b.algebraic_type =>
+        {
+            ConditionTerm::AlgebraicEqual(a.clone(), b.clone())
+        }
+        (AlgebraicValue::C(CValue::Pointer(a)), AlgebraicValue::C(CValue::Pointer(b)))
+            if a.c_type() == b.c_type() =>
+        {
+            ConditionTerm::pointer_value_equal(a.clone(), b.clone())
+        }
+        (AlgebraicValue::C(CValue::Int32(a)), AlgebraicValue::C(CValue::Int32(b)))
+        | (AlgebraicValue::C(CValue::UInt8(a)), AlgebraicValue::C(CValue::UInt8(b))) => {
+            ConditionTerm::equal(a.clone(), b.clone())
+        }
+        (AlgebraicValue::C(CValue::UInt32(a)), AlgebraicValue::C(CValue::UInt32(b))) => {
+            ConditionTerm::uint32_equal(a.clone(), b.clone())
+        }
+        (AlgebraicValue::C(CValue::Int64(a)), AlgebraicValue::C(CValue::Int64(b))) => {
+            ConditionTerm::int64_equal(a.clone(), b.clone())
+        }
+        (AlgebraicValue::C(CValue::UInt64(a)), AlgebraicValue::C(CValue::UInt64(b))) => {
+            ConditionTerm::uint64_equal(a.clone(), b.clone())
+        }
+        _ => return None,
+    };
+    Some(Proposition::ConditionIs(condition, true))
+}
+
 // C promotes an unsigned byte comparison to int32, but the selected resource
 // still describes one byte. Select that exact producer record, not a four-byte
 // read or a search for an alternative observation.
@@ -236,6 +310,11 @@ fn observation_equality(
         }
         (ReadType::PointerAddress, CValue::Pointer(a), CValue::Pointer(b)) => {
             ConditionTerm::pointer_equal(a.pointer().clone(), b.pointer().clone())
+        }
+        (ReadType::Abstract, CValue::Parameter(a), CValue::Parameter(b))
+            if a.algebraic_type == b.algebraic_type =>
+        {
+            ConditionTerm::AlgebraicEqual(a, b)
         }
         (ReadType::Integer(format), a, b) => {
             integer_equality(format, integer_bits(a)?, integer_bits(b)?)?
@@ -275,13 +354,43 @@ fn transitive(a: &Proposition, b: &Proposition) -> Option<Proposition> {
     let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     // Reflexive equalities may already have reduced to true. Composition
     // then retains the other cited equality, with no endpoint to rediscover.
-    if a == &truth && (b == &truth || read_type(b).is_some()) {
+    let supported = |p: &Proposition| {
+        matches!(
+            p,
+            Proposition::Equal(Term::Algebraic(_), Term::Algebraic(_))
+        ) || read_type(p).is_some()
+            || matches!(
+                p,
+                Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)
+            )
+    };
+    if a == &truth && (b == &truth || supported(b)) {
         return Some(b.clone());
     }
-    if b == &truth && read_type(a).is_some() {
+    if b == &truth && supported(a) {
         return Some(a.clone());
     }
+    if let (
+        Proposition::Equal(Term::Algebraic(x), Term::Algebraic(y)),
+        Proposition::Equal(Term::Algebraic(y2), Term::Algebraic(z)),
+    ) = (a, b)
+        && y == y2
+    {
+        return Some(if x == z {
+            truth
+        } else {
+            Proposition::Equal(Term::Algebraic(x.clone()), Term::Algebraic(z.clone()))
+        });
+    }
     let condition = match (a, b) {
+        (
+            Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(x, y), true),
+            Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(y2, z), true),
+        ) if y == y2 => ConditionTerm::AlgebraicEqual(x.clone(), z.clone()),
+        (
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(x, y), true),
+            Proposition::ConditionIs(ConditionTerm::IntegerEqual(y2, z), true),
+        ) if y == y2 => ConditionTerm::IntegerEqual(x.clone(), z.clone()),
         (
             Proposition::ConditionIs(ConditionTerm::PointerEqual(x, y), true),
             Proposition::ConditionIs(ConditionTerm::PointerEqual(y2, z), true),
@@ -318,6 +427,163 @@ fn transitive(a: &Proposition, b: &Proposition) -> Option<Proposition> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    pub(super) fn resource_fixture(size: u64) -> (TransportCertificate, Proposition) {
+        let schema =
+            ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
+                .unwrap();
+        let instance = |identity, value| {
+            ResourceInstance::new(
+                Variable(identity),
+                "model".into(),
+                vec![].into(),
+                schema.clone(),
+                vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+                    Variable(value),
+                )))]
+                .into(),
+            )
+            .unwrap()
+        };
+        let kept = instance(8_390_900, 8_390_901);
+        let mut resources = ResourceContext::new();
+        for i in 0..size {
+            resources = resources.unchecked_with_fact(CResourceFact::own(CResource::Instance(
+                instance(9_000_000 + i, 10_000_000 + i),
+            )));
+        }
+        let before = CState::new().with_resource_context(
+            resources
+                .clone()
+                .unchecked_with_fact(CResourceFact::own(CResource::Instance(kept.clone()))),
+        );
+        let after = CState::new().with_resource_context(resources.unchecked_with_fact(
+            CResourceFact::own(CResource::Instance(instance(8_390_900, 8_390_902))),
+        ));
+        // A supplied frame premise relates these symbolic endpoint values.
+        // As with the memory fixture, establishing the premise is a separate
+        // obligation, never performed by certificate application.
+        let footprint = crate::kernel::RegionFootprint::transition(
+            "selected".into(),
+            &before,
+            &after,
+            &Vec::<ExecutionPureFact>::new(),
+        );
+        let separation = Proposition::CResourceSeparate {
+            left: Box::new(CResource::Footprint(footprint)),
+            right: Box::new(CResource::Instance(kept)),
+        };
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::equal(
+                Bitvector32Term::Variable(Variable(8_390_902)),
+                Bitvector32Term::Variable(Variable(8_390_901)),
+            ),
+            true,
+        );
+        (
+            TransportCertificate {
+                nodes: vec![
+                    TransportNode::Premise {
+                        proposition: separation.clone(),
+                        result: separation,
+                    },
+                    TransportNode::Preserve {
+                        field: Some(typed_reads::FieldSelection {
+                            identity: Variable(8_390_900),
+                            index: 0,
+                        }),
+                        effect: None,
+                        separation: 0,
+                        result: goal.clone(),
+                    },
+                ],
+                conclusion: 1,
+            },
+            goal,
+        )
+    }
+
+    pub(super) fn resource_history_fixture(history: u64) -> (TransportCertificate, Proposition) {
+        let (mut certificate, goal) = resource_fixture(1);
+        let TransportNode::Premise {
+            proposition,
+            result,
+        } = &mut certificate.nodes[0]
+        else {
+            unreachable!()
+        };
+        let Proposition::CResourceSeparate { left, right } = proposition else {
+            unreachable!()
+        };
+        let CResource::Footprint(fp) = left.as_ref() else {
+            unreachable!()
+        };
+        let CResource::Instance(kept) = right.as_ref() else {
+            unreachable!()
+        };
+        let mut resources = fp.before_resources.clone();
+        for _ in 0..history {
+            let fact = CResourceFact::own(CResource::Instance(kept.clone()));
+            resources = resources
+                .without_exact_representation(&fact)
+                .unwrap()
+                .unchecked_with_fact(fact);
+        }
+        let before = CState::new().with_resource_context(resources);
+        let after = CState::new().with_resource_context(fp.after_resources.clone());
+        *left = Box::new(CResource::Footprint(
+            crate::kernel::RegionFootprint::transition(
+                "selected".into(),
+                &before,
+                &after,
+                &Vec::<ExecutionPureFact>::new(),
+            ),
+        ));
+        *result = proposition.clone();
+        (certificate, goal)
+    }
+
+    #[test]
+    fn resource_preservation_selects_exact_identity_field_and_values() {
+        let (certificate, goal) = resource_fixture(8);
+        assert_eq!(certificate.apply(|_| true).unwrap(), goal);
+        assert!(
+            certificate.apply(|_| false).is_err(),
+            "separation must be available"
+        );
+        for field in [
+            typed_reads::FieldSelection {
+                identity: Variable(8_390_999),
+                index: 0,
+            },
+            typed_reads::FieldSelection {
+                identity: Variable(8_390_900),
+                index: 1,
+            },
+        ] {
+            let (mut certificate, _) = resource_fixture(8);
+            let TransportNode::Preserve {
+                field: selected, ..
+            } = &mut certificate.nodes[1]
+            else {
+                unreachable!()
+            };
+            *selected = Some(field);
+            assert!(certificate.apply(|_| true).is_err());
+        }
+        let (mut certificate, _) = resource_fixture(8);
+        let TransportNode::Preserve { result, .. } = &mut certificate.nodes[1] else {
+            unreachable!()
+        };
+        *result = Proposition::ConditionIs(
+            ConditionTerm::equal(Bitvector32Term::Variable(Variable(8_390_902)), 99u32.into()),
+            true,
+        );
+        assert!(
+            certificate.apply(|_| true).is_err(),
+            "the annotation cannot invent a value"
+        );
+    }
 
     pub(super) fn observe(memory: &CMemory, address: &Pointer, ty: CType) -> CValue {
         let paths = crate::kernel::eval::evaluate_logical_memory_load_paths(
@@ -394,6 +660,7 @@ mod tests {
                     premise(effect),
                     premise(separation),
                     TransportNode::Preserve {
+                        field: None,
                         effect: Some(0),
                         separation: 1,
                         result: result.clone(),
@@ -403,6 +670,56 @@ mod tests {
             },
             result,
         )
+    }
+
+    pub(super) fn abstract_fixture(history: u64) -> (TransportCertificate, Proposition) {
+        let (mut certificate, _) = fixture(history, false);
+        let TransportNode::Premise {
+            proposition: Proposition::CMemoryMutatesOnly { before, after, .. },
+            ..
+        } = &certificate.nodes[0]
+        else {
+            unreachable!()
+        };
+        let address = Pointer::symbolic(Variable(8_310_000));
+        let ty = CType::Parameter(TypeParameterName::intern("TransportValue"));
+        let CValue::Parameter(a) = observe(after, &address, ty) else {
+            unreachable!()
+        };
+        let CValue::Parameter(b) = observe(before, &address, ty) else {
+            unreachable!()
+        };
+        let goal = Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(a, b), true);
+        let TransportNode::Preserve { result, .. } = &mut certificate.nodes[2] else {
+            unreachable!()
+        };
+        *result = goal.clone();
+        (certificate, goal)
+    }
+
+    #[test]
+    fn abstract_memory_preservation_uses_recorded_typed_values() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let _reads = typed_reads::ReadScope::enter();
+        let (mut certificate, goal) = abstract_fixture(8);
+        assert_eq!(certificate.apply(|_| true).unwrap(), goal);
+        let TransportNode::Preserve { result, .. } = &mut certificate.nodes[2] else {
+            unreachable!()
+        };
+        let Proposition::ConditionIs(ConditionTerm::AlgebraicEqual(_, old), true) = result else {
+            unreachable!()
+        };
+        old.algebraic_type = TypeParameterName::intern("WrongTransportValue").algebraic_type();
+        assert!(
+            certificate.apply(|_| true).is_err(),
+            "abstract types must agree"
+        );
+        let (certificate, _) = abstract_fixture(8);
+        let _empty_reads = typed_reads::ReadScope::enter();
+        assert!(
+            certificate.apply(|_| true).is_err(),
+            "no reconstruction when observations are absent"
+        );
     }
 
     #[test]

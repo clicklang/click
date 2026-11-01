@@ -248,3 +248,24 @@ fn elements_separation_requires_distinct_indices() {
         assert!(without_implicit_auto(|| verify_click_theorems(&source)).is_err());
     }
 }
+
+#[test]
+fn equal_array_base_separation_restricts_and_replays_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/separation_restricts_equal_array_bases.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "selected.ensures_0").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let missing_alias = source.replace("    requires p == q;", "");
+    let error = without_implicit_auto(|| verify_c0_sources(&missing_alias, &sources)).unwrap_err();
+    assert!(error.report().contains("rewrite"), "{}", error.report());
+    let out_of_range = source.replace(
+        "ensures separate(A, memory(q[i]))",
+        "ensures separate(A, memory(q[cap]))",
+    );
+    assert!(without_implicit_auto(|| verify_c0_sources(&out_of_range, &sources)).is_err());
+}

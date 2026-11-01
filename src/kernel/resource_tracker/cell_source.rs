@@ -1548,8 +1548,9 @@ pub(in crate::kernel) fn memory_dag_cell_source(
 
 /// [`memory_dag_cell_source`] with the reason the walk stopped, for the one
 /// caller that asks the history whether two loads can be one value at all.
-/// It is the same single traversal; only the second half of its answer is
-/// kept.
+/// Like the ordinary lookup, it inspects at most one immediate transition.
+/// Reaching that limit is inconclusive, not evidence of preservation across
+/// any earlier transition.
 pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
     memory: &SharedCMemory,
     pointer: &Pointer,
@@ -1566,7 +1567,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
         bytes,
         assumptions,
         cross_loop_havoc,
-        Some(1),
+        1,
         None,
     ))
 }
@@ -1602,7 +1603,7 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
         bytes,
         assumptions,
         true,
-        Some(max_hops),
+        max_hops,
         first,
     ))
 }
@@ -1613,7 +1614,7 @@ fn memory_dag_cell_source_walk(
     bytes: u32,
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
-    max_hops: Option<usize>,
+    max_hops: usize,
     first: Option<SharedCMemory>,
 ) -> (MemoryDagCell, CellWalkStop) {
     let result = memory_dag_cell_source_walk_inner(
@@ -1625,15 +1626,13 @@ fn memory_dag_cell_source_walk(
         max_hops,
         first,
     );
-    record_transport_cell_walk(memory, pointer, bytes, &result.0, result.1, max_hops);
+    record_transport_cell_walk(memory, pointer, bytes, &result.0, result.1, Some(max_hops));
     result
 }
 
-/// Whether a cell walk resumes the memoized version walk. The explicit
-/// whole-pointer recovery (`memory_provenance::complete_pointer_read_value`)
-/// keeps its own full walk: it reads a complete pointer off the cache steps
-/// the version walk skips, and is the logical-read fold that naming pointer
-/// reads by version removes (`roadmap/fact-aware-frame-walks.md`).
+/// Whole-pointer recovery inspects the selected edge itself, including cached
+/// pointer values that a memoized version summary may skip. Other bounded
+/// queries may reuse an already recorded summary; neither starts a cold walk.
 fn resumes_version_walk() -> bool {
     !crate::kernel::memory_provenance::explicit_dag_check_active()
 }
@@ -1644,7 +1643,7 @@ fn memory_dag_cell_source_walk_inner(
     bytes: u32,
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
-    max_hops: Option<usize>,
+    max_hops: usize,
     mut first: Option<SharedCMemory>,
 ) -> (MemoryDagCell, CellWalkStop) {
     let evidence = super::step_effect::Evidence {
@@ -1662,7 +1661,7 @@ fn memory_dag_cell_source_walk_inner(
         // This reads one named predecessor and one exact address, never a
         // cache bucket or an alternate pointer spelling.
         if crate::kernel::memory_provenance::extended_dag_bridging_active()
-            && max_hops.is_none_or(|limit| path.len() < limit)
+            && path.len() < max_hops
             && let Some(derivation) = current.derivation()
             && let CMemoryDerivation::CellsForgotten { base } = derivation.as_ref()
             && base.cells.concrete().get(pointer).is_some_and(|value| {
@@ -1681,20 +1680,14 @@ fn memory_dag_cell_source_walk_inner(
                 CellWalkStop::RetainedValue,
             );
         }
-        // The memoized version walk crosses every step memory alone shows
-        // separate; facts are applied only at the step where it stopped
-        // (`roadmap/fact-aware-frame-walks.md`). Repeating a query after each
-        // statement then pays for that statement's step, not the history. A
-        // walk bounded by hops bounds its work too, so it jumps only over a
-        // prefix the version walk has already crossed.
+        // Reuse an existing version summary without calculating one. A cold
+        // query may only inspect its explicitly bounded adjacent transitions.
         let oldest = if let Some(first) = first.take() {
             Some(first)
         } else if !resumes_version_walk() {
             None
-        } else if max_hops.is_some() {
-            super::memoized_cell_last_same_point(&current, pointer, bytes).flatten()
         } else {
-            super::cell_last_same_point(&current, pointer, bytes)
+            super::memoized_cell_last_same_point(&current, pointer, bytes).flatten()
         };
         if let Some(oldest) = oldest
             && oldest != current
@@ -1709,7 +1702,7 @@ fn memory_dag_cell_source_walk_inner(
             });
             current = oldest;
         }
-        if max_hops.is_some_and(|limit| path.len() >= limit) {
+        if path.len() >= max_hops {
             return (
                 MemoryDagCell::Unwritten {
                     node: current,

@@ -497,6 +497,7 @@ fn resource_subject_contains_old_expression(resource: &ResourceSubject) -> bool 
     match resource {
         ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Instance { .. }
         | ResourceSubject::Captured { .. } => false,
         ResourceSubject::Memory(segment) => contract_segment_contains_old_expression(segment),
         ResourceSubject::Declared { arguments, .. } => {
@@ -638,7 +639,9 @@ fn contract_segment_contains_at_expression(segment: &ContractSegment) -> bool {
 fn resource_subject_contains_at_expression(resource: &ResourceSubject) -> bool {
     match resource {
         ResourceSubject::Footprint(_) => true,
-        ResourceSubject::Parameter { .. } | ResourceSubject::Captured { .. } => false,
+        ResourceSubject::Parameter { .. }
+        | ResourceSubject::Instance { .. }
+        | ResourceSubject::Captured { .. } => false,
         ResourceSubject::Memory(segment) => contract_segment_contains_at_expression(segment),
         ResourceSubject::Declared { arguments, .. } => arguments.iter().any(contains_at_expression),
     }
@@ -827,6 +830,7 @@ fn collect_click_function_calls_in_resource_subject(
     match resource {
         ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Instance { .. }
         | ResourceSubject::Captured { .. } => {}
         ResourceSubject::Memory(segment) => collect_click_function_calls_in_segment(segment, calls),
         ResourceSubject::Declared { arguments, .. } => {
@@ -1521,6 +1525,7 @@ fn validate_recursive_calls_in_resource_subject(
     match subject {
         ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
+        | ResourceSubject::Instance { .. }
         | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => validate_recursive_calls_in_segment(
             caller,
