@@ -653,7 +653,7 @@ impl<'a> Proof<'a> {
             return Ok(None);
         };
         let source_fact = self.lower_surface_proposition(condition, "proof `if` condition")?;
-        let c_surface = surface_c_condition(&c_condition, &current_state);
+        let c_surface = surface_c_condition(&c_condition, &current_state)?;
         let c_fact = self.lower_surface_proposition(&c_surface, "current C `if` condition")?;
         if !path_condition_equivalent(&source_fact, &c_fact) {
             return Ok(None);

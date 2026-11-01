@@ -3739,14 +3739,7 @@ pub(super) fn finish_ordered_proof<'a>(
                     // A capture belongs only to paths that actually reach its
                     // source occurrence, including through newly decided arms.
                     let mut visits_selected_capture = false;
-                    let mut surface_post_choices =
-                        match direct_view.terminal_statement_choices(path_index) {
-                            Ok(choices) => choices,
-                            Err(message) => {
-                                retained_surface.block(message);
-                                Vec::new()
-                            }
-                        };
+                    let mut surface_post_choices = Vec::new();
                     let mut batch_previous_capture = None;
                     // Consecutive assumption closers only discharge claims;
                     // they do not change the outcome or its ambient facts.
@@ -5525,16 +5518,15 @@ pub(super) fn finish_ordered_proof<'a>(
         )?;
         // This is surface routing, never additional proof authority. If
         // either outcome cannot decide the guard, retain the existing refusal.
-        let distinct_terminal_suffixes = terminal_outcome_choices.len() == 2
-            && (surface_post_tactics_by_path
+        let distinct_terminal_suffixes = surface_post_tactics_by_path
+            .windows(2)
+            .any(|pair| pair[0] != pair[1])
+            || surface_grouped_closers_by_path
                 .windows(2)
                 .any(|pair| pair[0] != pair[1])
-                || surface_grouped_closers_by_path
-                    .windows(2)
-                    .any(|pair| pair[0] != pair[1])
-                || surface_closers_by_claim
-                    .iter()
-                    .any(|paths| paths.windows(2).any(|pair| pair[0] != pair[1])));
+            || surface_closers_by_claim
+                .iter()
+                .any(|paths| paths.windows(2).any(|pair| pair[0] != pair[1]));
         if terminal_outcome_choices.len() == 2
             && distinct_terminal_suffixes
             && surface_post_choices_by_path.iter().all(Vec::is_empty)
@@ -5556,6 +5548,21 @@ pub(super) fn finish_ordered_proof<'a>(
                         tactic_offset: 0,
                     },
                 );
+            }
+        }
+        // A shared suffix needs no case selector. In particular, loading
+        // different cells can produce internal pointer-offset cases whose
+        // common proof is already expressible. Preserve an existing terminal
+        // selector too; raw statement cases must not replace its checked route.
+        if distinct_terminal_suffixes && surface_post_choices_by_path.iter().all(Vec::is_empty) {
+            for (choices, path_index) in surface_post_choices_by_path
+                .iter_mut()
+                .zip(&surface_post_path_indices)
+            {
+                match direct_view.terminal_statement_choices(*path_index) {
+                    Ok(terminal_choices) => *choices = terminal_choices,
+                    Err(message) => retained_surface.block(message),
+                }
             }
         }
         let mut final_checked_execution = completed_execution.clone();

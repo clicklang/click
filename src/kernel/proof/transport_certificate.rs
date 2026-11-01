@@ -563,13 +563,11 @@ mod tests {
         }
         let before = CState::new().with_resource_context(resources);
         let after = CState::new().with_resource_context(fp.after_resources.clone());
-        *left = Box::new(CResource::Footprint(
-            crate::kernel::RegionFootprint::transition(
-                "selected".into(),
-                &before,
-                &after,
-                &Vec::<ExecutionPureFact>::new(),
-            ),
+        **left = CResource::Footprint(crate::kernel::RegionFootprint::transition(
+            "selected".into(),
+            &before,
+            &after,
+            &Vec::<ExecutionPureFact>::new(),
         ));
         *result = proposition.clone();
         (certificate, goal)
@@ -886,12 +884,12 @@ mod tests {
                 unreachable!()
             };
             let (address, _) = range.byte_footprint();
-            *right = Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            **right = CResource::Memory(CMemoryRange::new_with_element_width(
                 address,
                 0u32.into(),
                 1u32.into(),
                 1,
-            )));
+            ));
             *result = proposition.clone();
             assert!(partial.apply(|_| true).is_err());
             for corruption in 0..4 {

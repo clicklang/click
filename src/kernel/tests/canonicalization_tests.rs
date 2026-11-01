@@ -1116,13 +1116,12 @@ fn nested_snapshot_load_named(
     )
 }
 
-/// A symbolic static array of pointers holds, at each element, a fresh
-/// symbolic pointer named by that element's own load, so substituting that
-/// name rewrites that element and no other. The elements the run's
-/// representatives stand for are unchanged by it, so the run has to single
-/// the element out rather than keep itself whole.
+/// Symbolic pointer storage holds complete read identities, not pointer
+/// parameters backed by scalar load handles. Replacing the scalar handle as
+/// though it were a pointer parameter must leave every complete read intact.
 #[test]
-fn a_pointer_substitution_rewrites_the_one_symbolic_array_element_it_names() {
+fn a_scalar_load_handle_does_not_substitute_a_complete_pointer_array_read() {
+    let _session = crate::kernel::VerificationSession::enter();
     let block = PointerBlock::Concrete("symbolic-pointer-array".to_string());
     let at = |offset: i64| Pointer {
         block: block.clone(),
@@ -1136,7 +1135,7 @@ fn a_pointer_substitution_rewrites_the_one_symbolic_array_element_it_names() {
     );
     let Ok(memory) = CMemory::new()
         .with_block("symbolic-pointer-array", size)
-        .with_symbolic_storage_run(at(0), CType::Int32Pointer, elements, source)
+        .with_symbolic_storage_run(at(0), CType::Int32Pointer, elements, source.clone())
     else {
         panic!("a symbolic array over a fresh block is one run");
     };
@@ -1146,24 +1145,19 @@ fn a_pointer_substitution_rewrites_the_one_symbolic_array_element_it_names() {
             .get(&at(index * i64::from(width)))
             .expect("every element holds a cell")
     };
-    let named = match element(&memory, 50) {
-        CValue::Pointer(pointer) => match pointer.pointer().block {
-            PointerBlock::Symbolic(variable) => variable,
-            ref other => panic!("an element points into its own symbolic block, not {other:?}"),
-        },
-        other => panic!("an element holds a pointer, not {other:?}"),
+    let bits =
+        Bitvector32Term::MemoryLoad(source, Box::new(at(50 * i64::from(width))), LoadKind::Int32);
+    let (named, _) = crate::kernel::load_variable_for_term(&bits).unwrap();
+    let CValue::Pointer(observed) = element(&memory, 50) else {
+        panic!("pointer cell")
     };
+    assert!(observed.pointer() == &Pointer::loaded(&bits).unwrap());
+    // The scalar carrier is not a pointer parameter. Substituting it cannot
+    // replace the complete read's address or its provenance.
     let target = CMemory::global_pointer("target");
     let substituted =
         crate::kernel::reasoning::substitute_pointer_variable_in_memory(&memory, named, &target);
-    assert_eq!(
-        element(&substituted, 50),
-        match element(&memory, 50) {
-            CValue::Pointer(pointer) => CValue::Pointer(pointer.with_address(target)),
-            _ => unreachable!(),
-        }
-    );
-    for index in [0, 1, 49, 51, 99] {
+    for index in [0, 1, 49, 50, 51, 99] {
         assert_eq!(element(&substituted, index), element(&memory, index));
     }
 }

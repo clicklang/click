@@ -3585,6 +3585,12 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
     for expression in [
         "to_integer(x) + foo(x)",
         "foo(positive(x) as int32)",
+        "foo((if foo(x) + 1 < foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 <= foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 > foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 >= foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 == foo(x) { true } else { false }) as int32)",
+        "foo((if foo(x) + 1 != foo(x) { true } else { false }) as int32)",
         "foo_wide(positive(x) as int64)",
         "to_integer(positive(x) as uint64) + foo(x)",
         "foo((if x > 0 { true } else { false }) as int32)",

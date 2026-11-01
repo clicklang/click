@@ -340,6 +340,9 @@ pub(super) fn lower(
                 end
             }
             T::Unreachable => c_assert(c_int32_literal(0)),
+            T::Panic { message } => {
+                c_labeled_assert(c_int32_literal(0), format!("Rust panic `{message}`"))
+            }
             // The allocation comes first; a failed one aborts, so the
             // record moves into a live block, and the box is its address.
             T::BoxNew {
@@ -525,6 +528,16 @@ pub(super) fn lower(
                 BTreeMap::new()
             };
             let mut statement = match s {
+                S::Assert { condition, message } => {
+                    let (checks, condition) = cx.prepared_expr(condition)?;
+                    c_seq(
+                        checks,
+                        c_labeled_assert(
+                            branch_condition(condition),
+                            format!("Rust panic `{message}`"),
+                        ),
+                    )
+                }
                 S::SliceSplit {
                     slice,
                     midpoint,
@@ -869,6 +882,7 @@ pub(super) fn lower(
                     slice, midpoint, ..
                 } => vec![slice, midpoint],
                 S::SharedArrayInitialize { source, .. } => vec![source],
+                S::Assert { condition, .. } => vec![condition],
                 S::RangeInitialize { start, end, .. } => vec![start, end],
                 S::Assign { target, value } => vec![target, value],
                 S::Initialize { fields, .. } => fields.iter().collect(),

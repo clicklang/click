@@ -575,58 +575,64 @@ fn seeded_scalar_loads_frame_unknown_cells_with_constant_work() {
     let anchor = Pointer::symbolic(Variable(98_470));
     let other = Pointer::symbolic(Variable(98_471));
     let assumptions = PureFactContext::new();
-    let mut previous_work = None;
-    for size in [16, 256, 4096, 65536] {
-        let original = intern_c_memory(CMemory::new());
-        let first = intern_c_memory(original.memory().clone().with_seeded_cells(
-            anchor.clone(),
-            4,
-            CType::Int32,
-            0,
-            size,
-            original.clone(),
-        ));
-        let current = intern_c_memory(first.memory().clone().with_seeded_cells(
-            anchor.offset_by_bytes(size * 4),
-            4,
-            CType::Int32,
-            0,
-            size,
-            original.clone(),
-        ));
-        let (cell, work) = crate::instrumentation::measure_deterministic_work(|| {
-            memory_dag_cell_source(&current, &other, 4, &assumptions, false).unwrap()
-        });
-        let MemoryDagCell::Unwritten { node, path } = cell else {
-            panic!("naming must not invent a stored value for the other address");
-        };
-        assert_eq!(node, first);
-        // Each explicit query crosses one cache-only edge.
-        assert!(matches!(
-            path.as_slice(),
-            [hop] if hop.justification == MemoryDagHopJustification::SeededLoadsOfBase
-        ));
-        let earlier = memory_dag_cell_source(&first, &other, 4, &assumptions, false).unwrap();
-        assert_eq!(earlier.node(), &original);
-        for edge in [&current, &first] {
-            assert_eq!(
-                seeded_edge_justification(&edge, &other, 4, &assumptions),
-                MemoryDagHopJustification::SeededLoadsOfBase
-            );
+    for (element_type, width) in [
+        (CType::Int32, 4),
+        (CType::Int32Pointer, 8),
+        (CType::Int32Pointer, 16),
+    ] {
+        let mut previous_work = None;
+        for size in [16, 256, 4096, 65536] {
+            let original = intern_c_memory(CMemory::new());
+            let first = intern_c_memory(original.memory().clone().with_seeded_cells(
+                anchor.clone(),
+                width,
+                element_type,
+                0,
+                size,
+                original.clone(),
+            ));
+            let current = intern_c_memory(first.memory().clone().with_seeded_cells(
+                anchor.offset_by_bytes(size * width),
+                width,
+                element_type,
+                0,
+                size,
+                original.clone(),
+            ));
+            let (cell, work) = crate::instrumentation::measure_deterministic_work(|| {
+                memory_dag_cell_source(&current, &other, 4, &assumptions, false).unwrap()
+            });
+            let MemoryDagCell::Unwritten { node, path } = cell else {
+                panic!("naming must not invent a stored value for the other address");
+            };
+            assert_eq!(node, first);
+            // Each explicit query crosses one cache-only edge.
+            assert!(matches!(
+                path.as_slice(),
+                [hop] if hop.justification == MemoryDagHopJustification::SeededLoadsOfBase
+            ));
+            let earlier = memory_dag_cell_source(&first, &other, 4, &assumptions, false).unwrap();
+            assert_eq!(earlier.node(), &original);
+            for edge in [&current, &first] {
+                assert_eq!(
+                    seeded_edge_justification(&edge, &other, 4, &assumptions),
+                    MemoryDagHopJustification::SeededLoadsOfBase
+                );
+            }
+            assert!(work < 100, "size={size}, work={work}");
+            // Run length does not change the cost of one selected edge.
+            if let Some(previous) = previous_work {
+                assert!(
+                    work <= previous,
+                    "framing work must not grow with the run: size={size}: {work} > {previous}"
+                );
+            }
+            previous_work.get_or_insert(work);
         }
-        assert!(work < 100, "size={size}, work={work}");
-        // Run length does not change the cost of one selected edge.
-        if let Some(previous) = previous_work {
-            assert!(
-                work <= previous,
-                "framing work must not grow with the run: size={size}: {work} > {previous}"
-            );
-        }
-        previous_work.get_or_insert(work);
     }
 }
 
-/// Named struct unfolds cache pointer storage as narrower scalar slots. A
+/// Narrow scalar observations can overlap a complete pointer read. A
 /// full-width read must cross those no-write edges without reading the last
 /// partial slot as a write. The witness stays constant-size as the run grows.
 #[test]

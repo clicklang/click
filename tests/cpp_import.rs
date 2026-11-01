@@ -6787,6 +6787,7 @@ const INCREMENT_ARGS: &[&str] = &[
 ];
 
 /// Copies the regular files under `from` to `to`, keeping relative paths.
+#[cfg(not(feature = "fast-gate"))]
 fn copy_tree(from: &Path, to: &Path) {
     for entry in fs::read_dir(from).unwrap() {
         let entry = entry.unwrap();
@@ -6801,6 +6802,7 @@ fn copy_tree(from: &Path, to: &Path) {
 }
 
 /// A fresh scratch directory for one copy of a project.
+#[cfg(not(feature = "fast-gate"))]
 fn scratch_copy(name: &str) -> PathBuf {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let directory = std::env::temp_dir().join(format!(

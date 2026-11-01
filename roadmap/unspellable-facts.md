@@ -112,6 +112,19 @@ Elapsed 13m07s included a 3m05s rebuild; unit and fixture phases totaled about
 machine-fixture fact-stability audit passed with zero differences. No nightly
 suite was run.
 
+PR #2219 merged. The next slice, `codex/kernel-integer-comparisons`, moves
+all six mathematical-Integer comparisons out of `LegacyBool`. Shared nodes retain
+the exact operator and ordered Integer children. Import/export neither decides
+the comparison nor swaps its operands. Tests reconstruct each operator after
+dropping the source, spell comparisons inside Boolean-to-machine conversions,
+and grow shared Integer operands beside unrelated terms. Condition producers
+and the remaining overflow, pointer, memory and algebraic conditions remain
+separate migrations. Validation: all 86 focused bridge and spelling tests passed.
+`scripts/check.sh --no-fail-fast` passed 7,030 unit/import/scaling tests,
+58 examples and 4,953 mdtests in 11m32s (ten-minute timing warning).
+Separate fact-stability audits passed 248 integer and 20 bool fixtures with
+zero differences. No nightly suite ran and no limits changed.
+
 PR #2212 merged. The next slice, `codex/kernel-bool-conversions`, introduces a
 logical Bool sort in the shared tree and migrates Boolean-to-machine conversions.
 Their conditions expose literals, variables, machine comparisons, equality,

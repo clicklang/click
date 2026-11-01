@@ -136,7 +136,7 @@ refusal.
 | Comparing pointers to different objects | Supported: `mdtests/a_one_past_the_end_pointer_is_not_compared_with_another_object.md` | Not supported: pointer comparisons outside equality are not admitted | Not applicable |
 | Data races | Partial: under the modeled pthread runtime, workers need exclusive authority; there is no race semantics; `mdtests/authority_modeled_pthread_alias_worker_requires_authority.md` | Not applicable: no concurrency admitted | Not applicable: no concurrency admitted |
 | Undefined behavior in `unsafe` code | Not applicable | Not applicable | Not supported: `unsafe` functions and calls are refused at import |
-| Explicit `panic!`, `assert!`, `unwrap` | Not applicable | Not applicable | Not supported: macros and generic library calls are refused |
+| Explicit `panic!`, `assert!`, `unwrap` | Not applicable | Not applicable | Partial: `assert!`, `panic!`, `unreachable!`, `todo!` and `unimplemented!` are obligations that no call reaches them, and `Option::unwrap`/`expect` of a scalar require `Some`; no `assert_eq!`/`assert_ne!`; `tests/rust_import/panics.rs::charon_panics_are_obligations` |
 
 ## Provenance
 
@@ -157,7 +157,7 @@ supplies its own declarations; it never verifies a platform library.
 | Feature | C | C++ | Rust |
 | --- | --- | --- | --- |
 | Strings | Partial: ASCII literals, byte-buffer predicates; no wide strings; `mdtests/string_literals.md` | Not supported | Not supported: no `String` or `str` |
-| Standard library calls | Partial: `memcpy`, `memcmp`, `memset`, `strlen`, and the allocator family; no stdio; `mdtests/c_builtin_string_and_stdlib_headers.md` | Partial: a catalog for `std::span<int>` and `std::as_writable_bytes`; other calls refused; `tests/bitcoin_core_money_range.rs::axiomatic_span_pop_back_verifies_against_catalog_contracts` | Partial: slice `len`, `split_at`, `iter`, `chunks_exact`, core `From`, `mem::drop`, and the integer methods `min`, `max`, `wrapping_*`, `saturating_*`, `checked_add`/`checked_sub`, `abs_diff` and `unsigned_abs`, `Option::unwrap_or`, and slice `swap`, against library contracts; `examples/rust-chunks-exact/`, `tests/rust_import/core_methods.rs::charon_core_methods_verify_against_their_library_contracts` |
+| Standard library calls | Partial: `memcpy`, `memcmp`, `memset`, `strlen`, and the allocator family; no stdio; `mdtests/c_builtin_string_and_stdlib_headers.md` | Partial: a catalog for `std::span<int>` and `std::as_writable_bytes`; other calls refused; `tests/bitcoin_core_money_range.rs::axiomatic_span_pop_back_verifies_against_catalog_contracts` | Partial: slice `len`, `split_at`, `iter`, `chunks_exact`, core `From`, `mem::drop`, and the integer methods `min`, `max`, `wrapping_*`, `saturating_*`, `checked_add`/`checked_sub`, `abs_diff` and `unsigned_abs`, `Option::unwrap_or`, `unwrap` and `expect`, and slice `swap`, against library contracts; `examples/rust-chunks-exact/`, `tests/rust_import/core_methods.rs::charon_core_methods_verify_against_their_library_contracts` |
 | Your own `extern` contracts | Supported: reported as external assumptions; `mdtests/external_function_contract_call.md` | Partial: a system-header function the import does not verify, its head a C++ declaration with `this` implicit; `tests/cpp_import.rs::axiomatic_member_function_extern_heads_are_cpp_declarations` | Partial: scalar `safe fn` items of an `unsafe extern "C"` block; no other crates; `tests/rust_import/extern_functions.rs::charon_extern_block_calls_meet_their_extern_contract` |
 
 ## Concurrency

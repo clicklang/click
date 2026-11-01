@@ -867,7 +867,8 @@ integer type, and `unsigned_abs` of a signed one, by the callee's identity and
 signature. A `checked_*` result is the library's `Option`. `o.unwrap_or(d)` of
 an `Option` of a scalar calls `Option::unwrap_or` the same way, whose contract
 states its result with `option::unwrap_or(o, d)`; that module is implicit, so
-a sidecar needs no import. The library
+a sidecar needs no import. `unwrap` and `expect` are described under
+[Panics](#panics). The library
 function is opaque until `unfold` gives its definition, so a claim that needs
 the value, `result <= a`, unfolds it, and a proof of one arm states the value
 there: `have u32::min(a, b) == a by { unfold(u32::min(a, b)); solve(); }`.
@@ -980,6 +981,24 @@ for an update.
 cargo run --bin click -- import lock examples/rust-unsigned/arithmetic.click
 cargo run --bin click -- verify examples/rust-unsigned/arithmetic.click
 ```
+
+## Panics
+
+A Rust panic is an obligation: Click proves no call reaches it. A block that
+can only reach a call of `core::panicking`, the target of `assert!`,
+`panic!`, `unreachable!`, `todo!` and `unimplemented!`, is one obligation
+named by the panic's message, ``Rust panic `assertion failed: x > 3` ``; the
+statements that build the message, `format_args!` included, are not modeled,
+because a block shown unreachable has no effect. A branch whose one side
+panics is the assertion of the other side's condition, so after
+`assert!(x > 3)` the fact `x > 3` holds, and a refusal names the condition as
+its goal, ``could not show `x > 3u32` ``. A message with formatted arguments is
+named `formatted message`. `o.unwrap()` and `o.expect("...")` of an `Option` of
+a scalar call `Option::unwrap<T>` and `Option::expect<T>`, whose contract
+requires `o != Option<T>::None` and ensures `o == Option<T>::Some(result)`;
+`expect`'s message is not passed. `assert_eq!` and `assert_ne!` remain
+refused: they compare through a tuple of references
+([`design/charon-trial/panics`](https://github.com/clicklang/click/blob/master/design/charon-trial/panics/panics.click)).
 
 ## Byte slices and indexing
 

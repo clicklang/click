@@ -300,7 +300,9 @@ fn a_symbolic_global_array_entry_holds_exactly_the_per_element_cells() {
         CType::UInt8Pointer,
     ] {
         for length in [1u32, 5, 64, 65, 300] {
-            crate::kernel::eval::clear_load_variable_registry();
+            // Reset the naming caches together with their registries. A cached
+            // load handle cannot outlive the registry defining its pointer read.
+            let _session = crate::kernel::VerificationSession::enter();
             let function = function_with_global_array(element_type, length);
             let entry = initialize_c_function_globals(&CState::new(), &function);
             let base = CMemory::global_pointer("buf");

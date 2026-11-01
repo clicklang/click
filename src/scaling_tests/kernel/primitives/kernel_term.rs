@@ -184,3 +184,31 @@ fn boolean_conversion_bridge_is_linear_in_explicit_conditions() {
         }
     }
 }
+
+#[test]
+fn integer_comparison_bridge_reconstructs_shared_operands_linearly() {
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|i| KernelTerm::variable(KernelType::Integer, Variable(965_000 + i)))
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut value: SharedIntegerTerm = IntegerTerm::Variable(Variable(966_000)).into();
+            for _ in 0..size {
+                value = IntegerTerm::Add(value.clone(), value).into();
+            }
+            let source = ConditionTerm::IntegerGreaterEqual(value.clone(), value);
+            let ((term, restored), work) =
+                crate::instrumentation::measure_deterministic_work(|| {
+                    let term = KernelTermImport::default().condition(&source);
+                    drop(source);
+                    let restored = KernelTermExport::condition(&term).unwrap();
+                    (term, restored)
+                });
+            assert_eq!(KernelTermImport::default().condition(&restored), term);
+            assert!(
+                work <= 24 * (size + 2),
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}

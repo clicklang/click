@@ -10635,6 +10635,11 @@ impl SymbolicCConditionEvaluation {
 }
 
 impl SymbolicCConditionEvaluationPath {
+    /// What the condition evaluates to on this path.
+    pub fn outcome(&self) -> &CConditionOutcome {
+        &self.outcome
+    }
+
     pub fn facts(&self) -> &ExecutionFacts {
         &self.facts
     }

@@ -118,9 +118,8 @@ impl RegionFootprint {
         if let Some(changed) = changed {
             for fact in changed {
                 crate::instrumentation::record_deterministic_work(1);
-                match fact {
-                    CResourceFact::Own(resource, _) => members.push_back(resource),
-                    _ => {}
+                if let CResourceFact::Own(resource, _) = fact {
+                    members.push_back(resource);
                 }
             }
         }

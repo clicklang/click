@@ -4839,7 +4839,8 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
             return LOAD_VARIABLE_CACHE.with(|cache| {
                 let variable = cache.borrow().get(&load)?.0;
                 Some(CValue::Pointer(CPointerValue::from_read(
-                    Pointer::symbolic(variable),
+                    Pointer::loaded(&Bitvector32Term::Variable(variable))
+                        .expect("cached pointer cells have registered read identities"),
                     c_type,
                     &crate::kernel::intern_c_memory(memory.clone()),
                     pointer,
@@ -4884,7 +4885,8 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
         );
         let (variable, definition) = load_variable_for_term(&load)
             .expect("symbolic pointer cells must be backed by memory loads");
-        let value = Pointer::symbolic(variable);
+        let value = Pointer::loaded(&Bitvector32Term::Variable(variable))
+            .expect("symbolic pointer cells have registered read identities");
         if let Bitvector32Term::MemoryLoad(snapshot, address, _) = definition {
             crate::kernel::equality_graph::EqualityGraph::default()
                 .register_pointer_read_definition(&value, &snapshot, &address);
@@ -7904,6 +7906,34 @@ mod tests {
         assert!(normalize_using_conditions(&goal, std::slice::from_ref(&alias), &facts).is_ok());
         assert!(normalize_using_conditions(&goal, &[], &ProofFacts::from_ordered(&[])).is_err());
     }
+    #[test]
+    fn symbolic_storage_pointer_cells_share_logical_read_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(190_101));
+        let memory = CMemory::new();
+        assert!(
+            cached_symbolic_storage_cell_value(&memory, &address, CType::Int32Pointer).is_none()
+        );
+        for c_type in [CType::Int32Pointer, CType::UInt8Pointer, CType::VoidPointer] {
+            let stored = symbolic_storage_cell_value(&memory, &address, c_type, false).unwrap();
+            let logical = memory.symbolic_pointer_load(&address, c_type);
+            assert!(
+                stored == logical,
+                "storage and logical reads must have identical values and provenance"
+            );
+            assert!(cached_symbolic_storage_cell_value(&memory, &address, c_type) == Some(logical));
+        }
+        // Changing the upper half invalidates the whole pointer observation.
+        let changed = memory
+            .clone()
+            .store(address.offset_by_bytes(4), CValue::Int32(7.into()));
+        let old =
+            symbolic_storage_cell_value(&memory, &address, CType::Int32Pointer, false).unwrap();
+        let new =
+            symbolic_storage_cell_value(&changed, &address, CType::Int32Pointer, false).unwrap();
+        assert!(old != new);
+    }
+
     #[test]
     fn symbolic_pointer_load_factory_retains_exact_read_definition() {
         let _session = crate::kernel::VerificationSession::enter();
