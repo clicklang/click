@@ -49,7 +49,13 @@ fn narrow_comparison_identity_is_constant_in_operand_size() {
             crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(&native)
                 .expect("a native narrow comparison has a promoted spelling");
         assert!(
-            matches!(promoted, ConditionTerm::Compare { format: MachineIntegerType::Int32, .. }),
+            matches!(
+                promoted,
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    ..
+                }
+            ),
             "depth={depth}: {promoted:?}"
         );
         COMPARISON_IDENTITY_VISITS.with(|visits| visits.set(0));
