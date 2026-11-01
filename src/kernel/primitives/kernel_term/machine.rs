@@ -61,6 +61,10 @@ impl KernelTermImport {
             Old::UInt64Constant(value) => Node::MachineLiteral(Literal::UInt64(*value)),
             Old::MachineIntegerConstant(value) => Node::MachineLiteral(Literal::Wide(*value)),
             Old::Variable(variable) => Node::Variable(*variable),
+            Old::BoolCast { to, value } => Node::BoolCast {
+                destination: *to,
+                operand: self.condition(value),
+            },
             Old::IntegerToMachine { value, destination } => Node::IntegerToMachine {
                 destination: *destination,
                 operand: self.integer(value),
@@ -151,6 +155,13 @@ impl KernelTermExport {
                 Literal::Wide(value) => Old::MachineIntegerConstant(*value),
             },
             Node::Variable(variable) => Old::Variable(*variable),
+            Node::BoolCast {
+                destination,
+                operand,
+            } => Old::BoolCast {
+                to: *destination,
+                value: Box::new(Self::condition(operand)?),
+            },
             Node::IntegerToMachine {
                 destination,
                 operand,

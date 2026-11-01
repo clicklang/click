@@ -2752,6 +2752,10 @@ fn raise_kernel_term(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<SurfaceTerm> {
     use crate::kernel::{KernelIntegerOperator as Op, KernelTermNode as Node, KernelType};
+    if term.ty() == &KernelType::Bool {
+        let condition = crate::kernel::KernelTermExport::condition(term).ok()?;
+        return synthesize_surface_bool(&condition, parameter_binding, state, bound_variables);
+    }
     let category = if term.ty() == &KernelType::Integer {
         "integer"
     } else {
@@ -2797,6 +2801,15 @@ fn raise_kernel_term(
             name: generic_instance_source_name(name).into(),
             arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
         },
+        Node::BoolLiteral(_)
+        | Node::BoolCompare { .. }
+        | Node::BoolEqual { .. }
+        | Node::BoolIf { .. }
+        | Node::LegacyBool(_) => unreachable!("Bool sorts handled above"),
+        Node::BoolCast {
+            destination,
+            operand,
+        } => synthesize_observation_operand(recurse(operand)?, destination.c_type())?,
         Node::IntegerToMachine {
             destination,
             operand,
@@ -3658,8 +3671,19 @@ fn synthesize_surface_bitvector(
                 explicit_qualification: false,
             }))
         }
-        // TODO(stage5): synthesize `b as int32`.
-        Bitvector32Term::BoolCast { .. } => None,
+        Bitvector32Term::BoolCast { to, value } => {
+            // synthesize_surface_bool uses the uint8 carrier to name an
+            // unbound Bool variable. Naming above exhausted that route;
+            // do not recurse back into the same unnamed variable.
+            if *to == MachineIntegerType::UInt8
+                && matches!(value.as_ref(), ConditionTerm::Variable(variable) if !bound_variables.contains_key(variable))
+            {
+                return None;
+            }
+            let operand = crate::kernel::KernelTermImport::default().condition(value);
+            let term = crate::kernel::KernelTerm::bool_cast(*to, operand).ok()?;
+            raise_kernel_term(&term, parameter_binding, state, bound_variables)
+        }
 
         Bitvector32Term::MachineIntegerConstant(value) => {
             let value = if value.format() == MachineIntegerType::Int128.format() {

@@ -3581,9 +3581,16 @@ fn mathematical_constant_goals_keep_structure_and_type() {
 
 #[test]
 fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
-    let declarations = "function foo(x: int32) -> Integer { to_integer(x) } function foo_wide(x: int64) -> Integer { to_integer(x) } function bar(x: Integer) -> Integer { x + 1 }";
+    let declarations = "function positive(x: int32) -> Bool { x > 0 } function foo(x: int32) -> Integer { to_integer(x) } function foo_wide(x: int64) -> Integer { to_integer(x) } function bar(x: Integer) -> Integer { x + 1 }";
     for expression in [
         "to_integer(x) + foo(x)",
+        "foo(positive(x) as int32)",
+        "foo_wide(positive(x) as int64)",
+        "to_integer(positive(x) as uint64) + foo(x)",
+        "foo((if x > 0 { true } else { false }) as int32)",
+        "foo((if x > 0 { positive(x) } else { false }) as int32)",
+        "to_integer(positive(x) as uint8) + foo(x)",
+        "to_integer(positive(x) as int16) + foo(x)",
         "foo(to_int32(foo(x)))",
         "foo_wide(to_int64(foo(x) + 1))",
         "to_integer(to_uint64(foo(x))) + foo(x)",

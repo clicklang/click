@@ -112,6 +112,19 @@ Elapsed 13m07s included a 3m05s rebuild; unit and fixture phases totaled about
 machine-fixture fact-stability audit passed with zero differences. No nightly
 suite was run.
 
+PR #2212 merged. The next slice, `codex/kernel-bool-conversions`, introduces a
+logical Bool sort in the shared tree and migrates Boolean-to-machine conversions.
+Their conditions expose literals, variables, machine comparisons, equality,
+conditionals and calls as typed children. Other condition sorts keep complete
+legacy payloads, including pointer metadata; this does not migrate all condition
+producers. Comparison format remains structural even when fact equality ignores
+signedness. Raising writes the existing Boolean cast syntax with the Surface
+operand retained. Validation: all 134 focused bridge, spelling and conversion tests passed.
+`scripts/check.sh --no-fail-fast` passed 7,022 unit/import/scaling tests,
+58 examples and 4,953 mdtests in 11m14s, with the ten-minute timing warning.
+The separate fact-stability audits passed 20 bool and 248 integer fixtures
+with zero differences. No nightly suite ran and no limits changed.
+
 PR #2211 subsequently merged as `617ab6c8a`. The next slice on
 `codex/kernel-boolean-integers` migrates the reverse direction: mathematical
 Integer-to-machine conversions. A shared node retains the explicit destination

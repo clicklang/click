@@ -145,8 +145,15 @@ conversion through a no-narrower intermediate can be related to its direct
 modular conversion; a lossy intermediate does not restore the original value.
 No stored cast node is replaced by that equality.
 The `Legacy` leaf retains complete unmigrated values, including pointer
-metadata, Boolean conversions, array snapshots, and scoped binders. Those
-families do not yet have unified constructors or total raising. Legacy call
+metadata, array snapshots, and scoped binders. Those families do not yet have
+unified constructors or total raising. Boolean-to-machine conversions
+now have a shared `BoolCast` node with a logical `Bool` child. Boolean literals,
+variables, machine comparisons, equality, conditionals and calls have structural
+nodes; other conditions retain an exact `LegacyBool` payload. Import/export does
+not use condition fact equality: signed and unsigned equality comparisons keep
+their original format even where the fact store identifies them. Raising a
+conversion writes `b as int32` (or its destination type), retaining the Surface
+operand through `CUnary`. Legacy call
 arguments retain their producer identity and exact payload: semantic pointer
 equality must not select a different auxiliary qualifier or evidence record.
 This change
