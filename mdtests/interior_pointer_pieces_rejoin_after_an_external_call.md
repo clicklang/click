@@ -35,6 +35,8 @@ int32 caller(int32* x, int32 i, int32 j) {
     owns x[0..4];
     ensures result == 1;
 } by {
+    have i < 4;
+    have 0 <= j;
     step();
     step();
     step();
