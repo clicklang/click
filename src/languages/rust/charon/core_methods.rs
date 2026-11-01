@@ -263,7 +263,10 @@ impl Adapter<'_> {
         };
         let slice = self.ty(slice.ty())?;
         let mutable_slice = match &slice {
-            Type::ScalarSlice { element: e, mutable: true } => **e == element,
+            Type::ScalarSlice {
+                element: e,
+                mutable: true,
+            } => **e == element,
             Type::ByteSlice { mutable: true } => element == Type::U8,
             _ => false,
         };

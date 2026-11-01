@@ -40,11 +40,7 @@ fn charon_core_methods_verify_against_their_library_contracts() {
             "or_default",
         ),
         // `swap` requires its second index in bounds.
-        (
-            "    requires b < xs.len();\n",
-            "",
-            "precondition clause 3",
-        ),
+        ("    requires b < xs.len();\n", "", "precondition clause 3"),
         // The second element receives the first, not itself.
         (
             "    ensures xs[b] == old(xs[a]);\n",
