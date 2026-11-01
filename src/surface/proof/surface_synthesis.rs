@@ -5170,7 +5170,7 @@ fn synthesize_surface_pointer(
 
 /// `<region>.result` for a call's result temporary `local`, which no source
 /// name spells.
-fn call_result_expression(local: &str) -> Option<ContractExpression> {
+pub(super) fn call_result_expression(local: &str) -> Option<ContractExpression> {
     if !crate::surface::diagnostics::is_call_result_temporary(local) {
         return None;
     }

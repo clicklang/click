@@ -566,10 +566,34 @@ pub(in crate::surface::proof) struct CertifiedConditionTransition {
     pub(in crate::surface::proof) theorem: Theorem,
 }
 
+/// Spell generated call-result locals by their introducing source region.
+/// Only names in this condition are inspected; no ambient state is searched.
 pub(in crate::surface::proof) fn surface_c_condition(
     condition: &CExpression,
     state: &CState,
-) -> ClickProposition {
+) -> Result<ClickProposition, ClickError> {
+    let mut names = BTreeSet::new();
+    crate::surface::collect_c_expression_referenced_names(condition, &mut names);
+    let mut substitutions = BTreeMap::new();
+    for name in names {
+        if crate::surface::diagnostics::is_call_result_temporary(&name) {
+            let result = super::super::surface_synthesis::call_result_expression(&name)
+                .ok_or_else(|| {
+                    ClickError::new(format!(
+                        "call result `{name}` has no source region for its proof condition"
+                    ))
+                })?;
+            substitutions.insert(name, result);
+        }
+    }
+    let surface = surface_c_condition_unresolved(condition, state);
+    if substitutions.is_empty() {
+        return Ok(surface);
+    }
+    substitute_click_proposition(&surface, &substitutions).map_err(ClickError::new)
+}
+
+fn surface_c_condition_unresolved(condition: &CExpression, state: &CState) -> ClickProposition {
     pub(in crate::surface::proof) fn expression(expression: &CExpression) -> ContractExpression {
         substitute_c_fragment_as_contract_with_numerals(expression, &BTreeMap::new(), true)
             .expect("converting a C expression without substitutions cannot fail")
@@ -602,7 +626,7 @@ pub(in crate::surface::proof) fn surface_c_condition(
             expression,
             target_type: CType::Bool,
             ..
-        } => surface_c_condition(expression, state),
+        } => surface_c_condition_unresolved(expression, state),
         CExpression::Equal(left, right) => comparison(left, ComparisonOperator::Equal, right),
         CExpression::NotEqual(left, right) => comparison(left, ComparisonOperator::NotEqual, right),
         CExpression::LessThan(left, right) => comparison(left, ComparisonOperator::LessThan, right),
@@ -615,14 +639,16 @@ pub(in crate::surface::proof) fn surface_c_condition(
         CExpression::GreaterEqual(left, right) => {
             comparison(left, ComparisonOperator::GreaterEqual, right)
         }
-        CExpression::Not(body) => ClickProposition::Not(Box::new(surface_c_condition(body, state))),
+        CExpression::Not(body) => {
+            ClickProposition::Not(Box::new(surface_c_condition_unresolved(body, state)))
+        }
         CExpression::And(left, right) => ClickProposition::And(
-            Box::new(surface_c_condition(left, state)),
-            Box::new(surface_c_condition(right, state)),
+            Box::new(surface_c_condition_unresolved(left, state)),
+            Box::new(surface_c_condition_unresolved(right, state)),
         ),
         CExpression::Or(left, right) => ClickProposition::Or(
-            Box::new(surface_c_condition(left, state)),
-            Box::new(surface_c_condition(right, state)),
+            Box::new(surface_c_condition_unresolved(left, state)),
+            Box::new(surface_c_condition_unresolved(right, state)),
         ),
         // A `bool` value is the claim on itself (Stage 5): `Bool` has no
         // integer value to compare with zero.
@@ -1525,13 +1551,13 @@ mod boolean_guard_tests {
         ] {
             let converted = crate::kernel::c_cast(condition.clone(), CType::Bool);
             assert_eq!(
-                surface_c_condition(&converted, &CState::new()),
-                surface_c_condition(&condition, &CState::new())
+                surface_c_condition(&converted, &CState::new()).unwrap(),
+                surface_c_condition(&condition, &CState::new()).unwrap()
             );
             let nested = crate::kernel::c_cast(converted, CType::Bool);
             assert_eq!(
-                surface_c_condition(&nested, &CState::new()),
-                surface_c_condition(&condition, &CState::new())
+                surface_c_condition(&nested, &CState::new()).unwrap(),
+                surface_c_condition(&condition, &CState::new()).unwrap()
             );
         }
     }

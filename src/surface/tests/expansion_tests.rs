@@ -1,6 +1,25 @@
 use super::*;
 
 #[test]
+fn loop_guard_call_results_expand_with_source_region_names() {
+    let c = "int poll(int x) { return x; } int spin(int x) { while (poll(x) == 0) { } return 1; }";
+    let source = r#"verifying "poll.c";
+        int32 poll(int32 x) { ensures result == x; } by { step(); solve(); }
+        int32 spin(int32 x) diverges { ensures result == 1; } by {
+            loop diverges { }
+            step();
+            solve();
+        }"#;
+    let sources = [("poll.c", c)];
+    let verified = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "spin").unwrap();
+    assert!(!expanded.contains("__click_call_result"), "{expanded}");
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    assert!(verify_c0_sources(&source.replace("result == 1", "result == 2"), &sources).is_err());
+}
+
+#[test]
 fn common_terminal_proofs_do_not_require_internal_case_spellings() {
     let c = "int f(int i) { int a[2] = {3, 5}; return a[i]; }";
     let source = r#"verifying "f.c";
