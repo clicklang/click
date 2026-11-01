@@ -928,6 +928,12 @@ reinterpreted at the operand's width. A signed right shift is arithmetic. An
 exact claim such as `result == (x << n)` proves at `i32`, and `result == (x >>
 n)` at `i32` and `i64`; at `i8`, `i16` and a 64-bit left shift the
 reinterpreted result is not yet related to the spec's shift.
+At `u8` and `u16`, remainder uses the same signed 32-bit promotion as its
+contract expression; both operands fit that range and remain nonnegative.
+A precondition such as `x % 2u8 == 0u8` therefore proves the corresponding
+branch or `assert!` guard without an explicit proof. The nonzero-divisor
+obligation still applies
+([`design/charon-trial/narrow-remainder`](https://github.com/clicklang/click/blob/master/design/charon-trial/narrow-remainder/widths.click)).
 A narrow signed quotient or remainder is bounded only for a nonnegative
 dividend and positive divisor; with negative operands its range is not yet
 provable
