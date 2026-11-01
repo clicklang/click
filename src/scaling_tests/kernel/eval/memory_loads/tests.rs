@@ -2086,3 +2086,43 @@ fn structural_read_definitions_scale_across_cache_only_records() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn symbolic_pointer_observations_scale_with_selected_cells() {
+    let mut samples = Vec::new();
+    for count in [8u32, 32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(299_301));
+        let mut memory = CMemory::new();
+        // Grow unrelated stored state as well as the chain of observations.
+        for i in 0..count {
+            memory = memory.store(
+                Pointer::symbolic(Variable(300_000 + u64::from(i))),
+                int32(7),
+            );
+        }
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for i in 0..count {
+                let address = base.offset_by_bytes(i * 8);
+                let value =
+                    symbolic_storage_cell_value(&memory, &address, CType::Int32Pointer, false)
+                        .unwrap();
+                assert!(
+                    cached_symbolic_storage_cell_value(&memory, &address, CType::Int32Pointer)
+                        == Some(value.clone())
+                );
+                memory = memory
+                    .clone()
+                    .materialize_symbolic_cell(address.clone(), CType::Int32Pointer);
+                assert!(
+                    matches!(memory.load(&address), CExpressionOutcome::Value(held) if held == value)
+                );
+            }
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 6 + 128),
+        "{samples:?}"
+    );
+}

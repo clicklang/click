@@ -6,6 +6,8 @@ before the call and the target after it both read `n + 8`, as written. Lowering
 once renamed the target's read to the owned footprint's `old(n) + 8`, which only
 the listed alias connected; lowering is fact-stable now
 (`docs/internals/spellability.md`), so the transport holds without it.
+The bare read equality also exercises whole-pointer observations: unfold the
+field, store through another pointer read, then retain the field across a call.
 
 ```c filename=retained_field_fact_unlisted.c
 struct node {
@@ -99,6 +101,7 @@ void probe(struct node* g, struct node* n) {
                     let { after: after } =
                         step(set_word, { w: w });
 
+                    have n->right == at(before_call, n->right);
                     have n->right == saved by {
                         transport(at(before_call, n->right == saved), n->right == saved) using {
                             at(before_call, n->right == saved);

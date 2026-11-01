@@ -5821,6 +5821,7 @@ impl CMemory {
     /// Observe and cache a scalar cell without changing its physical bytes.
     /// The observation is computed here so callers cannot supply a new value
     /// under the guise of a read.
+    #[cfg(test)]
     pub(crate) fn materialize_symbolic_cell(self, pointer: Pointer, c_type: CType) -> Self {
         let value = crate::kernel::eval::symbolic_storage_cell_value(&self, &pointer, c_type, true);
         match value {
@@ -5839,9 +5840,13 @@ impl CMemory {
         c_type: CType,
         source: SharedCMemory,
     ) -> Self {
-        let kind = LoadKind::of_type(c_type).expect("contract fields have scalar read kinds");
-        let load = crate::kernel::canonical_form_of_load(source, pointer.clone(), kind);
-        let value = crate::kernel::cell_run_value(c_type, load);
+        let value = if let CType::Parameter(parameter) = c_type {
+            AlgebraicTermNode::parameter_load(source, pointer.clone(), parameter)
+        } else {
+            let kind = LoadKind::of_type(c_type).expect("contract fields have scalar read kinds");
+            let load = crate::kernel::canonical_form_of_load(source, pointer.clone(), kind);
+            crate::kernel::cell_run_value(c_type, load)
+        };
         self.materialize_named_cell(pointer, value)
     }
 

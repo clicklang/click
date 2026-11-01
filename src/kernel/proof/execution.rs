@@ -1129,7 +1129,7 @@ fn memory_only_adds_named_cells(
             return Err("added a cell no load reads".into());
         };
         let load = crate::kernel::canonical_form_of_load(base.clone(), pointer.clone(), kind);
-        if !cell_value_is_exactly_load(&value, &load, pointer) {
+        if !cell_value_is_exactly_load(&value, &load) {
             return Err(describe_unnamed_cell_addition(
                 &base, pointer, &value, &load,
             ));
@@ -1226,13 +1226,9 @@ fn describe_changed_state_field(changed: &CState, original: &CState) -> &'static
 
 /// Whether a materialized cell's value is exactly the given load of its own
 /// cell, in one of the representations resource projection writes: the scalar
-/// term itself, the `_Bool` normalization of it, or a pointer whose offset is
-/// that term scaled by its pointee width in the cell's own block.
-fn cell_value_is_exactly_load(
-    value: &CValue,
-    load: &Bitvector32Term,
-    pointer: &crate::kernel::Pointer,
-) -> bool {
+/// term itself, the `_Bool` normalization of it, or the complete typed pointer
+/// read (including its designation and extent).
+fn cell_value_is_exactly_load(value: &CValue, load: &Bitvector32Term) -> bool {
     match value {
         CValue::Int8(term) => term == load,
         CValue::Int16(term)
@@ -1251,14 +1247,8 @@ fn cell_value_is_exactly_load(
                 Bitvector32Term::Constant(1),
             )
         }
-        CValue::Pointer(value) => {
-            let target = value.pointer();
-            target.block == pointer.block
-                && matches!(
-                    &target.offset,
-                    crate::kernel::PointerOffsetTerm::Int32Scaled { value, .. }
-                        if value.as_ref() == load
-                )
+        CValue::Pointer(pointer) => {
+            value == &crate::kernel::cell_run_value(pointer.c_type(), load.clone())
         }
         _ => false,
     }
