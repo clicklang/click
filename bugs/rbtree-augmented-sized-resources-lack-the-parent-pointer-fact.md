@@ -56,7 +56,8 @@ cannot break this directory unseen.
 Resource-argument identity now ignores the view a cast selects, so
 `compute_size(old, 0)` accepts a held `size_metadata(rb_old)`. The sidecars
 stopped by that refusal moved to later proof obligations.
-Current checks against `1044b6034` plus the rotation proof repair:
+Current checks against `1044b6034` plus the rotation and leaf-propagation
+proof repairs:
 
 - `rbtree_size_rotate.click` now verifies both the callback and its contract
   theorem. The proof stops immediately before the metadata copy, states the
@@ -67,9 +68,10 @@ Current checks against `1044b6034` plus the rotation proof repair:
 - `rbtree_size_propagate_tree.click`, tactic@97:56: `normalize()` leaves
   `rb == rb`, with a cell walk that does not separate a step from an 8-byte
   read.
-- `rbtree_size_propagate.click` now passes the variant calculation and stops
-  at line 66: folding `optional_size(node->rb.rb_left)` requires a proved body
-  guard. Its cause is not established.
+- `rbtree_size_propagate.click` now verifies. After the `container_of`
+  expansion, its proof states that the C local denotes the original node and
+  uses that equality with the unfolded leaf facts to establish both null-child
+  guards in the local's spelling. The C, contracts, and verifier are unchanged.
 
 `rbtree_size_metadata.click` also verifies both selected proofs. The sized
 resources already state the parent-pointer facts described above. Keep this
