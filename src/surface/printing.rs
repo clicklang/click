@@ -95,7 +95,10 @@ fn machine_arithmetic(expression: &ContractExpression) -> Option<&'static str> {
     // `a + (i + 1u64)` can be a pointer. Preserve its source semantics;
     // generated C arithmetic still receives the machine barrier below.
     if !snapshot
-        && matches!(inner, ContractExpression::Add(..) | ContractExpression::Subtract(..))
+        && matches!(
+            inner,
+            ContractExpression::Add(..) | ContractExpression::Subtract(..)
+        )
     {
         return None;
     }

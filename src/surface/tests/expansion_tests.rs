@@ -15,7 +15,6 @@ fn unsigned_array_read_cases_expand_without_implicit_search() {
     assert!(verify_c0_sources(&wrong, &sources).is_err());
 }
 
-
 #[test]
 fn pointer_translation_with_integer_bound_expands_without_implicit_search() {
     let (source, sources) =
