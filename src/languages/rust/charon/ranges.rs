@@ -1,20 +1,35 @@
-//! Integer ranges, `start..end`, iterated by `for`. The compiler-resolved
-//! `IntoIterator::into_iter` and `Iterator::next` of `core::ops::Range` are
-//! checked by identity and lowered to the range's two bounds; `next` yields
-//! an ordinary `Option` value.
+//! Integer ranges, `start..end` and `start..=end`, iterated by `for`. The
+//! compiler-resolved `RangeInclusive::new`, `IntoIterator::into_iter` and
+//! `Iterator::next` of `core::ops::Range` and `RangeInclusive` are checked
+//! by identity and lowered to the range's two bounds, and an inclusive
+//! range's exhaustion; `next` yields an ordinary `Option` value.
 use super::protocol::{local, operand_place, path, variable};
 use super::*;
 
 impl Adapter<'_> {
-    /// The element of a `core::ops::Range<T>` of an integer `T`, or with
-    /// `template` of the declaration's own type parameter.
+    /// Whether `ty` is a `core::ops::RangeInclusive`.
+    pub(super) fn inclusive_range(&self, ty: &a::Ty) -> bool {
+        matches!(ty.kind(), a::TyKind::Adt(r)
+        if self.krate.type_decls.get(r.id).is_some_and(|decl| path(
+            &decl.item_meta.name,
+            &["core", "ops", "range", "RangeInclusive"],
+        )))
+    }
+
+    /// The element of a `core::ops::Range<T>` or `RangeInclusive<T>` of an
+    /// integer `T`, or with `template` of the declaration's own type
+    /// parameter.
     pub(super) fn range_element<'t>(&self, ty: &'t a::Ty, template: bool) -> Option<&'t a::Ty> {
         let a::TyKind::Adt(r) = ty.kind() else {
             return None;
         };
         let decl = self.krate.type_decls.get(r.id)?;
         if decl.item_meta.is_local
-            || !path(&decl.item_meta.name, &["core", "ops", "range", "Range"])
+            || !(path(&decl.item_meta.name, &["core", "ops", "range", "Range"])
+                || path(
+                    &decl.item_meta.name,
+                    &["core", "ops", "range", "RangeInclusive"],
+                ))
             || !matches!(decl.src, a::TypeSource::Normal)
             || !matches!(decl.kind, a::TypeDeclKind::Opaque)
             || !decl.generics.regions.is_empty()
@@ -100,6 +115,40 @@ impl BodyAdapter<'_, '_> {
             Some(a::PathElem::Ident(method, d)) if *d == a::Disambiguator::ZERO => method.as_str(),
             _ => return Err(unsupported("range method identity")),
         };
+        // `start..=end`, the standard `RangeInclusive::new`.
+        if into
+            && method == "new"
+            && matches!(callee.src, a::FunSource::Normal)
+            && self.adapter.inclusive_range(&call.dest.ty)
+        {
+            let element = self.adapter.ty(self
+                .adapter
+                .range_element(&call.dest.ty, false)
+                .expect("checked above"))?;
+            let [start, end] = call.args.as_slice() else {
+                return Err(unsupported("RangeInclusive::new arity"));
+            };
+            if callee.item_meta.is_local
+                || callee.signature.is_unsafe
+                || call.safety == a::CallSafety::Unsafe
+                || !matches!(callee.item_meta.name.name.as_slice(), [
+                    a::PathElem::Ident(core, _),
+                    a::PathElem::Ident(ops, _),
+                    a::PathElem::Ident(range, _),
+                    a::PathElem::Impl(a::ImplElem::Ty(_)),
+                    _,
+                ] if core == "core" && ops == "ops" && range == "range")
+                || self.adapter.ty(start.ty())? != element
+                || self.adapter.ty(end.ty())? != element
+            {
+                return Err(unsupported("RangeInclusive::new identity/signature"));
+            }
+            return Ok(Some(S::RangeInitialize {
+                target: self.local(local(&call.dest)?)?,
+                start: self.operand(start)?,
+                end: self.operand(end)?,
+            }));
+        }
         let a::FunSource::TraitImpl {
             trait_ref,
             impl_ref,
@@ -186,6 +235,7 @@ impl BodyAdapter<'_, '_> {
             )
             || tr.item_meta.lang_item != Some(LangItem::Iterator)
             || self.adapter.range_element(receiver, true).is_none()
+            || self.adapter.inclusive_range(receiver) != self.adapter.inclusive_range(range)
             || payload != Some(element)
         {
             return Err(unsupported("range next identity/signature"));
@@ -197,6 +247,7 @@ impl BodyAdapter<'_, '_> {
             iterator: self.iterator_root(operand_place(argument)?)?,
             option: destination,
             option_type,
+            taken: None,
         }))
     }
 }

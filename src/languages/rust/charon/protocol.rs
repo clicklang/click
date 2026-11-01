@@ -483,9 +483,13 @@ fn split_range_next(
         return Err(unsupported("range next dispatch"));
     }
     let first = blocks.len();
-    for target in [then_target, else_target] {
+    for (target, taken) in [(then_target, true), (else_target, false)] {
+        let mut next = next.clone();
+        if let S::RangeNext { taken: decided, .. } = &mut next {
+            *decided = Some(taken);
+        }
         blocks.push(out::MirBlock {
-            statements: vec![next.clone()],
+            statements: vec![next],
             terminator: T::Goto { target },
         });
     }
