@@ -80,3 +80,20 @@ the repair below:
 resources already state the parent-pointer facts described above. Keep this
 report open: the remaining sidecars and full-directory audit have not met the
 acceptance criteria.
+
+## Rotation helper parent designation
+
+`rbtree_size_rotate_set_parents.click` now verifies both selected proofs. Its
+contract requires the explicit masked parent-pointer equality, matching the
+ordinary rbtree helper: equality of the packed numeric word does not establish
+pointer designation. The non-root proof branches rewrite that premise through
+`sized_context_parent` before reading the C local `parent`. All 22 smart sites
+pass expansion audit. The C and postconditions are unchanged.
+
+The 14 direct rotation callers retain the typed parent-pointer fact across the
+child-link updates and, for double rotations, the inner rotation callback. They
+then rewrite the context parent explicitly to supply the helper's premise.
+Paired runs of all 14 callers on `e7cb3ca08` and with this repair reach the
+same existing failing statements and goals; none fails earlier. The broader
+report remains open: the complete insertion sidecars and directory audit do
+not yet pass.
