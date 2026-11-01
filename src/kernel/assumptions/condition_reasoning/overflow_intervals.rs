@@ -106,6 +106,9 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
+        if let Some(value) = self.exact_condition_value(condition) {
+            return Some(value);
+        }
         match condition {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,

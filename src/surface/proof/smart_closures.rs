@@ -9640,6 +9640,18 @@ impl<'a> Proof<'a> {
                 }
             }
         }
+        if matches!(self.goal(), Some(Proposition::And(..)))
+            && !matches!(self.surface_goal(), Some(ClickProposition::And(..)))
+        {
+            let split = (|| {
+                let (proof, split, ids) = self.split_focused_both().ok()?;
+                let marker = proof.checkpoint();
+                let left = proof.focus_branch(ids[0]).ok()?.try_restricted_solve_closure(surfaces)?;
+                let right = left.focus_branch(ids[1]).ok()?.try_restricted_solve_closure(surfaces)?;
+                right.join_focused_both(&marker, split, ids).ok()
+            })();
+            if split.is_some() { return split; }
+        }
         // A conjunction is proved one conjunct at a time, each as a checked
         // `have` from the same listed premises, and then closed from the
         // conjuncts it added.

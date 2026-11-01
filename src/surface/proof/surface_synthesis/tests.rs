@@ -2165,15 +2165,17 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
                     )),
                 );
             for truth in [false, true] {
-                let requirement = Proposition::ConditionIs(
-                    ConditionTerm::Overflows {
-                        format,
-                        op,
-                        left: Box::new(left.clone()),
-                        right: Box::new(right.clone()),
+                let domain = Proposition::signed_arithmetic_domain(
+                    format,
+                    match op {
+                        OverflowOperation::Add => MachineBinaryOp::Add,
+                        OverflowOperation::Subtract => MachineBinaryOp::Subtract,
+                        OverflowOperation::Multiply => MachineBinaryOp::Multiply,
+                        _ => unreachable!(),
                     },
-                    truth,
+                    &left, &right,
                 );
+                let requirement = if truth { Proposition::Not(Box::new(domain)) } else { domain };
                 let surface = synthesize_surface_proposition(
                     &requirement,
                     ParameterBinding::default(),

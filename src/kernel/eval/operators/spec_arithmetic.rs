@@ -1,7 +1,7 @@
 //! Logical operators construct one value and retain mandatory domain debts.
 //! No ambient facts participate in selecting the term or its domain.
 use super::*;
-use crate::kernel::{MachineBinaryOp, OverflowOperation};
+use crate::kernel::MachineBinaryOp;
 
 mod wide;
 
@@ -29,60 +29,21 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
     let (left, right, width) = apply_c_scalar_terms(left, right)?;
     let format = width.format();
     let mut obligations = inherited.to_vec();
-    let mut require_false = |condition| {
-        if PureFactContext::decide_intrinsically(&condition) != Some(false) {
-            obligations.push(
-                ProofObligation::evaluation_domain(Proposition::ConditionIs(condition, false))
-                    .with_context("arithmetic expression is defined"),
-            );
-        }
-    };
+    let mut domain = Vec::new();
     if matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder) {
-        let zero = match width {
-            ScalarWidth::Int32 => ConditionTerm::equal(right.clone(), 0u32.into()),
-            ScalarWidth::UInt32 => {
-                ConditionTerm::uint32_equal(right.clone(), Bitvector32Term::UInt32Constant(0))
-            }
-            ScalarWidth::Int64 => {
-                ConditionTerm::int64_equal(right.clone(), Bitvector32Term::Int64Constant(0))
-            }
-            ScalarWidth::UInt64 => {
-                ConditionTerm::uint64_equal(right.clone(), Bitvector32Term::UInt64Constant(0))
-            }
-        };
-        require_false(zero);
-    }
-    if matches!(width, ScalarWidth::Int32 | ScalarWidth::Int64)
-        && !matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder)
-    {
-        let overflow = match op {
-            MachineBinaryOp::Add => OverflowOperation::Add,
-            MachineBinaryOp::Subtract => OverflowOperation::Subtract,
-            MachineBinaryOp::Multiply => OverflowOperation::Multiply,
-            _ => unreachable!("arithmetic operator"),
-        };
-        require_false(ConditionTerm::machine_overflows(
-            format,
-            overflow,
-            left.clone(),
-            right.clone(),
-        ));
-    }
-    if matches!(width, ScalarWidth::Int32 | ScalarWidth::Int64)
-        && matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder)
-    {
-        let [minimum, minus_one] =
-            ConditionTerm::signed_division_exception_tests(format, &left, &right);
-        if !matches!(minimum, ConditionTerm::Constant(false))
-            && !matches!(minus_one, ConditionTerm::Constant(false))
-        {
-            obligations.push(
-                ProofObligation::evaluation_domain(Proposition::signed_division_exclusion(
-                    format, &left, &right,
-                ))
-                .with_context("arithmetic expression is defined"),
-            );
+        let zero = crate::kernel::machine_integer::range::constant_word(format, &0.into())?;
+        domain.push(Proposition::ConditionIs(ConditionTerm::machine_compare(
+            format, crate::kernel::CompareRelation::Equal, right.clone(), zero,
+        ), false));
+        if format.format().is_signed() {
+            domain.push(Proposition::signed_division_exclusion(format, &left, &right));
         }
+    } else if format.format().is_signed() {
+        domain.push(Proposition::signed_arithmetic_domain(format, op, &left, &right));
+    }
+    if let Some(domain) = Proposition::arithmetic_domain(domain) {
+        obligations.push(ProofObligation::evaluation_domain(domain)
+            .with_context("arithmetic expression is defined"));
     }
     let term = Bitvector32Term::machine_binary(format, op, left, right);
     Some(CExpressionPath {
@@ -188,12 +149,10 @@ fn apply_spec_shift_with_count_width(
             .expect("shift bounds fit their promoted format")
     };
     let mut obligations = inherited.to_vec();
+    let mut domain = Vec::new();
     let mut require_false = |condition| {
         if PureFactContext::decide_intrinsically(&condition) != Some(false) {
-            obligations.push(
-                ProofObligation::evaluation_domain(Proposition::ConditionIs(condition, false))
-                    .with_context("shift expression is defined"),
-            );
+            domain.push(Proposition::ConditionIs(condition, false));
         }
     };
     if !unsigned_count {
@@ -226,12 +185,13 @@ fn apply_spec_shift_with_count_width(
             left.clone(),
             constant(width.format(), 0),
         ));
-        require_false(ConditionTerm::machine_overflows(
-            width.format(),
-            OverflowOperation::ShiftLeft,
-            left.clone(),
-            count.clone(),
-        ));
+        domain.push(Proposition::ConditionIs(ConditionTerm::signed_shift_result_fits(
+            width.format(), left.clone(), count.clone(),
+        ), true));
+    }
+    if let Some(domain) = Proposition::arithmetic_domain(domain) {
+        obligations.push(ProofObligation::evaluation_domain(domain)
+            .with_context("shift expression is defined"));
     }
     let term = Bitvector32Term::machine_binary(width.format(), op, left, count);
     Some(CExpressionPath {
@@ -394,6 +354,8 @@ mod tests {
                 MachineBinaryOp::Multiply,
                 MachineBinaryOp::Divide,
                 MachineBinaryOp::Remainder,
+                MachineBinaryOp::ShiftLeft,
+                MachineBinaryOp::ShiftRight,
             ] {
                 let wrap = |term| match format {
                     MachineIntegerType::Int32 => CValue::Int32(term),
@@ -424,10 +386,8 @@ mod tests {
                     MachineIntegerType::Int32 | MachineIntegerType::Int64
                 );
                 let division = matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder);
-                assert_eq!(
-                    path.obligations.len(),
-                    usize::from(signed) + usize::from(division)
-                );
+                let shift = matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight);
+                assert_eq!(path.obligations.len(), usize::from(signed || division || shift));
                 assert!(path.obligations.iter().all(|debt| !debt.is_assumable()));
             }
         }

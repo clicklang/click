@@ -135,3 +135,39 @@ pub(crate) fn overflow_fact_of_integer_bound(
                 .then_some(fact)
         })
 }
+
+/// Read one explicitly supplied ordinary range conjunction as an arithmetic
+/// query. This is a structural adapter for existing interval certificates;
+/// it neither adds an overflow fact nor searches the context for bounds.
+pub(crate) fn ordinary_arithmetic_guard(proposition: &Proposition) -> Option<ConditionTerm> {
+    let Proposition::And(first, second) = proposition else { return None; };
+    let fact = definedness_of_integer_bound(first)?;
+    let bounds = integer_bounds_of_definedness(&fact);
+    let [upper, lower] = bounds.as_slice() else { return None; };
+    if !(first.as_ref() == upper && second.as_ref() == lower
+        || first.as_ref() == lower && second.as_ref() == upper) {
+        return None;
+    }
+    let Proposition::ConditionIs(condition, false) = fact else { return None; };
+    Some(condition)
+}
+
+/// Private input form for the existing interval proof rules. Stored facts,
+/// obligations and certificate results keep the ordinary propositions. This
+/// adapter reads only the explicit proposition, never the ambient context.
+pub(crate) fn interval_query_form(proposition: &Proposition) -> Option<Proposition> {
+    if let Some(condition) = ordinary_arithmetic_guard(proposition) {
+        return Some(Proposition::ConditionIs(condition, false));
+    }
+    if let Proposition::And(left, right) = proposition {
+        let a = interval_query_form(left);
+        let b = interval_query_form(right);
+        if a.is_some() || b.is_some() {
+            return Some(Proposition::And(
+                Box::new(a.unwrap_or_else(|| *left.clone())),
+                Box::new(b.unwrap_or_else(|| *right.clone())),
+            ));
+        }
+    }
+    None
+}

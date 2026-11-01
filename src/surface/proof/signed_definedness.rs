@@ -37,6 +37,8 @@ impl<'a> Proof<'a> {
         let Some((surface_left, surface_right)) = self.signed_definedness_surface_operands() else {
             return Ok(None);
         };
+        let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+        let goal = interval_query.as_ref().unwrap_or(goal);
         let Some((width, left, right, _)) = signed_definedness_operands(goal) else {
             // `defined(a + b)` over operands that carry definedness of their
             // own lowers to a conjunction; its outermost operation is the
@@ -237,6 +239,8 @@ impl<'a> Proof<'a> {
         let Some(goal) = self.goal() else {
             return Ok(None);
         };
+        let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+        let goal = interval_query.as_ref().unwrap_or(goal);
         let Some((width, left, right, _)) = signed_definedness_operands(goal) else {
             return Ok(None);
         };

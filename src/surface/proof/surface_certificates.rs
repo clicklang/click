@@ -2463,6 +2463,8 @@ pub(super) fn plan_explicit_increment_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -2495,6 +2497,8 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -2562,6 +2566,8 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -2683,6 +2689,8 @@ pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,

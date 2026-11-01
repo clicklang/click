@@ -154,12 +154,9 @@ fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
         )
         .expect("the existential lowers on one path");
 
-    let overflows = Proposition::ConditionIs(
-        ConditionTerm::signed_add_overflows(
-            Bitvector32Term::Variable(Variable(41)),
-            Bitvector32Term::Constant(1),
-        ),
-        false,
+    let overflows = Proposition::signed_arithmetic_domain(
+        crate::kernel::MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add,
+        &Bitvector32Term::Variable(Variable(41)), &Bitvector32Term::Constant(1),
     );
     let Proposition::Exists { var, body, .. } = &goal else {
         panic!("the lowered goal is an existential, got {goal:?}");

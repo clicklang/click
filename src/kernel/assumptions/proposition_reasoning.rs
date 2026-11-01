@@ -294,6 +294,19 @@ impl PureFactContext {
     /// shape. It searches no logical structure and instantiates nothing, so
     /// a proposition it does not settle is left for a tactic to prove.
     pub(crate) fn settles_exactly(&self, proposition: &Proposition) -> bool {
+        // Check the explicitly supplied logical structure with the ordinary
+        // leaf checker. A complete arithmetic domain needs no fact search.
+        match proposition {
+            Proposition::And(left, right) => return self.settles_exactly(left) && self.settles_exactly(right),
+            Proposition::Or(left, right) => {
+                if self.contains_assumed_exact(proposition) {
+                    record_implicit_reasoning_provenance(self, proposition);
+                    return true;
+                }
+                return self.settles_exactly(left) || self.settles_exactly(right);
+            }
+            _ => {}
+        }
         self.proves_exact(proposition)
             || match proposition {
                 Proposition::ForAll { .. }
@@ -1011,6 +1024,8 @@ impl SelectedFacts<'_> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> (Option<AtomicPropositionDerivationEvidence>, u64) {
+        let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(proposition);
+        let proposition = interval_query.as_ref().unwrap_or(proposition);
         let id_scope = PureFactContextIdScope::enter(self);
         let premises_id = id_scope.id;
         if let Some(result) = ATOMIC_DERIVATION_MEMO.with(|memo| {
@@ -1872,6 +1887,8 @@ impl SelectedFacts<'_> {
         premises_id: u64,
         evidence: &AtomicPropositionDerivationEvidence,
     ) -> bool {
+        let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(proposition);
+        let proposition = interval_query.as_ref().unwrap_or(proposition);
         if let AtomicPropositionDerivationEvidence::PointerWord(evidence) = evidence {
             let Proposition::ConditionIs(
                 ConditionTerm::Compare {

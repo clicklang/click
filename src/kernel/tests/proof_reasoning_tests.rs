@@ -1022,14 +1022,8 @@ fn int32_increment_below_max_is_defined_axiom_has_the_exact_implication() {
         ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::Constant(i32::MAX as u32)),
         true,
     );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: Box::new(value),
-            right: Box::new(Bitvector32Term::Constant(1)),
-        },
-        false,
+    let conclusion = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32, MachineBinaryOp::Add, &value, &Bitvector32Term::Constant(1),
     );
 
     assert_eq!(
@@ -1310,8 +1304,9 @@ fn int32_nonnegative_add_within_max_is_defined_axiom_has_the_exact_implication()
         ),
         true,
     );
-    let defined =
-        Proposition::ConditionIs(ConditionTerm::signed_add_overflows(value, amount), false);
+    let defined = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32, MachineBinaryOp::Add, &value, &amount,
+    );
 
     assert_eq!(
         theorem.proposition(),
@@ -6199,23 +6194,12 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
     else {
         panic!("wrong upper bound")
     };
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: x,
-            right: y,
-        },
-        false,
-    ) = result.as_ref()
-    else {
-        panic!("wrong safety conclusion")
-    };
+    assert_eq!(result.as_ref(), &Proposition::And(upper.clone(), lower.clone()));
     for a in [i32::MIN, -1, 0, 1, i32::MAX] {
         for b in [i32::MIN, -1, 0, 1, i32::MAX] {
             let in_range = integer(exact_lower, a, b) >= integer(min, a, b)
                 && integer(exact_upper, a, b) <= integer(max, a, b);
-            let exact = i64::from(bits(x, a, b) as i32) + i64::from(bits(y, a, b) as i32);
+            let exact = i64::from(a) + i64::from(b);
             assert_eq!(in_range, i32::try_from(exact).is_ok(), "{a}, {b}");
         }
     }
@@ -6232,9 +6216,16 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
         let Proposition::Implies(guard, conclusion) = theorem.proposition() else {
             panic!("missing definedness guard")
         };
-        let Proposition::ConditionIs(guard, false) = guard.as_ref() else {
-            panic!("wrong guard polarity")
+        let Proposition::And(upper, lower) = guard.as_ref() else {
+            panic!("expected ordinary range conjunction")
         };
+        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(exact, max), true) = upper.as_ref() else {
+            panic!("expected upper bound")
+        };
+        let Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(same_exact, min), true) = lower.as_ref() else {
+            panic!("expected lower bound")
+        };
+        assert_eq!(exact, same_exact);
         let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
             conclusion.as_ref()
         else {
@@ -6244,23 +6235,11 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
         let mut excluded = 0;
         for a in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
             for b in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
-                let exact = match guard {
-                    ConditionTerm::Overflows {
-                        format: MachineIntegerType::Int32,
-                        op: OverflowOperation::Add,
-                        left: x,
-                        right: y,
-                    } => i64::from(bits(x, a, b) as i32) + i64::from(bits(y, a, b) as i32),
-                    ConditionTerm::Overflows {
-                        format: MachineIntegerType::Int32,
-                        op: OverflowOperation::Subtract,
-                        left: x,
-                        right: y,
-                    } => i64::from(bits(x, a, b) as i32) - i64::from(bits(y, a, b) as i32),
-                    _ => panic!("wrong definedness guard"),
-                };
+                let exact = integer(exact, a, b);
+                let in_range = integer(min, a, b) <= exact && exact <= integer(max, a, b);
+                assert_eq!(in_range, (num_bigint::BigInt::from(i32::MIN)..=num_bigint::BigInt::from(i32::MAX)).contains(&exact));
                 let equality = integer(left, a, b) == integer(right, a, b);
-                if i32::try_from(exact).is_ok() {
+                if in_range {
                     defined += 1;
                     assert!(equality, "unsound bridge at {a}, {b}");
                 } else {

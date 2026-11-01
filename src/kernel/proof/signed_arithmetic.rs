@@ -2671,7 +2671,9 @@ fn interval_remainder(
 }
 
 fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool {
-    let Proposition::ConditionIs(condition, false) = proposition else {
+    let ordinary = crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
+        .map(|condition| Proposition::ConditionIs(condition, false));
+    let Proposition::ConditionIs(condition, false) = ordinary.as_ref().unwrap_or(proposition) else {
         return false;
     };
     match (condition, term) {

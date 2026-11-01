@@ -143,6 +143,11 @@ impl<'a> Proof<'a> {
                 self.step_error("`both` presentation correspondence requires a kernel conjunction")
             );
         };
+        if matches!(surface, ClickProposition::Defined { .. }) {
+            // `defined` names this entire ordinary domain. Its children are
+            // the kernel conjunction's propositions, not source operands.
+            return Ok(self.bundle_member_surface_children());
+        }
         let witness_refinement_kernel = self
             .proposition_obligation()
             .and_then(|goal| goal.presentation.witness_refinement_kernel.as_ref());

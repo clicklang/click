@@ -1,6 +1,6 @@
 use super::*;
 use crate::kernel::binary_node;
-use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::CompareRelation;
 use num_bigint::BigInt;
 use num_traits::One;
 
@@ -132,14 +132,8 @@ fn integer_existential_scopes_definedness_with_its_witness() {
         panic!("the lowered proposition must retain its Integer existential");
     };
     assert_eq!(*var, witness);
-    let overflow = Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: Box::new(left_bits.clone()),
-            right: Box::new(right_bits.clone()),
-        },
-        false,
+    let overflow = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, &left_bits, &right_bits,
     );
     assert!(
         contains(body, &overflow),
