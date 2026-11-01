@@ -1,6 +1,42 @@
 use super::*;
 
 #[test]
+fn unfolded_member_quantifier_keeps_written_pointer_arguments_in_expansion() {
+    let source = r#"
+        verifying "filled.c";
+        resource filled(p: int32*) {
+            owns p[0..2];
+            fact forall (i: int32) { 0 <= i and i < 2 implies p[i] == 7 };
+        }
+        extern void fill(int *p) {
+            consumes p[0..2];
+            produces filled(p);
+        }
+        int first(int *p) {
+            owns p[0..2];
+            ensures result == 7;
+        } by {
+            step();
+            unfold(filled(p));
+            have p[0] == 7;
+            step();
+            assumption();
+        }
+    "#;
+    let sources = [(
+        "filled.c",
+        "void fill(int *p); int first(int *p) { fill(p); return p[0]; }",
+    )];
+    let verified = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "first").unwrap();
+    assert!(expanded.contains("instantiate(forall"), "{expanded}");
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let wrong = expanded.replace("ensures result == 7;", "ensures result == 8;");
+    assert_ne!(wrong, expanded);
+    assert!(without_implicit_auto(|| verify_c0_sources(&wrong, &sources)).is_err());
+}
+
+#[test]
 fn short_circuit_boolean_returns_expand_distinct_outcome_proofs() {
     for (expression, proposition) in [("a && b", "a and b"), ("a || b", "a or b")] {
         let c = format!("bool f(bool a, bool b) {{ return {expression}; }}");

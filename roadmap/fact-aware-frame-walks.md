@@ -4,12 +4,9 @@ Priority: P1.
 
 ## Remaining targets
 
-First finish the cell-source removal candidate and its remaining
-unit-test repairs listed in [Smart tactics](smart-tactics.md). Do not land it
-with a smart proof that cannot replay.
-
-The subsequent pointer-specific traversal in `pointer_read_value_recursive` and its frame
-fallback still searches recorded memory history during ordinary checking.
+The next target is the pointer-specific traversal in `pointer_read_value_recursive`
+and its frame fallback. These still search recorded memory history during ordinary
+checking.
 `repeated_pointer_frame_queries_have_near_linear_total_work` in the combined
 experiment (`codex/memory-walk-removal-current`) demonstrates quadratic total
 work from repeated pointer-frame queries. Keep that regression with the pointer

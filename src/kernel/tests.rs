@@ -139,9 +139,13 @@ pub(in crate::kernel) fn explicit_frame(
         (CValue::Pointer(a), CValue::Pointer(b)) => {
             ConditionTerm::pointer_value_equal(a.clone(), b.clone())
         }
-        (CValue::Int32(a), CValue::Int32(b)) | (CValue::UInt8(a), CValue::UInt8(b)) => {
-            ConditionTerm::equal(a.clone(), b.clone())
-        }
+        (CValue::Int32(a), CValue::Int32(b)) => ConditionTerm::equal(a.clone(), b.clone()),
+        (CValue::UInt8(a), CValue::UInt8(b)) => ConditionTerm::machine_compare(
+            MachineIntegerType::UInt8,
+            CompareRelation::Equal,
+            a.clone(),
+            b.clone(),
+        ),
         (CValue::UInt64(a), CValue::UInt64(b)) => ConditionTerm::uint64_equal(a.clone(), b.clone()),
         other => panic!("unsupported test observation: {other:?}"),
     };

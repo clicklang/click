@@ -1,4 +1,4 @@
-# Explicit pointer round trips across a separate store
+# Explicit pointer round trips across a separate call
 
 ```c filename=round_trip.c
 void change(int32* other) { *other = 7; }

@@ -6,17 +6,28 @@ predicate range_filled(job: struct range_job*) {
     }
 }
 
+resource filled_range(output: int*, begin: int32, end: int32, value: int32) {
+    owns output[begin..end];
+    fact forall (k: int32) { begin <= k and k < end implies output[k] == value };
+}
+
 void *fill_range(void *argument) {
     views (argument as (struct range_job *))->output;
     views (argument as (struct range_job *))->begin;
     views (argument as (struct range_job *))->end;
     views (argument as (struct range_job *))->value;
-    owns (argument as (struct range_job *))->output[(argument as (struct range_job *))->begin..(argument as (struct range_job *))->end];
+    consumes (argument as (struct range_job *))->output[(argument as (struct range_job *))->begin..(argument as (struct range_job *))->end];
     requires 0 <= (argument as (struct range_job *))->begin;
     requires (argument as (struct range_job *))->begin <= (argument as (struct range_job *))->end;
     requires 0 <= (argument as (struct range_job *))->end - (argument as (struct range_job *))->begin;
     requires (argument as (struct range_job *))->end - (argument as (struct range_job *))->begin <= 1073741823;
     requires separate(memory(*(argument as (struct range_job *))), memory((argument as (struct range_job *))->output[(argument as (struct range_job *))->begin..(argument as (struct range_job *))->end]));
+    produces filled_range(
+        (argument as (struct range_job *))->output,
+        (argument as (struct range_job *))->begin,
+        (argument as (struct range_job *))->end,
+        (argument as (struct range_job *))->value
+    );
     ensures result == 0;
     ensures range_filled(argument as (struct range_job *));
 } by {
@@ -94,6 +105,7 @@ void *fill_range(void *argument) {
         }
     }
     step();
+    fold(filled_range((argument as (struct range_job *))->output, (argument as (struct range_job *))->begin, (argument as (struct range_job *))->end, (argument as (struct range_job *))->value));
     solve();
 }
 
@@ -120,6 +132,11 @@ int fill_parallel(int output[4]) {
     step();
     branch {
         step();
+        have first_job.output == output;
+        have first_job.begin == 0;
+        have first_job.end == 2;
+        have first_job.value == 11;
+        unfold(filled_range(output, 0, 2, 11));
         have range_filled(&first_job);
         have forall (k: int32) {
             first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
@@ -132,6 +149,11 @@ int fill_parallel(int output[4]) {
         solve();
     } else {}
     step();
+    have first_job.output == output;
+    have first_job.begin == 0;
+    have first_job.end == 2;
+    have first_job.value == 11;
+    unfold(filled_range(output, 0, 2, 11));
     have range_filled(&first_job);
     have forall (k: int32) {
         first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
@@ -141,6 +163,7 @@ int fill_parallel(int output[4]) {
     have output[0] == 11;
     have output[1] == 11;
     step();
+    unfold(filled_range(output, 2, 4, 22));
     have range_filled(&second_job);
     have forall (k: int32) {
         second_job.begin <= k and k < second_job.end implies second_job.output[k] == second_job.value
