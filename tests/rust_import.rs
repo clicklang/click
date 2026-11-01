@@ -16,6 +16,7 @@ fn rust_integer_literal_documentation_preserves_contextual_types() {
 }
 
 const SOURCE: &str = include_str!("../examples/basic-rust/borrow.rs");
+#[cfg(not(feature = "fast-gate"))]
 const FIELD_BORROW_GUARD_SOURCE: &str = include_str!("../examples/rust-field-borrow/guard.rs");
 const SIDECAR: &str = include_str!("../examples/basic-rust/borrow.click");
 struct Project {
@@ -2812,7 +2813,9 @@ fn rust_enum_match_expansions_verify() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 const UNSIGNED_SOURCE: &str = include_str!("../examples/rust-unsigned/arithmetic.rs");
+#[cfg(not(feature = "fast-gate"))]
 const UNSIGNED_SIDECAR: &str = include_str!("../examples/rust-unsigned/arithmetic.click");
 
 #[cfg(not(feature = "fast-gate"))]
@@ -3707,7 +3710,9 @@ fn field(p: &mut Pair) { owns p.byte; owns p.word; ensures p.byte == 7; ensures 
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
 }
 
+#[cfg(not(feature = "fast-gate"))]
 const SLICES_SOURCE: &str = include_str!("../examples/rust-slices/bytes.rs");
+#[cfg(not(feature = "fast-gate"))]
 const SLICES_SIDECAR: &str = include_str!("../examples/rust-slices/bytes.click");
 
 /// Arithmetic on a Rust pointer local keeps its C meaning under Integer
@@ -4812,6 +4817,7 @@ fn rust_byte_sum_proves_exact_prefix_sum_and_expands() {
     assert_cli(&p, &["verify"]);
 }
 
+#[cfg(not(feature = "fast-gate"))]
 fn assert_slice_iterator_artifact(p: &Project) {
     let prepared = p.prepared().unwrap();
     let function = prepared
