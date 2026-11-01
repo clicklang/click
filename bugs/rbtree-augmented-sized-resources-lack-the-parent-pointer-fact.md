@@ -131,6 +131,10 @@ identifies the helper's write target. Empty child resources use the established
 null pointer directly, and the promoted root's typed null-parent equality is
 rewritten from its tag value of one before folding the rotated tree.
 
-This repairs the left-left root-rotation sidecar without changing the C,
-contracts, resources, or verifier. The other insertion sidecars and full-directory
-audit still leave this report open.
+The mirrored right-right root rotation now has the corresponding explicit
+framing, with left and right exchanged and the old right-child alias identifying
+the parent. All three selected proofs in
+`rbtree_size_insert_mirrored_rotation.click` verify too.
+
+These repairs leave the C, contracts, resources, and verifier unchanged. The
+other insertion sidecars and full-directory audit still leave this report open.
