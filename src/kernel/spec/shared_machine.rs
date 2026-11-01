@@ -190,6 +190,16 @@ mod tests {
         }
         let signed_sum = SpecExpression::Add(signed(), signed());
         assert!(!evaluate(&signed_sum, false)[0].obligations.is_empty());
+        let zero = || {
+            Box::new(SpecExpression::Value(CValue::UInt64(
+                Bitvector32Term::UInt64Constant(0),
+            )))
+        };
+        let nested =
+            SpecExpression::Multiply(zero(), Box::new(SpecExpression::Divide(unsigned(), zero())));
+        let paths = evaluate(&nested, false);
+        assert_eq!(paths, evaluate(&nested, true));
+        assert!(!paths[0].obligations.is_empty());
     }
 }
 

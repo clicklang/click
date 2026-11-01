@@ -71,9 +71,35 @@ before folding the retained cell resource. Both focused fixtures pass; these
 repairs change neither C nor contracts. The integrated full gate passed 7,065
 unit/API/import/scaling tests, 58 examples and 4,963 mdtests in 10m49s
 (49 seconds over the ten-minute target; no limits changed and no nightly run).
-The machine-arithmetic producer migration
-is still pending: the shared machine nodes currently serve bridges, while
-ordinary specification arithmetic still constructs legacy machine values.
+The first machine-arithmetic producer slice now constructs shared nodes for
+same-format `uint32`/`uint64` addition, subtraction and multiplication over
+available values. Shared children survive until one final legacy checker
+export. These total wrapping operators have no definedness debt; the evaluator
+retains its existing literal-only evaluation, while the shared constructor is
+structural. A rejected mixed-format/deferred tree disables further preparation
+attempts inside that tree, avoiding repeated prefix walks. Signed and partial
+operators, deferred operands, C execution and checker consumers remain separate
+migration work. The 26 focused producer/bridge tests and all 1,132 scaling tests
+passed before the next upstream integration. The 96-fixture unsigned audit
+reported zero lowering differences both before and after the change; both runs
+failed the same `memcpy_then_terminator_keeps_copied_unsigned_bytes` transport
+proof, so neither audit was a passing corpus verdict.
+
+CI on the preceding head, integrated with `af1815919`, also exposed an
+`arena_alloc` search exhaustion when deriving `0 <= end - i` from the held
+`i <= end`. The proof now cites that bound in an explicit affine certificate;
+no search limit or program contract changes. The producer slice and this repair
+are integrated with upstream `96b02aab4`. The focused `arena` run passed.
+`scripts/check.sh --no-fail-fast` then passed 7,076 unit/API/import/scaling
+tests, 58 examples and 4,975 mdtests in 11m31s (91 seconds over the target).
+No limits changed and no nightly suite ran. The final nested-partial regression
+(`0 * (x / 0)` retains its divisor obligation) passed with the five producer
+checks. The integrated arithmetic audit passed all 124 fixtures with zero
+differences. The integrated unsigned audit again reported zero differences,
+with the same one failing byte-copy transport fixture out of 96. The ordinary
+`MDTEST_FILTER=unsigned` run fails that same transport too, although the full
+corpus passes. Investigate the isolation/proof-context dependency next; it is
+not solely a fact-stability instrumentation failure.
 
 The ordinary obligations also exposed a retained-proof bug: a post-execution
 `have` can retain prerequisite proofs before its own certificate. Replay now
