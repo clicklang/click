@@ -78,6 +78,25 @@ int32 owned_split_buffer_set_left(
     ensures owner->split == old(owner->split);
     ensures owner->len == old(owner->len);
     ensures owner->data == old(owner->data);
+} by {
+    mark before_store;
+    have separate(memory(owner->data[index]), memory(owner->data));
+    step();
+    have separate(statement(0).footprint, memory(owner->data)) by {
+        normalize() using {
+            at(before_store, separate(memory(owner->data[index]), memory(owner->data)));
+        };
+    }
+    have owner->data == at(before_store, owner->data) by {
+        transport_certificate {
+            premise 0: separate(statement(0).footprint, memory(owner->data))
+                => separate(statement(0).footprint, memory(owner->data));
+            preserve 0 => owner->data == at(before_store, owner->data);
+            conclusion 1;
+        }
+    }
+    step();
+    solve();
 }
 
 int32 owned_split_buffer_set_right(

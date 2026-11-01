@@ -713,7 +713,27 @@ int32 vector_fill(struct vector* owner, int32 value) {
         initialize by solve();
         preserve by {
             mark before_fill;
+            have separate(memory(owner->data[i]), memory(owner->data));
             step();
+            have separate(fill_cells.statement(0).footprint, memory(owner->data)) by {
+                normalize() using {
+                    at(before_fill, separate(memory(owner->data[i]), memory(owner->data)));
+                };
+            }
+            have owner->data == at(before_fill, owner->data) by {
+                transport_certificate {
+                    premise 0: separate(fill_cells.statement(0).footprint, memory(owner->data))
+                        => separate(fill_cells.statement(0).footprint, memory(owner->data));
+                    preserve 0 => owner->data == at(before_fill, owner->data);
+                    conclusion 1;
+                }
+            }
+            have owner->data == old(owner->data) by {
+                normalize() using {
+                    owner->data == at(before_fill, owner->data);
+                    at(before_fill, owner->data) == old(owner->data);
+                };
+            }
             transport(at(before_fill, owner->len) == old(owner->len),
                       owner->len == old(owner->len)) using {
                 at(before_fill, owner->len) == old(owner->len);

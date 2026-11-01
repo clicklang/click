@@ -1071,14 +1071,28 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
             have 0 <= i;
             have i < arena->capacity;
             mark opened;
+            have separate(memory(arena->occupied[i]), memory(arena->occupied));
+            have separate(memory(arena->occupied[i]), memory(arena->data));
             step();
-            transport(at(opened, arena->occupied) == old(arena->occupied),
-                      arena->occupied == old(arena->occupied)) using {
-                at(opened, arena->occupied) == old(arena->occupied);
-                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
-                0 <= at(opened, i);
-                at(opened, i) < at(opened, arena->capacity);
-            };
+            have separate(mark_free_run.statement(0).footprint, memory(arena->occupied)) by {
+                normalize() using {
+                    at(opened, separate(memory(arena->occupied[i]), memory(arena->occupied)));
+                };
+            }
+            have arena->occupied == at(opened, arena->occupied) by {
+                transport_certificate {
+                    premise 0: separate(mark_free_run.statement(0).footprint, memory(arena->occupied))
+                        => separate(mark_free_run.statement(0).footprint, memory(arena->occupied));
+                    preserve 0 => arena->occupied == at(opened, arena->occupied);
+                    conclusion 1;
+                }
+            }
+            have arena->occupied == old(arena->occupied) by {
+                normalize() using {
+                    arena->occupied == at(opened, arena->occupied);
+                    at(opened, arena->occupied) == old(arena->occupied);
+                };
+            }
             transport(at(opened, arena->capacity) == old(arena->capacity),
                       arena->capacity == old(arena->capacity)) using {
                 at(opened, arena->capacity) == old(arena->capacity);
@@ -1086,13 +1100,25 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 0 <= at(opened, i);
                 at(opened, i) < at(opened, arena->capacity);
             };
-            transport(at(opened, arena->data) == old(arena->data),
-                      arena->data == old(arena->data)) using {
-                at(opened, arena->data) == old(arena->data);
-                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
-                0 <= at(opened, i);
-                at(opened, i) < at(opened, arena->capacity);
-            };
+            have separate(mark_free_run.statement(0).footprint, memory(arena->data)) by {
+                normalize() using {
+                    at(opened, separate(memory(arena->occupied[i]), memory(arena->data)));
+                };
+            }
+            have arena->data == at(opened, arena->data) by {
+                transport_certificate {
+                    premise 0: separate(mark_free_run.statement(0).footprint, memory(arena->data))
+                        => separate(mark_free_run.statement(0).footprint, memory(arena->data));
+                    preserve 0 => arena->data == at(opened, arena->data);
+                    conclusion 1;
+                }
+            }
+            have arena->data == old(arena->data) by {
+                normalize() using {
+                    arena->data == at(opened, arena->data);
+                    at(opened, arena->data) == old(arena->data);
+                };
+            }
             have forall (k: int32) {
                 at(opened, i) + 1 <= k and k < end implies
                     arena->occupied[k] == 0

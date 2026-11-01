@@ -52,6 +52,18 @@ spec enum Anchor {
     At(struct node*, struct node*, struct node*, int32)
 }
 
+spec enum SavedPointer { At(struct node*) }
+
+resource saved_right(n: struct node*) {
+    field value: SavedPointer;
+    match value {
+        SavedPointer::At(saved) => {
+            owns n->right;
+            fact n->right == saved;
+        },
+    }
+}
+
 resource frame(g: struct node*, n: struct node*) {
     field anchor: Anchor;
     match anchor {
@@ -90,7 +102,9 @@ void probe(struct node* g, struct node* n) {
                 initialize by { assumption(); }
                 preserve by {
                     let { word: w } = unfold(state);
+                    let kept = fold(saved_right(n), { value: SavedPointer::At(saved) });
                     step(); step(); step(); step(); step(); step();
+                    unfold(kept);
 
                     have n->right == saved;
                     mark before_call;

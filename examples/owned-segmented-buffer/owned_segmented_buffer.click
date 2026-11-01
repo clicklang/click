@@ -104,7 +104,22 @@ int32 owned_segmented_buffer_set_first(
     ensures owner->first_data == old(owner->first_data);
     ensures owner->second_data == old(owner->second_data);
 } by {
+    mark before_store;
+    have separate(memory(owner->first_data[index]), memory(owner->first_data));
     step();
+    have separate(statement(0).footprint, memory(owner->first_data)) by {
+        normalize() using {
+            at(before_store, separate(memory(owner->first_data[index]), memory(owner->first_data)));
+        };
+    }
+    have owner->first_data == at(before_store, owner->first_data) by {
+        transport_certificate {
+            premise 0: separate(statement(0).footprint, memory(owner->first_data))
+                => separate(statement(0).footprint, memory(owner->first_data));
+            preserve 0 => owner->first_data == at(before_store, owner->first_data);
+            conclusion 1;
+        }
+    }
     step();
     solve();
 }

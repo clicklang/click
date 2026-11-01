@@ -2512,7 +2512,7 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
 /// a fact-free distinct-block rule erase the interesting history.
 fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u32, usize)> {
     let mut samples = Vec::new();
-    for size in [16u32, 32, 64, 128] {
+    for size in [4u32, 8, 16, 32] {
         let _session = crate::kernel::VerificationSession::enter();
         let field = Pointer::symbolic(Variable(998_910));
         let write = Pointer::symbolic(Variable(998_911));
@@ -2624,6 +2624,60 @@ fn explicit_pointer_frame_composition_has_near_linear_total_work() {
         assert!(
             pair[1].1 <= pair[0].1 * 3,
             "explicit composition: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn cold_pointer_frame_refusals_do_not_scan_history() {
+    for overwrite in [None, Some(0), Some(4)] {
+        let mut samples = Vec::new();
+        for size in [4_u32, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let field = Pointer::symbolic(Variable(998_920));
+            let write = Pointer::symbolic(Variable(998_921));
+            let initial = crate::kernel::intern_c_memory(CMemory::new().store(
+                field.clone(),
+                CValue::typed_pointer(Pointer::symbolic(Variable(998_922)), CType::Int32Pointer),
+            ));
+            let mut memory = initial.memory().clone();
+            if let Some(offset) = overwrite {
+                memory = memory.store(field.offset_by_bytes(offset), CValue::Int32(9u32.into()));
+            }
+            for index in 0..size {
+                memory = memory.store(write.clone(), CValue::Int32(index.into()));
+            }
+            let current = crate::kernel::intern_c_memory(memory);
+            let facts = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                    field.clone(),
+                    0u32.into(),
+                    8u32.into(),
+                    1,
+                ))),
+                right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                    write,
+                    0u32.into(),
+                    4u32.into(),
+                    1,
+                ))),
+            });
+            let before = Pointer::loaded_value(&initial, &field);
+            let after = Pointer::loaded_value(&current, &field);
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                    &before, &after, &facts,
+                )
+            });
+            assert!(
+                !proved,
+                "an unrecorded history must not establish equality: {overwrite:?}"
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{overwrite:?}: {samples:?}"
         );
     }
 }

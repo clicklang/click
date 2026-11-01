@@ -1658,6 +1658,21 @@ fn branch_continuation_match_expands_and_reverifies() {
     }
 }
 
+#[test]
+#[ignore = "nightly: focused pointer-history proof expansion and cold replay"]
+fn explicitly_packaged_pointer_frame_expands_without_history_search() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/a_retained_pointer_field_fact_transports_through_a_loop_alias.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "probe").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
+
 /// Expands the smart tactic that starts at `anchor` (plus `skip` bytes) in
 /// an mdtest's Click source and re-verifies the rewrite.
 fn expand_mdtest_site_and_reverify(relative: &str, anchor: &str, skip: usize) -> String {
