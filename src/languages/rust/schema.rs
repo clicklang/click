@@ -50,9 +50,12 @@ pub enum Type {
         element: Box<Type>,
     },
     /// A `core::ops::Range` of an integer, `start..end`, held as its two
-    /// bounds; the state of a `for` over it.
+    /// bounds; the state of a `for` over it. An `inclusive` range,
+    /// `start..=end`, also holds whether it is exhausted.
     Range {
         element: Box<Type>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        inclusive: bool,
     },
     /// `&[T]` or `&mut [T]` of a scalar `T` other than `u8`, whose slices
     /// are `ByteSlice`.
@@ -539,6 +542,12 @@ pub enum MirStatement {
         iterator: String,
         option: String,
         option_type: String,
+        /// Whether the range yields, when its `for` header's test already
+        /// decided it: the statement is then that arm alone. An inclusive
+        /// range's arm that yields is `if start < end { start += 1 } else
+        /// { done = true }`, an ordinary branch of the loop body.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        taken: Option<bool>,
     },
     ChunkInitialize {
         target: String,

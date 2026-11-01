@@ -79,8 +79,11 @@ pub(super) fn lower(
             );
             continue;
         }
-        if let Type::Range { element } = &local.value_type {
-            declarations = c_seq(declarations, cx.range_storage(&local.name, element)?);
+        if let Type::Range { element, inclusive } = &local.value_type {
+            declarations = c_seq(
+                declarations,
+                cx.range_storage(&local.name, element, *inclusive)?,
+            );
             continue;
         }
         if matches!(local.value_type, Type::ChunkIterator | Type::ChunkOption) {
@@ -577,7 +580,8 @@ pub(super) fn lower(
                     iterator,
                     option,
                     option_type,
-                } => cx.range_next(iterator, option, option_type)?,
+                    taken,
+                } => cx.range_next(iterator, option, option_type, *taken)?,
                 S::ChunkNext { iterator, option } => cx.chunk_next(iterator, option)?,
                 S::Assign {
                     target: E::Local { name },

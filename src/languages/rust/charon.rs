@@ -782,6 +782,7 @@ impl Adapter<'_> {
             }
             a::TyKind::Adt(_) if self.range_element(t, false).is_some() => Type::Range {
                 element: Box::new(self.ty(self.range_element(t, false).unwrap())?),
+                inclusive: self.inclusive_range(t),
             },
             a::TyKind::Adt(_) if self.chunk_type(t) => Type::ChunkIterator,
             a::TyKind::Adt(_) if self.chunk_option_type(t) => Type::ChunkOption,
