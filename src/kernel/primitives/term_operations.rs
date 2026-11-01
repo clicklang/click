@@ -2668,8 +2668,8 @@ impl ConditionTerm {
     }
 
     /// The native comparison `left REL right` of two 8- or 16-bit values of
-    /// `format`, at that format: two constants fold, and a value compared
-    /// with itself decides by the relation. One match on each root.
+    /// `format`, at that format: two constants fold. One match on each
+    /// root.
     pub(crate) fn narrow_compare(
         format: MachineIntegerType,
         relation: CompareRelation,
@@ -2692,12 +2692,9 @@ impl ConditionTerm {
                 R::Equal => a == b,
             });
         }
-        if left == right {
-            return Self::Constant(matches!(
-                relation,
-                R::LessEqual | R::GreaterEqual | R::Equal
-            ));
-        }
+        // Two constants fold; a comparison of a term with itself keeps its
+        // structure, as the 32-bit constructors keep it: a reflexive
+        // equality is a `transport` source naming its operand.
         Self::Compare {
             format,
             relation,

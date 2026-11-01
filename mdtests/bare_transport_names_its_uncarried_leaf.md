@@ -32,8 +32,8 @@ void fill(uint8* dst) {
 
 ```expect
 fail: quantified frame: a leaf was not carried: a read in it was not shown unchanged between its two snapshots by the steps between them and this context's facts
-  leaf it had: at(<state A>, dst[k]) as int32 == 7
-  leaf it wanted: at(<state B>, dst[k]) as int32 == 7
+  leaf it had: at(<state A>, dst[k]) == 7
+  leaf it wanted: at(<state B>, dst[k]) == 7
   where
     <state A> is `statement(1).entry`, projected for one read
     <state B> is this state, projected for one read

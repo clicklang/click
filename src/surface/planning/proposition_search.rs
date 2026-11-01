@@ -1961,8 +1961,16 @@ pub(crate) fn connected_equalities(
         if matches!(
             fact,
             Proposition::ConditionIs(
+                // An 8- or 16-bit equality is the same fact as the `int32`
+                // equality of its widenings (rule K8) and rewrites at its
+                // own width.
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    format: MachineIntegerType::Int32
+                        | MachineIntegerType::UInt32
+                        | MachineIntegerType::Int8
+                        | MachineIntegerType::UInt8
+                        | MachineIntegerType::Int16
+                        | MachineIntegerType::UInt16,
                     relation: CompareRelation::Equal,
                     ..
                 } | ConditionTerm::Compare {

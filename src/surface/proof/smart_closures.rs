@@ -7910,19 +7910,14 @@ impl<'a> Proof<'a> {
             if crate::kernel::is_verified_load_variable_defining_fact(&equality) {
                 continue;
             }
-            let equality_has_literal_endpoint = matches!(
-                &equality,
-                Proposition::ConditionIs(
-                    ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right },
-                    true
-                ) if matches!(left.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
-                    || matches!(right.as_ref(), Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_))
-            ) || matches!(
-                &equality,
-                Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
-                    if matches!(&**left, crate::kernel::IntegerTerm::Constant(_))
-                        || matches!(&**right, crate::kernel::IntegerTerm::Constant(_))
-            );
+            let equality_has_literal_endpoint = rewrite_equality_sides(&equality)
+                .is_some_and(|(left, right)| is_rewrite_literal(left) || is_rewrite_literal(right))
+                || matches!(
+                    &equality,
+                    Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
+                        if matches!(&**left, crate::kernel::IntegerTerm::Constant(_))
+                            || matches!(&**right, crate::kernel::IntegerTerm::Constant(_))
+                );
             if exclude_goal_fact
                 && (equality == goal
                     || swapped_bitvector_equality(&equality).is_some_and(|swapped| swapped == goal))
@@ -7951,12 +7946,9 @@ impl<'a> Proof<'a> {
                 // that checked direction.
                 if equality_has_literal_endpoint {
                     let literal_endpoint = |kernel: &Proposition, source: bool| {
-                        matches!(kernel, Proposition::ConditionIs(
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right } | ConditionTerm::Compare { format: MachineIntegerType::Int64, relation: CompareRelation::Equal, left, right }, true
-                    ) if matches!(if source { left.as_ref() } else { right.as_ref() },
-                        Bitvector32Term::Constant(_)
-                        | Bitvector32Term::UInt32Constant(_) | Bitvector32Term::Int64Constant(_) | Bitvector32Term::UInt64Constant(_)))
-                            || matches!(kernel, Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
+                        rewrite_equality_sides(kernel).is_some_and(|(left, right)| {
+                            is_rewrite_literal(if source { left } else { right })
+                        }) || matches!(kernel, Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true)
                             if matches!(if source { &**left } else { &**right }, crate::kernel::IntegerTerm::Constant(_)))
                     };
                     // A retained source spelling may be a proxy for a
@@ -12777,9 +12769,17 @@ fn checked_fact_spells_the_goal(proof: &Proof<'_>) -> bool {
 
 /// `b == a` for the fact `a == b`.
 fn swapped_bitvector_equality(fact: &Proposition) -> Option<Proposition> {
+    // A 32-bit equality swaps at `int32` (rule K6); an 8- or 16-bit one at
+    // its own format.
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format:
+                format @ (MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int8
+                | MachineIntegerType::UInt8
+                | MachineIntegerType::Int16
+                | MachineIntegerType::UInt16),
             relation: CompareRelation::Equal,
             left,
             right,
@@ -12791,7 +12791,7 @@ fn swapped_bitvector_equality(fact: &Proposition) -> Option<Proposition> {
     };
     Some(Proposition::ConditionIs(
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: ConditionTerm::fact_format(*format, CompareRelation::Equal),
             relation: CompareRelation::Equal,
             left: right.clone(),
             right: left.clone(),
@@ -13053,4 +13053,42 @@ fn flattened_disjuncts(proposition: &Proposition) -> Vec<&Proposition> {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/proof/smart_closures/indexed_arithmetic_tests.rs");
+}
+
+/// The sides of a native machine equality fact a smart `rewrite` can cite:
+/// a 32- or 64-bit equality, or an 8- or 16-bit one, which is the same fact
+/// as the `int32` equality of its widenings (rule K8).
+fn rewrite_equality_sides(equality: &Proposition) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
+    match equality {
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) if format.format().bits() < 32
+            || matches!(
+                format,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32 | MachineIntegerType::Int64
+            ) =>
+        {
+            Some((left, right))
+        }
+        _ => None,
+    }
+}
+
+/// A machine literal: a smart `rewrite` reduces operands to literals and
+/// never expands one.
+fn is_rewrite_literal(term: &Bitvector32Term) -> bool {
+    matches!(
+        term,
+        Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
+            | Bitvector32Term::Int64Constant(_)
+            | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_)
+    )
 }
