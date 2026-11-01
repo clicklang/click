@@ -5454,6 +5454,7 @@ fn materialize_composite_resource_cells_from_snapshot(
         return memory;
     }
 
+    let naming_source = crate::kernel::intern_c_memory(naming_memory.clone());
     // Observe complete typed fields. In particular, an eight-byte pointer read
     // cannot reuse two independently named four-byte integer observations.
     if let Some(layout) = crate::surface::lowering::object_segment_layout(parameters, segment)
@@ -5466,7 +5467,19 @@ fn materialize_composite_resource_cells_from_snapshot(
                 memory,
                 |mut memory, pointer, element_type| {
                     if !matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
-                        memory = memory.materialize_symbolic_cell(pointer, element_type);
+                        // Function pointers retain their scalar function-name
+                        // carrier. Object-pointer observations use the same
+                        // selected source as the range path below.
+                        let storage_type = if matches!(element_type, CType::FunctionPointer(_)) {
+                            CType::Int32
+                        } else {
+                            element_type
+                        };
+                        memory = memory.materialize_cell_from_source(
+                            pointer,
+                            storage_type,
+                            naming_source.clone(),
+                        );
                     }
                     memory
                 },
@@ -5505,7 +5518,9 @@ fn materialize_composite_resource_cells_from_snapshot(
     };
     // Keep typed reads at their physical stride. A narrower byte/word view
     // does not authorize overlapping whole-pointer observations.
-    let run_type = if !segment_type.is_pointer() || segment_type.byte_width() <= element_width {
+    let run_type = if !segment_type.is_pointer()
+        || (segment_type.is_object_pointer() && segment_type.byte_width() <= element_width)
+    {
         segment_type
     } else if element_width == 1 {
         CType::UInt8
@@ -5519,7 +5534,7 @@ fn materialize_composite_resource_cells_from_snapshot(
             run_type,
             start,
             end,
-            crate::kernel::intern_c_memory(naming_memory.clone()),
+            naming_source.clone(),
         ) {
             Ok(seeded) => return seeded,
             Err(unchanged) => memory = unchanged,
@@ -5534,7 +5549,7 @@ fn materialize_composite_resource_cells_from_snapshot(
         if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
             continue;
         }
-        memory = memory.materialize_symbolic_cell(pointer, run_type);
+        memory = memory.materialize_cell_from_source(pointer, run_type, naming_source.clone());
     }
     memory
 }

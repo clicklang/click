@@ -13,6 +13,15 @@ memory-history checker. The named-cell rule compares the full typed read,
 including designation and extent. Scalar load handles no longer double as
 pointer parameters in symbolic arrays.
 
+Composite fields and ranges take their canonical typed observations from the
+same selected naming snapshot. Function-pointer fields retain their scalar
+function-name carrier. These distinctions preserve callback entry assumptions,
+repeated borrowed-resource unfolds, and nested reads used by transport proofs;
+the existing full Markdown and example corpora cover those cases. Logical
+pointer reads consult the selected snapshot's complete cached observation
+before following its byte identity, so a checked loop frame does not lose a
+restored pointer value when observation-only snapshots are skipped.
+
 Regression coverage checks complete pointer cells, cached/ordinary read identity,
 upper-half writes, wrong read provenance, and no-write witnesses for pointer
 runs. The retained-field Markdown fixture also checks a bare before/after read
@@ -23,8 +32,10 @@ has zero differences before and after; its three quarantined fixture failures
 are unchanged.
 
 Keep this report open: the original sidecars do not yet meet the end-to-end
-acceptance criteria. Against the pre-repair baseline `617ab6c8a`, unchanged
-production runs give these frontiers:
+acceptance criteria. The initial repair `ca1d6dec0`, compared with the
+pre-repair baseline `617ab6c8a`, gave these unchanged-production frontiers.
+These long-running sidecars have not been rerun after the callback and
+loop-cache follow-up:
 
 | Sidecar | Before | After |
 | --- | --- | --- |
