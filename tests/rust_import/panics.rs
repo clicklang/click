@@ -2,8 +2,8 @@ use super::*;
 
 const SIDECAR: &str = include_str!("../../design/charon-trial/panics/panics.click");
 
-/// A Rust panic, `assert!`, `panic!`, `unreachable!`, `unwrap` or
-/// `expect`, is an obligation that the call never reaches it: each verifies
+/// A Rust panic, `assert!`, `assert_eq!`, `assert_ne!`, `panic!`,
+/// `unreachable!`, `unwrap` or `expect`, is an obligation that the call never reaches it: each verifies
 /// under the precondition that rules it out, and without it the refusal
 /// names the panic by its message.
 #[test]
@@ -37,6 +37,14 @@ fn charon_panics_are_obligations() {
         (
             "fn unwrapped(o: Option<u32>) -> u32 {\n    requires o != Option<u32>::None;\n",
             "precondition clause 1",
+        ),
+        (
+            "fn same(x: u32, y: u32) -> u32 {\n    requires x == y;\n",
+            "Rust panic `assertion left == right failed`",
+        ),
+        (
+            "fn distinct(x: i64, y: i64) -> i64 {\n    requires x > y;\n",
+            "Rust panic `assertion left != right failed`",
         ),
     ] {
         let function = SIDECAR
@@ -75,6 +83,10 @@ fn charon_refused_panic_names_its_condition() {
         (
             "fn first(xs: &[u8]) -> u8 { views *xs; ensures result == xs[0]; }",
             "could not show `xs.len() > 0u64`",
+        ),
+        (
+            "fn same(x: u32, y: u32) -> u32 { ensures result == y; }",
+            "could not show `x == y`",
         ),
     ] {
         let invalid = format!("verifying \"panics.rs\";\n{function}\n");

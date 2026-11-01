@@ -45,3 +45,20 @@ fn expected(o: Option<i64>) -> i64 {
     requires o == Option<i64>::Some(5i64);
     ensures result == 5i64;
 }
+
+// `assert_eq!(a, b)` asserts `a == b`, and `assert_ne!` asserts `a != b`.
+fn same(x: u32, y: u32) -> u32 {
+    requires x == y;
+    ensures result == y;
+}
+
+fn even_half(x: u32) -> u32 {
+    requires x % 2u32 == 0u32;
+    ensures result == x / 2u32;
+}
+
+fn distinct(x: i64, y: i64) -> i64 {
+    requires x > y;
+    requires y >= 0i64;
+    ensures result > 0i64;
+}

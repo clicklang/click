@@ -986,7 +986,8 @@ cargo run --bin click -- verify examples/rust-unsigned/arithmetic.click
 
 A Rust panic is an obligation: Click proves no call reaches it. A block that
 can only reach a call of `core::panicking`, the target of `assert!`,
-`panic!`, `unreachable!`, `todo!` and `unimplemented!`, is one obligation
+`assert_eq!`, `assert_ne!`, `panic!`, `unreachable!`, `todo!` and
+`unimplemented!`, is one obligation
 named by the panic's message, ``Rust panic `assertion failed: x > 3` ``; the
 statements that build the message, `format_args!` included, are not modeled,
 because a block shown unreachable has no effect. A branch whose one side
@@ -996,8 +997,11 @@ its goal, ``could not show `x > 3u32` ``. A message with formatted arguments is
 named `formatted message`. `o.unwrap()` and `o.expect("...")` of an `Option` of
 a scalar call `Option::unwrap<T>` and `Option::expect<T>`, whose contract
 requires `o != Option<T>::None` and ensures `o == Option<T>::Some(result)`;
-`expect`'s message is not passed. `assert_eq!` and `assert_ne!` remain
-refused: they compare through a tuple of references
+`expect`'s message is not passed. `assert_eq!(a, b)` asserts `a == b` and
+`assert_ne!(a, b)` asserts `a != b` of scalar operands, named ``Rust panic
+`assertion left == right failed` `` or `left != right` whatever their own
+message; the pair of borrows the macro compares through, `(&a, &b)`, reads
+the operands themselves
 ([`design/charon-trial/panics`](https://github.com/clicklang/click/blob/master/design/charon-trial/panics/panics.click)).
 
 ## Byte slices and indexing
