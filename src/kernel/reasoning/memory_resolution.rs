@@ -2138,7 +2138,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
                     right_pointer,
                     assumptions,
                 )
-                && !loads_separated_by_recorded_history(
+                && !loads_lack_recorded_equality(
                     left_memory,
                     right_memory,
                     left_pointer,
@@ -2364,67 +2364,41 @@ pub(in crate::kernel) fn memory_load_terms_equal_for_fact_transport(
         )
 }
 
-/// Whether the recorded history puts a step that writes this load's bytes
-/// between the two snapshots.
-///
-/// This is the one veto the snapshot comparisons answer to, and it is read
-/// off walks they have already paid for: the equality question reaches
-/// `recorded_load_history` first, so the refutation is a memo lookup on the
-/// same key. A stated or assumed equality never reaches here — the fact
-/// graph is consulted before the load arms are — so the veto withdraws only
-/// the structural routes.
-///
-/// The snapshots a framing comparison holds are often naming projections:
-/// built rather than derived, carrying no recorded step of their own, so a
-/// walk from one stops immediately. The projection registry leads each back
-/// to the snapshot its materialized cells were loaded from, which is where
-/// the history is, and the pair is asked again from there.
-pub(in crate::kernel) fn loads_separated_by_recorded_history(
+/// Structural snapshot equality needs positive evidence that the selected
+/// reads agree. An undecided bounded history query is not preservation: its
+/// unvisited suffix can contain a write or a released allocation.
+/// Naming projections use their registered source, without discovering any
+/// older source by walking history.
+pub(in crate::kernel) fn loads_lack_recorded_equality(
     left: &SharedCMemory,
     right: &SharedCMemory,
     pointer: &Pointer,
     kind: LoadKind,
     assumptions: &PureFactContext,
 ) -> bool {
-    let separated = |left: &SharedCMemory, right: &SharedCMemory| {
-        // Asked with every recorded edge readable, in every scope. Crossing a
-        // block declaration or a cell-forgetting step is not an inference the
-        // loadable prover licenses — those steps write nothing, and a walk
-        // that stops at one has read the history only as far as the first
-        // bookkeeping edge. The pre-arc scope keeps its own equality answers
-        // (see `recorded_load_history`); what it must not keep is a *weaker*
-        // view of which stores happened, because then one route would frame a
-        // load across a store another route refuses.
-        crate::kernel::api::with_extended_dag_bridging(|| {
-            crate::kernel::api::recorded_load_history(left, right, pointer, kind, assumptions)
-        }) == crate::kernel::api::LoadHistory::DifferentVersions
+    let agrees = |left: &SharedCMemory, right: &SharedCMemory| {
+        matches!(
+            crate::kernel::api::with_extended_dag_bridging(|| {
+                crate::kernel::api::recorded_load_history(left, right, pointer, kind, assumptions)
+            }),
+            crate::kernel::api::LoadHistory::OneVersion(_)
+        )
     };
-    separated(left, right) || {
-        let left_source = canonical_load_projection_source(left, pointer);
-        let right_source = canonical_load_projection_source(right, pointer);
-        (left_source.is_some() || right_source.is_some())
-            && separated(
-                left_source.as_ref().unwrap_or(left),
-                right_source.as_ref().unwrap_or(right),
-            )
+    if agrees(left, right) {
+        return false;
     }
+    let left_source = canonical_load_projection_source(left, pointer);
+    let right_source = canonical_load_projection_source(right, pointer);
+    !(left_source.is_some() || right_source.is_some())
+        || !agrees(
+            left_source.as_ref().unwrap_or(left),
+            right_source.as_ref().unwrap_or(right),
+        )
 }
 
-/// The term-level form of [`loads_separated_by_recorded_history`], for the
-/// routes that compare two whole terms rather than two snapshots.
-///
-/// Three structural routes can call two loads of one cell equal: the history
-/// walk itself, the snapshot comparison, and the deep canonical-form
-/// comparison. The first asks the history by construction; this is what the
-/// other two answer to, so that one store cannot be seen by one route and
-/// missed by another. A load variable is viewed through the load registry,
-/// exactly as those routes view it.
-///
-/// Routes that derive the equality from stated or assumed facts are not
-/// vetoed and never reach here: a premise about the two values outranks what
-/// the history says about the cell, and the fact graph is consulted first
-/// everywhere this is used.
-pub(in crate::kernel) fn load_equality_refuted_by_history(
+/// Gate structural comparisons of load terms on positive recorded evidence.
+/// Stated equalities use the fact graph independently of this gate.
+pub(in crate::kernel) fn load_equality_lacks_recorded_evidence(
     left: &Bitvector32Term,
     right: &Bitvector32Term,
     assumptions: &PureFactContext,
@@ -2445,15 +2419,15 @@ pub(in crate::kernel) fn load_equality_refuted_by_history(
     };
     // Two reads of one address that differ in kind are two values whatever
     // the history says, so no structural route may call them equal.
-    left_pointer == right_pointer
-        && (left_kind != right_kind
-            || loads_separated_by_recorded_history(
-                &left_memory,
-                &right_memory,
-                &left_pointer,
-                left_kind,
-                assumptions,
-            ))
+    left_pointer != right_pointer
+        || left_kind != right_kind
+        || loads_lack_recorded_equality(
+            &left_memory,
+            &right_memory,
+            &left_pointer,
+            left_kind,
+            assumptions,
+        )
 }
 
 fn memory_snapshots_match_for_resolution(
@@ -3205,8 +3179,22 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
         "a fresh allocation cannot affect a load through another concrete block"
     );
     assert!(
-        loads_proven_equal(&concrete_memory, &with_unrelated_heap, &concrete),
-        "the matcher still ignores heap metadata this pointer cannot observe"
+        !loads_proven_equal(&concrete_memory, &with_unrelated_heap, &concrete),
+        "unrelated snapshots need explicit preservation evidence"
+    );
+    let (_, _, equality) = crate::kernel::tests::explicit_frame(
+        &concrete_memory,
+        &with_unrelated_heap,
+        &concrete,
+        CType::Int32,
+        &[],
+        &PureFactContext::new(),
+    )
+    .expect("the allocation footprint is separate from this concrete block");
+    assert!(
+        PureFactContext::new()
+            .assume_proposition(equality.clone())
+            .contains_known(&equality)
     );
 
     let pending_base = Pointer {

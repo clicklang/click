@@ -377,6 +377,11 @@ impl PrioritizedStatementFacts {
 struct ImplicationCandidate {
     antecedents: PersistentSequence<Proposition>,
     consequent: Proposition,
+    /// For an entry filed under one conjunct of a conjunctive consequent,
+    /// that whole consequent. Such an entry serves only the search for a
+    /// conjunct (`discharged_implication_containing`); the `extract` rule's
+    /// own lookup reads the entries without one.
+    whole: Option<Proposition>,
 }
 
 #[derive(Clone)]
@@ -1903,7 +1908,9 @@ impl ProofFacts {
             .get(&snapshot_blind_proposition_key(required))
             .is_some_and(|bucket| {
                 bucket.iter().any(|candidate| {
-                    &candidate.consequent == required && antecedents_available(candidate)
+                    candidate.whole.is_none()
+                        && &candidate.consequent == required
+                        && antecedents_available(candidate)
                 })
             })
         {
@@ -1917,6 +1924,40 @@ impl ProofFacts {
                         && antecedents_available(candidate)
                 })
             })
+    }
+
+    /// An implication whose antecedents are all available and whose
+    /// consequent is a conjunction with `required` among its conjuncts: the
+    /// implication fact itself and that whole consequent. `extract` states
+    /// the whole consequent from the fact, and `required` is then a proper
+    /// conjunct of an available fact.
+    pub(crate) fn discharged_implication_containing(
+        &self,
+        required: &Proposition,
+    ) -> Option<(Proposition, Proposition)> {
+        let bucket = self
+            .implications_by_consequent
+            .get(&snapshot_blind_proposition_key(required))?;
+        bucket.iter().find_map(|candidate| {
+            let whole = candidate.whole.as_ref()?;
+            if &candidate.consequent != required
+                || !candidate
+                    .antecedents
+                    .iter()
+                    .all(|antecedent| self.available_across_effects(antecedent, &[]))
+            {
+                return None;
+            }
+            let fact =
+                candidate
+                    .antecedents
+                    .iter()
+                    .rev()
+                    .fold(whole.clone(), |rest, antecedent| {
+                        Proposition::Implies(Box::new(antecedent.clone()), Box::new(rest))
+                    });
+            Some((fact, whole.clone()))
+        })
     }
 
     /// Availability of one premise a `using` list names.
@@ -3316,7 +3357,25 @@ fn index_implication_consequents(
         let candidate = ImplicationCandidate {
             antecedents: antecedents.clone(),
             consequent: consequent.as_ref().clone(),
+            whole: None,
         };
+        // Each conjunct of a conjunctive consequent is filed too, naming the
+        // whole consequent, so a goal that is one conjunct finds the
+        // implication in one probe.
+        if matches!(consequent.as_ref(), Proposition::And(..)) {
+            let mut conjuncts = Vec::new();
+            collect_owned_atomic_conjuncts(consequent, &mut conjuncts);
+            for conjunct in &conjuncts {
+                let key = snapshot_blind_proposition_key(conjunct);
+                let mut bucket = index.get(&key).cloned().unwrap_or_default();
+                bucket.push(ImplicationCandidate {
+                    antecedents: antecedents.clone(),
+                    consequent: conjunct.clone(),
+                    whole: Some(consequent.as_ref().clone()),
+                });
+                index = index.with_inserted(key, bucket);
+            }
+        }
         let normalized = consequent.clone();
         let mut keys = vec![snapshot_blind_proposition_key(consequent)];
         let normalized_key = snapshot_blind_proposition_key(&normalized);

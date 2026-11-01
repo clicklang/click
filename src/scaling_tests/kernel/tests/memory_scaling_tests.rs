@@ -2441,6 +2441,8 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         let context = PureFactContext::new();
         // Prepare a partial write: discard the cached whole pointer, but
         // do not perform the write yet. This records cache-only forgetting.
+        let seed_snapshot = crate::kernel::intern_c_memory(seeded.clone());
+        let seeded_read = Pointer::loaded_value(&seed_snapshot, &field);
         let forgotten = seeded.without_possible_aliasing_cells(&field, 4, &context);
         assert!(!forgotten.has_known_cell_at(&field));
         let before = Pointer::loaded_value(&source, &field);
@@ -2450,7 +2452,13 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         for _ in 0..3 {
             let (equal, units) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
-                    &before, &after, &context,
+                    &before,
+                    &seeded_read,
+                    &context,
+                ) && crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                    &seeded_read,
+                    &after,
+                    &context,
                 )
             });
             assert!(

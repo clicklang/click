@@ -4,10 +4,9 @@ The loop rotates a parent's right subtree (the `__rb_erase_color` case 3
 shape). After `parent->right` is overwritten, the sibling's own `right` link
 is compared with its value before the stores. The two reads are pointer loads
 of one cell at two snapshots, so the goal is a same-block pointer equality.
-The execution frontier's checked load-equality bridge proves it: the parent's
-store is separated from the sibling's field by the two owned nodes of the
-current composition. `assumption()` closes it only once that bridge has
-published the goal.
+An explicit separation fact and transport certificate preserve the inner
+node's freshly stored right link across the parent's store. Recovering that
+value must not require finding its older store in memory history.
 
 ```c filename=rotate.c
 #define WRITE_ONCE(x, value) ({ typeof(x) __value = (value); (*(volatile typeof(x) *)&(x)) = __value; __value; })
@@ -83,7 +82,22 @@ void rotate(struct node* parent) {
                                     have sibling == sid;
                                     have tmp2 == iid;
                                     mark inner_inputs;
-                                    step(); step(); step(); // The three link stores.
+                                    step(); step(); // Store the sibling and inner links.
+                                    have iid->right == sid;
+                                    have separate(memory(parent->right), memory(iid->right)) by assumption();
+                                    mark before_parent_store;
+                                    step();
+                                    have separate(loop(0).statement(5).footprint, memory(iid->right)) by {
+                                        normalize() using { separate(memory(parent->right), memory(iid->right)); };
+                                    }
+                                    have iid->right == at(before_parent_store, iid->right) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(5).footprint, memory(iid->right))
+                                                => separate(loop(0).statement(5).footprint, memory(iid->right));
+                                            preserve 0 => iid->right == at(before_parent_store, iid->right);
+                                            conclusion 1;
+                                        }
+                                    }
                                     have parent->right == iid;
                                     have iid->right == sid;
                                     have sid->left == tmp1;

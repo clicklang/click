@@ -1233,6 +1233,13 @@ by `contradiction` on that antecedent, reading only the goal; expansion
 writes `intro(); contradiction(A);`
 ([`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md)).
 
+A goal that is one conjunct of an implication's consequent, `c == 2` from
+`a != 0` and `a != 0 implies (b == 1 and c == 2)`, is closed once the
+antecedent is an available fact: the closer extracts the whole consequent,
+spelled as the implication is written, and the goal is then a proper
+conjunct; expansion writes the `extract`
+([`solve_closes_a_conjunct_of_a_discharged_consequent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_closes_a_conjunct_of_a_discharged_consequent.md)).
+
 A comparison held only under a definedness guard (`defined(e) implies a == b`,
 as a call postcondition over partial arithmetic lowers) whose consequent names a
 goal operand is used once a nested `solve` proves the guard: the closer extracts
@@ -3851,9 +3858,10 @@ close the exact invariant value and safety obligations, and the ranking
 obligations a `decreases` clause adds after them, as
 `close_invariants() by { ... }` with `solve()` on each member: the bundle's
 conjunctions and guards are descended by `both` and `intro`, and every member
-is closed by `solve()` alone. A member `solve()` does not close as spelled over
-the back edge is stated once more at the iteration entry and closed by
-`solve()` there, which closes an unsigned or 64-bit bound from the guard
+is closed by `solve()` alone, spelled as its clause writes it: the descent
+member of `decreases m` is `m < at(<iteration entry>, m)`, and a tuple's the
+disjunction over pivots with the earlier components tied. This closes an
+unsigned or 64-bit bound and its descent from the guard
 ([`back_edge_closes_an_unsigned_bound_from_the_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md)).
 
 A `preserve` path whose tactics stop inside the body first runs the rest of it

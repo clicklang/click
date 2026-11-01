@@ -152,13 +152,19 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     step();
     have defined(count(pool_object(pool, _)) + 1);
     step();
-    open(pool_object(pool, first)) { step(); }
-    open(pool_object(pool, second)) { step(); }
+    open(pool_object(pool, first)) { step(); have first->value == 11; }
+    open(pool_object(pool, second)) { step(); have first->value == 11; have second->value == 22; }
     step();
+    have first->value == 11;
+    have second->value == 22;
     step();
+    have first->value == 11;
+    have second->value == 22;
     unfold(pool_control(pool));
     fold(pool_control(pool));
     step();
+    have first->value == 11;
+    have second->value == 22;
     step_until(function.exit); unfold(valid_pool);
 }
 

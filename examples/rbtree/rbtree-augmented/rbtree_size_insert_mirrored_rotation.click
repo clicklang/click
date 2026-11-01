@@ -151,17 +151,64 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     step(); step(); step(); step();
                     have tmp == 0 by { assumption(); }
                     have node != 0 by { assumption(); }
-                    step(); step(); step(); step(); step(); step();
+                    have separate(memory(gparent->rb_left), memory(gparent->rb_right));
+                    have separate(memory(gparent->rb_left), memory(parent->rb_left));
+                    have separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
+                    have separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
+                    have separate(memory(gparent->rb_left), memory(root->rb_node));
+                    have separate(memory(parent->rb_right), memory(gparent->rb_right));
+                    have separate(memory(parent->rb_right), memory(parent->rb_left));
+                    have separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
+                    have separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
+                    have separate(memory(parent->rb_right), memory(root->rb_node));
+                    have gparent->rb_right == parent by { assumption(); }
+                    mark before_link_writes;
+                    step(); step(); step();
+                    have gparent->rb_right == 0 by { assumption(); }
+                    have separate(memory(gparent->rb_right), memory(parent->rb_left));
+                    mark after_right_write;
+                    step(); step(); step();
+                    transport(at(after_right_write, gparent->rb_right == 0), gparent->rb_right == 0) using {
+                        at(after_right_write, gparent->rb_right == 0);
+                        separate(memory(gparent->rb_right), memory(parent->rb_left));
+                    };
                     have gparent->__rb_parent_color == 1 by { solve(); }
+                    have gparent->rb_right == 0 by { assumption(); }
+                    have separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
+                    have separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
+                    have separate(memory(gparent->rb_right), memory(root->rb_node));
+                    mark before_parent_update;
                     step();
-                    have g->rb_right == 0 by { solve(); }
-                    let p_left = fold(sized_at(g->rb_right), { model: SizedTree::Empty });
-                    have g->rb_left == 0 by { solve(); }
-                    let g_left = fold(sized_at(g->rb_left), { model: SizedTree::Empty });
+                    transport(at(before_parent_update, gparent->rb_right == 0), gparent->rb_right == 0) using {
+                        at(before_parent_update, gparent->rb_right == 0);
+                        separate(memory(gparent->rb_right), memory(gparent->__rb_parent_color));
+                        separate(memory(gparent->rb_right), memory(parent->__rb_parent_color));
+                        separate(memory(gparent->rb_right), memory(root->rb_node));
+                    };
+                    have g->rb_right == 0 by { assumption(); }
+                    let p_left = fold(sized_at(0), { model: SizedTree::Empty });
+                    transport(at(before_link_writes, gparent->rb_left == 0), gparent->rb_left == 0) using {
+                        at(before_link_writes, gparent->rb_left == 0);
+                        separate(memory(gparent->rb_left), memory(gparent->rb_right));
+                        separate(memory(gparent->rb_left), memory(parent->rb_left));
+                        separate(memory(gparent->rb_left), memory(gparent->__rb_parent_color));
+                        separate(memory(gparent->rb_left), memory(parent->__rb_parent_color));
+                        separate(memory(gparent->rb_left), memory(root->rb_node));
+                    };
+                    have g->rb_left == 0 by { assumption(); }
+                    let g_left = fold(sized_at(0), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
                     }, { metadata: g_size, right: p_left, left: g_left });
-                    transport(at(region(5).entry, parent->rb_right == node), parent->rb_right == node);
+                    transport(at(before_link_writes, parent->rb_right == node), parent->rb_right == node) using {
+                        at(before_link_writes, parent->rb_right == node);
+                        at(before_link_writes, gparent->rb_right) == parent;
+                        separate(memory(parent->rb_right), memory(gparent->rb_right));
+                        separate(memory(parent->rb_right), memory(parent->rb_left));
+                        separate(memory(parent->rb_right), memory(gparent->__rb_parent_color));
+                        separate(memory(parent->rb_right), memory(parent->__rb_parent_color));
+                        separate(memory(parent->rb_right), memory(root->rb_node));
+                    };
                     have parent->rb_left == gparent by { solve(); }
                     have p->rb_left == g by {
                         rewrite(p == parent);
@@ -172,6 +219,9 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have parent->__rb_parent_color == at(region(13).exit, gparent->__rb_parent_color) by { solve(); }
                     have parent->__rb_parent_color == 1 by { solve(); }
                     transport(parent->__rb_parent_color == 1, p->__rb_parent_color == 1);
+                    have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by {
+                        rewrite(p->__rb_parent_color == 1); normalize();
+                    }
                     have p->__rb_parent_color == (p->__rb_parent_color & 1) by {
                         rewrite(p->__rb_parent_color == 1); normalize();
                     }

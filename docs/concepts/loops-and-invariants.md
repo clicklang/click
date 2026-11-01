@@ -264,17 +264,18 @@ executes one complete body iteration, and proves all invariants again. Either
 proof may be omitted; bounded automation owned by the `loop` keyword supplies
 an omitted phase. Expanding that keyword writes all omitted phases explicitly.
 
-An omitted `preserve` walks the body once. At a C `if` with more of the body
-after it, whose arms both fall through, it runs both arms and joins them
-where they meet, as a written `branch` with no `ensuring` does, so the rest of
-the body is not walked once per arm
-(`mdtests/an_automatically_closed_loop_joins_its_c_branches.md`).
-Arms that end in different states are joined keeping only what both agree
-on. A loop whose invariant needs what each arm established is therefore not
-closed automatically; the failure says so, and the body is written with
-`branch ensuring { ... }`, which states it
-(`mdtests/an_automatically_closed_loop_keeps_only_what_its_branches_agree_on.md`,
-`mdtests/a_written_branch_interface_carries_what_an_invariant_needs.md`).
+An omitted `preserve` walks the body as a function's implicit tail walks a
+function. At a C `if` whose condition the path does not decide, it splits, and
+each arm runs on as its own path to the back edge, a `break`, a `continue` or
+a `return`, where it closes the invariants with everything it established
+(`mdtests/an_automatically_closed_loop_splits_at_its_c_branches.md`,
+`mdtests/an_automatically_closed_loop_closes_each_branch_arm.md`). Sequential
+`if`s multiply its paths; it shares the implicit tail's step budget and its
+limit of 1,024 splits, past which it stops and names the explicit join
+(`mdtests/a_loop_body_stops_at_the_split_limit.md`). `branch ensuring { ...
+}` joins an `if`'s arms and states what both establish, so the rest of the
+body is checked once
+(`mdtests/a_written_branch_interface_carries_what_an_invariant_needs.md`).
 An interface fact holds in an arm only together with what its terms need to
 denote a value, so an arm that proves `p[j] <= p[j + 1]` for the interface
 also proves `defined(j + 1)`
@@ -1215,12 +1216,14 @@ that ran.
 A bare `close_invariants()` closes the bundle as `close_invariants() by { ... }`
 with `solve()` on each member: it descends the bundle's conjunctions and each
 member's guards with `both` and `intro`, and closes every member with `solve()`
-alone, which reads the facts in scope like any other `solve()`. A member
-`solve()` does not close as spelled over the back edge is stated once more at
-the iteration entry, `at(<entry>, 0 <= i - 1)`, so the step sees the
-difference the body took, and closed by `solve()` there. That closes an
+alone, which reads the facts in scope like any other `solve()`. Each member
+is spelled as its clause writes it, as a function's exit closes each `ensures`
+as written: an invariant over the back-edge locals, and the descent member of
+`decreases m` as `m < at(<iteration entry>, m)`, a tuple's as the
+disjunction over pivots with the earlier components tied. That closes an
 unsigned or 64-bit bound such as `i <= n` after `i += 1` from the guard
-`i < n` (`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`,
+`i < n`, and the descent of `n - i`
+(`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`,
 `mdtests/a_64_bit_countdown_closes_its_back_edge.md`). A member `solve()`
 misses is named in the refusal; prove it by hand in a
 `close_invariants() by { ... }` body.

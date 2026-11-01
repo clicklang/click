@@ -6776,6 +6776,19 @@ impl ResourceContext {
             let supplier = candidates
                 .supplier_at_base(*entry, base)
                 .unwrap_or_else(|| self.fact(*entry).clone());
+            // A cell returned at an interior pointer must share the query's
+            // coordinates before adjacency indexing. This only rebases the
+            // already selected constant-size range; carrier checks remain in
+            // the ordinary merge rule.
+            let supplier = match &supplier {
+                CResourceFact::Own(CResource::Memory(range), quantity) => {
+                    memory_range_rebased(range, base, assumptions).map_or_else(
+                        || supplier.clone(),
+                        |range| CResourceFact::Own(CResource::Memory(range), quantity.clone()),
+                    )
+                }
+                _ => supplier,
+            };
             suppliers.insert_fact(supplier);
         }
         Some(suppliers.normalized_with_byte_endpoints(assumptions, true))
