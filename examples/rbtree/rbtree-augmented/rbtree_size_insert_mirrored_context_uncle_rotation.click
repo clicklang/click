@@ -230,6 +230,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have parent == p by { assumption(); }
                     have parent->rb_right == node by { assumption(); }
                     mark before_link_writes;
+                    have at(before_link_writes, ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above) by assumption();
                     have at(before_link_writes, parent->rb_right == node) by { assumption(); }
                     have at(before_link_writes, g->rb_right) == parent by { assumption(); }
                     step(); step(); step();
@@ -264,6 +265,13 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have at(before_parent_update, g->rb_right == m) by { assumption(); }
                     have at(before_parent_update, parent->rb_right == node) by { assumption(); }
                     have at(before_parent_update, parent->rb_left == gparent) by { assumption(); }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by {
+                        transport(at(before_link_writes, ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above),
+                            ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above);
+                    }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(link.model, 0) by {
+                        rewrite(sized_context_parent(link.model, 0) == above); assumption();
+                    }
                     let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     have parent->__rb_parent_color == at(before_parent_update, gparent->__rb_parent_color) by { assumption(); }
                     have p->__rb_parent_color == at(before_parent_update, g->__rb_parent_color) by { assumption(); }

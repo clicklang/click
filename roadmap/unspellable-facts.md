@@ -12,6 +12,30 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Ordinary arithmetic domains (2026-11-01)
+
+The user approved representing definedness as conjunctions of ordinary
+propositions, rather than adding an `overflows<type>(...)` surface primitive.
+The proposed shared-overflow-node slice remains a local checkpoint on
+`codex/kernel-overflow-conditions` and is not being landed.
+
+The first replacement slice is `codex/division-domain-propositions`: signed
+32/64-bit division and remainder require nonzero divisor plus the ordinary
+MIN/-1 exclusion. Both specification evaluation and C execution use ordinary
+propositions; the int32 remainder bridge theorem uses the same conjunction.
+The full exclusion is checked by indexed assumption membership, with existing
+atomic checks deciding its two comparisons. Unknown execution records an Or
+on the normal branch and an And of equalities on the exceptional branch.
+Other operations and legacy internal overflow reasoning remain to migrate.
+The ordinary obligations also exposed a retained-proof bug: a post-execution
+`have` can retain prerequisite proofs before its own certificate. Replay now
+keeps that complete sequence rather than requiring a single step.
+Validation: `scripts/check.sh --no-fail-fast` passed 7,038 unit/API/import/
+scaling tests, 58 examples, and 4,954 mdtests in 12m02s (over the ten-minute
+target; no limits changed and no nightly run). The focused division
+fact-stability audit passed all 17 fixtures with zero differences, matching
+the zero-difference baseline on its 16 existing fixtures.
+
 ## Shared SurfaceTerm and KernelTerm migration (2026-10-31)
 
 The user approved a staged unification of source expressions and kernel

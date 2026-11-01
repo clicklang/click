@@ -78,6 +78,7 @@ void probe(struct node *p, struct root *root) {
   step();
   have near->tag == rid->tag by { normalize() using { near == rid; }; }
   have rid->tag == 0u64 by { normalize() using { near == rid; }; }
+  step();
  } }
  } }
  } }

@@ -200,6 +200,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     }; }
                     apply(size_children_fit(sized_value(far), 0));
                     mark before_inner_rotation;
+                    have at(before_inner_rotation, ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above) by assumption();
                     let { metadata: n_size, left: n_left, right: n_right } = unfold(focus);
                     let focus = fold(sized_at(node), { model: SizedTree::Node(node, p, Color::Red, 1, SizedTree::Empty, SizedTree::Empty) }, { metadata: n_size, left: n_left, right: n_right });
                     unfold(color_bit(Color::Red)); unfold(color_bit(Color::Black));
@@ -337,6 +338,22 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         separate(memory(g->__rb_parent_color), memory((node as (void *) as (struct sized_node *))->size));
                         separate(memory(g->__rb_parent_color), memory(g->rb_left));
                     };
+                    transport(at(before_inner_rotation, ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above), ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above) using {
+                        at(before_inner_rotation, ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above);
+                        g == g;
+                        at(before_inner_rotation, g->rb_left) == p;
+                        gparent == g;
+                        parent == node;
+                        separate(memory(g->__rb_parent_color), memory(p->__rb_parent_color));
+                        separate(memory(g->__rb_parent_color), memory(p->rb_left));
+                        separate(memory(g->__rb_parent_color), memory(p->rb_right));
+                        separate(memory(g->__rb_parent_color), memory((p as (void *) as (struct sized_node *))->size));
+                        separate(memory(g->__rb_parent_color), memory(node->__rb_parent_color));
+                        separate(memory(g->__rb_parent_color), memory(node->rb_left));
+                        separate(memory(g->__rb_parent_color), memory(node->rb_right));
+                        separate(memory(g->__rb_parent_color), memory((node as (void *) as (struct sized_node *))->size));
+                        separate(memory(g->__rb_parent_color), memory(g->rb_left));
+                    };
                     let p_size = fold(size_metadata(p), { value: pv - 1 });
                     let n_size = fold(size_metadata(node), { value: pv });
                     let parent_subtree = fold(sized_at(p), { model: SizedTree::Node(p, node, Color::Red, pv - 1, far, SizedTree::Empty) }, { metadata: p_size, left: far_subtree, right: p_empty_right });
@@ -355,6 +372,9 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     mark before_parent_update;
                     have at(before_parent_update, g->rb_left == 0) by { assumption(); }
                     have at(before_parent_update, node->rb_left == p) by { assumption(); }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(link.model, 0) by {
+                        rewrite(sized_context_parent(link.model, 0) == above); assumption();
+                    }
                     let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     let g_size = fold(size_metadata(g), { value: gv });
                     transport(at(before_parent_update, g->rb_left == 0), g->rb_left == 0) using {

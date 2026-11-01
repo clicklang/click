@@ -222,6 +222,34 @@ fn span(s: a::Span) -> out::Span {
         column: s.data().beg.col as usize + 1,
     }
 }
+/// A macro's generated code can belong to a different file from its caller.
+/// Keep the reported filename and line together, preferring either recorded
+/// span in the enclosing item's file and otherwise the item's own location.
+fn refusal_location(
+    krate: &a::TranslatedCrate,
+    source: &str,
+    candidate: a::Span,
+    enclosing: a::Span,
+) -> String {
+    let enclosing = enclosing.data();
+    let selected = [Some(candidate.data()), candidate.generated_from_span()]
+        .into_iter()
+        .flatten()
+        .find(|span| span.file_id == enclosing.file_id)
+        .unwrap_or(enclosing);
+    let filename = krate
+        .files
+        .get(selected.file_id)
+        .and_then(|file| {
+            if let a::FileName::Local(path) = &file.name {
+                path.to_str()
+            } else {
+                None
+            }
+        })
+        .unwrap_or(source);
+    format!("{filename}:{}", selected.beg.line)
+}
 fn simple_name(n: &a::Name, krate: &str) -> Result<String, String> {
     match n.name.as_slice() {
         [a::PathElem::Ident(c, d), a::PathElem::Ident(name, nd)]
@@ -2880,13 +2908,13 @@ pub(super) fn decode_crate(
         }
     }
     // A refusal while naming or checking an item names where it is.
-    let mut item_line = 0;
+    let mut item_location = format!("{source}:1");
     (|| -> Result<(), String> {
         for (id, f) in krate.fun_decls.iter_indexed() {
             if !f.item_meta.is_local {
                 continue;
             }
-            item_line = f.item_meta.span.data().beg.line;
+            item_location = refusal_location(&krate, source, f.item_meta.span, f.item_meta.span);
             let name = match &f.src {
                 a::FunSource::Normal
                     if crate_config.is_some() && adapter.closure_as_fn_name(f)?.is_some() =>
@@ -3042,8 +3070,8 @@ pub(super) fn decode_crate(
             };
             let located = |error: String| {
                 format!(
-                    "{source}:{} in {name}: {error}",
-                    f.item_meta.span.data().beg.line
+                    "{} in {name}: {error}",
+                    refusal_location(&krate, source, f.item_meta.span, f.item_meta.span)
                 )
             };
             if !adapter.crate_mode
@@ -3095,10 +3123,12 @@ pub(super) fn decode_crate(
         Ok(())
     })()
     .map_err(|error| {
-        if error.starts_with(&format!("{source}:")) {
+        if error.starts_with(&format!("{item_location}:"))
+            || error.starts_with(&format!("{item_location} in "))
+        {
             error
         } else {
-            format!("{source}:{item_line}: {error}")
+            format!("{item_location}: {error}")
         }
     })?;
     // A `Drop` implementation runs before the glue drops the fields; a
@@ -3126,8 +3156,8 @@ pub(super) fn decode_crate(
         for (field_id, field) in adapter.fields(*id)?.iter_enumerated() {
             let located = |error: String| {
                 format!(
-                    "{source}:{} in struct `{name}`, field `{}`: {error}",
-                    field.span.data().beg.line,
+                    "{} in struct `{name}`, field `{}`: {error}",
+                    refusal_location(&krate, source, field.span, decl.item_meta.span),
                     field.name,
                 )
             };
@@ -3253,30 +3283,36 @@ pub(super) fn decode_crate(
             (body, BTreeMap::new(), BTreeSet::new())
         };
         let try_body;
-        let body = if let Some(rewritten) = adapter
-            .option_try_body(body)
-            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
-        {
+        let body = if let Some(rewritten) = adapter.option_try_body(body).map_err(|e| {
+            format!(
+                "{} in {name}: {e}",
+                refusal_location(&krate, source, body.span, f.item_meta.span)
+            )
+        })? {
             try_body = rewritten;
             &try_body
         } else {
             body
         };
         let take_body;
-        let body = if let Some(rewritten) = adapter
-            .option_take_body(body)
-            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
-        {
+        let body = if let Some(rewritten) = adapter.option_take_body(body).map_err(|e| {
+            format!(
+                "{} in {name}: {e}",
+                refusal_location(&krate, source, body.span, f.item_meta.span)
+            )
+        })? {
             take_body = rewritten;
             &take_body
         } else {
             body
         };
         let box_free_body;
-        let body = if let Some(rewritten) = adapter
-            .box_free_body(body)
-            .map_err(|e| format!("{source}:{} in {name}: {e}", body.span.data().beg.line))?
-        {
+        let body = if let Some(rewritten) = adapter.box_free_body(body).map_err(|e| {
+            format!(
+                "{} in {name}: {e}",
+                refusal_location(&krate, source, body.span, f.item_meta.span)
+            )
+        })? {
             box_free_body = rewritten;
             &box_free_body
         } else {
@@ -3405,7 +3441,10 @@ pub(super) fn decode_crate(
                     Type::Bool
                 } else {
                     adapter.ty(&local.ty).map_err(|error| {
-                        format!("{source}:{} in {name}: {error}", local.span.data().beg.line)
+                        format!(
+                            "{} in {name}: {error}",
+                            refusal_location(&krate, source, local.span, f.item_meta.span)
+                        )
                     })?
                 },
                 span: span(local.span),
@@ -3454,7 +3493,12 @@ pub(super) fn decode_crate(
                     }
                     b.statement(s)
                         .map(|s| s.into_iter().collect::<Vec<_>>())
-                        .map_err(|e| format!("{source}:{} in {name}: {e}", s.span.data().beg.line))
+                        .map_err(|e| {
+                            format!(
+                                "{} in {name}: {e}",
+                                refusal_location(&krate, source, s.span, f.item_meta.span)
+                            )
+                        })
                 })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
@@ -3492,8 +3536,8 @@ pub(super) fn decode_crate(
             }
             .map_err(|e| {
                 format!(
-                    "{source}:{} in {name}: {e}",
-                    block.terminator.span.data().beg.line
+                    "{} in {name}: {e}",
+                    refusal_location(&krate, source, block.terminator.span, f.item_meta.span)
                 )
             })?;
             coercions.push((blocks.len(), b.coercions.take()));
@@ -3509,8 +3553,8 @@ pub(super) fn decode_crate(
             name: name.clone(),
             return_type: adapter.ty(&f.signature.output).map_err(|error| {
                 format!(
-                    "{source}:{} in {name}: {error}",
-                    f.item_meta.span.data().beg.line
+                    "{} in {name}: {error}",
+                    refusal_location(&krate, source, f.item_meta.span, f.item_meta.span)
                 )
             })?,
             parameters,
@@ -3723,6 +3767,58 @@ pub(super) fn decode_crate(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn charon_refusal_locations_keep_file_and_line_together() {
+        let artifact: ExtractionArtifact = serde_json::from_slice(NESTED_ARTIFACT).unwrap();
+        let krate = &artifact.data.translated;
+        let owner = krate
+            .fun_decls
+            .iter()
+            .find(|f| f.item_meta.is_local)
+            .unwrap()
+            .item_meta
+            .span;
+        let mut local = owner.data();
+        local.beg.line = 2;
+        local.end = local.beg;
+        let mut foreign = local;
+        foreign.file_id = a::FileId::from_usize(99_999);
+        foreign.beg.line = 45;
+        foreign.end = foreign.beg;
+        let local_location = refusal_location(krate, "nested.rs", a::Span::new(local, None), owner);
+        assert_eq!(local_location, "nested.rs:2");
+        // A crate's entry file need not be the enclosing function's file.
+        assert_eq!(
+            refusal_location(krate, "root.rs", a::Span::new(local, None), owner),
+            local_location
+        );
+        // Prefer the direct caller location when the generated code is foreign.
+        assert_eq!(
+            refusal_location(
+                krate,
+                "nested.rs",
+                a::Span::new(local, Some(foreign)),
+                owner
+            ),
+            local_location
+        );
+        // Also accept a caller location recorded in generated_from_span.
+        assert_eq!(
+            refusal_location(
+                krate,
+                "nested.rs",
+                a::Span::new(foreign, Some(local)),
+                owner
+            ),
+            local_location
+        );
+        // Never attach a foreign line to the caller's filename.
+        assert_eq!(
+            refusal_location(krate, "nested.rs", a::Span::new(foreign, None), owner),
+            format!("nested.rs:{}", owner.data().beg.line)
+        );
+    }
+
     #[test]
     fn charon_plain_record_loop_needs_storage_lifetime_restarts() {
         let artifact = include_bytes!(
