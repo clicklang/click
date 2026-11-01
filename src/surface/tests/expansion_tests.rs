@@ -1,6 +1,32 @@
 use super::*;
 
 #[test]
+fn signed_division_ordinary_domains_expand_without_implicit_solving() {
+    let c = "int f(int a, int b) { return a / b; }";
+    let source = r#"verifying "division.c";
+        int32 f(int32 a, int32 b) {
+            requires defined(a / b);
+            ensures result == a / b;
+        }"#;
+    let sources = [("division.c", c)];
+    for requirement in ["defined(a / b)", "b > 0"] {
+        let source = source.replace("defined(a / b)", requirement);
+        let (session, verified) = C0VerificationSession::new(&source, &sources).unwrap();
+        let expanded = expand_checked_grouped_claim(&source, &verified, "f").unwrap();
+        let at = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
+        session
+            .verify_at(&expanded, at.line, at.column)
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+        drop(session);
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+    }
+    for missing in ["b != 0", "a != -2147483648 or b != -1"] {
+        assert!(verify_c0_sources(&source.replace("defined(a / b)", missing), &sources).is_err());
+    }
+}
+
+#[test]
 fn loop_guard_call_results_expand_with_source_region_names() {
     let c = "int poll(int x) { return x; } int spin(int x) { while (poll(x) == 0) { } return 1; }";
     let source = r#"verifying "poll.c";

@@ -7837,10 +7837,7 @@ fn int32_remainder_bridge_matches_independent_signed_boundary_models() {
     );
     assert_eq!(
         no_overflow.as_ref(),
-        &Proposition::ConditionIs(
-            ConditionTerm::signed_divide_overflows(left.clone(), right.clone()),
-            false
-        )
+        &Proposition::signed_division_exclusion(MachineIntegerType::Int32, &left, &right)
     );
     let Proposition::Implies(integer_nonzero, conclusion) = rest.as_ref() else {
         panic!("missing mathematical domain");

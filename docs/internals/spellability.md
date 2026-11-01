@@ -152,6 +152,13 @@ variables, machine comparisons, equality, conditionals and calls have structural
 nodes. Mathematical-Integer comparisons use `IntegerCompare`, retaining all six
 operators and both typed Integer operands. A greater-than comparison is not
 rewritten as a swapped less-than comparison, and disequality remains explicit.
+Native signed division and remainder now generate ordinary domain propositions:
+`b != 0` and `(a != MIN or b != -1)`. The conjunction is also the premise of the
+int32 remainder-to-Integer theorem. Specification obligations retain these
+propositions separately, and C execution records the ordinary exclusion on its
+normal branch and the two exceptional equalities on its undefined branch.
+No new overflow spelling or term is needed for this domain. Other arithmetic
+operations and legacy internal overflow reasoning remain separate migrations.
 Other conditions retain an exact `LegacyBool` payload. Import/export does
 not use condition fact equality: signed and unsigned equality comparisons keep
 their original format even where the fact store identifies them. Raising a

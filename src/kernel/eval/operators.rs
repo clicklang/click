@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::binary_term;
 
+mod division_domains;
 mod spec_arithmetic;
 pub(in crate::kernel) use spec_arithmetic::{apply_spec_machine_arithmetic, apply_spec_rust_shift};
 
@@ -3662,45 +3663,15 @@ fn apply_c_int32_division_nonzero(
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
 ) -> Vec<CExpressionPath> {
-    let overflow = ConditionTerm::signed_divide_overflows(left.clone(), right.clone());
-    match decide_with_facts(assumptions, &facts, &overflow) {
-        Some(true) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::UndefinedBehavior(
-                CUndefinedBehavior::SignedDivisionOverflow,
-            ),
-            facts,
-            obligations,
-        }],
-        Some(false) => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(int32(result(left, right))),
-            facts,
-            obligations,
-        }],
-        None => {
-            let mut normal_facts = facts.clone();
-            add_condition_path_fact(&mut normal_facts, assumptions, overflow.clone(), false)
-                .expect("unknown divide-overflow fact should be consistent");
-
-            let mut overflow_facts = facts;
-            add_condition_path_fact(&mut overflow_facts, assumptions, overflow, true)
-                .expect("unknown divide-overflow fact should be consistent");
-
-            vec![
-                CExpressionPath {
-                    outcome: CExpressionOutcome::Value(int32(result(left, right))),
-                    facts: normal_facts,
-                    obligations: obligations.clone(),
-                },
-                CExpressionPath {
-                    outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::SignedDivisionOverflow,
-                    ),
-                    facts: overflow_facts,
-                    obligations,
-                },
-            ]
-        }
-    }
+    division_domains::apply_nonzero(
+        MachineIntegerType::Int32,
+        left,
+        right,
+        facts,
+        obligations,
+        assumptions,
+        result,
+    )
 }
 
 fn apply_c_int64_overflowing(
@@ -3780,14 +3751,13 @@ fn apply_c_int64_division_nonzero(
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
 ) -> Vec<CExpressionPath> {
-    let overflow = ConditionTerm::int64_signed_divide_overflows(left.clone(), right.clone());
-    apply_c_int64_overflowing(
+    division_domains::apply_nonzero(
+        MachineIntegerType::Int64,
         left,
         right,
         facts,
         obligations,
         assumptions,
-        overflow,
         result,
     )
 }
