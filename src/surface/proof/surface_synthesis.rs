@@ -2765,6 +2765,13 @@ fn raise_kernel_term(
             name: generic_instance_source_name(name).into(),
             arguments: arguments.iter().map(recurse).collect::<Option<Vec<_>>>()?,
         },
+        Node::IntegerToMachine {
+            destination,
+            operand,
+        } => SurfaceTerm::Call {
+            name: integer_conversion_name(*destination).into(),
+            arguments: vec![recurse(operand)?],
+        },
         Node::MachineObservation { format, operand } => {
             let value = crate::kernel::KernelTermExport::default()
                 .argument(operand)
@@ -2820,6 +2827,22 @@ fn raise_kernel_term(
             synthesize_legacy_call_argument(&value, parameter_binding, state, bound_variables)?
         }
     })
+}
+
+fn integer_conversion_name(format: crate::kernel::MachineIntegerType) -> &'static str {
+    use crate::kernel::MachineIntegerType::*;
+    match format {
+        Int8 => "to_int8",
+        UInt8 => "to_uint8",
+        Int16 => "to_int16",
+        UInt16 => "to_uint16",
+        Int32 => "to_int32",
+        UInt32 => "to_uint32",
+        Int64 => "to_int64",
+        UInt64 => "to_uint64",
+        Int128 => "to_int128",
+        UInt128 => "to_uint128",
+    }
 }
 
 /// Keep the observation's interpretation inside its snapshot selector.
@@ -4075,7 +4098,12 @@ fn synthesize_surface_bitvector(
             name,
             arguments: values,
         } => synthesize_surface_call(name, values, parameter_binding, state, bound_variables),
-        Bitvector32Term::AlgebraicMatch { .. } | Bitvector32Term::IntegerToMachine { .. } => None,
+        Bitvector32Term::IntegerToMachine { value, destination } => {
+            let operand = crate::kernel::KernelTermImport::default().integer(value);
+            let term = crate::kernel::KernelTerm::integer_to_machine(*destination, operand).ok()?;
+            raise_kernel_term(&term, parameter_binding, state, bound_variables)
+        }
+        Bitvector32Term::AlgebraicMatch { .. } => None,
     }
 }
 

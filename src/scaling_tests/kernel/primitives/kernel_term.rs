@@ -123,3 +123,32 @@ fn machine_observation_bridge_scales_with_its_explicit_operand() {
         }
     }
 }
+
+#[test]
+fn integer_conversion_bridge_scales_with_shared_operand() {
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|i| KernelTerm::variable(KernelType::Integer, Variable(950_000 + i)))
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let mut value: SharedIntegerTerm = IntegerTerm::Variable(Variable(951_000)).into();
+            for _ in 0..size {
+                value = IntegerTerm::Add(value.clone(), value).into();
+            }
+            let source =
+                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::IntegerToMachine {
+                    value,
+                    destination: MachineIntegerType::Int32,
+                }));
+            let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let term = KernelTermImport::default().argument(&source);
+                KernelTermExport::default().argument(&term).unwrap()
+            });
+            assert_eq!(restored, source);
+            assert!(
+                work <= 12 * (size + 2),
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}

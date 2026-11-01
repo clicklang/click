@@ -61,6 +61,10 @@ impl KernelTermImport {
             Old::UInt64Constant(value) => Node::MachineLiteral(Literal::UInt64(*value)),
             Old::MachineIntegerConstant(value) => Node::MachineLiteral(Literal::Wide(*value)),
             Old::Variable(variable) => Node::Variable(*variable),
+            Old::IntegerToMachine { value, destination } => Node::IntegerToMachine {
+                destination: *destination,
+                operand: self.integer(value),
+            },
             Old::Binary {
                 op,
                 format,
@@ -147,6 +151,13 @@ impl KernelTermExport {
                 Literal::Wide(value) => Old::MachineIntegerConstant(*value),
             },
             Node::Variable(variable) => Old::Variable(*variable),
+            Node::IntegerToMachine {
+                destination,
+                operand,
+            } => Old::IntegerToMachine {
+                value: Self::default().integer(operand)?,
+                destination: *destination,
+            },
             Node::MachineBinary {
                 format,
                 operator,
@@ -205,6 +216,45 @@ impl KernelTermExport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn integer_conversion_preserves_destination_and_operand_without_folding() {
+        for destination in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt128,
+        ] {
+            let operand: SharedIntegerTerm = IntegerTerm::Add(
+                IntegerTerm::constant_i64(1).into(),
+                IntegerTerm::constant_i64(2).into(),
+            )
+            .into();
+            let source = PureFunctionArgument::Value(wrap_exact(
+                destination,
+                Bitvector32Term::IntegerToMachine {
+                    value: operand,
+                    destination,
+                },
+            ));
+            let common = KernelTermImport::default().argument(&source);
+            assert!(
+                matches!(common.node(), KernelTermNode::IntegerToMachine { destination: actual, .. } if *actual == destination)
+            );
+            assert_eq!(common.children()[0].ty(), &KernelType::Integer);
+            assert!(matches!(
+                common.children()[0].node(),
+                KernelTermNode::IntegerOperation { .. }
+            ));
+            assert_eq!(
+                KernelTermExport::default().argument(&common).unwrap(),
+                source
+            );
+            drop(source);
+            let restored = KernelTermExport::default().argument(&common).unwrap();
+            assert_eq!(KernelTermImport::default().argument(&restored), common);
+        }
+    }
 
     #[test]
     fn machine_bridge_preserves_formats_payloads_and_structure() {

@@ -130,6 +130,10 @@ changes the structural observation, particularly under quantified binders.
 Observation casts use `SurfaceTerm::CUnary` with the Surface operand retained;
 projecting a resource field or scoped name into a C fragment loses its binding. The checker bridge reconstructs
 the exact `IntegerTerm::Machine` payload without folding arithmetic.
+Mathematical-Integer-to-machine conversions use an `IntegerToMachine` shared
+node with an Integer operand and explicit destination format. Raising uses the
+existing `to_int32`, `to_uint64`, etc. calls; exporting reconstructs the original
+conversion without evaluating the operand or consulting range facts.
 Wide symbolic cast chains retain their intermediate nodes. Collapsing
 `(x as int128) as int64` used to create a generic `int32`-to-`int64` cast,
 while its direct spelling lowered to `Int64From32`. Retaining the chain
