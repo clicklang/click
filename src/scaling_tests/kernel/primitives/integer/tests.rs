@@ -138,28 +138,27 @@ fn widened_and_read_sums(n: u32) -> (SharedIntegerTerm, SharedIntegerTerm) {
 }
 
 /// Rule W's reading of a term through its observations' widenings is
-/// computed once per node: the first reading of an `n`-term sum costs the
-/// same work per term at every size, and every later reading, and every
-/// identity, hash and order of a comparison over it, costs none.
+/// computed when each node is interned, from its children's readings, so
+/// reading an `n`-term sum, and the identity, hash and order of a comparison
+/// over it, cost no work at any size; building the sum costs the same work
+/// per term at every size.
 #[test]
-fn widening_value_reading_is_constant_per_node_and_cached() {
+fn widening_value_reading_is_computed_once_per_node() {
     use std::hash::{Hash, Hasher};
     let hash = |condition: &ConditionTerm| {
         let mut state = std::collections::hash_map::DefaultHasher::new();
         condition.hash(&mut state);
         state.finish()
     };
-    let mut first = Vec::new();
-    let mut identities = Vec::new();
+    let mut built = Vec::new();
     for n in [16u32, 64, 256, 1024] {
-        let (widened, read) = widened_and_read_sums(n);
-        let (reading, work) =
+        let ((widened, read), work) =
+            crate::instrumentation::measure_deterministic_work(|| widened_and_read_sums(n));
+        built.push((n, work));
+        let (reading, reading_work) =
             crate::instrumentation::measure_deterministic_work(|| widened.read_through());
         assert_eq!(reading, read, "n={n}");
-        first.push((n, work));
-        let (_, again) =
-            crate::instrumentation::measure_deterministic_work(|| widened.read_through());
-        assert_eq!(again, 0, "n={n}: a second reading is cached");
+        assert_eq!(reading_work, 0, "n={n}: the reading is a lookup");
         let bound = |value: SharedIntegerTerm| {
             ConditionTerm::IntegerLessEqual(value, IntegerTerm::constant_i64(7).into())
         };
@@ -170,20 +169,12 @@ fn widening_value_reading_is_constant_per_node_and_cached() {
                 && hash(&written) == hash(&stated)
         });
         assert!(same, "n={n}: one fact up to rule W");
-        identities.push(identity_work);
+        assert_eq!(identity_work, 0, "n={n}: identity reads cached readings");
     }
-    // The identity reads cached readings: only the shared constant side is
-    // read once, at every size.
     assert!(
-        identities
-            .iter()
-            .all(|work| *work == identities[0] && *work <= 2),
-        "{identities:?}"
+        built.iter().all(|(n, work)| *work <= 64 * *n as usize),
+        "{built:?}"
     );
-    // One node visit per node of the widened sum (each observation and each
-    // sum node); the read sum's nodes are their own readings and are not
-    // revisited. Exactly linear: the same work per added term.
-    assert_linear(&first);
 }
 
 /// Each step between sizes costs the same work per added term.

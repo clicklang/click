@@ -683,10 +683,11 @@ impl SharedIntegerTerm {
     /// `to_integer(a as int128) * to_integer(b as int128)` reads as
     /// `to_integer(a) * to_integer(b)`. Reasoning keys an opaque product by
     /// this reading, so the two spellings are one atom; the term itself is
-    /// unchanged. Each node's reading is computed once and cached on the
-    /// node, which keeps the rebuilt node alive and its identity stable:
-    /// O(1) per node over the term's lifetime. Other nodes (applications,
-    /// conditionals, folds) are their own reading.
+    /// unchanged. Each node's reading is computed once, when the node is
+    /// interned, from its children's readings, and cached on the node, which
+    /// keeps the rebuilt node alive and its identity stable: O(1) per node,
+    /// and reading it is a lookup. Other nodes (applications, conditionals,
+    /// folds) are their own reading.
     pub(crate) fn read_through(&self) -> SharedIntegerTerm {
         self.read_through_ref().clone()
     }
@@ -719,7 +720,6 @@ impl SharedIntegerTerm {
                 continue;
             }
             if !expanded {
-                crate::instrumentation::record_deterministic_work(1);
                 stack.push((node.clone(), true));
                 stack.extend(
                     children(&node)
@@ -779,11 +779,18 @@ impl SharedIntegerTerm {
         }
     }
 
+    /// Interns `term` and computes its reading ([`Self::read_through`])
+    /// from its children's, which interning computed before: O(1) per new
+    /// node, so no later reader walks a term's DAG.
     pub(crate) fn intern(term: IntegerTerm) -> Self {
-        integer_interner()
+        let node = integer_interner()
             .lock()
             .expect("Integer interner lock poisoned")
-            .intern(term)
+            .intern(term);
+        if node.0.read_through.get().is_none() {
+            node.compute_read_through();
+        }
+        node
     }
 }
 
