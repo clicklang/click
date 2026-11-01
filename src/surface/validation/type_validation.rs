@@ -2343,6 +2343,12 @@ fn validate_resource_subject_expression_types(
         ResourceSubject::Memory(segment) => {
             validate_contract_segment_expression_types(segment, variables, click_functions, context)
         }
+        ResourceSubject::SavedMemory { base, start, end } => {
+            for expression in [base, start].into_iter().chain(end.iter()) {
+                infer_contract_expression_type(expression, variables, click_functions, context)?;
+            }
+            Ok(())
+        }
         ResourceSubject::Declared {
             name,
             arguments,
@@ -4361,6 +4367,12 @@ fn validate_resource_subject_calls(
         | ResourceSubject::Captured { .. } => Ok(()),
         ResourceSubject::Memory(segment) => {
             validate_contract_segment_calls(segment, click_functions, context)
+        }
+        ResourceSubject::SavedMemory { base, start, end } => {
+            for argument in [base, start].into_iter().chain(end.iter()) {
+                validate_contract_expression_calls(argument, click_functions, context)?;
+            }
+            Ok(())
         }
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {

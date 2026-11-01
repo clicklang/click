@@ -2857,10 +2857,9 @@ fn complete_pointer_read_source(read: &LoadedPointerView) -> SharedCMemory {
 
 /// Whether two reads at addresses the caller proved equal see the bytes of
 /// one cell source. Reads of one snapshot are one read. Each may also be a
-/// projection of a different snapshot, which it agrees with at its own cell;
-/// that does not make the two reads differ. A frame can retain an opaque read
-/// without materializing its cell, so the walk follows only the selected
-/// cell, stopping at the older named snapshot.
+/// projection of a different snapshot, which it agrees with at its own cell.
+/// Compare their retained sources using only immediate checked transitions;
+/// longer preservation arguments must be supplied as explicit equalities.
 pub(in crate::kernel) fn pointer_reads_see_one_cell_source(
     left: &LoadedPointerView,
     right: &LoadedPointerView,
@@ -3692,9 +3691,9 @@ impl LoadCellWalks {
     }
 }
 
-/// Compare two selected read histories, stopping as soon as their checked
-/// no-write prefixes meet. Alternating the walks avoids inspecting history
-/// older than a nearby shared source, including for sibling snapshot views.
+/// Compare exact sources or one checked predecessor per named endpoint.
+/// Longer preservation chains require explicit equalities; this operation
+/// must not discover intermediate snapshots by following memory history.
 fn typed_reads_share_memory_source(
     left: &SharedCMemory,
     right: &SharedCMemory,
@@ -3707,47 +3706,32 @@ fn typed_reads_share_memory_source(
     }
     let _scope = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
     with_extended_dag_bridging(|| {
-        let mut current = [Some(left.clone()), Some(right.clone())];
-        let mut reached = [
-            std::collections::HashSet::from([left.clone()]),
-            std::collections::HashSet::from([right.clone()]),
-        ];
         let evidence = crate::kernel::resource_tracker::step_effect::Evidence {
             assumptions,
             cross_loop_havoc: true,
         };
-        while current.iter().any(Option::is_some) {
-            for side in 0..2 {
-                let Some(node) = current[side].take() else {
-                    continue;
-                };
-                crate::instrumentation::record_deterministic_work(1);
-                let Some(step) = node.derivation() else {
-                    continue;
-                };
-                if !matches!(
-                    crate::kernel::resource_tracker::step_effect::affects(
-                        &step,
-                        &node,
-                        crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
-                        &evidence,
-                    ),
-                    crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
-                        crate::kernel::resource_tracker::step_effect::Separation::Cell(_)
-                    )
-                ) {
-                    continue;
-                }
-                let base = step.base();
-                if reached[1 - side].contains(base) {
-                    return true;
-                }
-                if reached[side].insert(base.clone()) {
-                    current[side] = Some(base.clone());
-                }
-            }
+        let predecessor = |node: &SharedCMemory| {
+            crate::instrumentation::record_deterministic_work(1);
+            let step = node.derivation()?;
+            matches!(
+                crate::kernel::resource_tracker::step_effect::affects(
+                    &step,
+                    node,
+                    crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
+                    &evidence,
+                ),
+                crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
+                    crate::kernel::resource_tracker::step_effect::Separation::Cell(_)
+                )
+            )
+            .then(|| step.base().clone())
+        };
+        let left_base = predecessor(left);
+        if left_base.as_ref() == Some(right) {
+            return true;
         }
-        false
+        let right_base = predecessor(right);
+        right_base.as_ref() == Some(left) || left_base.is_some() && left_base == right_base
     })
 }
 

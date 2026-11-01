@@ -4,10 +4,10 @@ The companion of `a_retained_child_read_frames_across_a_call_through_a_loop_alia
 that carries a fact about the field rather than the field's read: the input
 resource states `n->right == saved`, and the transport carries it across the
 setter call that retains `n->right`. With the input opened and re-folded before
-the loop, the fact is stated at the loop head; `have n->right == saved` carries
-it across the body's two stores to the point before the call (`solve` transports
-it, the stores being separate from `n->right`), and the transport carries it on
-across the call. The fact is a
+the loop, the fact is stated at the loop head. A small owned `saved_right`
+resource retains it across the body's stores; unfolding that resource states
+the preserved fact before the call. The explicit transport carries it on across
+the call. The fact is a
 pointer-value equality, and the transport once compared such facts only
 exactly, refusing what the two-step form (transport the read, then rewrite)
 proved.
@@ -59,6 +59,18 @@ spec enum Anchor {
     At(struct node*, struct node*, struct node*, int32)
 }
 
+spec enum SavedPointer { At(struct node*) }
+
+resource saved_right(n: struct node*) {
+    field value: SavedPointer;
+    match value {
+        SavedPointer::At(saved) => {
+            owns n->right;
+            fact n->right == saved;
+        },
+    }
+}
+
 resource frame(g: struct node*, n: struct node*) {
     field anchor: Anchor;
     match anchor {
@@ -97,7 +109,9 @@ void probe(struct node* g, struct node* n) {
                 initialize by { assumption(); }
                 preserve by {
                     let { word: w } = unfold(state);
+                    let kept = fold(saved_right(n), { value: SavedPointer::At(saved) });
                     step(); step(); step(); step(); step(); step();
+                    unfold(kept);
 
                     have n->right == saved;
                     mark before_call;

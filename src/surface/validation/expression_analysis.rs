@@ -500,6 +500,10 @@ fn resource_subject_contains_old_expression(resource: &ResourceSubject) -> bool 
         | ResourceSubject::Instance { .. }
         | ResourceSubject::Captured { .. } => false,
         ResourceSubject::Memory(segment) => contract_segment_contains_old_expression(segment),
+        ResourceSubject::SavedMemory { base, start, end } => [base, start]
+            .into_iter()
+            .chain(end.iter())
+            .any(contains_old_expression),
         ResourceSubject::Declared { arguments, .. } => {
             arguments.iter().any(contains_old_expression)
         }
@@ -643,6 +647,10 @@ fn resource_subject_contains_at_expression(resource: &ResourceSubject) -> bool {
         | ResourceSubject::Instance { .. }
         | ResourceSubject::Captured { .. } => false,
         ResourceSubject::Memory(segment) => contract_segment_contains_at_expression(segment),
+        ResourceSubject::SavedMemory { base, start, end } => [base, start]
+            .into_iter()
+            .chain(end.iter())
+            .any(contains_at_expression),
         ResourceSubject::Declared { arguments, .. } => arguments.iter().any(contains_at_expression),
     }
 }
@@ -833,6 +841,11 @@ fn collect_click_function_calls_in_resource_subject(
         | ResourceSubject::Instance { .. }
         | ResourceSubject::Captured { .. } => {}
         ResourceSubject::Memory(segment) => collect_click_function_calls_in_segment(segment, calls),
+        ResourceSubject::SavedMemory { base, start, end } => {
+            for argument in [base, start].into_iter().chain(end.iter()) {
+                collect_click_function_calls(argument, calls);
+            }
+        }
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
                 collect_click_function_calls(argument, calls);
@@ -1537,6 +1550,21 @@ fn validate_recursive_calls_in_resource_subject(
             measures,
             algebraic_definitions,
         ),
+        ResourceSubject::SavedMemory { base, start, end } => {
+            for argument in [base, start].into_iter().chain(end.iter()) {
+                validate_recursive_calls_in_expression(
+                    caller,
+                    argument,
+                    lower_bounds,
+                    structural_subterms,
+                    definitions,
+                    function_calls,
+                    measures,
+                    algebraic_definitions,
+                )?;
+            }
+            Ok(())
+        }
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
                 validate_recursive_calls_in_expression(

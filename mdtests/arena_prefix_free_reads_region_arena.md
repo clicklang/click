@@ -77,14 +77,125 @@ void arena_release(struct region* region) {
     let { live: n } = unfold(before);
     let { start: s, end: e } = unfold(freed);
     have separate(memory(*region), memory(region->arena->live_regions));
+    have region->arena->data == old(region->arena->data);
     mark before_store;
-    step_until(function.exit);
+    step();
+    have separate(statement(0).footprint, memory(region->arena)) by {
+        normalize() using { };
+    }
     have region->arena == at(before_store, region->arena) by {
-        transport(at(before_store, region->arena) == at(before_store, region->arena),
-                  region->arena == at(before_store, region->arena)) using {
-            at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
+        transport_certificate {
+            premise 0: separate(statement(0).footprint, memory(region->arena))
+                => separate(statement(0).footprint, memory(region->arena));
+            preserve 0 => region->arena == at(before_store, region->arena);
+            conclusion 1;
+        }
+    }
+    have separate(memory((&arena)[0..1]), memory(region->arena->data));
+    have separate(statement(0).footprint, memory(region->arena->data)) by {
+        normalize() using { separate(memory((&arena)[0..1]), memory(region->arena->data)); };
+    }
+    have region->arena->data == at(before_store, region->arena->data) by {
+        transport_certificate {
+            premise 0: separate(statement(0).footprint, memory(region->arena->data))
+                => separate(statement(0).footprint, memory(region->arena->data));
+            preserve 0 => region->arena->data == at(before_store, region->arena->data);
+            conclusion 1;
+        }
+    }
+    mark after_declare;
+    step();
+    have separate(statement(1).footprint, memory(region->arena)) by {
+        normalize() using { };
+    }
+    have region->arena == at(after_declare, region->arena) by {
+        transport_certificate {
+            premise 0: separate(statement(1).footprint, memory(region->arena))
+                => separate(statement(1).footprint, memory(region->arena));
+            preserve 0 => region->arena == at(after_declare, region->arena);
+            conclusion 1;
+        }
+    }
+    have separate(memory((&arena)[0..1]), memory(region->arena->data));
+    have separate(statement(1).footprint, memory(region->arena->data)) by {
+        normalize() using { separate(memory((&arena)[0..1]), memory(region->arena->data)); };
+    }
+    have region->arena->data == at(after_declare, region->arena->data) by {
+        transport_certificate {
+            premise 0: separate(statement(1).footprint, memory(region->arena->data))
+                => separate(statement(1).footprint, memory(region->arena->data));
+            preserve 0 => region->arena->data == at(after_declare, region->arena->data);
+            conclusion 1;
+        }
+    }
+    have region->arena == at(before_store, region->arena) by {
+        transport_certificate {
+            premise 0: region->arena == at(after_declare, region->arena)
+                => region->arena == at(after_declare, region->arena);
+            premise 1: at(after_declare, region->arena) == at(before_store, region->arena)
+                => at(after_declare, region->arena) == at(before_store, region->arena);
+            transitive 0, 1 => region->arena == at(before_store, region->arena);
+            conclusion 2;
+        }
+    }
+    mark after_assignment;
+    have arena == at(after_assignment, region->arena);
+    have separate(memory(at(after_assignment, &arena->live_regions)[0]), memory((&arena->data)[0..1]));
+    have separate(memory(at(after_assignment, &arena->live_regions)[0]), memory(at(after_assignment, &region->arena->data)[0])) by {
+        rewrite(at(after_assignment, region->arena) == arena);
+        assumption();
+    }
+    have separate(memory(arena->live_regions), memory(region->arena));
+    step();
+    have separate(statement(2).footprint, memory(region->arena)) by {
+        normalize() using { separate(memory(arena->live_regions), memory(region->arena)); };
+    }
+    have region->arena == at(after_assignment, region->arena) by {
+        transport_certificate {
+            premise 0: separate(statement(2).footprint, memory(region->arena))
+                => separate(statement(2).footprint, memory(region->arena));
+            preserve 0 => region->arena == at(after_assignment, region->arena);
+            conclusion 1;
+        }
+    }
+    have separate(statement(2).footprint, memory(at(after_assignment, &region->arena->data)[0])) by {
+        normalize() using {
+            separate(memory(at(after_assignment, &arena->live_regions)[0]), memory(at(after_assignment, &region->arena->data)[0]));
         };
     }
+    have load_int32_pointer(at(after_assignment, &region->arena->data)) == at(after_assignment, region->arena->data) by {
+        transport_certificate {
+            premise 0: separate(statement(2).footprint, memory(at(after_assignment, &region->arena->data)[0]))
+                => separate(statement(2).footprint, memory(at(after_assignment, &region->arena->data)[0]));
+            preserve 0 => load_int32_pointer(at(after_assignment, &region->arena->data)) == at(after_assignment, region->arena->data);
+            conclusion 1;
+        }
+    }
+    have region->arena->data == load_int32_pointer(at(after_assignment, &region->arena->data)) by {
+        rewrite(region->arena == at(after_assignment, region->arena));
+        normalize();
+    }
+    have region->arena->data == at(after_assignment, region->arena->data) by {
+        transport_certificate {
+            premise 0: region->arena->data == load_int32_pointer(at(after_assignment, &region->arena->data))
+                => region->arena->data == load_int32_pointer(at(after_assignment, &region->arena->data));
+            premise 1: load_int32_pointer(at(after_assignment, &region->arena->data)) == at(after_assignment, region->arena->data)
+                => load_int32_pointer(at(after_assignment, &region->arena->data)) == at(after_assignment, region->arena->data);
+            transitive 0, 1 => region->arena->data == at(after_assignment, region->arena->data);
+            conclusion 2;
+        }
+    }
+    have region->arena == at(before_store, region->arena) by {
+        transport_certificate {
+            premise 0: region->arena == at(after_assignment, region->arena)
+                => region->arena == at(after_assignment, region->arena);
+            premise 1: at(after_assignment, region->arena) == at(before_store, region->arena)
+                => at(after_assignment, region->arena) == at(before_store, region->arena);
+            transitive 0, 1 => region->arena == at(before_store, region->arena);
+            conclusion 2;
+        }
+    }
+    step_until(function.exit);
     have defined(region->arena) by {
         transport(defined(at(before_store, region->arena)), defined(region->arena)) using {
             at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
@@ -102,6 +213,7 @@ void arena_release(struct region* region) {
             at(before_store, separate(memory(*region), memory(region->arena->live_regions)));
         };
     }
+    have region->arena->data == old(region->arena->data);
     let after = fold(arena_live_count(region->arena), { live: n - 1 });
     solve();
 }

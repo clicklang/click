@@ -384,8 +384,14 @@ fn integer_equality(
 
 fn transitive(a: &Proposition, b: &Proposition) -> Option<Proposition> {
     let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-    // Reflexive equalities may already have reduced to true. Composition
-    // then retains the other cited equality, with no endpoint to rediscover.
+    // A complete-pointer identity can lower either to true or to a retained
+    // reflexive address equality. Both carry no new information: keep the
+    // other cited equality without reconstructing the erased pointer domain.
+    let identity = |p: &Proposition| {
+        p == &truth
+            || matches!(p,
+            Proposition::ConditionIs(ConditionTerm::PointerEqual(x, y), true) if x == y)
+    };
     let supported = |p: &Proposition| {
         matches!(
             p,
@@ -396,10 +402,10 @@ fn transitive(a: &Proposition, b: &Proposition) -> Option<Proposition> {
                 Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)
             )
     };
-    if a == &truth && (b == &truth || supported(b)) {
+    if identity(a) && (identity(b) || supported(b)) {
         return Some(b.clone());
     }
-    if b == &truth && supported(a) {
+    if identity(b) && supported(a) {
         return Some(a.clone());
     }
     if let (
@@ -459,6 +465,33 @@ fn transitive(a: &Proposition, b: &Proposition) -> Option<Proposition> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reflexive_address_equality_composes_with_complete_pointer_equality() {
+        let a = CPointerValue::new(Pointer::symbolic(Variable(8_390_890)), CType::Int32Pointer);
+        let b = CPointerValue::new(Pointer::symbolic(Variable(8_390_891)), CType::Int32Pointer);
+        let identity = Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(a.pointer().clone()),
+                Box::new(a.pointer().clone()),
+            ),
+            true,
+        );
+        let address_only = Proposition::ConditionIs(
+            ConditionTerm::PointerEqual(
+                Box::new(a.pointer().clone()),
+                Box::new(b.pointer().clone()),
+            ),
+            true,
+        );
+        let complete = Proposition::ConditionIs(
+            ConditionTerm::PointerValueEqual(Box::new(a), Box::new(b)),
+            true,
+        );
+        assert_eq!(transitive(&identity, &complete), Some(complete.clone()));
+        assert_eq!(transitive(&complete, &identity), Some(complete.clone()));
+        assert!(transitive(&address_only, &complete).is_none());
+    }
 
     pub(super) fn resource_fixture(size: u64) -> (TransportCertificate, Proposition) {
         let schema =
