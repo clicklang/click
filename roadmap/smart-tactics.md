@@ -58,14 +58,24 @@ facts do not establish flat cost as the queried class or bucket grows.
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 
-The next removal target is `typed_reads_share_memory_source`, reached by
-complete-pointer equality and provenance comparison. Its alternating history
-walk is separate from the now-bounded general cell-source lookup. Use
-`repeated_pointer_frame_queries_have_near_linear_total_work` and its adjacent
-and explicit-composition controls in
-`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`. Investigate the related
-read-initialization loop `typed_read_has_same_memory_source` with its own
-checking regression before widening the removal.
+The current unlanded removal targets `typed_reads_share_memory_source`, reached
+by complete-pointer equality and provenance comparison. The local implementation
+inspects at most one predecessor per endpoint; it no longer searches ancestry.
+Before landing, finish these proof repairs:
+
+- Decide how resource descriptors spell a saved pointer base with current
+  indices, such as `memory(old(p)[i..j])`, consistently with `take` and `give`.
+  The arena loop needs this exact address; do not recover it by history search.
+- Finish the nested arena-prefix preservation proof with explicit observation
+  addresses and certificates. Preserve its original produced range.
+- Rerun the ordinary corpus and affected expansion/replay checks after these
+  repairs. Keep the work local until those checks pass.
+
+Retain `repeated_pointer_frame_queries_have_near_linear_total_work`, its adjacent
+and explicit-composition controls, and cold refusal/partial-overwrite controls
+in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`. Investigate the
+related read-initialization loop `typed_read_has_same_memory_source` with its
+own checking regression before widening the removal.
 
 Repair affected proofs with explicit separation and transport certificates,
 preserving C and contracts. Structural read equality needs positive evidence;

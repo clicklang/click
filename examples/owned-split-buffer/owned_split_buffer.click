@@ -1,3 +1,5 @@
+import click::separation;
+
 theorem incremented_one_is_two(before: int32, after: int32) {
     requires before == 1;
     requires after == before + 1;
@@ -80,11 +82,37 @@ int32 owned_split_buffer_set_left(
     ensures owner->data == old(owner->data);
 } by {
     mark before_store;
-    have separate(memory(owner->data[index]), memory(owner->data));
+    have index <= ((index + 1) as int32);
+    have ((index + 1) as int32) <= owner->len;
+    have contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1])) by {
+        apply(separation::subrange(owner->data, 0, owner->len, index, index + 1)) using {
+            0 <= index; index <= ((index + 1) as int32);
+            ((index + 1) as int32) <= owner->len;
+        };
+    }
+    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
+    have separate(memory(owner->data), memory(owner->data[index..index + 1])) by {
+        apply(separation::restrict(memory(*owner), memory(owner->data[0..owner->len]),
+            memory(owner->data), memory(owner->data[index..index + 1]))) using {
+            separate(memory(*owner), memory(owner->data[0..owner->len]));
+            contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1]));
+            contains(memory(*owner), memory(owner->data));
+        };
+    }
+    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { normalize(); }
+    have contains(memory(owner->data), memory(owner->data)) by { normalize(); }
+    have separate(memory(owner->data), memory(owner->data[index])) by {
+        apply(separation::restrict(memory(owner->data), memory(owner->data[index..index + 1]),
+            memory(owner->data), memory(owner->data[index]))) using {
+            separate(memory(owner->data), memory(owner->data[index..index + 1]));
+            contains(memory(owner->data[index..index + 1]), memory(owner->data[index]));
+            contains(memory(owner->data), memory(owner->data));
+        };
+    }
     step();
     have separate(statement(0).footprint, memory(owner->data)) by {
         normalize() using {
-            at(before_store, separate(memory(owner->data[index]), memory(owner->data)));
+            at(before_store, separate(memory(owner->data), memory(owner->data[index])));
         };
     }
     have owner->data == at(before_store, owner->data) by {
@@ -120,7 +148,49 @@ int32 owned_split_buffer_set_right(
     ensures owner->len == old(owner->len);
     ensures owner->data == old(owner->data);
 } by {
+    have 0 <= index;
+    mark before_store;
+    have index <= ((index + 1) as int32);
+    have ((index + 1) as int32) <= owner->len;
+    have contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1])) by {
+        apply(separation::subrange(owner->data, 0, owner->len, index, index + 1)) using {
+            0 <= index; index <= ((index + 1) as int32);
+            ((index + 1) as int32) <= owner->len;
+        };
+    }
+    have contains(memory(*owner), memory(owner->data)) by { normalize(); }
+    have separate(memory(owner->data), memory(owner->data[index..index + 1])) by {
+        apply(separation::restrict(memory(*owner), memory(owner->data[0..owner->len]),
+            memory(owner->data), memory(owner->data[index..index + 1]))) using {
+            separate(memory(*owner), memory(owner->data[0..owner->len]));
+            contains(memory(owner->data[0..owner->len]), memory(owner->data[index..index + 1]));
+            contains(memory(*owner), memory(owner->data));
+        };
+    }
+    have contains(memory(owner->data[index..index + 1]), memory(owner->data[index])) by { normalize(); }
+    have contains(memory(owner->data), memory(owner->data)) by { normalize(); }
+    have separate(memory(owner->data), memory(owner->data[index])) by {
+        apply(separation::restrict(memory(owner->data), memory(owner->data[index..index + 1]),
+            memory(owner->data), memory(owner->data[index]))) using {
+            separate(memory(owner->data), memory(owner->data[index..index + 1]));
+            contains(memory(owner->data[index..index + 1]), memory(owner->data[index]));
+            contains(memory(owner->data), memory(owner->data));
+        };
+    }
     step();
+    have separate(statement(0).footprint, memory(owner->data)) by {
+        normalize() using {
+            at(before_store, separate(memory(owner->data), memory(owner->data[index])));
+        };
+    }
+    have owner->data == at(before_store, owner->data) by {
+        transport_certificate {
+            premise 0: separate(statement(0).footprint, memory(owner->data))
+                => separate(statement(0).footprint, memory(owner->data));
+            preserve 0 => owner->data == at(before_store, owner->data);
+            conclusion 1;
+        }
+    }
     step();
     solve();
 }

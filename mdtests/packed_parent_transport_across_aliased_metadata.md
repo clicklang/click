@@ -60,14 +60,16 @@ struct node* caller(struct node* p, struct node* q, struct node* parent) {
     ensures result == parent;
 } by {
     let { child: child, a: a, b: b } = unfold(f);
-    unfold(child);
+    let { bits: saved_bits } = unfold(child);
     have separate(memory(p->word), memory((p as (void *) as (struct sized *))->size));
     word_metadata_separation(p, q, { b: b });
     mark before_update;
     have ((p->word & ~3) as (struct node *)) == parent by solve();
+    let kept = fold(packed(p, parent), { bits: saved_bits });
     step(update, { a: a, b: b });
+    unfold(kept);
     have p->word == at(before_update, p->word) by { transport(at(before_update, p->word) == at(before_update, p->word), p->word == at(before_update, p->word)); }
-    have ((p->word & ~3) as (struct node *)) == parent by { transport(at(before_update, ((p->word & ~3) as (struct node *))) == parent, ((p->word & ~3) as (struct node *)) == parent) using { at(before_update, ((p->word & ~3) as (struct node *))) == parent; p == at(before_update, q->left); separate(memory(p->word), memory((p as (void *) as (struct sized *))->size)); separate(memory(p->word), memory((q as (void *) as (struct sized *))->size)); }; }
+    have ((p->word & ~3) as (struct node *)) == parent by { assumption(); }
 }
 ```
 

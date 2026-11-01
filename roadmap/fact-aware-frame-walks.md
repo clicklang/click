@@ -4,23 +4,26 @@ Priority: P1.
 
 ## Remaining targets
 
-The next target is `typed_reads_share_memory_source` in
-`src/kernel/memory_provenance.rs`. Pointer value, designation, and extent
-comparison reach it through `complete_pointer_reads_equal_across_frame` and
-`pointer_reads_see_one_cell_source`. It alternates between the two selected
-snapshots, following no-write predecessors until their histories meet.
+The unlanded `typed_reads_share_memory_source` removal in
+`src/kernel/memory_provenance.rs` replaces alternating ancestry discovery with
+one immediate predecessor per endpoint. Complete-pointer equality, designation,
+and extent comparison must retain that bound.
 
-`repeated_pointer_frame_queries_have_near_linear_total_work` in
-`src/scaling_tests/kernel/tests/memory_scaling_tests.rs` measures 16, 32, 64,
-and 128 stores with one entry-to-current check after each store. It retains
-proved equalities and keeps caches live. Adjacent-state and explicit-composition
-controls distinguish this hidden history discovery from explicit proof work.
-The current local regression is red: entry-to-current work at those sizes is
-21,423 / 72,991 / 266,751 / 1,016,767 units. Adjacent checks take
-7,452 / 14,876 / 29,724 / 59,420 units; explicit composition takes
-9,163 / 18,411 / 36,907 / 73,899. Retain both passing controls when removing
-the implicit walk. The red test is isolated on `codex/pointer-history-next`;
-do not publish it into the still-open cell-source removal PR.
+Before landing:
+
+- Resolve the resource-descriptor spelling for a saved pointer base with
+  current indices, needed by the arena store's separation proof. Reuse the
+  existing `take`/`give` form if approved; do not add a history fallback.
+- Finish the nested arena-prefix read preservation with explicit addresses,
+  preserving the original C and produced range.
+- Validate the full ordinary corpus and affected expansion/replay checks on
+  the completed repairs. Keep this work separate from the open cell-source PR.
+
+Retain the repeated-query, adjacent-state, explicit-composition, and cold
+refusal controls in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`.
+Cold histories include writes to either pointer half; an undecided comparison
+must refuse equality. The ordinary repeated-query tests use 4, 8, 16, and 32
+stores; cold-refusal tests include histories through 256 stores.
 
 The related `typed_read_has_same_memory_source` loop supplies initialization
 checks through `PureFactContext`'s read-definedness evidence. Measure that caller
@@ -31,7 +34,7 @@ bounded variants may reuse already memoized version summaries but must not
 start a cold version walk. An inconclusive query is not preservation evidence.
 Do not reintroduce source discovery to recover automatic proof coverage.
 
-## Proposed next build
+## Removal design
 
 Design check
 - Part: pointer equality and provenance comparison (fast memory checking).
@@ -51,10 +54,8 @@ Design check
 - Failure: decline an unrecorded long-span equality; require explicit links.
   A miss proves neither inequality nor permission to ignore provenance.
 
-Before landing, add long rejected-history controls (including pointer-half
-writes), disable the walk, and repair the affected proofs with existing
-primitives while retaining their C and contracts. Discuss any missing primitive
-before extending the kernel. Measure initialization separately as noted above.
+Retain the rejected-history controls and discuss missing primitives before
+extending the kernel. Measure initialization separately as noted above.
 
 ## Design and build cycle
 

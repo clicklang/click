@@ -1,3 +1,35 @@
+import click::separation;
+
+theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int32, i: int32) {
+    requires separate(whole, memory(p[0..len]));
+    requires contains(whole, kept);
+    requires 0 <= i;
+    requires i < len;
+    ensures separate(kept, memory(p[i])) by {
+        have i <= 2147483646 by { solve() using { i < len; }; }
+        have defined(i + 1) by { solve() using { 0 <= i; i <= 2147483646; }; }
+        have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
+        have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
+        have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
+            apply(separation::subrange(p, 0, len, i, i + 1)) using {
+                defined(i + 1); 0 <= i; i <= ((i + 1) as int32); ((i + 1) as int32) <= len;
+            };
+        }
+        have separate(kept, memory(p[i..i + 1])) by {
+            apply(separation::restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1]))) using {
+                defined(i + 1); separate(whole, memory(p[0..len])); contains(whole, kept);
+                contains(memory(p[0..len]), memory(p[i..i + 1]));
+            };
+        }
+        have contains(kept, kept) by { normalize(); }
+        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
+        apply(separation::restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
+            defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
+            contains(memory(p[i..i + 1]), memory(p[i]));
+        };
+    }
+}
+
 theorem int32_equality_transitive(first: int32, second: int32, third: int32) {
     requires first == second;
     requires second == third;
@@ -713,17 +745,26 @@ int32 vector_fill(struct vector* owner, int32 value) {
         initialize by solve();
         preserve by {
             mark before_fill;
-            have separate(memory(owner->data[i]), memory(owner->data));
+            have i < owner->cap;
+            have contains(memory(*owner), memory(owner->data)) by { normalize(); }
+            have separate(memory(owner->data), memory(owner->data[i])) by {
+                apply(selected_array_cell(memory(*owner), memory(owner->data),
+                    owner->data, owner->cap, i)) using {
+                    separate(memory(*owner), memory(owner->data[0..owner->cap]));
+                    contains(memory(*owner), memory(owner->data));
+                    0 <= i; i < owner->cap;
+                };
+            }
             step();
-            have separate(fill_cells.statement(0).footprint, memory(owner->data)) by {
+            have separate(loop(0).statement(0).footprint, memory(owner->data)) by {
                 normalize() using {
-                    at(before_fill, separate(memory(owner->data[i]), memory(owner->data)));
+                    at(before_fill, separate(memory(owner->data), memory(owner->data[i])));
                 };
             }
             have owner->data == at(before_fill, owner->data) by {
                 transport_certificate {
-                    premise 0: separate(fill_cells.statement(0).footprint, memory(owner->data))
-                        => separate(fill_cells.statement(0).footprint, memory(owner->data));
+                    premise 0: separate(loop(0).statement(0).footprint, memory(owner->data))
+                        => separate(loop(0).statement(0).footprint, memory(owner->data));
                     preserve 0 => owner->data == at(before_fill, owner->data);
                     conclusion 1;
                 }

@@ -118,7 +118,13 @@ impl RegionFootprint {
         if let Some(changed) = changed {
             for fact in changed {
                 crate::instrumentation::record_deterministic_work(1);
-                if let CResourceFact::Own(resource, _) = fact {
+                if let CResourceFact::Own(resource, _) = fact
+                    && !matches!(resource, CResource::Memory(_))
+                {
+                    // Spatial ownership may split or coalesce while a call
+                    // lends and returns a cell. Those map edits do not write
+                    // bytes. Memory writes and lifetime effects are recorded
+                    // above; retain changes to named resource observations.
                     members.push_back(resource);
                 }
             }

@@ -59,12 +59,12 @@ void roundtrip(struct node* p, struct node* q) {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
         Tree::Node(id, lm, rm) => {
             let { left: l, right: r } = unfold(t);
-            have separate(memory(q->tag), memory(id->left));
-            have separate(memory(q->tag), memory(id->right));
+            have separate(memory((&q->tag)[0..1]), memory(id->left));
+            have separate(memory((&q->tag)[0..1]), memory(id->right));
             mark before_store;
             step();
             have separate(statement(0).footprint, memory(id->left)) by {
-                normalize() using { separate(memory(q->tag), memory(id->left)); };
+                normalize() using { separate(memory((&q->tag)[0..1]), memory(id->left)); };
             }
             have id->left == at(before_store, id->left) by {
                 transport_certificate {
@@ -75,7 +75,7 @@ void roundtrip(struct node* p, struct node* q) {
                 }
             }
             have separate(statement(0).footprint, memory(id->right)) by {
-                normalize() using { separate(memory(q->tag), memory(id->right)); };
+                normalize() using { separate(memory((&q->tag)[0..1]), memory(id->right)); };
             }
             have id->right == at(before_store, id->right) by {
                 transport_certificate {
