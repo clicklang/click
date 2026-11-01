@@ -97,3 +97,20 @@ fn charon_refused_panic_names_its_condition() {
         assert!(rendered.contains(goal), "{goal}: {rendered}");
     }
 }
+
+#[test]
+#[ignore = "nightly: live Charon extraction takes 0.6s"]
+fn charon_macro_refusal_stays_in_the_callers_source_file() {
+    let p = Project::new("pub fn q(x: u32, y: u32) -> u32 {\n    assert_eq!(x, y);\n    x\n}\n");
+    let error = p.refresh().unwrap_err();
+    assert!(
+        error.contains("does not support type `(&u32, &u32)`"),
+        "{error}"
+    );
+    // Some Charon macro locals have only a generated span. In that case the
+    // enclosing function is the honest fallback, rather than a foreign line.
+    assert!(
+        error.contains("borrow.rs:2 in q:") || error.contains("borrow.rs:1 in q:"),
+        "{error}"
+    );
+}
