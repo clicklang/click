@@ -2006,11 +2006,37 @@ fn evaluate_bool_value_paths(
         let _condition_values = ConditionValueScope::enter();
         evaluate_c_expression_paths(state, expression, assumptions, budget)?
     };
+    // A Rust comparison whose operands are written without a cast compares
+    // values of one type; at 8 or 16 bits it is native at that type, so the
+    // promoted comparison the evaluator built is read back as it (rule K8).
+    // An operand written with `as` keeps the comparison at the cast's type.
+    let native_comparison = match expression {
+        CExpression::Equal(left, right)
+        | CExpression::NotEqual(left, right)
+        | CExpression::LessThan(left, right)
+        | CExpression::LessEqual(left, right)
+        | CExpression::GreaterThan(left, right)
+        | CExpression::GreaterEqual(left, right) => {
+            !matches!(left.as_ref(), CExpression::Cast { .. })
+                && !matches!(right.as_ref(), CExpression::Cast { .. })
+        }
+        _ => false,
+    };
     Ok(paths
         .into_iter()
         .map(|path| CExpressionPath {
             outcome: match path.outcome {
                 CExpressionOutcome::Value(value) => ConditionTerm::nonzero_test(&value)
+                    .map(|condition| {
+                        native_comparison
+                            .then(|| {
+                                crate::kernel::machine_integer::comparison::native_narrow_comparison(
+                                    &condition,
+                                )
+                            })
+                            .flatten()
+                            .unwrap_or(condition)
+                    })
                     .map(CValue::of_bool)
                     .map(CExpressionOutcome::Value)
                     .unwrap_or(CExpressionOutcome::RuntimeError(
