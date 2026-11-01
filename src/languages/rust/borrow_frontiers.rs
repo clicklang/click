@@ -723,7 +723,7 @@ pub(super) fn certify_scalar_reference_end<'a>(
             transfer(statement, &types, &mut aliases, true)?;
         }
         match &block.terminator {
-            T::Return | T::Unreachable => break,
+            T::Return | T::Unreachable | T::Panic { .. } => break,
             T::Goto { target } => {
                 point = MirPoint {
                     block: *target,

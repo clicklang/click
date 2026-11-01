@@ -374,7 +374,7 @@ pub(super) fn split_next_branches(blocks: &mut Vec<out::MirBlock>) -> Result<(),
                 .map(|case| case.target)
                 .chain(*otherwise)
                 .collect(),
-            T::Return | T::Unreachable => Vec::new(),
+            T::Return | T::Unreachable | T::Panic { .. } => Vec::new(),
         };
         for target in targets {
             crate::instrumentation::record_deterministic_work(1);

@@ -1,0 +1,47 @@
+verifying "panics.rs";
+
+// A Rust panic is an obligation: the call that reaches it must be shown
+// impossible. `assert!(c)` asserts `c`, and after it `c` is a fact.
+fn above_three(x: u32) -> u32 {
+    requires x > 3;
+    ensures result == x - 4;
+}
+
+fn with_message(x: u32) -> u32 {
+    requires x > 3;
+    ensures result == x;
+}
+
+// The message's arguments are built only on the panic's path.
+fn formatted(x: u32) -> u32 {
+    requires x > 3;
+    ensures result == x;
+}
+
+fn nonzero(x: u32) -> u32 {
+    requires x != 0;
+    ensures result == x;
+}
+
+fn classify(x: u8) -> u8 {
+    requires x <= 1u8;
+    ensures x == 0u8 implies result == 10u8;
+    ensures x == 1u8 implies result == 20u8;
+}
+
+fn first(xs: &[u8]) -> u8 {
+    views *xs;
+    requires xs.len() > 0;
+    ensures result == xs[0];
+}
+
+// `unwrap` and `expect` require `Some` and return its payload.
+fn unwrapped(o: Option<u32>) -> u32 {
+    requires o != Option<u32>::None;
+    ensures o == Option<u32>::Some(result);
+}
+
+fn expected(o: Option<i64>) -> i64 {
+    requires o == Option<i64>::Some(5i64);
+    ensures result == 5i64;
+}

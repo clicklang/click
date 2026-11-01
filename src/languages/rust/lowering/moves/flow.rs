@@ -186,7 +186,11 @@ impl Flow {
             }
             stack.push((block, next + 1));
             let target = targets[next];
-            if target == exit && matches!(mir.blocks[block].terminator, T::Return | T::Unreachable)
+            if target == exit
+                && matches!(
+                    mir.blocks[block].terminator,
+                    T::Return | T::Unreachable | T::Panic { .. }
+                )
             {
                 continue;
             }

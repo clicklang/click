@@ -4685,7 +4685,7 @@ pub fn prove_symbolic_c_condition_evaluation(
             let proposition = Proposition::CConditionEvaluates {
                 state: Box::new(state.clone()),
                 condition: condition.clone(),
-                outcome,
+                outcome: outcome.clone(),
             };
             let theorem = Theorem::new(wrap_proof_facts(
                 proposition,
@@ -4694,6 +4694,7 @@ pub fn prove_symbolic_c_condition_evaluation(
                 &obligations,
             ));
             SymbolicCConditionEvaluationPath {
+                outcome,
                 facts,
                 obligations,
                 theorem,
