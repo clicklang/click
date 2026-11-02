@@ -1574,34 +1574,93 @@ impl TermClasses {
         )))
     }
 
+    fn machine_comparison_kind(
+        format: MachineIntegerType,
+        relation: CompareRelation,
+    ) -> Option<ConditionKind> {
+        use CompareRelation::*;
+        use ConditionKind::*;
+        use MachineIntegerType::*;
+        Some(match (format, relation) {
+            (Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32, Equal) => Int32Eq,
+            (Int32, LessThan) => Int32Lt,
+            (Int32, LessEqual) => Int32Le,
+            (Int32, GreaterThan) => Int32Gt,
+            (Int32, GreaterEqual) => Int32Ge,
+            (UInt32, LessThan) => UInt32Lt,
+            (UInt32, LessEqual) => UInt32Le,
+            (UInt32, GreaterThan) => UInt32Gt,
+            (UInt32, GreaterEqual) => UInt32Ge,
+            (Int64, Equal) => UInt64Eq,
+            (Int64, LessThan) => Int64Lt,
+            (Int64, LessEqual) => Int64Le,
+            (Int64, GreaterThan) => Int64Gt,
+            (Int64, GreaterEqual) => Int64Ge,
+            (UInt64, LessThan) => UInt64Lt,
+            (UInt64, LessEqual) => UInt64Le,
+            (UInt64, GreaterThan) => UInt64Gt,
+            (UInt64, GreaterEqual) => UInt64Ge,
+            _ => return None,
+        })
+    }
+
+    fn machine_comparison_width(
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        [left, right]: [crate::kernel::MachineOperandView<'_>; 2],
+    ) -> W {
+        if relation == CompareRelation::Equal && format.format().bits() == 32 {
+            match left.root_width().or_else(|| right.root_width()) {
+                Some(width @ (W::Bits8 | W::Bits16)) => width,
+                _ => W::Bits32,
+            }
+        } else {
+            W::of_machine_type(format)
+        }
+    }
+
+    pub(in crate::kernel::equality_graph) fn machine_comparison_node(
+        &mut self,
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        [left, right]: [crate::kernel::MachineOperandView<'_>; 2],
+    ) -> Option<u64> {
+        let kind = Self::machine_comparison_kind(format, relation)?;
+        // Equality of a native narrow value uses its own carrier even when
+        // written with the 32-bit equality constructor.
+        let width = Self::machine_comparison_width(format, relation, [left, right]);
+        let mut operand = |view| match view {
+            crate::kernel::MachineOperandView::Shared(term) => {
+                self.intern_shared_machine(term, width)
+            }
+            crate::kernel::MachineOperandView::Legacy(term) => {
+                self.intern_typed_machine(term, width)
+            }
+        };
+        let (left, right) = (operand(left), operand(right));
+        Some(self.intern_node(Node::Condition(kind, left, right)))
+    }
+
     pub(in crate::kernel::equality_graph) fn condition_node(
         &mut self,
         condition: &C,
     ) -> Option<u64> {
         use ConditionKind::*;
-        // An equality of 8- or 16-bit values (a native narrow equality, or a
-        // load equation written with the 32-bit equality) equates two values
-        // of that width: its sides are interned at it. The width is read from
-        // the sides' roots (`root_width`), O(1) per interned equation.
         if let C::Compare {
             format,
-            relation: CompareRelation::Equal,
-            left: a,
-            right: b,
+            relation,
+            left,
+            right,
         } = condition
-            && let Some(width @ (W::Bits8 | W::Bits16)) = if format.format().bits() < 32 {
-                Some(W::of_machine_type(*format))
-            } else if format.format().bits() == 32 {
-                crate::kernel::root_width(a).or_else(|| crate::kernel::root_width(b))
-            } else {
-                None
-            }
         {
-            let (a, b) = (
-                self.intern_typed_machine(a, width),
-                self.intern_typed_machine(b, width),
+            return self.machine_comparison_node(
+                *format,
+                *relation,
+                [
+                    crate::kernel::MachineOperandView::Legacy(left),
+                    crate::kernel::MachineOperandView::Legacy(right),
+                ],
             );
-            return Some(self.intern_node(Node::Condition(Int32Eq, a, b)));
         }
         let (kind, left, right) = match condition {
             C::IntegerEqual(a, b) => (IntegerEq, self.intern_integer(a), self.intern_integer(b)),
@@ -1620,110 +1679,12 @@ impl TermClasses {
                 let (a, b) = self.algebraic_nodes(a, b)?;
                 (AlgebraicEq, a, b)
             }
-            C::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            } => (Int32Eq, self.intern_int32(a), self.intern_int32(b)),
             C::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 left: a,
                 right: b,
             } => (Int32AddOverflow, self.intern_int32(a), self.intern_int32(b)),
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            } => (Int32Lt, self.intern_int32(a), self.intern_int32(b)),
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            } => (Int32Le, self.intern_int32(a), self.intern_int32(b)),
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left: a,
-                right: b,
-            } => (Int32Gt, self.intern_int32(a), self.intern_int32(b)),
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: a,
-                right: b,
-            } => (Int32Ge, self.intern_int32(a), self.intern_int32(b)),
-            C::Compare {
-                format: MachineIntegerType::UInt32,
-                relation:
-                    relation @ (crate::kernel::CompareRelation::LessThan
-                    | crate::kernel::CompareRelation::LessEqual
-                    | crate::kernel::CompareRelation::GreaterThan
-                    | crate::kernel::CompareRelation::GreaterEqual),
-                left: a,
-                right: b,
-            } if *relation != CompareRelation::Equal => (
-                Self::condition_kind(condition)?,
-                self.intern_int32(a),
-                self.intern_int32(b),
-            ),
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            } => (UInt64Eq, self.intern_uint64(a), self.intern_uint64(b)),
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            } => (Int64Lt, self.intern_uint64(a), self.intern_uint64(b)),
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            } => (Int64Le, self.intern_uint64(a), self.intern_uint64(b)),
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterThan,
-                left: a,
-                right: b,
-            } => (Int64Gt, self.intern_uint64(a), self.intern_uint64(b)),
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterEqual,
-                left: a,
-                right: b,
-            } => (Int64Ge, self.intern_uint64(a), self.intern_uint64(b)),
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            } => (UInt64Lt, self.intern_uint64(a), self.intern_uint64(b)),
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            } => (UInt64Le, self.intern_uint64(a), self.intern_uint64(b)),
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterThan,
-                left: a,
-                right: b,
-            } => (UInt64Gt, self.intern_uint64(a), self.intern_uint64(b)),
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterEqual,
-                left: a,
-                right: b,
-            } => (UInt64Ge, self.intern_uint64(a), self.intern_uint64(b)),
             C::PointerValueEqual(a, b) => (
                 PointerValueEq,
                 self.intern_expression(
@@ -1768,6 +1729,12 @@ impl TermClasses {
     }
 
     fn condition_kind(condition: &C) -> Option<ConditionKind> {
+        if let C::Compare {
+            format, relation, ..
+        } = condition
+        {
+            return Self::machine_comparison_kind(*format, *relation);
+        }
         Some(match condition {
             C::IntegerEqual(..) => ConditionKind::IntegerEq,
             C::IntegerNotEqual(..) => ConditionKind::IntegerNe,
@@ -1776,110 +1743,14 @@ impl TermClasses {
             C::IntegerGreaterThan(..) => ConditionKind::IntegerGt,
             C::IntegerGreaterEqual(..) => ConditionKind::IntegerGe,
             C::AlgebraicEqual(..) => ConditionKind::AlgebraicEq,
-            C::Compare {
-                format:
-                    MachineIntegerType::Int32
-                    | MachineIntegerType::UInt32
-                    | MachineIntegerType::Int8
-                    | MachineIntegerType::UInt8
-                    | MachineIntegerType::Int16
-                    | MachineIntegerType::UInt16,
-                relation: CompareRelation::Equal,
-                ..
-            } => ConditionKind::Int32Eq,
             C::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
                 ..
             } => ConditionKind::Int32AddOverflow,
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                ..
-            } => ConditionKind::UInt64Eq,
             C::PointerEqual(..) => ConditionKind::PointerEq,
             C::PointerValueEqual(..) => ConditionKind::PointerValueEq,
             C::PointerOffsetEqual(..) => ConditionKind::OffsetEq,
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                ..
-            } => ConditionKind::Int32Lt,
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                ..
-            } => ConditionKind::Int32Le,
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                ..
-            } => ConditionKind::Int32Gt,
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                ..
-            } => ConditionKind::Int32Ge,
-            C::Compare {
-                format: MachineIntegerType::UInt32,
-                relation: CompareRelation::LessThan,
-                ..
-            } => ConditionKind::UInt32Lt,
-            C::Compare {
-                format: MachineIntegerType::UInt32,
-                relation: CompareRelation::LessEqual,
-                ..
-            } => ConditionKind::UInt32Le,
-            C::Compare {
-                format: MachineIntegerType::UInt32,
-                relation: CompareRelation::GreaterThan,
-                ..
-            } => ConditionKind::UInt32Gt,
-            C::Compare {
-                format: MachineIntegerType::UInt32,
-                relation: CompareRelation::GreaterEqual,
-                ..
-            } => ConditionKind::UInt32Ge,
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessThan,
-                ..
-            } => ConditionKind::Int64Lt,
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessEqual,
-                ..
-            } => ConditionKind::Int64Le,
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterThan,
-                ..
-            } => ConditionKind::Int64Gt,
-            C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterEqual,
-                ..
-            } => ConditionKind::Int64Ge,
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessThan,
-                ..
-            } => ConditionKind::UInt64Lt,
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessEqual,
-                ..
-            } => ConditionKind::UInt64Le,
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterThan,
-                ..
-            } => ConditionKind::UInt64Gt,
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterEqual,
-                ..
-            } => ConditionKind::UInt64Ge,
             C::BoolEqual(..) => ConditionKind::BoolEq,
             C::BoolApplication(_) | C::BoolIf { .. } | C::BoolLoad(..) => ConditionKind::BoolValue,
             _ => return None,
@@ -2056,11 +1927,83 @@ impl TermClasses {
         })
     }
 
+    pub(in crate::kernel::equality_graph) fn admit_machine_comparison(
+        &mut self,
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        operands: [crate::kernel::MachineOperandView<'_>; 2],
+        value: bool,
+    ) -> bool {
+        let Some(node) = self.machine_comparison_node(format, relation, operands) else {
+            return false;
+        };
+        self.condition_kinds = self.condition_kinds.with_value((
+            Self::machine_comparison_kind(format, relation).expect("supported comparison"),
+            value,
+        ));
+        self.register_pending_loads();
+        if format == MachineIntegerType::Int32 {
+            use CompareRelation::*;
+            let [a, b] = operands;
+            let order = match (relation, value) {
+                (LessThan, true) | (GreaterEqual, false) => Some((a, b, true)),
+                (LessEqual, true) | (GreaterThan, false) => Some((a, b, false)),
+                (GreaterThan, true) | (LessEqual, false) => Some((b, a, true)),
+                (GreaterEqual, true) | (LessThan, false) => Some((b, a, false)),
+                (Equal, _) => None,
+            };
+            if let Some((a, b, strict)) = order {
+                if let Some(bound) = b.word32_constant() {
+                    self.retain_signed_int32_interval(
+                        a,
+                        i64::from(i32::MIN),
+                        i64::from(bound as i32) - i64::from(strict),
+                    );
+                }
+                if let Some(bound) = a.word32_constant() {
+                    self.retain_signed_int32_interval(
+                        b,
+                        i64::from(bound as i32) + i64::from(strict),
+                        i64::from(i32::MAX),
+                    );
+                }
+            }
+        }
+        self.retain_condition_truth(node, if value { 1 } else { 2 });
+        if value
+            && relation == CompareRelation::Equal
+            && matches!(
+                Self::machine_comparison_width(format, relation, operands),
+                W::Bits8 | W::Bits16
+            )
+            && let Some(Application::Condition(ConditionKind::Int32Eq, left, right)) =
+                self.applications.get(&node).copied()
+        {
+            self.close(vec![(left, right)]);
+        }
+        true
+    }
+
     pub(in crate::kernel::equality_graph) fn admit_condition(
         &mut self,
         condition: &C,
         value: bool,
     ) -> bool {
+        if let C::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } = condition
+        {
+            use crate::kernel::MachineOperandView as V;
+            return self.admit_machine_comparison(
+                *format,
+                *relation,
+                [V::Legacy(left), V::Legacy(right)],
+                value,
+            );
+        }
         let Some(node) = self.condition_node(condition) else {
             return false;
         };
@@ -2069,115 +2012,10 @@ impl TermClasses {
             value,
         ));
         self.register_pending_loads();
-        // Only signed 32-bit order facts contribute to this interval. Wide
-        // and unsigned comparisons retain their separate semantic orders.
-        let order = match (condition, value) {
-            (
-                C::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessThan,
-                    left: a,
-                    right: b,
-                },
-                true,
-            )
-            | (
-                C::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessEqual,
-                    left: a,
-                    right: b,
-                },
-                false,
-            ) => Some((a, b, true, value)),
-            (
-                C::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessEqual,
-                    left: a,
-                    right: b,
-                },
-                true,
-            )
-            | (
-                C::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessThan,
-                    left: a,
-                    right: b,
-                },
-                false,
-            ) => Some((a, b, false, value)),
-            (
-                C::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterThan,
-                    left: a,
-                    right: b,
-                },
-                true,
-            )
-            | (
-                C::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterEqual,
-                    left: a,
-                    right: b,
-                },
-                false,
-            ) => Some((b, a, true, value)),
-            (
-                C::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterEqual,
-                    left: a,
-                    right: b,
-                },
-                true,
-            )
-            | (
-                C::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::GreaterThan,
-                    left: a,
-                    right: b,
-                },
-                false,
-            ) => Some((b, a, false, value)),
-            _ => None,
-        };
-        if let Some((a, b, strict, forward)) = order {
-            let (a, b) = if forward { (a, b) } else { (b, a) };
-            if let Some(bound) = b.as_const() {
-                self.retain_signed_int32_interval(
-                    a,
-                    i64::from(i32::MIN),
-                    i64::from(bound as i32) - i64::from(strict),
-                );
-            }
-            if let Some(bound) = a.as_const() {
-                self.retain_signed_int32_interval(
-                    b,
-                    i64::from(bound as i32) + i64::from(strict),
-                    i64::from(i32::MAX),
-                );
-            }
-        }
         self.retain_condition_truth(node, if value { 1 } else { 2 });
-        // A true equation of 8- or 16-bit values equates its sides, as the
-        // 32-bit equations do through their typed input. One union.
-        if value
-            && let Some(Application::Condition(ConditionKind::Int32Eq, left, right)) =
-                self.applications.get(&node).copied()
-            && self.narrow_equation(condition)
-        {
-            self.close(vec![(left, right)]);
-        }
         true
     }
 
-    /// Whether `condition` is an equation the graph interns at 8 or 16 bits
-    /// (`condition_node`). One root match and at most two width reads.
     fn narrow_equation(&self, condition: &C) -> bool {
         let C::Compare {
             format,
@@ -2188,22 +2026,25 @@ impl TermClasses {
         else {
             return false;
         };
-        match format.format().bits() {
-            8 | 16 => true,
-            32 => matches!(
-                crate::kernel::root_width(left).or_else(|| crate::kernel::root_width(right)),
-                Some(W::Bits8 | W::Bits16)
+        use crate::kernel::MachineOperandView as V;
+        matches!(
+            Self::machine_comparison_width(
+                *format,
+                CompareRelation::Equal,
+                [V::Legacy(left), V::Legacy(right)]
             ),
-            _ => false,
-        }
+            W::Bits8 | W::Bits16
+        )
     }
 
-    pub(in crate::kernel::equality_graph) fn knows_condition(
+    pub(in crate::kernel::equality_graph) fn knows_machine_comparison(
         &mut self,
-        condition: &C,
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        operands: [crate::kernel::MachineOperandView<'_>; 2],
         value: bool,
     ) -> bool {
-        let Some(node) = self.condition_node(condition) else {
+        let Some(node) = self.machine_comparison_node(format, relation, operands) else {
             return false;
         };
         self.register_pending_loads();
@@ -2215,22 +2056,55 @@ impl TermClasses {
         {
             return true;
         }
-        // An equation of 8- or 16-bit values is decided by its sides'
-        // classes: true when they are one class, false when they hold two
-        // different constants. Two lookups.
-        if let Some(Application::Condition(ConditionKind::Int32Eq, left, right)) =
-            self.applications.get(&node).copied()
-            && self.narrow_equation(condition)
+        if relation == CompareRelation::Equal
+            && matches!(
+                Self::machine_comparison_width(format, relation, operands),
+                W::Bits8 | W::Bits16
+            )
+            && let Some(Application::Condition(ConditionKind::Int32Eq, left, right)) =
+                self.applications.get(&node).copied()
         {
             let (left, right) = (self.root(left), self.root(right));
             return if value {
                 left == right
             } else {
-                matches!(
-                    (self.narrow_constants.get(&left), self.narrow_constants.get(&right)),
-                    (Some(a), Some(b)) if a != b
-                )
+                matches!((self.narrow_constants.get(&left), self.narrow_constants.get(&right)), (Some(a), Some(b)) if a != b)
             };
+        }
+        false
+    }
+
+    pub(in crate::kernel::equality_graph) fn knows_condition(
+        &mut self,
+        condition: &C,
+        value: bool,
+    ) -> bool {
+        if let C::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } = condition
+        {
+            use crate::kernel::MachineOperandView as V;
+            return self.knows_machine_comparison(
+                *format,
+                *relation,
+                [V::Legacy(left), V::Legacy(right)],
+                value,
+            );
+        }
+        let Some(node) = self.condition_node(condition) else {
+            return false;
+        };
+        self.register_pending_loads();
+        let truth = if value { 1 } else { 2 };
+        if self
+            .condition_truth
+            .get(&self.root(node))
+            .is_some_and(|known| known & truth != 0)
+        {
+            return true;
         }
         let C::PointerOffsetEqual(a, b) = condition else {
             return false;

@@ -171,6 +171,27 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared comparison admission and truth queries (2026-11-02)
+
+Written native comparisons and Integer observations now use one borrowed
+comparison view for checked bound admission. Written operands stay borrowed;
+observations retain their shared handles. Direction and negation are normalized
+without copying operands, and bound witnesses and canonical aliases are kept.
+
+Graph comparison-node construction, truth admission and truth queries accept
+operand views. Existing native callers use the same implementation. Narrow
+equality carriers, signed 32-bit interval annotations and the supported graph
+condition kinds are unchanged. This is the graph interface for the remaining
+higher-level comparison migration; `assume_condition_uncharged` and `decide`
+still have boxed comparison adapters.
+
+The focused suite passes 73 tests, including a format/relation/truth matrix,
+shared/native admission and query interoperability, equality merges, and an
+8/32/96-node doubled-child DAG regression exercising successful and missing
+truth queries without exporting operands. The full gate is running. Operation
+and modular mappings and the remaining interval adapters are still pending;
+nested signed preparation remains disabled.
+
 ## Shared graph registration across observation widths (2026-11-02)
 
 An Integer observation can read a machine expression at a different carrier
@@ -190,8 +211,11 @@ including mixed-width children, shifts, complements and cancellation. An
 8/32/96-node doubled-child DAG regression checks repeated cross-width Integer
 registration has near-linear work and never requests a boxed operand. The
 17 focused graph/format tests pass, as do all four graph/constant checks after
-expanding constant-reading coverage to every machine format. The full gate is
-in progress.
+expanding constant-reading coverage to every machine format. The full gate
+passed 7,121 tests, including 1,156 scaling tests, 58 examples and 4,991 proof
+fixtures in 12m38s (over the ten-minute target; no limits changed). The arithmetic
+fact-stability audit passed 124 fixtures with zero differences. This increment
+merged in #2270; no nightly suite ran.
 
 ## Shared overflow query extraction (2026-11-02)
 
