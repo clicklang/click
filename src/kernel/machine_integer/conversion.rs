@@ -235,27 +235,21 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
     let IntegerTerm::Machine(machine) = observed.value_read() else {
         return Vec::new();
     };
-    // The shared storage fragment has literals, variables and arithmetic
-    // operators only. Inspect its root without exporting the arithmetic DAG.
-    let crate::kernel::MachineOperandView::Legacy(word) = machine.operand_view() else {
+    use crate::kernel::KernelMachineCastEncoding as E;
+    let Some((encoding, source, _, operand)) = machine.operand_view().cast() else {
         return Vec::new();
     };
-    let candidates: Vec<(Ty, &Bitvector32Term)> = match word {
-        Bitvector32Term::MachineIntegerCast { value, source, .. } => vec![(*source, value)],
-        Bitvector32Term::UInt32From64(value) => vec![(Ty::UInt64, value), (Ty::Int64, value)],
-        // The legacy 32-to-64-bit conversions name their source's width,
-        // and some their signedness; the cast rule below keeps the reading
-        // it accepts.
-        Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value) => vec![(Ty::Int32, value), (Ty::UInt32, value)],
-        Bitvector32Term::UInt64FromInt64(value) => vec![(Ty::Int64, value)],
-        _ => Vec::new(),
+    let candidates = match encoding {
+        E::Generic => vec![source],
+        E::UInt32From64 => vec![Ty::UInt64, Ty::Int64],
+        E::Int64From32 | E::UInt64From32 | E::Int64FromUInt32 | E::UInt64FromInt32 => {
+            vec![Ty::Int32, Ty::UInt32]
+        }
+        E::UInt64FromInt64 => vec![Ty::Int64],
     };
     candidates
         .into_iter()
-        .filter_map(|(ty, value)| IntegerTerm::from_machine(ty, value.clone()))
+        .filter_map(|ty| operand.observe(ty))
         .filter(|original| {
             original.value_read() != observed.value_read() && cast(observed, original).is_some()
         })
@@ -269,26 +263,29 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
 pub(crate) fn widened_narrow_word(
     observed: &IntegerTerm,
 ) -> Option<crate::kernel::MachineOperandView<'_>> {
-    use crate::kernel::MachineOperandView as View;
+    use crate::kernel::KernelMachineCastEncoding as E;
     let IntegerTerm::Machine(machine) = observed else {
         return None;
     };
     let view = machine.operand_view();
-    match (machine.ty().format().bits(), view) {
-        (16 | 32, View::Shared(_)) => Some(view),
-        (16 | 32, View::Legacy(word)) => Some(View::Legacy(
-            word.narrow_widening32_operand()
-                .map_or(word, |(_, operand)| operand),
-        )),
-        (
-            64,
-            View::Legacy(
-                Bitvector32Term::Int64From32(word)
-                | Bitvector32Term::UInt64FromInt32(word)
-                | Bitvector32Term::Int64FromUInt32(word)
-                | Bitvector32Term::UInt64From32(word),
-            ),
-        ) => Some(View::Legacy(word)),
+    match machine.ty().format().bits() {
+        16 | 32 => Some(match view.cast() {
+            Some((E::Generic, source, destination, operand))
+                if crate::kernel::is_narrow_widening32(source, destination) =>
+            {
+                operand
+            }
+            _ => view,
+        }),
+        64 => match view.cast()? {
+            (
+                E::Int64From32 | E::UInt64FromInt32 | E::Int64FromUInt32 | E::UInt64From32,
+                _,
+                _,
+                operand,
+            ) => Some(operand),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -307,20 +304,9 @@ pub(crate) fn narrow_widening(observed: &IntegerTerm, original: &IntegerTerm) ->
     if source.bits() >= 32 || destination == source || !destination.contains(source) {
         return false;
     }
-    let crate::kernel::MachineOperandView::Legacy(word) = machine.operand_view() else {
-        return false;
-    };
-    match word {
-        Bitvector32Term::MachineIntegerCast {
-            value,
-            source: from,
-            ..
-        } => {
-            *from == operand.ty()
-                && crate::kernel::SharedMachineIntegerTerm::intern(
-                    operand.ty(),
-                    value.as_ref().clone(),
-                ) == *operand
+    match machine.operand_view().cast() {
+        Some((crate::kernel::KernelMachineCastEncoding::Generic, from, _, value)) => {
+            from == operand.ty() && value.retain(operand.ty()) == *operand
         }
         _ => false,
     }
@@ -349,14 +335,37 @@ fn cast_of_written_sign_cast(
     else {
         return None;
     };
-    let crate::kernel::MachineOperandView::Legacy(_) = written.operand_view() else {
+    let (encoding, source, destination, _) = written.operand_view().cast()?;
+    if encoding != crate::kernel::KernelMachineCastEncoding::Generic
+        || source.format().bits() != 32
+        || destination.format().bits() != 32
+        || source == destination
+    {
         return None;
-    };
-    written.value().sign_cast32_operand()?;
+    }
     if !representation::has_legacy_conversions(written.ty())
         || !representation::has_legacy_conversions(machine.ty())
     {
         return None;
+    }
+    if let crate::kernel::MachineOperandView::Shared(term) = written.operand_view() {
+        let converted = term.checking_legacy_machine_conversion(written.ty(), machine.ty());
+        let exact = matches_kernel(machine, &converted);
+        let numeric = match converted.node() {
+            crate::kernel::KernelTermNode::MachineCast {
+                encoding: crate::kernel::KernelMachineCastEncoding::Generic,
+                source,
+                destination,
+                operand,
+            } if source.format().bits() == 32
+                && destination.format().bits() == 32
+                && source != destination =>
+            {
+                matches_kernel(machine, operand)
+            }
+            _ => exact,
+        };
+        return (exact || numeric).then(|| machine.ty().format());
     }
     let converted = convert_value(
         written.ty().value_from_term(written.value().clone()),
@@ -393,15 +402,12 @@ fn cast_through_readings(
     // inner carrier is shown below to be the source's value inside the
     // destination range, the conversion leaves that word unchanged.
     // The same bounds are still required.
-    if let Some(Bitvector32Term::MachineIntegerCast {
-        value: inner,
-        source: through,
-        destination,
-    }) = legacy_word(machine)
-        && *destination == machine.ty()
+    if let Some((crate::kernel::KernelMachineCastEncoding::Generic, through, destination, inner)) =
+        machine.operand_view().cast()
+        && destination == machine.ty()
         && through.format().bits() <= 32
         && through.format().contains(destination.format())
-        && let Some(peeled) = IntegerTerm::from_machine(machine.ty(), inner.as_ref().clone())
+        && let Some(peeled) = inner.observe(machine.ty())
         && let Some(format) = cast(&peeled, original)
     {
         return Some(format);
@@ -497,13 +503,6 @@ fn cast_through_readings(
     None
 }
 
-fn legacy_word(machine: &crate::kernel::SharedMachineIntegerTerm) -> Option<&Bitvector32Term> {
-    match machine.operand_view() {
-        crate::kernel::MachineOperandView::Legacy(word) => Some(word),
-        crate::kernel::MachineOperandView::Shared(_) => None,
-    }
-}
-
 fn matches_word(machine: &crate::kernel::SharedMachineIntegerTerm, word: &Bitvector32Term) -> bool {
     match machine.operand_view() {
         crate::kernel::MachineOperandView::Legacy(actual) => actual == word,
@@ -573,13 +572,7 @@ fn cast_shared_operand(
 ) -> Option<crate::kernel::MachineIntegerFormat> {
     use crate::kernel::{KernelMachineCastEncoding as E, KernelTermNode as N, MachineBinaryOp};
     let (source, destination) = (operand.ty(), machine.ty());
-    // Exactly the root admission performed by accepts_cast_operand for this
-    // storage fragment: literals must match, and 128-bit operators are absent.
-    if let Some(literal) = operand.operand_view().literal() {
-        if source.constant_from_term(&literal).is_none() {
-            return None;
-        }
-    } else if source.format().bits() == 128 && !matches!(term.node(), N::Variable(_)) {
+    if !operand.operand_view().accepts_cast_operand(source) {
         return None;
     }
     let converted = term.checking_machine_cast(source, destination);

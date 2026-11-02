@@ -208,21 +208,7 @@ impl Bitvector32Term {
     /// that source type's range. This inspects only the root, never
     /// assumptions or subterms, so a constructor may call it for free.
     pub(in crate::kernel) fn int64_width_interval(&self) -> Option<(i64, i64)> {
-        match self {
-            Self::Int64Constant(value) => Some((*value, *value)),
-            Self::Int64From32(_) => Some((i64::from(i32::MIN), i64::from(i32::MAX))),
-            Self::Int64FromUInt32(_) => Some((0, i64::from(u32::MAX))),
-            Self::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::BitwiseAnd,
-                left,
-                right,
-            } => {
-                let mask = left.int64_as_const().or_else(|| right.int64_as_const())?;
-                (mask >= 0).then_some((0, mask))
-            }
-            _ => None,
-        }
+        crate::kernel::MachineOperandView::Legacy(self).int64_width_interval()
     }
 
     // Local structural bounds only: do not search assumptions or traverse an

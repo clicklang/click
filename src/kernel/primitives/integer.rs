@@ -629,18 +629,39 @@ impl SharedMachineIntegerTerm {
     /// through this. Computed once per interned observation: a bounded walk
     /// through at most three conversions, one interning of the operand.
     pub fn value_reading(&self) -> Option<&IntegerTerm> {
+        // Reading work is session-local even when the interned observation's
+        // OnceLock survives an earlier verification. Warm global nodes must
+        // not change the work charged for otherwise identical input.
+        let shared_reading = self.shared_operand().map(|root| {
+            let reading = if matches!(
+                root.node(),
+                KernelTermNode::MachineCast { .. } | KernelTermNode::MachineLiteral(_)
+            ) {
+                machine_view::shared_value_reading(self.ty(), root)
+            } else {
+                Some((self.ty(), root.clone()))
+            };
+            (root, reading)
+        });
         self.0
             .reading
             .get_or_init(|| {
-                if self.shared_operand().is_some_and(|term| {
-                    matches!(
-                        term.node(),
-                        KernelTermNode::Variable(_)
-                            | KernelTermNode::MachineBinary { .. }
-                            | KernelTermNode::MachineUnary { .. }
-                    )
-                }) {
-                    return None;
+                if let Some((root, reading)) = shared_reading {
+                    let (ty, read) = reading?;
+                    if let KernelTermNode::MachineLiteral(value) = read.node() {
+                        return Some(IntegerTerm::constant(
+                            ty.constant_from_term(&value.legacy_term())?.to_integer(),
+                        ));
+                    }
+                    if ty == self.ty() && read.id() == root.id() {
+                        return None;
+                    }
+                    let read = SharedMachineIntegerTerm::from_shared(
+                        ty,
+                        read.with_machine_observation_type(ty),
+                    )?;
+                    let _ = read.0.reading.set(None);
+                    return Some(IntegerTerm::Machine(read));
                 }
                 let reading = machine_value_reading(self.ty(), self.value())?;
                 match &reading {

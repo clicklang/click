@@ -594,45 +594,35 @@ impl PureFactContext {
     // A clear-sign-bit mask has a local range. Keep comparison terms intact
     // so arithmetic certificates retain their original proposition shapes.
     pub(super) fn decide_masked_order(&self, condition: &ConditionTerm) -> Option<bool> {
-        fn range(term: &Bitvector32Term) -> Option<(i64, i64)> {
-            if let Some(value) = term.as_const() {
+        use crate::kernel::MachineOperandView;
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        fn range(term: MachineOperandView<'_>) -> Option<(i64, i64)> {
+            if let Some(value) = term.word32_constant() {
                 let value = value as i32 as i64;
                 return Some((value, value));
             }
-            let binary_term!(Bits32, BitwiseAnd, a, b) = term else {
+            let (format, MachineBinaryOp::BitwiseAnd, [a, b]) = term.binary()? else {
                 return None;
             };
-            let mask = a.as_const().or_else(|| b.as_const())?;
+            if format.format().bits() != 32 {
+                return None;
+            }
+            let mask = a.word32_constant().or_else(|| b.word32_constant())?;
             (mask <= i32::MAX as u32).then_some((0, mask as i64))
         }
-        let (left, right, strict) = match condition {
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            } => (a, b, true),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            } => (a, b, false),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left: a,
-                right: b,
-            } => (b, a, true),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left: a,
-                right: b,
-            } => (b, a, false),
+        let query = comparison_view(condition, true)?;
+        if query.format != MachineIntegerType::Int32 {
+            return None;
+        }
+        let strict = match query.relation {
+            Relation::Less => true,
+            Relation::LessEqual => false,
             _ => return None,
         };
-        let ((llo, lhi), (rlo, rhi)) = (range(left)?, range(right)?);
+        let ((llo, lhi), (rlo, rhi)) = (
+            range(query.operands[0].operand_view())?,
+            range(query.operands[1].operand_view())?,
+        );
         if if strict { lhi < rlo } else { lhi <= rlo } {
             Some(true)
         } else if if strict { llo >= rhi } else { llo > rhi } {
@@ -2054,6 +2044,93 @@ mod tests {
                 true,
             );
         assert_eq!(int32_bounded.decide(&add), None);
+    }
+
+    fn boxed_masked_order_reference(condition: &ConditionTerm) -> Option<bool> {
+        fn range(term: &Bitvector32Term) -> Option<(i64, i64)> {
+            if let Some(value) = term.as_const() {
+                let value = value as i32 as i64;
+                return Some((value, value));
+            }
+            let binary_term!(Bits32, BitwiseAnd, a, b) = term else {
+                return None;
+            };
+            let mask = a.as_const().or_else(|| b.as_const())?;
+            (mask <= i32::MAX as u32).then_some((0, mask as i64))
+        }
+        let (left, right, strict) = match condition {
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: a,
+                right: b,
+            } => (a, b, true),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessEqual,
+                left: a,
+                right: b,
+            } => (a, b, false),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left: a,
+                right: b,
+            } => (b, a, true),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterEqual,
+                left: a,
+                right: b,
+            } => (b, a, false),
+            _ => return None,
+        };
+        let ((llo, lhi), (rlo, rhi)) = (range(left)?, range(right)?);
+        if if strict { lhi < rlo } else { lhi <= rlo } {
+            Some(true)
+        } else if if strict { llo >= rhi } else { llo > rhi } {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn masked_comparison_views_preserve_written_verdicts() {
+        let context = PureFactContext::new();
+        for mask in [0, 127, i32::MAX as u32, u32::MAX] {
+            let masked = Bitvector32Term::Binary {
+                format: MachineIntegerType::Int32,
+                op: MachineBinaryOp::BitwiseAnd,
+                left: Box::new(Bitvector32Term::Variable(Variable(985301))),
+                right: Box::new(Bitvector32Term::Constant(mask)),
+            };
+            for bound in [0, 42, 128, u32::MAX] {
+                for relation in [
+                    CompareRelation::LessThan,
+                    CompareRelation::LessEqual,
+                    CompareRelation::GreaterThan,
+                    CompareRelation::GreaterEqual,
+                    CompareRelation::Equal,
+                ] {
+                    for (left, right) in [
+                        (masked.clone(), Bitvector32Term::Constant(bound)),
+                        (Bitvector32Term::Constant(bound), masked.clone()),
+                    ] {
+                        let query = ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation,
+                            left: Box::new(left),
+                            right: Box::new(right),
+                        };
+                        assert_eq!(
+                            context.decide_masked_order(&query),
+                            boxed_masked_order_reference(&query)
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[cfg(test)]

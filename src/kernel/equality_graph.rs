@@ -1714,7 +1714,7 @@ impl EqualityGraph {
                         N::MachineBinary { arguments, .. } => {
                             pending.extend(arguments.iter().map(Work::SharedMachine))
                         }
-                        N::MachineUnary { operand, .. } => {
+                        N::MachineUnary { operand, .. } | N::MachineCast { operand, .. } => {
                             pending.push(Work::SharedMachine(operand))
                         }
                         N::Variable(variable) => {
