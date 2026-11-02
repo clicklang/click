@@ -337,3 +337,63 @@ fn boolean_synthesis_tracks_expression_size_not_unrelated_names() {
         assert!(work >= size && work <= 20 * size + 64, "{size}: {work}");
     }
 }
+
+#[test]
+fn leading_domain_recognition_retains_shared_arithmetic() {
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm, Variable,
+    };
+    let mut previous = None;
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(
+            KernelType::C(MachineIntegerType::Int32.c_type()),
+            Variable(991704),
+        );
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root.clone()],
+            );
+        }
+        let operand =
+            SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap();
+        for subtract in [false, true] {
+            let left = IntegerTerm::Machine(operand.clone()).into();
+            let right = IntegerTerm::constant(1.into()).into();
+            let exact = if subtract {
+                IntegerTerm::Subtract(left, right)
+            } else {
+                IntegerTerm::Add(left, right)
+            };
+            let upper = Proposition::ConditionIs(
+                ConditionTerm::IntegerLessEqual(
+                    exact.clone().into(),
+                    IntegerTerm::constant(i32::MAX.into()).into(),
+                ),
+                true,
+            );
+            let lower = Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterEqual(
+                    exact.into(),
+                    IntegerTerm::constant(i32::MIN.into()).into(),
+                ),
+                true,
+            );
+            assert!(!is_leading_add_definedness_guard(&upper));
+            let domain = Proposition::And(Box::new(upper), Box::new(lower));
+            let (recognized, work) = crate::instrumentation::measure_deterministic_work(|| {
+                is_leading_add_definedness_guard(&domain)
+            });
+            assert_eq!(recognized, !subtract);
+            assert!(!operand.has_boxed_operand());
+            if !subtract {
+                if let Some((old_size, old_work)) = previous {
+                    assert!(work <= old_work * size / old_size + 32);
+                }
+                previous = Some((size, work));
+            }
+        }
+    }
+}
