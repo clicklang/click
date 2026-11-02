@@ -20042,3 +20042,18 @@ fn uint32_from_le_bytes_expands_and_retains() {
     verify_c0_sources(&expanded.replace("4293820433u32", "17u32"), &sources)
         .expect_err("a single stored byte is not the reconstructed word");
 }
+
+#[test]
+fn loop_owned_view_call_expands_and_replays() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/loop_owned_view_survives_unrelated_read_call.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified =
+        verify_c0_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_checked_grouped_claim(&source, &verified, "caller").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
