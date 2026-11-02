@@ -556,3 +556,50 @@ fn signed_wide_interval_queries_ignore_bound_bucket_size() {
         }
     }
 }
+
+#[test]
+fn shared_masked_order_queries_do_not_export_growing_operands() {
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelTermImport, KernelType, SharedMachineIntegerTerm,
+    };
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(985302));
+        let mask = KernelTermImport::default()
+            .machine_arithmetic(ty, &Bitvector32Term::Constant(127))
+            .unwrap();
+        let context = PureFactContext::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                let masked = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::BitwiseAnd,
+                    [root.clone(), mask.clone()],
+                );
+                let machine = SharedMachineIntegerTerm::from_shared(ty, masked).unwrap();
+                for (bound, expected) in [(128, Some(true)), (0, Some(false)), (42, None)] {
+                    let query = ConditionTerm::IntegerLessThan(
+                        IntegerTerm::Machine(machine.clone()).into(),
+                        IntegerTerm::constant(bound.into()).into(),
+                    );
+                    assert_eq!(context.decide_masked_order(&query), expected);
+                    assert!(!machine.has_boxed_operand());
+                }
+            }
+        });
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+}

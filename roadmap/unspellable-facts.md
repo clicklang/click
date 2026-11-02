@@ -277,9 +277,15 @@ refuse the same mappings.
 Differential tests compare shared and boxed readings (including refusal),
 observations, conversion candidates and graph classes across integer formats.
 A deterministic regression grows arithmetic/cast prefixes through 8/32/96
-levels without exporting their operands. This completes the cast representation
-prerequisite; higher-level comparison dispatch and interval-query outputs still
-have boxed boundaries. Nested signed preparation remains disabled.
+levels without exporting their operands. The masked-order decision helper also
+uses comparison/operand views, with differential true/false/refusal coverage and
+a no-export regression over growing shared operands. A cache-lifetime test
+checks reuse across proof-state restoration and reset at a new verification.
+
+The cast representation prerequisite is complete for the shared arithmetic
+fragment; opaque operands retain their compatibility storage. Higher-level
+comparison dispatch and interval-query outputs still have boxed boundaries.
+Nested signed preparation remains disabled.
 
 ## Shared inverse-operation operands (2026-11-02)
 

@@ -614,6 +614,47 @@ mod cast_tests {
     use super::*;
 
     #[test]
+    fn checking_cast_cache_survives_restore_but_not_a_new_verification() {
+        use crate::kernel::{KernelMachineCastEncoding as E, KernelType};
+        let mut term = KernelTerm::variable(
+            KernelType::C(MachineIntegerType::Int32.c_type()),
+            Variable(985003),
+        );
+        {
+            let _session = crate::kernel::VerificationSession::enter();
+            let snapshot = crate::kernel::VerificationSession::capture_state();
+            for _ in 0..96 {
+                term = KernelTerm::machine_cast_shared(
+                    E::Generic,
+                    MachineIntegerType::Int32,
+                    MachineIntegerType::Int32,
+                    term,
+                );
+            }
+            let expected =
+                term.checking_machine_cast(MachineIntegerType::Int32, MachineIntegerType::Int8);
+            assert!(crate::kernel::VerificationSession::restore_state(&snapshot));
+            crate::kernel::eval::begin_load_origin_epoch();
+            let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
+                term.checking_machine_cast(MachineIntegerType::Int32, MachineIntegerType::Int8)
+            });
+            assert_eq!(actual, expected);
+            assert!(
+                work <= 2,
+                "restoring proof state rewalked the cast chain: {work}"
+            );
+        }
+        let _session = crate::kernel::VerificationSession::enter();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            term.checking_machine_cast(MachineIntegerType::Int32, MachineIntegerType::Int8)
+        });
+        assert!(
+            work >= 96,
+            "another verification reused the previous cast cache: {work}"
+        );
+    }
+
+    #[test]
     fn shared_cast_readings_match_boxed_readings_and_refusals() {
         use crate::kernel::{KernelMachineCastEncoding as E, machine_integer::FORMATS};
         let _session = crate::kernel::VerificationSession::enter();
