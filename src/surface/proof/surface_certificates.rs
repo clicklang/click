@@ -1,7 +1,6 @@
 use super::*;
-use crate::kernel::binary_node;
 use crate::kernel::binary_term;
-use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::planning::solve::plan_explicit_equality_rewrites_from;
 
@@ -906,8 +905,7 @@ pub(super) fn spell_signed_goal(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<ClickProposition> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = interval_query.as_ref().unwrap_or(goal);
+    use crate::kernel::{MachineBinaryOp, MachineOperandView, SignedDefinedWidth};
     let mut operands: Vec<(&Bitvector32Term, ContractExpression)> = Vec::new();
     for (kernel, surface) in premise_pairs {
         let parts = signed_strict_parts(kernel)
@@ -933,36 +931,56 @@ pub(super) fn spell_signed_goal(
         }
     }
     fn spell(
-        term: &Bitvector32Term,
+        term: MachineOperandView<'_>,
         operands: &[(&Bitvector32Term, ContractExpression)],
     ) -> Option<ContractExpression> {
-        if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) = term {
+        if let Some(value) = term.word32_constant() {
             return Some(ContractExpression::CFragment(CExpression::Value(int32(
-                *value,
+                value,
             ))));
         }
-        if let Some((_, surface)) = operands.iter().find(|(operand, _)| *operand == term) {
+        if let Some((_, surface)) = operands
+            .iter()
+            .find(|(operand, _)| same_written_int32_operand(term, operand))
+        {
             return Some(surface.clone());
         }
-        match term {
-            binary_term!(Int32, Add, left, right) => Some(ContractExpression::Add(
-                Box::new(spell(left, operands)?),
-                Box::new(spell(right, operands)?),
-            )),
-            binary_term!(Int32, Subtract, left, right) => Some(ContractExpression::Subtract(
-                Box::new(spell(left, operands)?),
-                Box::new(spell(right, operands)?),
-            )),
+        match term.binary() {
+            Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [left, right])) => {
+                Some(ContractExpression::Add(
+                    Box::new(spell(left, operands)?),
+                    Box::new(spell(right, operands)?),
+                ))
+            }
+            Some((MachineIntegerType::Int32, MachineBinaryOp::Subtract, [left, right])) => {
+                Some(ContractExpression::Subtract(
+                    Box::new(spell(left, operands)?),
+                    Box::new(spell(right, operands)?),
+                ))
+            }
             _ => None,
         }
     }
     let compare = |left: &Bitvector32Term, operator, right: &Bitvector32Term| {
         Some(ClickProposition::Comparison {
-            left: spell(left, &operands)?,
+            left: spell(MachineOperandView::Legacy(left), &operands)?,
             operator,
-            right: spell(right, &operands)?,
+            right: spell(MachineOperandView::Legacy(right), &operands)?,
         })
     };
+    if let Some((SignedDefinedWidth::Int32, values, subtract)) =
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)
+    {
+        let left = Box::new(spell(values[0].operand_view(), &operands)?);
+        let right = Box::new(spell(values[1].operand_view(), &operands)?);
+        return Some(ClickProposition::Defined {
+            expression: if subtract {
+                ContractExpression::Subtract(left, right)
+            } else {
+                ContractExpression::Add(left, right)
+            },
+        });
+    }
     match goal {
         Proposition::ConditionIs(condition, true) => match condition {
             ConditionTerm::Compare {
@@ -997,34 +1015,6 @@ pub(super) fn spell_signed_goal(
             } => compare(left, ComparisonOperator::Equal, right),
             _ => None,
         },
-        Proposition::ConditionIs(
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Add,
-                left,
-                right,
-            },
-            false,
-        ) => Some(ClickProposition::Defined {
-            expression: ContractExpression::Add(
-                Box::new(spell(left, &operands)?),
-                Box::new(spell(right, &operands)?),
-            ),
-        }),
-        Proposition::ConditionIs(
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Subtract,
-                left,
-                right,
-            },
-            false,
-        ) => Some(ClickProposition::Defined {
-            expression: ContractExpression::Subtract(
-                Box::new(spell(left, &operands)?),
-                Box::new(spell(right, &operands)?),
-            ),
-        }),
         _ => None,
     }
 }
@@ -2461,32 +2451,39 @@ fn plan_explicit_constant_lower_bound_weakening(
     None
 }
 
+// Written operand identity for the explicit arithmetic rules below. The
+// observation handle is an exact syntax key, not a value/equality-graph read.
+fn same_written_int32_operand(
+    operand: crate::kernel::MachineOperandView<'_>,
+    written: &Bitvector32Term,
+) -> bool {
+    operand.retain(MachineIntegerType::Int32)
+        == crate::kernel::SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            written.clone(),
+        )
+}
+
 pub(super) fn plan_explicit_increment_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = interval_query.as_ref().unwrap_or(goal);
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: value,
-            right: amount,
-        },
-        false,
-    ) = goal
+    let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
         return None;
     };
-    if amount.as_ref() != &Bitvector32Term::Constant(1) {
+    let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
+    if amount.literal() != Some(Bitvector32Term::Constant(1)) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_value, upper)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_value != value.as_ref() || upper != &Bitvector32Term::Constant(i32::MAX as u32) {
+        if !same_written_int32_operand(value, premise_value)
+            || upper != &Bitvector32Term::Constant(i32::MAX as u32)
+        {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -2499,28 +2496,22 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = interval_query.as_ref().unwrap_or(goal);
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: one,
-            right: value,
-        },
-        false,
-    ) = goal
+    let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
         return None;
     };
-    if one.as_ref() != &Bitvector32Term::Constant(1) {
+    let [one, value] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
+    if one.literal() != Some(Bitvector32Term::Constant(1)) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_value, upper)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_value != value.as_ref() || upper != &Bitvector32Term::Constant(i32::MAX as u32) {
+        if !same_written_int32_operand(value, premise_value)
+            || upper != &Bitvector32Term::Constant(i32::MAX as u32)
+        {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -2568,43 +2559,30 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = interval_query.as_ref().unwrap_or(goal);
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: value,
-            right: amount,
-        },
-        false,
-    ) = goal
+    let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
         return None;
     };
+    let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
     let zero = Bitvector32Term::Constant(0);
-    let headroom = binary_node!(
-        Int32,
-        Subtract,
-        Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
-        Box::new(amount.as_ref().clone()),
-    );
-    let (nonnegative_kernel, nonnegative_surface) = premise_pairs
-        .iter()
-        .find(|(kernel, _)| signed_nonstrict_parts(kernel) == Some((&zero, amount.as_ref())))?;
-    let (headroom_kernel, headroom_surface) = premise_pairs
-        .iter()
-        .find(|(kernel, _)| signed_nonstrict_parts(kernel) == Some((value.as_ref(), &headroom)))?;
+    let (_, nonnegative_surface) = premise_pairs.iter().find(|(kernel, _)| {
+        signed_nonstrict_parts(kernel)
+            .is_some_and(|(left, right)| left == &zero && same_written_int32_operand(amount, right))
+    })?;
+    let (_, headroom_surface) = premise_pairs.iter().find(|(kernel, _)| {
+        let Some((left, right)) = signed_nonstrict_parts(kernel) else {
+            return false;
+        };
+        let binary_term!(Int32, Subtract, maximum, subtracted) = right else {
+            return false;
+        };
+        same_written_int32_operand(value, left)
+            && maximum.as_ref() == &Bitvector32Term::Constant(i32::MAX as u32)
+            && same_written_int32_operand(amount, subtracted)
+    })?;
     surface_nonstrict_parts(nonnegative_surface)?;
     surface_nonstrict_parts(headroom_surface)?;
-    debug_assert_eq!(
-        signed_nonstrict_parts(nonnegative_kernel),
-        Some((&zero, amount.as_ref()))
-    );
-    debug_assert_eq!(
-        signed_nonstrict_parts(headroom_kernel),
-        Some((value.as_ref(), &headroom))
-    );
     let (_, surface_amount) = surface_nonstrict_parts(nonnegative_surface)?;
     let (surface_value, _) = surface_nonstrict_parts(headroom_surface)?;
     // The headroom `MAX - amount` is itself a machine difference, whose
@@ -2691,26 +2669,21 @@ pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = interval_query.as_ref().unwrap_or(goal);
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Subtract,
-            left: value,
-            right: amount,
-        },
-        false,
-    ) = goal
+    let (crate::kernel::SignedDefinedWidth::Int32, operands, true) =
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
         return None;
     };
+    let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
     let zero = Bitvector32Term::Constant(0);
-    let (_, nonnegative_surface) = premise_pairs
-        .iter()
-        .find(|(kernel, _)| signed_nonstrict_parts(kernel) == Some((&zero, amount.as_ref())))?;
+    let (_, nonnegative_surface) = premise_pairs.iter().find(|(kernel, _)| {
+        signed_nonstrict_parts(kernel)
+            .is_some_and(|(left, right)| left == &zero && same_written_int32_operand(amount, right))
+    })?;
     let (_, within_value_surface) = premise_pairs.iter().find(|(kernel, _)| {
-        signed_nonstrict_parts(kernel) == Some((amount.as_ref(), value.as_ref()))
+        signed_nonstrict_parts(kernel).is_some_and(|(left, right)| {
+            same_written_int32_operand(amount, left) && same_written_int32_operand(value, right)
+        })
     })?;
     let (_, surface_amount) = surface_nonstrict_parts(nonnegative_surface)?;
     let (_, surface_value) = surface_nonstrict_parts(within_value_surface)?;
@@ -3777,5 +3750,88 @@ mod selected_premise_tests {
                 ProofTactic::Assumption,
             ])
         );
+    }
+}
+
+#[cfg(test)]
+mod shared_goal_spelling_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_signed_goal_spelling_does_not_export_operands() {
+        use crate::kernel::{IntegerTerm, KernelTerm, KernelType, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = Variable(991705);
+        let machine = SharedMachineIntegerTerm::from_shared(
+            MachineIntegerType::Int32,
+            KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::Add,
+                [
+                    KernelTerm::variable(
+                        KernelType::C(MachineIntegerType::Int32.c_type()),
+                        variable,
+                    ),
+                    KernelTerm::variable(
+                        KernelType::C(MachineIntegerType::Int32.c_type()),
+                        variable,
+                    ),
+                ],
+            ),
+        )
+        .unwrap();
+        let surface = ContractExpression::CFragment(CExpression::Variable("x".into()));
+        let one = ContractExpression::CFragment(CExpression::Value(int32(1)));
+        let pairs = vec![(
+            Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(Bitvector32Term::Variable(variable)),
+                    right: Box::new(Bitvector32Term::Constant(10)),
+                },
+                true,
+            ),
+            ClickProposition::Comparison {
+                left: surface.clone(),
+                operator: ComparisonOperator::LessEqual,
+                right: ContractExpression::CFragment(CExpression::Value(int32(10))),
+            },
+        )];
+        let surface = ContractExpression::Add(Box::new(surface.clone()), Box::new(surface));
+        for subtract in [false, true] {
+            let left = IntegerTerm::Machine(machine.clone()).into();
+            let right = IntegerTerm::constant(1.into()).into();
+            let exact = if subtract {
+                IntegerTerm::Subtract(left, right)
+            } else {
+                IntegerTerm::Add(left, right)
+            };
+            let upper = Proposition::ConditionIs(
+                ConditionTerm::IntegerLessEqual(
+                    exact.clone().into(),
+                    IntegerTerm::constant(i32::MAX.into()).into(),
+                ),
+                true,
+            );
+            let lower = Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterEqual(
+                    exact.into(),
+                    IntegerTerm::constant(i32::MIN.into()).into(),
+                ),
+                true,
+            );
+            assert!(spell_signed_goal(&upper, &pairs).is_none());
+            let domain = Proposition::And(Box::new(upper), Box::new(lower));
+            let expected = ClickProposition::Defined {
+                expression: if subtract {
+                    ContractExpression::Subtract(Box::new(surface.clone()), Box::new(one.clone()))
+                } else {
+                    ContractExpression::Add(Box::new(surface.clone()), Box::new(one.clone()))
+                },
+            };
+            assert_eq!(spell_signed_goal(&domain, &pairs), Some(expected));
+            assert!(!machine.has_boxed_operand());
+        }
     }
 }

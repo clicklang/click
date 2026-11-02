@@ -303,6 +303,28 @@ impl CheckedOrderBounds {
         ))
     }
 
+    /// The two numeric extrema used by `interval_view`, with their exact
+    /// admitted sources. Selection is fixed-size even when one endpoint has
+    /// many weaker bounds; it does not enumerate that endpoint's bucket.
+    pub(super) fn interval_sources_view(
+        &self,
+        term: MachineOperandView<'_>,
+        unsigned: bool,
+    ) -> [Option<Proposition>; 2] {
+        let _checking =
+            crate::instrumentation::CheckingWorkScope::new("select indexed interval bounds", 1);
+        crate::instrumentation::record_deterministic_work(1);
+        let Some(bounds) = self.endpoints[usize::from(unsigned)].get(&Self::word_key(term)) else {
+            return [None, None];
+        };
+        let source =
+            |(_, condition, value): &Bound| Proposition::ConditionIs(condition.clone(), *value);
+        [
+            bounds.lower.iter().next_back().map(source),
+            bounds.upper.iter().next().map(source),
+        ]
+    }
+
     /// At most one numeric extremum and one unambiguous symbolic source per
     /// direction. The fixed four slots are selected, never a bucket iterator.
     pub(super) fn constant_evidence_sources(

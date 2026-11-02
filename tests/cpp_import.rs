@@ -14649,7 +14649,7 @@ fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
         }
     ));
     fs::remove_file(&project.exporter).unwrap();
-    for (answer, expected) in [(0, 2), (1, 1)] {
+    for (answer, expected) in [(false, 2), (true, 1)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
         bool update(int32& value, bool answer) {{ owns value; requires value == 4; ensures value == 5; ensures result == answer; }}
@@ -14758,14 +14758,14 @@ fn expression_observers_admit_composed_boolean_conditions() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let helper = if condition == "number()" {
-            "int32 number()"
+        let (helper, result) = if condition == "number()" {
+            ("int32 number()", "1")
         } else {
-            "bool predicate()"
+            ("bool predicate()", "true")
         };
         let sidecar = format!(
             r#"verifying "condition.cpp";
-{helper} {{ ensures result == 1; }}
+{helper} {{ ensures result == {result}; }}
 int32 choose() {{ ensures result == 1; }}
 "#
         );
@@ -14787,7 +14787,7 @@ fn condition_calls_propagate_scalar_exception_contracts() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let source = r#"verifying "condition.cpp";
-    bool predicate(bool fail) throws int32 { ensures result == 1; exceptional ensures exception == 7; }
+    bool predicate(bool fail) throws int32 { ensures result == true; exceptional ensures exception == 7; }
     int32 choose(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
     "#;
     check_selected_claim_certificate(&project, &import, source);
@@ -14848,7 +14848,7 @@ int choose(int value) noexcept {
         &project,
         &import,
         r#"verifying "condition.cpp";
-    bool predicate(int32 value) { requires value == 7; ensures result == 1; }
+    bool predicate(int32 value) { requires value == 7; ensures result == true; }
     int32 echo(int32 value) { ensures result == value; }
     int32 choose(int32 value) { requires value == 7; ensures result == 9; }
     "#,
@@ -14869,7 +14869,7 @@ fn condition_calls_preserve_the_enclosing_catch_scope() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "condition.cpp";
-        bool predicate(bool fail) throws int32 { ensures result == 1; exceptional ensures exception == 7; }
+        bool predicate(bool fail) throws int32 { ensures result == true; exceptional ensures exception == 7; }
         int32 choose(bool fail) { ensures result == 5 or result == 7; } by {
             step();
             outcomes {

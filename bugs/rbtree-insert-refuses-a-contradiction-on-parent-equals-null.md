@@ -67,3 +67,26 @@ another instance of
 or needs an explicit frame premise is not yet established. Keep this report
 open until the whole insertion example passes; the erase and augmented
 reports remain open too.
+
+## Reduced reconstructed-pointer transport defect
+
+A small single-store reduction exposed a separate frame-checking defect:
+`mdtests/a_word_pointer_fact_survives_a_store_through_an_alias.md`. The C store
+writes `p->left`, with `p == g`; explicit separation proves it does not touch
+`g->word`. Transport of a scalar fact about that word succeeds, but transport
+of the pointer reconstructed from the word failed. The mask and loop were
+not necessary to reproduce it.
+
+The pointer frame crossed the store but compared its immediate pre-state with
+the read's earlier named version. Cached field observations between those
+states are not writes. The checker now uses the observation prefix's directly retained byte source
+after that one checked transition. The reduced proof verifies and expands;
+a scaling regression grows the observation chain and retains an overlapping
+upper-half-write refusal.
+
+This does not establish the full insertion proof. The original bare transport
+at the first rotation still fails, and an explicit single-store transport in
+that tree branch also remains refused. Rewriting a preserved numeric word alone
+is insufficient: the reconstructed pointer also carries a read designation,
+which scalar equality does not replace. Keep this report open while reducing
+the remaining tree-specific frame failure.

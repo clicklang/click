@@ -34,7 +34,7 @@ fn narrow_cast_words_intern_in_work_linear_in_the_casts() {
             for i in 0..size {
                 let cast =
                     Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, var(175_000 + i));
-                let [widened, _] = widenings(Ty::UInt8, &cast);
+                let widened = Bitvector32Term::machine_integer_cast(Ty::UInt8, Ty::Int32, cast);
                 let mask =
                     Bitvector32Term::bitwise_and(var(175_000 + i), Bitvector32Term::Constant(255));
                 assert!(graph.are_int32_equal(&widened, &mask));
@@ -42,7 +42,7 @@ fn narrow_cast_words_intern_in_work_linear_in_the_casts() {
         });
         let ((), chain_work) = crate::instrumentation::measure_deterministic_work(|| {
             let last = if size % 2 == 0 { Ty::UInt8 } else { Ty::Int16 };
-            let [chain, _] = widenings(last, &chain);
+            let chain = Bitvector32Term::machine_integer_cast(last, Ty::Int32, chain);
             assert!(!graph.are_int32_equal(&chain, &var(174_000)));
         });
         // Each half is linear in `size`. Measured (2026-11-01): about 54
