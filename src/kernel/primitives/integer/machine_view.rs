@@ -30,6 +30,17 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
+    pub(crate) fn variable(self) -> Option<&'a Variable> {
+        match self {
+            Self::Shared(term) => match term.node() {
+                KernelTermNode::Variable(variable) => Some(variable),
+                _ => None,
+            },
+            Self::Legacy(Bitvector32Term::Variable(variable)) => Some(variable),
+            Self::Legacy(_) => None,
+        }
+    }
+
     pub(crate) fn binary(self) -> Option<(MachineIntegerType, MachineBinaryOp, [Self; 2])> {
         match self {
             Self::Shared(term) => match term.node() {
@@ -139,17 +150,16 @@ mod tests {
     fn cached_machine_constants_match_legacy_readings() {
         let _session = crate::kernel::VerificationSession::enter();
         use MachineBinaryOp::*;
-        for ty in [
-            MachineIntegerType::Int32,
-            MachineIntegerType::UInt32,
-            MachineIntegerType::Int64,
-            MachineIntegerType::UInt64,
-        ] {
-            let literal = |n: i64| match ty {
-                MachineIntegerType::Int32 => Bitvector32Term::Constant(n as u32),
-                MachineIntegerType::UInt32 => Bitvector32Term::UInt32Constant(n as u32),
-                MachineIntegerType::Int64 => Bitvector32Term::Int64Constant(n),
-                _ => Bitvector32Term::UInt64Constant(n as u64),
+        for ty in crate::kernel::machine_integer::FORMATS {
+            let literal = |n: i64| {
+                ty.constant_term(
+                    MachineIntegerConstant::from_bits(
+                        ty.format(),
+                        (n as u128) & ty.format().mask(),
+                    )
+                    .unwrap(),
+                )
+                .unwrap()
             };
             let check = |boxed: Bitvector32Term| {
                 let shared = KernelTermImport::default().machine(ty, &boxed);

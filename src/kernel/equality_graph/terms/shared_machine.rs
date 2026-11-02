@@ -1,4 +1,4 @@
-//! Register the native shared native fragment without exporting boxed prefixes.
+//! Register shared machine operands without exporting boxed prefixes.
 //! The operator nodes are the same nodes used by legacy congruence registration.
 use super::*;
 use crate::kernel::{
@@ -15,6 +15,95 @@ impl TermClasses {
             if self.shared_machine_classes.contains_key(&key) {
                 continue;
             }
+            // The observation may read an operator at another carrier width.
+            // Legacy registration keeps such an operator opaque (except for
+            // its explicit add/sub cancellation). Retain that exact identity
+            // without exporting the operator's shared descendants.
+            let operator_format = match term.node() {
+                N::MachineBinary { format, .. } | N::MachineUnary { format, .. } => Some(*format),
+                _ => None,
+            };
+            if operator_format.is_some_and(|format| {
+                let native = if format.format().bits() == 128 {
+                    W::Bits64
+                } else {
+                    W::of_machine_type(format)
+                };
+                native != width
+                    && !matches!(
+                        (term.node(), width),
+                        (
+                            N::MachineUnary {
+                                format: MachineIntegerType::UInt32,
+                                ..
+                            },
+                            W::Bits64
+                        )
+                    )
+            }) {
+                let cancellation = match term.node() {
+                    N::MachineBinary {
+                        format,
+                        operator,
+                        arguments: [left, right],
+                    } if matches!(format.format().bits(), 32 | 64) => match left.node() {
+                        N::MachineBinary {
+                            format: inner_format,
+                            operator: inner_op,
+                            arguments: [base, added],
+                        } if format == inner_format
+                            && matches!(
+                                (operator, inner_op),
+                                (MachineBinaryOp::Add, MachineBinaryOp::Subtract)
+                                    | (MachineBinaryOp::Subtract, MachineBinaryOp::Add)
+                            )
+                            && matches!(
+                                added.node(),
+                                N::MachineLiteral(
+                                    L::Word32(_) | L::UInt32(_) | L::Int64(_) | L::UInt64(_)
+                                )
+                            )
+                            && added == right =>
+                        {
+                            Some(base)
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                let class = if let Some(base) = cancellation {
+                    if !finish {
+                        pending.push((term, true));
+                        pending.push((base, false));
+                        continue;
+                    }
+                    self.shared_machine_classes
+                        .get(&(base.id(), width))
+                        .unwrap()
+                        .1
+                } else {
+                    let format = match width {
+                        W::Bits8 => MachineIntegerType::UInt8,
+                        W::Bits16 => MachineIntegerType::UInt16,
+                        W::Bits32 => MachineIntegerType::Int32,
+                        W::Bits64 => MachineIntegerType::UInt64,
+                        W::Bits128 => MachineIntegerType::UInt128,
+                    };
+                    let atom = MachineAtom::from_operand(
+                        format,
+                        crate::kernel::MachineOperandView::Shared(term),
+                    );
+                    self.intern_node(match width {
+                        W::Bits8 | W::Bits16 => Node::MachineNarrow(atom),
+                        W::Bits32 => Node::Int32(atom),
+                        W::Bits64 => Node::UInt64(atom),
+                        W::Bits128 => Node::Machine128(atom),
+                    })
+                };
+                self.shared_machine_classes
+                    .insert(key, (term.clone(), class));
+                continue;
+            }
             let class = match term.node() {
                 N::MachineBinary {
                     format,
@@ -22,6 +111,7 @@ impl TermClasses {
                     arguments: [left, right],
                 } => {
                     let opaque_count = width != W::Bits32
+                        && format.format().bits() != 128
                         && matches!(
                             operator,
                             MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
@@ -99,7 +189,11 @@ impl TermClasses {
                         N::MachineLiteral(L::Int64(v)) if *v == n)
                             || matches!(t.node(), N::MachineLiteral(L::UInt64(v)) if *v == n as u64)
                     };
-                    let equivalent = if width == W::Bits64 {
+                    let equivalent = if width == W::Bits64
+                        && matches!(
+                            format,
+                            MachineIntegerType::Int64 | MachineIntegerType::UInt64
+                        ) {
                         match operator {
                             MachineBinaryOp::Add if number(left, 0) => Some(b),
                             MachineBinaryOp::Add | MachineBinaryOp::Subtract
@@ -136,14 +230,19 @@ impl TermClasses {
                         operator: inner_op,
                         arguments: [base, added],
                     } = left.node()
-                        && matches!(width, W::Bits32 | W::Bits64)
+                        && matches!(format.format().bits(), 32 | 64)
                         && format == inner_format
                         && matches!(
                             (operator, inner_op),
                             (MachineBinaryOp::Add, MachineBinaryOp::Subtract)
                                 | (MachineBinaryOp::Subtract, MachineBinaryOp::Add)
                         )
-                        && matches!(added.node(), N::MachineLiteral(_))
+                        && matches!(
+                            added.node(),
+                            N::MachineLiteral(
+                                L::Word32(_) | L::UInt32(_) | L::Int64(_) | L::UInt64(_)
+                            )
+                        )
                         && added == right
                     {
                         let other = self
@@ -160,16 +259,24 @@ impl TermClasses {
                     operator,
                     operand,
                 } => {
-                    if !finish {
-                        pending.push((term, true));
-                        pending.push((operand, false));
-                        continue;
-                    }
-                    let value = self
-                        .shared_machine_classes
-                        .get(&(operand.id(), width))
-                        .unwrap()
-                        .1;
+                    let source_width = W::of_machine_type(*format);
+                    let value = if source_width != width {
+                        // The legacy wide query of a uint32 complement (and
+                        // its raw 128-bit counterpart) reads its own-width
+                        // operand. This transition cannot recurse at that
+                        // same mismatched root width.
+                        self.intern_shared_machine(operand, source_width)
+                    } else {
+                        if !finish {
+                            pending.push((term, true));
+                            pending.push((operand, false));
+                            continue;
+                        }
+                        self.shared_machine_classes
+                            .get(&(operand.id(), width))
+                            .unwrap()
+                            .1
+                    };
                     if width == W::Bits32 {
                         self.intern_node(Node::Int32Unary(Int32Unary::Not, value))
                     } else {
@@ -203,6 +310,82 @@ impl TermClasses {
 mod tests {
     use super::*;
     use crate::kernel::{IntegerTerm, KernelTermImport, SharedMachineIntegerTerm};
+
+    #[test]
+    fn shared_registration_preserves_cross_width_opaque_identities() {
+        for format in crate::kernel::machine_integer::FORMATS {
+            let variable = T::Variable(Variable(982401));
+            let literal = if format.format().bits() <= 32 {
+                T::Constant(1)
+            } else {
+                T::UInt64Constant(1)
+            };
+            let child = T::Binary {
+                format: MachineIntegerType::UInt32,
+                op: MachineBinaryOp::Add,
+                left: Box::new(variable.clone()),
+                right: Box::new(literal.clone()),
+            };
+            for op in [
+                MachineBinaryOp::Add,
+                MachineBinaryOp::Subtract,
+                MachineBinaryOp::Multiply,
+                MachineBinaryOp::ShiftRight,
+            ] {
+                for left in [variable.clone(), child.clone()] {
+                    let term = T::Binary {
+                        format,
+                        op,
+                        left: Box::new(left),
+                        right: Box::new(literal.clone()),
+                    };
+                    let cancellation = T::Binary {
+                        format,
+                        op: MachineBinaryOp::Subtract,
+                        left: Box::new(T::Binary {
+                            format,
+                            op: MachineBinaryOp::Add,
+                            left: Box::new(term.clone()),
+                            right: Box::new(literal.clone()),
+                        }),
+                        right: Box::new(literal.clone()),
+                    };
+                    let complement = T::Unary {
+                        format,
+                        op: crate::kernel::MachineUnaryOp::BitwiseNot,
+                        operand: Box::new(term.clone()),
+                    };
+                    for boxed in [term, cancellation, complement] {
+                        let shared = KernelTermImport::default().machine(format, &boxed);
+                        for observed in [
+                            MachineIntegerType::UInt8,
+                            MachineIntegerType::UInt16,
+                            MachineIntegerType::Int32,
+                            MachineIntegerType::UInt64,
+                            MachineIntegerType::UInt128,
+                        ] {
+                            let _session = crate::kernel::VerificationSession::enter();
+                            let width = W::of_machine_type(observed);
+                            let observation = SharedMachineIntegerTerm::from_shared(
+                                observed,
+                                shared.with_machine_observation_type(observed),
+                            )
+                            .unwrap();
+                            let mut classes = TermClasses::default();
+                            let a = classes.intern_shared_machine(
+                                observation.shared_operand().unwrap(),
+                                width,
+                            );
+                            classes.intern_integer(&IntegerTerm::Machine(observation.clone()));
+                            assert!(!observation.has_boxed_operand());
+                            let b = classes.intern_typed_machine(&boxed, width);
+                            assert_eq!(classes.root(a), classes.root(b), "{observed:?}: {boxed:?}");
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn shared_machine_registration_meets_legacy_classes_and_late_merges() {
@@ -271,5 +454,8 @@ mod tests {
                 }
             }
         }
+    }
+    mod scaling_tests {
+        include!("../../../scaling_tests/kernel/equality_graph/terms/shared_machine/tests.rs");
     }
 }

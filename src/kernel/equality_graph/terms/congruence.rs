@@ -389,9 +389,7 @@ impl TermClasses {
                                 IntegerOperation::Observe(value.ty()),
                             ));
                             let width = W::of_machine_type(value.ty());
-                            if let Some(term) = value.shared_operand()
-                                && term.shared_native_width() == Some(width)
-                            {
+                            if let Some(term) = value.shared_operand() {
                                 let operand = self.intern_shared_machine(term, width);
                                 values.push(self.intern_node(Node::Apply(head, operand)));
                             } else {
