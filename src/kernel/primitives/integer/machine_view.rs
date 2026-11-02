@@ -53,6 +53,21 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
+    pub(crate) fn root_width(self) -> Option<CarrierWidth> {
+        match self {
+            Self::Legacy(value) => crate::kernel::root_width(value),
+            Self::Shared(term) => match term.node() {
+                KernelTermNode::MachineBinary { format, .. }
+                | KernelTermNode::MachineUnary { format, .. } => {
+                    Some(CarrierWidth::of_machine_type(*format))
+                }
+                KernelTermNode::MachineLiteral(_) => crate::kernel::root_width(&self.literal()?),
+                KernelTermNode::Variable(_) => None,
+                _ => unreachable!("shared machine operand fragment"),
+            },
+        }
+    }
+
     pub(crate) fn observe(self, ty: MachineIntegerType) -> Option<IntegerTerm> {
         if let Some(literal) = self.literal() {
             return IntegerTerm::from_machine(ty, literal);

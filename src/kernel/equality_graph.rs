@@ -561,6 +561,7 @@ enum OffsetPart {
 
 #[derive(Clone, Default)]
 struct EqualityGraphState {
+    registered_shared_pointer_operands: crate::persistent::PersistentSet<u64>,
     separation_sources: crate::persistent::PersistentSet<usize>,
     /// Exact source handles survive closure reconstruction and branch cloning.
     pointer_fact_inputs: terms::PointerFactSources,
@@ -1599,8 +1600,10 @@ impl EqualityGraph {
         algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
         integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
         pointer_calls: impl IntoIterator<Item = &'a SharedPureApplication>,
+        shared_seen: &mut crate::persistent::PersistentSet<u64>,
     ) -> Vec<Pointer> {
         enum Work<'a> {
+            SharedMachine(&'a crate::kernel::KernelTerm),
             Machine(&'a Bitvector32Term),
             Algebraic(&'a AlgebraicTerm),
             Integer(&'a crate::kernel::IntegerTerm),
@@ -1625,7 +1628,13 @@ impl EqualityGraph {
                         continue;
                     }
                     match term {
-                        I::Machine(value) => pending.push(Work::Machine(value.value())),
+                        I::Machine(value) => {
+                            if let Some(term) = value.shared_operand() {
+                                pending.push(Work::SharedMachine(term));
+                            } else {
+                                pending.push(Work::Machine(value.value()));
+                            }
+                        }
                         I::Negate(value) => pending.push(Work::Integer(value)),
                         I::Add(a, b)
                         | I::Subtract(a, b)
@@ -1686,6 +1695,31 @@ impl EqualityGraph {
                     CValue::Parameter(term) => pending.push(Work::Algebraic(term)),
                     _ => {}
                 },
+                Work::SharedMachine(term) => {
+                    use crate::kernel::KernelTermNode as N;
+                    if shared_seen.contains(&term.id()) {
+                        continue;
+                    }
+                    *shared_seen = shared_seen.with_value(term.id());
+                    match term.node() {
+                        N::MachineBinary { arguments, .. } => {
+                            pending.extend(arguments.iter().map(Work::SharedMachine))
+                        }
+                        N::MachineUnary { operand, .. } => {
+                            pending.push(Work::SharedMachine(operand))
+                        }
+                        N::Variable(variable) => {
+                            let leaf = Bitvector32Term::Variable(*variable);
+                            if let Some((_, pointer)) =
+                                terms::uint64_read(&leaf).or_else(|| terms::int32_read(&leaf))
+                            {
+                                pointers.push(pointer);
+                            }
+                        }
+                        N::MachineLiteral(_) => {}
+                        _ => unreachable!("shared machine operand fragment"),
+                    }
+                }
                 Work::Machine(term) => {
                     if let Bitvector32Term::ClickFunctionApplication { arguments, .. } = term {
                         pending.extend(arguments.iter().map(Work::Argument));
@@ -1723,7 +1757,13 @@ impl EqualityGraph {
         algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
         integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
     ) {
-        let pointers = Self::expression_pointer_operands(machine, algebraic, integer, []);
+        let pointers = Self::expression_pointer_operands(
+            machine,
+            algebraic,
+            integer,
+            [],
+            &mut state.registered_shared_pointer_operands,
+        );
         if pointers.is_empty() {
             return;
         }
@@ -2332,8 +2372,13 @@ impl EqualityGraphState {
                 if !calls_seen.insert(application.clone()) {
                     continue;
                 }
-                for pointer in EqualityGraph::expression_pointer_operands([], [], [], [application])
-                {
+                for pointer in EqualityGraph::expression_pointer_operands(
+                    [],
+                    [],
+                    [],
+                    [application],
+                    &mut Default::default(),
+                ) {
                     self.register_pointer_address(&pointer);
                     if is_application(&pointer.block) {
                         pending.push(pointer.block);

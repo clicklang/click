@@ -134,6 +134,7 @@ struct NodeKeyData {
     ty: KernelType,
     node: KernelTermNode,
     shared_machine_operand: bool,
+    shared_native_width: Option<CarrierWidth>,
 }
 #[derive(Clone)]
 struct NodeKey(Arc<NodeKeyData>);
@@ -167,9 +168,54 @@ impl NodeKey {
             KernelTermNode::MachineUnary { operand, .. } => operand.is_shared_machine_operand(),
             _ => false,
         };
+        let shared_native_width = match (&ty, &node) {
+            (KernelType::C(c), node) => MachineIntegerType::from_c_type(*c)
+                .filter(|format| matches!(format.format().bits(), 8 | 16 | 32 | 64))
+                .map(CarrierWidth::of_machine_type)
+                .filter(|width| match node {
+                    KernelTermNode::Variable(_) => true,
+                    KernelTermNode::MachineLiteral(
+                        KernelMachineLiteral::Word32(_) | KernelMachineLiteral::UInt32(_),
+                    ) => *width == CarrierWidth::Bits32,
+                    KernelTermNode::MachineLiteral(
+                        KernelMachineLiteral::Int64(_) | KernelMachineLiteral::UInt64(_),
+                    ) => *width == CarrierWidth::Bits64,
+                    KernelTermNode::MachineLiteral(KernelMachineLiteral::Wide(value)) => {
+                        MachineIntegerType::from_c_type(*c).unwrap().format().bits()
+                            == value.format().bits()
+                    }
+                    KernelTermNode::MachineUnary {
+                        format, operand, ..
+                    } => {
+                        CarrierWidth::of_machine_type(*format) == *width
+                            && operand.shared_native_width() == Some(*width)
+                    }
+                    KernelTermNode::MachineBinary {
+                        format,
+                        operator,
+                        arguments: [left, right],
+                    } => {
+                        CarrierWidth::of_machine_type(*format) == *width
+                            && left.shared_native_width() == Some(*width)
+                            && if *width != CarrierWidth::Bits32
+                                && matches!(
+                                    operator,
+                                    MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+                                )
+                            {
+                                right.is_shared_machine_operand()
+                            } else {
+                                right.shared_native_width() == Some(*width)
+                            }
+                    }
+                    _ => false,
+                }),
+            _ => None,
+        };
         Self(Arc::new(NodeKeyData {
             fingerprint: hash.finish(),
             shared_machine_operand,
+            shared_native_width,
             ty,
             node,
         }))
@@ -251,6 +297,14 @@ pub(crate) fn clear_integer_bridge_memo() {
 }
 
 impl KernelTerm {
+    pub(crate) fn id(&self) -> u64 {
+        self.0.id
+    }
+
+    pub(crate) fn shared_native_width(&self) -> Option<CarrierWidth> {
+        self.0.key.0.shared_native_width
+    }
+
     pub(crate) fn is_shared_machine_operand(&self) -> bool {
         self.0.key.0.shared_machine_operand
     }
