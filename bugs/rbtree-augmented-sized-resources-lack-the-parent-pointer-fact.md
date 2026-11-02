@@ -189,5 +189,10 @@ ordered `have` proofs, preserving each member's body and the dependencies on
 earlier members. The expanded source rechecks.
 
 `rbtree_size_insert_context_stop.click` already verifies all three selected
-proofs on `2bab9ff83`, without changes. The mirrored context color flip, other
-remaining sidecars, and directory-wide audit still leave this report open.
+proofs on `2bab9ff83`, without changes.
+
+The mirrored context color flip now also verifies all three selected proofs.
+It uses the same owned frames across its recoloring calls, with the frame
+definitions shared by both sidecars in `rbtree_size_context_flip_frames.click`.
+Its C and contracts are unchanged, and the insertion proof expands and rechecks.
+Other remaining sidecars and the directory-wide audit still leave this report open.

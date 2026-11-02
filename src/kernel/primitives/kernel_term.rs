@@ -155,8 +155,8 @@ impl NodeKey {
         ty.hash(&mut hash);
         node.hash(&mut hash);
         // This migration fragment has exact structural identities all the way
-        // to its leaves. Opaque payloads and conversions keep their old storage
-        // until their checker views migrate; inspect immediate children only.
+        // to its leaves, including explicit conversion roots. Opaque payloads
+        // keep their old storage; inspect immediate children only.
         let shared_machine_operand = match &node {
             KernelTermNode::MachineLiteral(_) => true,
             KernelTermNode::Variable(_) => {
@@ -165,7 +165,8 @@ impl NodeKey {
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().all(KernelTerm::is_shared_machine_operand)
             }
-            KernelTermNode::MachineUnary { operand, .. } => operand.is_shared_machine_operand(),
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => operand.is_shared_machine_operand(),
             _ => false,
         };
         let machine_constant = machine::constant_reading(&node);
@@ -605,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn observation_storage_keeps_conversion_and_opaque_compatibility_boundaries() {
+    fn observation_storage_shares_casts_but_keeps_opaque_compatibility_boundaries() {
         let format = MachineIntegerType::Int32;
         let cast = Bitvector32Term::MachineIntegerCast {
             source: MachineIntegerType::Int8,
@@ -613,9 +614,13 @@ mod tests {
             value: Box::new(Bitvector32Term::Variable(Variable(87654326))),
         };
         let term = KernelTermImport::default().machine(format, &cast);
-        assert!(SharedMachineIntegerTerm::from_shared(format, term).is_none());
+        let shared = SharedMachineIntegerTerm::from_shared(format, term).unwrap();
+        assert!(!shared.has_boxed_operand());
+        assert!(shared.value_reading().is_some());
+        assert!(!shared.has_boxed_operand());
         let observation = SharedMachineIntegerTerm::intern(format, cast.clone());
-        assert!(observation.shared_operand().is_none());
+        assert!(observation.shared_operand().is_some());
+        assert_eq!(observation.id(), shared.id());
         assert_eq!(observation.value(), &cast);
         assert!(observation.value_reading().is_some());
         let opaque = KernelTerm::legacy(PureFunctionArgument::Value(CValue::Int32(

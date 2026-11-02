@@ -3732,7 +3732,12 @@ fn typed_reads_share_memory_source(
                     crate::kernel::resource_tracker::step_effect::Separation::Cell(_)
                 )
             )
-            .then(|| step.base().clone())
+            .then(|| {
+                // Observations preserve bytes and retain their source directly.
+                // The read producer may name that earlier source, rather than
+                // the checked transition's immediate observation-only base.
+                step.base().unchanged_bytes_source()
+            })
         };
         let left_base = predecessor(left);
         if left_base.as_ref() == Some(right) {

@@ -35,6 +35,23 @@ impl KernelTerm {
         )
     }
 
+    pub(crate) fn machine_cast_shared(
+        encoding: KernelMachineCastEncoding,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+        operand: Self,
+    ) -> Self {
+        Self::intern(
+            KernelType::C(destination.c_type()),
+            KernelTermNode::MachineCast {
+                encoding,
+                source,
+                destination,
+                operand,
+            },
+        )
+    }
+
     /// Change only the observation's numeric interpretation. The underlying
     /// word node and its format-tagged operations remain exactly as written.
     pub(crate) fn with_machine_observation_type(&self, format: MachineIntegerType) -> Self {
@@ -145,6 +162,17 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
                 operand: Box::new(operand.machine_constant_reading()?.legacy_term()),
             },
         ),
+        KernelTermNode::MachineCast {
+            encoding,
+            source,
+            destination,
+            operand,
+        } => (
+            *destination,
+            encoding
+                .unary(*source, *destination)
+                .build_raw(operand.machine_constant_reading()?.legacy_term()),
+        ),
         _ => return None,
     };
     match format {
@@ -168,6 +196,48 @@ pub enum KernelMachineCastEncoding {
     Int64FromUInt32,
     UInt64FromInt32,
     UInt64FromInt64,
+}
+
+impl KernelMachineCastEncoding {
+    pub(crate) fn of_unary(
+        op: BitvectorUnaryOp,
+    ) -> Option<(Self, MachineIntegerType, MachineIntegerType)> {
+        use BitvectorUnaryOp as U;
+        use MachineIntegerType as T;
+        Some(match op {
+            U::MachineIntegerCast {
+                source,
+                destination,
+            } => (Self::Generic, source, destination),
+            U::Int64From32 => (Self::Int64From32, T::Int32, T::Int64),
+            U::UInt64From32 => (Self::UInt64From32, T::UInt32, T::UInt64),
+            U::UInt32From64 => (Self::UInt32From64, T::UInt64, T::UInt32),
+            U::Int64FromUInt32 => (Self::Int64FromUInt32, T::UInt32, T::Int64),
+            U::UInt64FromInt32 => (Self::UInt64FromInt32, T::Int32, T::UInt64),
+            U::UInt64FromInt64 => (Self::UInt64FromInt64, T::Int64, T::UInt64),
+            _ => return None,
+        })
+    }
+
+    pub(crate) fn unary(
+        self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+    ) -> BitvectorUnaryOp {
+        use BitvectorUnaryOp as U;
+        match self {
+            Self::Generic => U::MachineIntegerCast {
+                source,
+                destination,
+            },
+            Self::Int64From32 => U::Int64From32,
+            Self::UInt64From32 => U::UInt64From32,
+            Self::UInt32From64 => U::UInt32From64,
+            Self::Int64FromUInt32 => U::Int64FromUInt32,
+            Self::UInt64FromInt32 => U::UInt64FromInt32,
+            Self::UInt64FromInt64 => U::UInt64FromInt64,
+        }
+    }
 }
 
 pub(super) fn wrap_exact(format: MachineIntegerType, term: Bitvector32Term) -> CValue {
@@ -220,6 +290,21 @@ impl KernelTermImport {
                 operator: *op,
                 operand: self.machine_arithmetic(*format, operand)?,
             },
+            value
+                if value
+                    .as_unary()
+                    .and_then(|(op, _)| KernelMachineCastEncoding::of_unary(op))
+                    .is_some() =>
+            {
+                let (op, operand) = value.as_unary()?;
+                let (encoding, source, destination) = KernelMachineCastEncoding::of_unary(op)?;
+                KernelTermNode::MachineCast {
+                    encoding,
+                    source,
+                    destination,
+                    operand: self.machine_arithmetic(source, operand)?,
+                }
+            }
             Old::Variable(value) => KernelTermNode::Variable(*value),
             Old::Constant(value) => KernelTermNode::MachineLiteral(Literal::Word32(*value)),
             Old::UInt32Constant(value) => KernelTermNode::MachineLiteral(Literal::UInt32(*value)),
@@ -575,32 +660,74 @@ mod tests {
     }
 }
 
+thread_local! {
+    static CHECKED_CASTS: std::cell::RefCell<std::collections::HashMap<(u64, MachineIntegerType, MachineIntegerType), KernelTerm>> = Default::default();
+}
+
 impl KernelTerm {
     /// Checking-only reconstruction of a generic cast over the shared arithmetic
     /// fragment. Children stay shared; literal folding matches the old checker.
+    pub(crate) fn clear_cast_checks() {
+        CHECKED_CASTS.with(|cache| cache.borrow_mut().clear());
+    }
+
     pub(crate) fn checking_machine_cast(
         &self,
         source: MachineIntegerType,
         destination: MachineIntegerType,
     ) -> Self {
         assert!(self.is_shared_machine_operand());
-        if source == destination {
-            return self.with_machine_observation_type(destination);
-        }
-        if let KernelTermNode::MachineLiteral(literal) = self.node()
-            && let Some(constant) = source.constant_from_term(&literal.legacy_term())
-        {
-            let value = destination
-                .constant_term(constant.convert_modulo(destination.format()))
-                .expect("matching format");
-            return KernelTermImport::default().machine(destination, &value);
-        }
-        Self::checking_cast_node(
-            self.clone(),
-            source,
-            destination,
-            KernelMachineCastEncoding::Generic,
-        )
+        CHECKED_CASTS.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let mut term = self.clone();
+            let mut source = source;
+            let mut path = Vec::new();
+            let result = loop {
+                crate::instrumentation::record_deterministic_work(1);
+                let key = (term.id(), source, destination);
+                if let Some(result) = cache.get(&key) {
+                    break result.clone();
+                }
+                path.push(key);
+                if source == destination {
+                    break term.with_machine_observation_type(destination);
+                }
+                if let KernelTermNode::MachineLiteral(literal) = term.node()
+                    && let Some(constant) = source.constant_from_term(&literal.legacy_term())
+                {
+                    let value = destination
+                        .constant_term(constant.convert_modulo(destination.format()))
+                        .expect("matching format");
+                    break KernelTermImport::default().machine(destination, &value);
+                }
+                if let KernelTermNode::MachineCast {
+                    encoding: KernelMachineCastEncoding::Generic,
+                    source: original,
+                    destination: intermediate,
+                    operand,
+                } = term.node()
+                    && original.carrier_bytes() == 4
+                    && source.carrier_bytes() == 4
+                    && destination.carrier_bytes() == 4
+                    && *intermediate == source
+                    && destination.format().bits() <= intermediate.format().bits()
+                {
+                    source = *original;
+                    term = operand.clone();
+                    continue;
+                }
+                break Self::checking_cast_node(
+                    term,
+                    source,
+                    destination,
+                    KernelMachineCastEncoding::Generic,
+                );
+            };
+            for key in path {
+                cache.insert(key, result.clone());
+            }
+            result
+        })
     }
 
     fn checking_cast_node(
@@ -609,14 +736,11 @@ impl KernelTerm {
         destination: MachineIntegerType,
         encoding: KernelMachineCastEncoding,
     ) -> Self {
-        Self::intern(
-            KernelType::C(destination.c_type()),
-            KernelTermNode::MachineCast {
-                source,
-                destination,
-                encoding,
-                operand: operand.with_machine_observation_type(source),
-            },
+        Self::machine_cast_shared(
+            encoding,
+            source,
+            destination,
+            operand.with_machine_observation_type(source),
         )
     }
 
@@ -631,6 +755,15 @@ impl KernelTerm {
         let root = |value: &Self| match value.node() {
             KernelTermNode::MachineLiteral(L::Int64(bits)) => literal(*bits as u32),
             KernelTermNode::MachineLiteral(L::UInt64(bits)) => literal(*bits as u32),
+            KernelTermNode::MachineCast {
+                encoding:
+                    KernelMachineCastEncoding::Int64From32
+                    | KernelMachineCastEncoding::UInt64From32
+                    | KernelMachineCastEncoding::Int64FromUInt32
+                    | KernelMachineCastEncoding::UInt64FromInt32,
+                operand,
+                ..
+            } => operand.with_machine_observation_type(Ty::Int32),
             _ => Self::checking_cast_node(
                 value.clone(),
                 Ty::UInt64,
@@ -708,7 +841,17 @@ impl KernelTerm {
             C::LowWord => self.checking_low_word(),
             C::Reinterpret64 if destination.format().is_signed() => self.clone(),
             C::Reinterpret64 => {
-                Self::checking_cast_node(self.clone(), source, destination, E::UInt64FromInt64)
+                if matches!(
+                    self.node(),
+                    KernelTermNode::MachineCast {
+                        encoding: E::UInt64FromInt64,
+                        ..
+                    }
+                ) {
+                    self.clone()
+                } else {
+                    Self::checking_cast_node(self.clone(), source, destination, E::UInt64FromInt64)
+                }
             }
             C::Extend64 => {
                 let encoding = match (
@@ -720,7 +863,12 @@ impl KernelTerm {
                     (true, false) => E::UInt64FromInt32,
                     (false, false) => E::UInt64From32,
                 };
-                Self::checking_cast_node(self.clone(), source, destination, encoding)
+                if matches!(self.node(), KernelTermNode::MachineCast {encoding: actual, ..} if *actual == encoding)
+                {
+                    self.clone()
+                } else {
+                    Self::checking_cast_node(self.clone(), source, destination, encoding)
+                }
             }
         };
         if let KernelTermNode::MachineLiteral(literal) = value.node() {

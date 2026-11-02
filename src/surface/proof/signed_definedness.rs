@@ -21,7 +21,7 @@ use crate::kernel::SignedDefinedWidth;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::proof::arithmetic_special::{
-    signed_constant_bound_on, signed_definedness_operands, signed_width_constant,
+    signed_definedness_operands, signed_width_constant,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
@@ -239,16 +239,18 @@ impl<'a> Proof<'a> {
         let Some(goal) = self.goal() else {
             return Ok(None);
         };
-        let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-        let goal = interval_query.as_ref().unwrap_or(goal);
-        let Some((width, left, right, _)) = signed_definedness_operands(goal) else {
+        use crate::kernel::proof::arithmetic_special::{
+            signed_constant_bound_on_view, signed_definedness_query,
+        };
+        let Some((width, operands, _)) = signed_definedness_query(goal) else {
             return Ok(None);
         };
         let premises = premise_pairs
             .iter()
             .filter(|(kernel, _)| {
-                signed_constant_bound_on(width, kernel, left).is_some()
-                    || signed_constant_bound_on(width, kernel, right).is_some()
+                signed_constant_bound_on_view(width, kernel, operands[0].operand_view()).is_some()
+                    || signed_constant_bound_on_view(width, kernel, operands[1].operand_view())
+                        .is_some()
             })
             .map(|(_, surface)| surface.clone())
             .collect::<Vec<_>>();

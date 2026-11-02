@@ -257,6 +257,77 @@ The explicit equality-rewrite mapper still has boxed outputs; higher-level
 comparison decisions, inverse operation mappings and remaining interval adapters
 need migration before nested signed preparation is enabled.
 
+## Shared cast operands and conversion consumers (2026-11-02)
+
+Generic integral casts and the six legacy conversion encodings now belong to
+shared machine operand storage. Their source/destination formats, encodings and
+written children stay structural. Root views, written-variable collection,
+conversion value readings and equality registration retain the shared children;
+casts meet the same congruence classes as boxed registration, including narrow
+word identities, widening siblings and signed-byte inversion.
+
+Value-reading and checking-cast caches use syntax-only node/type keys and survive
+proof-state restoration. They clear at the outer verification boundary. The
+checking cast constructor preserves the previous 32-bit cast-chain conventions;
+this never rewrites a stored or lowered term. Conversion source discovery,
+narrow-widening checks, inverse addition/subtraction mappings and overflow-bound
+carrier selection use shared cast views. Unsupported widths/readings still
+refuse the same mappings.
+
+Differential tests compare shared and boxed readings (including refusal),
+observations, conversion candidates and graph classes across integer formats.
+A deterministic regression grows arithmetic/cast prefixes through 8/32/96
+levels without exporting their operands. The masked-order decision helper also
+uses comparison/operand views, with differential true/false/refusal coverage and
+a no-export regression over growing shared operands. A cache-lifetime test
+checks reuse across proof-state restoration and reset at a new verification.
+
+The full fixture run exposed the missing int64 root-width adapter: a shared
+`Int64FromUInt32` lost its `[0, 2^32 - 1]` range in `int64_defined` certificates.
+`MachineOperandView::int64_width_interval` now supplies the common root rule to
+both boxed callers and interval certificates, preserving signed-extension,
+unsigned-extension, mask and refusal behavior. The existing
+`int64_defined_from_bounds` and refusal fixtures remain unchanged.
+
+The cast representation prerequisite is complete for the shared arithmetic
+fragment; opaque operands retain their compatibility storage. Higher-level
+comparison dispatch and interval-query outputs still have boxed boundaries.
+Nested signed preparation remains disabled.
+
+## Shared widening decisions and interval planning (2026-11-02)
+
+The widened-unsigned-sum comparison and its selected-premise route now consume
+shared comparison/operand views. Range reads use the existing maintained extrema
+indexes. Evidence selection retains the exact source of each contributing
+extremum, rather than enumerating all bounds on an operand. Signed/unsigned
+widening sibling rules and the refusal of insufficient bounds are preserved.
+The atomic evidence dispatcher can use this route on Integer observations without
+exporting their operands. The main condition dispatcher now runs masked-range
+and widened-sum rules on the original operand views before its native comparison
+conversion. Successful range decisions avoid exporting shared trees; the other
+comparison routes still retain their compatibility bridge.
+
+`signed_definedness_query` reads a single complete signed add/subtract domain as
+operand handles. Special-certificate planning, restricted definedness closure,
+and the four explicit increment/one-plus/nonnegative-add/nonnegative-subtract
+planners use it instead of building an overflow proposition. Compound-domain
+selection stays in the existing certificate rule. Explicit planner matching keeps
+written operand identity; it does not read equality facts or change lowering.
+
+An attempted admission-plus-query no-export regression confirmed that ordinary
+Integer comparison admission still calls
+`native_comparison_of_integer_observation -> boxed_condition -> boxed_value` in
+`assume_condition_once`. The query regression isolates this existing boundary;
+full comparison admission is not yet shared. Modular admission's earlier
+no-export regression covers a different route.
+
+Remaining compatibility boundaries include ordinary comparison admission, the
+main condition dispatcher, selected atomic interval-query normalization, conditional normalization,
+reassociated-add checking, unrestricted definedness planning and spelling.
+Nested signed preparation remains disabled. The remaining work must preserve
+proof sources and refusal routes, not replace the old dispatcher with graph-only
+lookup or add rule-local fact-dependent fallbacks.
+
 ## Shared inverse-operation operands (2026-11-02)
 
 The inverse map from an exact Integer sum/difference to its machine operation

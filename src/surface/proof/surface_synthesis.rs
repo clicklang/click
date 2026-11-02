@@ -5647,19 +5647,32 @@ fn synthesize_surface_algebraic(
                         )
                     }
                     // A field of another scalar width that a binder names is
-                    // spelled by that binder, which carries its own type.
+                    // spelled by that binder, which carries its own type;
+                    // otherwise by the local, parameter or `result` holding
+                    // it, which carry theirs. A constant of such a width
+                    // would need its literal suffix and is not spelled.
                     crate::kernel::AlgebraicValue::C(
-                        CValue::Bool(Bitvector32Term::Variable(variable))
-                        | CValue::Int8(Bitvector32Term::Variable(variable))
-                        | CValue::Int16(Bitvector32Term::Variable(variable))
-                        | CValue::UInt8(Bitvector32Term::Variable(variable))
-                        | CValue::UInt16(Bitvector32Term::Variable(variable))
-                        | CValue::UInt32(Bitvector32Term::Variable(variable))
-                        | CValue::Int64(Bitvector32Term::Variable(variable))
-                        | CValue::UInt64(Bitvector32Term::Variable(variable)),
-                    ) => bound_variables.get(variable).map(|name| {
-                        ContractExpression::CFragment(CExpression::Variable(name.clone()))
-                    }),
+                        CValue::Bool(value @ Bitvector32Term::Variable(variable))
+                        | CValue::Int8(value @ Bitvector32Term::Variable(variable))
+                        | CValue::Int16(value @ Bitvector32Term::Variable(variable))
+                        | CValue::UInt8(value @ Bitvector32Term::Variable(variable))
+                        | CValue::UInt16(value @ Bitvector32Term::Variable(variable))
+                        | CValue::UInt32(value @ Bitvector32Term::Variable(variable))
+                        | CValue::Int64(value @ Bitvector32Term::Variable(variable))
+                        | CValue::UInt64(value @ Bitvector32Term::Variable(variable)),
+                    ) => bound_variables
+                        .get(variable)
+                        .map(|name| {
+                            ContractExpression::CFragment(CExpression::Variable(name.clone()))
+                        })
+                        .or_else(|| {
+                            synthesize_surface_bitvector(
+                                value,
+                                parameter_binding,
+                                state,
+                                bound_variables,
+                            )
+                        }),
                     _ => None,
                 })
                 .collect::<Option<Vec<_>>>()?;

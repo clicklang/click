@@ -3135,9 +3135,20 @@ fn charon_result_values_read_as_click_results() {
             "result_values::must",
         ),
         (
+            "Result::Ok(v) => v, Result::Err(e) => 0u32 });\n}\n\n// A caller",
+            "Result::Ok(v) => 0u32, Result::Err(e) => 0u32 });\n}\n\n// A caller",
+            "result_values::must.ensures_0",
+        ),
+        (
             "ensures result == 5u32;",
             "ensures result == 6u32;",
             "result_values::must_say.ensures_0",
+        ),
+        // The payload is the witness only when the value is that variant.
+        (
+            "requires r == Result<u32, u8>::Ok(5u32);",
+            "requires r == Result<u32, u8>::Err(5u8);",
+            "result_values::must_say",
         ),
         (
             "ensures result == click::result::unwrap_or(r, d);",

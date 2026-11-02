@@ -1683,7 +1683,7 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
             "bool probe(bool flag) noexcept { return !flag; }",
             "",
             "bool flag",
-            "flag == 0",
+            "flag == false",
         ),
         (
             "bool probe(unsigned long value) noexcept { return !value; }",
@@ -1693,13 +1693,13 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
         ),
         (
             "bool ready() noexcept { return false; } bool probe() noexcept { return !ready(); }",
-            "bool ready() { ensures result == 0; }",
+            "bool ready() { ensures result == false; }",
             "",
             "1 == 1",
         ),
         (
             "bool ready() noexcept { return false; } bool probe() noexcept { if (!ready()) { return true; } else { return false; } }",
-            "bool ready() { ensures result == 0; }",
+            "bool ready() { ensures result == false; }",
             "",
             "1 == 1",
         ),
@@ -1709,10 +1709,10 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"negation.cpp\";\n{helper}\nbool probe({parameters}) {{ requires {requires}; ensures result == 1; }}\n"
+            "verifying \"negation.cpp\";\n{helper}\nbool probe({parameters}) {{ requires {requires}; ensures result == true; }}\n"
         );
         check_selected_claim_certificate(&project, &import, &source);
-        let hostile = source.replace("ensures result == 1;", "ensures result == 0;");
+        let hostile = source.replace("ensures result == true;", "ensures result == false;");
         let path = project.directory.join("bad.click");
         fs::write(&path, &hostile).unwrap();
         assert!(
@@ -1722,7 +1722,7 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
         if parameters == "uint64 value" {
             let high = source
                 .replace("value == 0u64", "value == 4294967296u64")
-                .replace("result == 1", "result == 0");
+                .replace("result == true", "result == false");
             check_selected_claim_certificate(&project, &import, &high);
         }
     }
@@ -10761,13 +10761,13 @@ fn shared_scalar_interpretation_keeps_execution_and_proof_signatures_aligned() {
         (
             "long convert(bool n) noexcept { return static_cast<long>(n); }",
             "int64 convert(bool n)",
-            "n == 1",
+            "n == true",
             "1i64",
         ),
         (
             "unsigned convert(bool n) noexcept { return static_cast<unsigned>(n); }",
             "uint32 convert(bool n)",
-            "n == 0",
+            "n == false",
             "0u32",
         ),
     ] {
@@ -11886,7 +11886,7 @@ fn not_equal_source_supports_the_existing_narrow_scalar_widths() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let proof = format!(
-            "verifying \"comparison.cpp\"; bool unequal({ty} a, {ty} b) {{ ensures result == 1 implies a != b; ensures result == 0 implies a == b; }}"
+            "verifying \"comparison.cpp\"; bool unequal({ty} a, {ty} b) {{ ensures result == true implies a != b; ensures result == false implies a == b; }}"
         );
         check_arithmetic_sidecar(&project, &import, &proof);
     }
@@ -12393,8 +12393,8 @@ fn branch_likelihood_attributes_preserve_both_outcomes() {
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "weights.cpp";
 int32 choose(bool positive) {
- ensures positive != 0 implies result == 7;
- ensures positive == 0 implies result == -3;
+ ensures positive == true implies result == 7;
+ ensures positive == false implies result == -3;
 }
 "#;
     check_first_claim_certificate(&project, &import, proof);
@@ -15599,7 +15599,7 @@ fn converted_call_initializers_preserve_boolean_results() {
         &import,
         r#"verifying "converted.cpp";
 bool echo(bool value) { ensures result == value; }
-int32 relay(bool value) { requires value == 1; ensures result == 1; }
+int32 relay(bool value) { requires value == true; ensures result == 1; }
 "#,
     );
 }
@@ -16252,7 +16252,7 @@ fn converted_wide_call_initializers_preserve_values_with_checked_destination_bou
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn converted_wide_boolean_calls_observe_high_bits() {
-    for (point, answer) in [("0", "0"), ("18446744073709551616", "1")] {
+    for (point, answer) in [("0", "false"), ("18446744073709551616", "true")] {
         let project = Project::with_fixture(
             "wide.cpp",
             "relay",
@@ -16261,7 +16261,7 @@ fn converted_wide_boolean_calls_observe_high_bits() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let zero_fact = if answer == "0" {
+        let zero_fact = if answer == "false" {
             String::new()
         } else {
             format!(
@@ -16284,7 +16284,7 @@ bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures resu
             &format!("ensures result == {answer};"),
             &format!(
                 "ensures result == {};",
-                if answer == "0" { "1" } else { "0" }
+                if answer == "false" { "true" } else { "false" }
             ),
         );
         let path = project.directory.join("hostile.click");

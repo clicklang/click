@@ -107,3 +107,65 @@ fn comparison_nodes_reuse_shared_prefixes() {
         assert!(lw * small * 4 <= sw * large * 5, "{measurements:?}");
     }
 }
+
+#[test]
+fn shared_cast_registration_and_readings_reuse_growing_prefixes() {
+    use crate::kernel::{KernelMachineCastEncoding as E, KernelType, MachineOperandView};
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(
+            KernelType::C(MachineIntegerType::Int32.c_type()),
+            Variable(985201),
+        );
+        let mut classes = TermClasses::default();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                let wide = KernelTerm::machine_cast_shared(
+                    E::Generic,
+                    MachineIntegerType::Int32,
+                    MachineIntegerType::Int64,
+                    root.clone(),
+                );
+                let observed = MachineOperandView::Shared(&wide)
+                    .observe(MachineIntegerType::Int64)
+                    .unwrap();
+                let IntegerTerm::Machine(machine) = &observed else {
+                    panic!("observation");
+                };
+                let read = observed.value_read();
+                assert!(
+                    matches!(read, IntegerTerm::Machine(value) if value.ty() == MachineIntegerType::Int32)
+                );
+                classes.intern_integer(&observed);
+                assert!(!machine.has_boxed_operand());
+                root = KernelTerm::machine_cast_shared(
+                    E::Generic,
+                    MachineIntegerType::Int64,
+                    MachineIntegerType::Int32,
+                    wide,
+                );
+                let narrowed = MachineOperandView::Shared(&root)
+                    .observe(MachineIntegerType::Int32)
+                    .unwrap();
+                classes.intern_integer(&narrowed);
+                let IntegerTerm::Machine(machine) = &narrowed else {
+                    panic!("observation");
+                };
+                assert!(!machine.has_boxed_operand());
+            }
+        });
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+}

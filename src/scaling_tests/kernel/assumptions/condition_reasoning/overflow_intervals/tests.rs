@@ -556,3 +556,172 @@ fn signed_wide_interval_queries_ignore_bound_bucket_size() {
         }
     }
 }
+
+#[test]
+fn shared_masked_order_queries_do_not_export_growing_operands() {
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelTermImport, KernelType, SharedMachineIntegerTerm,
+    };
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(985302));
+        let mask = KernelTermImport::default()
+            .machine_arithmetic(ty, &Bitvector32Term::Constant(127))
+            .unwrap();
+        let context = PureFactContext::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                let masked = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::BitwiseAnd,
+                    [root.clone(), mask.clone()],
+                );
+                let machine = SharedMachineIntegerTerm::from_shared(ty, masked).unwrap();
+                for (bound, expected) in [(128, Some(true)), (0, Some(false)), (42, None)] {
+                    let query = ConditionTerm::IntegerLessThan(
+                        IntegerTerm::Machine(machine.clone()).into(),
+                        IntegerTerm::constant(bound.into()).into(),
+                    );
+                    assert_eq!(context.decide_masked_order(&query), expected);
+                    if expected.is_some() {
+                        assert_eq!(context.decide(&query), expected);
+                    }
+                    assert!(!machine.has_boxed_operand());
+                }
+            }
+        });
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+}
+
+#[test]
+fn shared_widened_queries_and_evidence_do_not_export_operands() {
+    use crate::kernel::{
+        IntegerTerm, KernelMachineCastEncoding as E, KernelTerm, KernelType,
+        SharedMachineIntegerTerm,
+    };
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(
+            KernelType::C(MachineIntegerType::UInt32.c_type()),
+            Variable(986201),
+        );
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::UInt32,
+                MachineBinaryOp::Add,
+                [root.clone(), root.clone()],
+            );
+        }
+        let operand =
+            SharedMachineIntegerTerm::from_shared(MachineIntegerType::UInt32, root.clone())
+                .unwrap();
+        let widened = KernelTerm::machine_cast_shared(
+            E::Int64FromUInt32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            root,
+        );
+        let sum = SharedMachineIntegerTerm::from_shared(
+            MachineIntegerType::Int64,
+            KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int64,
+                MachineBinaryOp::Add,
+                [widened.clone(), widened],
+            ),
+        )
+        .unwrap();
+        // Isolate comparison/evidence queries from ordinary fact admission,
+        // whose native-comparison compatibility bridge is not yet migrated.
+        let context = PureFactContext::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for (bound, expected) in [
+                (2 * i64::from(u32::MAX), Some(true)),
+                (2 * i64::from(u32::MAX) - 1, None),
+                (-1, Some(false)),
+            ] {
+                let condition = ConditionTerm::IntegerLessEqual(
+                    IntegerTerm::Machine(sum.clone()).into(),
+                    IntegerTerm::constant(bound.into()).into(),
+                );
+                assert_eq!(context.decide_widened_sum_bound(&condition), expected);
+                if expected.is_some() {
+                    assert_eq!(context.decide(&condition), expected);
+                }
+                let sources = context
+                    .widened_unsigned_sum_bound_premises(&condition)
+                    .unwrap();
+                assert!(sources.is_empty());
+                if expected == Some(true) {
+                    let (evidence, _) = context
+                        .selected_for_test()
+                        .proves_atomic_for_derivation_with_id(
+                            &Proposition::ConditionIs(condition, true),
+                            true,
+                        );
+                    assert!(matches!(evidence, Some(crate::kernel::AtomicPropositionDerivationEvidence::WidenedUnsignedSumBound)));
+                }
+                assert!(!sum.has_boxed_operand());
+                assert!(!operand.has_boxed_operand());
+            }
+        });
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+}
+
+#[test]
+fn widened_source_selection_is_bounded_in_related_bounds() {
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let value = Bitvector32Term::Variable(Variable(986202));
+        let mut context = PureFactContext::new();
+        for index in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::unsigned_less_equal(value.clone(), (100 + index as u32).into()),
+                true,
+            );
+        }
+        let sum = Bitvector32Term::int64_add(
+            Bitvector32Term::int64_from_uint32(value.clone()),
+            Bitvector32Term::int64_from_uint32(value),
+        );
+        let query =
+            ConditionTerm::int64_signed_less_equal(sum, Bitvector32Term::Int64Constant(200));
+        let (sources, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.widened_unsigned_sum_bound_premises(&query).unwrap()
+        });
+        assert!(sources.len() <= 12);
+        let selected = sources
+            .into_iter()
+            .fold(PureFactContext::new(), |context, source| {
+                context.assume_proposition(source)
+            });
+        assert_eq!(selected.decide_widened_sum_bound(&query), Some(true));
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
