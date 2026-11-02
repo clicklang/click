@@ -14848,7 +14848,7 @@ int choose(int value) noexcept {
         &project,
         &import,
         r#"verifying "condition.cpp";
-    bool predicate(int32 value) { requires value == 7; ensures result == 1; }
+    bool predicate(int32 value) { requires value == 7; ensures result == true; }
     int32 echo(int32 value) { ensures result == value; }
     int32 choose(int32 value) { requires value == 7; ensures result == 9; }
     "#,
@@ -14869,7 +14869,7 @@ fn condition_calls_preserve_the_enclosing_catch_scope() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "condition.cpp";
-        bool predicate(bool fail) throws int32 { ensures result == 1; exceptional ensures exception == 7; }
+        bool predicate(bool fail) throws int32 { ensures result == true; exceptional ensures exception == 7; }
         int32 choose(bool fail) { ensures result == 5 or result == 7; } by {
             step();
             outcomes {
