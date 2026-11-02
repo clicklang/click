@@ -20014,3 +20014,57 @@ fn loop_owned_view_call_expands_and_replays() {
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
 }
+
+#[test]
+fn structural_invariant_bundles_expand_as_ordered_member_haves() {
+    let checked = verify_click_theorems(
+        r#"
+        theorem bundle(a: int32, b: int32) {
+            requires a == b;
+            requires b == 0;
+            ensures a == 0 and (a == 0 implies a + 1 == 1) by {
+                both {
+                    have a == 0 by {
+                        rewrite(a == b); rewrite(b == 0); normalize();
+                    }
+                    assumption();
+                } and {
+                    intro();
+                    have a == 0 by { assumption(); }
+                    have a + 1 == 1 by { rewrite(a == 0); normalize(); }
+                    assumption();
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap();
+    let closure = ProofCertificate::from_steps(vec![ProofStep::CloseInvariantsBy(Box::new(
+        checked[0].proof_certificate().unwrap(),
+    ))])
+    .unwrap();
+    let printed = format_proof_certificate(&closure);
+    assert!(!printed.contains("close_invariants"), "{printed}");
+    assert!(!printed.contains("both {"), "{printed}");
+    assert!(!printed.contains("intro()"), "{printed}");
+    assert_eq!(printed.matches("have a == 0 by").count(), 1, "{printed}");
+    assert!(
+        printed.find("have a == 0").unwrap()
+            < printed.find("have (to_integer(a) + 1) == 1").unwrap()
+    );
+    // The second member's guard is supplied by the first member's exported
+    // fact. Replay the printed members without giving that guard as a premise.
+    let replay = format!(
+        r#"
+        theorem replay(a: int32, b: int32) {{
+            requires a == b;
+            requires b == 0;
+            ensures a == 0 and (a == 0 implies a + 1 == 1)
+            {} both {{ assumption(); }} and {{ intro(); assumption(); }}
+            }}
+        }}
+    "#,
+        printed.strip_suffix('}').unwrap()
+    );
+    without_implicit_auto(|| verify_click_theorems(&replay)).unwrap();
+}

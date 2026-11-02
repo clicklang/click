@@ -316,30 +316,65 @@ impl ProofCertificate {
             // closed member by member, `have m by { ... }` for each and then
             // the bundle from those facts, is written as those `have`s, and
             // the end of the `preserve` script closes each member from them.
-            if let ProofStep::CloseInvariantsBy(body) = step {
-                let body = body.to_proof_tactics();
-                let haves = body
-                    .iter()
-                    .take_while(|tactic| matches!(tactic, ProofTactic::Have(_)))
-                    .count();
-                if haves > 0 && haves < body.len() {
-                    // A member that was already a fact closes by itself at
-                    // the end of the script; its `have` would only restate it.
-                    tactics.extend(
-                        body[..haves]
-                            .iter()
-                            .filter(|tactic| {
-                                !matches!(tactic, ProofTactic::Have(have)
-                            if have.proof.tactics() == Some(&[ProofTactic::Assumption][..]))
-                            })
-                            .cloned(),
-                    );
-                    continue;
-                }
+            if let ProofStep::CloseInvariantsBy(body) = step
+                && let Some(members) = body.invariant_member_tactics()
+            {
+                tactics.extend(members);
+                continue;
             }
             tactics.push(step.to_proof_tactic());
         }
         tactics
+    }
+
+    /// Export a checked invariant bundle's members in declaration order.
+    /// The bundle planner may split conjunctions and introduce the guards
+    /// contributed by earlier invariants before reaching each member's `have`.
+    /// At the back edge those earlier members are already established, so the
+    /// written proof needs their `have`s, not the bundle's `both`/`intro` shell.
+    /// Keep each member body opaque: introductions inside it still belong to
+    /// that member's proof. Only walk this selected certificate, once.
+    fn invariant_member_tactics(&self) -> Option<Vec<ProofTactic>> {
+        let mut pending = vec![self.steps()];
+        let mut members = Vec::new();
+        while let Some(steps) = pending.pop() {
+            let steps = &steps[steps
+                .iter()
+                .take_while(|step| matches!(step, ProofStep::Intro))
+                .count()..];
+            let haves = steps
+                .iter()
+                .take_while(|step| matches!(step, ProofStep::Have { .. }))
+                .count();
+            if haves > 0 {
+                // As in a flat bundle, the trailing operations close the
+                // bundle from its published members; they are not source
+                // operations at an execution frontier.
+                for step in &steps[..haves] {
+                    let ProofStep::Have { proof, .. } = step else {
+                        unreachable!()
+                    };
+                    if !matches!(proof.steps(), [ProofStep::Assumption]) {
+                        members.push(step.to_proof_tactic());
+                    }
+                }
+                continue;
+            }
+            match steps {
+                [ProofStep::Assumption] => {}
+                [
+                    ProofStep::Both {
+                        left_proof,
+                        right_proof,
+                    },
+                ] => {
+                    pending.push(right_proof.steps());
+                    pending.push(left_proof.steps());
+                }
+                _ => return None,
+            }
+        }
+        Some(members)
     }
 
     /// Returns whether this certificate contains the source-only arithmetic
