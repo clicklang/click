@@ -387,6 +387,7 @@ impl Names {
             }
             Subobject { pointer: e, .. }
             | BitwiseNot(e)
+            | NarrowArithmetic(e, _)
             | Cast(e, _)
             | PointerCoercion(e, _)
             | LoopEntrySnapshot(e)

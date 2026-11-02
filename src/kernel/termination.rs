@@ -1540,6 +1540,7 @@ fn collect_spec_c_variables(
                     | SpecExpression::Subobject { .. }
                     | SpecExpression::PointerOffset { .. }
                     | SpecExpression::BitwiseNot(_)
+                    | SpecExpression::NarrowArithmetic(_, _)
                     | SpecExpression::Cast(_, _)
                     | SpecExpression::PointerCoercion(_, _)
                     | SpecExpression::PureFunctionApplication { .. }

@@ -2616,6 +2616,25 @@ fn validate_algebraic_expression_node(
                     {
                         return Ok(Some(ClickType::Integer));
                     }
+                    // An argument is at its parameter's type: arithmetic
+                    // over values of a narrow one is that type's operator (G2).
+                    if let Some(expected) = function
+                        .and_then(|function| function.parameters.get(index))
+                        .map(|parameter| parameter.click_type())
+                        && narrow_arithmetic_value_type(argument, expected, &mut |leaf| {
+                            Ok(
+                                match variables.argument_type(leaf, click_functions, context)? {
+                                    Some(ClickType::C(c_type)) => {
+                                        SpecValueType::Scalar(Some(c_type))
+                                    }
+                                    _ => SpecValueType::Scalar(None),
+                                },
+                            )
+                        })?
+                        .is_some()
+                    {
+                        return Ok(Some(expected.clone()));
+                    }
                     let algebraic = validate_algebraic_expression(
                         argument,
                         variables,
@@ -3162,6 +3181,22 @@ fn require_scalar_return_leaf(
                 _ => false,
             };
             if compatible {
+                return Ok(());
+            }
+            // Arithmetic over values of a narrow result type is that type's
+            // operator (G2).
+            if narrow_arithmetic_value_type(value, expected, &mut |leaf| {
+                infer_scoped_spec_value_type(
+                    leaf,
+                    &types.c_values,
+                    &types.integers,
+                    click_functions,
+                    context,
+                    false,
+                )
+            })?
+            .is_some()
+            {
                 return Ok(());
             }
             // Generic applications can have a concrete instantiated result

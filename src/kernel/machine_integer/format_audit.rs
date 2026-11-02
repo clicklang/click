@@ -37,7 +37,9 @@ pub(crate) enum WordIdentity {
     /// A narrow value observed whose term is a 32-bit operation's word
     /// rather than a value of its format.
     NarrowValueAsWord,
-    /// Rust narrow arithmetic lowered as a 32-bit operation and a cast back.
+    /// Rust narrow arithmetic lowered as a 32-bit operation and a cast back:
+    /// `/ % >>`, and `<<` by a count that is not 32 bits (decision G4); the
+    /// other operators are native.
     PromotedNarrowArithmetic,
 }
 

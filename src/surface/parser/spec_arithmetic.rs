@@ -11,7 +11,9 @@
 //! branch of an `if` in one of those positions
 //! (an `if`'s condition stays a proposition). Where a machine type is
 //! expected the
-//! operation is C's at that type, as written. An untyped `let` has no
+//! operation is C's at that type, as written; at an 8- or 16-bit type it is
+//! that type's own operator (decision G2), which lowering marks
+//! (`SpecExpression::at_machine_type`). An untyped `let` has no
 //! expected type, so one whose value does arithmetic on a machine value is
 //! refused and names both annotations. An untyped `let` has its value's
 //! type, and each `let` in scope is an operand of its type, so arithmetic
