@@ -5,7 +5,8 @@ array. One quantified transport carries every guarded `next[k]` value from
 the iteration-entry snapshot through the store, inside a `have` in `preserve`.
 The guard supplies the read index bounds, and the `using` list supplies the
 write index bounds and separation. An unrelated existential fact keeps the
-proof on the explicit transport path.
+proof on the explicit transport path. A second transport carries the bounded-value
+invariant itself to the post-store state, so loop closure can reuse it directly.
 
 ```c filename=loop_symbolic_disjoint_array_store_frame.c
 void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) {
@@ -83,6 +84,26 @@ void traverse(int32 *next, int32 *visited, int32 n, int32 from, int32 to) diverg
                     forall (k: int32) {
                         0 <= k and k < n implies at(iter, next[k]) == at(iter, next[k])
                     };
+                    0 <= cur;
+                    cur < n;
+                    separate(memory(next[0..n]), memory(visited[0..n]));
+                };
+                assumption();
+            }
+            have forall (k: int32) {
+                0 <= k and k < n implies 0 <= next[k] and next[k] < n
+            } by {
+                transport(
+                    at(iter, forall (k: int32) {
+                        0 <= k and k < n implies 0 <= next[k] and next[k] < n
+                    }),
+                    forall (k: int32) {
+                        0 <= k and k < n implies 0 <= next[k] and next[k] < n
+                    }
+                ) using {
+                    at(iter, forall (k: int32) {
+                        0 <= k and k < n implies 0 <= next[k] and next[k] < n
+                    });
                     0 <= cur;
                     cur < n;
                     separate(memory(next[0..n]), memory(visited[0..n]));
