@@ -35,6 +35,89 @@ pub(crate) fn clear_arithmetic_comparison_cache() {
     ARITHMETIC_COMPARISONS.with(|cache| cache.borrow_mut().clear());
 }
 
+// Only written machine variables are cached. Registered-load dependencies are
+// resolved by each collector against its current registry, never cached here.
+thread_local! {
+    static SHARED_MACHINE_CARRIERS: std::cell::RefCell<HashMap<u64, crate::persistent::PersistentSet<Variable>>> = Default::default();
+}
+
+pub(crate) fn clear_shared_carrier_cache() {
+    SHARED_MACHINE_CARRIERS.with(|cache| cache.borrow_mut().clear());
+}
+
+fn collect_machine_carriers(machine: &SharedMachineIntegerTerm, variables: &mut CarrierVariables) {
+    let Some(root) = machine.shared_operand() else {
+        collect_bitvector_carriers(machine.value(), variables);
+        return;
+    };
+    let written = SHARED_MACHINE_CARRIERS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let mut pending = vec![(root, false)];
+        while let Some((term, finish)) = pending.pop() {
+            if !variables.visit() {
+                return None;
+            }
+            if cache.contains_key(&term.id()) {
+                continue;
+            }
+            let result = match term.node() {
+                KernelTermNode::Variable(variable) => {
+                    crate::persistent::PersistentSet::default().with_value(*variable)
+                }
+                KernelTermNode::MachineLiteral(_) => Default::default(),
+                KernelTermNode::MachineUnary { operand, .. } => {
+                    if !finish {
+                        pending.push((term, true));
+                        pending.push((operand, false));
+                        continue;
+                    }
+                    cache[&operand.id()].clone()
+                }
+                KernelTermNode::MachineBinary {
+                    arguments: [left, right],
+                    ..
+                } => {
+                    if !finish {
+                        pending.push((term, true));
+                        pending.push((right, false));
+                        pending.push((left, false));
+                        continue;
+                    }
+                    let (left, right) = (&cache[&left.id()], &cache[&right.id()]);
+                    let (large, small) = if left.len() >= right.len() {
+                        (left, right)
+                    } else {
+                        (right, left)
+                    };
+                    let mut result = large.clone();
+                    if !large.shares_root_with(small) {
+                        for variable in small.iter() {
+                            if !variables.visit() {
+                                return None;
+                            }
+                            result = result.with_value(*variable);
+                        }
+                    }
+                    result
+                }
+                _ => unreachable!("shared machine observation storage fragment"),
+            };
+            cache.insert(term.id(), result);
+        }
+        Some(cache[&root.id()].clone())
+    });
+    let Some(written) = written else {
+        return;
+    };
+    for variable in written.iter() {
+        if !variables.visit() {
+            return;
+        }
+        variables.c.insert(*variable);
+        collect_registered_load_carriers(*variable, variables);
+    }
+}
+
 #[derive(Clone, Default)]
 struct RewriteScope {
     c: BTreeMap<Variable, Variable>,
@@ -437,7 +520,7 @@ fn collect_integer_carriers(
         IntegerTerm::Variable(variable) => {
             variables.integer.insert(*variable);
         }
-        IntegerTerm::Machine(value) => collect_bitvector_carriers(value.value(), variables),
+        IntegerTerm::Machine(value) => collect_machine_carriers(value, variables),
         IntegerTerm::Negate(value) => collect_integer_shared_carriers(value, variables, seen),
         crate::kernel::binary_integer_term!(left, right) => {
             collect_integer_shared_carriers(left, variables, seen);

@@ -365,6 +365,7 @@ impl VerificationSession {
             // Structural operand identities read no registry or proof state;
             // retain them across function epochs and state restores.
             proof::signed_arithmetic::clear_shared_operand_keys();
+            proof::term_rewrite::clear_shared_carrier_cache();
             VERIFICATION_SESSION_GENERATION
                 .with(|generation| generation.set(generation.get().wrapping_add(1)));
 
