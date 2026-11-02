@@ -10761,13 +10761,13 @@ fn shared_scalar_interpretation_keeps_execution_and_proof_signatures_aligned() {
         (
             "long convert(bool n) noexcept { return static_cast<long>(n); }",
             "int64 convert(bool n)",
-            "n == 1",
+            "n == true",
             "1i64",
         ),
         (
             "unsigned convert(bool n) noexcept { return static_cast<unsigned>(n); }",
             "uint32 convert(bool n)",
-            "n == 0",
+            "n == false",
             "0u32",
         ),
     ] {
@@ -11886,7 +11886,7 @@ fn not_equal_source_supports_the_existing_narrow_scalar_widths() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let proof = format!(
-            "verifying \"comparison.cpp\"; bool unequal({ty} a, {ty} b) {{ ensures result == 1 implies a != b; ensures result == 0 implies a == b; }}"
+            "verifying \"comparison.cpp\"; bool unequal({ty} a, {ty} b) {{ ensures result == true implies a != b; ensures result == false implies a == b; }}"
         );
         check_arithmetic_sidecar(&project, &import, &proof);
     }
@@ -12393,8 +12393,8 @@ fn branch_likelihood_attributes_preserve_both_outcomes() {
     let import = load_import(&project.config()).unwrap();
     let proof = r#"verifying "weights.cpp";
 int32 choose(bool positive) {
- ensures positive != 0 implies result == 7;
- ensures positive == 0 implies result == -3;
+ ensures positive == true implies result == 7;
+ ensures positive == false implies result == -3;
 }
 "#;
     check_first_claim_certificate(&project, &import, proof);
@@ -16252,7 +16252,7 @@ fn converted_wide_call_initializers_preserve_values_with_checked_destination_bou
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn converted_wide_boolean_calls_observe_high_bits() {
-    for (point, answer) in [("0", "0"), ("18446744073709551616", "1")] {
+    for (point, answer) in [("0", "false"), ("18446744073709551616", "true")] {
         let project = Project::with_fixture(
             "wide.cpp",
             "relay",
@@ -16261,7 +16261,7 @@ fn converted_wide_boolean_calls_observe_high_bits() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let zero_fact = if answer == "0" {
+        let zero_fact = if answer == "false" {
             String::new()
         } else {
             format!(
@@ -16284,7 +16284,7 @@ bool relay(uint128 value) {{ requires to_integer(value) == {point}; ensures resu
             &format!("ensures result == {answer};"),
             &format!(
                 "ensures result == {};",
-                if answer == "0" { "1" } else { "0" }
+                if answer == "false" { "true" } else { "false" }
             ),
         );
         let path = project.directory.join("hostile.click");
