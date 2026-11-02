@@ -2231,6 +2231,10 @@ id = "library.type.Option"
 path = "reference/library/index.md#option"
 
 [[item]]
+id = "library.type.Result"
+path = "reference/library/index.md#result"
+
+[[item]]
 id = "library.function.list::append"
 path = "reference/library/index.md#listappend"
 
@@ -4070,6 +4074,10 @@ path = "reference/library/index.md#usizeabs_diff"
 [[item]]
 id = "library.function.option::unwrap_or"
 path = "reference/library/index.md#optionunwrap_or"
+
+[[item]]
+id = "library.function.result::unwrap_or"
+path = "reference/library/index.md#resultunwrap_or"
 
 [[item]]
 id = "library.theorem.integer::uint32_from_le_bytes"

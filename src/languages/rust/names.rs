@@ -269,6 +269,29 @@ pub(crate) fn option_type_name(argument: &str) -> String {
     name
 }
 
+/// The importer's name for the type Rust `Result<ok, err>`, the library's
+/// `spec enum Result<T, E>` at `ok` and `err`, which a sidecar names
+/// `Result<ok, err>`.
+pub(crate) fn result_type_name(ok: &str, err: &str) -> String {
+    let mut name = qualified_name(["core", "result", "Result"]);
+    for argument in [ok, err] {
+        // As for `Option`, `u64` and `usize`, and `i64` and `isize`, are one
+        // kernel type.
+        let argument = match argument {
+            "u64" => "usize",
+            "isize" => "i64",
+            other => other,
+        };
+        push_type_argument(&mut name, argument);
+    }
+    name
+}
+
+/// Whether a sidecar path names Rust's `Result`, `Result` or its full path.
+pub(crate) fn is_result_path(segments: &[&str]) -> bool {
+    matches!(segments, ["Result"] | ["core" | "std", "result", "Result"])
+}
+
 /// Whether a sidecar path names Rust's `Option`, `Option` or its full path.
 pub(crate) fn is_option_path(segments: &[&str]) -> bool {
     matches!(segments, ["Option"] | ["core" | "std", "option", "Option"])

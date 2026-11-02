@@ -804,6 +804,39 @@ import.
 
 **Verified use:** [`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click).
 
+## Results
+
+### `Result`
+
+```click
+spec enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+```
+
+**Meaning:** A value or an error. A Rust `Result<u32, u8>` parameter or result
+is this value in a contract: `ensures result == Result<u32, u8>::Ok(x);`. As
+for `Option`, the importer lays the Rust value out itself.
+
+### `result::unwrap_or`
+
+```click
+function unwrap_or<T, E>(r: Result<T, E>, default: T) -> T {
+    match r {
+        Result::Ok(value) => value,
+        Result::Err(error) => default,
+    }
+}
+```
+
+**Meaning:** Rust's `Result::unwrap_or`: the payload of `Ok`, else `default`.
+A call `r.unwrap_or(d)` in imported Rust calls an external function whose
+contract is `ensures result == click::result::unwrap_or(r, d);`. The module is
+implicit; a sidecar writes `click::result::unwrap_or(r, d)` with no import.
+
+**Verified use:** [`design/charon-trial/result-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-values/results.click).
+
 ## Signed `int32` theorems
 
 ### `integer::int32_increment_upper_bound`
