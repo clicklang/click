@@ -3455,8 +3455,11 @@ impl<'a> TermRewrite<'a> {
         if self.checked_work_exhausted() {
             return exhausted_integer(shared.as_ref());
         }
+        // An occurrence is matched up to its observations' value relations
+        // (rule W): `to_integer(count as uint32 as int32)` occurs in a goal
+        // that reads the same word through σ. Both readings are cached.
         if let Some((from, to)) = self.integer_exact
-            && shared == from
+            && (shared == from || shared.read_through_ref() == from.read_through_ref())
         {
             let work = match to.as_ref() {
                 IntegerTerm::Constant(value) => value.bits() as usize + 1,

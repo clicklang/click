@@ -723,7 +723,20 @@ Progress:
      (`narrow_fact_widening`), so order, interval and equality reasoning on
      32-bit terms sees it, and the Integer readings of a native comparison
      are those of its promoted spelling. Terms are built and printed as
-     written.
+     written. The fourth PR (2026-11-01) stops `IntegerTerm::from_machine`
+     folding conversions: `to_integer(x as int32)` keeps its widening and an
+     observation of σ keeps σ. Rule W relates such an observation to its
+     operand's value (`SharedMachineIntegerTerm::value_reading`, computed
+     once per interned observation, and `SharedIntegerTerm::read_through`
+     for a term's arithmetic, cached per node). Reasoning reads the
+     relation, never the constructor: the Integer engines' atoms (an
+     observation and its reading are one atom; a product, quotient or
+     remainder is keyed by its reading), the fact identity of an Integer
+     comparison, the range of an observation (`range::observation_range`),
+     the native readings of Integer comparisons, the in-range and cast
+     identities and their planners, and the Integer rewrite's occurrence
+     match. The audit of the other normalizations is in
+     [Decisions](#decisions), 2026-11-01 (PR 4).
   8. Rust native narrow `+ - * & | ^ ! <<` (G4).
   9. The 64-bit relations and the legacy conversions merged into `Cast`.
   10. Generic `T: intn` / `T: uintn` library theorems.
@@ -1294,3 +1307,41 @@ Maintainer direction, 2026-11-01 (native narrow comparisons, PR 3):
   rebuilding agree. A consumer that unifies a pattern with binders against
   a fact (quantified-premise candidate matching) reads both sides in their
   `int32` spelling, since a key cannot bind a pattern variable.
+
+Maintainer direction, 2026-11-01 (`from_machine` stops folding, PR 4):
+
+- **An observation is built as written.** `IntegerTerm::from_machine`
+  folds no conversion: `to_integer(x as int32)` is the observation of the
+  widening, and an observation of σ keeps σ. Spec text, C, C++ and Rust
+  lower through it unchanged, so a term keeps the structure its source
+  wrote.
+- **Rule W, value relations of observations.** `to_integer(widen(v)) ==
+  to_integer(v)` for a value-preserving widening at every width (narrow to
+  32 bits, 32 to 64, any to 128); `to_integer` of σ(x) at `int32` or
+  `uint32` is `x` read at that format; a conversion observed at a type that
+  contains its destination is observed at the destination. The relation is
+  a reading (`SharedMachineIntegerTerm::value_reading`): a bounded walk
+  through at most three conversions, computed once per interned
+  observation and cached on it, so a reader's step is O(1).
+  `SharedIntegerTerm::read_through` lifts it to a term's arithmetic, once
+  per node. The relation lives at the solver's atoms and the fact-identity
+  level: an observation and its reading are one Integer affine atom, an
+  Integer comparison has the identity of its sides' readings (as a native
+  narrow comparison has its promoted spelling's, PR 3), and a range, a
+  native reading, an in-range or cast identity and an Integer rewrite's
+  occurrence each read it at the reader. Nothing is rewritten in a term,
+  and terms print as written.
+- **Audit of `from_machine`'s normalizations:**
+
+  | Normalization | Decision | Why |
+  |---|---|---|
+  | σ peel at `int32`/`uint32` (`into_word32`, K2) | Removed | Rule W reads it; the observation keeps σ |
+  | Widening read as its operand (`to_integer(widen(v))` as `to_integer(v)`, every width) | Removed | Rule W reads it; the observation keeps the widening |
+  | A conversion observed at a type containing its destination is observed at the destination (`to_integer@int32(x as uint8)` as the `uint8` observation) | Kept | The conversion node is retained; only the caller's observation type becomes the value's own format. The structural alternative is a widening node the source did not write, so there is no cleaner target |
+  | A conversion observed at a type that neither is nor contains its destination has no observation (`None`) | Kept | A refusal of an ill-typed observation, not a normalization. σ's observation at the other 32-bit format is no longer refused, since σ is retained |
+  | A machine constant observes as its Integer constant (with a `uint32` constant's word, K1) | Kept | A literal has no structure the constant loses, and every Integer evaluator, normalizer and certificate reads Integer constants; carrying `to_integer(5i32)` would be unwieldy for no retained structure |
+  | A 128-bit observation of a term the wide format does not accept (`None`) | Kept | A refusal, not a normalization |
+
+  The 32-bit cast-chain collapse in `Bitvector32Term::machine_integer_cast`
+  is a constructor of the conversion, not of the observation, and is
+  outside this audit.

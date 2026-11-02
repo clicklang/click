@@ -282,10 +282,12 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
         let term = Bitvector32Term::Variable(Variable(149_003));
         let wide =
             Bitvector32Term::machine_integer_cast(source, MachineIntegerType::Int128, term.clone());
-        assert_eq!(
-            IntegerTerm::from_machine(MachineIntegerType::Int128, wide).unwrap(),
-            IntegerTerm::from_machine(source, term).unwrap()
-        );
+        // The observation keeps its widening as written; its value is the
+        // operand's by rule W.
+        let observed = IntegerTerm::from_machine(MachineIntegerType::Int128, wide).unwrap();
+        let original = IntegerTerm::from_machine(source, term).unwrap();
+        assert_ne!(observed, original);
+        assert_eq!(observed.value_read(), &original);
     }
     let term = Bitvector32Term::Variable(Variable(149_004));
     let narrowed = Bitvector32Term::machine_integer_cast(
@@ -295,8 +297,8 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
     );
     let observation = IntegerTerm::from_machine(MachineIntegerType::Int64, narrowed).unwrap();
     assert_ne!(
-        observation,
-        IntegerTerm::from_machine(MachineIntegerType::UInt128, term).unwrap()
+        observation.value_read(),
+        &IntegerTerm::from_machine(MachineIntegerType::UInt128, term).unwrap()
     );
     let IntegerTerm::Machine(machine) = observation else {
         unreachable!()

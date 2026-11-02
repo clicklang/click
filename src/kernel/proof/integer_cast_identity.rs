@@ -46,11 +46,11 @@ fn check_as_written(
     let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = result else {
         return Err(invalid());
     };
-    // An observation that already names its original (a widening's
-    // Integer reading is its operand's) is the identity itself; its bounds
-    // are still checked, at the observation's own format.
-    let (original, destination) = if a == b {
-        match a.as_ref() {
+    // Two observations with one value reading (rule W: a widening's value
+    // is its operand's) are the identity itself; its bounds are still
+    // checked, at the format of that reading.
+    let (original, destination) = if a.value_read() == b.value_read() {
+        match a.value_read() {
             crate::kernel::IntegerTerm::Machine(machine) => (a, machine.ty().format()),
             _ => return Err(invalid()),
         }
@@ -70,10 +70,11 @@ fn check_as_written(
         .ok_or(Error::InvalidPremise(bounds[1]))?;
     let (lo, operand) = order(lower).ok_or_else(invalid)?;
     let (other_operand, hi) = order(upper).ok_or_else(invalid)?;
-    // A bound may name the original or its widening, which has the same
-    // value (K8, a relation across widths).
+    // A bound may name the original or any observation with its value
+    // reading, such as its widening (rule W, a relation across widths).
     let names_original = |operand: &SharedIntegerTerm| {
         operand.as_ref() == bounded
+            || operand.value_read() == bounded.value_read()
             || crate::kernel::machine_integer::conversion::narrow_widening(operand, bounded)
     };
     if !names_original(operand) || !names_original(other_operand) {
@@ -408,10 +409,11 @@ mod tests {
                     .check(&goal, &wrong_source)
                     .is_err()
             );
-            // The bounds must describe the source observation in the equality,
-            // even when the constructor has removed that intermediate cast.
+            // The bounds must describe the source observation in the equality.
+            // A widened intermediate has its operand's value (rule W), so
+            // bounds on it describe the operand too.
             let underlying = IntegerTerm::from_machine(source, variable.clone()).unwrap();
-            if underlying == original {
+            if underlying.value_read() == original.value_read() {
                 continue;
             }
             let wrong_goal =

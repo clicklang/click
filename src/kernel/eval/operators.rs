@@ -993,10 +993,10 @@ fn apply_c_int128_multiply(
             _ => return None,
         };
         let observed = IntegerTerm::from_machine(ty, term)?;
-        // Numeric widening has already normalized to the original observer.
-        // Resolve only its indexed equality component, keeping the original
-        // signedness; unknown values retain both product-bound obligations.
-        if let IntegerTerm::Machine(machine) = &observed {
+        // A widening's value is its operand's (rule W): resolve only the
+        // operand's indexed equality component, keeping its signedness;
+        // unknown values retain both product-bound obligations.
+        if let IntegerTerm::Machine(machine) = observed.value_read() {
             let constant = match machine.ty() {
                 MachineIntegerType::Int64 => assumptions
                     .wide_constant_from_equalities(machine.value())
@@ -1300,12 +1300,13 @@ fn apply_c_int128_division_like(
                     true,
                 )),
             );
-            // A promoted narrow divisor retains its exact native observation.
-            // Written contracts use that native form inside their disjunction.
+            // A promoted divisor's observation is its operand's by value
+            // (rule W). Written contracts use that native form inside their
+            // disjunction.
             let native_equality_safe =
-                crate::kernel::assumptions::canonical_observation_form(&equality_safe);
+                crate::kernel::assumptions::read_observation_form(&equality_safe);
             let native_inequality_safe =
-                crate::kernel::assumptions::canonical_observation_form(&inequality_safe);
+                crate::kernel::assumptions::read_observation_form(&inequality_safe);
             let guards = [
                 safe,
                 &equality_safe,

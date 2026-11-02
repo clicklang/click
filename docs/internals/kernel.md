@@ -623,10 +623,10 @@ its format, and its range is its format's: no range fact is filed for it.
   beside them (`checked_narrowing_identity`).
 - A 32-bit view of a narrow value is its widening, `Cast(S -> int32, v)`,
   related to `v` by value (K8, a relation across widths), never merged with
-  it: `IntegerTerm::from_machine` reads a widening's observation as its
-  operand's, and `integer_cast_identity` accepts the reflexive
-  `to_integer(widened) == to_integer(x)` with its bounds checked at the
-  observation's own format.
+  it. Its observation `to_integer(x as int32)` is built as written, and rule
+  W relates it to `to_integer(x)`: the Integer engines read the two as one
+  atom, and `integer_cast_identity` accepts `to_integer(widened) ==
+  to_integer(x)` with its bounds checked at `x`'s format.
 
 C compares narrow values through their promotions, which is its structure:
 a C comparison of bytes is the signed `int32` comparison of the widenings.
@@ -723,7 +723,8 @@ the widths a rule supports; it asks the module
 | Conversion | `conversion::cast` and the narrow-widening helpers | a cast preserves a value its destination holds; a widening needs no premise |
 | Conversion table | `conversion::lower`, `convert_term`, `convert_value` | the node a conversion from `S` to `F` builds in every language, and whether a specification's conversion owes the range |
 | Usual arithmetic conversions | `conversion::usual_arithmetic_format` | C11 6.3.1.8 in LP64: the format two integer operands are converted to, after promoting narrow formats to `int32` |
-| Narrow widening (K8, a relation) | `primitives::is_narrow_widening32`, `Bitvector32Term::narrow_widening32_operand`; the e-graph's value link and `join_widening_sibling`; the difference graph's `link_parts` and `structural_interval`; `IntegerTerm::from_machine` | `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` has `v`'s value: `to_integer(widen(v)) == to_integer(v)`, a link with `v`'s range, never a union across widths; the `int32` and `uint32` widenings of one value are one word (K1) |
+| Narrow widening (K8, a relation) | `primitives::is_narrow_widening32`, `Bitvector32Term::narrow_widening32_operand`; the e-graph's value link and `join_widening_sibling`; the difference graph's `link_parts` and `structural_interval`; rule W below | `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` has `v`'s value: `to_integer(widen(v)) == to_integer(v)`, a link with `v`'s range, never a union across widths; the `int32` and `uint32` widenings of one value are one word (K1) |
+| Observation value relations (W) | `SharedMachineIntegerTerm::value_reading`, `machine_value_reading`, `IntegerTerm::value_read`, `SharedIntegerTerm::read_through`; the readers: Integer affine atoms (`collect_integer_affine_terms`), `ConditionTerm` identity of Integer comparisons, `range::observation_range`, `native_comparison_of_integer_observation`, `native_comparison_through_integer_operations`, `identity::mathematical`, `conversion::cast`, the Integer rewrite's occurrence match | `IntegerTerm::from_machine` builds an observation as written and folds no conversion; its value is related, not rewritten: `to_integer(widen(v)) == to_integer(v)` for a value-preserving widening at any width, `to_integer` of σ(x) at `int32` or `uint32` is `x` read at that format, and a conversion observed at a type containing its destination is observed at the destination. The reading is computed once per interned observation (at most three conversions) and per Integer node (`read_through`), cached on the node, so each reader's step is O(1) after the first; terms are printed as written |
 | Native narrow nodes | `CarrierWidth::Bits8`, `Bits16`, `CarrierWidth::native`, `is_native_narrow_operator`; `Bitvector32Term::narrow_constant`, `machine_binary`, `machine_unary`; the e-graph's `Node::MachineNarrow` and `narrow_constants` | an 8- or 16-bit operator `+ - * & \| ^ << ~`, constant, binder or load is a value of its own width, `(a op b) mod 2^N`; narrow constant atoms are keyed by their unsigned bits, a cast of a constant class folds to the destination's constant, and a narrow equation is decided by one class (true) or two different constants (false) |
 | Narrow-cast word (K7') | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node`, `narrow_cast_word` | the `int32` and `uint32` widenings of `Cast(S -> F, x)` into an 8- or 16-bit `F` meet `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word (a narrow operand is widened first) |
 | Narrow loads and byte R-mem | `Application::NarrowLoad`, `CellRead::Narrow`, `Node::NarrowRead`, `enqueue_narrow_load`, `enqueue_signed_byte_read` | an 8- or 16-bit read is a load application of its snapshot, address and kind, equal to a stored value of its width and, for a canonical projection, to the same read of its recorded source (one indexed edge); the `int8` read of a byte is `Cast(UInt8 -> Int8, u)` of its `uint8` read `u` |
