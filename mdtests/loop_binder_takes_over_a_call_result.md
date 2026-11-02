@@ -82,7 +82,6 @@ void caller(int32 n) {
                 Chain::Link(rest_model) => {
                     let { rest: r } = unfold(c);
                     step();
-                    close_invariants();
                 },
             }
         }

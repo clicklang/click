@@ -22,7 +22,6 @@ void guard_paths(bool a, bool b) diverges {
         preserve by {
             have not a implies b by { solve(); }
             step();
-            close_invariants();
         }
     }
 }

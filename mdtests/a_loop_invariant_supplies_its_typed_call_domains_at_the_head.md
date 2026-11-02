@@ -37,7 +37,7 @@ struct node* settle(struct node* p, struct node* q, int32 n) {
         decreases n;
         invariant is_node(p) == 1;
         initialize by solve();
-        preserve by { step(); step(); close_invariants(); }
+        preserve by { step(); step(); }
     }
 }
 ```

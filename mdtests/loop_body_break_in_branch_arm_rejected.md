@@ -41,7 +41,6 @@ int32 branch_arm_break(int32 n) {
         preserve by {
             branch { step(); } else { }
             step();
-            close_invariants();
         }
     }
     step();

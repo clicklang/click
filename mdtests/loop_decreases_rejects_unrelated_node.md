@@ -71,7 +71,6 @@ void walk(struct tree_node* root, struct tree_node* other) {
                 HeapTree::Empty => { contradiction(t.model == HeapTree::Empty); },
                 HeapTree::Node(identity, value, left_model, right_model) => {
                     step();
-                    close_invariants();
                 },
             }
         }

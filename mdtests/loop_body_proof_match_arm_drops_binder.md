@@ -62,12 +62,10 @@ void spin(struct cell* node, int32 n) {
                     unfold(c);
                     step();
                     let c = fold(cell(node), { model: Sign::Neg(value) });
-                    close_invariants();
                 },
                 Sign::Pos(value) => {
                     unfold(c);
                     step();
-                    close_invariants();
                 },
             }
         }

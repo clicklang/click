@@ -289,7 +289,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         }; }
                         assumption();
                     }
-                    close_invariants() by { solve(); }
                 }
             }
             step_until(loop(1));
@@ -369,7 +368,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         }; }
                         assumption();
                     }
-                    close_invariants() by { solve(); }
                 }
             }
             have size < 4294967296u64;
@@ -479,7 +477,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 }; }
                                 assumption();
                             }
-                            close_invariants() by { solve(); }
                         } else {
                             step();
                             step();
@@ -559,7 +556,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                                 }; }
                                 assumption();
                             }
-                            close_invariants() by { solve(); }
                         } else {
                             step();
                             step();
@@ -607,7 +603,6 @@ int32 string_get_size(uint64 size, uint64 blk_size, uint32 units, char buf[], in
                         have 100u32 <= sf_cap;
                         assumption();
                     }
-                    close_invariants() by { solve(); }
                 }
             }
 // Binary units express the remainder in thousandths.

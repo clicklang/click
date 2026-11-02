@@ -96,7 +96,6 @@ void release(struct node* p) {
                     step();
                     step();
                     step();
-                    close_invariants();
                 },
             }
         }

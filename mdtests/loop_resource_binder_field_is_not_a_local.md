@@ -58,7 +58,6 @@ int32 spin(struct cell* node, int32 n) {
             have 0 <= n - i - 1 by { solve() using { i < n; 0 <= i; }; }
             have n - i - 1 < n - i by { solve() using { i < n; 0 <= i; }; }
             step();
-            close_invariants();
         }
     }
     have n <= 1 by { solve() using { i >= n; i <= 1; }; }

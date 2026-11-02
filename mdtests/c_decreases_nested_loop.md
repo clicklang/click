@@ -48,13 +48,11 @@ int32 nested_count(int32 n, int32 m) {
                 initialize by solve();
                 preserve by {
                     step();
-                    close_invariants();
                 }
             }
             have 0 <= to_integer(i - 1);
             step();
             have i >= 0 by { solve() using { 0 <= i; }; }
-            close_invariants() by { solve(); }
         }
     }
     step();

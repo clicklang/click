@@ -122,7 +122,6 @@ fn nested(bytes: &[u8]) -> usize {
                     have __rust_mir_17_remaining < at(inner, __rust_mir_17_remaining) by {
                         solve() using { __rust_mir_17_remaining == at(inner, __rust_mir_17_remaining) - 2u64; 2u64 <= at(inner, __rust_mir_17_remaining); };
                     }
-                    close_invariants();
                 }
             }
             have __rust_mir_17_remaining < 2u64 by {
@@ -146,7 +145,6 @@ fn nested(bytes: &[u8]) -> usize {
                 solve() using { __rust_mir_8_remaining == at(outer, __rust_mir_8_remaining) - 4u64; 4u64 <= at(outer, __rust_mir_8_remaining); };
             }
             have __rust_mir_8_remaining <= 8u64 by { solve() using { __rust_mir_8_remaining <= 4u64; }; }
-            close_invariants();
         }
     }
     have __rust_mir_8_remaining < 4u64 by {

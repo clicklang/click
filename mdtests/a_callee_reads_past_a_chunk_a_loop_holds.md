@@ -47,7 +47,6 @@ uint32 sum(const uint8* bytes, uint64 length, uint64 start) {
             have at(head, done) <= 12u64;
             have done <= 16u64 by { solve() using { to_integer(done) == to_integer(at(head, done) + 4u64); at(head, done) <= 12u64; }; }
             have to_integer(16u64 - done) < to_integer(16u64 - at(head, done)) by { solve() using { to_integer(done) == to_integer(at(head, done) + 4u64); at(head, done) <= 12u64; }; }
-            close_invariants();
         }
     }
 }

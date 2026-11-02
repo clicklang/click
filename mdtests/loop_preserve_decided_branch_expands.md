@@ -78,7 +78,6 @@ int32 count_zero_run(int32* a, int32 n) {
                     0 <= n;
                 };
             }
-            close_invariants();
         }
     }
     step();

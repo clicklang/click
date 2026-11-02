@@ -88,7 +88,6 @@ void bump_n(struct cell* node, int32 n) {
                     let l = fold(list_at(node), {
                         model: CellList::Cons(node, 7, tail_model)
                     }, { tail: t });
-                    close_invariants();
                 },
             }
         }

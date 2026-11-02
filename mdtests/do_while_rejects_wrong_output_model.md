@@ -61,7 +61,6 @@ void walk(struct Node* p, int32* marker) {
                     step();
                     if p == 0 {
                     } else {
-                        close_invariants();
                     }
                 },
             }

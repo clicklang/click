@@ -116,7 +116,6 @@ void countdown(int32 n) {
                             step();
                             step();
                             let c = fold(chain(n), { model: Chain::Nil });
-                            close_invariants();
                         },
                         Chain::Link(rest2_model) => {
                             apply(chain_len_is_nonnegative(rest2_model));
@@ -136,7 +135,6 @@ void countdown(int32 n) {
                             step();
                             step();
                             step();
-                            close_invariants();
                         },
                     }
                 },
