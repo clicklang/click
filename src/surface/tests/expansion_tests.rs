@@ -19770,7 +19770,7 @@ fn signed_byte_swap_selected_frame_expands_without_search() {
 }
 
 #[test]
-fn theorem_entry_requirements_expand_to_explicit_haves() {
+fn theorem_entry_type_bounds_discharge_without_search() {
     let source = r#"
         theorem entry_conversion() {
             ensures forall (k: uint8) {
@@ -19779,11 +19779,11 @@ fn theorem_entry_requirements_expand_to_explicit_haves() {
         }
     "#;
     without_implicit_auto(|| verify_click_theorems(source))
-        .expect_err("the entry requirement needs an explicit proof without implicit search");
+        .expect("the byte binder itself establishes the conversion domain");
     verify_click_theorems(source).expect("entry requirements use ordinary proof checking");
     let expanded = expand_c0_claim_source_by_label(source, &[], "entry_conversion.ensures_0")
-        .expect("entry requirement certificates are retained");
-    assert!(expanded.contains("have "), "{expanded}");
+        .expect("entry conversion expands without redundant requirement proofs");
+    assert!(!expanded.contains("have "), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     without_implicit_auto(|| verify_click_theorems(&expanded))
         .expect("expanded entry requirements check without search");
