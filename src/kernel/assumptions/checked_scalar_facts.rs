@@ -1,6 +1,8 @@
 //! Endpoint-selected equalities and contiguous excluded-value runs.
 //! Admission changes only the written endpoints; queries never enumerate facts.
 use super::*;
+use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+use crate::kernel::{MachineOperandView, equality_graph::MachineAtom};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 #[derive(Clone, Debug, Default)]
@@ -57,41 +59,61 @@ impl Exclusions {
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct CheckedScalarFacts {
-    literals: PersistentMap<Bitvector32Term, PersistentSet<ConditionTerm>>,
+    literals: PersistentMap<MachineAtom, PersistentSet<(ConditionTerm, bool)>>,
     equalities: PersistentMap<Bitvector32Term, PersistentSet<ConditionTerm>>,
-    exclusions: PersistentMap<Bitvector32Term, Exclusions>,
+    exclusions: PersistentMap<MachineAtom, Exclusions>,
 }
 
 impl CheckedScalarFacts {
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
-        let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } = condition
-        else {
+        let Some(view) = comparison_view(condition, value) else {
             return;
         };
-        for (endpoint, other) in [
-            (left.as_ref(), right.as_ref()),
-            (right.as_ref(), left.as_ref()),
-        ] {
+        if !matches!(
+            view.format,
+            MachineIntegerType::Int32 | MachineIntegerType::UInt32
+        ) {
+            return;
+        }
+        let equal = match view.relation {
+            Relation::Equal => true,
+            Relation::NotEqual => false,
+            _ => return,
+        };
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        for (endpoint, other) in [(left, right), (right, left)] {
             crate::instrumentation::record_deterministic_work(1);
-            if value && signed_bitvector_constant(other).is_some() {
-                let sources = self.literals.get(endpoint).cloned().unwrap_or_default();
+            let key = MachineAtom::from_operand(MachineIntegerType::Int32, endpoint);
+            let number = other.word32_constant().map(|bits| i64::from(bits as i32));
+            if equal && number.is_some() {
+                let sources = self.literals.get(&key).cloned().unwrap_or_default();
+                let source = (condition.clone(), value);
                 let sources = if insert {
-                    sources.with_value(condition.clone())
+                    sources.with_value(source)
                 } else {
-                    sources.without_value(condition)
+                    sources.without_value(&source)
                 };
                 self.literals = if sources.is_empty() {
-                    self.literals.without_key(endpoint)
+                    self.literals.without_key(&key)
                 } else {
-                    self.literals.with_inserted(endpoint.clone(), sources)
+                    self.literals.with_inserted(key.clone(), sources)
                 };
             }
-            if value {
+            // Memory matching still consumes native written conditions. Keep
+            // its unique-source policy separate from semantic scalar queries.
+            if let MachineOperandView::Legacy(endpoint) = endpoint
+                && matches!(
+                    condition,
+                    ConditionTerm::Compare {
+                        relation: CompareRelation::Equal,
+                        ..
+                    }
+                )
+                && value
+            {
                 let sources = self.equalities.get(endpoint).cloned().unwrap_or_default();
                 let sources = if insert {
                     sources.with_value(condition.clone())
@@ -103,28 +125,42 @@ impl CheckedScalarFacts {
                 } else {
                     self.equalities.with_inserted(endpoint.clone(), sources)
                 };
-            } else if let Some(number) = signed_bitvector_constant(other) {
-                let canonical = crate::kernel::eval::canonical_term(endpoint);
-                for key in
-                    std::iter::once(endpoint).chain((&canonical != endpoint).then_some(&canonical))
-                {
-                    let mut excluded = self.exclusions.get(key).cloned().unwrap_or_default();
+            }
+            if !equal && let Some(number) = number {
+                let alias = match endpoint {
+                    MachineOperandView::Shared(_) => None,
+                    MachineOperandView::Legacy(term) => {
+                        let canonical = crate::kernel::eval::canonical_term(term);
+                        (canonical != *term).then(|| {
+                            MachineAtom::from_operand(
+                                MachineIntegerType::Int32,
+                                MachineOperandView::Legacy(&canonical),
+                            )
+                        })
+                    }
+                };
+                for key in std::iter::once(key).chain(alias) {
+                    let mut excluded = self.exclusions.get(&key).cloned().unwrap_or_default();
                     excluded.adjust(number, insert);
                     self.exclusions = if excluded.counts.is_empty() {
-                        self.exclusions.without_key(key)
+                        self.exclusions.without_key(&key)
                     } else {
-                        self.exclusions.with_inserted(key.clone(), excluded)
+                        self.exclusions.with_inserted(key, excluded)
                     };
                 }
             }
         }
     }
 
-    pub(super) fn literal_equality(&self, term: &Bitvector32Term) -> Option<&ConditionTerm> {
+    pub(super) fn literal_equality(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<&(ConditionTerm, bool)> {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select literal equality", 1);
         crate::instrumentation::record_deterministic_work(1);
-        self.literals.get(term)?.iter().next()
+        let key = MachineAtom::from_operand(MachineIntegerType::Int32, term);
+        self.literals.get(&key)?.iter().next()
     }
 
     pub(super) fn singleton_equality(&self, term: &Bitvector32Term) -> Option<&ConditionTerm> {
@@ -137,14 +173,15 @@ impl CheckedScalarFacts {
 
     pub(super) fn past_exclusions(
         &self,
-        term: &Bitvector32Term,
+        term: MachineOperandView<'_>,
         lower: i64,
         upper: i64,
     ) -> (i64, i64) {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("read excluded interval endpoints", 1);
         crate::instrumentation::record_deterministic_work(1);
-        let Some(excluded) = self.exclusions.get(term) else {
+        let key = MachineAtom::from_operand(MachineIntegerType::Int32, term);
+        let Some(excluded) = self.exclusions.get(&key) else {
             return (lower, upper);
         };
         let lower = excluded
@@ -155,4 +192,9 @@ impl CheckedScalarFacts {
             .map_or(upper, |(start, _)| (start - 1).max(lower));
         (lower, upper)
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/assumptions/checked_scalar_facts/tests.rs");
 }

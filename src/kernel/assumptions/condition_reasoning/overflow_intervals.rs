@@ -525,20 +525,19 @@ impl PureFactContext {
     /// queried term only, never a scan of the context. A term with neither a
     /// width range nor an indexed bound on both sides has no interval.
     pub(super) fn decide_indexed_greater_equal(&self, condition: &ConditionTerm) -> Option<bool> {
-        let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        } = condition
-        else {
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let view = comparison_view(condition, true)?;
+        if view.format != MachineIntegerType::Int32 || view.relation != Relation::LessEqual {
             return None;
-        };
-        let right = right.as_const()? as i32 as i64;
-        let (lower, upper) = self.indexed_constant_interval(left)?;
-        if upper < right {
+        }
+        // Normalized `constant <= operand`, including the Integer observation
+        // spelling, reads precisely the operand's maintained extrema.
+        let constant = view.operands[0].operand_view().word32_constant()? as i32 as i64;
+        let (lower, upper) =
+            self.indexed_constant_interval_view(view.operands[1].operand_view(), false)?;
+        if upper < constant {
             Some(false)
-        } else if lower >= right {
+        } else if lower >= constant {
             Some(true)
         } else {
             None
@@ -958,9 +957,11 @@ impl PureFactContext {
     ) -> Option<(i64, i64)> {
         let (lower, upper) = self.signed_interval(term)?;
         let canonical = crate::kernel::eval::canonical_term(term);
-        let (mut lower, mut upper) = self
-            .checked_scalar_facts
-            .past_exclusions(&canonical, lower, upper);
+        let (mut lower, mut upper) = self.checked_scalar_facts.past_exclusions(
+            crate::kernel::MachineOperandView::Legacy(&canonical),
+            lower,
+            upper,
+        );
         let excluded = |value: i64| {
             crate::instrumentation::record_deterministic_work(1);
             self.has_condition_fact(

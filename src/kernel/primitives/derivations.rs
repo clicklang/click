@@ -949,25 +949,38 @@ impl SignedConstantEvidence {
         term: &Bitvector32Term,
         source: &Proposition,
     ) -> Option<i64> {
-        let Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) = source
-        else {
+        Self::exact_equality_value_view(crate::kernel::MachineOperandView::Legacy(term), source)
+    }
+
+    pub(in crate::kernel) fn exact_equality_value_view(
+        term: crate::kernel::MachineOperandView<'_>,
+        source: &Proposition,
+    ) -> Option<i64> {
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let Proposition::ConditionIs(condition, value) = source else {
             return None;
         };
-        if left.as_ref() == term {
-            signed_bitvector_constant(right)
-        } else if right.as_ref() == term {
-            signed_bitvector_constant(left)
-        } else {
-            None
+        let view = comparison_view(condition, *value)?;
+        if !matches!(
+            view.format,
+            MachineIntegerType::Int32 | MachineIntegerType::UInt32
+        ) || view.relation != Relation::Equal
+        {
+            return None;
         }
+        let key = term.retain(MachineIntegerType::Int32);
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let other = if left.retain(MachineIntegerType::Int32) == key {
+            right
+        } else if right.retain(MachineIntegerType::Int32) == key {
+            left
+        } else {
+            return None;
+        };
+        other.word32_constant().map(|bits| i64::from(bits as i32))
     }
 }
 

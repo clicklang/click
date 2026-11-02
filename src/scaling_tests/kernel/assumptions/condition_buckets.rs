@@ -302,9 +302,15 @@ fn excluded_runs_keep_duplicate_sources_and_widths_separate() {
     index.adjust(&forward, false, true);
     index.adjust(&reverse, false, true);
     index.adjust(&forward, false, false);
-    assert_eq!(index.past_exclusions(&x, 0, 3), (1, 3));
+    assert_eq!(
+        index.past_exclusions(crate::kernel::MachineOperandView::Legacy(&x), 0, 3),
+        (1, 3)
+    );
     index.adjust(&reverse, false, false);
-    assert_eq!(index.past_exclusions(&x, 0, 3), (0, 3));
+    assert_eq!(
+        index.past_exclusions(crate::kernel::MachineOperandView::Legacy(&x), 0, 3),
+        (0, 3)
+    );
     let wide = ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
@@ -312,7 +318,10 @@ fn excluded_runs_keep_duplicate_sources_and_widths_separate() {
         right: Bitvector32Term::Int64Constant(0).into(),
     };
     index.adjust(&wide, false, true);
-    assert_eq!(index.past_exclusions(&x, 0, 3), (0, 3));
+    assert_eq!(
+        index.past_exclusions(crate::kernel::MachineOperandView::Legacy(&x), 0, 3),
+        (0, 3)
+    );
 }
 
 #[test]
