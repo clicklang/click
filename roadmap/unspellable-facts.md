@@ -332,7 +332,9 @@ lookup or add rule-local fact-dependent fallbacks.
 
 The scalar literal-equality and excluded-value indexes use shared operand keys
 and accept ordinary Integer observations directly, retaining the source's exact
-condition and truth. Constant-equality premise selection and its evidence reader
+condition and truth. Opaque legacy operands keep context-local keys: globally
+interning memory loads compares unrelated snapshots across verification arenas.
+Constant-equality premise selection and its evidence reader
 use the same operand views. The unique native equality index for memory matching
 remains separate, preserving its existing source-selection policy.
 

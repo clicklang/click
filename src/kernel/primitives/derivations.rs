@@ -968,14 +968,15 @@ impl SignedConstantEvidence {
         {
             return None;
         }
-        let key = term.retain(MachineIntegerType::Int32);
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey;
+        let key = ScalarOperandKey::new(term);
         let [left, right] = view
             .operands
             .each_ref()
             .map(|operand| operand.operand_view());
-        let other = if left.retain(MachineIntegerType::Int32) == key {
+        let other = if ScalarOperandKey::new(left) == key {
             right
-        } else if right.retain(MachineIntegerType::Int32) == key {
+        } else if ScalarOperandKey::new(right) == key {
             left
         } else {
             return None;

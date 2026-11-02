@@ -5,6 +5,36 @@ use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{MachineOperandView, equality_graph::MachineAtom};
 use crate::persistent::{PersistentMap, PersistentSet};
 
+// Arithmetic has shared syntax identities. Opaque legacy leaves must stay in
+// this context's index: globally interning a memory load compares snapshots
+// from independent verification arenas and charges unrelated memory contents.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(in crate::kernel) enum ScalarOperandKey {
+    Shared(MachineAtom),
+    Written(Bitvector32Term),
+}
+
+impl ScalarOperandKey {
+    pub(in crate::kernel) fn new(view: MachineOperandView<'_>) -> Self {
+        let ty = MachineIntegerType::Int32;
+        match view {
+            MachineOperandView::Shared(_) => Self::Shared(MachineAtom::from_operand(ty, view)),
+            MachineOperandView::Legacy(term) => {
+                if let Some(shared) =
+                    crate::kernel::KernelTermImport::default().machine_arithmetic(ty, term)
+                {
+                    Self::Shared(MachineAtom::from_operand(
+                        ty,
+                        MachineOperandView::Shared(&shared),
+                    ))
+                } else {
+                    Self::Written(term.clone())
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct Exclusions {
     counts: PersistentMap<i64, usize>,
@@ -59,9 +89,9 @@ impl Exclusions {
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct CheckedScalarFacts {
-    literals: PersistentMap<MachineAtom, PersistentSet<(ConditionTerm, bool)>>,
+    literals: PersistentMap<ScalarOperandKey, PersistentSet<(ConditionTerm, bool)>>,
     equalities: PersistentMap<Bitvector32Term, PersistentSet<ConditionTerm>>,
-    exclusions: PersistentMap<MachineAtom, Exclusions>,
+    exclusions: PersistentMap<ScalarOperandKey, Exclusions>,
 }
 
 impl CheckedScalarFacts {
@@ -86,7 +116,7 @@ impl CheckedScalarFacts {
             .map(|operand| operand.operand_view());
         for (endpoint, other) in [(left, right), (right, left)] {
             crate::instrumentation::record_deterministic_work(1);
-            let key = MachineAtom::from_operand(MachineIntegerType::Int32, endpoint);
+            let key = ScalarOperandKey::new(endpoint);
             let number = other.word32_constant().map(|bits| i64::from(bits as i32));
             if equal && number.is_some() {
                 let sources = self.literals.get(&key).cloned().unwrap_or_default();
@@ -131,12 +161,8 @@ impl CheckedScalarFacts {
                     MachineOperandView::Shared(_) => None,
                     MachineOperandView::Legacy(term) => {
                         let canonical = crate::kernel::eval::canonical_term(term);
-                        (canonical != *term).then(|| {
-                            MachineAtom::from_operand(
-                                MachineIntegerType::Int32,
-                                MachineOperandView::Legacy(&canonical),
-                            )
-                        })
+                        (canonical != *term)
+                            .then(|| ScalarOperandKey::new(MachineOperandView::Legacy(&canonical)))
                     }
                 };
                 for key in std::iter::once(key).chain(alias) {
@@ -159,7 +185,7 @@ impl CheckedScalarFacts {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select literal equality", 1);
         crate::instrumentation::record_deterministic_work(1);
-        let key = MachineAtom::from_operand(MachineIntegerType::Int32, term);
+        let key = ScalarOperandKey::new(term);
         self.literals.get(&key)?.iter().next()
     }
 
@@ -180,7 +206,7 @@ impl CheckedScalarFacts {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("read excluded interval endpoints", 1);
         crate::instrumentation::record_deterministic_work(1);
-        let key = MachineAtom::from_operand(MachineIntegerType::Int32, term);
+        let key = ScalarOperandKey::new(term);
         let Some(excluded) = self.exclusions.get(&key) else {
             return (lower, upper);
         };
