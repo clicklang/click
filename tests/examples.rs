@@ -719,6 +719,14 @@ fn rbtree_sized_uncle_rotation_origin_order_and_expansion_recheck() {
     check_sized_context_rotation_retained_expansion(SIDECAR);
 }
 
+#[test]
+#[ignore = "nightly: verifies and replays the mirrored sized root double rotation"]
+fn rbtree_sized_mirrored_double_rotation_retained_session_expansion_rechecks() {
+    check_sized_context_rotation_retained_expansion(
+        "rbtree_size_insert_mirrored_double_rotation.click",
+    );
+}
+
 fn check_sized_context_rotation_retained_expansion(sidecar: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("examples/rbtree/rbtree-augmented")

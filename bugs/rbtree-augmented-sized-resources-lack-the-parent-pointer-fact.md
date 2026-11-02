@@ -154,3 +154,21 @@ Both rotation callbacks remain in the proof. This repairs the left-right
 three-node insertion without changing the C, contracts, resources, or verifier.
 The mirrored double rotation, remaining context sidecars, and directory-wide
 audit are still outside this completed repair; keep the broader report open.
+
+## Mirrored double rotation
+
+All four selected proofs in `rbtree_size_insert_mirrored_double_rotation.click`
+now verify, including a root-case contract for `__rb_rotate_set_parents`.
+The insertion proof also expands and rechecks in the retained verification
+session. The C and the three original insertion contracts are unchanged.
+
+Small owned resources retain the complete parent-word relationships and the
+unchanged right link across writes. Opening and immediately refolding the
+right subtree exposes its node identity before retaining that link. The root
+helper contract proves both updated parent words and the root link separately;
+explicit color bounds retain the pointer representation through the tagged
+store. The outer proof uses those postconditions and states the promoted
+root's typed null-parent relationship before folding.
+
+This is a proof repair, with no verifier change. The remaining context sidecars
+and directory-wide audit still leave the broader report open.
