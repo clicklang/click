@@ -9081,6 +9081,8 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
             crate::kernel::AlgebraicValueType::C(crate::kernel::CType::Parameter(name)) => {
                 name.name().to_string()
             }
+            // A crate enum payload is spelled by its name.
+            crate::kernel::AlgebraicValueType::Algebraic { name, .. } => name.clone(),
             crate::kernel::AlgebraicValueType::C(c_type) => match c_type {
                 crate::kernel::CType::Int8 => "i8",
                 crate::kernel::CType::Int16 => "i16",

@@ -55,8 +55,33 @@ struct EnumTypes;
 
 impl EnumTypes {
     fn enter(export: &RustExport) -> Result<Self, String> {
-        let mut types = BTreeMap::new();
-        for declared in &export.enums {
+        // Each enum is known as soon as it is declared, and the guard clears
+        // them all if a later one is refused.
+        ENUM_TYPES.with(|known| known.borrow_mut().clear());
+        let guard = Self;
+        // Crate enums first: a library enum instance may hold one,
+        // `Result<u32, ParseError>`.
+        let (crate_enums, instances): (Vec<_>, Vec<_>) = export
+            .enums
+            .iter()
+            .partition(|declared| declared.generic.is_none());
+        for declared in crate_enums.into_iter().chain(instances) {
+            // A library enum instance's payload of a crate enum is that enum
+            // itself, `Result<u32, ParseError>`'s error a `ParseError`, whose
+            // variants the instance's schemas carry.
+            let mut nested = BTreeMap::new();
+            let mut payload_type = |t: &Type| -> Result<Option<AlgebraicValueType>, String> {
+                let Type::Enum { name } = t else {
+                    return Ok(None);
+                };
+                if declared.generic.is_none() {
+                    return Ok(None);
+                }
+                let enum_type = EnumTypes::get(name)?.algebraic_type();
+                let value_type = enum_type.value_type();
+                nested.insert(value_type.clone(), enum_type.variants.clone());
+                Ok(Some(value_type))
+            };
             let variants: std::sync::Arc<[AlgebraicVariantType]> = declared
                 .variants
                 .iter()
@@ -67,6 +92,9 @@ impl EnumTypes {
                             .fields
                             .iter()
                             .map(|field| {
+                                if let Some(nested) = payload_type(field)? {
+                                    return Ok(nested);
+                                }
                                 let c_type = scalar_type(field)?;
                                 if c_type == C0Type::Void || c_type.is_pointer() {
                                     return Err(
@@ -87,6 +115,9 @@ impl EnumTypes {
                 .arguments
                 .iter()
                 .map(|argument| {
+                    if let Some(nested) = payload_type(argument)? {
+                        return Ok(nested);
+                    }
                     Ok(AlgebraicValueType::C(
                         scalar_type(argument)?.to_kernel_type(),
                     ))
@@ -96,27 +127,28 @@ impl EnumTypes {
                 name: spec_name.clone(),
                 arguments: arguments.clone(),
             };
+            nested.insert(nominal, variants.clone());
             let algebraic_type = AlgebraicType {
                 rigid: false,
                 name: spec_name.clone(),
                 arguments,
                 variants: variants.clone(),
-                schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
-                    nominal, variants,
-                )]))),
+                schemas: std::sync::Arc::new(AlgebraicSchemas::new(nested)),
             };
-            if types
-                .insert(
-                    declared.name.clone(),
-                    TypeParameterName::of(&algebraic_type),
-                )
-                .is_some()
-            {
+            let duplicate = ENUM_TYPES.with(|known| {
+                known
+                    .borrow_mut()
+                    .insert(
+                        declared.name.clone(),
+                        TypeParameterName::of(&algebraic_type),
+                    )
+                    .is_some()
+            });
+            if duplicate {
                 return Err("duplicate Rust enum".into());
             }
         }
-        ENUM_TYPES.with(|known| *known.borrow_mut() = types);
-        Ok(Self)
+        Ok(guard)
     }
 
     fn get(name: &str) -> Result<TypeParameterName, String> {
@@ -130,6 +162,25 @@ impl Drop for EnumTypes {
     fn drop(&mut self) {
         ENUM_TYPES.with(|known| known.borrow_mut().clear());
     }
+}
+
+/// The C type of field `index` of variant `variant` of enum `name`, when
+/// that field is itself an enum: `Result<u32, ParseError>`'s `Err` field.
+fn nested_enum_field_type(
+    name: &str,
+    variant: &str,
+    index: usize,
+) -> Result<Option<C0Type>, String> {
+    let enum_type = EnumTypes::get(name)?.algebraic_type();
+    let Some(AlgebraicValueType::Algebraic { name: field, .. }) = enum_type
+        .variants
+        .iter()
+        .find(|declared| declared.name == variant)
+        .and_then(|declared| declared.fields.get(index))
+    else {
+        return Ok(None);
+    };
+    Ok(Some(C0Type::Parameter(EnumTypes::get(field)?)))
 }
 
 fn scalar_type(t: &Type) -> Result<C0Type, String> {
