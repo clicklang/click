@@ -736,8 +736,23 @@ Progress:
      the native readings of Integer comparisons, the in-range and cast
      identities and their planners, and the Integer rewrite's occurrence
      match. The audit of the other normalizations is in
-     [Decisions](#decisions), 2026-11-01 (PR 4).
-  8. Rust native narrow `+ - * & | ^ ! <<` (G4).
+     [Decisions](#decisions), 2026-11-01 (PR 4). The fifth PR (2026-11-02)
+     makes specification narrow arithmetic native (G2): at an 8- or 16-bit
+     position (a typed `let`, an argument at its parameter's type, a pure
+     function's body at its result type) `+ - * & | ^ ~` over operands of
+     that type is the type's native node (`SpecExpression::NarrowArithmetic`,
+     marked by `SpecExpression::at_machine_type`), with no domain
+     obligation; operands of another type and a cast's operand keep the
+     promoted reading. Rule N relates a native operator to C's promoted
+     spelling in the e-graph. See [Decisions](#decisions), 2026-11-02.
+  8. Rust native narrow `+ - * & | ^ ! <<` (G4). Done with step 7's fifth
+     PR (2026-11-02): a Rust `+ - * & | ^ !` on `u8`, `i8`, `u16` or `i16`,
+     and `<<` by a 32-bit count, is the native node of its type
+     (`CIntegerCastMode::NarrowArithmetic`); the checked overflow stays its
+     own panic assertion; `/ % >>` stay promoted (G4) and are what the
+     format audit's `promoted-narrow-arithmetic` still records. The core
+     library's narrow `wrapping_add`, `wrapping_sub` and `wrapping_mul` are
+     `a + b`, `a - b` and `a * b` at their result type.
   9. The 64-bit relations and the legacy conversions merged into `Cast`.
   10. Generic `T: intn` / `T: uintn` library theorems.
 
@@ -823,10 +838,9 @@ Progress:
   `uint8` to `uint16`; K8 covers 32-bit destinations only), and the
   legacy mask readers of `integer_cast_identity`, since a byte stored into
   a wider cell still builds `b & 0xFF` (`byte_view::integer_cell_with_byte`).
-  Remaining for Stage 4: Rust narrow checked arithmetic as `Binary` in the
-  operand's format with `not Overflows` panic checks, in place of its
-  `int32` computation and width-specific checks, once Stage 3 gives the
-  narrow formats operator nodes; and the library families.
+  Rust narrow checked arithmetic is `Binary` in the operand's format
+  (step 7's fifth PR, 2026-11-02); its panic checks keep their 32-bit
+  spelling. Remaining for Stage 4: the library families.
 
 ### Stage 5. A logical `bool`
 
@@ -1345,3 +1359,33 @@ Maintainer direction, 2026-11-01 (`from_machine` stops folding, PR 4):
   The 32-bit cast-chain collapse in `Bitvector32Term::machine_integer_cast`
   is a constructor of the conversion, not of the observation, and is
   outside this audit.
+
+Decision, 2026-11-02 (native narrow arithmetic, PR 5; step 8):
+
+- **Specification narrow arithmetic is native at its position (G2).** The
+  type-directed rule chose machine arithmetic for every non-Integer
+  position but never read the position's machine type: `let s: uint8 =
+  a + b;` was the promoted `int32` sum, unconverted. Now a typed `let`, an
+  argument at its parameter's type and a pure function's body at its result
+  type mark their arithmetic spine (through `if` branches and `let`
+  bodies); at 8 or 16 bits `+ - * & | ^ ~` over operands of that type, or
+  over `int32` literals it holds, is the native node, which wraps and owes
+  no domain obligation, as C's promote-and-convert at that type owes none.
+  A cast's operand has no expected type, so `(a + b) as uint8` stays
+  promoted as written; operands of another type keep the promoted reading.
+  A contract `let` of narrow arithmetic stays a typed binding rather than
+  being substituted, since substituting would drop its type; the validator
+  gives such arithmetic its position's type. Specification `<<` at a narrow
+  position stays promoted for now (its count obligation at the narrow
+  width is a separate question).
+- **Rust narrow arithmetic is native (G4).** `+ - * & | ^ !` and `<<` by a
+  32-bit count; the panic assertions are unchanged. A native narrow shift's
+  count is a 32-bit word (the width check requires it), interned as a word,
+  as a 32-bit shift's is.
+- **Rule N.** A native narrow operator is in the class of C's promoted
+  spelling, `Cast(int32 -> F, widen(a) op widen(b))`, so C, C++ and Rust
+  meet: R-dist and R-comp take C's spelling to the native node, and K7'
+  takes the native node's widening to the masked word operator. It is an
+  e-graph relation; no term is rewritten, and terms print as written
+  (`a + b` for the native `uint8` sum).
+
