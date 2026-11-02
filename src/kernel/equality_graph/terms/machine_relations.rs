@@ -181,6 +181,7 @@ pub(super) enum Relation {
     Distribute,
     Compose,
     Invert,
+    Promote,
 }
 
 /// A machine application, read structurally: its operand IDs are the ones
@@ -321,6 +322,9 @@ impl TermClasses {
         };
         match decoded {
             Decoded::Operator { format, op, .. } => {
+                if matches!(format, OperatorFormat::Format(narrow) if narrow.format().bits() < 32) {
+                    self.queue_machine_relation(Relation::Promote, id, id);
+                }
                 let class = self.root(id);
                 let mut operators = self
                     .class_operators
@@ -432,7 +436,7 @@ impl TermClasses {
 
     fn queue_machine_relation(&mut self, relation: Relation, first: u64, second: u64) {
         let key = match relation {
-            Relation::Invert => (first, first),
+            Relation::Invert | Relation::Promote => (first, first),
             _ => (first, second),
         };
         if !self.fired_machine_relations.contains(&key) {
@@ -459,6 +463,7 @@ impl TermClasses {
             Relation::Distribute => self.distribute(first, second, pending),
             Relation::Compose => self.compose(first, second, pending),
             Relation::Invert => self.invert(first, second, pending),
+            Relation::Promote => self.promote(first, pending),
         }
         self.relating_machine_terms = false;
     }
@@ -507,6 +512,12 @@ impl TermClasses {
         if let Some(result) =
             self.intern_machine_operator(OperatorFormat::of(key.destination), op, left, right)
         {
+            // The distributed operator is the narrowing `cast` of a wider
+            // one: it has its promoted spelling, so rule N does not fire on
+            // it. Firing would spell the word again over fresh narrowings of
+            // its operands, before R-comp merges them, without end.
+            self.fired_machine_relations =
+                self.fired_machine_relations.with_value((result, result));
             pending.push((cast, result));
         }
     }
@@ -596,6 +607,67 @@ impl TermClasses {
         {
             pending.push((back, operand));
         }
+    }
+
+    /// Rule N for the native 8- or 16-bit operator `operator`: it is the
+    /// narrowing of the `int32` operator over its operands' widenings, as
+    /// C's promotion spells it, `a op b == Cast(int32 -> F, widen(a) op
+    /// widen(b))`, and a shift's 32-bit count is the promoted shift's count.
+    /// The narrowing is interned as every narrow cast is, with its rule-K7'
+    /// word, so the widening of the native operator meets the masked word
+    /// operator. Once per operator: at most seven nodes, the cast's word and
+    /// two unions. An operator R-dist built is a narrowing already and is
+    /// skipped (`distribute` marks it).
+    fn promote(&mut self, operator: u64, pending: &mut PendingUnions) {
+        if self.fired_machine_relations.contains(&(operator, operator)) {
+            return;
+        }
+        let Some(Decoded::Operator {
+            format: OperatorFormat::Format(format),
+            op,
+            left,
+            right,
+        }) = self.decode_machine(operator)
+        else {
+            return;
+        };
+        if format.format().bits() >= 32 {
+            return;
+        }
+        self.fired_machine_relations = self
+            .fired_machine_relations
+            .with_value((operator, operator));
+        crate::instrumentation::record_deterministic_work(1);
+        let widen = |classes: &mut Self, value: u64| {
+            let value = classes.root(value);
+            classes.intern_node(Node::Int32Unary(
+                Int32Unary::Cast(format, MachineIntegerType::Int32),
+                value,
+            ))
+        };
+        let left = widen(self, left);
+        let right = match (op, right) {
+            (SignFree::ShiftLeft, Some(count)) => Some(self.root(count)),
+            (_, Some(right)) => Some(widen(self, right)),
+            (_, None) => None,
+        };
+        let Some(word) = self.intern_machine_operator(OperatorFormat::Word32, op, left, right)
+        else {
+            return;
+        };
+        // The term constructors order a commutative operator's operands
+        // (`bitwise_xor` puts the smaller term first), so C's spelling may
+        // have them swapped: the swapped word is the same value.
+        if let (Some(right), true) = (right, op != SignFree::Subtract && op != SignFree::ShiftLeft)
+            && let Some(swapped) =
+                self.intern_machine_operator(OperatorFormat::Word32, op, right, Some(left))
+            && self.root(swapped) != self.root(word)
+        {
+            pending.push((word, swapped));
+        }
+        let narrowed =
+            self.narrow_cast_parts(MachineIntegerType::Int32, format, self.root(word), pending);
+        pending.push((operator, narrowed));
     }
 
     /// The conversion `cast` applies, applied to the class `value`.

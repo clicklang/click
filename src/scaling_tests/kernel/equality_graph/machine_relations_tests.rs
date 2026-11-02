@@ -174,3 +174,50 @@ fn wide_cast_composition_scales_with_selected_chain_not_unrelated_classes() {
         }
     }
 }
+
+/// A chain of `size` native `uint8` operations, and C's spelling of the same
+/// chain: each step promoted to `int32` and narrowed back.
+fn narrow_chain(size: u64) -> (Bitvector32Term, Bitvector32Term) {
+    use crate::kernel::MachineBinaryOp as Op;
+    let ops = [Op::Add, Op::Multiply, Op::BitwiseXor, Op::Subtract];
+    let mut native = var(184_000);
+    let mut promoted = var(184_000);
+    for index in 0..size {
+        let op = ops[index as usize % ops.len()];
+        let operand = var(184_001 + index);
+        native = Bitvector32Term::machine_binary(Ty::UInt8, op, native, operand.clone());
+        promoted = cast(
+            Ty::Int32,
+            Ty::UInt8,
+            Bitvector32Term::machine_binary(
+                Ty::Int32,
+                op,
+                cast(Ty::UInt8, Ty::Int32, promoted),
+                cast(Ty::UInt8, Ty::Int32, operand),
+            ),
+        );
+    }
+    (native, promoted)
+}
+
+/// Rule N fires once per native operator, and R-dist with R-comp once per
+/// narrowing, so relating a chain of `n` native operators to its promoted
+/// spelling costs work linear in `n`.
+#[test]
+fn native_narrow_promotion_is_linear_in_the_operation_chain() {
+    let mut work = Vec::new();
+    for size in SIZES {
+        let _session = VerificationSession::enter();
+        let (native, promoted) = narrow_chain(size);
+        let (equal, units) = crate::instrumentation::measure_deterministic_work(|| {
+            let graph = EqualityGraph::default();
+            let mut state = graph.state.lock().expect("equality graph");
+            state
+                .terms
+                .are_typed_equal(crate::kernel::CarrierWidth::Bits8, &native, &promoted)
+        });
+        assert!(equal, "size {size}");
+        work.push(units);
+    }
+    assert_linear("rule N", &work, 600);
+}
