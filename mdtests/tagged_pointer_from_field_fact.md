@@ -28,6 +28,11 @@ int32 parent_value(struct node* node, struct node* next) {
     views node->word;
     views next->value;
     ensures result == next->value;
+} by {
+    step();
+    step();
+    have parent == next by { solve(); }
+    step();
 }
 ```
 

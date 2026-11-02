@@ -18968,7 +18968,7 @@ fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
         ),
         (
             "mdtests/tagged_pointer_from_field_fact.md",
-            "parent_value.ensures_0",
+            "parent_value.contract",
             "ensures result == next->value;",
         ),
         (
@@ -20013,4 +20013,38 @@ fn atomic_store_scalar_framing_expands_and_replays() {
         without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
     }
+}
+
+#[test]
+#[ignore = "nightly: explicit pointer aliases across full expansion and cold replay"]
+fn explicit_pointer_alias_repairs_expand_and_cold_replay() {
+    let mut failures = Vec::new();
+    for (fixture, function) in [
+        (
+            "a_cast_contract_a_saved_word_keeps_its_historical_relationship",
+            "read_packed",
+        ),
+        (
+            "a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced",
+            "peek",
+        ),
+        (
+            "rewrite_of_a_full_pointer_alias_keeps_constructor_type_evidence",
+            "parent",
+        ),
+        ("tagged_pointer_from_field_fact", "parent_value"),
+    ] {
+        let (source, inputs) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let inputs = inputs
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = verify_c0_sources(&source, &inputs).unwrap();
+        let expanded = expand_checked_grouped_claim(&source, &verified, function)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.message()));
+        if let Err(error) = verify_c0_sources(&expanded, &inputs) {
+            failures.push(format!("{fixture}: {}\n{expanded}", error.report()));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }

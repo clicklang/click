@@ -42,6 +42,7 @@ int parent(struct node* node) {
                 rewrite(unp == gparent);
                 normalize();
             }
+            have ((node->word & ~3) as (struct node *)) == unp by { solve(); }
             let t = fold(tree(node), { model: Wrapped::Node(id, unp, left, right) });
             step_until(function.exit);
         },

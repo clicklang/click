@@ -26,14 +26,17 @@ one working case, not general recovery of all earlier provenance facts.
 
 Remaining blockers in the experiment:
 
-- The ordinary corpus reports 4972 passing fixtures and six failures:
+- The last full ordinary corpus run had six failing fixtures. Explicit full-
+  pointer equality steps now make four pass in focused checks:
   `a_cast_contract_a_saved_word_keeps_its_historical_relationship`,
   `a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced`,
-  `c_decreases_resource_witness_child`,
-  `call_through_witness_footprint_includes_its_memory` (changed expected error),
   `rewrite_of_a_full_pointer_alias_keeps_constructor_type_evidence`, and
-  `tagged_pointer_from_field_fact`. All six predate the entry repair below.
-  Do not restore historical-source discovery to recover them.
+  `tagged_pointer_from_field_fact`. Only the parent-cast repair also passes
+  expansion and cold replay; the other three remain blocked as described below.
+  `c_decreases_resource_witness_child` and
+  `call_through_witness_footprint_includes_its_memory` remain ordinary failures.
+  The latter must reach its intended negative transport check, not merely fail
+  earlier. No C or contract changes are part of these repairs.
 - Four focused kernel tests still fail: complete owned-store framing, cached
   pointer identity, recent pointer origin after havoc, and packed-word transport
   scaling. Preserve their assertions while investigating explicit evidence.
@@ -43,6 +46,44 @@ Remaining blockers in the experiment:
   reconstructed complete words. Removing constructor cache warming exposes
   this traversal: one-write transport costs 288/336/528/1296 units with
   4/16/64/256 unrelated entries. Do not restore warming or raise the bound.
+
+**Immediate blocker: pointer equality proofs do not cold-replay.**
+The focused `explicit_pointer_alias_repairs_expand_and_cold_replay` test in
+`src/surface/tests/expansion_tests.rs` checks all four candidate repairs above.
+It is a deliberately red investigation regression, run individually (7.2s),
+not a full nightly run. Three fail:
+
+- The saved-word proof's first `solve()` expands to `normalize() using {};`.
+  Fresh verification rejects that step. The equality is between
+  `((saved & ~1) as (struct node *))` and `p`; this happens before the source
+  overwrite. Start the next reduction here.
+- The constructor fixture's `unp == gparent` likewise expands to empty-premise
+  normalization that does not cold-replay.
+- The tagged-field fixture's `parent == next` expands to a failing
+  `assumption()` after a preceding generated step.
+
+Do not count successful smart verification as a completed repair, restore the
+naming walk, or add a replay fallback. The exact omitted dependency is not yet
+established. Investigate why search/expansion can accept steps which the fresh
+checker rejects before resuming affected proof repairs. The parent-cast fixture
+is the passing expansion/replay control.
+
+The witness experiments also remain unresolved. Naming the recursive witness
+and explicitly proving the current cast equal to it succeeds, but the recursive
+call still fails to match its owned `marked_list` resource. For the footprint
+fixture, naming the witness and asking for the local pointer's equality fails;
+the diagnostic says a selected pointer premise has no checked source spelling.
+Those exploratory edits were reverted. Coordinate any necessary spelling change
+with the separate spellability work; do not weaken the negative fixture's
+expected refusal.
+
+The kernel failures are not all timing failures. Cached pointer recovery and
+recent call-havoc origin matching lose equalities previously supplied implicitly
+by naming; complete owned-store framing also loses its expected equation. Keep
+their positive and negative assertions until explicit replacement evidence is
+established. Packed-word transport still succeeds but pays for unrelated older
+history through `transport_framed_atomic_pointer_value`'s `cell_version_point`.
+Its one-write work is 288/336/528/1296 for 4/16/64/256 unrelated entries.
 
 **Entry setup: use the producer's complete-pointer equations.**
 The empty-function copied-aggregate reproduction passes unchanged. Entry setup
