@@ -183,6 +183,9 @@ the same format-tagged identity already used by Integer terms.
 
 All 30 focused conversion/machine-format and operation-identity tests pass,
 including a shared-prefix regression at 8/32/96 levels with no boxed operand.
+The full gate passes 7,110 tests (including 1,152 scaling tests), 58 examples,
+and 4,987 proof fixtures in 12m12s. The arithmetic audit passes 124 fixtures
+with zero differences. No limits changed and no nightly suite ran.
 The general cast rule, comparison decisions, and overflow/modular adapters still
 need migration; this does not enable nested signed arithmetic.
 
