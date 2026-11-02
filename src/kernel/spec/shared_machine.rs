@@ -1,8 +1,30 @@
-//! Shared producers for the total, same-format unsigned arithmetic fragment.
-//! Deferred operands and partial operations retain their existing evaluator.
+//! Shared arithmetic producers, with definedness kept outside the term.
+//! Deferred operands and nested signed operations retain their old evaluator.
 use super::*;
 
+mod signed;
+
+pub(super) struct PreparedExpression {
+    pub(super) value: KernelTerm,
+    pub(super) obligations: Vec<ProofObligation>,
+}
+
 pub(super) fn prepare(
+    expression: &SpecExpression,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Option<PreparedExpression>> {
+    if let Some(prepared) = signed::prepare(expression, budget)? {
+        return Ok(Some(prepared));
+    }
+    Ok(
+        prepare_unsigned(expression, budget)?.map(|value| PreparedExpression {
+            value,
+            obligations: Vec::new(),
+        }),
+    )
+}
+
+fn prepare_unsigned(
     expression: &SpecExpression,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<KernelTerm>> {
@@ -101,7 +123,7 @@ pub(super) fn prepare(
                     };
                     importer.argument(&PureFunctionArgument::Value(value))
                 } else {
-                    KernelTerm::unsigned_binary(format, op, [left, right])
+                    KernelTerm::arithmetic_binary(format, op, [left, right])
                         .map_err(|_| ExecutionLimit::Paths)?
                 };
                 values.push(term);
@@ -116,16 +138,119 @@ mod tests {
     use super::*;
 
     fn evaluate(expression: &SpecExpression, legacy: bool) -> Vec<SpecExpressionPath> {
+        evaluate_with_assumptions(expression, legacy, &PureFactContext::new())
+    }
+
+    fn evaluate_with_assumptions(
+        expression: &SpecExpression,
+        legacy: bool,
+        assumptions: &PureFactContext,
+    ) -> Vec<SpecExpressionPath> {
         let mut execution = ExecutionBudget::new();
         let mut budget = SpecEvaluation::logical(&mut execution);
         budget.machine_preparation_disabled = legacy;
         evaluate_spec_expression_paths_with_algebraic_bindings_in(
             SpecScope::unbound(&CState::new(), None),
             expression,
-            &PureFactContext::new(),
+            assumptions,
             &mut budget,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn signed_available_operands_preserve_values_and_separate_domains() {
+        for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+            let wrap = |bits| {
+                if format == MachineIntegerType::Int32 {
+                    CValue::Int32(bits)
+                } else {
+                    CValue::Int64(bits)
+                }
+            };
+            let constant = |n: i64| {
+                if format == MachineIntegerType::Int32 {
+                    Bitvector32Term::Constant(n as u32)
+                } else {
+                    Bitvector32Term::Int64Constant(n)
+                }
+            };
+            let maximum = if format == MachineIntegerType::Int32 {
+                i32::MAX as i64
+            } else {
+                i64::MAX
+            };
+            let minimum = -maximum - 1;
+            let variable = Bitvector32Term::Variable(Variable(990004));
+            for (left, right) in [
+                (variable.clone(), variable.clone()),
+                (variable.clone(), constant(0)),
+                (constant(2), constant(3)),
+                (constant(maximum), constant(1)),
+                (constant(minimum), constant(-1)),
+                (constant(maximum), constant(maximum)),
+            ] {
+                for operator in [
+                    MachineBinaryOp::Add,
+                    MachineBinaryOp::Subtract,
+                    MachineBinaryOp::Multiply,
+                ] {
+                    let a = Box::new(SpecExpression::Value(wrap(left.clone())));
+                    let b = Box::new(SpecExpression::Value(wrap(right.clone())));
+                    let expression = match operator {
+                        MachineBinaryOp::Add => SpecExpression::Add(a, b),
+                        MachineBinaryOp::Subtract => SpecExpression::Subtract(a, b),
+                        _ => SpecExpression::Multiply(a, b),
+                    };
+                    let mut execution = ExecutionBudget::new();
+                    let prepared =
+                        prepare(&expression, &mut SpecEvaluation::logical(&mut execution))
+                            .unwrap()
+                            .unwrap();
+                    if left == variable {
+                        assert!(matches!(
+                            prepared.value.node(),
+                            KernelTermNode::MachineBinary { .. }
+                        ));
+                    }
+                    let paths = evaluate(&expression, false);
+                    assert_eq!(paths, evaluate(&expression, true));
+                    // Neither overflowing literals nor symbolic operands can
+                    // lose their domain just because the value is now shared.
+                    if operator == MachineBinaryOp::Add
+                        && ((left == variable && right == variable) || left == constant(maximum))
+                    {
+                        assert_eq!(paths[0].obligations.len(), 1);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_signed_domains_retain_held_resource_metadata() {
+        let operand = || {
+            Box::new(SpecExpression::Value(CValue::Int32(
+                Bitvector32Term::Variable(Variable(990005)),
+            )))
+        };
+        let expression = SpecExpression::Add(operand(), operand());
+        for held in [false, true] {
+            let assumptions = if held {
+                PureFactContext::new().assume_held_resource_domains()
+            } else {
+                PureFactContext::new()
+            };
+            let shared = evaluate_with_assumptions(&expression, false, &assumptions);
+            let legacy = evaluate_with_assumptions(&expression, true, &assumptions);
+            assert_eq!(shared, legacy);
+            assert_eq!(shared[0].obligations.len(), 1);
+            // ProofObligation equality deliberately ignores this metadata.
+            for path in [&shared[0], &legacy[0]] {
+                assert!(path.obligations[0].evaluation_domain);
+                assert_eq!(path.obligations[0].assumable, held);
+            }
+        }
     }
 
     #[test]
@@ -182,6 +307,7 @@ mod tests {
         };
         for expression in [
             SpecExpression::Add(signed(), signed()),
+            SpecExpression::Add(Box::new(SpecExpression::Add(signed(), signed())), signed()),
             SpecExpression::Divide(unsigned(), unsigned()),
             SpecExpression::ShiftLeft(unsigned(), unsigned()),
             SpecExpression::Multiply(unsigned(), signed()),

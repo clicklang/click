@@ -114,8 +114,20 @@ These total wrapping operations owe no domain obligation. The evaluator retains
 its existing literal-only evaluation; the shared constructor itself does not
 fold. A mixed-format or deferred operand retains the legacy evaluator, and one
 rejected preparation disables further attempts inside that selected tree.
-Signed arithmetic and the other partial operators still use legacy producers
-with separate obligations. C execution has not migrated. Shifts use the
+One same-format `int32`/`int64` addition, subtraction or multiplication over
+two available values also constructs a shared node, accompanied by the existing
+ordinary-proposition range obligation. Literal evaluation and held-resource
+domain metadata remain evaluator responsibilities. When the exact arithmetic
+result is one machine observation (for example, the domain calculation for
+`x + 0`), its source type alone can establish representability in a containing
+type. This root-type rule never walks the operand or folds the machine value.
+Conjoining domain conditions then drops literal truths only; symbolic conditions go to ordinary obligation discharge,
+without invoking the proof checker while building the domain. Nested signed expressions
+retain the legacy evaluator: their `IntegerTerm::Machine` obligation operands
+still own boxed machine trees, so exporting every shared prefix would copy a
+growing expression repeatedly. Shared observation storage/checker views are a
+prerequisite to migrating that case. Other partial operators also remain on
+legacy producers with separate obligations. C execution has not migrated. Shifts use the
 same shared binary nodes: lowering has already converted a count to the
 left operand's carrier width, and the bridge preserves that explicit conversion
 without reinterpreting it from the result's signedness. Widening spellings explicitly retain the source `int32`/`uint32`
@@ -175,7 +187,8 @@ subtraction from zero. C shifts conjoin the count bounds and, for signed left
 shift, a nonnegative operand and representable result; Rust shifts require
 only the count bounds. Unsigned wrapping operations have no overflow debt.
 The supported 128-bit operators also retain one complete ordinary domain.
-Only intrinsically true conditions disappear; assumed facts never change it.
+Only literal truths disappear during domain construction; symbolic conditions
+remain for ordinary obligation discharge. Assumed facts never change the term.
 Existing interval rules may interpret these propositions through private
 overflow queries, but generated domain facts, theorem statements, and
 certificate conclusions use ordinary propositions. Symbolic machine operations
