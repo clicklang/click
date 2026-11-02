@@ -161,7 +161,7 @@ pub(super) fn lower_prefix(
         if universal {
             paths = paths
                 .into_iter()
-                .map(|path| wrap_spec_universal_path(path, &data))
+                .map(|path| wrap_spec_universal_path(path, &data, assumptions))
                 .collect();
         } else {
             let range_facts = machine_quantifier_range_facts(&data.sort, data.variable);
