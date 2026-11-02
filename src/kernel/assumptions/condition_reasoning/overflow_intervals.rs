@@ -526,6 +526,14 @@ impl PureFactContext {
     /// width range nor an indexed bound on both sides has no interval.
     pub(super) fn decide_indexed_greater_equal(&self, condition: &ConditionTerm) -> Option<bool> {
         use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        // Preserve the native dispatcher's original admission scope. Reading
+        // every native `constant <= term` here would add checked work before
+        // its existing literal/identity routes (including during setup).
+        if let ConditionTerm::Compare { relation, .. } = condition
+            && *relation != CompareRelation::GreaterEqual
+        {
+            return None;
+        }
         let view = comparison_view(condition, true)?;
         if view.format != MachineIntegerType::Int32 || view.relation != Relation::LessEqual {
             return None;
