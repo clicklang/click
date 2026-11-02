@@ -9902,7 +9902,7 @@ impl<'a> Proof<'a> {
         if matches!(self.goal(), Some(Proposition::And(..)))
             && !matches!(self.surface_goal(), Some(ClickProposition::And(..)))
             && !self.goal().is_some_and(|goal| {
-                crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(goal)
+                crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                     .is_some()
             })
         {
@@ -10027,7 +10027,7 @@ impl<'a> Proof<'a> {
             proof.check_typed_atomic_solve_candidate(goal, &derivation, &premise_pairs)
         };
         let arithmetic_domain = signed_definedness_operands(goal).is_some()
-            || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(goal)
+            || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
         let typed_first = signed_order || arithmetic_domain;
         if typed_first && let Some(closed) = try_typed_derivation() {
