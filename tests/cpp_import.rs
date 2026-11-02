@@ -14667,11 +14667,21 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
-    for (value, expected) in [(0, 1), (3, 2)] {
+    for (value, empty, expected) in [(0, true, 1), (3, false, 2)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
-        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }}
-        int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }}
+        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ true }} else {{ false }}); }}
+        int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }} by {{
+            step();
+            let {{ result: empty }} = step(Base::Empty, {{}});
+            have empty == {empty} by {{
+                rewrite(empty == (if state.left.base.value == 0 {{ true }} else {{ false }}));
+                rewrite(state.left.base.value == {value});
+                normalize();
+            }}
+            step_until(function.exit);
+            solve();
+        }}
         "#
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
