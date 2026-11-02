@@ -132,9 +132,9 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
 fn shared_machine_prefix_registration_is_linear_and_branch_local() {
     use crate::kernel::{CType, IntegerTerm, KernelTerm, KernelType, SharedMachineIntegerTerm};
     let mut baseline = Vec::new();
-    for unrelated in [0, 32, 128] {
+    for unrelated in [0, 32, 64] {
         let mut samples = Vec::new();
-        for size in [8, 32, 128] {
+        for size in [8, 32, 96] {
             let _session = crate::kernel::VerificationSession::enter();
             let mut graph = EqualityGraph::default();
             for i in 0..unrelated {

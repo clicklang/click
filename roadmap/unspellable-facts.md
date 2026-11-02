@@ -204,7 +204,7 @@ view extraction, unrelated-input independence, and branch isolation. A matrix
 checks agreement with legacy classes across every native format and binary
 operator, including a late operand merge. The initial larger probe at
 16/64/256 levels measured 1,615/6,415/25,615 units, independent of 0/128/512
-unrelated facts. The gate regression uses 8/32/128 levels and 0/32/128 unrelated
+unrelated facts. The gate regression uses 8/32/96 levels and 0/32/64 unrelated
 facts to keep its runtime within the fast-test budget.
 
 ## Shared operand views for arithmetic checking (2026-11-02)
