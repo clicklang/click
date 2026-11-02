@@ -138,6 +138,10 @@ fn narrow_operator_chains_intern_with_constant_work_per_node() {
         for i in 1..sizes.len() - 1 {
             assert_eq!(step(i), step(0), "{format:?}: {samples:?}");
         }
+        // A bare chain is interned with a small constant per node: no
+        // relation that only a widening or a narrowing of the chain needs
+        // (rule N) fires on it (about 9.5 units per node, 2026-11-02).
+        assert!(step(0) <= 16.0, "{format:?}: {samples:?}");
     }
 }
 

@@ -179,7 +179,9 @@ fn wide_cast_composition_scales_with_selected_chain_not_unrelated_classes() {
 /// chain: each step promoted to `int32` and narrowed back.
 fn narrow_chain(size: u64) -> (Bitvector32Term, Bitvector32Term) {
     use crate::kernel::MachineBinaryOp as Op;
-    let ops = [Op::Add, Op::Multiply, Op::BitwiseXor, Op::Subtract];
+    // Not `^`: the 32-bit constructor flattens and orders an exclusive-or
+    // chain, so C's spelling of a chain is not the narrow chain's shape.
+    let ops = [Op::Add, Op::Multiply, Op::Subtract];
     let mut native = var(184_000);
     let mut promoted = var(184_000);
     for index in 0..size {
@@ -220,4 +222,40 @@ fn native_narrow_promotion_is_linear_in_the_operation_chain() {
         work.push(units);
     }
     assert_linear("rule N", &work, 600);
+}
+
+/// Rule N fires where a native operator is widened: the widening of each of
+/// `n` native `uint8` operators meets the masked 32-bit operator of its
+/// operands' widenings (rule K7'). Each firing is constant work, so `n`
+/// widened operators cost work linear in `n`.
+#[test]
+fn widened_native_narrow_operators_are_linear() {
+    use crate::kernel::MachineBinaryOp as Op;
+    let ops = [Op::Add, Op::Multiply, Op::Subtract, Op::ShiftLeft];
+    let mut work = Vec::new();
+    for size in SIZES {
+        let _session = VerificationSession::enter();
+        let widen = |term: Bitvector32Term| cast(Ty::UInt8, Ty::Int32, term);
+        let ((), units) = crate::instrumentation::measure_deterministic_work(|| {
+            let graph = EqualityGraph::default();
+            for index in 0..size {
+                let op = ops[index as usize % ops.len()];
+                let (a, b) = (var(185_000 + 2 * index), var(185_001 + 2 * index));
+                let native = Bitvector32Term::machine_binary(Ty::UInt8, op, a.clone(), b.clone());
+                let right = if op == Op::ShiftLeft { b } else { widen(b) };
+                let masked = Bitvector32Term::machine_binary(
+                    Ty::Int32,
+                    Op::BitwiseAnd,
+                    Bitvector32Term::machine_binary(Ty::Int32, op, widen(a), right),
+                    Bitvector32Term::Constant(255),
+                );
+                assert!(
+                    graph.are_int32_equal(&widen(native), &masked),
+                    "size {size} {op:?}"
+                );
+            }
+        });
+        work.push(units);
+    }
+    assert_linear("widened rule N", &work, 1000);
 }

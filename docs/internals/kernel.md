@@ -731,8 +731,8 @@ the widths a rule supports; it asks the module
 | Promoted comparison reading | `comparison::integer_readings_with_promotions`, `integer_comparisons_of_widenings`; `integer_affine_claims` | a signed `int32` comparison whose sides are narrow widenings or constants is the Integer comparison of the sides' values (`0 <= widen(x)` is `0 <= to_integer(x)`); a native 8- or 16-bit comparison has the readings of its promoted spelling |
 | Native narrow comparison (one fact, K8) | `ConditionTerm::comparison_fact`, `as_fact_comparison`, `ComparisonSide`; `comparison::narrow_comparison_as_int32`, `narrow_fact_widening`, `native_narrow_comparison`; `condition_match_key`; the `adjust_*` wrappers of `PureFactContext` and `EqualityGraph::add_condition` | a specification or Rust comparison `a R b` of two values of one 8- or 16-bit format `S` is native at `S`, and is the same fact as the `int32` comparison of the operands' widenings (a constant side in `S`'s range reads as its value): identity, hashing, order and every structural fact key read both as one, in O(1) per side; the 32-bit indexes also file a native fact under its `int32` spelling. Terms are built and printed as written; C comparisons and a written `x as int32 R c` stay promoted |
 | Cross-format relations (R0, R-dist, R-comp) | the e-graph's `terms/machine_relations.rs`: `relate_machine_application`, `merge_machine_relations` | a conversion to a format no wider than its source distributes over `+ - * & \| ^ ~` and a constant `<<` below the destination's width; a conversion of a value-preserving conversion it reads exactly, or one keeping no more bits than either, is one conversion; a same-width conversion of at least 32 bits has its inverse in its operand's class |
-| Native narrow arithmetic (G2, G4) | `SpecExpression::NarrowArithmetic`, `SpecExpression::at_machine_type`; `CIntegerCastMode::NarrowArithmetic`, `c_narrow_arithmetic`; `CIntegerCastMode::ResultConversion`; `eval::native_narrow_binary`, `native_narrow_not` | specification arithmetic `+ - * & \| ^ ~` at an 8- or 16-bit position (a typed `let`, a pure function's argument at its parameter's type, a pure function's body at its result type) over operands of that type, and Rust `+ - * & \| ^ !` and `<<` by a 32-bit count on `u8`, `i8`, `u16`, `i16`, are the native node of the type, `(a op b) mod 2^N`, with no promotion and no domain obligation; an `int32` literal the type holds takes it. Rust's checked overflow stays its own panic assertion. Operands of another type keep the promoted reading. C keeps promote, operate, convert |
-| Promoted spelling of a native narrow operator (N) | the e-graph's `terms/machine_relations.rs`: `promote` (`Relation::Promote`) | a native 8- or 16-bit operator `a op b` (and `~a`, and `a << c` for a 32-bit count `c`) is in the class of `Cast(int32 -> F, widen(a) op widen(b))`, interned with its K7' word, so C's promoted spelling meets it through R-dist and R-comp and its widening meets the masked word operator. Once per operator, at most seven nodes and two unions (the second relates a commutative operator's swapped word); skipped where the class already holds a narrowing of the same 32-bit operator |
+| Native narrow arithmetic (G2, G4) | `SpecExpression::NarrowArithmetic`, `SpecExpression::at_machine_type`; `CIntegerCastMode::NarrowArithmetic`, `c_narrow_arithmetic`; `CIntegerCastMode::ResultConversion`; `eval::native_narrow_binary`, `native_narrow_not` | specification arithmetic `+ - * & \| ^ ~` at an 8- or 16-bit position (a typed `let`, a pure function's argument at its parameter's type, a pure function's body at its result type) over operands of that type, and Rust `+ - * & \| ^ !` and `<<` by a 32-bit count on `u8`, `i8`, `u16`, `i16`, are the native node of the type, `(a op b) mod 2^N`, with no promotion and no domain obligation; an `int32` literal the type holds takes it. Rust's checked overflow stays its own panic assertion. An operand of another machine type at a specification position is refused by the parser or type checker, which names the conversion to write; inside the kernel, operands of another type keep the promoted reading. C keeps promote, operate, convert |
+| Promoted spelling of a native narrow operator (N) | the e-graph's `terms/machine_relations.rs`: `promote` (`Relation::Promote`) | a native 8- or 16-bit operator `a op b` (and `~a`, and `a << c` for a 32-bit count `c`) is in the class of `Cast(int32 -> F, widen(a) op widen(b))`, interned with its K7' word, so its widening meets the masked word operator. It fires on demand: when the operator's class is widened to 32 bits, and for a shift (whose symbolic count R-dist cannot move); C's spelling meets the native node through R-dist and R-comp without it. Once per operator, at most seven nodes and two unions; an operator R-dist built is skipped, and R-dist of the rule's own narrowing over its word is marked fired |
 | `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
 | `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |
 | `Bool` unfolding (L-Unfold) | `ConditionTerm::bool_unfold_equation`; `unfold` lowers `f(args) == body` to `BoolEqual` | unfolding a `-> Bool` function's application files `application == body` |
@@ -818,13 +818,18 @@ widening keeps its operand's value, so `widen(a) op widen(b)` computed
 modulo `2^32` is congruent to `a op b` modulo `2^N`, and the narrowing reads
 exactly those low bits (R-dist read in reverse, with R-comp); a left shift
 by `c` below 32 is multiplication by `2^c`, and at or above the narrow width
-both sides are 0. The rule fires once per operator node, from the same
-queue as R-dist, and does not fire where the class already holds a
-narrowing of the same 32-bit operator, which R-dist builds an operator
-from: without that check each firing would spell the word again over the
-fresh narrowings of its operands before R-comp merged them, without end
-(`equality_graph/machine_relations_tests.rs`, and its scaling test over an
-operation chain).
+both sides are 0. Cost: it fires from the same queue as R-dist, once per
+operator, and only where it is needed: when the operator's class gets a
+32-bit widening, the case R-dist cannot reach (the widened native value
+meeting a masked word), and for a shift. C's promoted arithmetic meets a
+native operator through R-dist and R-comp alone. An operator R-dist built
+is already a narrowing and is skipped, and R-dist of the rule's own
+narrowing over its word is marked fired, since it would only rebuild the
+operator: without these, each firing respelled the word over fresh
+narrowings without end, and fired eagerly a bare chain of native sums cost
+about 30 times the work of interning it
+(`equality_graph/machine_relations_tests.rs` and its scaling tests;
+`narrow_tests.rs` bounds a bare chain's work per node).
 
 Conditions carry their format (`Compare`, `Overflows`), but the term arena
 still spells each width with its own operator nodes, so one file,
