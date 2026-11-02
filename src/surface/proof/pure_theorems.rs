@@ -2567,7 +2567,8 @@ fn is_nat_integer_law_name(name: &str) -> bool {
 }
 
 pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
-    name == "click::separation::restrict"
+    name == "click::integer::uint32_from_le_bytes"
+        || name == "click::separation::restrict"
         || matches!(
             name.split("::<").next(),
             Some("click::separation::subrange" | "click::separation::elements")
@@ -2653,6 +2654,7 @@ fn verify_kernel_standard_theorem_axiom(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let (parameter_count, requirement_count) = match theorem.name() {
+        "click::integer::uint32_from_le_bytes" => (1, 3),
         "click::separation::restrict" => (4, 3),
         name if name.split("::<").next() == Some("click::separation::subrange") => (5, 3),
         name if name.split("::<").next() == Some("click::separation::elements") => (3, 1),
@@ -2740,7 +2742,15 @@ fn verify_kernel_standard_theorem_axiom(
             "`{claim_label}` does not have the declaration shape required by its kernel axiom",
         )));
     }
-    let axiom = if theorem.name().split("::<").next() == Some("click::separation::elements") {
+    let axiom = if theorem.name() == "click::integer::uint32_from_le_bytes" {
+        let Some(CValue::Pointer(pointer)) = context.values.get(theorem.parameters()[0].name())
+        else {
+            return Err(ClickError::new(
+                "uint32_from_le_bytes requires a uint32 pointer",
+            ));
+        };
+        crate::kernel::prove_uint32_from_le_bytes(pointer.clone()).map_err(ClickError::new)?
+    } else if theorem.name().split("::<").next() == Some("click::separation::elements") {
         let parameter = |index: usize| match context.values.get(theorem.parameters()[index].name())
         {
             Some(CValue::Int32(value)) => Ok((MachineIntegerType::Int32, value.clone())),
@@ -4330,6 +4340,28 @@ mod tests {
             None,
         )
         .map(|_| ())
+    }
+
+    #[test]
+    fn uint32_byte_representation_declaration_checks_its_target_reads_and_order() {
+        let source = include_str!("../../../library/integer.click")
+            .split("// Representation bytes")
+            .nth(1)
+            .unwrap()
+            .split_once('\n')
+            .unwrap()
+            .1;
+        verify_standard_declaration(source).expect("representation declaration");
+        for invalid in [
+            source.replace("requires little_endian();", ""),
+            source.replace("views p[0..1];", ""),
+            source.replace("requires defined(p[0]);", ""),
+            source.replace("<< 24u32", "<< 16u32"),
+            source.replace("[3] as uint32", "[2] as uint32"),
+            source.replace("p: uint32*", "p: int32*"),
+        ] {
+            assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
+        }
     }
 
     #[test]

@@ -9,6 +9,9 @@ The `authority` resource's restricted empty-population source use is verified
 by `authority_establishes_and_retires_empty_stack_population` in
 `src/surface/tests/execution_tests.rs`.
 
+The representation law `integer::uint32_from_le_bytes` is exercised in
+[`integer_uint32_from_le_bytes_initialization.md`](integer_uint32_from_le_bytes_initialization.md).
+
 The separation axiom `separation::restrict` is verified in
 [`resource_theorem_parameters.md`](resource_theorem_parameters.md), including
 forwarding through a user theorem and application to C struct fields.

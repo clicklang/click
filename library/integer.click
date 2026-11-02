@@ -807,3 +807,15 @@ theorem uint64_product_bound_from_division(x: uint64, y: uint64) {
         };
     }
 }
+
+// Representation bytes of one readable unsigned word, at the current point.
+theorem uint32_from_le_bytes(p: uint32*) {
+    requires little_endian();
+    views p[0..1];
+    requires defined(p[0]);
+    ensures p[0] ==
+        (((p as (uint8 *))[0] as uint32) |
+         ((p as (uint8 *))[1] as uint32) << 8u32 |
+         ((p as (uint8 *))[2] as uint32) << 16u32 |
+         ((p as (uint8 *))[3] as uint32) << 24u32);
+}

@@ -5389,6 +5389,21 @@ fn lower_spec_predicate_proposition_at_state_in(
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
+    // Byte order belongs to the target, not to a memory or resource state.
+    if name == LITTLE_ENDIAN_PREDICATE_NAME {
+        if !arguments.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Ok(vec![SpecPropositionPath {
+            introductions: Vec::new(),
+            proposition: Proposition::Predicate {
+                name: name.into(),
+                arguments: vec![],
+            },
+            facts: ExecutionFacts::new(),
+            obligations: Vec::new(),
+        }]);
+    }
     if name == MUTEX_HELD_PREDICATE_NAME {
         let [SpecPredicateArgument::Value(mutex)] = arguments else {
             return Ok(vec![invalid_mutex_held_path(

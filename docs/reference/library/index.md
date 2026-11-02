@@ -5107,3 +5107,28 @@ are permitted. Memory access and separation still require their usual validity
 conditions.
 
 **Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md) and [`mdtests/generic_pointer_struct_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_struct_parameters.md), including padded structs and struct-pointer elements.
+
+### `integer::uint32_from_le_bytes`
+
+```click
+theorem uint32_from_le_bytes(p: uint32*) {
+    requires little_endian();
+    views p[0..1];
+    requires defined(p[0]);
+    ensures p[0] ==
+        (((p as (uint8 *))[0] as uint32) |
+         ((p as (uint8 *))[1] as uint32) << 8u32 |
+         ((p as (uint8 *))[2] as uint32) << 16u32 |
+         ((p as (uint8 *))[3] as uint32) << 24u32);
+}
+```
+
+Relates one readable unsigned 32-bit object to its four character representation
+bytes at the same program point. `little_endian()` is a built-in target fact;
+C proofs receive it only from a little-endian execution environment. Pure
+theorems must state it as a premise. The rule does not grant read permission,
+initialize memory, or reinterpret pointer representations. Its kernel
+constructor constructs five reads and a fixed packing expression without
+searching memory history. Applications retain the named lemma in expansion.
+
+Checked use: [`integer_uint32_from_le_bytes_initialization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_uint32_from_le_bytes_initialization.md).

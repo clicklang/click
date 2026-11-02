@@ -14,6 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
+pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
+
 pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 /// The prefix of the fact that an opaque subobject extent covers a range of
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
@@ -29,6 +31,7 @@ pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     match name {
         MUTEX_HELD_PREDICATE_NAME => Some("held"),
         SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
+        LITTLE_ENDIAN_PREDICATE_NAME => Some("little_endian"),
         _ => CFunctionContract::surface_name_from_predicate(name)
             .or_else(|| (!name.starts_with("__click_")).then_some(name)),
     }
