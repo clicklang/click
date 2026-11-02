@@ -5,8 +5,10 @@
 //! and overflow semantics.  Mathematical integers have no C representation.
 
 use super::*;
+mod machine_view;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
+pub(crate) use machine_view::MachineOperandView;
 use num_bigint::BigInt;
 #[cfg(test)]
 use num_traits::ToPrimitive;
