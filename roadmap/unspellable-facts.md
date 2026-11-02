@@ -188,6 +188,10 @@ that reader now checks the count before shifting. Shared-prefix scaling tests
 cover signed32, unsigned32, and signed64 at 8/32/96 levels without materializing
 operands; a separate test grows the actual signed64 bound bucket at 4/16/64.
 Branch and withdrawal tests retain source witnesses and extrema.
+Validation: the full gate passes 7,108 tests (including 1,151 scaling tests),
+58 examples, and 4,987 proof fixtures. The run including recompilation took
+13m14s, over the ten-minute target; no limits changed. The arithmetic audit
+passes 124 fixtures with zero fact-stability differences. No nightly suite ran.
 
 This is still an intermediate consumer migration. General comparison decision,
 overflow query adapters, conversion/modular reverse adapters, and nested signed
