@@ -189,6 +189,14 @@ tests, 58 examples and 4,991 proof fixtures in 12m04s (over the ten-minute
 target; no limits changed). The arithmetic fact-stability audit passes all 124
 fixtures with zero differences. No nightly suite ran.
 
+The signed arithmetic certificate's exact-definedness matcher also consumes
+the view directly. It matches against the explicit certificate term without
+exporting a guard operand, preserving the old signed atom fragment and literal
+tag equivalence. Differential matching and a large-guard/small-certificate
+refusal regression pass; all 70 focused machine-integer and signed-certificate
+tests pass on this integrated increment. The earlier full-gate numbers above
+cover extraction/classification before this certificate consumer was added.
+
 Remaining: overflow decision/certificate query outputs, comparison query and
 fact-identity outputs, operation reverse readings and modular equalities still
 have legacy adapters. Nested signed preparation remains disabled until those
