@@ -1614,13 +1614,31 @@ a variable. The same fixture borrows a local of a type parameter in
 ## Result values
 
 A Rust `Result<T, E>` whose `T` and `E` are each `i32`, `u8`, `u16`, `u32`,
-`usize` or `bool`, or in generic code the function's own type parameters, is a
-value of the library's [`spec enum Result<T, E>`](library/index.md#results):
+`usize` or `bool`, a non-generic enum of the selected file, or in generic code
+the function's own type parameters, is a value of the library's
+[`spec enum Result<T, E>`](library/index.md#results):
 `Ok(x)` and `Err(e)` construct it, and `match`, `if let` and `matches!` on it
 step and split as on any enum. A sidecar writes the type as Rust does,
 `Result<u32, u8>`, and constructs `Result<u32, u8>::Ok(x)`; a pattern is
-`Result::Ok(v)`. A `Result` of another type, such as a crate enum or a
-record, is refused by name.
+`Result::Ok(v)`. A `Result` of another type, such as a record, is refused by
+name.
+
+A crate enum payload is that enum's own `spec enum`: `Result<u32, ParseError>`
+constructs `Result<u32, ParseError>::Err(ParseError::TooBig(x))`, a `match`
+arm `Result::Err(e)` binds `e` as a `ParseError`, and a Rust `match` on
+`Err(ParseError::Empty)` tests the error as it tests any enum local. So may an
+`Option`'s payload be a crate enum. Enums are imported from single-file units
+only ([coverage](coverage.md)).
+[`design/charon-trial/result-errors`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-errors/errors.click)
+verifies `check`, which returns either `ParseError` variant, `forwarded`,
+whose `?` returns whichever it met, `doubled`, `describe`, a nested
+`match`, and `wrapped` and `unwrapped` over an `Option<ParseError>`; each
+false claim mutated into the sidecar is refused
+(`tests/rust_import.rs::charon_result_errors_carry_a_crate_enum`). The
+callers' proofs rest on a kernel rule for an implication whose consequent the
+facts make an equation of two constructors: `x == 0 implies r ==
+Err(ParseError::Empty)` beside `r == Ok(v)` is `x != 0`, and `P implies
+Ok(v) == Ok(x)` is `P implies v == x`.
 
 `r?` on such a `Result` returns `r`'s `Err` unchanged and otherwise reads
 `Ok`'s payload: the importer checks that the compiler's `branch` and

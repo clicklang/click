@@ -3089,6 +3089,13 @@ fn matched_value_premise_instances(
             constructor,
         );
         if instance != premise && !instances.contains(&instance) {
+            // A premise whose consequent the arm's constructor makes an
+            // equation of two constructors says what that equation decides.
+            for decided in super::facts::constructor_consequent_instances(&instance) {
+                if !instances.contains(&decided) {
+                    instances.push(decided);
+                }
+            }
             instances.push(instance);
         }
     }

@@ -917,6 +917,17 @@ impl AlgebraicTypeApplication {
                         crate::kernel::AlgebraicValueType::C(c_type) => Some(ClickType::C(
                             crate::surface::generics::c0_type_from_kernel(*c_type),
                         )),
+                        // A crate enum payload, `Result<u32, ParseError>`'s
+                        // error, is that enum's `spec enum`.
+                        crate::kernel::AlgebraicValueType::Algebraic { name, arguments }
+                            if arguments.is_empty() =>
+                        {
+                            Some(ClickType::Algebraic(Self {
+                                rigid: false,
+                                name: name.clone(),
+                                arguments: Vec::new(),
+                            }))
+                        }
                         _ => None,
                     })
                     .collect::<Option<Vec<_>>>()?,

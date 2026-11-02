@@ -1226,19 +1226,9 @@ fn synthesize_surface_proposition_with_bound_variables(
 /// proposition shape, rather than a surface spelling heuristic, identifies
 /// the only guard this synthesis fallback may omit.
 fn is_leading_add_definedness_guard(proposition: &Proposition) -> bool {
-    let query = crate::kernel::machine_integer::definedness::interval_query_form(proposition);
-    let proposition = query.as_ref().unwrap_or(proposition);
     matches!(
-        proposition,
-        Proposition::ConditionIs(
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Add,
-                left: _,
-                right: _
-            },
-            false
-        )
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(proposition),
+        Some((crate::kernel::SignedDefinedWidth::Int32, _, false))
     )
 }
 
