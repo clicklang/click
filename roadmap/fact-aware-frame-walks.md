@@ -2,10 +2,9 @@
 
 Priority: P1.
 
-## Current branch boundary
+## Checking boundaries to preserve
 
-`codex/pointer-read-naming-regression` requires final integration validation. Keep these
-checking boundaries:
+Keep these checking boundaries during subsequent removals:
 
 - `CPointerValue::from_read` uses the supplied address and snapshot's O(1)
   `unchanged_bytes_source()` link instead of `resource_tracker::last_same_point`.
@@ -21,7 +20,7 @@ Preserve `fresh_pointer_read_naming_across_store_history_has_near_linear_total_w
 and `bounded_cell_source_is_independent_of_history_cache`. Neither ordinary
 memoization nor a warmed history cache may hide the cost of a cold query.
 
-## Remaining landing checks
+## Validation for subsequent removals
 
 Run the ordinary fixture corpus, full normal gate (including scaling), and the
 named expansion/replay checks below before publishing. Keep the repaired Rust

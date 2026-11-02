@@ -2802,6 +2802,7 @@ int32 arena_pipeline(
     }
     mark a1;
     let { outcome: o1 } = step(arena_alloc, { st: s0 });
+    have allocated == 1 implies first->arena == arena by { assumption(); }
     have arena->capacity == at(a1, arena->capacity);
     branch {
         have o1.model == ArenaAllocOutcome::Failure;
@@ -2853,8 +2854,8 @@ int32 arena_pipeline(
     }
     have o1.model == ArenaAllocOutcome::Success(first->start, first->end);
     have first->end <= arena->capacity;
-    have first->arena == arena;
     let { allocated: r1 } = unfold(o1);
+    have first->arena == arena by { extract(first->arena == arena); assumption(); }
     mark z1;
     have r1.start == at(z1, first->start);
     have r1.end == at(z1, first->end);
@@ -2915,6 +2916,7 @@ int32 arena_pipeline(
     have s0.live == 1;
     mark a2;
     let { outcome: o2 } = step(arena_alloc, { st: s0 });
+    have allocated == 1 implies second->arena == arena by { assumption(); }
     have arena->capacity == at(a2, arena->capacity);
     branch {
         have o2.model == ArenaAllocOutcome::Failure;
@@ -3098,8 +3100,8 @@ int32 arena_pipeline(
     }
     have o2.model == ArenaAllocOutcome::Success(second->start, second->end);
     have second->end <= arena->capacity;
-    have second->arena == arena;
     let { allocated: r2 } = unfold(o2);
+    have second->arena == arena by { extract(second->arena == arena); assumption(); }
     have at(a2, s0.live) == 1;
     have s0.live == 2;
     mark z2;
@@ -3992,6 +3994,7 @@ int32 arena_pipeline(
     }
     mark a3;
     let { outcome: o3 } = step(arena_alloc, { st: g3 });
+    have allocated == 1 implies combined->arena == arena by { assumption(); }
     have arena->capacity == at(a3, arena->capacity);
     branch {
         have o3.model == ArenaAllocOutcome::Failure;

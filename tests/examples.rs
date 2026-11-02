@@ -3073,6 +3073,7 @@ fn separation_history_repairs_expand_and_replay() {
         ("arena", "arena_cells.click", "arena_free"),
         ("arena", "arena_cells.click", "arena_write"),
         ("arena", "arena_cells.click", "arena_read"),
+        ("arena", "arena_cells.click", "arena_pipeline"),
         ("owned-vector", "vector.click", "allocated_vector_push"),
         (
             "marked-linked-list",
