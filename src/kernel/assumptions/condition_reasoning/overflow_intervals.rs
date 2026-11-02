@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
-use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{CompareRelation, MachineIntegerType, MachineOperandView, OverflowOperation};
 
 #[cfg(test)]
 thread_local! {
@@ -28,8 +28,7 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
-        let term = crate::kernel::eval::canonical_term(term);
-        self.checked_order_bounds.interval(&term, false)
+        self.indexed_constant_interval_view(MachineOperandView::Legacy(term), false)
     }
 
     /// Direct unsigned constant extrema, maintained separately from signed facts.
@@ -37,69 +36,24 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
-        let term = crate::kernel::eval::canonical_term(term);
-        self.checked_order_bounds.interval(&term, true)
+        self.indexed_constant_interval_view(MachineOperandView::Legacy(term), true)
     }
 
-    /// The exact `uint32` order facts that bound `term` by a constant,
-    /// indexed under `term` itself, each returned as the condition fact the
-    /// context holds so a certificate can cite it: the `uint32` counterpart
-    /// of [`Self::signed_constant_bound_facts`]'s order bounds. Keyed lookups
-    /// on `term` only.
-    pub(crate) fn unsigned32_constant_bound_facts(
+    fn indexed_constant_interval_view(
         &self,
-        term: &Bitvector32Term,
-    ) -> Vec<Proposition> {
-        let mut facts = Vec::new();
-        let Some(bounds) = self.uint32_order_bounds.get(term) else {
-            return facts;
-        };
-        for (endpoint, other, strict, is_upper) in bounds.keys() {
-            crate::instrumentation::record_deterministic_work(1);
-            if endpoint != term || other.as_const().is_none() {
-                continue;
+        term: MachineOperandView<'_>,
+        unsigned: bool,
+    ) -> Option<(i64, i64)> {
+        match term {
+            MachineOperandView::Legacy(term) => {
+                let canonical = crate::kernel::eval::canonical_term(term);
+                self.checked_order_bounds.interval(&canonical, unsigned)
             }
-            let (lower, upper) = if *is_upper {
-                (endpoint.clone(), other.clone())
-            } else {
-                (other.clone(), endpoint.clone())
-            };
-            let order = |relation: CompareRelation, reversed: bool| {
-                let (left, right) = if reversed {
-                    (upper.clone(), lower.clone())
-                } else {
-                    (lower.clone(), upper.clone())
-                };
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt32,
-                    relation,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                }
-            };
-            let forms = if *strict {
-                [
-                    (order(CompareRelation::LessThan, false), true),
-                    (order(CompareRelation::GreaterThan, true), true),
-                    (order(CompareRelation::LessEqual, true), false),
-                    (order(CompareRelation::GreaterEqual, false), false),
-                ]
-            } else {
-                [
-                    (order(CompareRelation::LessEqual, false), true),
-                    (order(CompareRelation::GreaterEqual, true), true),
-                    (order(CompareRelation::LessThan, true), false),
-                    (order(CompareRelation::GreaterThan, false), false),
-                ]
-            };
-            if let Some((condition, value)) = forms
-                .into_iter()
-                .find(|(condition, value)| self.condition_facts.get(condition) == Some(value))
-            {
-                facts.push(Proposition::ConditionIs(condition, value));
+            // Shared arithmetic contains no atomic load payloads to replace.
+            MachineOperandView::Shared(_) => {
+                self.checked_order_bounds.interval_view(term, unsigned)
             }
         }
-        facts
     }
 
     pub(in crate::kernel) fn decide_from_overflow_facts(
@@ -634,28 +588,34 @@ impl PureFactContext {
 
     // Bounds through zero extension preserve unsigned order, including the
     // upper half of u32. Read only the queried operand's indexed bounds.
-    fn widened_unsigned_interval(&self, term: &Bitvector32Term) -> (i64, i64) {
-        if let Some(value) = term.as_const() {
+    fn widened_unsigned_interval(
+        &self,
+        term: MachineOperandView<'_>,
+        mut source: impl FnMut(MachineOperandView<'_>, bool),
+    ) -> (i64, i64) {
+        if let Some(value) = term.word32_constant() {
             return (value as i64, value as i64);
         }
         let mut range = (0, u32::MAX as i64);
         // The `uint32` widening of an unsigned 8- or 16-bit value is in its
         // source's range (the format's own range, no fact read).
-        if let Bitvector32Term::MachineIntegerCast { source, .. } = term
+        if let Some((crate::kernel::KernelMachineCastEncoding::Generic, source, _, _)) = term.cast()
             && source.format().bits() < 32
             && !source.format().is_signed()
         {
             range.1 = i64::try_from(source.format().bounds().1).unwrap_or(range.1);
         }
-        if let Some((lo, hi)) = self.indexed_unsigned32_constant_interval(term) {
+        if let Some((lo, hi)) = self.indexed_constant_interval_view(term, true) {
+            source(term, true);
             range.0 = range.0.max(lo);
             range.1 = range.1.min(hi);
         }
-        let sibling = Self::int32_widening_sibling(term);
-        for term in std::iter::once(term).chain(sibling.as_ref()) {
-            if let Some((lo, hi)) = self.indexed_constant_interval(term)
+        let sibling = Self::int32_widening_sibling_view(term);
+        for term in std::iter::once(term).chain(sibling.as_ref().map(|s| s.operand_view())) {
+            if let Some((lo, hi)) = self.indexed_constant_interval_view(term, false)
                 && (lo >= 0 || range.1 <= i32::MAX as i64)
             {
+                source(term, false);
                 range.0 = range.0.max(lo);
                 range.1 = range.1.min(hi);
             }
@@ -663,31 +623,43 @@ impl PureFactContext {
         range
     }
 
-    /// The `int32` widening of the 8- or 16-bit value a `uint32` widening
-    /// widens: the same word (rule K1), under which a signed fact about the
-    /// value is filed. One match on the root.
-    fn int32_widening_sibling(term: &Bitvector32Term) -> Option<Bitvector32Term> {
-        let Bitvector32Term::MachineIntegerCast {
-            value,
-            source,
-            destination: MachineIntegerType::UInt32,
-        } = term
-        else {
+    fn int32_widening_sibling_view(
+        term: MachineOperandView<'_>,
+    ) -> Option<crate::kernel::SharedMachineIntegerTerm> {
+        use crate::kernel::{KernelMachineCastEncoding as E, SharedMachineIntegerTerm};
+        let (E::Generic, source, MachineIntegerType::UInt32, value) = term.cast()? else {
             return None;
         };
-        (source.format().bits() < 32).then(|| {
-            Bitvector32Term::machine_integer_cast(
-                *source,
+        if source.format().bits() >= 32 {
+            return None;
+        }
+        Some(match value {
+            MachineOperandView::Shared(root) => SharedMachineIntegerTerm::from_shared(
                 MachineIntegerType::Int32,
-                value.as_ref().clone(),
+                root.checking_machine_cast(source, MachineIntegerType::Int32),
             )
+            .expect("shared cast operand"),
+            MachineOperandView::Legacy(value) => SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                Bitvector32Term::machine_integer_cast(
+                    source,
+                    MachineIntegerType::Int32,
+                    value.clone(),
+                ),
+            ),
         })
     }
 
-    fn widened_unsigned_operand(term: &Bitvector32Term) -> Option<Option<&Bitvector32Term>> {
-        match term {
-            Bitvector32Term::Int64FromUInt32(value) => Some(Some(value)),
-            Bitvector32Term::Int64Constant(value) if (0..=u32::MAX as i64).contains(value) => {
+    fn widened_unsigned_operand_view(
+        term: MachineOperandView<'_>,
+    ) -> Option<Option<MachineOperandView<'_>>> {
+        if let Some((crate::kernel::KernelMachineCastEncoding::Int64FromUInt32, _, _, value)) =
+            term.cast()
+        {
+            return Some(Some(value));
+        }
+        match term.literal()? {
+            Bitvector32Term::Int64Constant(value) if (0..=u32::MAX as i64).contains(&value) => {
                 Some(None)
             }
             _ => None,
@@ -698,98 +670,58 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<Vec<Proposition>> {
-        let ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessEqual,
-            left,
-            right: _,
-        } = condition
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let query = comparison_view(condition, true)?;
+        if query.format != MachineIntegerType::Int64 || query.relation != Relation::LessEqual {
+            return None;
+        }
+        let (MachineIntegerType::Int64, MachineBinaryOp::Add, [a, b]) =
+            query.operands[0].operand_view().binary()?
         else {
             return None;
         };
-        let Bitvector32Term::Binary {
-            format: MachineIntegerType::Int64,
-            op: MachineBinaryOp::Add,
-            left: a,
-            right: b,
-        } = left.as_ref()
-        else {
-            return None;
-        };
-        let a_operand = Self::widened_unsigned_operand(a)?;
-        let b_operand = Self::widened_unsigned_operand(b)?;
+        let operands = [
+            Self::widened_unsigned_operand_view(a)?,
+            Self::widened_unsigned_operand_view(b)?,
+        ];
         let mut premises = Vec::new();
-        for operand in [a_operand, b_operand].into_iter().flatten() {
-            let unsigned =
-                self.unsigned32_constant_bound_facts(&crate::kernel::eval::canonical_term(operand));
-            let mut signed = self.signed_constant_bound_facts(
-                SignedDefinedWidth::Int32,
-                &crate::kernel::eval::canonical_term(operand),
-            );
-            if let Some(sibling) = Self::int32_widening_sibling(operand) {
-                signed.extend(self.signed_constant_bound_facts(
-                    SignedDefinedWidth::Int32,
-                    &crate::kernel::eval::canonical_term(&sibling),
-                ));
-            }
-            if unsigned.is_empty() {
-                premises.extend(signed);
-            } else {
-                let unsigned_upper = self
-                    .indexed_unsigned32_constant_interval(operand)
-                    .map_or(u32::MAX as i64, |(_, upper)| upper);
-                premises.extend(unsigned);
-                premises.extend(signed.into_iter().filter(|premise| {
-                    if unsigned_upper > i32::MAX as i64 {
-                        return true;
+        for operand in operands.into_iter().flatten() {
+            self.widened_unsigned_interval(operand, |term, unsigned| {
+                let sources = match term {
+                    MachineOperandView::Legacy(term) => {
+                        let canonical = crate::kernel::eval::canonical_term(term);
+                        self.checked_order_bounds
+                            .interval_sources_view(MachineOperandView::Legacy(&canonical), unsigned)
                     }
-                    let Proposition::ConditionIs(condition, value) = premise else {
-                        return false;
-                    };
-                    condition_as_order_fact(condition, *value).is_some_and(
-                        |(lower, upper, strict)| {
-                            let lower = crate::kernel::eval::canonical_term(&lower);
-                            (lower == crate::kernel::eval::canonical_term(operand)
-                                || Self::int32_widening_sibling(operand).is_some_and(|sibling| {
-                                    lower == crate::kernel::eval::canonical_term(&sibling)
-                                }))
-                                && signed_bitvector_constant(&upper)
-                                    .is_some_and(|bound| bound - i64::from(strict) < unsigned_upper)
-                        },
-                    )
-                }));
-            }
+                    MachineOperandView::Shared(_) => self
+                        .checked_order_bounds
+                        .interval_sources_view(term, unsigned),
+                };
+                premises.extend(sources.into_iter().flatten());
+            });
         }
         Some(premises)
     }
 
     pub(crate) fn decide_widened_sum_bound(&self, condition: &ConditionTerm) -> Option<bool> {
-        let ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        } = condition
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let query = comparison_view(condition, true)?;
+        if query.format != MachineIntegerType::Int64 || query.relation != Relation::LessEqual {
+            return None;
+        }
+        let (MachineIntegerType::Int64, MachineBinaryOp::Add, [a, b]) =
+            query.operands[0].operand_view().binary()?
         else {
             return None;
         };
-        let Bitvector32Term::Binary {
-            format: MachineIntegerType::Int64,
-            op: MachineBinaryOp::Add,
-            left: a,
-            right: b,
-        } = left.as_ref()
-        else {
-            return None;
-        };
-        let a_operand = Self::widened_unsigned_operand(a)?;
-        let b_operand = Self::widened_unsigned_operand(b)?;
-        let bound = right.int64_as_const()?;
-        let interval = |term: &Bitvector32Term, operand: Option<&Bitvector32Term>| {
+        let a_operand = Self::widened_unsigned_operand_view(a)?;
+        let b_operand = Self::widened_unsigned_operand_view(b)?;
+        let bound = query.operands[1].operand_view().int64_constant()?;
+        let interval = |term: MachineOperandView<'_>, operand: Option<MachineOperandView<'_>>| {
             if let Some(operand) = operand {
-                self.widened_unsigned_interval(operand)
+                self.widened_unsigned_interval(operand, |_, _| {})
             } else {
-                let value = term.int64_as_const().expect("checked widened constant");
+                let value = term.int64_constant().expect("checked widened constant");
                 (value, value)
             }
         };
@@ -2138,5 +2070,189 @@ mod tests {
         include!(
             "../../../scaling_tests/kernel/assumptions/condition_reasoning/overflow_intervals/tests.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod shared_widened_query_tests {
+    use super::*;
+    impl PureFactContext {
+        fn reference_widened_unsigned_interval(&self, term: &Bitvector32Term) -> (i64, i64) {
+            if let Some(value) = term.as_const() {
+                return (value as i64, value as i64);
+            }
+            let mut range = (0, u32::MAX as i64);
+            // The `uint32` widening of an unsigned 8- or 16-bit value is in its
+            // source's range (the format's own range, no fact read).
+            if let Bitvector32Term::MachineIntegerCast { source, .. } = term
+                && source.format().bits() < 32
+                && !source.format().is_signed()
+            {
+                range.1 = i64::try_from(source.format().bounds().1).unwrap_or(range.1);
+            }
+            if let Some((lo, hi)) = self.indexed_unsigned32_constant_interval(term) {
+                range.0 = range.0.max(lo);
+                range.1 = range.1.min(hi);
+            }
+            let sibling = Self::reference_int32_widening_sibling(term);
+            for term in std::iter::once(term).chain(sibling.as_ref()) {
+                if let Some((lo, hi)) = self.indexed_constant_interval(term)
+                    && (lo >= 0 || range.1 <= i32::MAX as i64)
+                {
+                    range.0 = range.0.max(lo);
+                    range.1 = range.1.min(hi);
+                }
+            }
+            range
+        }
+
+        fn reference_int32_widening_sibling(term: &Bitvector32Term) -> Option<Bitvector32Term> {
+            let Bitvector32Term::MachineIntegerCast {
+                value,
+                source,
+                destination: MachineIntegerType::UInt32,
+            } = term
+            else {
+                return None;
+            };
+            (source.format().bits() < 32).then(|| {
+                Bitvector32Term::machine_integer_cast(
+                    *source,
+                    MachineIntegerType::Int32,
+                    value.as_ref().clone(),
+                )
+            })
+        }
+
+        fn reference_widened_unsigned_operand(
+            term: &Bitvector32Term,
+        ) -> Option<Option<&Bitvector32Term>> {
+            match term {
+                Bitvector32Term::Int64FromUInt32(value) => Some(Some(value)),
+                Bitvector32Term::Int64Constant(value) if (0..=u32::MAX as i64).contains(value) => {
+                    Some(None)
+                }
+                _ => None,
+            }
+        }
+
+        pub(crate) fn reference_decide_widened_sum_bound(
+            &self,
+            condition: &ConditionTerm,
+        ) -> Option<bool> {
+            let ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::LessEqual,
+                left,
+                right,
+            } = condition
+            else {
+                return None;
+            };
+            let Bitvector32Term::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::Add,
+                left: a,
+                right: b,
+            } = left.as_ref()
+            else {
+                return None;
+            };
+            let a_operand = Self::reference_widened_unsigned_operand(a)?;
+            let b_operand = Self::reference_widened_unsigned_operand(b)?;
+            let bound = right.int64_as_const()?;
+            let interval = |term: &Bitvector32Term, operand: Option<&Bitvector32Term>| {
+                if let Some(operand) = operand {
+                    self.reference_widened_unsigned_interval(operand)
+                } else {
+                    let value = term.int64_as_const().expect("checked widened constant");
+                    (value, value)
+                }
+            };
+            let (a_lo, a_hi) = interval(a, a_operand);
+            let (b_lo, b_hi) = interval(b, b_operand);
+            if a_hi + b_hi <= bound {
+                Some(true)
+            } else if a_lo + b_lo > bound {
+                Some(false)
+            } else {
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn shared_widened_sum_queries_preserve_bounds_and_sources() {
+        use crate::kernel::{IntegerTerm, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        let a = Bitvector32Term::Variable(Variable(986101));
+        let b = Bitvector32Term::Variable(Variable(986102));
+        let cases = [
+            vec![],
+            vec![
+                ConditionTerm::unsigned_less_equal(a.clone(), 100u32.into()),
+                ConditionTerm::unsigned_less_equal(b.clone(), 50u32.into()),
+            ],
+            vec![
+                ConditionTerm::signed_greater_equal(a.clone(), 0u32.into()),
+                ConditionTerm::signed_less_equal(a.clone(), 100u32.into()),
+            ],
+            vec![ConditionTerm::unsigned_greater_equal(
+                a.clone(),
+                (u32::MAX - 100).into(),
+            )],
+        ];
+        for facts in cases {
+            let context = facts.iter().fold(PureFactContext::new(), |context, fact| {
+                context.assume_condition(fact.clone(), true)
+            });
+            for first in [
+                a.clone(),
+                Bitvector32Term::machine_integer_cast(
+                    MachineIntegerType::UInt8,
+                    MachineIntegerType::UInt32,
+                    a.clone(),
+                ),
+            ] {
+                let sum = Bitvector32Term::int64_add(
+                    Bitvector32Term::int64_from_uint32(first),
+                    Bitvector32Term::int64_from_uint32(b.clone()),
+                );
+                for bound in [
+                    -1,
+                    0,
+                    49,
+                    100,
+                    150,
+                    i64::from(u32::MAX),
+                    2 * i64::from(u32::MAX),
+                ] {
+                    let written = ConditionTerm::int64_signed_less_equal(
+                        sum.clone(),
+                        Bitvector32Term::Int64Constant(bound),
+                    );
+                    let expected = context.reference_decide_widened_sum_bound(&written);
+                    assert_eq!(context.decide_widened_sum_bound(&written), expected);
+                    let machine =
+                        SharedMachineIntegerTerm::intern(MachineIntegerType::Int64, sum.clone());
+                    let shared = ConditionTerm::IntegerLessEqual(
+                        IntegerTerm::Machine(machine.clone()).into(),
+                        IntegerTerm::constant(bound.into()).into(),
+                    );
+                    assert_eq!(context.decide_widened_sum_bound(&shared), expected);
+                    let selected = context
+                        .widened_unsigned_sum_bound_premises(&shared)
+                        .unwrap();
+                    assert!(selected.len() <= 12);
+                    assert!(selected.iter().all(|p| context.contains_assumed_exact(p)));
+                    let selected_context = selected
+                        .iter()
+                        .fold(PureFactContext::new(), |context, fact| {
+                            context.assume_proposition(fact.clone())
+                        });
+                    assert_eq!(selected_context.decide_widened_sum_bound(&shared), expected);
+                }
+            }
+        }
     }
 }

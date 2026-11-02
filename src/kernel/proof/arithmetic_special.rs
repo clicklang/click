@@ -1314,19 +1314,7 @@ fn signed_width_constant_view(
 
 /// What one explicitly supplied constant fact says about an operand.
 /// The source fact remains the witness; matching reads only its two endpoints.
-pub(crate) fn signed_constant_bound_on(
-    width: SignedDefinedWidth,
-    premise: &Proposition,
-    term: &Bitvector32Term,
-) -> Option<(Option<i64>, Option<i64>)> {
-    signed_constant_bound_on_view(
-        width,
-        premise,
-        crate::kernel::MachineOperandView::Legacy(term),
-    )
-}
-
-fn signed_constant_bound_on_view(
+pub(crate) fn signed_constant_bound_on_view(
     width: SignedDefinedWidth,
     premise: &Proposition,
     term: crate::kernel::MachineOperandView<'_>,
@@ -1407,7 +1395,7 @@ fn signed_constant_bound_on_key(
 /// operation is the one overflow conjunct no other conjunct takes as an
 /// operand, and every other conjunct must be a conjunct of a cited premise,
 /// which marks that premise used.
-type SignedDefinedOperation<'a> = (
+pub(crate) type SignedDefinedOperation<'a> = (
     SignedDefinedWidth,
     [crate::kernel::machine_integer::comparison::ComparisonOperand<'a>; 2],
     bool,
@@ -1495,6 +1483,21 @@ impl<'a> IntervalLeaf<'a> {
                 ))
             }
         }
+    }
+}
+
+/// Read one complete signed addition/subtraction domain without constructing
+/// an overflow proposition or exporting its shared operands. Compound domains
+/// remain the responsibility of the certificate's outer-operation selection.
+pub(crate) fn signed_definedness_query(
+    proposition: &Proposition,
+) -> Option<SignedDefinedOperation<'_>> {
+    if let Some(query) =
+        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
+    {
+        IntervalLeaf::Arithmetic(query).operation()
+    } else {
+        IntervalLeaf::Written(proposition).operation()
     }
 }
 
@@ -3559,6 +3562,87 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signed_domain_query_views_match_legacy_interval_shapes() {
+        use crate::kernel::machine_integer::definedness::{
+            integer_bounds_of_definedness, interval_query_form,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for op in [
+                OverflowOperation::Add,
+                OverflowOperation::Subtract,
+                OverflowOperation::Multiply,
+                OverflowOperation::Divide,
+            ] {
+                let legacy = Proposition::ConditionIs(
+                    ConditionTerm::Overflows {
+                        format,
+                        op,
+                        left: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(986302))),
+                        right: Box::new(
+                            if format == MachineIntegerType::Int64
+                                || format == MachineIntegerType::UInt64
+                            {
+                                Bitvector32Term::Int64Constant(1)
+                            } else {
+                                Bitvector32Term::Constant(1)
+                            },
+                        ),
+                    },
+                    false,
+                );
+                let mut forms = vec![legacy.clone()];
+                let bounds = integer_bounds_of_definedness(&legacy);
+                if let [a, b] = bounds.as_slice() {
+                    forms.extend([
+                        a.clone(),
+                        Proposition::And(Box::new(a.clone()), Box::new(b.clone())),
+                        Proposition::And(Box::new(b.clone()), Box::new(a.clone())),
+                    ]);
+                    forms.push(Proposition::And(
+                        Box::new(Proposition::And(Box::new(a.clone()), Box::new(b.clone()))),
+                        Box::new(legacy.clone()),
+                    ));
+                }
+                for proposition in forms {
+                    let adapted = interval_query_form(&proposition);
+                    let expected =
+                        signed_definedness_operands(adapted.as_ref().unwrap_or(&proposition));
+                    let query = signed_definedness_query(&proposition);
+                    assert_eq!(query.is_some(), expected.is_some());
+                    if let (
+                        Some((width, operands, subtract)),
+                        Some((expected_width, left, right, expected_subtract)),
+                    ) = (query, expected)
+                    {
+                        assert_eq!(width, expected_width);
+                        assert_eq!(subtract, expected_subtract);
+                        let ty = match width {
+                            SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
+                            SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
+                        };
+                        for (operand, expected) in operands.iter().zip([left, right]) {
+                            assert!(
+                                operand.operand_view().retain(ty)
+                                    == crate::kernel::SharedMachineIntegerTerm::intern(
+                                        ty,
+                                        expected.clone()
+                                    )
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn constant_bound_views_preserve_native_comparison_polarity() {

@@ -294,6 +294,38 @@ fragment; opaque operands retain their compatibility storage. Higher-level
 comparison dispatch and interval-query outputs still have boxed boundaries.
 Nested signed preparation remains disabled.
 
+## Shared widening decisions and interval planning (2026-11-02)
+
+The widened-unsigned-sum comparison and its selected-premise route now consume
+shared comparison/operand views. Range reads use the existing maintained extrema
+indexes. Evidence selection retains the exact source of each contributing
+extremum, rather than enumerating all bounds on an operand. Signed/unsigned
+widening sibling rules and the refusal of insufficient bounds are preserved.
+The atomic evidence dispatcher can use this route on Integer observations without
+exporting their operands. This does not yet remove the main condition dispatcher's
+native-comparison compatibility bridge.
+
+`signed_definedness_query` reads a single complete signed add/subtract domain as
+operand handles. Special-certificate planning, restricted definedness closure,
+and the four explicit increment/one-plus/nonnegative-add/nonnegative-subtract
+planners use it instead of building an overflow proposition. Compound-domain
+selection stays in the existing certificate rule. Explicit planner matching keeps
+written operand identity; it does not read equality facts or change lowering.
+
+An attempted admission-plus-query no-export regression confirmed that ordinary
+Integer comparison admission still calls
+`native_comparison_of_integer_observation -> boxed_condition -> boxed_value` in
+`assume_condition_once`. The query regression isolates this existing boundary;
+full comparison admission is not yet shared. Modular admission's earlier
+no-export regression covers a different route.
+
+Remaining compatibility boundaries include ordinary comparison admission, the
+main condition dispatcher, selected atomic interval-query normalization, conditional normalization,
+reassociated-add checking, unrestricted definedness planning and spelling.
+Nested signed preparation remains disabled. The remaining work must preserve
+proof sources and refusal routes, not replace the old dispatcher with graph-only
+lookup or add rule-local fact-dependent fallbacks.
+
 ## Shared inverse-operation operands (2026-11-02)
 
 The inverse map from an exact Integer sum/difference to its machine operation

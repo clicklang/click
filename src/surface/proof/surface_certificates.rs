@@ -1,5 +1,4 @@
 use super::*;
-use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
@@ -2461,32 +2460,39 @@ fn plan_explicit_constant_lower_bound_weakening(
     None
 }
 
+// Written operand identity for the explicit arithmetic rules below. The
+// observation handle is an exact syntax key, not a value/equality-graph read.
+fn same_written_int32_operand(
+    operand: crate::kernel::MachineOperandView<'_>,
+    written: &Bitvector32Term,
+) -> bool {
+    operand.retain(MachineIntegerType::Int32)
+        == crate::kernel::SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            written.clone(),
+        )
+}
+
 pub(super) fn plan_explicit_increment_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = interval_query.as_ref().unwrap_or(goal);
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: value,
-            right: amount,
-        },
-        false,
-    ) = goal
+    let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
         return None;
     };
-    if amount.as_ref() != &Bitvector32Term::Constant(1) {
+    let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
+    if amount.literal() != Some(Bitvector32Term::Constant(1)) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_value, upper)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_value != value.as_ref() || upper != &Bitvector32Term::Constant(i32::MAX as u32) {
+        if !same_written_int32_operand(value, premise_value)
+            || upper != &Bitvector32Term::Constant(i32::MAX as u32)
+        {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -2499,28 +2505,22 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = interval_query.as_ref().unwrap_or(goal);
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: one,
-            right: value,
-        },
-        false,
-    ) = goal
+    let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
         return None;
     };
-    if one.as_ref() != &Bitvector32Term::Constant(1) {
+    let [one, value] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
+    if one.literal() != Some(Bitvector32Term::Constant(1)) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_value, upper)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_value != value.as_ref() || upper != &Bitvector32Term::Constant(i32::MAX as u32) {
+        if !same_written_int32_operand(value, premise_value)
+            || upper != &Bitvector32Term::Constant(i32::MAX as u32)
+        {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -2568,43 +2568,30 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = interval_query.as_ref().unwrap_or(goal);
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: value,
-            right: amount,
-        },
-        false,
-    ) = goal
+    let (crate::kernel::SignedDefinedWidth::Int32, operands, false) =
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
         return None;
     };
+    let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
     let zero = Bitvector32Term::Constant(0);
-    let headroom = binary_node!(
-        Int32,
-        Subtract,
-        Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
-        Box::new(amount.as_ref().clone()),
-    );
-    let (nonnegative_kernel, nonnegative_surface) = premise_pairs
-        .iter()
-        .find(|(kernel, _)| signed_nonstrict_parts(kernel) == Some((&zero, amount.as_ref())))?;
-    let (headroom_kernel, headroom_surface) = premise_pairs
-        .iter()
-        .find(|(kernel, _)| signed_nonstrict_parts(kernel) == Some((value.as_ref(), &headroom)))?;
+    let (_, nonnegative_surface) = premise_pairs.iter().find(|(kernel, _)| {
+        signed_nonstrict_parts(kernel)
+            .is_some_and(|(left, right)| left == &zero && same_written_int32_operand(amount, right))
+    })?;
+    let (_, headroom_surface) = premise_pairs.iter().find(|(kernel, _)| {
+        let Some((left, right)) = signed_nonstrict_parts(kernel) else {
+            return false;
+        };
+        let binary_term!(Int32, Subtract, maximum, subtracted) = right else {
+            return false;
+        };
+        same_written_int32_operand(value, left)
+            && maximum.as_ref() == &Bitvector32Term::Constant(i32::MAX as u32)
+            && same_written_int32_operand(amount, subtracted)
+    })?;
     surface_nonstrict_parts(nonnegative_surface)?;
     surface_nonstrict_parts(headroom_surface)?;
-    debug_assert_eq!(
-        signed_nonstrict_parts(nonnegative_kernel),
-        Some((&zero, amount.as_ref()))
-    );
-    debug_assert_eq!(
-        signed_nonstrict_parts(headroom_kernel),
-        Some((value.as_ref(), &headroom))
-    );
     let (_, surface_amount) = surface_nonstrict_parts(nonnegative_surface)?;
     let (surface_value, _) = surface_nonstrict_parts(headroom_surface)?;
     // The headroom `MAX - amount` is itself a machine difference, whose
@@ -2691,26 +2678,21 @@ pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = interval_query.as_ref().unwrap_or(goal);
-    let Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Subtract,
-            left: value,
-            right: amount,
-        },
-        false,
-    ) = goal
+    let (crate::kernel::SignedDefinedWidth::Int32, operands, true) =
+        crate::kernel::proof::arithmetic_special::signed_definedness_query(goal)?
     else {
         return None;
     };
+    let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
     let zero = Bitvector32Term::Constant(0);
-    let (_, nonnegative_surface) = premise_pairs
-        .iter()
-        .find(|(kernel, _)| signed_nonstrict_parts(kernel) == Some((&zero, amount.as_ref())))?;
+    let (_, nonnegative_surface) = premise_pairs.iter().find(|(kernel, _)| {
+        signed_nonstrict_parts(kernel)
+            .is_some_and(|(left, right)| left == &zero && same_written_int32_operand(amount, right))
+    })?;
     let (_, within_value_surface) = premise_pairs.iter().find(|(kernel, _)| {
-        signed_nonstrict_parts(kernel) == Some((amount.as_ref(), value.as_ref()))
+        signed_nonstrict_parts(kernel).is_some_and(|(left, right)| {
+            same_written_int32_operand(amount, left) && same_written_int32_operand(value, right)
+        })
     })?;
     let (_, surface_amount) = surface_nonstrict_parts(nonnegative_surface)?;
     let (_, surface_value) = surface_nonstrict_parts(within_value_surface)?;
