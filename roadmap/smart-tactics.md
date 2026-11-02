@@ -58,12 +58,12 @@ facts do not establish flat cost as the queried class or bucket grows.
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 
-The next removal target is the pointer-specific history traversal in
-`pointer_read_value_recursive` and its frame fallback. The combined experiment
-is on `codex/memory-walk-removal-current`; use its deterministic
-`repeated_pointer_frame_queries_have_near_linear_total_work` regression when
-isolating that next change. Removing only the general cell-source traversal
-does not fix that end-to-end quadratic example.
+Investigate the read-initialization loop `typed_read_has_same_memory_source`
+with its own checking regression before choosing a removal. Keep it separate
+from complete-pointer equality and provenance comparison, which may inspect
+only one predecessor per endpoint. Retain the repeated-query, adjacent-state,
+explicit-composition, cold-refusal and partial-overwrite controls in
+`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`.
 
 Repair affected proofs with explicit separation and transport certificates,
 preserving C and contracts. Structural read equality needs positive evidence;
@@ -78,10 +78,8 @@ a concrete proof need; support whole-region separation by explicit composition,
 not a transition scan. Extend observations beyond memory only with an explicit
 primitive design and a concrete use.
 
-Keep this work separate from the compact-run experiment above. Before landing
-the pointer removal, rerun the ordinary corpus and affected expansion/replay
-checks with that traversal actually disabled. Migrate any remaining implicit
-framing tests to explicit proofs, retaining their aliasing and overlap controls.
+Keep history removal separate from the compact-run experiment above. Migrate
+implicit framing tests to explicit proofs, retaining aliasing and overlap controls.
 This item does not require a general audit of all history upkeep, diagnostics,
 or verifier code before closure.
 

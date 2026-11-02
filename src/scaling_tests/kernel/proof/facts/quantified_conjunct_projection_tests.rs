@@ -13,6 +13,8 @@ fn projection_lookup_is_flat_against_unrelated_quantified_facts() {
     let goal = guarded(2, 4, |k| equals(k, 7));
     let mut costs = Vec::new();
     for size in [16u32, 64, 256] {
+        // Each context starts with the same cold comparison state.
+        let _session = crate::kernel::VerificationSession::enter();
         let mut facts = ProofFacts::from_ordered(&[]);
         for index in 0..size {
             let var = 1_000 + u64::from(index) * 2;

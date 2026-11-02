@@ -4025,22 +4025,50 @@ fn full_pointer_read_survives_a_join_of_stores_to_its_sibling() {
         ),
     };
     let left = before.memory().clone().store(beside.clone(), int32(0));
-    let right = before.memory().clone().store(beside, int32(1));
+    let right = before.memory().clone().store(beside.clone(), int32(1));
     let joined = intern_c_memory(
         left.clone()
             .with_interface_memory_havoc(Variable(998_712), &BTreeSet::new(), &[&left, &right])
             .unwrap(),
     );
+    // The explicit proof selects the disjoint byte ranges after rewriting
+    // child == q: [q + 8, q + 12) is separate from [q, q + 8).
+    let facts = facts.assume_proposition(Proposition::CResourceSeparate {
+        left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            beside.clone(),
+            0u32.into(),
+            4u32.into(),
+            1,
+        ))),
+        right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            q.pointer().clone(),
+            0u32.into(),
+            8u32.into(),
+            1,
+        ))),
+    });
+    // The explicit join summary names the common write footprint of both arms.
+    // Comparing the distant snapshots alone no longer searches their histories.
+    let effect = Proposition::CMemoryEffectSummary {
+        before: before.memory().clone(),
+        after: joined.memory().clone(),
+        mutable_ranges: vec![CMemoryRange::new(beside, 0u32.into(), 1u32.into())],
+    };
+    let (old, new, equality) = super::explicit_frame(
+        before.memory(),
+        joined.memory(),
+        q.pointer(),
+        CType::Int32Pointer,
+        &[effect],
+        &facts,
+    )
+    .expect("the selected join footprint preserves the complete pointer");
+    let (CValue::Pointer(old), CValue::Pointer(new)) = (old, new) else {
+        panic!("complete pointer observations");
+    };
+    let preserved = facts.clone().assume_proposition(equality);
+    assert!(preserved.pointer_designations_match(&old, &new));
     let earlier = Pointer::loaded_value(&before, q.pointer());
-    let projected = intern_c_memory(
-        crate::kernel::memory_provenance::canonical_c_memory_for_pointer_load(&joined, q.pointer()),
-    );
-    crate::kernel::reasoning::record_canonical_load_projection(&joined, &projected, q.pointer());
-    let later = Pointer::loaded_value(&projected, q.pointer());
-    assert!(
-        crate::kernel::memory_provenance::pointer_read_designations_equal(&earlier, &later, &facts)
-    );
-    assert!(crate::kernel::memory_provenance::pointer_read_extents_equal(&earlier, &later, &facts));
     let upper_half = Pointer {
         block: q.pointer().block.clone(),
         offset: PointerOffsetTerm::add(q.pointer().offset.clone(), PointerOffsetTerm::Constant(4)),

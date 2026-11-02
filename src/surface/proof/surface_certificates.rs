@@ -906,6 +906,8 @@ pub(super) fn spell_signed_goal(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<ClickProposition> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let mut operands: Vec<(&Bitvector32Term, ContractExpression)> = Vec::new();
     for (kernel, surface) in premise_pairs {
         let parts = signed_strict_parts(kernel)
@@ -2463,6 +2465,8 @@ pub(super) fn plan_explicit_increment_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -2495,6 +2499,8 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -2562,6 +2568,8 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -2683,6 +2691,8 @@ pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
     goal: &Proposition,
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = interval_query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,

@@ -1333,6 +1333,11 @@ pub(in crate::surface) fn collect_resource_subject_referenced_names(
         ResourceSubject::Memory(segment) => {
             names.extend(contract_segment_referenced_names(segment))
         }
+        ResourceSubject::SavedMemory { base, start, end } => {
+            for argument in [base, start].into_iter().chain(end.iter()) {
+                collect_contract_expression_referenced_names(argument, names);
+            }
+        }
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
                 collect_contract_expression_referenced_names(argument, names);

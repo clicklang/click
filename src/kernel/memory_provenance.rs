@@ -2857,10 +2857,9 @@ fn complete_pointer_read_source(read: &LoadedPointerView) -> SharedCMemory {
 
 /// Whether two reads at addresses the caller proved equal see the bytes of
 /// one cell source. Reads of one snapshot are one read. Each may also be a
-/// projection of a different snapshot, which it agrees with at its own cell;
-/// that does not make the two reads differ. A frame can retain an opaque read
-/// without materializing its cell, so the walk follows only the selected
-/// cell, stopping at the older named snapshot.
+/// projection of a different snapshot, which it agrees with at its own cell.
+/// Compare their retained sources using only immediate checked transitions;
+/// longer preservation arguments must be supplied as explicit equalities.
 pub(in crate::kernel) fn pointer_reads_see_one_cell_source(
     left: &LoadedPointerView,
     right: &LoadedPointerView,
@@ -3692,9 +3691,9 @@ impl LoadCellWalks {
     }
 }
 
-/// Compare two selected read histories, stopping as soon as their checked
-/// no-write prefixes meet. Alternating the walks avoids inspecting history
-/// older than a nearby shared source, including for sibling snapshot views.
+/// Compare exact sources or one checked predecessor per named endpoint.
+/// Longer preservation chains require explicit equalities; this operation
+/// must not discover intermediate snapshots by following memory history.
 fn typed_reads_share_memory_source(
     left: &SharedCMemory,
     right: &SharedCMemory,
@@ -3707,47 +3706,32 @@ fn typed_reads_share_memory_source(
     }
     let _scope = ExplicitReadScope(EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true)));
     with_extended_dag_bridging(|| {
-        let mut current = [Some(left.clone()), Some(right.clone())];
-        let mut reached = [
-            std::collections::HashSet::from([left.clone()]),
-            std::collections::HashSet::from([right.clone()]),
-        ];
         let evidence = crate::kernel::resource_tracker::step_effect::Evidence {
             assumptions,
             cross_loop_havoc: true,
         };
-        while current.iter().any(Option::is_some) {
-            for side in 0..2 {
-                let Some(node) = current[side].take() else {
-                    continue;
-                };
-                crate::instrumentation::record_deterministic_work(1);
-                let Some(step) = node.derivation() else {
-                    continue;
-                };
-                if !matches!(
-                    crate::kernel::resource_tracker::step_effect::affects(
-                        &step,
-                        &node,
-                        crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
-                        &evidence,
-                    ),
-                    crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
-                        crate::kernel::resource_tracker::step_effect::Separation::Cell(_)
-                    )
-                ) {
-                    continue;
-                }
-                let base = step.base();
-                if reached[1 - side].contains(base) {
-                    return true;
-                }
-                if reached[side].insert(base.clone()) {
-                    current[side] = Some(base.clone());
-                }
-            }
+        let predecessor = |node: &SharedCMemory| {
+            crate::instrumentation::record_deterministic_work(1);
+            let step = node.derivation()?;
+            matches!(
+                crate::kernel::resource_tracker::step_effect::affects(
+                    &step,
+                    node,
+                    crate::kernel::resource_tracker::Resource::Cell { pointer, bytes },
+                    &evidence,
+                ),
+                crate::kernel::resource_tracker::step_effect::StepEffect::Separate(
+                    crate::kernel::resource_tracker::step_effect::Separation::Cell(_)
+                )
+            )
+            .then(|| step.base().clone())
+        };
+        let left_base = predecessor(left);
+        if left_base.as_ref() == Some(right) {
+            return true;
         }
-        false
+        let right_base = predecessor(right);
+        right_base.as_ref() == Some(left) || left_base.is_some() && left_base == right_base
     })
 }
 
@@ -6000,33 +5984,27 @@ pub(crate) fn certified_store_equations(
                     return None;
                 }
             };
-            // What the store wrote is the read of its own kind there. An 8-
-            // or 16-bit value (a `Bool` is carried in 8 bits) is a value of
-            // its own format, equated at it.
+            // What the store wrote is the read of its own kind there,
+            // equated at the stored value's format. Bool uses its byte carrier.
             let kind = LoadKind::of_value(&store.value)?;
-            let read = Bitvector32Term::memory_read(
+            // The store record establishes the value of this exact read.
+            // Publish its registered version name, the same term logical
+            // lowering constructs at the post-store snapshot. The private
+            // store record retains the raw memory relation; no history or
+            // ambient fact search is needed to name its read.
+            let read = crate::kernel::canonical_form_of_load(
                 crate::kernel::intern_c_memory(store.after.clone()),
                 store.pointer.clone(),
                 kind,
             );
-            let narrow = match store.value.numeric_value() {
-                CValue::Bool(_) | CValue::UInt8(_) => Some(MachineIntegerType::UInt8),
-                CValue::Int8(_) => Some(MachineIntegerType::Int8),
-                CValue::Int16(_) => Some(MachineIntegerType::Int16),
-                CValue::UInt16(_) => Some(MachineIntegerType::UInt16),
-                _ => None,
+            let format = match store.value.numeric_value() {
+                CValue::Bool(_) => MachineIntegerType::UInt8,
+                value => MachineIntegerType::from_c_type(value.c_type())?,
             };
-            let condition = match narrow {
-                Some(format) => {
-                    ConditionTerm::machine_compare(format, CompareRelation::Equal, read, value)
-                }
-                None => ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(read),
-                    right: Box::new(value),
-                },
-            };
+            // Use the language comparison constructor as well as its width:
+            // 64/128-bit equality has one sign-free, signed-format spelling.
+            let condition =
+                ConditionTerm::machine_compare(format, CompareRelation::Equal, read, value);
             Some(Proposition::ConditionIs(condition, true))
         })
         .collect()
@@ -8454,5 +8432,65 @@ mod direct_unchanged_scaling_tests {
             "a direct unchanged check grew with unrelated effect facts \
              (size, work, effect facts visited): {samples:?}"
         );
+    }
+}
+
+#[test]
+fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
+    use crate::kernel::{ExecutionFacts, ExecutionPureFact};
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let address = Pointer::symbolic(Variable(989_777));
+        let before = CMemory::new();
+        let one = crate::kernel::machine_integer::range::constant_word(format, &1.into()).unwrap();
+        let term = Bitvector32Term::logical_machine_binary(
+            format,
+            crate::kernel::MachineBinaryOp::Add,
+            Bitvector32Term::Variable(Variable(989_778)),
+            one,
+        );
+        let value = match format {
+            MachineIntegerType::Int32 => CValue::Int32(term.clone()),
+            MachineIntegerType::UInt32 => CValue::UInt32(term.clone()),
+            MachineIntegerType::Int64 => CValue::Int64(term.clone()),
+            MachineIntegerType::UInt64 => CValue::UInt64(term.clone()),
+            _ => unreachable!(),
+        };
+        let after = before.clone().store(address.clone(), value.clone());
+        let named = crate::kernel::canonical_form_of_load(
+            crate::kernel::intern_c_memory_ref(&after),
+            address.clone(),
+            LoadKind::of_value(&value).unwrap(),
+        );
+        let facts: ExecutionFacts = vec![ExecutionPureFact::certified_store(
+            before, after, address, value, None,
+        )]
+        .into();
+        let equations = certified_store_equations(&facts);
+        assert_eq!(
+            equations,
+            vec![Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: if format == MachineIntegerType::UInt64 {
+                        MachineIntegerType::Int64
+                    } else {
+                        format
+                    },
+                    relation: CompareRelation::Equal,
+                    left: Box::new(named),
+                    right: Box::new(term),
+                },
+                true
+            )]
+        );
+        let Proposition::ConditionIs(condition, _) = &equations[0] else {
+            unreachable!()
+        };
+        assert!(crate::kernel::condition_variable_widths(condition).is_ok());
     }
 }

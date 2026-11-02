@@ -1452,8 +1452,14 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
     let original = Bitvector32Term::Variable(Variable(812_001));
     let remaining =
         Bitvector32Term::uint64_subtract(original.clone(), Bitvector32Term::UInt64Constant(16));
-    let extent =
-        Bitvector32Term::uint64_add(Bitvector32Term::UInt64Constant(16), remaining.clone());
+    // The source retains `16 + len`, including when len stores `original - 16`.
+    // Algebraic cancellation is a comparison rule, not the source's term.
+    let extent = Bitvector32Term::logical_machine_binary(
+        crate::kernel::MachineIntegerType::UInt64,
+        crate::kernel::MachineBinaryOp::Add,
+        Bitvector32Term::UInt64Constant(16),
+        remaining.clone(),
+    );
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_less_equal(extent, Bitvector32Term::UInt64Constant(i64::MAX as u64)),
         true,

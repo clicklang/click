@@ -4,13 +4,17 @@ Priority: P1.
 
 ## Remaining targets
 
-The next target is the pointer-specific traversal in `pointer_read_value_recursive`
-and its frame fallback. These still search recorded memory history during ordinary
-checking.
-`repeated_pointer_frame_queries_have_near_linear_total_work` in the combined
-experiment (`codex/memory-walk-removal-current`) demonstrates quadratic total
-work from repeated pointer-frame queries. Keep that regression with the pointer
-removal; restricting the general cell-source lookup alone does not make it pass.
+The `typed_read_has_same_memory_source` loop in
+`src/kernel/memory_provenance.rs` supplies initialization checks through
+`PureFactContext`'s read-definedness evidence. Establish a deterministic scaling
+regression through that checking caller, then discuss the explicit proof needed
+to replace its history traversal before implementing the removal.
+
+Keep complete-pointer equality and provenance comparison bounded to one
+immediate predecessor per endpoint. Retain the repeated-query, adjacent-state,
+explicit-composition and cold-refusal controls in
+`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`. Cold histories include
+writes to either pointer half; an undecided comparison must refuse equality.
 
 The general `memory_dag_cell_source` entry now inspects one transition. Its
 bounded variants may reuse already memoized version summaries but must not

@@ -1342,3 +1342,51 @@ fn numeric_pointer_read_rewrites_ignore_separate_storage() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn arithmetic_comparison_memos_are_bounded_and_session_local() {
+    let mut cold_work = Vec::new();
+    for size in [4usize, 16, 64] {
+        let variable = Bitvector32Term::Variable(Variable(978_445));
+        let mut expression = variable.clone();
+        for _ in 0..size {
+            expression = Bitvector32Term::logical_machine_binary(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                expression,
+                Bitvector32Term::Constant(0),
+            );
+        }
+        let goal = Proposition::ConditionIs(ConditionTerm::equal(expression, variable), true);
+        let measure = || {
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::arithmetic_comparison_form(&goal)
+            })
+        };
+        let first;
+        {
+            let _session = crate::kernel::VerificationSession::enter();
+            assert!(
+                with_checked_simple_budget(2, || crate::kernel::arithmetic_comparison_form(&goal))
+                    .is_none()
+            );
+            // A budget refusal must not become a cached negative answer.
+            first = measure();
+            assert!(first.0.is_some());
+            let warm = measure();
+            assert_eq!(warm.0, first.0);
+            assert!(warm.1 <= 2, "completed lookup should reuse the comparison");
+        }
+        {
+            let _session = crate::kernel::VerificationSession::enter();
+            let fresh = measure();
+            assert_eq!(
+                fresh, first,
+                "prior verification must not warm the next one"
+            );
+        }
+        cold_work.push(first.1);
+    }
+    assert!(cold_work[1] <= 4 * cold_work[0] + 32);
+    assert!(cold_work[2] <= 4 * cold_work[1] + 32);
+}

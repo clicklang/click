@@ -19,18 +19,92 @@ propositions, rather than adding an `overflows<type>(...)` surface primitive.
 The proposed shared-overflow-node slice remains a local checkpoint on
 `codex/kernel-overflow-conditions` and is not being landed.
 
-The first replacement slice is `codex/division-domain-propositions`: signed
+The first replacement slice merged as #2230: signed
 32/64-bit division and remainder require nonzero divisor plus the ordinary
 MIN/-1 exclusion. Both specification evaluation and C execution use ordinary
 propositions; the int32 remainder bridge theorem uses the same conjunction.
 The full exclusion is checked by indexed assumption membership, with existing
 atomic checks deciding its two comparisons. Unknown execution records an Or
 on the normal branch and an And of equalities on the exceptional branch.
-Other operations and legacy internal overflow reasoning remain to migrate.
+The follow-up `codex/arithmetic-ordinary-propositions` consolidates the supported
+arithmetic operators in one PR: signed add/subtract/multiply use exact
+Integer range bounds, division/remainder conjoin both requirements, and
+shifts conjoin their language-specific requirements. Unary negation inherits
+subtraction; unsigned wrapping arithmetic has no overflow obligation.
+Supported 128-bit operators also retain one complete domain. C execution,
+including pointer-formation arithmetic, publishes ordinary branch facts.
+Builtin theorem statements and certificate results use the same propositions.
+Private structural adapters let existing interval reasoning consume the new
+representation without inserting opaque overflow facts in the proof state.
+These adapters are not new Surface terms or fact-dependent lowering.
+Arithmetic observation planning selects the complete domain's recorded source,
+including historical anchors. Integer bridge shortcuts are now session-local:
+retained terms preserve identity without changing a later verification's work.
+Logical machine arithmetic also preserves symbolic cancellation and identity
+nodes. Their equalities belong to comparison, including wide literal identities and
+`(x + c) - c` cancellation in the equality graph. Store equations publish the
+registered read name at the stored value's actual width. Static scalar reads
+use declaration names, including historical reads. Arithmetic identity
+planning retains explicit operands and orders selected dependencies before
+their users; a same-cell frame is tried before stored-value search. False
+scalar equalities are refused using ordinary affine cancellation and word
+congruence, without creating facts or changing lowering.
+Shared comparison-form normalization handles arithmetic identities in exact
+premise lists, arithmetic claims, fold alpha keys, and selected scalar-read
+addresses. It preserves the original terms and snapshots; comparisons do not
+walk memory history or search ambient facts. Arithmetic comparison is a query
+operation: it does not file normalized aliases as additional facts. Completed
+comparison queries are memoized within the load-origin session; budget refusals
+are not retained, and a fresh verification starts with cold comparison caches.
+Validation of the all-operators migration: `scripts/check.sh --no-fail-fast`
+passed 7,060 unit/API/import/scaling tests, 58 examples, and 4,958 mdtests in
+10m38s (38 seconds over the ten-minute target; no limits changed and no
+nightly run). Targeted fact-stability audits passed 124 arithmetic, 17 division,
+and 24 shift fixtures with zero differences. Arithmetic adds one fixture to
+its zero-difference 123-fixture baseline; the 24-fixture shift baseline and
+the merged division slice's 17-fixture audit were also zero.
+Integration with upstream `e929bd000` exposed two proof dependencies in CI.
+`copy3_array_demo` now states separation from the actual pre-store index,
+using the explicit Integer observation of the machine `i - 1`. `arena_pipeline`
+now rewrites its known load through an explicitly typed machine-index equality
+before folding the retained cell resource. Both focused fixtures pass; these
+repairs change neither C nor contracts. The integrated full gate passed 7,065
+unit/API/import/scaling tests, 58 examples and 4,963 mdtests in 10m49s
+(49 seconds over the ten-minute target; no limits changed and no nightly run).
+The first machine-arithmetic producer slice now constructs shared nodes for
+same-format `uint32`/`uint64` addition, subtraction and multiplication over
+available values. Shared children survive until one final legacy checker
+export. These total wrapping operators have no definedness debt; the evaluator
+retains its existing literal-only evaluation, while the shared constructor is
+structural. A rejected mixed-format/deferred tree disables further preparation
+attempts inside that tree, avoiding repeated prefix walks. Signed and partial
+operators, deferred operands, C execution and checker consumers remain separate
+migration work. The 26 focused producer/bridge tests and all 1,132 scaling tests
+passed before the next upstream integration. The 96-fixture unsigned audit
+reported zero lowering differences both before and after the change; both runs
+failed the same `memcpy_then_terminator_keeps_copied_unsigned_bytes` transport
+proof, so neither audit was a passing corpus verdict.
+
+CI on the preceding head, integrated with `af1815919`, also exposed an
+`arena_alloc` search exhaustion when deriving `0 <= end - i` from the held
+`i <= end`. The proof now cites that bound in an explicit affine certificate;
+no search limit or program contract changes. The producer slice and this repair
+are integrated with upstream `96b02aab4`. The focused `arena` run passed.
+`scripts/check.sh --no-fail-fast` then passed 7,076 unit/API/import/scaling
+tests, 58 examples and 4,975 mdtests in 11m31s (91 seconds over the target).
+No limits changed and no nightly suite ran. The final nested-partial regression
+(`0 * (x / 0)` retains its divisor obligation) passed with the five producer
+checks. The integrated arithmetic audit passed all 124 fixtures with zero
+differences. The integrated unsigned audit again reported zero differences,
+with the same one failing byte-copy transport fixture out of 96. The ordinary
+`MDTEST_FILTER=unsigned` run fails that same transport too, although the full
+corpus passes. Investigate the isolation/proof-context dependency next; it is
+not solely a fact-stability instrumentation failure.
+
 The ordinary obligations also exposed a retained-proof bug: a post-execution
 `have` can retain prerequisite proofs before its own certificate. Replay now
 keeps that complete sequence rather than requiring a single step.
-Validation: `scripts/check.sh --no-fail-fast` passed 7,038 unit/API/import/
+Validation of the merged division slice (#2230): `scripts/check.sh --no-fail-fast` passed 7,038 unit/API/import/
 scaling tests, 58 examples, and 4,954 mdtests in 12m02s (over the ten-minute
 target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching

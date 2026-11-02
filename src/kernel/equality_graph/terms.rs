@@ -323,6 +323,12 @@ enum Node {
     ),
     TypeInteger,
     IntegerAtom(crate::kernel::SharedIntegerTerm),
+    IntegerFold(
+        Option<crate::kernel::MachineIntegerType>,
+        Variable,
+        Variable,
+        crate::kernel::SharedIntegerTerm,
+    ),
     MachineUnary(crate::kernel::BitvectorUnaryOp, crate::kernel::CarrierWidth),
     MachineBinary(
         crate::kernel::BitvectorBinaryOp,

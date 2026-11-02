@@ -1632,21 +1632,15 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies defined((old(st.total) + "),
+        claim.contains("implies (let integer_value: Integer = to_integer(old((st.total as "),
         "{expanded}"
     );
     assert!(
-        claim.contains("arithmetic_certificate rules {"),
+        claim.contains("integer_value) <= 9223372036854775807"),
         "{expanded}"
     );
     assert!(
-        claim.contains(
-            "premise 0: at(function.entry, st.total < 100) => at(function.entry, st.total < 100);"
-        ),
-        "{expanded}"
-    );
-    assert!(
-        claim.contains("int64_defined bounds [0] => defined(("),
+        claim.contains("integer_value) >= -9223372036854775808"),
         "{expanded}"
     );
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
@@ -1674,7 +1668,7 @@ fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     assert!(!claim.contains("execute()"), "{expanded}");
     assert!(!claim.contains("solve()"), "{expanded}");
     assert!(
-        claim.contains("implies defined((old(st.total) + "),
+        claim.contains("implies (let integer_value: Integer = to_integer(old((st.total as "),
         "{expanded}"
     );
     if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
@@ -1710,6 +1704,51 @@ fn branch_continuation_match_expands_and_reverifies() {
                 error.message()
             );
         }
+    }
+}
+
+#[test]
+#[ignore = "nightly: focused pointer-history proof expansion and cold replay"]
+fn explicitly_packaged_pointer_frame_expands_without_history_search() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/a_retained_pointer_field_fact_transports_through_a_loop_alias.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "probe").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
+
+#[test]
+#[ignore = "nightly: saved memory descriptor expansion and cold replay"]
+fn saved_memory_descriptors_expand_and_replay() {
+    for (fixture, claim) in [
+        ("saved_memory_bases_keep_current_indices", "advance"),
+        ("saved_memory_struct_elements_keep_their_stride", "advance"),
+        ("saved_memory_cell_does_not_increment_its_index", "keep"),
+        ("saved_memory_field_address_keeps_snapshot", "redirect"),
+        ("arena_prefix_free_reads_region_arena", "arena_release"),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = c_sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        with_proof_trace(claim, || {
+            let verified = verify_c0_sources(&source, &sources).unwrap_or_else(|error| {
+                panic!(
+                    "{fixture}: {}\n{}",
+                    error.report(),
+                    error.trace_context_report().unwrap_or_default()
+                )
+            });
+            let expanded = expand_checked_grouped_claim(&source, &verified, claim).unwrap();
+            without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+                .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
+        });
     }
 }
 
@@ -2841,7 +2880,7 @@ theorem machine_fold_argument_missing_definedness(divisor: int32) {
     }
 }
 "#,
-            "divisor != 0 }` holds, and that is not available here",
+            "divisor != 0 and (k != -2147483648 or divisor != -1) }` holds, and that is not available here",
         ),
         (
             r#"
@@ -14952,7 +14991,7 @@ fn pure_folded_constant_successor_solve_expands_to_successor_bound() {
 }
 
 #[test]
-fn unfolded_conjunction_have_solve_expands_to_both_scopes() {
+fn unfolded_conjunction_have_solve_expands_and_rechecks() {
     let c_source = r#"
             struct pair {
                 int32 low;
@@ -14996,8 +15035,8 @@ fn unfolded_conjunction_have_solve_expands_to_both_scopes() {
         position.column,
     )
     .expect("the unfolded conjunction have solve should expand to exact child scopes");
-    assert!(expanded.contains("both {"), "{expanded}");
-    assert!(expanded.contains("} and {"), "{expanded}");
+    // Named store equations can close the whole conjunction by assumption.
+    // Both that certificate and a split certificate must expand and recheck.
     assert!(!expanded.contains("have 0 <= pair->low"), "{expanded}");
     assert!(
         !expanded.contains("have pair->low <= pair->high"),

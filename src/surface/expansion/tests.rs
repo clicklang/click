@@ -2334,9 +2334,9 @@ fn int64_arithmetic_expands_to_its_integer_bridge_steps() {
     let expanded = expand_c0_claim_source_by_label(source, &[], "step_two.ensures_0")
         .expect("the int64 arithmetic step expands");
     for step in [
-        "have defined((i + 1i64)) by {\n            assumption();",
+        "have (to_integer(i) + 1) <= 9223372036854775807 by {",
         "integer_operation_identity bounds [0, 1] => to_integer((i + 2i64)) ==",
-        "have to_integer((i + 1i64)) < to_integer(length) by {\n            assumption();",
+        "premise 2: to_integer((i + 1i64)) < to_integer(length)",
     ] {
         assert!(expanded.contains(step), "{step}\n{expanded}");
     }

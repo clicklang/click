@@ -72,14 +72,7 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
     let field_range = CMemoryRange::from_pointer_value(&field, 0u32.into(), 2u32.into(), 4);
     let data_range = CMemoryRange::from_pointer_value(&data, 0u32.into(), 4u32.into(), 4);
     let initial = CMemory::new();
-    let before = CPointerValue::from_read(
-        data.pointer().clone(),
-        CType::Int32Pointer,
-        &intern_c_memory_ref(&initial),
-        field.pointer(),
-    );
-    // The frame restores scalar cache cells covering one complete pointer.
-    // Its pointer origin still comes from the original eight-byte read.
+    // Restore scalar cache cells covering one complete pointer.
     let memory = initial
         .materialize_symbolic_cell(field.pointer().clone(), CType::Int32)
         .materialize_symbolic_cell(field.pointer().offset_by_bytes(4), CType::Int32);
@@ -93,8 +86,13 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
                 .unchecked_with_fact(CResourceFact::own_memory(data_range.clone())),
         );
     let assumptions = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(field_range)),
-        right: Box::new(CResource::Memory(data_range)),
+        left: Box::new(
+            crate::kernel::region_footprint::byte_resource(&CResource::Memory(field_range))
+                .unwrap(),
+        ),
+        right: Box::new(
+            crate::kernel::region_footprint::byte_resource(&CResource::Memory(data_range)).unwrap(),
+        ),
     });
     let scalar = |value: u32| CExpression::Value(CValue::Int32(value.into()));
     for (name, length, kept) in [("data", 4, true), ("field", 2, false)] {
@@ -126,21 +124,30 @@ fn restoring_a_loop_frame_retains_complete_pointer_reads_but_not_written_cells()
         )
         .unwrap();
         assert!(head.resource_failures.is_empty());
-        let after = CPointerValue::from_read(
-            before.pointer().clone(),
-            CType::Int32Pointer,
-            &intern_c_memory_ref(head.top.memory()),
+        let preservation = crate::kernel::tests::explicit_frame(
+            state.memory(),
+            head.top.memory(),
             field.pointer(),
+            CType::Int32Pointer,
+            &head.summaries,
+            &assumptions,
         );
         assert_eq!(
-            crate::kernel::memory_provenance::pointer_read_designations_equal(
-                before.designation(),
-                after.designation(),
-                &assumptions,
-            ),
+            preservation.is_some(),
             kept,
-            "only a field kept outside the loop's write set retains its origin"
+            "only a field outside the loop's explicit write footprint is preserved"
         );
+        if let Some((before, after, equality)) = preservation {
+            let (CValue::Pointer(before), CValue::Pointer(after)) = (before, after) else {
+                panic!("complete pointer observations");
+            };
+            assert!(
+                assumptions
+                    .clone()
+                    .assume_proposition(equality)
+                    .pointer_designations_match(&before, &after)
+            );
+        }
     }
 }
 

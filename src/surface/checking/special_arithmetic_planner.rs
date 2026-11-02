@@ -45,7 +45,10 @@ pub(super) fn plan_special_arithmetic_certificate(
     // exactly the listed premises that bound an operand by a constant of
     // the goal's width. The kernel recomputes the operand ranges and
     // refuses a result that can leave that width.
-    if let Some((width, left, right, _)) = signed_definedness_operands(goal) {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    if let Some((width, left, right, _)) =
+        signed_definedness_operands(interval_query.as_ref().unwrap_or(goal))
+    {
         let bounds = premises
             .iter()
             .enumerate()

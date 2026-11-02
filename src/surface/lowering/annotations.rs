@@ -7682,6 +7682,31 @@ impl AnnotationLowerer<'_> {
             )),
             ResourceSubject::Captured { value, .. } => Ok(SpecResource::Value(value.clone())),
 
+            ResourceSubject::SavedMemory { base, start, end } => {
+                let element_width = self
+                    .contract_pointer_element_width(base, environment)
+                    .ok_or("saved memory base must be a pointer with a known element width")?;
+                let base = self.lower_contract_expression_to_spec(base, environment)?;
+                let start = self.lower_contract_expression_to_spec(start, environment)?;
+                Ok(match end {
+                    Some(end) => SpecResource::Memory {
+                        base,
+                        start,
+                        end: self.lower_contract_expression_to_spec(end, environment)?,
+                        element_width,
+                    },
+                    None => SpecResource::Memory {
+                        base: SpecExpression::PointerOffset {
+                            pointer: Box::new(base),
+                            elements: Box::new(start),
+                            byte_width: element_width,
+                        },
+                        start: SpecExpression::Value(int32(0)),
+                        end: SpecExpression::Value(int32(1)),
+                        element_width,
+                    },
+                })
+            }
             ResourceSubject::Memory(segment) => {
                 let environment = self.spec_segment_environment(segment, environment)?;
                 Ok(SpecResource::Memory {
@@ -8065,6 +8090,72 @@ impl AnnotationLowerer<'_> {
                 pointer: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
                 elements: Box::new(self.lower_c_fragment_to_spec(index, environment)?),
                 byte_width,
+            });
+        }
+        if let CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) =
+            expression
+            && let CExpression::TypedLoad {
+                pointer,
+                value_type,
+                volatile,
+                pointee_constant,
+                access_class,
+                source,
+            } = target.as_ref()
+        {
+            // The address operand belongs to this elaboration environment,
+            // which may select a saved memory. A raw CExpression here would
+            // silently evaluate nested pointer reads in the current state.
+            // Bind only that operand, then use the existing address operation
+            // to retain its designation, extent, and qualifiers.
+            let name = "<spec-address-operand>".to_string();
+            fn bind_address_base<'a>(
+                pointer: &'a CExpression,
+                name: &str,
+            ) -> (&'a CExpression, CExpression) {
+                match pointer {
+                    CExpression::Subobject { pointer, width } => {
+                        let (base, pointer) = bind_address_base(pointer, name);
+                        (
+                            base,
+                            CExpression::Subobject {
+                                pointer: Box::new(pointer),
+                                width: *width,
+                            },
+                        )
+                    }
+                    CExpression::PointerOffsetBytes { pointer, bytes } => {
+                        let (base, pointer) = bind_address_base(pointer, name);
+                        (
+                            base,
+                            CExpression::PointerOffsetBytes {
+                                pointer: Box::new(pointer),
+                                bytes: *bytes,
+                            },
+                        )
+                    }
+                    base => (base, CExpression::Variable(name.into())),
+                }
+            }
+            // C member selection records a designation, not merely an extent.
+            // Retain that selected syntax around the snapshot-bound base.
+            let (base, pointer) = bind_address_base(pointer, &name);
+            let target = Box::new(CExpression::TypedLoad {
+                pointer: Box::new(pointer),
+                value_type: *value_type,
+                volatile: *volatile,
+                pointee_constant: *pointee_constant,
+                access_class: access_class.clone(),
+                source: source.clone(),
+            });
+            let address = match expression {
+                CExpression::CheckedObjectAddress(_) => CExpression::CheckedObjectAddress(target),
+                _ => CExpression::AddressOf(target),
+            };
+            return Ok(SpecExpression::Let {
+                name,
+                value: Box::new(self.lower_c_fragment_to_spec(base, environment)?),
+                body: Box::new(SpecExpression::CExpression(address)),
             });
         }
         match expression {
@@ -8590,7 +8681,8 @@ impl AnnotationLowerer<'_> {
                 &CExpression::Variable(name.clone()),
                 environment,
             ),
-            ContractExpression::QualifiedC { lowered, .. }
+            ContractExpression::CUnary { lowered, .. }
+            | ContractExpression::QualifiedC { lowered, .. }
             | ContractExpression::CFragment(lowered)
             | ContractExpression::Field { lowered, .. } => {
                 self.c_expression_array_element_width(lowered, environment)
@@ -8676,6 +8768,13 @@ impl AnnotationLowerer<'_> {
         }
         match expression {
             CExpression::Value(CValue::Pointer(pointer)) => pointer.c_type().pointee_type(),
+            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+                match target.as_ref() {
+                    CExpression::TypedLoad { value_type, .. } => Some(*value_type),
+                    CExpression::Variable(name) => self.c_variable_type(name),
+                    _ => None,
+                }
+            }
             CExpression::Cast { target_type, .. } => target_type.pointee_type(),
             CExpression::Variable(name) => environment
                 .array_refs
@@ -8752,6 +8851,15 @@ impl AnnotationLowerer<'_> {
                     unreachable!()
                 };
                 self.c_expression_array_element_width(base, environment)
+            }
+            CExpression::AddressOf(target) | CExpression::CheckedObjectAddress(target) => {
+                match target.as_ref() {
+                    CExpression::TypedLoad { value_type, .. } => Some(value_type.byte_width()),
+                    CExpression::Variable(name) => {
+                        self.c_variable_type(name).map(CType::byte_width)
+                    }
+                    _ => None,
+                }
             }
             CExpression::Value(CValue::Pointer(pointer)) => {
                 pointer.c_type().pointee_type().map(CType::byte_width)

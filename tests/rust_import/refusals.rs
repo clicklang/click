@@ -7,8 +7,8 @@ use super::*;
 fn rust_import_refusals_name_their_place_and_construct() {
     for (source, expected) in [
         (
-            "pub fn bad(n: u32) -> u32 {\n    let mut t = 0;\n    for i in 0..=n { t = i; }\n    t\n}",
-            &["borrow.rs:3 in bad:", "type `RangeInclusive<u32>`"][..],
+            "pub fn bad(n: u32) -> u32 {\n    let mut t = 0;\n    for i in (0..n).rev() { t = i; }\n    t\n}",
+            &["borrow.rs:3 in bad:", "type `Rev<Range<u32>>`"][..],
         ),
         (
             "pub fn bad(a: u32, b: u32) -> u32 {\n    a.pow(b)\n}",

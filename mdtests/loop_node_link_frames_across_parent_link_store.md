@@ -82,11 +82,203 @@ void rotate(struct node* parent) {
                                     have sibling == sid;
                                     have tmp2 == iid;
                                     mark inner_inputs;
-                                    step(); step(); // Store the sibling and inner links.
-                                    have iid->right == sid;
-                                    have separate(memory(parent->right), memory(iid->right)) by assumption();
-                                    mark before_parent_store;
+                                    mark before_link_0;
+                                    have separate(memory(sibling->left), memory(sid->right)) by assumption();
+                                    have separate(memory(sibling->left), memory(iid->left)) by assumption();
+                                    have separate(memory(sibling->left), memory(parent->left)) by assumption();
                                     step();
+                                    have separate(loop(0).statement(3).footprint, memory(sid->right)) by {
+                                        normalize() using { separate(memory(sibling->left), memory(sid->right)); };
+                                    }
+                                    have sid->right == at(before_link_0, sid->right) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(3).footprint, memory(sid->right))
+                                                => separate(loop(0).statement(3).footprint, memory(sid->right));
+                                            preserve 0 => sid->right == at(before_link_0, sid->right);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have separate(loop(0).statement(3).footprint, memory(iid->left)) by {
+                                        normalize() using { separate(memory(sibling->left), memory(iid->left)); };
+                                    }
+                                    have iid->left == at(before_link_0, iid->left) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(3).footprint, memory(iid->left))
+                                                => separate(loop(0).statement(3).footprint, memory(iid->left));
+                                            preserve 0 => iid->left == at(before_link_0, iid->left);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have separate(loop(0).statement(3).footprint, memory(parent->left)) by {
+                                        normalize() using { separate(memory(sibling->left), memory(parent->left)); };
+                                    }
+                                    have parent->left == at(before_link_0, parent->left) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(3).footprint, memory(parent->left))
+                                                => separate(loop(0).statement(3).footprint, memory(parent->left));
+                                            preserve 0 => parent->left == at(before_link_0, parent->left);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have sid->left == tmp1;
+                                    mark before_link_1;
+                                    have separate(memory(tmp2->right), memory(sid->right)) by assumption();
+                                    have separate(memory(tmp2->right), memory(iid->left)) by assumption();
+                                    have separate(memory(tmp2->right), memory(parent->left)) by assumption();
+                                    have separate(memory(tmp2->right), memory(sid->left)) by assumption();
+                                    step();
+                                    have separate(loop(0).statement(4).footprint, memory(sid->right)) by {
+                                        normalize() using { separate(memory(tmp2->right), memory(sid->right)); };
+                                    }
+                                    have sid->right == at(before_link_1, sid->right) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(4).footprint, memory(sid->right))
+                                                => separate(loop(0).statement(4).footprint, memory(sid->right));
+                                            preserve 0 => sid->right == at(before_link_1, sid->right);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have sid->right == at(inner_inputs, sid->right) by {
+                                        transport_certificate {
+                                            premise 0: sid->right == at(before_link_1, sid->right) => sid->right == at(before_link_1, sid->right);
+                                            premise 1: at(before_link_1, sid->right) == at(inner_inputs, sid->right) => at(before_link_1, sid->right) == at(inner_inputs, sid->right);
+                                            transitive 0, 1 => sid->right == at(inner_inputs, sid->right);
+                                            conclusion 2;
+                                        }
+                                    }
+                                    have separate(loop(0).statement(4).footprint, memory(iid->left)) by {
+                                        normalize() using { separate(memory(tmp2->right), memory(iid->left)); };
+                                    }
+                                    have iid->left == at(before_link_1, iid->left) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(4).footprint, memory(iid->left))
+                                                => separate(loop(0).statement(4).footprint, memory(iid->left));
+                                            preserve 0 => iid->left == at(before_link_1, iid->left);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have iid->left == at(inner_inputs, iid->left) by {
+                                        transport_certificate {
+                                            premise 0: iid->left == at(before_link_1, iid->left) => iid->left == at(before_link_1, iid->left);
+                                            premise 1: at(before_link_1, iid->left) == at(inner_inputs, iid->left) => at(before_link_1, iid->left) == at(inner_inputs, iid->left);
+                                            transitive 0, 1 => iid->left == at(inner_inputs, iid->left);
+                                            conclusion 2;
+                                        }
+                                    }
+                                    have separate(loop(0).statement(4).footprint, memory(parent->left)) by {
+                                        normalize() using { separate(memory(tmp2->right), memory(parent->left)); };
+                                    }
+                                    have parent->left == at(before_link_1, parent->left) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(4).footprint, memory(parent->left))
+                                                => separate(loop(0).statement(4).footprint, memory(parent->left));
+                                            preserve 0 => parent->left == at(before_link_1, parent->left);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have parent->left == at(inner_inputs, parent->left) by {
+                                        transport_certificate {
+                                            premise 0: parent->left == at(before_link_1, parent->left) => parent->left == at(before_link_1, parent->left);
+                                            premise 1: at(before_link_1, parent->left) == at(inner_inputs, parent->left) => at(before_link_1, parent->left) == at(inner_inputs, parent->left);
+                                            transitive 0, 1 => parent->left == at(inner_inputs, parent->left);
+                                            conclusion 2;
+                                        }
+                                    }
+                                    have separate(loop(0).statement(4).footprint, memory(sid->left)) by {
+                                        normalize() using { separate(memory(tmp2->right), memory(sid->left)); };
+                                    }
+                                    have sid->left == at(before_link_1, sid->left) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(4).footprint, memory(sid->left))
+                                                => separate(loop(0).statement(4).footprint, memory(sid->left));
+                                            preserve 0 => sid->left == at(before_link_1, sid->left);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have iid->right == sid;
+                                    mark before_parent_store;
+                                    have separate(memory(parent->right), memory(sid->right)) by assumption();
+                                    have separate(memory(parent->right), memory(iid->left)) by assumption();
+                                    have separate(memory(parent->right), memory(parent->left)) by assumption();
+                                    have separate(memory(parent->right), memory(sid->left)) by assumption();
+                                    have separate(memory(parent->right), memory(iid->right)) by assumption();
+                                    step();
+                                    have separate(loop(0).statement(5).footprint, memory(sid->right)) by {
+                                        normalize() using { separate(memory(parent->right), memory(sid->right)); };
+                                    }
+                                    have sid->right == at(before_parent_store, sid->right) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(5).footprint, memory(sid->right))
+                                                => separate(loop(0).statement(5).footprint, memory(sid->right));
+                                            preserve 0 => sid->right == at(before_parent_store, sid->right);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have sid->right == at(inner_inputs, sid->right) by {
+                                        transport_certificate {
+                                            premise 0: sid->right == at(before_parent_store, sid->right) => sid->right == at(before_parent_store, sid->right);
+                                            premise 1: at(before_parent_store, sid->right) == at(inner_inputs, sid->right) => at(before_parent_store, sid->right) == at(inner_inputs, sid->right);
+                                            transitive 0, 1 => sid->right == at(inner_inputs, sid->right);
+                                            conclusion 2;
+                                        }
+                                    }
+                                    have separate(loop(0).statement(5).footprint, memory(iid->left)) by {
+                                        normalize() using { separate(memory(parent->right), memory(iid->left)); };
+                                    }
+                                    have iid->left == at(before_parent_store, iid->left) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(5).footprint, memory(iid->left))
+                                                => separate(loop(0).statement(5).footprint, memory(iid->left));
+                                            preserve 0 => iid->left == at(before_parent_store, iid->left);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have iid->left == at(inner_inputs, iid->left) by {
+                                        transport_certificate {
+                                            premise 0: iid->left == at(before_parent_store, iid->left) => iid->left == at(before_parent_store, iid->left);
+                                            premise 1: at(before_parent_store, iid->left) == at(inner_inputs, iid->left) => at(before_parent_store, iid->left) == at(inner_inputs, iid->left);
+                                            transitive 0, 1 => iid->left == at(inner_inputs, iid->left);
+                                            conclusion 2;
+                                        }
+                                    }
+                                    have separate(loop(0).statement(5).footprint, memory(parent->left)) by {
+                                        normalize() using { separate(memory(parent->right), memory(parent->left)); };
+                                    }
+                                    have parent->left == at(before_parent_store, parent->left) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(5).footprint, memory(parent->left))
+                                                => separate(loop(0).statement(5).footprint, memory(parent->left));
+                                            preserve 0 => parent->left == at(before_parent_store, parent->left);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have parent->left == at(inner_inputs, parent->left) by {
+                                        transport_certificate {
+                                            premise 0: parent->left == at(before_parent_store, parent->left) => parent->left == at(before_parent_store, parent->left);
+                                            premise 1: at(before_parent_store, parent->left) == at(inner_inputs, parent->left) => at(before_parent_store, parent->left) == at(inner_inputs, parent->left);
+                                            transitive 0, 1 => parent->left == at(inner_inputs, parent->left);
+                                            conclusion 2;
+                                        }
+                                    }
+                                    have separate(loop(0).statement(5).footprint, memory(sid->left)) by {
+                                        normalize() using { separate(memory(parent->right), memory(sid->left)); };
+                                    }
+                                    have sid->left == at(before_parent_store, sid->left) by {
+                                        transport_certificate {
+                                            premise 0: separate(loop(0).statement(5).footprint, memory(sid->left))
+                                                => separate(loop(0).statement(5).footprint, memory(sid->left));
+                                            preserve 0 => sid->left == at(before_parent_store, sid->left);
+                                            conclusion 1;
+                                        }
+                                    }
+                                    have sid->left == at(before_link_1, sid->left) by {
+                                        transport_certificate {
+                                            premise 0: sid->left == at(before_parent_store, sid->left) => sid->left == at(before_parent_store, sid->left);
+                                            premise 1: at(before_parent_store, sid->left) == at(before_link_1, sid->left) => at(before_parent_store, sid->left) == at(before_link_1, sid->left);
+                                            transitive 0, 1 => sid->left == at(before_link_1, sid->left);
+                                            conclusion 2;
+                                        }
+                                    }
                                     have separate(loop(0).statement(5).footprint, memory(iid->right)) by {
                                         normalize() using { separate(memory(parent->right), memory(iid->right)); };
                                     }

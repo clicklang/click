@@ -2505,3 +2505,179 @@ fn pointer_frame_through_seeded_cells_ignores_run_length() {
         "{samples:?}"
     );
 }
+
+/// N stores and N explicit frame queries; retain every proved
+/// equality and keep all caches live within the sequence. Distinct symbolic
+/// addresses require the supplied full-byte separation, rather than letting
+/// a fact-free distinct-block rule erase the interesting history.
+fn repeated_pointer_frame_work(compare_to_entry: bool, compose: bool) -> Vec<(u32, usize)> {
+    let mut samples = Vec::new();
+    for size in [4u32, 8, 16, 32] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(998_910));
+        let write = Pointer::symbolic(Variable(998_911));
+        let initial = crate::kernel::intern_c_memory(CMemory::new());
+        let original =
+            CPointerValue::new(Pointer::loaded_value(&initial, &field), CType::Int32Pointer);
+        let mut facts = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                field.clone(),
+                0u32.into(),
+                8u32.into(),
+                1,
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                write.clone(),
+                0u32.into(),
+                4u32.into(),
+                1,
+            ))),
+        });
+        let mut memory = initial.memory().clone();
+        let mut previous = original.clone();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 0..size {
+                memory = memory
+                    .clone()
+                    .store(write.clone(), CValue::Int32(index.into()));
+                let snapshot = crate::kernel::intern_c_memory_ref(&memory);
+                let current = CPointerValue::new(
+                    Pointer::loaded_value(&snapshot, &field),
+                    CType::Int32Pointer,
+                );
+                let reference = if compare_to_entry {
+                    &original
+                } else {
+                    &previous
+                };
+                let source = Proposition::ConditionIs(
+                    ConditionTerm::pointer_value_equal(reference.clone(), reference.clone()),
+                    true,
+                );
+                let target = Proposition::ConditionIs(
+                    ConditionTerm::pointer_value_equal(current.clone(), reference.clone()),
+                    true,
+                );
+                let proved = crate::kernel::api::c_condition_fact_target_reaches_in_context(
+                    &source, &target, &facts,
+                );
+                if !compare_to_entry || index == 0 {
+                    assert!(proved, "adjacent control: query {index} of {size}");
+                }
+                // Keep every proved equality; a declined history query adds nothing.
+                if proved {
+                    facts = facts.clone().assume_proposition(target);
+                }
+                if compose {
+                    let composed = Proposition::ConditionIs(
+                        ConditionTerm::pointer_value_equal(current.clone(), original.clone()),
+                        true,
+                    );
+                    assert!(
+                        crate::kernel::api::c_condition_fact_target_reaches_in_context(
+                            &source, &composed, &facts,
+                        ),
+                        "composition at {index} of {size}"
+                    );
+                    facts = facts.clone().assume_proposition(composed);
+                }
+                previous = current;
+            }
+        });
+        samples.push((size, work));
+    }
+    samples
+}
+
+#[test]
+fn adjacent_pointer_frame_checks_have_near_linear_total_work() {
+    let samples = repeated_pointer_frame_work(false, false);
+    eprintln!("adjacent-snapshot pointer checks: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 3, "adjacent control: {samples:?}");
+    }
+}
+
+/// Regression for the remaining implicit history walk: this calls the kernel checking entry used by
+/// explicit `transport`, with no smart tactic/planner. Each query names the
+/// entry snapshot and current snapshot in constant space; the input contains
+/// N stores and N checks, not an explicitly enumerated N-by-N history proof.
+#[test]
+fn repeated_pointer_frame_queries_have_near_linear_total_work() {
+    let samples = repeated_pointer_frame_work(true, false);
+    eprintln!("entry-to-current pointer checks: {samples:?}");
+    // Doubling permits 2x linear work plus ample logarithmic overhead, but
+    // rejects a sustained quadratic curve (approximately 4x).
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * 3,
+            "pointer-frame checking exceeds the near-linear doubling envelope: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn explicit_pointer_frame_composition_has_near_linear_total_work() {
+    let samples = repeated_pointer_frame_work(false, true);
+    eprintln!("explicit pointer frame composition: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * 3,
+            "explicit composition: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn cold_pointer_frame_refusals_do_not_scan_history() {
+    for overwrite in [None, Some(0), Some(4)] {
+        let mut samples = Vec::new();
+        for size in [4_u32, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let field = Pointer::symbolic(Variable(998_920));
+            let write = Pointer::symbolic(Variable(998_921));
+            let initial = crate::kernel::intern_c_memory(CMemory::new().store(
+                field.clone(),
+                CValue::typed_pointer(Pointer::symbolic(Variable(998_922)), CType::Int32Pointer),
+            ));
+            let mut memory = initial.memory().clone();
+            if let Some(offset) = overwrite {
+                memory = memory.store(field.offset_by_bytes(offset), CValue::Int32(9u32.into()));
+            }
+            for index in 0..size {
+                memory = memory.store(write.clone(), CValue::Int32(index.into()));
+            }
+            let current = crate::kernel::intern_c_memory(memory);
+            let facts = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                    field.clone(),
+                    0u32.into(),
+                    8u32.into(),
+                    1,
+                ))),
+                right: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+                    write,
+                    0u32.into(),
+                    4u32.into(),
+                    1,
+                ))),
+            });
+            let before = Pointer::loaded_value(&initial, &field);
+            let after = Pointer::loaded_value(&current, &field);
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::memory_provenance::complete_pointer_reads_equal_across_frame(
+                    &before, &after, &facts,
+                )
+            });
+            assert!(
+                !proved,
+                "an unrecorded history must not establish equality: {overwrite:?}"
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples.iter().all(|work| *work == samples[0]),
+            "{overwrite:?}: {samples:?}"
+        );
+    }
+}

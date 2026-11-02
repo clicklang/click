@@ -1979,7 +1979,11 @@ impl<'a> Planner<'a> {
         let mut index: HashMap<DefinednessKey, Vec<usize>> = HashMap::new();
         for (candidate, proposition) in self.premises.iter().enumerate() {
             charge_work(1)?;
-            let Some((operator, left, right)) = definedness_parts_from_proposition(proposition)
+            let ordinary =
+                crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
+                    .map(|condition| Proposition::ConditionIs(condition, false));
+            let Some((operator, left, right)) =
+                definedness_parts_from_proposition(ordinary.as_ref().unwrap_or(proposition))
             else {
                 continue;
             };
@@ -2831,7 +2835,11 @@ impl<'a> Planner<'a> {
 }
 
 fn exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool {
-    let Proposition::ConditionIs(condition, false) = proposition else {
+    let ordinary =
+        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
+            .map(|condition| Proposition::ConditionIs(condition, false));
+    let Proposition::ConditionIs(condition, false) = ordinary.as_ref().unwrap_or(proposition)
+    else {
         return false;
     };
     match (condition, term) {

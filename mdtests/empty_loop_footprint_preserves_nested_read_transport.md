@@ -10,6 +10,38 @@ void fill(struct arena *arena, int32 start, int32 end) {
 }
 ```
 ```click
+import click::separation;
+
+theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, len: int32, i: int32) {
+    requires separate(whole, memory(p[0..len]));
+    requires contains(whole, kept);
+    requires 0 <= i;
+    requires i < len;
+    ensures separate(kept, memory(p[i])) by {
+        have i <= 2147483646 by { solve() using { i < len; }; }
+        have defined(i + 1) by { solve() using { 0 <= i; i <= 2147483646; }; }
+        have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < len; }; }
+        have ((i + 1) as int32) <= len by { solve() using { 0 <= i; i < len; }; }
+        have contains(memory(p[0..len]), memory(p[i..i + 1])) by {
+            apply(separation::subrange(p, 0, len, i, i + 1)) using {
+                defined(i + 1); 0 <= i; i <= ((i + 1) as int32); ((i + 1) as int32) <= len;
+            };
+        }
+        have separate(kept, memory(p[i..i + 1])) by {
+            apply(separation::restrict(whole, memory(p[0..len]), kept, memory(p[i..i + 1]))) using {
+                defined(i + 1); separate(whole, memory(p[0..len])); contains(whole, kept);
+                contains(memory(p[0..len]), memory(p[i..i + 1]));
+            };
+        }
+        have contains(kept, kept) by { normalize(); }
+        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
+        apply(separation::restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
+            defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
+            contains(memory(p[i..i + 1]), memory(p[i]));
+        };
+    }
+}
+
 resource arena_window(
     data: int32*,
     occupied: int32*,
@@ -61,15 +93,35 @@ void fill(struct arena *arena, int32 start, int32 end) {
             have 0 <= i;
             have i < arena->capacity;
             mark opened;
+            have contains(memory(*arena), memory(arena->occupied)) by { normalize(); }
+            have separate(memory(arena->occupied), memory(arena->occupied[i])) by {
+                apply(selected_array_cell(memory(*arena), memory(arena->occupied),
+                    arena->occupied, arena->capacity, i)) using {
+                    separate(memory(*arena), memory(arena->occupied[0..arena->capacity]));
+                    contains(memory(*arena), memory(arena->occupied));
+                    0 <= i; i < arena->capacity;
+                };
+            }
             step();
-            transport(at(opened, arena->occupied) == old(arena->occupied),
-                      arena->occupied == old(arena->occupied)) using {
-                at(opened, arena->occupied) == old(arena->occupied);
-                at(opened, separate(memory(*arena), memory(arena->occupied[0..arena->capacity])));
-                at(opened, separate(memory(*arena), memory(arena->data[0..arena->capacity])));
-                0 <= at(opened, i);
-                at(opened, i) < at(opened, arena->capacity);
-            };
+            have separate(loop(0).statement(0).footprint, memory(arena->occupied)) by {
+                normalize() using {
+                    at(opened, separate(memory(arena->occupied), memory(arena->occupied[i])));
+                };
+            }
+            have arena->occupied == at(opened, arena->occupied) by {
+                transport_certificate {
+                    premise 0: separate(loop(0).statement(0).footprint, memory(arena->occupied))
+                        => separate(loop(0).statement(0).footprint, memory(arena->occupied));
+                    preserve 0 => arena->occupied == at(opened, arena->occupied);
+                    conclusion 1;
+                }
+            }
+            have arena->occupied == old(arena->occupied) by {
+                normalize() using {
+                    arena->occupied == at(opened, arena->occupied);
+                    at(opened, arena->occupied) == old(arena->occupied);
+                };
+            }
             have forall (k: int32) {
                 at(opened, i) < k and k < end implies
                     arena->occupied[k] == 0

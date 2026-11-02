@@ -13795,6 +13795,10 @@ pub(crate) struct ResourceInstanceRewriteResult {
 /// of refusing; anything else keeps the generic conditional-proof
 /// diagnostic.
 fn is_pure_undefined_behavior_condition(proposition: &Proposition) -> bool {
+    if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition).is_some()
+    {
+        return true;
+    }
     let Proposition::ConditionIs(condition, false) = proposition else {
         return false;
     };
@@ -13956,7 +13960,10 @@ fn lower_selected_resource_body_clauses(
             {
                 continue;
             }
-            if is_pure_undefined_behavior_condition(goal.proposition()) {
+            // An asserted resource clause includes the expression domains
+            // recorded by arithmetic lowering, regardless of their logical
+            // shape. Memory/access prerequisites still require evidence.
+            if goal.evaluation_domain {
                 retained_conditions.push(goal.proposition().clone());
                 continue;
             }

@@ -743,6 +743,10 @@ fn condition_identity_as_written(left: &ConditionTerm, right: &ConditionTerm) ->
         | (
             ConditionTerm::IntegerLessEqual(left_first, left_second),
             ConditionTerm::IntegerLessEqual(right_first, right_second),
+        )
+        | (
+            ConditionTerm::IntegerGreaterEqual(left_first, left_second),
+            ConditionTerm::IntegerGreaterEqual(right_first, right_second),
         ) => left_first == right_first && left_second == right_second,
         _ => false,
     }
@@ -1527,6 +1531,8 @@ fn signed_defined(
     bounds: &[(usize, &Proposition)],
     result: &Proposition,
 ) -> Result<(), SpecialArithmeticCheckError> {
+    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(result);
+    let result = interval_query.as_ref().unwrap_or(result);
     let mut used = vec![false; bounds.len()];
     let (claimed, left, right, subtract) = signed_defined_operation(result, bounds, &mut used)
         .ok_or(SpecialArithmeticCheckError::NodeResultMismatch(index))?;

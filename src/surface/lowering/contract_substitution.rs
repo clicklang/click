@@ -933,6 +933,11 @@ fn collect_resource_subject_binding_names(
         }
         ResourceSubject::Captured { .. } => {}
         ResourceSubject::Memory(segment) => collect_contract_segment_binding_names(segment, names),
+        ResourceSubject::SavedMemory { base, start, end } => {
+            for argument in [base, start].into_iter().chain(end.iter()) {
+                collect_contract_expression_binding_names(argument, names);
+            }
+        }
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
                 collect_contract_expression_binding_names(argument, names);
@@ -1312,6 +1317,25 @@ fn rewrite_resource_subject_exact(
         | ResourceSubject::Parameter { .. }
         | ResourceSubject::Captured { .. } => (subject.clone(), false),
         ResourceSubject::Memory(segment) => (ResourceSubject::Memory(segment.clone()), false),
+        ResourceSubject::SavedMemory { base, start, end } => {
+            let mut changed = false;
+            let mut rewrite = |expression| {
+                let (expression, did_change) = rewrite_contract_expression_exact(
+                    expression,
+                    source,
+                    target,
+                    preserve_snapshots,
+                );
+                changed |= did_change;
+                expression
+            };
+            let resource = ResourceSubject::SavedMemory {
+                base: rewrite(base),
+                start: rewrite(start),
+                end: end.as_ref().map(&mut rewrite),
+            };
+            (resource, changed)
+        }
         ResourceSubject::Declared {
             kind,
             name,
@@ -1912,6 +1936,14 @@ fn substitute_resource_subject(
         ResourceSubject::Memory(segment) => Ok(ResourceSubject::Memory(
             substitute_contract_segment(segment, substitutions)?,
         )),
+        ResourceSubject::SavedMemory { base, start, end } => Ok(ResourceSubject::SavedMemory {
+            base: substitute_contract_expression_in(base, substitutions)?,
+            start: substitute_contract_expression_in(start, substitutions)?,
+            end: end
+                .as_ref()
+                .map(|end| substitute_contract_expression_in(end, substitutions))
+                .transpose()?,
+        }),
         ResourceSubject::Declared {
             kind,
             name,
@@ -2065,6 +2097,13 @@ fn apply_contract_lets_to_resource_subject(
         ResourceSubject::Memory(segment) => Ok(ResourceSubject::Memory(
             apply_contract_lets_to_segment(segment, bindings)?,
         )),
+        ResourceSubject::SavedMemory { base, start, end } => Ok(ResourceSubject::SavedMemory {
+            base: apply_contract_lets_to_expression(base, bindings)?,
+            start: apply_contract_lets_to_expression(start, bindings)?,
+            end: end
+                .map(|end| apply_contract_lets_to_expression(end, bindings))
+                .transpose()?,
+        }),
         ResourceSubject::Declared {
             kind,
             name,
@@ -2714,6 +2753,11 @@ fn collect_resource_subject_referenced_names(
         | ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
         | ResourceSubject::Captured { .. } => {}
+        ResourceSubject::SavedMemory { base, start, end } => {
+            for argument in [base, start].into_iter().chain(end.iter()) {
+                collect_contract_expression_referenced_names(argument, names);
+            }
+        }
         ResourceSubject::Declared { arguments, .. } => {
             for argument in arguments {
                 collect_contract_expression_referenced_names(argument, names);

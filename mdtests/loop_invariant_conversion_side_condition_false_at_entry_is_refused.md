@@ -46,5 +46,5 @@ int32 walk(int32 s, int32 n) {
 ```
 
 ```expect
-fail: loop 0 invariant 1 entry, owing `defined((i + 1))`
+fail: loop 0 invariant 1 entry, owing `(let integer_value: Integer = to_integer((i as int32)) + 1; integer_value) <= 2147483647 and (let integer_value: Integer = to_integer((i as int32)) + 1; integer_value) >= -2147483648`
 ```

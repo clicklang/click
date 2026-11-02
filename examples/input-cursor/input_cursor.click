@@ -1,3 +1,5 @@
+import click::separation;
+
 theorem incremented_zero_is_one(before: int32, after: int32) {
     requires before == 0;
     requires after == before + 1;
@@ -116,9 +118,79 @@ int32 input_cursor_clone(
     ensures target->data == source->data;
 } by {
     observe(input_cursor(source));
+    have contains(memory(*source), memory(source->data)) by { normalize(); }
+    have contains(memory(*target), memory(target->pos)) by { normalize(); }
+    have separate(memory(target->pos), memory(source->data)) by {
+        apply(separation::restrict(memory(*target), memory(*source),
+            memory(target->pos), memory(source->data))) using {
+            separate(memory(*target), memory(*source));
+            contains(memory(*target), memory(target->pos));
+            contains(memory(*source), memory(source->data));
+        };
+    }
+    have contains(memory(*target), memory(target->len)) by { normalize(); }
+    have separate(memory(target->len), memory(source->data)) by {
+        apply(separation::restrict(memory(*target), memory(*source),
+            memory(target->len), memory(source->data))) using {
+            separate(memory(*target), memory(*source));
+            contains(memory(*target), memory(target->len));
+            contains(memory(*source), memory(source->data));
+        };
+    }
+    have contains(memory(*target), memory(target->data)) by { normalize(); }
+    have separate(memory(target->data), memory(source->data)) by {
+        apply(separation::restrict(memory(*target), memory(*source),
+            memory(target->data), memory(source->data))) using {
+            separate(memory(*target), memory(*source));
+            contains(memory(*target), memory(target->data));
+            contains(memory(*source), memory(source->data));
+        };
+    }
+    mark before_copy;
     step();
+    have separate(statement(0).footprint, memory(source->data)) by {
+        normalize() using { separate(memory(target->pos), memory(source->data)); };
+    }
+    have source->data == at(before_copy, source->data) by {
+        transport_certificate {
+            premise 0: separate(statement(0).footprint, memory(source->data))
+                => separate(statement(0).footprint, memory(source->data));
+            preserve 0 => source->data == at(before_copy, source->data);
+            conclusion 1;
+        }
+    }
+    mark after_pos;
     step();
+    have separate(statement(1).footprint, memory(source->data)) by {
+        normalize() using { separate(memory(target->len), memory(source->data)); };
+    }
+    have source->data == at(before_copy, source->data) by {
+        transport_certificate {
+            premise 0: separate(statement(1).footprint, memory(source->data))
+                => separate(statement(1).footprint, memory(source->data));
+            preserve 0 => source->data == at(after_pos, source->data);
+            premise 2: at(after_pos, source->data) == at(before_copy, source->data)
+                => at(after_pos, source->data) == at(before_copy, source->data);
+            transitive 1, 2 => source->data == at(before_copy, source->data);
+            conclusion 3;
+        }
+    }
+    mark after_len;
     step();
+    have separate(statement(2).footprint, memory(source->data)) by {
+        normalize() using { separate(memory(target->data), memory(source->data)); };
+    }
+    have source->data == at(before_copy, source->data) by {
+        transport_certificate {
+            premise 0: separate(statement(2).footprint, memory(source->data))
+                => separate(statement(2).footprint, memory(source->data));
+            preserve 0 => source->data == at(after_len, source->data);
+            premise 2: at(after_len, source->data) == at(before_copy, source->data)
+                => at(after_len, source->data) == at(before_copy, source->data);
+            transitive 1, 2 => source->data == at(before_copy, source->data);
+            conclusion 3;
+        }
+    }
     step();
     have target->data == old(source->data);
     have target->len == old(source->len);

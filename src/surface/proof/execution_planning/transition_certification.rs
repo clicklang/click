@@ -91,6 +91,20 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+/// Presentation checks are observations, not execution steps. Their missing
+/// prerequisites must reject the candidate, never become debts of a surrounding
+/// step probe or let a candidate pass by deferring its prerequisites.
+pub(in crate::surface) fn without_open_obligation_probe<R>(operation: impl FnOnce() -> R) -> R {
+    struct Restore(Option<OpenObligationProbe>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            OPEN_OBLIGATION_PROBE.with(|probe| *probe.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(OPEN_OBLIGATION_PROBE.with(|probe| probe.borrow_mut().take()));
+    operation()
+}
+
 /// Runs `operation` with every `Fast` refusal that carries a structured
 /// requirement recorded instead of returned, and returns what the step met.
 /// What `operation` produces is a checked step only when nothing was

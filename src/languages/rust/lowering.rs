@@ -653,7 +653,7 @@ fn lower_function(
 struct Context<'a> {
     shared_array_iterators: BTreeMap<String, CType>,
     /// The range locals, with their element type.
-    ranges: BTreeMap<String, Type>,
+    ranges: BTreeMap<String, (Type, bool)>,
     /// The enumerated slice iterators and their `Option` locals.
     enumerated: BTreeSet<String>,
     shared_array_options: BTreeMap<String, CType>,

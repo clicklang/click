@@ -35,13 +35,11 @@ pub(super) fn apply(
     let left = observe(left)?;
     let right = observe(right)?;
     let mut obligations = inherited.to_vec();
+    let mut domain = Vec::new();
     let mut require = |proposition: Proposition| {
         if !matches!(&proposition, Proposition::ConditionIs(ConditionTerm::Constant(actual), expected) if actual == expected)
         {
-            obligations.push(
-                ProofObligation::evaluation_domain(proposition)
-                    .with_context("wide arithmetic expression is defined"),
-            );
+            domain.push(proposition);
         }
     };
     let result = if op == MachineBinaryOp::Multiply {
@@ -83,6 +81,12 @@ pub(super) fn apply(
             IntegerTerm::truncating_quotient(left, right)
         }
     };
+    if let Some(domain) = Proposition::arithmetic_domain(domain) {
+        obligations.push(
+            ProofObligation::evaluation_domain(domain)
+                .with_context("wide arithmetic expression is defined"),
+        );
+    }
     let term = result
         .as_const()
         .and_then(|constant| {

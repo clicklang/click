@@ -1,14 +1,9 @@
-//! Definedness: `not overflows(F, op, a, b)` holds exactly when the exact
-//! result `to_integer(a) op to_integer(b)` lies in `F`. That is the
-//! definition of each overflow test: it is true exactly when the exact
-//! result is not representable in the operands' format.
-//!
-//! Every format has an overflow test, `Overflows { format, op, left,
-//! right }`, and the equivalence holds at each. A definedness fact is filed
-//! only where C arithmetic's overflow is undefined behavior, `int32` and
-//! `int64` (`representation::files_definedness`): an unsigned overflow is a
-//! wrap, which surface `defined(...)` does not ask about, and its test is
-//! kernel-internal (`design/machine-integers.md`, "Decisions", 2026-10-24).
+//! Structural adapters between ordinary exact-result bounds and the private
+//! overflow queries used by existing interval reasoning. Generated arithmetic
+//! domains are ordinary propositions; these adapters never file an opaque
+//! overflow fact or alter a lowered term.
+//! A single bound identifies a candidate query, but only both bounds establish
+//! representability. Unsigned overflow remains wrapping arithmetic.
 
 use super::{FORMATS, Operation, range, representation};
 use crate::kernel::{Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
@@ -131,7 +126,63 @@ pub(crate) fn overflow_fact_of_integer_bound(
         .find_map(|condition| {
             let fact = Proposition::ConditionIs(condition, false);
             integer_bounds_of_definedness(&fact)
-                .contains(bound)
+                .iter()
+                .any(|expected| same_integer_bound(expected, bound))
                 .then_some(fact)
         })
+}
+
+/// The two order spellings of an ordinary bound are the same proposition.
+/// This is comparison matching, never a change to either stored term.
+fn same_integer_bound(left: &Proposition, right: &Proposition) -> bool {
+    left == right
+        || matches!((left, right),
+        (Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true),
+         Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(c, d), true)) |
+        (Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(a, b), true),
+         Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(c, d), true))
+        if a == d && b == c)
+}
+
+/// Read one explicitly supplied ordinary range conjunction as an arithmetic
+/// query. This is a structural adapter for existing interval certificates;
+/// it neither adds an overflow fact nor searches the context for bounds.
+pub(crate) fn ordinary_arithmetic_guard(proposition: &Proposition) -> Option<ConditionTerm> {
+    let Proposition::And(first, second) = proposition else {
+        return None;
+    };
+    let fact = definedness_of_integer_bound(first)?;
+    let bounds = integer_bounds_of_definedness(&fact);
+    let [upper, lower] = bounds.as_slice() else {
+        return None;
+    };
+    if !(same_integer_bound(first, upper) && same_integer_bound(second, lower)
+        || same_integer_bound(first, lower) && same_integer_bound(second, upper))
+    {
+        return None;
+    }
+    let Proposition::ConditionIs(condition, false) = fact else {
+        return None;
+    };
+    Some(condition)
+}
+
+/// Private input form for the existing interval proof rules. Stored facts,
+/// obligations and certificate results keep the ordinary propositions. This
+/// adapter reads only the explicit proposition, never the ambient context.
+pub(crate) fn interval_query_form(proposition: &Proposition) -> Option<Proposition> {
+    if let Some(condition) = ordinary_arithmetic_guard(proposition) {
+        return Some(Proposition::ConditionIs(condition, false));
+    }
+    if let Proposition::And(left, right) = proposition {
+        let a = interval_query_form(left);
+        let b = interval_query_form(right);
+        if a.is_some() || b.is_some() {
+            return Some(Proposition::And(
+                Box::new(a.unwrap_or_else(|| *left.clone())),
+                Box::new(b.unwrap_or_else(|| *right.clone())),
+            ));
+        }
+    }
+    None
 }
