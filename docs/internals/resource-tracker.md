@@ -200,6 +200,13 @@ are cleared with the other canonical-form caches when a `VerificationSession`
 starts, because interning dedups by content and one verification's history
 must not answer the next one's question.
 
+Bounded cell-source checking does not consult those version memos. Each hop
+records one actual transition; a warm history result cannot stand in for a
+sequence of transitions or change whether a simple step succeeds. Longer
+preservation arguments must be supplied explicitly, for example through
+`transport_certificate`. The cache-independence regression queries the same
+read before and after warming the naming cache and requires identical results.
+
 ## One rule, and its answers
 
 There is one decider, `resource_tracker::step_effect::affects`, and every walk

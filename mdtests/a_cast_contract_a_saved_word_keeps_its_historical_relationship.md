@@ -17,11 +17,26 @@ int32 read_packed(unsigned long* slot, struct node* p) {
     owns *slot;
     views p->value;
 } by {
+    mark before;
     step();
+    have separate(statement(0).region(0).footprint, memory(*slot)) by {
+        normalize() using {};
+    }
+    have *(slot as (int32 **)) == at(before, *(slot as (int32 **))) by {
+        transport_certificate {
+            premise 0: separate(statement(0).region(0).footprint, memory(*slot))
+                => separate(statement(0).region(0).footprint, memory(*slot));
+            preserve 0 => *(slot as (int32 **)) == at(before, *(slot as (int32 **)));
+            conclusion 1;
+        }
+    }
+    have ((*slot & ~1) as (struct node *)) == p by {
+        assumption();
+    }
     step();
-    have ((saved & ~1) as (struct node *)) == p by { solve(); }
+    have ((saved & ~1) as (struct node *)) == p by { assumption(); }
     step();
-    have ((saved & ~1) as (struct node *)) == p by { solve(); }
+    have ((saved & ~1) as (struct node *)) == p by { assumption(); }
     step();
 }
 ```

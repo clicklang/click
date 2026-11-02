@@ -24,117 +24,79 @@ an explicit complete-pointer preservation certificate crosses a separated
 write, and the preserved pointer can then be dereferenced. This establishes
 one working case, not general recovery of all earlier provenance facts.
 
-Remaining blockers in the experiment:
+**Current checker boundary and proof repair.**
+Bounded cell-source checking no longer consults `CELL_VERSION_MEMO`. The cached
+lookup helper and `MemoryDagHopJustification::SameVersion` are removed. Each
+retained hop now corresponds to one actual transition. The history-naming cache
+still exists for other callers; its removal/migration remains separate work.
+`bounded_cell_source_is_independent_of_history_cache` checks the same query
+before and after warming the history cache at 2/8/32 preceding stores. It failed
+before this change and passes afterward.
 
-- The last full ordinary corpus run had six failing fixtures. Explicit full-
-  pointer equality steps now make four pass in focused checks:
-  `a_cast_contract_a_saved_word_keeps_its_historical_relationship`,
-  `a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced`,
-  `rewrite_of_a_full_pointer_alias_keeps_constructor_type_evidence`, and
-  `tagged_pointer_from_field_fact`. Only the parent-cast repair also passes
-  expansion and cold replay; the other three remain blocked as described below.
-  `c_decreases_resource_witness_child` and
-  `call_through_witness_footprint_includes_its_memory` remain ordinary failures.
-  The latter must reach its intended negative transport check, not merely fail
-  earlier. No C or contract changes are part of these repairs.
-- Four focused kernel tests still fail: complete owned-store framing, cached
-  pointer identity, recent pointer origin after havoc, and packed-word transport
-  scaling. Preserve their assertions while investigating explicit evidence.
-  The complete scaling suite reports 1144 passed and these three scaling
-  failures out of 1147 tests; the owned-store framing failure is a unit test.
-- `transport_framed_atomic_pointer_value` still calls `cell_version_point` for
-  reconstructed complete words. Removing constructor cache warming exposes
-  this traversal: one-write transport costs 288/336/528/1296 units with
-  4/16/64/256 unrelated entries. Do not restore warming or raise the bound.
+`mdtests/saved_word_explicit_transport.md` supplies a working explicit argument:
+separate the local declaration's footprint from the source word, then preserve
+the complete eight-byte observation through `*(slot as (int32 **))`. The
+pointer-typed view connects provenance; a numeric word equality alone does not.
+No pointee is dereferenced by this observation. Assignment then copies the
+preserved value. The original saved-word overwrite fixture uses the same
+argument without changing its C or contract.
+`saved_word_equality_expansion_cold_replay` checks both explicit proofs and their
+fresh expanded replay, and checks that the old cache-dependent `solve` refuses.
+Both tests pass; the saved-word lowering audit reports zero differences.
 
-**Immediate blocker: pointer equality proofs do not cold-replay.**
-The focused `explicit_pointer_alias_repairs_expand_and_cold_replay` test in
-`src/surface/tests/expansion_tests.rs` checks all four candidate repairs above.
-It is a deliberately red investigation regression, run individually (7.2s),
-not a full nightly run. Three fail:
+**Remaining validation and blockers.**
+The kernel, transport-certificate, memory-DAG, resource-tracker, and full scaling
+selection reports 1284/1287 passing. The three failures are the already known
+cached-pointer identity, recent pointer origin after havoc, and packed-word
+transport scaling cases. The separate complete owned-store framing unit also
+remains a known blocker. Keep their positive and negative assertions until
+explicit replacement evidence is established.
 
-- The saved-word proof's first `solve()` expands to `normalize() using {};`.
-  Fresh verification rejects that step. The equality is between
-  `((saved & ~1) as (struct node *))` and `p`; this happens before the source
-  overwrite. Start the next reduction here.
-- The constructor fixture's `unp == gparent` likewise expands to empty-premise
-  normalization that does not cold-replay.
-- The tagged-field fixture's `parent == next` expands to a failing
-  `assumption()` after a preceding generated step.
+The full ordinary corpus reports 4970 passing fixtures and nine failures.
+Six expected-pass proofs still fail:
 
-The smaller `saved_word_equality_expansion_cold_replay` regression contains only
-`unsigned long saved = *slot;`, an entry cast equality, and a `have` proving the
-same cast of `saved`. No overwrite, dereference, resource witness, or struct
-layout is required. It reproduces the saved-word failure in about 0.6s.
+- `a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced`
+- `an_interface_resource_argument_reads_through_a_model_pointer`
+- `c_decreases_resource_witness_child`
+- `cpp_generic_class_state_in_a_resource`
+- `preserved_word_equality_rewrites_integer_address`
+- `tagged_pointer_from_field_fact`
 
-The hidden dependency is confirmed: a failed context-free normalization attempt
-inside `solve` warms cell-version state. The later `normalize() using {};`
-compares complete-pointer domains through `memory_dag_cell_source_with_stop`.
-That one-transition query accepts `memoized_cell_last_same_point` and jumps from
-snapshot 2 to snapshot 0. Fresh replay lacks the cached summary and refuses the
-same goal. The goal's read coordinates agree across sessions; differing raw
-`PointerLoadId`s were just session identities, not a lowering discrepancy.
-Temporarily disabling only the memoized jump makes the original `solve` refuse
-the goal instead of emitting the non-replayable certificate. Instrumentation
-and the temporary disabling switch were removed after this experiment.
+Three negative fixtures fail earlier than their intended refusal:
 
-Next design/build: remove cache-dependent history jumps from simple read
-checking; cached search results are not explicit proof steps. Then express the
-copy's preservation argument through the existing primitive/certificate path,
-checking whether the complete word's provenance can be carried by that path.
-Do not count successful smart verification as a completed repair, restore the
-naming walk, or warm the cache during replay. The parent-cast fixture is the
-passing expansion/replay control. No production verifier change was made in
-this investigation.
+- `call_through_witness_footprint_includes_its_memory`
+- `joined_pointer_field_read_rejects_different_field`
+- `mutex_protected_pointer_footprint_stale_read_rejected`
 
-The witness experiments also remain unresolved. Naming the recursive witness
-and explicitly proving the current cast equal to it succeeds, but the recursive
-call still fails to match its owned `marked_list` resource. For the footprint
-fixture, naming the witness and asking for the local pointer's equality fails;
-the diagnostic says a selected pointer premise has no checked source spelling.
-Those exploratory edits were reverted. Coordinate any necessary spelling change
-with the separate spellability work; do not weaken the negative fixture's
-expected refusal.
+Keep their expected errors until the prerequisite proof reaches the intended
+negative check. The constructor-equality fixture passes ordinary verification;
+its fresh expansion still needs an individual check. The grouped
+`explicit_pointer_alias_repairs_expand_and_cold_replay` regression is not yet
+green. The saved-word case has its own passing gate regression. No full nightly
+suite was run. Next, apply the explicit complete-observation argument to the
+remaining word/cast cases, starting with
+`preserved_word_equality_rewrites_integer_address`; discuss any missing primitive
+before extending the kernel.
 
-The kernel failures are not all timing failures. Cached pointer recovery and
-recent call-havoc origin matching lose equalities previously supplied implicitly
-by naming; complete owned-store framing also loses its expected equation. Keep
-their positive and negative assertions until explicit replacement evidence is
-established. Packed-word transport still succeeds but pays for unrelated older
-history through `transport_framed_atomic_pointer_value`'s `cell_version_point`.
-Its one-write work is 288/336/528/1296 for 4/16/64/256 unrelated entries.
+The two witness cases also remain unresolved. Naming the recursive witness
+and explicitly proving the current cast equal to it succeeded before this
+removal, but the recursive call still failed to match its owned `marked_list`
+resource. For the footprint fixture, naming the witness and asking for the local
+pointer's equality failed with a selected pointer premise lacking a checked
+source spelling. Coordinate necessary spelling changes with the separate
+spellability work. The negative footprint fixture must reach its intended
+transport refusal, not fail at an earlier unrelated obligation.
 
-**Entry setup: use the producer's complete-pointer equations.**
-The empty-function copied-aggregate reproduction passes unchanged. Entry setup
-was admitting alternate Surface pointer equations alongside the kernel entry
-facts. Read-over-write closure derived another equality, which the later
-artifact check then rejected as an additional input assumption. Both kernel
-entry constructions agree; the setup fallback is not involved.
+`transport_framed_atomic_pointer_value` still calls `cell_version_point` for
+reconstructed complete words. Its one-write work is 288/336/528/1296 for
+4/16/64/256 unrelated entries. Do not restore constructor warming or raise the
+bound. Search that discovers a path must emit the preservation steps; warming a
+memo is not a certificate.
 
-`contract_entry_view` now selects complete-pointer equations only by exact
-membership in the kernel entry producer's existing fact set, then appends the
-producer's other visible facts. Other source aliases retain their existing
-selection: restricting those too exposes unrelated resource-range spelling
-problems, which belong with the separate spellability work. This scoped repair
-adds no equality search, history lookup, copy index, or pointer representation.
-All eighteen aggregate-parameter fixtures pass after removing four redundant
-final rewrites; C and contracts are unchanged. The selected kernel, scaling,
-search-boundary, and aggregate expansion/replay checks report 1270/1273 passing,
-with only the three known scaling failures above. The separate owned-store
-framing unit still fails. The aggregate-parameter fact-stability audit reports
-zero differences. Full ordinary corpus results are listed above. The tiny
-`a_copied_aggregate_parameter_retains_its_pointee_requirement` fixture passes
-unchanged. The false-entry-fact rejection guard passes. No nightly suite was run.
-
-The corrected `logical_read_of_copied_pointer_retains_its_complete_value`
-regression uses `contains_known` to test entailment; `proves_exact` tests premise
-spelling. No additional copy-evidence index is needed for that case. The old
-internal diagnostic's exact source spelling remains unestablished; this repair
-does not change diagnostic rendering.
-
-Remaining work stays with the failing automatic framing/recovery cases and
-packed-word transport traversal above. Do not simply replace artifact premise
-checks with a broader reasoner, or restore a historical-source fallback.
+The branch's copied-aggregate entry repair retains the kernel producer's exact
+complete-pointer equations, avoiding additional derived entry assumptions.
+Other source aliases retain their existing selection. Do not broaden artifact
+premise authorization into search or resurrect a copy-evidence index.
 
 Read-side `CellsForgotten` projections and bulk-write preparation remain
 separate from scalar-store invalidation. Removing them requires preserving
@@ -148,11 +110,10 @@ explicit-composition and cold-refusal controls in
 `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`. Cold histories include
 writes to either pointer half; an undecided comparison must refuse equality.
 
-The general `memory_dag_cell_source` entry has a one-transition bound, but its
-bounded walker still reuses memoized version summaries. The replay regression
-above shows why this exception must be removed: a warm summary changes what a
-simple step proves. An inconclusive query is not preservation evidence.
-Do not reintroduce source discovery to recover automatic proof coverage.
+The general `memory_dag_cell_source` entry inspects one transition. Its bounded
+variants obey their explicit transition limits regardless of history-cache
+contents. An inconclusive query is not preservation evidence. Do not reintroduce
+source discovery to recover automatic proof coverage.
 
 ## Design and build cycle
 

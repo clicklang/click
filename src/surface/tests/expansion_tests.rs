@@ -20065,11 +20065,32 @@ void copy(unsigned long* slot, int32* p) {
         "saved.c",
         "void copy(unsigned long* slot, int32* p) { unsigned long saved = *slot; }",
     )];
-    // Search must not warm an implicit history summary that its emitted
-    // normalization step needs but a fresh proof session does not possess.
-    let verified =
-        verify_c0_sources(source, &inputs).unwrap_or_else(|error| panic!("{}", error.report()));
-    let expanded = expand_checked_grouped_claim(source, &verified, "copy").unwrap();
-    verify_c0_sources(&expanded, &inputs)
-        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    // The old smart proof must not succeed merely by warming a hidden
+    // history summary. A longer preservation argument is now explicit.
+    let refused = verify_c0_sources(source, &inputs)
+        .err()
+        .expect("implicit history proof must refuse");
+    assert!(
+        refused.message().contains("`solve` failed"),
+        "{}",
+        refused.report()
+    );
+    for (fixture, function) in [
+        ("saved_word_explicit_transport", "copy"),
+        (
+            "a_cast_contract_a_saved_word_keeps_its_historical_relationship",
+            "read_packed",
+        ),
+    ] {
+        let (source, inputs) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let inputs = inputs
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = verify_c0_sources(&source, &inputs)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
+        verify_c0_sources(&expanded, &inputs)
+            .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
+    }
 }
