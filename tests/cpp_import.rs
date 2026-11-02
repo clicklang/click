@@ -14649,7 +14649,7 @@ fn condition_calls_evaluate_once_before_branch_and_verify_offline() {
         }
     ));
     fs::remove_file(&project.exporter).unwrap();
-    for (answer, expected) in [(0, 2), (1, 1)] {
+    for (answer, expected) in [(false, 2), (true, 1)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
         bool update(int32& value, bool answer) {{ owns value; requires value == 4; ensures value == 5; ensures result == answer; }}
