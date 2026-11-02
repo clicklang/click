@@ -104,6 +104,43 @@ resource sized_context_flip_at(n: struct rb_node*, root: struct rb_root*) {
         },
     }
 }
+// The recoloring calls change parent words, retaining every tree link.
+resource sized_context_flip_links(root: struct rb_root*, x: struct rb_node*, y: struct rb_node*, z: struct rb_node*) {
+    field top: int32*;
+    field xl: int32*; field xr: int32*;
+    field yl: int32*; field yr: int32*;
+    field zl: int32*; field zr: int32*;
+    owns root->rb_node;
+    owns x->rb_left; owns x->rb_right;
+    owns y->rb_left; owns y->rb_right;
+    owns z->rb_left; owns z->rb_right;
+    fact root->rb_node == top;
+    fact x->rb_left == xl; fact x->rb_right == xr;
+    fact y->rb_left == yl; fact y->rb_right == yr;
+    fact z->rb_left == zl; fact z->rb_right == zr;
+    fact xl != x; fact xr != x;
+    fact yl != y; fact yr != y;
+    fact zl != z; fact zr != z;
+}
+resource sized_context_flip_parent_word(p: struct rb_node*) {
+    field up: int32*;
+    field word: uint64;
+    owns p->__rb_parent_color;
+    fact p->__rb_parent_color == word;
+    fact ((p->__rb_parent_color & ~3) as (struct rb_node*)) == up;
+    fact (p->__rb_parent_color & 1) == color_bit(Color::Black);
+}
+
+// Each new black parent word is retained across the other recolorings.
+resource sized_context_flip_black_word(p: struct rb_node*, up: struct rb_node*) {
+    field word: uint64;
+    owns p->__rb_parent_color;
+    fact p->__rb_parent_color == word;
+    fact ((p->__rb_parent_color & ~3) as (struct rb_node*)) == up;
+    fact p->__rb_parent_color == address(up) + (p->__rb_parent_color & 1);
+    fact (p->__rb_parent_color & 1) == color_bit(Color::Black);
+}
+
 void __rb_insert(struct rb_node* node, struct rb_root* root,
                   void (*augment_rotate)(struct rb_node*, struct rb_node*)) {
     owns state: sized_context_flip_at(node, root);
@@ -294,7 +331,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             let { metadata: p_size, sibling: p_right, up: g_path } = unfold(path);
                             let { metadata: g_size, sibling: u_tree, up: top } = unfold(g_path);
                             let { metadata: u_size, left: u_left, right: u_right } = unfold(u_tree);
-                            mark before_recolor;
                             have y->rb_left != y by assumption();
                             have y->rb_right != y by assumption();
                             have x->rb_left != x by assumption();
@@ -309,25 +345,30 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             }
                             step(); step(); step(); step(); step(); step(); step();
                             step();
-                            step(); step(); step(); step(); step();
-                            have z->rb_right != z by {
-                                transport(at(before_recolor, z->rb_right != z), z->rb_right != z);
-                            }
-                            have z->rb_left != z by {
-                                transport(at(before_recolor, z->rb_left != z), z->rb_left != z);
-                            }
-                            have y->rb_left != y by {
-                                transport(at(before_recolor, y->rb_left != y), y->rb_left != y);
-                            }
-                            have y->rb_right != y by {
-                                transport(at(before_recolor, y->rb_right != y), y->rb_right != y);
-                            }
-                            have x->rb_left != x by {
-                                transport(at(before_recolor, x->rb_left != x), x->rb_left != x);
-                            }
-                            have x->rb_right != x by {
-                                transport(at(before_recolor, x->rb_right != x), x->rb_right != x);
-                            }
+                            have tmp == z by { assumption(); }
+                            have gparent == x by { assumption(); }
+                            have parent == y by { assumption(); }
+                            let links = fold(sized_context_flip_links(root, x, y, z), {
+                                top: root->rb_node, xl: x->rb_left, xr: x->rb_right,
+                                yl: y->rb_left, yr: y->rb_right, zl: z->rb_left, zr: z->rb_right
+                            });
+                            let parent_word = fold(sized_context_flip_parent_word(x), {
+                                up: ((x->__rb_parent_color & ~3) as (struct rb_node*)),
+                                word: x->__rb_parent_color
+                            });
+                            step();
+                            let uncle_word = fold(sized_context_flip_black_word(tmp, gparent), {
+                                word: tmp->__rb_parent_color
+                            });
+                            step();
+                            let black_parent_word = fold(sized_context_flip_black_word(parent, gparent), {
+                                word: parent->__rb_parent_color
+                            });
+                            unfold(parent_word);
+                            step(); step(); step();
+                            unfold(uncle_word);
+                            unfold(black_parent_word);
+                            unfold(links);
                             have to_integer(sized_value(old(state.uncle))) == 1 + to_integer(sized_value(sized_left(old(state.uncle)))) + to_integer(sized_value(sized_right(old(state.uncle)))) by {
                                 assumption();
                             }

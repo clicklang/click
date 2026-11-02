@@ -172,3 +172,22 @@ root's typed null-parent relationship before folding.
 
 This is a proof repair, with no verifier change. The remaining context sidecars
 and directory-wide audit still leave the broader report open.
+
+## Context color flip and black-parent stop
+
+All three selected proofs in `rbtree_size_insert_context_color_flip.click`
+now verify. The proof retains the root pointer and all six child links in an
+owned frame across the recolorings. It retains the grandparent's parent word
+until the parent read, then retains each newly black parent word across the
+remaining stores before refolding the subtrees. The C and original contracts
+are unchanged; this part is a proof repair.
+
+The grouped insertion proof's expansion exposed a separate serialization bug:
+a back-edge certificate split into guarded conjunction members still printed
+the retired `close_invariants` syntax. Expansion now emits those members as
+ordered `have` proofs, preserving each member's body and the dependencies on
+earlier members. The expanded source rechecks.
+
+`rbtree_size_insert_context_stop.click` already verifies all three selected
+proofs on `2bab9ff83`, without changes. The mirrored context color flip, other
+remaining sidecars, and directory-wide audit still leave this report open.

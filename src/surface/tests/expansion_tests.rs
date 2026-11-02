@@ -2489,7 +2489,7 @@ int32 g(uint8 p[], uint8 x) {
         ("int64", "0i64", "acc + 1i64"),
         ("uint32", "z", "acc"),
         ("uint8", "z", "acc"),
-        ("bool", "z", "acc"),
+        ("Bool", "z", "acc"),
     ] {
         let source = format!(
             "function unsupported(lo: int32, hi: int32, z: {ty}) -> {ty} {{ (lo..hi).fold({initial}, |acc, k| {{ {body} }}) }}"
@@ -2527,6 +2527,15 @@ theorem check_wrapped(lo: uint64, hi: uint64) {
         .replace("uint64", "int32")
         .replace("0u64", "0")
         .replace("2u64", "2");
+    // step_until does not split C branches. Prove each combination explicitly
+    // so the positive control still verifies the original two array reads.
+    let finish =
+        "step_until(function.exit);\n        unfold(my_count(p, 0, 2, x));\n        solve();";
+    let second = format!("if p[1] == x {{ {finish} }} else {{ {finish} }}");
+    let supported = supported.replace(
+        finish,
+        &format!("if p[0] == x {{ {second} }} else {{ {second} }}"),
+    );
     let sources = [("g.c", c_source)];
     let verified_for_label =
         verify_c0_sources(&supported, &sources).expect("int32 count fold should verify");
@@ -17964,7 +17973,7 @@ fn peeled_empty_fold_order_keeps_its_checked_conclusion() {
 }
 
 #[test]
-#[ignore = "nightly: empty-fold order and certificate mutations"]
+#[ignore = "nightly: empty-fold order and expanded-proof mutations"]
 fn peeled_empty_fold_order_rejects_false_comparisons() {
     let source = empty_fold_order_source();
     for (before, after) in [
@@ -17981,12 +17990,18 @@ fn peeled_empty_fold_order_rejects_false_comparisons() {
         );
     }
     let expanded = expand_c0_claim_source_by_label(source, &[], "empty_order.ensures_0").unwrap();
-    let invalid = expanded.replacen("trivial => 0 <= 0", "trivial => 0 == 0", 1);
-    assert_ne!(invalid, expanded);
-    assert!(
-        verify_c0_sources(&invalid, &[]).is_err(),
-        "changed conclusion relation accepted"
-    );
+    verify_c0_sources(&expanded, &[]).expect("expanded empty order must verify before mutation");
+    // Expansion now normalizes using the peeled equality. Check both its
+    // conclusion and its selected evidence, without assuming a certificate form.
+    for (before, after) in [
+        ("0 <= marks(end)", "0 < marks(end)"),
+        ("marks(end) == 0", "marks(end) == 1"),
+    ] {
+        let invalid = expanded.replacen(before, after, 1);
+        assert_ne!(invalid, expanded, "missing mutation target: {before}");
+        verify_c0_sources(&invalid, &[])
+            .expect_err("false expanded conclusion or forged premise accepted");
+    }
 }
 
 // The arithmetic planner's affine sum is constant even though this goal
@@ -18024,16 +18039,21 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
             .expect_err("false or undefined subtraction must be refused");
     }
     let expanded = expand_function_proof_source(&source, &borrowed, "f").unwrap();
-    // The comparison now normalizes to a trivial certificate. A different
-    // true comparison still cannot stand in for its checked conclusion.
-    let forged = expanded.replacen(
-        "trivial => (8 - to_integer(x)) <= ((8 - to_integer(x)) + 4);",
-        "trivial => (8 - to_integer(x)) <= ((8 - to_integer(x)) + 5);",
-        1,
-    );
-    assert_ne!(forged, expanded, "expected the checked trivial comparison");
-    verify_c0_sources(&forged, &borrowed)
-        .expect_err("a different generated comparison must be refused");
+    verify_c0_sources(&expanded, &borrowed).expect("expanded subtraction must verify");
+    // Expansion normalizes the comparison using the stated bounds. Reject
+    // both a false conclusion and a stronger bound that was never established.
+    for (before, after) in [
+        (
+            "(8 - to_integer(x)) <= ((8 - to_integer(x)) + 4)",
+            "(8 - to_integer(x)) <= ((8 - to_integer(x)) - 4)",
+        ),
+        ("4 <= x;\n", "5 <= x;\n"),
+    ] {
+        let forged = expanded.replacen(before, after, 1);
+        assert_ne!(forged, expanded, "missing mutation target: {before}");
+        verify_c0_sources(&forged, &borrowed)
+            .expect_err("false expanded comparison or forged bound accepted");
+    }
 }
 
 #[test]
@@ -19998,4 +20018,58 @@ fn loop_owned_view_call_expands_and_replays() {
     let expanded = expand_checked_grouped_claim(&source, &verified, "caller").unwrap();
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
+
+#[test]
+fn structural_invariant_bundles_expand_as_ordered_member_haves() {
+    let checked = verify_click_theorems(
+        r#"
+        theorem bundle(a: int32, b: int32) {
+            requires a == b;
+            requires b == 0;
+            ensures a == 0 and (a == 0 implies a + 1 == 1) by {
+                both {
+                    have a == 0 by {
+                        rewrite(a == b); rewrite(b == 0); normalize();
+                    }
+                    assumption();
+                } and {
+                    intro();
+                    have a == 0 by { assumption(); }
+                    have a + 1 == 1 by { rewrite(a == 0); normalize(); }
+                    assumption();
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap();
+    let closure = ProofCertificate::from_steps(vec![ProofStep::CloseInvariantsBy(Box::new(
+        checked[0].proof_certificate().unwrap(),
+    ))])
+    .unwrap();
+    let printed = format_proof_certificate(&closure);
+    assert!(!printed.contains("close_invariants"), "{printed}");
+    assert!(!printed.contains("both {"), "{printed}");
+    assert!(!printed.contains("intro()"), "{printed}");
+    assert_eq!(printed.matches("have a == 0 by").count(), 1, "{printed}");
+    assert!(
+        printed.find("have a == 0").unwrap()
+            < printed.find("have (to_integer(a) + 1) == 1").unwrap()
+    );
+    // The second member's guard is supplied by the first member's exported
+    // fact. Replay the printed members without giving that guard as a premise.
+    let replay = format!(
+        r#"
+        theorem replay(a: int32, b: int32) {{
+            requires a == b;
+            requires b == 0;
+            ensures a == 0 and (a == 0 implies a + 1 == 1)
+            {} both {{ assumption(); }} and {{ intro(); assumption(); }}
+            }}
+        }}
+    "#,
+        printed.strip_suffix('}').unwrap()
+    );
+    without_implicit_auto(|| verify_click_theorems(&replay)).unwrap();
 }
