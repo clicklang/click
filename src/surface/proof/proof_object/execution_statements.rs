@@ -2011,8 +2011,17 @@ impl<'a> Proof<'a> {
             } else {
                 String::new()
             };
+            let branch_join = if matches!(
+                self.node.step.as_deref(),
+                Some(ProofStep::Branch { then_proof, else_proof, .. })
+                    if !then_proof.is_pruned_execution_arm() && !else_proof.is_pruned_execution_arm()
+            ) {
+                ". The obligation is checked after the `branch` join, which keeps only facts both arms agree on. Use `branch ensuring { ... }` to carry a shared fact across the join, or a proof `if` to keep the cases apart"
+            } else {
+                ""
+            };
             let error = root.step_error(format!(
-                "closure body did not prove every invariant obligation{open_member}{}{rejoined}",
+                "closure body did not prove every invariant obligation{open_member}{}{rejoined}{branch_join}",
                 ranking_member_diagnostic(&bundle.ranking_measures)
             ));
             return Err(error.with_search_failures(search.finish()));

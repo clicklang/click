@@ -143,8 +143,8 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// Restores an ancestor's exact execution diagnostic context after a
-    /// nested structural operation. The descendant check is provenance-based;
+    /// Restores an ancestor's source site and execution diagnostic context
+    /// after a nested structural operation. The descendant check is provenance-based;
     /// this changes no goals, facts, execution state, or proof nodes.
     pub(in crate::surface::proof) fn restore_execution_tactic_attribution(
         &self,
@@ -171,7 +171,7 @@ impl<'a> Proof<'a> {
                 .step_error("execution tactic attribution can only be restored from an ancestor"));
         }
         Ok(Self {
-            site: self.site.clone(),
+            site: ancestor.site.clone(),
             context: ancestor.context.clone(),
             state: self.state.clone(),
             node: self.node.clone(),
