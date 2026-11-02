@@ -62,11 +62,30 @@ not a full nightly run. Three fail:
 - The tagged-field fixture's `parent == next` expands to a failing
   `assumption()` after a preceding generated step.
 
+The smaller `saved_word_equality_expansion_cold_replay` regression contains only
+`unsigned long saved = *slot;`, an entry cast equality, and a `have` proving the
+same cast of `saved`. No overwrite, dereference, resource witness, or struct
+layout is required. It reproduces the saved-word failure in about 0.6s.
+
+The hidden dependency is confirmed: a failed context-free normalization attempt
+inside `solve` warms cell-version state. The later `normalize() using {};`
+compares complete-pointer domains through `memory_dag_cell_source_with_stop`.
+That one-transition query accepts `memoized_cell_last_same_point` and jumps from
+snapshot 2 to snapshot 0. Fresh replay lacks the cached summary and refuses the
+same goal. The goal's read coordinates agree across sessions; differing raw
+`PointerLoadId`s were just session identities, not a lowering discrepancy.
+Temporarily disabling only the memoized jump makes the original `solve` refuse
+the goal instead of emitting the non-replayable certificate. Instrumentation
+and the temporary disabling switch were removed after this experiment.
+
+Next design/build: remove cache-dependent history jumps from simple read
+checking; cached search results are not explicit proof steps. Then express the
+copy's preservation argument through the existing primitive/certificate path,
+checking whether the complete word's provenance can be carried by that path.
 Do not count successful smart verification as a completed repair, restore the
-naming walk, or add a replay fallback. The exact omitted dependency is not yet
-established. Investigate why search/expansion can accept steps which the fresh
-checker rejects before resuming affected proof repairs. The parent-cast fixture
-is the passing expansion/replay control.
+naming walk, or warm the cache during replay. The parent-cast fixture is the
+passing expansion/replay control. No production verifier change was made in
+this investigation.
 
 The witness experiments also remain unresolved. Naming the recursive witness
 and explicitly proving the current cast equal to it succeeds, but the recursive
@@ -129,9 +148,10 @@ explicit-composition and cold-refusal controls in
 `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`. Cold histories include
 writes to either pointer half; an undecided comparison must refuse equality.
 
-The general `memory_dag_cell_source` entry now inspects one transition. Its
-bounded variants may reuse already memoized version summaries but must not
-start a cold version walk. An inconclusive query is not preservation evidence.
+The general `memory_dag_cell_source` entry has a one-transition bound, but its
+bounded walker still reuses memoized version summaries. The replay regression
+above shows why this exception must be removed: a warm summary changes what a
+simple step proves. An inconclusive query is not preservation evidence.
 Do not reintroduce source discovery to recover automatic proof coverage.
 
 ## Design and build cycle

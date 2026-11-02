@@ -20048,3 +20048,28 @@ fn explicit_pointer_alias_repairs_expand_and_cold_replay() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
+
+#[test]
+fn saved_word_equality_expansion_cold_replay() {
+    let source = r#"
+verifying "saved.c";
+void copy(unsigned long* slot, int32* p) {
+    views *slot;
+    requires ((*slot & ~1) as (int32 *)) == p;
+} by {
+    step(); step();
+    have ((saved & ~1) as (int32 *)) == p by { solve(); }
+}
+"#;
+    let inputs = [(
+        "saved.c",
+        "void copy(unsigned long* slot, int32* p) { unsigned long saved = *slot; }",
+    )];
+    // Search must not warm an implicit history summary that its emitted
+    // normalization step needs but a fresh proof session does not possess.
+    let verified =
+        verify_c0_sources(source, &inputs).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_checked_grouped_claim(source, &verified, "copy").unwrap();
+    verify_c0_sources(&expanded, &inputs)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
