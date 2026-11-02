@@ -302,8 +302,10 @@ indexes. Evidence selection retains the exact source of each contributing
 extremum, rather than enumerating all bounds on an operand. Signed/unsigned
 widening sibling rules and the refusal of insufficient bounds are preserved.
 The atomic evidence dispatcher can use this route on Integer observations without
-exporting their operands. This does not yet remove the main condition dispatcher's
-native-comparison compatibility bridge.
+exporting their operands. The main condition dispatcher now runs masked-range
+and widened-sum rules on the original operand views before its native comparison
+conversion. Successful range decisions avoid exporting shared trees; the other
+comparison routes still retain their compatibility bridge.
 
 `signed_definedness_query` reads a single complete signed add/subtract domain as
 operand handles. Special-certificate planning, restricted definedness closure,

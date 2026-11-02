@@ -590,6 +590,9 @@ fn shared_masked_order_queries_do_not_export_growing_operands() {
                         IntegerTerm::constant(bound.into()).into(),
                     );
                     assert_eq!(context.decide_masked_order(&query), expected);
+                    if expected.is_some() {
+                        assert_eq!(context.decide(&query), expected);
+                    }
                     assert!(!machine.has_boxed_operand());
                 }
             }
@@ -656,6 +659,9 @@ fn shared_widened_queries_and_evidence_do_not_export_operands() {
                     IntegerTerm::constant(bound.into()).into(),
                 );
                 assert_eq!(context.decide_widened_sum_bound(&condition), expected);
+                if expected.is_some() {
+                    assert_eq!(context.decide(&condition), expected);
+                }
                 let sources = context
                     .widened_unsigned_sum_bound_premises(&condition)
                     .unwrap();
