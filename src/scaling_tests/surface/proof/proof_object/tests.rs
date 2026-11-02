@@ -2016,12 +2016,17 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             );
+            // The `int32` read of a `uint32` store is σ of the stored value.
             facts.push(Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(load.clone()),
-                    right: Box::new(stored),
+                    right: Box::new(Bitvector32Term::sign_cast32(
+                        MachineIntegerType::UInt32,
+                        MachineIntegerType::Int32,
+                        stored,
+                    )),
                 },
                 true,
             ));

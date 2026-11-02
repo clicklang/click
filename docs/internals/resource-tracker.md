@@ -681,9 +681,10 @@ The kind is checked in three kinds of place:
   at, a cell a snapshot holds (`MemoryDagCell::resolved_value`,
   `resolve_memory_load_value`, the deep canonical form, exact-load
   normalization, `memory_materializes_atomic_load`) — asks
-  `LoadKind::reads_value`, or `LoadKind::read_cell` where a character read of
-  a one-byte cell of the other signedness answers with the same bits
-  converted: the value is exactly what a read of this kind returns;
+  `LoadKind::reads_value`, or `LoadKind::read_cell` where a read of a cell
+  of the same width and the other signedness answers with the same bits
+  converted (σ of the stored word at 32 bits): the value is exactly what a
+  read of this kind returns;
 - the int32 equality graph takes a load variable as an int32 load only when its
   kind is `Int32`, which every 32-bit load variable's is. Its recorded width is the widest access seen at the
   address, so a byte read beside an `int32` read used to qualify
