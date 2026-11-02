@@ -78,6 +78,7 @@ pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
 };
 mod remainder_rules;
+pub(crate) use integer::MachineOperandView;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
     SharedIntegerApplication, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedPureApplication,

@@ -171,6 +171,42 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared operand views for arithmetic checking (2026-11-02)
+
+Following merged #2258, `codex/nested-signed-arithmetic` introduces borrowed
+machine operand views. Ring identities and quotient/shift/remainder bounds now
+inspect shared roots and observe child handles without materializing boxed
+prefixes. The boxed adapters use the same operation maps. Literal observation,
+32-bit signed/unsigned interpretation, wide-format admission, and the existing
+read-over-write rule for named reads remain intact. The additive identity
+consumer also shares the root inspection instead of repeating it.
+
+The deterministic regression checks every prefix of a doubled-child DAG at
+16/64/256 levels, including successful quotient bounds, arithmetic identities,
+and affine range inspection. Measured work is 9,824/39,296/157,184 units,
+unchanged beside 0/128/512 unrelated terms. It asserts linear growth,
+unrelated-input independence, and that neither the original nor quotient
+observation materializes a boxed operand. A format/operator matrix covers the
+32/64-bit signed and unsigned readings and wide admission refusals.
+
+Nested signed preparation remains disabled. The remaining coordinated migration
+must preserve shared operands through native comparison and overflow query
+construction, conversion/modular adapters, and the equality graph's Integer
+observation registration. These still call `value()` and/or build boxed
+conditions; enabling nested production first would move repeated prefix copying
+into checking. The equality graph needs handle-keyed registration memoization
+with existing class identities, literal identities, and branch isolation
+preserved. Then nested preparation can accumulate ordinary definedness
+obligations in postorder and be tested through actual obligation checking,
+not just construction. No fact-aware fallback or changed work limit is part
+of this increment.
+
+Validation: `scripts/check.sh --no-fail-fast` passes 7,096 unit/API/import
+checks (including all 1,145 scaling tests), 58 example projects, and 4,981
+mdtests in 11m54s, above the ten-minute target. The before/after arithmetic
+fact-stability audit passes all 124 fixtures with zero differences. No nightly
+suite ran and no limits changed.
+
 ## Shared machine observation storage (2026-11-02)
 
 Following merged #2256, `codex/shared-observation-storage` migrates the arithmetic

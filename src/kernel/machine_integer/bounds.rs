@@ -52,7 +52,9 @@ pub(crate) fn operation_bound(
     let ty = value.ty();
     let format = ty.format();
     let signed = format.is_signed();
-    let (division, operand, divisor) = representation::word_division(ty, value.value())?;
+    let (division, [operand, divisor]) = representation::view_division(ty, value.operand_view())?;
+    let divisor_word = divisor.literal()?;
+    let divisor = &divisor_word;
     let divisor = match division {
         Division::ShiftRight => {
             let amount = usize::try_from(unsigned_constant(divisor)?).ok()?;
@@ -75,7 +77,7 @@ pub(crate) fn operation_bound(
     let observed = IntegerTerm::Machine(value.clone());
     let condition = match division {
         Division::Quotient | Division::ShiftRight => {
-            let operand = IntegerTerm::from_machine(ty, operand.clone())?;
+            let operand = operand.observe(ty)?;
             let scaled =
                 IntegerTerm::Multiply(IntegerTerm::constant(divisor).into(), observed.into());
             match (upper, signed && division == Division::Quotient) {

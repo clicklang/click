@@ -3,6 +3,15 @@
 use super::*;
 
 impl KernelTerm {
+    /// Change only the observation's numeric interpretation. The underlying
+    /// word node and its format-tagged operations remain exactly as written.
+    pub(crate) fn with_machine_observation_type(&self, format: MachineIntegerType) -> Self {
+        if self.ty() == &KernelType::C(format.c_type()) {
+            return self.clone();
+        }
+        Self::intern(KernelType::C(format.c_type()), self.node().clone())
+    }
+
     /// Construct one arithmetic operation structurally from shared children.
     /// Signed definedness belongs to the evaluator's separate obligations.
     pub(crate) fn arithmetic_binary(
