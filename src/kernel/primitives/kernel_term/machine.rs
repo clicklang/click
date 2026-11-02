@@ -3,16 +3,19 @@
 use super::*;
 
 impl KernelTerm {
-    /// Construct one unsigned operation structurally from shared children.
-    /// Definedness is separate; this total fragment has no domain debt.
-    pub(crate) fn unsigned_binary(
+    /// Construct one arithmetic operation structurally from shared children.
+    /// Signed definedness belongs to the evaluator's separate obligations.
+    pub(crate) fn arithmetic_binary(
         format: MachineIntegerType,
         operator: MachineBinaryOp,
         arguments: [Self; 2],
     ) -> Result<Self, &'static str> {
         if !matches!(
             format,
-            MachineIntegerType::UInt32 | MachineIntegerType::UInt64
+            MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int64
+                | MachineIntegerType::UInt64
         ) || !matches!(
             operator,
             MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply
@@ -20,7 +23,7 @@ impl KernelTerm {
             .iter()
             .any(|arg| arg.ty() != &KernelType::C(format.c_type()))
         {
-            return Err("unsigned arithmetic requires matching uint32 or uint64 operands");
+            return Err("arithmetic requires matching 32-bit or 64-bit integer operands");
         }
         Ok(Self::intern(
             KernelType::C(format.c_type()),

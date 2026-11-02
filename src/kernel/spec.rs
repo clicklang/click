@@ -5640,17 +5640,18 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
             SpecExpression::Add(..) | SpecExpression::Subtract(..) | SpecExpression::Multiply(..)
         );
     if candidate {
-        if let Some(value) = shared_machine::prepare(expression, budget)? {
+        if let Some(mut prepared) = shared_machine::prepare(expression, budget)? {
             let PureFunctionArgument::Value(value) = KernelTermExport::default()
-                .argument(&value)
+                .argument(&prepared.value)
                 .map_err(|_| ExecutionLimit::Paths)?
             else {
                 unreachable!()
             };
+            apply_held_resource_domain_policy(&mut prepared.obligations, assumptions);
             return Ok(vec![SpecExpressionPath {
                 value,
                 facts: Vec::new().into(),
-                obligations: Vec::new(),
+                obligations: prepared.obligations,
             }]);
         }
         budget.machine_preparation_disabled = true;
@@ -7679,19 +7680,26 @@ fn apply_spec_arithmetic(
     if let Some(mut path) =
         crate::kernel::eval::apply_spec_machine_arithmetic(op, &left, &right, &facts, &obligations)
     {
-        // A held body's projection assumes the domain its fold established.
-        // Keep the debt while distinguishing it from a new proof obligation.
-        // Ordinary entry requirements, calls and folds retain mandatory domains.
-        if assumptions.should_assume_held_resource_domains() {
-            for obligation in path.obligations.iter_mut().skip(obligations.len()) {
-                if obligation.evaluation_domain {
-                    obligation.assumable = true;
-                }
-            }
-        }
+        apply_held_resource_domain_policy(&mut path.obligations[obligations.len()..], assumptions);
         return vec![path];
     }
     apply(left, right, facts, obligations, assumptions)
+}
+
+fn apply_held_resource_domain_policy(
+    obligations: &mut [ProofObligation],
+    assumptions: &PureFactContext,
+) {
+    // A held body's projection assumes the domain its fold established.
+    // Keep the debt while distinguishing it from a new proof obligation.
+    // Ordinary entry requirements, calls and folds retain mandatory domains.
+    if assumptions.should_assume_held_resource_domains() {
+        for obligation in obligations {
+            if obligation.evaluation_domain {
+                obligation.assumable = true;
+            }
+        }
+    }
 }
 
 fn evaluate_spec_scalar_binary_paths_in(
