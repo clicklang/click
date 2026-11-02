@@ -729,6 +729,13 @@ impl Parser {
         {
             return Ok(crate::languages::rust::names::option_type_name(argument));
         }
+        if let [ok, err] = arguments.as_slice()
+            && crate::languages::rust::names::is_result_path(
+                &path.iter().map(String::as_str).collect::<Vec<_>>(),
+            )
+        {
+            return Ok(crate::languages::rust::names::result_type_name(ok, err));
+        }
         Ok(trait_instance_name(&path, &arguments))
     }
 

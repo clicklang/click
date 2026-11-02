@@ -9071,7 +9071,8 @@ mod retained_caller_tests {
 mod construction_return_tests;
 
 /// The name a sidecar's Rust type resolves to for enum type `enum_type`: a
-/// crate enum's own name, or an `Option` instance's importer name.
+/// crate enum's own name, or an `Option` or `Result` instance's importer
+/// name.
 fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     let algebraic_type = enum_type.algebraic_type();
     let spelling = |argument: &crate::kernel::AlgebraicValueType| -> String {
@@ -9099,6 +9100,9 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     match algebraic_type.arguments.as_slice() {
         [argument] if algebraic_type.name == "Option" => {
             crate::languages::rust::names::option_type_name(&spelling(argument))
+        }
+        [ok, err] if algebraic_type.name == "Result" => {
+            crate::languages::rust::names::result_type_name(&spelling(ok), &spelling(err))
         }
         _ => algebraic_type.name.clone(),
     }

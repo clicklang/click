@@ -167,6 +167,104 @@ impl Adapter<'_> {
 
     /// The external function a call of `Option::<T>::unwrap_or`, `unwrap`
     /// or `expect` calls, declared once per method and payload type:
+    /// A call of `Result::unwrap_or`, `Result::unwrap` or `Result::expect`
+    /// on a `Result` of scalars, as [`Self::option_method_call`] reads
+    /// `Option`'s: `unwrap_or`'s contract is the library's
+    /// `result::unwrap_or`, and `unwrap`'s and `expect`'s require `Ok` and
+    /// return its payload. Their `E: Debug` bound and the formatted panic
+    /// are not imported: the panic is an obligation.
+    pub(super) fn result_method_call(
+        &self,
+        callee: &a::FunDecl,
+        pointer: &a::FnPtr,
+        call: &a::Call,
+    ) -> Result<Option<String>, String> {
+        let name = &callee.item_meta.name.name;
+        let method = match name.as_slice() {
+            [
+                a::PathElem::Ident(core, _),
+                a::PathElem::Ident(result, _),
+                a::PathElem::Impl(a::ImplElem::Ty(_)),
+                a::PathElem::Ident(method, d),
+            ] if !callee.item_meta.is_local
+                && matches!(callee.src, a::FunSource::Normal)
+                && core == "core"
+                && result == "result"
+                && *d == a::Disambiguator::ZERO
+                && matches!(method.as_str(), "unwrap_or" | "unwrap" | "expect") =>
+            {
+                method.as_str()
+            }
+            _ => return Ok(None),
+        };
+        let refused = || unsupported(&format!("core method `Result::{method}` signature"));
+        let [ok, err] = pointer.generics.types.as_raw_slice() else {
+            return Err(refused());
+        };
+        let (ok, err) = (self.ty(ok)?, self.ty(err)?);
+        let Some(argument) = call.args.first() else {
+            return Err(refused());
+        };
+        let result = self.ty(argument.ty())?;
+        let second = match (method, call.args.as_slice()) {
+            ("unwrap", [_]) => None,
+            ("unwrap_or", [_, default]) => Some(self.ty(default.ty())? == ok),
+            ("expect", [_, message]) => Some(matches!(message.ty().kind(),
+                a::TyKind::Ref(_, text, a::RefKind::Shared) if matches!(text.kind(), a::TyKind::Adt(r) if r.builtin == Some(a::BuiltinAdt::Str)))),
+            _ => Some(false),
+        };
+        if !ok.is_scalar()
+            || !err.is_scalar()
+            || callee.signature.is_unsafe
+            || call.safety == a::CallSafety::Unsafe
+            || !pointer.generics.const_generics.is_empty()
+            || result != self.result_enum(ok.clone(), err.clone())?
+            || second == Some(false)
+            || self.ty(&call.dest.ty)? != ok
+        {
+            return Err(refused());
+        }
+        let mut function = super::super::names::qualified_name(["Result", method]);
+        for argument in [&ok, &err] {
+            super::super::names::push_type_argument(
+                &mut function,
+                argument.scalar_name().expect("a scalar"),
+            );
+        }
+        let parameter = |name: &str, value_type: Type| out::Place {
+            name: name.into(),
+            value_type,
+            span: span(callee.item_meta.span),
+        };
+        let (parameters, specification) = if method == "unwrap_or" {
+            (
+                vec![parameter("r", result), parameter("d", ok.clone())],
+                super::super::standard_library::RESULT_UNWRAP_OR,
+            )
+        } else {
+            (
+                vec![parameter("r", result)],
+                super::super::standard_library::RESULT_UNWRAP,
+            )
+        };
+        self.core_methods.borrow_mut().insert(
+            function.clone(),
+            out::Function {
+                name: function.clone(),
+                return_type: ok,
+                parameters,
+                body: vec![],
+                mir: None,
+                external: true,
+                captures: 0,
+                implements: None,
+                instance_of: None,
+                core_method: Some(specification.into()),
+                span: span(callee.item_meta.span),
+            },
+        );
+        Ok(Some(function))
+    }
     /// `unwrap_or`'s contract is the library's `option::unwrap_or`, and
     /// `unwrap`'s and `expect`'s require `Some` and return its payload.
     /// `expect`'s message is not passed: it serves the panic alone.

@@ -1782,6 +1782,13 @@ theorem use_option_unwrap_or(d: int32) {
         solve();
     }
 }
+
+theorem use_result_unwrap_or(d: int32) {
+    ensures result::unwrap_or(Result<int32, uint8>::Err(3u8), d) == d by {
+        unfold(result::unwrap_or(Result<int32, uint8>::Err(3u8), d));
+        solve();
+    }
+}
 ```
 
 ```expect

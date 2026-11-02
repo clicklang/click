@@ -54,8 +54,8 @@ impl Adapter<'_> {
         panicking(callee).then_some(call)
     }
 
-    /// The local holding the message of the `Option::expect` call `block`
-    /// ends with.
+    /// The local holding the message of the `Option::expect` or
+    /// `Result::expect` call `block` ends with.
     fn expect_message(&self, block: &u::BlockData) -> Option<a::LocalId> {
         let u::TerminatorKind::Call { call, .. } = &block.terminator.kind else {
             return None;
@@ -64,8 +64,19 @@ impl Adapter<'_> {
             return None;
         };
         let callee = self.krate.fun_decls.get(self.resolve(pointer).ok()?)?;
+        // `Result::expect` has no diagnostic item; it is the inherent method
+        // of `core::result`'s `impl<T, E> Result<T, E>`.
+        let result_expect = matches!(callee.item_meta.name.name.as_slice(), [
+            a::PathElem::Ident(core, _),
+            a::PathElem::Ident(result, _),
+            a::PathElem::Impl(a::ImplElem::Ty(_)),
+            a::PathElem::Ident(method, d),
+        ] if core == "core" && result == "result" && method == "expect"
+            && *d == a::Disambiguator::ZERO
+            && matches!(callee.src, a::FunSource::Normal));
         if callee.item_meta.is_local
-            || callee.item_meta.diagnostic_item.as_deref() != Some("option_expect")
+            || (callee.item_meta.diagnostic_item.as_deref() != Some("option_expect")
+                && !result_expect)
         {
             return None;
         }

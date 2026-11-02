@@ -21,6 +21,7 @@ mod panics;
 mod protocol;
 mod ranges;
 mod referent_match;
+mod result_try;
 mod shared_arrays;
 #[cfg(test)]
 mod slice_into_iteration_tests;
@@ -837,6 +838,11 @@ impl Adapter<'_> {
             a::TyKind::Adt(_) if let Some(payload) = self.option_payload(t) => {
                 self.option_enum(self.ty(payload)?)?
             }
+            // A `Result<T, E>` of scalars is the value of the library's
+            // `spec enum Result<T, E>` at them.
+            a::TyKind::Adt(_) if let Some((ok, err)) = self.result_payloads(t) => {
+                self.result_enum(self.ty(ok)?, self.ty(err)?)?
+            }
             // An instance of a generic struct is a record of its own, named
             // with its type arguments: `Cell<T>` in generic code, `Cell<i32>`
             // in a caller.
@@ -1025,6 +1031,24 @@ impl Adapter<'_> {
             && !self.protocol_option(ty))
         .then_some(payload)
     }
+    /// The `Ok` and `Err` payload types of a `core::result::Result<T, E>`.
+    fn result_payloads<'t>(&self, ty: &'t a::Ty) -> Option<(&'t a::Ty, &'t a::Ty)> {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return None;
+        };
+        let decl = self.krate.type_decls.get(r.id)?;
+        let [ok, err] = r.generics.types.as_raw_slice() else {
+            return None;
+        };
+        (!decl.item_meta.is_local
+            && protocol::path(&decl.item_meta.name, &["core", "result", "Result"]))
+        .then_some((ok, err))
+    }
+    /// Whether `ty` is an instance of a library enum: an `Option` or a
+    /// `Result` the importer reads as the library's `spec enum`.
+    fn library_enum(&self, ty: &a::Ty) -> bool {
+        self.option_payload(ty).is_some() || self.result_payloads(ty).is_some()
+    }
     /// The locals of `body` that hold a crate enum's discriminant, with the
     /// enum each reads.
     fn enum_discriminants(&self, body: &u::ExprBody) -> BTreeMap<a::LocalId, a::Place> {
@@ -1035,7 +1059,7 @@ impl Adapter<'_> {
                     &statement.kind
                     && let a::PlaceKind::Local(local) = target.kind
                     && (matches!(place.ty.kind(), a::TyKind::Adt(r) if self.enums.contains_key(&r.id))
-                        || self.option_payload(&place.ty).is_some())
+                        || self.library_enum(&place.ty))
                 {
                     discriminants.insert(local, place.clone());
                 }
@@ -1043,9 +1067,10 @@ impl Adapter<'_> {
         }
         discriminants
     }
-    /// The name of enum `ty`'s type, a crate enum or an `Option` instance,
-    /// and its variants. The compiler leaves `Option`'s declaration opaque;
-    /// its variants are `None` and `Some(T)`, tagged 0 and 1.
+    /// The name of enum `ty`'s type, a crate enum or an `Option` or `Result`
+    /// instance, and its variants. The compiler leaves the library enums'
+    /// declarations opaque; `Option`'s variants are `None` and `Some(T)`,
+    /// tagged 0 and 1, and `Result`'s `Ok(T)` and `Err(E)`, tagged 0 and 1.
     fn enum_variants(&self, ty: &a::Ty) -> Result<(String, Vec<EnumVariant>), String> {
         let a::TyKind::Adt(r) = ty.kind() else {
             return Err(unsupported("enum type"));
@@ -1064,6 +1089,18 @@ impl Adapter<'_> {
                 name,
                 vec![variant(0, "None", vec![]), variant(1, "Some", vec![None])],
             ));
+        }
+        if self.result_payloads(ty).is_some() {
+            let Type::Enum { name } = self.ty(ty)? else {
+                unreachable!("a result of scalars is an enum")
+            };
+            let variant = |index: usize, name: &str| EnumVariant {
+                id: a::VariantId::from_usize(index),
+                name: name.into(),
+                discriminant: a::IntegerValue::Signed(a::IntTy::Isize, index as i128),
+                fields: vec![None],
+            };
+            return Ok((name, vec![variant(0, "Ok"), variant(1, "Err")]));
         }
         let name = self
             .enums
@@ -1119,6 +1156,23 @@ impl Adapter<'_> {
         self.enum_instances
             .borrow_mut()
             .insert(name.clone(), ("Option".into(), vec![payload]));
+        Ok(Type::Enum { name })
+    }
+    /// The library's `spec enum Result<T, E>` at `ok` and `err`, recorded so
+    /// the import declares the instance.
+    fn result_enum(&self, ok: Type, err: Type) -> Result<Type, String> {
+        let spell = |payload: &Type| {
+            record_argument_spelling(payload).ok_or_else(|| {
+                unsupported(
+                    "Result of a type other than a type parameter, \
+                     i32, u8, u16, u32, usize or bool",
+                )
+            })
+        };
+        let name = super::names::result_type_name(&spell(&ok)?, &spell(&err)?);
+        self.enum_instances
+            .borrow_mut()
+            .insert(name.clone(), ("Result".into(), vec![ok, err]));
         Ok(Type::Enum { name })
     }
     /// Whether a box may hold `ty`: a crate struct, or an instance of a
@@ -1769,8 +1823,7 @@ impl BodyAdapter<'_, '_> {
                     as u64,
             },
             a::Rvalue::Aggregate(a::AggregateKind::Adt(r, Some(variant), None), fields)
-                if self.adapter.enums.contains_key(&r.id)
-                    || self.adapter.option_payload(ty).is_some() =>
+                if self.adapter.enums.contains_key(&r.id) || self.adapter.library_enum(ty) =>
             {
                 let (name, variants) = self.adapter.enum_variants(ty)?;
                 let declared = variants
@@ -2494,7 +2547,10 @@ impl BodyAdapter<'_, '_> {
                     Some(function) => Some(function),
                     None => match self.adapter.option_method_call(callee, ptr, call)? {
                         Some(function) => Some(function),
-                        None => self.adapter.slice_method_call(callee, ptr, call)?,
+                        None => match self.adapter.result_method_call(callee, ptr, call)? {
+                            Some(function) => Some(function),
+                            None => self.adapter.slice_method_call(callee, ptr, call)?,
+                        },
                     },
                 };
                 if let Some(function) = core_method {
@@ -3295,6 +3351,18 @@ pub(super) fn decode_crate(
         } else {
             body
         };
+        let result_try_body;
+        let body = if let Some(rewritten) = adapter.result_try_body(body).map_err(|e| {
+            format!(
+                "{} in {name}: {e}",
+                refusal_location(&krate, source, body.span, f.item_meta.span)
+            )
+        })? {
+            result_try_body = rewritten;
+            &result_try_body
+        } else {
+            body
+        };
         let take_body;
         let body = if let Some(rewritten) = adapter.option_take_body(body).map_err(|e| {
             format!(
@@ -3728,22 +3796,22 @@ pub(super) fn decode_crate(
     // Each instance of a library enum, with its variants' fields at the
     // instance's arguments.
     for (name, (generic, arguments)) in adapter.enum_instances.borrow().iter() {
-        // Only `Option` is instantiated, at its one argument.
-        let [payload] = arguments.as_slice() else {
-            return Err(unsupported("library enum instance"));
+        let variant = |name: &str, fields: Vec<Type>| out::Variant {
+            name: name.into(),
+            field_names: Vec::new(),
+            fields,
         };
-        let exported = vec![
-            out::Variant {
-                name: "None".into(),
-                field_names: Vec::new(),
-                fields: Vec::new(),
-            },
-            out::Variant {
-                name: "Some".into(),
-                field_names: Vec::new(),
-                fields: vec![payload.clone()],
-            },
-        ];
+        let exported = match (generic.as_str(), arguments.as_slice()) {
+            ("Option", [payload]) => vec![
+                variant("None", vec![]),
+                variant("Some", vec![payload.clone()]),
+            ],
+            ("Result", [ok, err]) => vec![
+                variant("Ok", vec![ok.clone()]),
+                variant("Err", vec![err.clone()]),
+            ],
+            _ => return Err(unsupported("library enum instance")),
+        };
         enums.push(out::Enum {
             name: name.clone(),
             generic: Some(generic.clone()),

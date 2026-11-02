@@ -1,0 +1,28 @@
+{
+  "units": {
+    "result_values": {
+      "language": "rust",
+      "sources": {
+        "results.rs": {}
+      },
+      "crate": {
+        "name": "result_values",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "result_values::round",
+          "result_values::plus_one",
+          "result_values::quarter",
+          "result_values::error_code",
+          "result_values::kept",
+          "result_values::must",
+          "result_values::must_say",
+          "result_values::or_default"
+        ],
+        "files": [
+          "results.rs"
+        ]
+      }
+    }
+  }
+}
