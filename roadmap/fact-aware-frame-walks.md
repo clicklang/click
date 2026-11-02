@@ -4,31 +4,49 @@ Priority: P1.
 
 ## Remaining targets
 
-**Pointer read naming: red regression ready for design review.**
-`CPointerValue::from_read` calls `resource_tracker::last_same_point`, which
-reaches `cell_last_same_version` and its history traversal. The constructor
-already receives an exact read value, snapshot, and address; the walk selects
-an older complete-read identity for its designation and opaque extent.
+**Pointer read naming: removal experiment, not ready to land.**
+On `codex/pointer-read-naming-regression`, `CPointerValue::from_read` no longer
+calls `resource_tracker::last_same_point`. It uses the supplied address and
+snapshot's existing O(1) `unchanged_bytes_source()` link. That link identifies
+cache-only observations of the same bytes; it does not cross actual writes.
+`LoadedPointer`, its registry, initialization checks, and lifetime checks are
+unchanged. Keep this separate from the pointer-representation work.
 
-The local `codex/pointer-read-naming-regression` experiment adds
-`fresh_pointer_read_naming_across_store_history_has_near_linear_total_work`
-in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`. At N=16/32/64/128,
-N fresh cells after N disjoint stores in the same object cost
-273/1057/4161/16513 units: exactly N² + N + 1. Same-cell reads cost
-18/34/66/130; fresh reads without history cost 17/33/65/129. All use normal
-memoization, with a fresh verification session per size and no cache clearing
-between reads. Store construction and exact read-identity creation are outside
-the measurement. The intended near-linear assertion fails; both controls and
-the existing-origin assertions pass. The regression remains local and red;
-production code is unchanged.
+The regression `fresh_pointer_read_naming_across_store_history_has_near_linear_total_work`
+in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs` measures N fresh
+pointer constructions after N disjoint stores. At N=16/32/64/128, baseline work
+was 273/1057/4161/16513 (N² + N + 1); the experiment costs 16/32/64/128.
+Same-cell and no-history controls also cost 16/32/64/128. Normal memoization
+remains enabled, with no cache clearing between reads.
 
-Design question before removal: name the complete pointer's designation and
-opaque extent directly from the supplied snapshot/address, then use explicit
-complete-pointer preservation to relate it to an earlier read. Establish how
-existing typed transport carries designation and bounds; numeric pointer equality
-alone must not confer provenance or access. Discuss any missing primitive before
-changing the constructor. Do not add a historical-source fallback or weaken
-partial-overwrite, lifetime, or width checks.
+`mdtests/pointer_read_origin_explicit_transport.md` passes with the removal:
+an explicit complete-pointer preservation certificate crosses a separated
+write, and the preserved pointer can then be dereferenced. This establishes
+one working case, not general recovery of all earlier provenance facts.
+
+Remaining blockers in the experiment:
+
+- The ordinary proof corpus has twelve failing fixtures (eleven formerly
+  passing proofs and one changed expected-failure diagnostic). Copied aggregate
+  parameter setup fails to connect its entry pointer facts to the contract.
+  Removing redundant final rewrites only exposes the same certification failure;
+  those exploratory proof edits were reverted. Other failures concern packed
+  pointers, constructor evidence, and resource witnesses.
+- Four focused kernel tests still fail: complete owned-store framing, cached
+  pointer identity, recent pointer origin after havoc, and packed-word transport
+  scaling. Preserve their assertions while investigating explicit evidence.
+  The complete scaling suite reports 1144 passed and these three scaling
+  failures out of 1147 tests; the owned-store framing failure is a unit test.
+- `transport_framed_atomic_pointer_value` still calls `cell_version_point` for
+  reconstructed complete words. Removing constructor cache warming exposes
+  this traversal: one-write transport costs 288/336/528/1296 units with
+  4/16/64/256 unrelated entries. Do not restore warming or raise the bound.
+
+Next design review: determine how copied-parameter construction should record
+its complete-pointer equality directly, and how packed-word transport should
+use its supplied endpoints without finding an older designation. Discuss any
+missing primitive before extending the kernel. Do not add a historical-source
+fallback or weaken partial-overwrite, lifetime, or width checks.
 
 Read-side `CellsForgotten` projections and bulk-write preparation remain
 separate from scalar-store invalidation. Removing them requires preserving

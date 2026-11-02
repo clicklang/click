@@ -2818,13 +2818,13 @@ fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32,
                 })
                 .collect::<Vec<_>>()
         });
-        // The stores do not touch these slots. Check the existing complete-read
-        // origin semantics without paying for these assertions in the sample.
+        // Construction keeps the exact supplied source even when an earlier
+        // read would have the same bytes. No historical identity is inferred.
         for ((address, read), value) in reads.iter().zip(values.iter()) {
             assert_eq!(value.pointer(), read);
-            let original = Pointer::loaded_value(&initial, address);
-            assert_eq!(value.designation(), &original);
-            assert_eq!(value.opaque_extent(), Some(&original));
+            let exact = Pointer::loaded_value(&current, address);
+            assert_eq!(value.designation(), &exact);
+            assert_eq!(value.opaque_extent(), Some(&exact));
         }
         samples.push((size, work));
     }

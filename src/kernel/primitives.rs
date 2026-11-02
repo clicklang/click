@@ -2113,18 +2113,12 @@ impl CPointerValue {
             return value;
         }
         value.qualifiers = None;
-        // The domain comes from one complete pointer read.
-        // Name its eight-byte version using the tracker's cached, assumption-
-        // free naming query rather than a cached four-byte scalar prefix.
-        let point = crate::kernel::resource_tracker::last_same_point(
-            crate::kernel::resource_tracker::Resource::Cell {
-                pointer: cell,
-                bytes: C_POINTER_BYTE_WIDTH,
-            },
-            &crate::kernel::resource_tracker::ProgramPoint::at(memory),
-        );
-        let source = point.as_ref().map_or(memory, |point| point.snapshot());
-        let origin = Arc::new(Pointer::loaded_value(source, cell));
+        // Cache observations retain their unchanged-byte source directly.
+        // This lookup crosses no writes: preservation across program states
+        // needs explicit evidence, not a search for an older cell version.
+        crate::instrumentation::record_deterministic_work(1);
+        let source = memory.unchanged_bytes_source();
+        let origin = Arc::new(Pointer::loaded_value(&source, cell));
         value
             .with_opaque_extent(Some(origin.clone()))
             .with_designation(origin)
