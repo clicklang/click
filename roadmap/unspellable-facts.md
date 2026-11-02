@@ -171,6 +171,48 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared machine observation storage (2026-11-02)
+
+Following merged #2256, `codex/shared-observation-storage` migrates the arithmetic
+fragment of `SharedMachineIntegerTerm` storage to `KernelTerm` handles. Literal
+and variable leaves plus machine unary/binary nodes have exact shared identities;
+observation interning uses those identities instead of copying/hashing boxed
+prefixes. Old boxed inputs import into the same observation identity. Integer
+import/export retains shared operands, including after dropping the source and
+clearing bridge memoization. Root value-reading of these symbolic observations
+is an identity operation and does not request the boxed operand.
+
+A cached bit computed from immediate children selects this migration fragment.
+Conversions and opaque payloads keep the existing storage, preserving their
+value-reading rules and complete metadata. The old `value()` API materializes
+one explicit boxed output lazily. This is a prerequisite, not completion of
+nested signed production: obligation producers and consumers must retain typed
+shared views rather than request a boxed tree for every prefix. The scaling
+regression observes every prefix of a DAG with doubled children at 16/64/256
+levels beside 0/128/512 unrelated terms, checks identity across the Integer
+bridge, and asserts that no boxed operand is materialized. No facts choose
+storage or change the constructed term.
+
+The pre-change arithmetic audit passes all 124 fixtures with zero differences.
+The first full gate exposed eager legacy importing through Boolean conversion
+bodies, plus repeated import/materialization work and cross-session diagnostic
+cost differences. The boundary now uses an arithmetic-only importer that stops
+at unsupported leaves, reuses an imported observation within a verification,
+and retains an old caller's supplied boxed tree. Session-scoped bookkeeping
+resets with the Integer bridge memo. The cache retains observations until reset
+so weak-interner cleanup cannot change within-session work. A regression checks
+release on reset and equal cold costs across sessions. Machine-format scaling
+samples and fixed-query comparisons now reset term-bridge caches or enter a
+fresh verification for each sample, so larger samples do not inherit earlier
+warm imports. Fixtures that retain memory identities reset only the bridges.
+Original slope bounds and exact work-equality assertions remain unchanged.
+Final validation passes all 49 targeted storage/bridge/cache and affected
+sampling checks. `scripts/check.sh --no-fail-fast` passes 7,088 unit/API/import/
+scaling tests, 58 examples and 4,975 regular proof fixtures in 10m55s
+(55 seconds over the ten-minute target). All 1,141 scaling tests pass. The
+final arithmetic audit passes all 124 fixtures with zero differences, matching
+the pre-change baseline. No work limits changed and no full nightly suite ran.
+
 ## Shared SurfaceTerm and KernelTerm migration (2026-10-31)
 
 The user approved a staged unification of source expressions and kernel

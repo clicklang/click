@@ -33,6 +33,8 @@ fn held_separation_uses_only_the_selected_members() {
 fn held_field_separation_does_not_visit_unrelated_owners() {
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
+        // Keep term-bridge imports cold at every sample size.
+        crate::kernel::clear_integer_bridge_memo();
         let state =
             CState::new().with_resource_context(ResourceContext::new().unchecked_with_facts(
                 (0..size).map(|index| CResourceFact::own(range(index, 0, 6, 4))),
@@ -59,6 +61,8 @@ fn held_separation_transitive_alias_uses_the_shared_resource_index() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut samples = Vec::new();
     for size in [4u64, 16, 64, 256] {
+        // Keep term-bridge imports cold at every sample size.
+        crate::kernel::clear_integer_bridge_memo();
         let pointer = |index| {
             let CResource::Memory(range) = cell(index) else {
                 unreachable!()

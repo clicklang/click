@@ -18,6 +18,8 @@ fn loadability_explanation_ignores_unrelated_objects() {
     let mut samples = Vec::new();
     let mut misses = Vec::new();
     for size in [8u64, 32, 128] {
+        // Keep term-bridge imports cold at every sample size.
+        crate::kernel::clear_integer_bridge_memo();
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_proposition(Proposition::CMemoryLoadable {
