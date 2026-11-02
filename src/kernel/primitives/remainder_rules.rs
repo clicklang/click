@@ -38,7 +38,22 @@ impl C {
             | binary_term!(UInt32, Divide, n, d)
             | binary_term!(Int32, Remainder, n, d)
             | binary_term!(UInt32, Remainder, n, d) => (n.as_ref().clone(), d.as_ref().clone()),
-            _ => return None,
+            // Rule C: σ of a `uint32` quotient or remainder is the `int32`
+            // one of its operands' σ when those are nonnegative and the
+            // divisor positive, which are the guards below.
+            result => match result.sign_cast_division_operands()? {
+                (MachineIntegerType::UInt32, _, n, d) => {
+                    let signed = |value: &B| {
+                        B::sign_cast32(
+                            MachineIntegerType::UInt32,
+                            MachineIntegerType::Int32,
+                            value.clone(),
+                        )
+                    };
+                    (signed(n), signed(d))
+                }
+                _ => return None,
+            },
         };
         let mut guards = vec![
             C::signed_less_equal(B::Constant(0), n.clone()),

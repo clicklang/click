@@ -467,6 +467,9 @@ impl PureFactContext {
         if let Some(value) = self.decide_by_sign_bit(condition) {
             return Some(value);
         }
+        if let Some(value) = self.decide_by_sign_cast_division(condition) {
+            return Some(value);
+        }
         // Wide comparisons may use a recorded constant equality. Consult only
         // the queried terms' equality components, never unrelated conditions.
         let wide_comparison = match condition {

@@ -7263,6 +7263,11 @@ impl PureFactContext {
         } else {
             Vec::new()
         };
+        // Rule C's probe: only a comparison naming σ of a quotient or
+        // remainder (one match on the root and each side) is kept.
+        let sign_cast_division = (condition.names_sign_cast_division()
+            && self.condition_facts.get(&condition) != Some(&value))
+        .then(|| condition.clone());
         let mut next = self.assume_condition_once(condition, value);
         if !sign_bit_equivalents.is_empty() {
             next = Self::without_sign_bit_rule(|| {
@@ -7273,6 +7278,15 @@ impl PureFactContext {
                         next.assume_condition_once(equivalent, value)
                     })
             });
+        }
+        // Rule C: a comparison naming σ of a quotient or remainder on
+        // operands of known sign also files its reading at the other
+        // signedness (`condition_reasoning::sign_cast_division`).
+        if let Some(probe) = sign_cast_division
+            && let Some(reading) = next.sign_cast_division_equivalent(&probe)
+            && reading != probe
+        {
+            next = next.assume_condition_once(reading, value);
         }
         if let Some((condition, value, selected)) = decided {
             next = next.assume_decided_algebraic_if(condition, value, selected);
