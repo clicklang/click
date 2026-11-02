@@ -1390,3 +1390,48 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
     assert!(cold_work[1] <= 4 * cold_work[0] + 32);
     assert!(cold_work[2] <= 4 * cold_work[1] + 32);
 }
+
+#[test]
+fn shared_carrier_collection_reuses_growing_prefixes_without_exporting() {
+    let mut samples = Vec::new();
+    for size in [8usize, 32, 96] {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let variable = Variable(982801);
+        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+                let proposition = Proposition::ConditionIs(
+                    ConditionTerm::IntegerEqual(
+                        IntegerTerm::Machine(machine.clone()).into(),
+                        IntegerTerm::constant_i64(0).into(),
+                    ),
+                    true,
+                );
+                let mut collector = IntegerSubstitutionVariableCollector::checked();
+                collector.collect(&proposition);
+                assert!(!collector.exhausted());
+                let mut found = BTreeSet::new();
+                collector.extend_into(&mut found);
+                assert_eq!(found, BTreeSet::from([variable]));
+                assert!(!machine.has_boxed_operand());
+                // Comparison forms must use the same collector without exporting.
+                assert!(crate::kernel::eval::comparison_form(&proposition).is_none());
+                assert!(!machine.has_boxed_operand());
+            }
+        });
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+}

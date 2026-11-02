@@ -258,3 +258,43 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_snapshot() {
         "the reminted pointer keeps the canonical byte offset for Integer 9"
     );
 }
+
+#[test]
+fn shared_carrier_cache_preserves_current_registered_load_dependencies() {
+    let _session = VerificationSession::enter();
+    let address_variable = Variable(982802);
+    let pointer = Pointer::symbolic(address_variable);
+    let load = exact_load(&memory(), &pointer);
+    let format = MachineIntegerType::Int32;
+    let root = KernelTerm::machine_binary_shared(
+        format,
+        MachineBinaryOp::Add,
+        [
+            KernelTerm::variable(KernelType::C(CType::Int32), load),
+            KernelTerm::variable(KernelType::C(CType::Int32), load),
+        ],
+    );
+    let machine = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
+    let proposition = Proposition::ConditionIs(
+        ConditionTerm::IntegerEqual(
+            IntegerTerm::Machine(machine.clone()).into(),
+            IntegerTerm::constant_i64(0).into(),
+        ),
+        true,
+    );
+    let collect = || {
+        let mut collector = IntegerSubstitutionVariableCollector::checked();
+        collector.collect(&proposition);
+        assert!(!collector.exhausted());
+        let mut found = BTreeSet::new();
+        collector.extend_into(&mut found);
+        found
+    };
+    assert_eq!(collect(), BTreeSet::from([load, address_variable]));
+    assert_eq!(collect(), BTreeSet::from([load, address_variable]));
+    assert!(!machine.has_boxed_operand());
+    // A warm syntax cache must not retain a previous registry's dependencies.
+    crate::kernel::eval::clear_load_variable_registry();
+    assert_eq!(collect(), BTreeSet::from([load]));
+    assert!(!machine.has_boxed_operand());
+}
