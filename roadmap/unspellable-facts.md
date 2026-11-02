@@ -186,8 +186,11 @@ with the boxed conversion policy at every format, and a differential rule matrix
 checks previous accept/refuse answers for arithmetic, opaque words, and cast
 roots. Deterministic regressions grow shared prefixes at 8/32/96, covering both
 accepted and rejected conversions and a small legacy operand against a large
-shared target, with no boxed materialization. General comparison, overflow and
-modular/operation reverse adapters remain ahead of nested signed preparation.
+shared target, with no boxed materialization. The full gate passes 7,115 tests
+(including 1,153 scaling tests), 58 examples, and 4,991 proof fixtures in 12m33s.
+The arithmetic audit passes 124 fixtures with zero differences. No limits changed
+and no nightly suite ran. General comparison, overflow and modular/operation
+reverse adapters remain ahead of nested signed preparation.
 
 ## Shared conversion candidate lookup (2026-11-02)
 
