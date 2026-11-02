@@ -3,7 +3,8 @@
 use super::*;
 
 impl KernelTerm {
-    #[cfg(test)]
+    /// Retain a legacy machine operator over shared children without folding.
+    /// Child interpretation is supplied by the caller, as in the legacy node.
     pub(crate) fn machine_binary_shared(
         format: MachineIntegerType,
         operator: MachineBinaryOp,
@@ -15,6 +16,21 @@ impl KernelTerm {
                 format,
                 operator,
                 arguments,
+            },
+        )
+    }
+
+    pub(crate) fn machine_unary_shared(
+        format: MachineIntegerType,
+        operator: MachineUnaryOp,
+        operand: Self,
+    ) -> Self {
+        Self::intern(
+            KernelType::C(format.c_type()),
+            KernelTermNode::MachineUnary {
+                format,
+                operator,
+                operand,
             },
         )
     }

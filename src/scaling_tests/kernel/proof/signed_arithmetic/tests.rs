@@ -448,3 +448,80 @@ fn exact_definedness_refuses_small_mismatch_without_expanding_shared_guard() {
         assert!(lw * small * 4 <= sw * large * 5, "{measurements:?}");
     }
 }
+
+#[test]
+fn definedness_source_matching_reuses_shared_prefixes() {
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelTermImport, KernelType, SharedMachineIntegerTerm,
+    };
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut import = KernelTermImport::default();
+        let mut left = import.machine(format, &Bitvector32Term::Constant(1));
+        let mut right = import.machine(format, &Bitvector32Term::UInt32Constant(1));
+        let variable =
+            KernelTerm::variable(KernelType::C(crate::kernel::CType::Int32), Variable(982500));
+        left = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Add,
+            [left, variable.clone()],
+        );
+        right = KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [right, variable]);
+        let guard = |operand: SharedMachineIntegerTerm| {
+            let exact = IntegerTerm::Add(
+                IntegerTerm::Machine(operand).into(),
+                IntegerTerm::constant(1.into()).into(),
+            );
+            Proposition::And(
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::integer_less_equal(
+                        exact.clone(),
+                        IntegerTerm::constant(i32::MAX.into()),
+                    ),
+                    true,
+                )),
+                Box::new(Proposition::ConditionIs(
+                    ConditionTerm::integer_greater_equal(
+                        exact,
+                        IntegerTerm::constant(i32::MIN.into()),
+                    ),
+                    true,
+                )),
+            )
+        };
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                left = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [left.clone(), left.clone()],
+                );
+                right = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [right.clone(), right.clone()],
+                );
+                let a = SharedMachineIntegerTerm::from_shared(format, left.clone()).unwrap();
+                let b = SharedMachineIntegerTerm::from_shared(format, right.clone()).unwrap();
+                let (ga, gb) = (guard(a.clone()), guard(b.clone()));
+                assert!(signed_arithmetic_source_matches(&ga, &gb));
+                assert!(signed_arithmetic_source_matches(&gb, &ga));
+                assert!(!signed_arithmetic_source_matches(
+                    &ga,
+                    &Proposition::ConditionIs(ConditionTerm::Constant(false), false)
+                ));
+                assert!(!a.has_boxed_operand());
+                assert!(!b.has_boxed_operand());
+            }
+        });
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+}
