@@ -711,11 +711,9 @@ impl TermClasses {
         // folds back: the result is known, so the pair is marked fired.
         // Without this each operator cost a cascade of narrowings and K7'
         // words, a large constant per firing.
-        for word in [Some(word), swapped] {
-            if let Some(word) = word {
-                self.fired_machine_relations =
-                    self.fired_machine_relations.with_value((narrowed, word));
-            }
+        for word in [Some(word), swapped].into_iter().flatten() {
+            self.fired_machine_relations =
+                self.fired_machine_relations.with_value((narrowed, word));
         }
         pending.push((operator, narrowed));
     }
