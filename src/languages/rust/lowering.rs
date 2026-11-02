@@ -263,6 +263,19 @@ fn rust_scalar_cast(value: CExpression, target: CType) -> CExpression {
         c_cast(value, target)
     }
 }
+/// Rust `!value` on an integer of type `target`: at 8 or 16 bits the native
+/// complement of that type (decision G4), otherwise the complement of the
+/// value's word converted modularly to `target`.
+fn rust_bitwise_not(value: CExpression, target: CType) -> CExpression {
+    if matches!(
+        target,
+        CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16
+    ) {
+        c_narrow_arithmetic(c_bitwise_not(value), target)
+    } else {
+        rust_scalar_cast(c_bitwise_not(value), target)
+    }
+}
 fn integer_from(value: CExpression, source: &Type, target: &Type) -> Result<CExpression, String> {
     if !source.converts_losslessly_to(target) {
         return Err("integer From requires a supported lossless conversion".into());
@@ -1645,10 +1658,9 @@ impl Context<'_> {
                 let (prefix, value) = self.prepared_expr(value)?;
                 let value = match e {
                     E::Not { .. } => c_bool_value(c_not(value)),
-                    E::BitwiseNot { value_type, .. } => rust_scalar_cast(
-                        c_bitwise_not(value),
-                        scalar_type(value_type)?.to_kernel_type(),
-                    ),
+                    E::BitwiseNot { value_type, .. } => {
+                        rust_bitwise_not(value, scalar_type(value_type)?.to_kernel_type())
+                    }
                     E::Cast { value_type, .. } => {
                         rust_scalar_cast(value, scalar_type(value_type)?.to_kernel_type())
                     }
@@ -2055,8 +2067,8 @@ impl Context<'_> {
                 self.expr(value)?,
                 scalar_type(value_type)?.to_kernel_type(),
             )),
-            E::BitwiseNot { value, value_type } => Ok(rust_scalar_cast(
-                c_bitwise_not(self.expr(value)?),
+            E::BitwiseNot { value, value_type } => Ok(rust_bitwise_not(
+                self.expr(value)?,
                 scalar_type(value_type)?.to_kernel_type(),
             )),
             E::Deref { .. } | E::Field { .. } => {
@@ -2087,9 +2099,9 @@ impl Context<'_> {
             E::Binary {
                 operator,
                 left_type,
+                right_type,
                 left,
                 right,
-                ..
             } => {
                 let mut l = self.expr(left)?;
                 let r = self.expr(right)?;
@@ -2097,24 +2109,33 @@ impl Context<'_> {
                 // at their type (`design/machine-integers.md`, Decisions
                 // 2026-11-01): its operands keep their width, and the `bool`
                 // value below reads the comparison at it.
+                let narrow = matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16);
                 let narrow_comparison =
-                    matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16)
-                        && matches!(operator.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge");
+                    narrow && matches!(operator.as_str(), "eq" | "ne" | "lt" | "le" | "gt" | "ge");
+                // Rust `+ - * & | ^ <<` on 8- or 16-bit values are the
+                // operators of that type (decision G4): native nodes over the
+                // operands as written. A checked operator's overflow panic is
+                // its own assertion (`prepared_expr`). A native shift's count
+                // is a 32-bit word; a count of another width keeps the
+                // promoted shift.
+                let narrow_native = narrow
+                    && (matches!(
+                        operator.as_str(),
+                        "add" | "sub" | "mul" | "bit_and" | "bit_or" | "bit_xor"
+                    ) || (operator == "shl" && right_type.integer_bits() == Some(32)));
                 // Keep the RHS at its source width. The shared shift evaluator
                 // checks signed/nonnegative and full-width upper bounds before
                 // forming its word-sized shift term. Narrowing here would lose
                 // the exact relation to Rust's already checked count.
-                if !narrow_comparison
-                    && matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16)
-                {
-                    // Rust narrow arithmetic is a 32-bit operation and a
-                    // cast back (`design/machine-integers.md`, Stage 4).
+                if narrow && !narrow_comparison && !narrow_native {
+                    // Rust narrow `/ % >>` are still a 32-bit operation and
+                    // a cast back (decision G4).
                     crate::kernel::machine_integer::format_audit::record(
                         crate::kernel::machine_integer::format_audit::WordIdentity::PromotedNarrowArithmetic,
                         std::panic::Location::caller(),
                     );
                 }
-                if narrow_comparison {
+                if narrow_comparison || narrow_native {
                 } else if matches!(left_type, Type::U8 | Type::U16) {
                     // Narrow unsigned remainder fits in signed int, matching
                     // the promotion used by its contract expression. Other
@@ -2171,9 +2192,12 @@ impl Context<'_> {
                     // A Rust comparison or connective is a `bool` value: the
                     // condition itself, with no path split (Stage 5, D5).
                     Ok(c_bool_value(result))
-                } else if matches!(left_type, Type::U8 | Type::U16 | Type::I8 | Type::I16)
-                    && matches!(operator.as_str(), "add" | "sub" | "mul" | "div" | "rem")
-                {
+                } else if narrow_native {
+                    Ok(c_narrow_arithmetic(
+                        result,
+                        scalar_type(left_type)?.to_kernel_type(),
+                    ))
+                } else if narrow && matches!(operator.as_str(), "div" | "rem") {
                     // Checked narrow arithmetic cannot discard bits. Its range
                     // obligation permits an exact coercion; only casts,
                     // bitwise results and shifts need explicit truncation.

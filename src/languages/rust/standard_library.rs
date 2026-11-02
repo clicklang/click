@@ -23,6 +23,49 @@ fn slice_swap_contract(function: &super::schema::Function) -> String {
     )
 }
 
+/// The `core_method` of `Result::unwrap` and `Result::expect`, which Rust
+/// panics on at `Err`.
+pub(super) const RESULT_UNWRAP: &str = "result::unwrap";
+
+/// The `core_method` of `Result::unwrap_or`.
+pub(super) const RESULT_UNWRAP_OR: &str = "click::result::unwrap_or";
+
+/// The sidecar spelling of the `Result` instance `ty`, `Result<u32, u8>`.
+fn result_spelling(ty: &Type) -> String {
+    let Type::Enum { name } = ty else {
+        unreachable!("a result is an enum")
+    };
+    let (_, arguments) = super::names::split_type_arguments(name);
+    format!("Result<{}>", arguments.join(", "))
+}
+
+/// `Result::unwrap(r)`'s contract: Rust panics unless `r` is `Ok`, whose
+/// payload is the result.
+fn result_unwrap_contract(function: &super::schema::Function) -> String {
+    let result = result_spelling(&function.parameters[0].value_type);
+    let payload = function
+        .return_type
+        .scalar_name()
+        .expect("a scalar payload");
+    format!(
+        "\nextern fn {}(r: {result}) -> {payload} {{\n    requires exists (value: {payload}) {{ r == {result}::Ok(value) }};\n    ensures r == {result}::Ok(result);\n}}\n",
+        function.name,
+    )
+}
+
+/// `Result::unwrap_or(r, d)`'s contract, the library's `result::unwrap_or`.
+fn result_unwrap_or_contract(function: &super::schema::Function) -> String {
+    let result = result_spelling(&function.parameters[0].value_type);
+    let payload = function
+        .return_type
+        .scalar_name()
+        .expect("a scalar payload");
+    format!(
+        "\nextern fn {}(r: {result}, d: {payload}) -> {payload} {{\n    ensures result == {RESULT_UNWRAP_OR}(r, d);\n}}\n",
+        function.name,
+    )
+}
+
 /// The `core_method` of `Option::unwrap` and `Option::expect`, which Rust
 /// panics on at `None`.
 pub(super) const OPTION_UNWRAP: &str = "option::unwrap";
@@ -53,6 +96,14 @@ pub(super) fn contracts(export: &RustExport) -> String {
         }
         if specification == OPTION_UNWRAP {
             source.push_str(&option_unwrap_contract(function));
+            continue;
+        }
+        if specification == RESULT_UNWRAP {
+            source.push_str(&result_unwrap_contract(function));
+            continue;
+        }
+        if specification == RESULT_UNWRAP_OR {
+            source.push_str(&result_unwrap_or_contract(function));
             continue;
         }
         // An `Option` is of the type of the method's scalar parameter:

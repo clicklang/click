@@ -3064,6 +3064,131 @@ fn charon_option_values_read_as_click_options() {
     }
 }
 
+const RESULT_VALUE_SIDECAR: &str =
+    include_str!("../design/charon-trial/result-values/results.click");
+
+// A Rust `Result<u32, u8>` is Click's `Result<u32, u8>` in a contract, as an
+// `Option` is: a function returning one, a `match` and an `if let` on one,
+// and a caller composing two through their contracts. `r?` returns `r`'s
+// `Err` unchanged or reads `Ok`'s payload, in generic code too. `unwrap` and
+// `expect` require `Ok`, and `unwrap_or` is the library's.
+#[test]
+fn charon_result_values_read_as_click_results() {
+    let p = Project::from_fixture("design/charon-trial/result-values");
+    fs::write(p.root.join("borrow.click"), RESULT_VALUE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(RESULT_VALUE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "ensures good == false implies result == Result<u32, u8>::Err(7u8);",
+            "ensures good == false implies result == Result<u32, u8>::Err(8u8);",
+            "result_values::ok_if.ensures_1",
+        ),
+        (
+            "Result::Err(e) => 0u32 });\n}\n\nfn result_values::round",
+            "Result::Err(e) => 1u32 });\n}\n\nfn result_values::round",
+            "result_values::or_zero.ensures_0",
+        ),
+        (
+            "fn result_values::round(x: u32) -> u32 {\n    ensures result == x;",
+            "fn result_values::round(x: u32) -> u32 {\n    ensures result == 0u32;",
+            "result_values::round.ensures_0",
+        ),
+        // `?` returns the `Err` it met, not another.
+        (
+            "Result::Err(e) => Result<u32, u8>::Err(e) });",
+            "Result::Err(e) => Result<u32, u8>::Err(0u8) });",
+            "result_values::plus_one.ensures_0",
+        ),
+        // Without the requirement the `+ 1` can overflow and panic.
+        (
+            "    requires match r { Result::Ok(v) => v, Result::Err(e) => 0u32 } < 4294967295u32;\n",
+            "",
+            "result_values::plus_one",
+        ),
+        (
+            "ensures result == Result<u32, u8>::Ok((x / 2u32) / 2u32);",
+            "ensures result == Result<u32, u8>::Ok(x / 2u32);",
+            "result_values::quarter.ensures_0",
+        ),
+        (
+            "Result::Ok(v) => 0u8, Result::Err(e) => e",
+            "Result::Ok(v) => 1u8, Result::Err(e) => e",
+            "result_values::error_code.ensures_0",
+        ),
+        (
+            "fn result_values::same<T: Copy, E: Copy>(r: Result<T, E>) -> Result<T, E> {\n    ensures result == r;",
+            "fn result_values::same<T: Copy, E: Copy>(r: Result<T, E>) -> Result<T, E> {\n    ensures result != r;",
+            "result_values::same.ensures_0",
+        ),
+        (
+            "ensures result == Result<i32, bool>::Ok(x);",
+            "ensures result == Result<i32, bool>::Err(false);",
+            "result_values::kept.ensures_0",
+        ),
+        // `unwrap` panics on `Err`: without the requirement the call's own
+        // requirement fails.
+        (
+            "fn result_values::must(r: Result<u32, u8>) -> u32 {\n    requires exists (v: u32) { r == Result<u32, u8>::Ok(v) };\n",
+            "fn result_values::must(r: Result<u32, u8>) -> u32 {\n",
+            "result_values::must",
+        ),
+        (
+            "Result::Ok(v) => v, Result::Err(e) => 0u32 });\n}\n\n// A caller",
+            "Result::Ok(v) => 0u32, Result::Err(e) => 0u32 });\n}\n\n// A caller",
+            "result_values::must.ensures_0",
+        ),
+        (
+            "ensures result == 5u32;",
+            "ensures result == 6u32;",
+            "result_values::must_say.ensures_0",
+        ),
+        // The payload is the witness only when the value is that variant.
+        (
+            "requires r == Result<u32, u8>::Ok(5u32);",
+            "requires r == Result<u32, u8>::Err(5u8);",
+            "result_values::must_say",
+        ),
+        (
+            "ensures result == click::result::unwrap_or(r, d);",
+            "ensures result == d;",
+            "result_values::or_default.ensures_0",
+        ),
+    ] {
+        assert!(RESULT_VALUE_SIDECAR.contains(before), "{before}");
+        let invalid = RESULT_VALUE_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the result program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
+// `?` on a `Result` is read only when it keeps the error type, where
+// `From::from` is the identity; a `Result` of another type is refused by
+// name.
+#[test]
+fn rust_result_refuses_error_conversion_and_unsupported_payloads() {
+    for (source, message) in [
+        (
+            "pub fn widen(r: Result<u32, u8>) -> Result<u32, u16> { let v = r?; Ok(v) }",
+            "`?` that converts the error type with `From`",
+        ),
+        (
+            "pub fn named(r: Result<u32, [u8; 2]>) -> u32 { match r { Ok(v) => v, Err(_) => 0 } }",
+            "Result of a type other than",
+        ),
+    ] {
+        let p = Project::new(source);
+        let error = p.refresh().unwrap_err();
+        assert!(error.contains(message), "expected {message}: {error}");
+        assert!(!p.artifact("borrow.rs").exists());
+    }
+}
+
 const OPTION_REF_SIDECAR: &str = include_str!("../design/charon-trial/option-refs/refs.click");
 
 // A reference to an `Option` reads, writes and matches one `Option` value. A
@@ -4758,7 +4883,7 @@ fn rust_nested_while_loop_invariants_keep_preorder_indices() {
     );
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { step_until(loop(0)); loop { decreases 1-i; invariant 0<=i and i<=1; preserve by { step_until(loop(1)); loop { decreases 1-j; invariant 0<=j and j<=1; } step_until(back_edge()); close_invariants(); } } step_until(function.exit); solve(); }";
+    let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { step_until(loop(0)); loop { decreases 1-i; invariant 0<=i and i<=1; preserve by { step_until(loop(1)); loop { decreases 1-j; invariant 0<=j and j<=1; } step_until(back_edge()); } } step_until(function.exit); solve(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);
@@ -5901,4 +6026,62 @@ fn rust_recursive_countdown_expansion_checks_without_search() {
             .map_err(|error| error.to_string())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: selected stack transport expansion and cold replay"]
+fn charon_stack_transport_repairs_expand_and_replay() {
+    for (directory, sidecar, function) in [
+        (
+            "recursive-drop",
+            "list.click",
+            "__rust_q_I14_recursive_drop_T36___rust_q_I14_recursive_drop_I5_Stack_I3_pop",
+        ),
+        (
+            "generic-stack",
+            "stack.click",
+            "__rust_q_I13_generic_stack_T40___rust_q_I13_generic_stack_I5_Stack_A1_T_I3_pop",
+        ),
+        (
+            "generic-container",
+            "container.click",
+            "__rust_q_I17_generic_container_T44___rust_q_I17_generic_container_I5_Stack_A1_T_I3_pop",
+        ),
+    ] {
+        if std::env::var("CLICK_STACK_REPAIR_CASE").is_ok_and(|selected| selected != directory) {
+            continue;
+        }
+        let fixture = format!("design/charon-trial/{directory}");
+        let source = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(&fixture)
+                .join(sidecar),
+        )
+        .unwrap();
+        let p = Project::from_fixture(&fixture);
+        fs::write(p.root.join("borrow.click"), &source).unwrap();
+        let prepared = p.prepared().unwrap();
+        click::surface::with_proof_trace(function, || {
+            C0VerificationSession::new_program_prepared(&source, &prepared).unwrap_or_else(
+                |error| {
+                    panic!(
+                        "{directory}: {}\n{}",
+                        error.report(),
+                        error.trace_context_report().unwrap_or_default()
+                    )
+                },
+            );
+        });
+        let claim = format!("{function}.contract");
+        let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+            &source, &prepared, &claim,
+        )
+        .unwrap_or_else(|error| panic!("{directory}: {}", error.report()));
+        click::surface::without_implicit_auto_for_claim(&claim, || {
+            C0VerificationSession::new_program_prepared(&expanded, &prepared)
+                .map(|_| ())
+                .map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{directory}: {error}\n{expanded}"));
+    }
 }

@@ -14,6 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
+pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
+
 pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 /// The prefix of the fact that an opaque subobject extent covers a range of
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
@@ -29,6 +31,7 @@ pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     match name {
         MUTEX_HELD_PREDICATE_NAME => Some("held"),
         SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
+        LITTLE_ENDIAN_PREDICATE_NAME => Some("little_endian"),
         _ => CFunctionContract::surface_name_from_predicate(name)
             .or_else(|| (!name.starts_with("__click_")).then_some(name)),
     }
@@ -73,16 +76,19 @@ pub use kernel_term::{
 };
 pub(crate) use kernel_term::{KernelTermExport, KernelTermImport, clear_integer_bridge_memo};
 mod machine_integer;
-pub(crate) use machine_integer::is_narrow_widening32;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
 };
+pub(crate) use machine_integer::{is_narrow_widening32, is_sign_cast32};
 mod remainder_rules;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
     SharedIntegerApplication, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedPureApplication,
 };
 pub use integer::{MachineIntegerType, SharedMachineIntegerTerm, SignedDefinedWidth};
+pub(crate) use integer::{
+    MachineOperandView, clear_shared_machine_variable_cache, shared_machine_syntax_variables,
+};
 mod alias_candidates;
 pub(crate) use alias_candidates::{AliasCandidates, BlockKeyed};
 mod cell_store;
@@ -1118,7 +1124,8 @@ enum ConditionIdentity<'a> {
 
 /// A comparison side as its fact identity reads it
 /// ([`ConditionTerm::comparison_fact`]): a term, or the value of a
-/// constant of the comparison's 8- or 16-bit identity format.
+/// constant of the comparison's identity format (an 8- or 16-bit format, or
+/// `int32` for a 32-bit equality's constant of either spelling).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum ComparisonSide<'a> {
     Term(&'a Bitvector32Term),
@@ -1131,6 +1138,9 @@ impl<'a> ComparisonSide<'a> {
     pub(crate) fn term(self, format: MachineIntegerType) -> std::borrow::Cow<'a, Bitvector32Term> {
         match self {
             Self::Term(term) => std::borrow::Cow::Borrowed(term),
+            Self::Value(value) if format.format().bits() == 32 => {
+                std::borrow::Cow::Owned(Bitvector32Term::constant_at32(format, value as u32))
+            }
             Self::Value(value) => std::borrow::Cow::Owned(Bitvector32Term::MachineIntegerConstant(
                 MachineIntegerConstant::from_signed(format.format(), value)
                     .expect("an identity value lies in its narrow format's range"),
@@ -1156,6 +1166,13 @@ thread_local! {
 /// operands. Terms keep their written spelling; only identity, hashing,
 /// order and the fact keys read this form. One match on each side; no
 /// clone.
+///
+/// A 32-bit equality compares bits, which σ keeps (rule K6, a lookup-level
+/// equivalence since σ is a node of its own): it is identified at `int32`
+/// whichever signedness it is written at, each side read through one σ and
+/// a constant of either spelling read as its bits. So `u == v` at `uint32`,
+/// `u as int32 == v as int32` and `u == x as uint32` with `v == x as
+/// uint32` are one fact. The terms keep their format and their σ.
 fn comparison_identity<'a>(
     format: MachineIntegerType,
     relation: CompareRelation,
@@ -1166,6 +1183,18 @@ fn comparison_identity<'a>(
     COMPARISON_IDENTITY_VISITS.with(|visits| visits.set(visits.get() + 1));
     let format = ConditionTerm::fact_format(format, relation);
     let bits = format.format().bits();
+    let (left, right) = if relation == CompareRelation::Equal && bits == 32 {
+        (left.sign_cast32_bits(), right.sign_cast32_bits())
+    } else {
+        (left, right)
+    };
+    // A 32-bit equality's constant side, of either spelling, as its bits.
+    let side = |term: &'a Bitvector32Term| match term.constant32() {
+        Some(bits) if relation == CompareRelation::Equal && format == MachineIntegerType::Int32 => {
+            ComparisonSide::Value(i128::from(bits as i32))
+        }
+        _ => ComparisonSide::Term(term),
+    };
     if bits < 32 {
         let side = |term: &'a Bitvector32Term| match term {
             Bitvector32Term::MachineIntegerConstant(constant)
@@ -1195,6 +1224,12 @@ fn comparison_identity<'a>(
                 }
             };
             let side = |term: &'a Bitvector32Term| match term {
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
+                    if relation == CompareRelation::Equal =>
+                {
+                    let value = i128::from(*value as i32);
+                    (low <= value && value <= high).then_some(ComparisonSide::Value(value))
+                }
                 Bitvector32Term::Constant(value) => {
                     let value = i128::from(*value as i32);
                     (low <= value && value <= high).then_some(ComparisonSide::Value(value))
@@ -1211,17 +1246,15 @@ fn comparison_identity<'a>(
             }
         }
     }
-    (
-        format,
-        ComparisonSide::Term(left),
-        ComparisonSide::Term(right),
-    )
+    (format, side(left), side(right))
 }
 
 impl ConditionTerm {
-    /// The format a comparison is filed at as a fact: a 32-bit equality is
-    /// filed at `int32` whichever signedness reads it (rule K6); every other
-    /// comparison at its own format.
+    /// The format a comparison is identified at as a fact: a 32-bit
+    /// equality at `int32` whichever signedness it is written at (rule K6,
+    /// a lookup-level equivalence; [`comparison_identity`] also reads its
+    /// sides through σ); every other comparison at its own format. The
+    /// term keeps the format it is written at.
     pub(crate) fn fact_format(
         format: MachineIntegerType,
         relation: CompareRelation,
@@ -3160,6 +3193,18 @@ pub enum CIntegerCastMode {
     /// decision D5): its operand's condition is the value, built with no
     /// path split. Only the Rust front end writes it, at target `bool`.
     BoolValue,
+    /// A Rust operator `+ - * & | ^ <<` or `!` on an 8- or 16-bit value
+    /// (decision G4): its operand is the operator over operands of the
+    /// target's type as written, and its value is that operator's native
+    /// node at the target's format, `(a op b) mod 2^N`, with no promotion
+    /// and no conversion. Only the Rust front end writes it; Rust's
+    /// overflow panics are separate checked assertions.
+    NarrowArithmetic,
+    /// The conversion lowering inserts from a pure function's body to its
+    /// declared result type: C's conversion, as `CConversion`, at whose
+    /// type the body's arithmetic is (decision G2), so a body `a + b` of a
+    /// `-> uint8` function is the `uint8` operator.
+    ResultConversion,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3500,6 +3545,12 @@ pub enum SpecExpression {
     BitwiseXor(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseNot(Box<SpecExpression>),
     Cast(Box<SpecExpression>, CType),
+    /// The operator at the root of the expression, one of `+ - * & | ^ ~`,
+    /// at the 8- or 16-bit format its position expects (decision G2): over
+    /// two operands of that format (an `int32` literal it holds takes the
+    /// format), the operator's native node, `(a op b) mod 2^N`. Over operands
+    /// of another type the operator keeps its promoted reading.
+    NarrowArithmetic(Box<SpecExpression>, MachineIntegerType),
     /// An implicit pointer conversion retains the complete designation.
     PointerCoercion(Box<SpecExpression>, CType),
     If {
@@ -3551,6 +3602,63 @@ pub enum SpecExpression {
         pointer: Box<SpecExpression>,
         value_type: CType,
     },
+}
+
+impl SpecExpression {
+    /// `self` at the position of a value of machine type `target`
+    /// (decision G2, the type-directed arithmetic rule): at an 8- or 16-bit
+    /// `target`, each `+ - * & | ^ ~` of its arithmetic spine, through the
+    /// branches of a conditional and the body of a `let`, is that type's
+    /// operator ([`Self::NarrowArithmetic`]). Every other expression, and
+    /// every expression at another type, is unchanged. One visit per spine
+    /// node.
+    pub fn at_machine_type(self, target: CType) -> Self {
+        let Some(format) = MachineIntegerType::from_c_type(target).filter(|format| {
+            matches!(
+                format,
+                MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16
+            )
+        }) else {
+            return self;
+        };
+        self.at_narrow_format(format)
+    }
+
+    fn at_narrow_format(self, format: MachineIntegerType) -> Self {
+        let at = |expression: Box<Self>| Box::new(expression.at_narrow_format(format));
+        let operation = match self {
+            Self::Add(left, right) => Self::Add(at(left), at(right)),
+            Self::Subtract(left, right) => Self::Subtract(at(left), at(right)),
+            Self::Multiply(left, right) => Self::Multiply(at(left), at(right)),
+            Self::BitwiseAnd(left, right) => Self::BitwiseAnd(at(left), at(right)),
+            Self::BitwiseOr(left, right) => Self::BitwiseOr(at(left), at(right)),
+            Self::BitwiseXor(left, right) => Self::BitwiseXor(at(left), at(right)),
+            Self::BitwiseNot(operand) => Self::BitwiseNot(at(operand)),
+            Self::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                return Self::If {
+                    condition,
+                    then_branch: at(then_branch),
+                    else_branch: at(else_branch),
+                };
+            }
+            Self::Let { name, value, body } => {
+                return Self::Let {
+                    name,
+                    value,
+                    body: at(body),
+                };
+            }
+            other => return other,
+        };
+        Self::NarrowArithmetic(Box::new(operation), format)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -13518,7 +13626,7 @@ pub struct ExecutionPureFact {
     /// [`ExecutionPureFact::certified_join_summary`].
     pub(super) join_summary: bool,
     /// Checked resource bound for this modular memory effect, retained by its producer.
-    pub(super) resource_effect_bound: Option<CResource>,
+    pub(super) resource_effect_bound: Option<std::sync::Arc<CResource>>,
     pub(super) certified_store: Option<Box<CertifiedMemoryStore>>,
     pub(super) transport: Option<Box<CertifiedExecutionFactTransport>>,
     /// Exact producer metadata for a kernel-minted load variable.  This is
@@ -13531,17 +13639,18 @@ pub struct ExecutionPureFact {
 
 /// Source events are execution provenance, not part of the proposition's
 /// semantic identity. Keep them beside the fact while making fact equality
-/// and hashing remain proposition-oriented.
+/// and hashing remain proposition-oriented. Allocate the event list only for
+/// facts carrying source events; ordinary pure facts keep one optional pointer.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct GeneratedLoadSourceEvents(Vec<GeneratedLoadSourceEvent>);
+pub(crate) struct GeneratedLoadSourceEvents(Option<Box<Vec<GeneratedLoadSourceEvent>>>);
 
 impl GeneratedLoadSourceEvents {
     pub(crate) fn as_slice(&self) -> &[GeneratedLoadSourceEvent] {
-        &self.0
+        self.0.as_deref().map_or(&[], Vec::as_slice)
     }
 
     pub(crate) fn push(&mut self, event: GeneratedLoadSourceEvent) {
-        self.0.push(event);
+        self.0.get_or_insert_with(Default::default).push(event);
     }
 }
 

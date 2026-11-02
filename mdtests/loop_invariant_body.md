@@ -1,10 +1,10 @@
-# Explicit loop-invariant closure proof
+# A loop's back edge closes its invariant bundle
 
-The `by` keyword introduces a proof of the exact back-edge obligations.
-Expansion retains its child scopes, rather than restating the goals as haves.
-The completed body supplies the closure evidence; the legacy invariant prover
-does not independently prove these obligations again. Read-safety obligations
-are part of the body goal, not assumptions supplied to it.
+The `preserve` script ends after its last `step()`, and the back edge owes the
+exact bundle: each invariant and, for `decreases 3 - i`, its ranking members.
+Each member is closed by `solve()`, as a function's exit closes each
+`ensures`. Read-safety obligations are part of the bundle, not assumptions
+supplied to it.
 
 ```c filename=count.c
 int32 count() {
@@ -31,14 +31,6 @@ int32 count() { ensures result == 3; } by {
         preserve by {
             mark iteration;
             step();
-            close_invariants() by {
-                both { solve(); }
-                and {
-                    both { solve(); }
-                    and { both { solve() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; }
-                        and { solve() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; } }
-                }
-            }
         }
     }
     step();

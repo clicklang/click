@@ -31,9 +31,6 @@ int32 uprec_phases(int32 a, int32* p) {
         initialize by solve();
         preserve by {
             step();
-            close_invariants() by {
-                both { solve(); } and { solve(); }
-            }
         }
     }
     step();

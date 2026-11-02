@@ -61,6 +61,10 @@ impl Adapter<'_> {
     /// either: the library's own `impl Try for Option<T>` or `impl
     /// FromResidual<Option<!>> for Option<T>`, at their declared signatures.
     fn try_call(&self, call: &a::Call) -> Result<Option<TryCall>, String> {
+        // A `?` on a `Result` is `result_try`'s.
+        if self.calls_result_try(call) {
+            return Ok(None);
+        }
         let a::FnOperand::Regular(ptr) = &call.func else {
             return Ok(None);
         };

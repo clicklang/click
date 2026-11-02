@@ -1454,13 +1454,17 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
     // The narrow observations by word, so a wider observation of the same
     // word finds the value it widens by one lookup.
     let mut narrow_by_word =
-        std::collections::HashMap::<crate::kernel::Bitvector32Term, Vec<_>>::new();
+        std::collections::HashMap::<crate::kernel::SharedMachineIntegerTerm, Vec<_>>::new();
     for observation in &observations {
         if let crate::kernel::IntegerTerm::Machine(machine) = observation
             && machine.ty().format().bits() < 32
         {
             narrow_by_word
-                .entry(machine.value().clone())
+                .entry(
+                    machine
+                        .operand_view()
+                        .retain(crate::kernel::MachineIntegerType::Int32),
+                )
                 .or_default()
                 .push(observation.clone());
         }
@@ -1488,7 +1492,10 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
                     // legacy 32-to-64-bit conversion also offers.
                     .or_else(|| {
                         widened_narrow_word(&observed)
-                            .and_then(|word| narrow_by_word.get(word))
+                            .and_then(|word| {
+                                narrow_by_word
+                                    .get(&word.retain(crate::kernel::MachineIntegerType::Int32))
+                            })
                             .and_then(|narrow| {
                                 narrow
                                     .iter()
@@ -2873,6 +2880,17 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn wide_conjunction_surfaces(
         &self,
     ) -> Option<Vec<ClickProposition>> {
+        self.conjunction_leaf_surfaces(9)
+    }
+
+    /// The spelling of each leaf of the focused conjunction, when it has at
+    /// least `min_leaves` leaves and every leaf is spelled so that it lowers
+    /// back to that leaf. A loop's invariant bundle is closed member by
+    /// member through these at any width, as a function's `ensures` are.
+    pub(in crate::surface::proof) fn conjunction_leaf_surfaces(
+        &self,
+        min_leaves: usize,
+    ) -> Option<Vec<ClickProposition>> {
         let mut pending = vec![self.goal()?];
         let mut leaves = Vec::new();
         while let Some(goal) = pending.pop() {
@@ -2885,7 +2903,7 @@ impl<'a> Proof<'a> {
         }
         // Binary certificates below this width fit comfortably inside the
         // parser's existing structural limit, including enclosing scopes.
-        if leaves.len() <= 8 {
+        if leaves.len() < min_leaves {
             return None;
         }
         // Leaves are checked last first. A loop-invariant bundle guards each
@@ -2919,14 +2937,35 @@ impl<'a> Proof<'a> {
             }
             surfaces
         } else {
-            // A synthesized member is kept only when it lowers back to its
-            // leaf, so it needs no second check.
-            let mut surfaces = leaves
-                .iter()
-                .rev()
-                .map(|goal| self.synthesized_bundle_member_surface(goal))
-                .collect::<Option<Vec<_>>>()?;
-            surfaces.reverse();
+            // A member is spelled as its loop head writes it, the way an
+            // `ensures` is: each invariant guarded by the ones declared
+            // before it, then the `decreases` members. A written form is kept
+            // only when it lowers back to its leaf; a leaf it does not match,
+            // such as a guard lowering adds, is synthesized from the kernel
+            // goal instead, which is likewise kept only when it lowers back.
+            let written = self.written_bundle_member_surfaces().unwrap_or_default();
+            // Each written form is lowered at most once, on first use.
+            let mut lowered: Vec<Option<Option<Proposition>>> = vec![None; written.len()];
+            let mut surfaces = Vec::with_capacity(leaves.len());
+            for goal in &leaves {
+                let mut matched = None;
+                for (index, surface) in written.iter().enumerate() {
+                    let candidate = lowered[index].get_or_insert_with(|| {
+                        self.lower_surface_goal(surface, "loop invariant bundle member")
+                            .ok()
+                    });
+                    if candidate.as_ref().is_some_and(|candidate| {
+                        crate::kernel::proof::propositions_are_alpha_equal(candidate, goal)
+                    }) {
+                        matched = Some(surface.clone());
+                        break;
+                    }
+                }
+                match matched {
+                    Some(surface) => surfaces.push(surface),
+                    None => surfaces.push(self.synthesized_bundle_member_surface(goal)?),
+                }
+            }
             surfaces
         };
         Some(surfaces)
@@ -6752,6 +6791,13 @@ impl<'a> Proof<'a> {
         {
             return self.try_implication_solve_closure(&surface_antecedent, introduced_surfaces);
         }
+        if let (ClickProposition::Exists { name, .. }, Proposition::Exists { var, body, .. }) =
+            (surface_goal, goal)
+            && let Some(closed) =
+                self.try_constructor_witness_exists_closure(name, *var, body, introduced_surfaces)?
+        {
+            return Ok(Some(closed));
+        }
         match (surface_goal, goal) {
             (ClickProposition::Exists { name, .. }, goal @ Proposition::Exists { .. })
                 if quantified_external_range_goal(goal) =>
@@ -6772,6 +6818,152 @@ impl<'a> Proof<'a> {
             }
             _ => Ok(None),
         }
+    }
+
+    /// `exists v { x == C(.., v, ..) }` where the facts already give `x` a
+    /// constructor `C(.., t, ..)` of the same variant: the witness is `t`,
+    /// read off that constructor, as a proof would name it with `witness`.
+    /// One lookup in the constructor index; the checked `witness` step and
+    /// an ordinary closure of the instance decide it.
+    #[inline(never)]
+    fn try_constructor_witness_exists_closure(
+        &self,
+        name: &str,
+        var: Variable,
+        body: &Proposition,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Self>, ClickError> {
+        use crate::kernel::{AlgebraicTermNode, AlgebraicValue};
+        let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = body else {
+            return Ok(None);
+        };
+        let is_bound = |field: &AlgebraicValue| match field {
+            AlgebraicValue::C(
+                CValue::Int32(term)
+                | CValue::UInt32(term)
+                | CValue::Int8(term)
+                | CValue::Int16(term)
+                | CValue::UInt8(term)
+                | CValue::UInt16(term)
+                | CValue::Int64(term)
+                | CValue::UInt64(term)
+                | CValue::Bool(term),
+            ) => *term == Bitvector32Term::Variable(var),
+            _ => false,
+        };
+        // The written pattern and the value it describes, in either order.
+        let split = |pattern: &crate::kernel::AlgebraicTerm| match &pattern.node {
+            AlgebraicTermNode::Constructor { variant, fields } => fields
+                .iter()
+                .position(is_bound)
+                .map(|index| (variant.clone(), index)),
+            _ => None,
+        };
+        let Some((value, (variant, index))) = split(right)
+            .map(|found| (left, found))
+            .or_else(|| split(left).map(|found| (right, found)))
+        else {
+            return Ok(None);
+        };
+        let Some(known) = self
+            .facts()
+            .assumptions()
+            .known_algebraic_constructor(value)
+        else {
+            return Ok(None);
+        };
+        let AlgebraicTermNode::Constructor {
+            variant: known_variant,
+            fields,
+        } = &known.node
+        else {
+            return Ok(None);
+        };
+        let Some(AlgebraicValue::C(field)) =
+            fields.get(index).filter(|_| *known_variant == variant)
+        else {
+            return Ok(None);
+        };
+        // A constant is written as itself; any other value by the local,
+        // parameter or binder that holds it.
+        let constant = matches!(
+            field,
+            CValue::Int32(term)
+                | CValue::UInt32(term)
+                | CValue::Int8(term)
+                | CValue::Int16(term)
+                | CValue::UInt8(term)
+                | CValue::UInt16(term)
+                | CValue::Int64(term)
+                | CValue::UInt64(term)
+                | CValue::Bool(term)
+                if matches!(
+                    term,
+                    Bitvector32Term::Constant(_)
+                        | Bitvector32Term::UInt32Constant(_)
+                        | Bitvector32Term::Int64Constant(_)
+                        | Bitvector32Term::UInt64Constant(_)
+                )
+        );
+        let variable = match field {
+            CValue::Int32(term)
+            | CValue::UInt32(term)
+            | CValue::Int8(term)
+            | CValue::Int16(term)
+            | CValue::UInt8(term)
+            | CValue::UInt16(term)
+            | CValue::Int64(term)
+            | CValue::UInt64(term)
+            | CValue::Bool(term) => match term {
+                Bitvector32Term::Variable(variable) => Some(*variable),
+                _ => None,
+            },
+            _ => None,
+        };
+        let spelled = if constant {
+            Some(ContractExpression::CFragment(CExpression::Value(
+                field.clone(),
+            )))
+        } else if let ProofContext::Pure(context) = self.context.as_ref() {
+            // A theorem's values are its parameters and binders, by name.
+            let (intro_names, local_names) = self.binder_variable_names();
+            context
+                .theorem_context
+                .values
+                .iter()
+                .find(|(_, value)| *value == field)
+                .map(|(name, _)| name.clone())
+                .or_else(|| {
+                    variable.and_then(|variable| {
+                        context
+                            .source_names
+                            .get(&variable)
+                            .cloned()
+                            .or_else(|| local_names.get(&variable).cloned())
+                            .or_else(|| intro_names.get(&variable).cloned())
+                    })
+                })
+                .map(|name| ContractExpression::CFragment(CExpression::Variable(name)))
+        } else {
+            self.premise_fixed_state_view().and_then(|view| {
+                super::surface_synthesis::synthesize_surface_value(
+                    field,
+                    view.parameter_binding,
+                    view.fixed_state.state,
+                )
+            })
+        };
+        let Some(spelled) = spelled else {
+            return Ok(None);
+        };
+        check_verification_deadline()?;
+        let witness = ProofWitness::single(name.to_string(), spelled);
+        let Some(introduced) =
+            attempt::candidate_outcome(self.apply_step(ProofStep::Witness(witness)))?
+        else {
+            return Ok(None);
+        };
+        introduced.try_solve_closure_with_surfaces(introduced_surfaces)
     }
 
     // These helpers preserve the dispatcher's search order and checked steps;
@@ -9895,7 +10087,7 @@ impl<'a> Proof<'a> {
         if matches!(self.goal(), Some(Proposition::And(..)))
             && !matches!(self.surface_goal(), Some(ClickProposition::And(..)))
             && !self.goal().is_some_and(|goal| {
-                crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(goal)
+                crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                     .is_some()
             })
         {
@@ -10020,7 +10212,7 @@ impl<'a> Proof<'a> {
             proof.check_typed_atomic_solve_candidate(goal, &derivation, &premise_pairs)
         };
         let arithmetic_domain = signed_definedness_operands(goal).is_some()
-            || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(goal)
+            || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
         let typed_first = signed_order || arithmetic_domain;
         if typed_first && let Some(closed) = try_typed_derivation() {

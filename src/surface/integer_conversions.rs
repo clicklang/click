@@ -790,13 +790,27 @@ mod tests {
                 expand_c0_claim_source_by_label(&source, &[("cast.c", &c)], "caller.ensures_0")
                     .unwrap();
             verify_c0_sources(&expanded, &[("cast.c", &c)]).unwrap();
+            let without_lower =
+                source.replace(&format!("requires {lower} <= to_integer(value);"), "");
+            // Remove the equivalent native guard too when testing a missing bound.
+            let without_upper = source
+                .replace(&format!("requires to_integer(value) <= {upper};"), "")
+                .replace(native_guard, "");
+            if source_ty.starts_with("int") {
+                verify_c0_sources(&without_lower, &[("cast.c", &c)])
+                    .expect_err("a signed source needs its nonnegative bound");
+            }
+            if source_ty == "uint64" {
+                verify_c0_sources(&without_upper, &[("cast.c", &c)])
+                    .expect_err("narrowing the unsigned range needs its upper bound");
+                verify_c0_sources(&without_lower, &[("cast.c", &c)])
+                    .expect("uint64 already guarantees the nonnegative bound");
+            }
+            if matches!(source_ty, "int64" | "uint32") {
+                verify_c0_sources(&without_upper, &[("cast.c", &c)])
+                    .expect("the source type already guarantees this upper bound");
+            }
             for invalid in [
-                source.replace(&format!("requires {lower} <= to_integer(value);"), ""),
-                // A native guard on the same bound is that bound in its one
-                // form, so the bound is missing only when both are.
-                source
-                    .replace(&format!("requires to_integer(value) <= {upper};"), "")
-                    .replace(native_guard, ""),
                 source.replace(
                     "integer_cast_identity bounds [0, 1]",
                     "integer_cast_identity bounds [1, 0]",

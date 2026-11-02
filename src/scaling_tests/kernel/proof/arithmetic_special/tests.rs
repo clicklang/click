@@ -545,3 +545,87 @@ fn unsigned_widening_identity_work_scales_with_operand_payload() {
         );
     }
 }
+
+#[test]
+fn signed_defined_certificates_keep_shared_operands_and_source_bounds() {
+    use crate::kernel::{IntegerTerm, KernelTerm, KernelType, SharedMachineIntegerTerm, Variable};
+    for (format, width) in [
+        (MachineIntegerType::Int32, SignedDefinedWidth::Int32),
+        (MachineIntegerType::Int64, SignedDefinedWidth::Int64),
+    ] {
+        let mut samples = Vec::new();
+        for size in [8, 32, 96] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut term = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982600));
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..size {
+                    term = KernelTerm::machine_binary_shared(
+                        format,
+                        MachineBinaryOp::Add,
+                        [term.clone(), term.clone()],
+                    );
+                    let observation =
+                        SharedMachineIntegerTerm::from_shared(format, term.clone()).unwrap();
+                    let observed = IntegerTerm::Machine(observation.clone());
+                    let premises = [
+                        Proposition::ConditionIs(
+                            ConditionTerm::integer_less_equal(
+                                observed.clone(),
+                                IntegerTerm::constant(100.into()),
+                            ),
+                            true,
+                        ),
+                        Proposition::ConditionIs(
+                            ConditionTerm::integer_greater_equal(
+                                observed.clone(),
+                                IntegerTerm::constant((-100).into()),
+                            ),
+                            true,
+                        ),
+                    ];
+                    let exact = crate::kernel::machine_integer::Operation::Add
+                        .exact(observed, IntegerTerm::constant(1.into()));
+                    let (minimum, maximum) = width.range();
+                    let goal = Proposition::And(
+                        Box::new(Proposition::ConditionIs(
+                            ConditionTerm::integer_less_equal(
+                                exact.clone(),
+                                IntegerTerm::constant(maximum.into()),
+                            ),
+                            true,
+                        )),
+                        Box::new(Proposition::ConditionIs(
+                            ConditionTerm::integer_greater_equal(
+                                exact,
+                                IntegerTerm::constant(minimum.into()),
+                            ),
+                            true,
+                        )),
+                    );
+                    let certificate = SpecialArithmeticCertificate {
+                        nodes: vec![SpecialArithmeticNode::SignedDefined {
+                            width,
+                            bounds: vec![0, 1],
+                            result: goal.clone(),
+                        }],
+                        conclusion: 0,
+                    };
+                    assert_eq!(certificate.check(&goal, &premises), Ok(()));
+                    let bad = [Proposition::ConditionIs(
+                        ConditionTerm::Constant(true),
+                        true,
+                    )];
+                    assert!(signed_defined(0, width, &[(0, &bad[0])], &goal).is_err());
+                    assert!(!observation.has_boxed_operand());
+                }
+            });
+            samples.push((size, work));
+        }
+        for pair in samples.windows(2) {
+            let [(small, sw), (large, lw)] = pair else {
+                unreachable!()
+            };
+            assert!(lw * small * 4 <= sw * large * 5, "{format:?}: {samples:?}");
+        }
+    }
+}

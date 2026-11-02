@@ -76,7 +76,7 @@ impl RegionFootprint {
                 }
                 Proposition::CMemoryEffectSummary { mutable_ranges, .. } => {
                     effect_count += 1;
-                    resource_bound = fact.resource_effect_bound.clone();
+                    resource_bound = fact.resource_effect_bound.as_deref().cloned();
                     if let Some(bound) = &resource_bound {
                         let mut pending = vec![bound];
                         while let Some(resource) = pending.pop() {
@@ -143,6 +143,7 @@ impl RegionFootprint {
         }
         let changed = after.resources().changed_facts_since(before.resources());
         let complete = changed.is_some();
+
         if let Some(changed) = changed {
             for fact in changed {
                 crate::instrumentation::record_deterministic_work(1);

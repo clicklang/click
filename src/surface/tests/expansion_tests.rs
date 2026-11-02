@@ -1081,57 +1081,6 @@ fn post_execution_have_expansion_preserves_later_smart_proofs() {
 }
 
 #[test]
-#[ignore = "nightly: 0.9s in the parallel gate"]
-fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/c_decreases_recursive_in_loop.md");
-    let markdown = std::fs::read_to_string(&path).unwrap();
-    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
-    let source = fixture.click_source.as_deref().unwrap();
-    let sources = fixture
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    verify_c0_sources(source, &sources).unwrap();
-    let position =
-        expansion::position_at_offset(source, source.find("close_invariants();").unwrap());
-    let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
-        .expect("the first arm's closer expands with that arm's checked body");
-    // Each arm of the proof `if` closes the invariants itself: the arms end
-    // in different states, so nothing after the `if` is shared. Expanding
-    // the first arm's closer leaves the other arm's as written.
-    assert_eq!(
-        expanded.matches("close_invariants();").count(),
-        1,
-        "{expanded}"
-    );
-    assert_eq!(
-        expanded.matches("close_invariants() by").count(),
-        1,
-        "{expanded}"
-    );
-    assert_eq!(expanded.matches("if n > 0").count(), 1, "{expanded}");
-    assert!(expanded.contains("initialize by solve();"), "{expanded}");
-    assert!(
-        expanded.contains("    step();\n    solve();\n}"),
-        "the phase's unselected successor stays written: {expanded}"
-    );
-    verify_c0_sources(&expanded, &sources).unwrap();
-    let claim = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
-    verify_c0_sources_at(&expanded, &sources, claim.line, claim.column).unwrap();
-    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
-    session
-        .verify_at(&expanded, claim.line, claim.column)
-        .unwrap();
-    verify_c0_sources(
-        &expanded.replace("ensures result == 0", "ensures result == 1"),
-        &sources,
-    )
-    .expect_err("the expansion must still reject a false result claim");
-}
-
-#[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2540,7 +2489,7 @@ int32 g(uint8 p[], uint8 x) {
         ("int64", "0i64", "acc + 1i64"),
         ("uint32", "z", "acc"),
         ("uint8", "z", "acc"),
-        ("bool", "z", "acc"),
+        ("Bool", "z", "acc"),
     ] {
         let source = format!(
             "function unsupported(lo: int32, hi: int32, z: {ty}) -> {ty} {{ (lo..hi).fold({initial}, |acc, k| {{ {body} }}) }}"
@@ -2578,6 +2527,15 @@ theorem check_wrapped(lo: uint64, hi: uint64) {
         .replace("uint64", "int32")
         .replace("0u64", "0")
         .replace("2u64", "2");
+    // step_until does not split C branches. Prove each combination explicitly
+    // so the positive control still verifies the original two array reads.
+    let finish =
+        "step_until(function.exit);\n        unfold(my_count(p, 0, 2, x));\n        solve();";
+    let second = format!("if p[1] == x {{ {finish} }} else {{ {finish} }}");
+    let supported = supported.replace(
+        finish,
+        &format!("if p[0] == x {{ {second} }} else {{ {second} }}"),
+    );
     let sources = [("g.c", c_source)];
     let verified_for_label =
         verify_c0_sources(&supported, &sources).expect("int32 count fold should verify");
@@ -6334,7 +6292,6 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_preserve_phase() {
         \x20               solve();\n\
         \x20           }\n\
         \x20           step();\n\
-        \x20           close_invariants();\n\
         \x20       }\n\
         \x20   }\n\
         \x20   step();\n\
@@ -6371,7 +6328,6 @@ fn count_up_with_initialize(phase: &str) -> String {
         \x20       }}\n\
         \x20       preserve by {{\n\
         \x20           step();\n\
-        \x20           close_invariants();\n\
         \x20       }}\n\
         \x20   }}\n\
         \x20   step();\n\
@@ -12681,7 +12637,6 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                     }
                     step();
                     unfold(all_le_range);
-                    close_invariants();
                 }
             }
             step();
@@ -15183,7 +15138,6 @@ fn loop_preservation_case_after_step_expands_in_place() {
                     } else {
                         have not (flag == i) by { assumption(); }
                     }
-                    close_invariants();
                 }
             }
             step();
@@ -15242,7 +15196,6 @@ fn loop_preservation_case_before_step_expands_in_place() {
                         have not (flag == i) by { assumption(); }
                     }
                     step();
-                    close_invariants();
                 }
             }
             step();
@@ -15936,7 +15889,6 @@ int spin(int n) {
         }
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();
@@ -16181,7 +16133,7 @@ fn an_unfold_bound_scalar_field_expands_and_reverifies() {
         "the expansion should keep the field binding: {expanded}"
     );
     assert!(
-        !expanded.contains("solve();") && !expanded.contains("close_invariants();"),
+        !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -16218,7 +16170,7 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
         "the decided branch should be printed as its checked split: {expanded}"
     );
     assert!(
-        !expanded.contains("solve();") && !expanded.contains("close_invariants();"),
+        !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -16252,7 +16204,7 @@ fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
         );
     }
     assert!(
-        !expanded.contains("solve();") && !expanded.contains("close_invariants();"),
+        !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -17051,7 +17003,6 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
         \x20       initialize by { solve(); }\n\
         \x20       preserve by {\n\
         \x20           step();\n\
-        \x20           close_invariants();\n\
         \x20       }\n\
         \x20   }\n\
         \x20   step_until(function.exit);\n\
@@ -18022,7 +17973,7 @@ fn peeled_empty_fold_order_keeps_its_checked_conclusion() {
 }
 
 #[test]
-#[ignore = "nightly: empty-fold order and certificate mutations"]
+#[ignore = "nightly: empty-fold order and expanded-proof mutations"]
 fn peeled_empty_fold_order_rejects_false_comparisons() {
     let source = empty_fold_order_source();
     for (before, after) in [
@@ -18039,12 +17990,18 @@ fn peeled_empty_fold_order_rejects_false_comparisons() {
         );
     }
     let expanded = expand_c0_claim_source_by_label(source, &[], "empty_order.ensures_0").unwrap();
-    let invalid = expanded.replacen("trivial => 0 <= 0", "trivial => 0 == 0", 1);
-    assert_ne!(invalid, expanded);
-    assert!(
-        verify_c0_sources(&invalid, &[]).is_err(),
-        "changed conclusion relation accepted"
-    );
+    verify_c0_sources(&expanded, &[]).expect("expanded empty order must verify before mutation");
+    // Expansion now normalizes using the peeled equality. Check both its
+    // conclusion and its selected evidence, without assuming a certificate form.
+    for (before, after) in [
+        ("0 <= marks(end)", "0 < marks(end)"),
+        ("marks(end) == 0", "marks(end) == 1"),
+    ] {
+        let invalid = expanded.replacen(before, after, 1);
+        assert_ne!(invalid, expanded, "missing mutation target: {before}");
+        verify_c0_sources(&invalid, &[])
+            .expect_err("false expanded conclusion or forged premise accepted");
+    }
 }
 
 // The arithmetic planner's affine sum is constant even though this goal
@@ -18082,16 +18039,21 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
             .expect_err("false or undefined subtraction must be refused");
     }
     let expanded = expand_function_proof_source(&source, &borrowed, "f").unwrap();
-    // The comparison now normalizes to a trivial certificate. A different
-    // true comparison still cannot stand in for its checked conclusion.
-    let forged = expanded.replacen(
-        "trivial => (8 - to_integer(x)) <= ((8 - to_integer(x)) + 4);",
-        "trivial => (8 - to_integer(x)) <= ((8 - to_integer(x)) + 5);",
-        1,
-    );
-    assert_ne!(forged, expanded, "expected the checked trivial comparison");
-    verify_c0_sources(&forged, &borrowed)
-        .expect_err("a different generated comparison must be refused");
+    verify_c0_sources(&expanded, &borrowed).expect("expanded subtraction must verify");
+    // Expansion normalizes the comparison using the stated bounds. Reject
+    // both a false conclusion and a stronger bound that was never established.
+    for (before, after) in [
+        (
+            "(8 - to_integer(x)) <= ((8 - to_integer(x)) + 4)",
+            "(8 - to_integer(x)) <= ((8 - to_integer(x)) - 4)",
+        ),
+        ("4 <= x;\n", "5 <= x;\n"),
+    ] {
+        let forged = expanded.replacen(before, after, 1);
+        assert_ne!(forged, expanded, "missing mutation target: {before}");
+        verify_c0_sources(&forged, &borrowed)
+            .expect_err("false expanded comparison or forged bound accepted");
+    }
 }
 
 #[test]
@@ -19770,7 +19732,7 @@ fn signed_byte_swap_selected_frame_expands_without_search() {
 }
 
 #[test]
-fn theorem_entry_requirements_expand_to_explicit_haves() {
+fn theorem_entry_type_bounds_discharge_without_search() {
     let source = r#"
         theorem entry_conversion() {
             ensures forall (k: uint8) {
@@ -19779,11 +19741,11 @@ fn theorem_entry_requirements_expand_to_explicit_haves() {
         }
     "#;
     without_implicit_auto(|| verify_click_theorems(source))
-        .expect_err("the entry requirement needs an explicit proof without implicit search");
+        .expect("the byte binder itself establishes the conversion domain");
     verify_click_theorems(source).expect("entry requirements use ordinary proof checking");
     let expanded = expand_c0_claim_source_by_label(source, &[], "entry_conversion.ensures_0")
-        .expect("entry requirement certificates are retained");
-    assert!(expanded.contains("have "), "{expanded}");
+        .expect("entry conversion expands without redundant requirement proofs");
+    assert!(!expanded.contains("have "), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     without_implicit_auto(|| verify_click_theorems(&expanded))
         .expect("expanded entry requirements check without search");
@@ -20092,16 +20054,12 @@ void copy(unsigned long* slot, int32* p) {
         "saved.c",
         "void copy(unsigned long* slot, int32* p) { unsigned long saved = *slot; }",
     )];
-    // The old smart proof must not succeed merely by warming a hidden
-    // history summary. A longer preservation argument is now explicit.
-    let refused = verify_c0_sources(source, &inputs)
-        .err()
-        .expect("implicit history proof must refuse");
-    assert!(
-        refused.message().contains("`solve` failed"),
-        "{}",
-        refused.report()
-    );
+    // The producer's direct read equation now proves this short case. Its
+    // expansion must also replay cold, without warming a history cache.
+    let verified = verify_c0_sources(source, &inputs).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "copy").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &inputs))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
     for (fixture, function) in [
         ("saved_word_explicit_transport", "copy"),
         (
@@ -20120,4 +20078,101 @@ void copy(unsigned long* slot, int32* p) {
         verify_c0_sources(&expanded, &inputs)
             .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
     }
+}
+
+// The reconstruction rule must survive checked tactic expansion and retained
+// verification, rather than working only during ordinary execution search.
+#[test]
+fn uint32_from_le_bytes_expands_and_retains() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/integer_uint32_from_le_bytes_initialization.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).unwrap();
+    let position = expansion::position_at_offset(source, source.find("step_until").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let claim = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
+    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+    session
+        .verify_at(&expanded, claim.line, claim.column)
+        .unwrap();
+    verify_c0_sources(&expanded.replace("4293820433u32", "17u32"), &sources)
+        .expect_err("a single stored byte is not the reconstructed word");
+}
+
+#[test]
+fn loop_owned_view_call_expands_and_replays() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/loop_owned_view_survives_unrelated_read_call.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified =
+        verify_c0_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_checked_grouped_claim(&source, &verified, "caller").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
+
+#[test]
+fn structural_invariant_bundles_expand_as_ordered_member_haves() {
+    let checked = verify_click_theorems(
+        r#"
+        theorem bundle(a: int32, b: int32) {
+            requires a == b;
+            requires b == 0;
+            ensures a == 0 and (a == 0 implies a + 1 == 1) by {
+                both {
+                    have a == 0 by {
+                        rewrite(a == b); rewrite(b == 0); normalize();
+                    }
+                    assumption();
+                } and {
+                    intro();
+                    have a == 0 by { assumption(); }
+                    have a + 1 == 1 by { rewrite(a == 0); normalize(); }
+                    assumption();
+                }
+            }
+        }
+    "#,
+    )
+    .unwrap();
+    let closure = ProofCertificate::from_steps(vec![ProofStep::CloseInvariantsBy(Box::new(
+        checked[0].proof_certificate().unwrap(),
+    ))])
+    .unwrap();
+    let printed = format_proof_certificate(&closure);
+    assert!(!printed.contains("close_invariants"), "{printed}");
+    assert!(!printed.contains("both {"), "{printed}");
+    assert!(!printed.contains("intro()"), "{printed}");
+    assert_eq!(printed.matches("have a == 0 by").count(), 1, "{printed}");
+    assert!(
+        printed.find("have a == 0").unwrap()
+            < printed.find("have (to_integer(a) + 1) == 1").unwrap()
+    );
+    // The second member's guard is supplied by the first member's exported
+    // fact. Replay the printed members without giving that guard as a premise.
+    let replay = format!(
+        r#"
+        theorem replay(a: int32, b: int32) {{
+            requires a == b;
+            requires b == 0;
+            ensures a == 0 and (a == 0 implies a + 1 == 1)
+            {} both {{ assumption(); }} and {{ intro(); assumption(); }}
+            }}
+        }}
+    "#,
+        printed.strip_suffix('}').unwrap()
+    );
+    without_implicit_auto(|| verify_click_theorems(&replay)).unwrap();
 }

@@ -338,37 +338,6 @@ int32 sum(int32 a[], int32 n) {
                     to_integer((at(region(5).entry, i) + 1)) == (to_integer(at(region(5).entry, i)) + to_integer(1));
                 };
             }
-            close_invariants() by {
-                both {
-                    assumption();
-                } and {
-                    both {
-                        intro();
-                        assumption();
-                    } and {
-                        both {
-                            intro();
-                            intro();
-                            assumption();
-                        } and {
-                            both {
-                                arithmetic_certificate {
-                                    premise 0: to_integer(i) <= to_integer(n) => to_integer(i) <= to_integer(n);
-                                    conclusion 0;
-                                }
-                            } and {
-                                arithmetic_certificate {
-                                    premise 0: to_integer(i) == (to_integer(at(region(5).entry, i)) + 1) => to_integer(i) == (to_integer(at(region(5).entry, i)) + 1);
-                                    less_equal_from_equal 0 reverse => (to_integer(at(region(5).entry, i)) + 1) <= to_integer(i);
-                                    trivial => 0 < 1;
-                                    add 1, 2 => ((to_integer(at(region(5).entry, i)) + 1) + 0) < (to_integer(i) + 1);
-                                    conclusion 3;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
     have i == n;

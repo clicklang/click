@@ -233,6 +233,13 @@ fn validate_proposition_expression_types_one(
                 }
                 return Ok(());
             }
+            if name == "little_endian" {
+                return if arguments.is_empty() {
+                    Ok(())
+                } else {
+                    Err(ClickError::new("little_endian expects no arguments"))
+                };
+            }
             if name == "same_object" {
                 let [left, right] = arguments.as_slice() else {
                     return Err(ClickError::new(format!(
@@ -955,6 +962,69 @@ fn spec_value_matches_click_type(actual: &SpecValueType, expected: &ClickType) -
     }
 }
 
+/// The type of `value` at a position of the 8- or 16-bit type `expected`
+/// (decision G2): arithmetic `+ - * & | ^ ~` over operands of that type, or
+/// unsuffixed literals, is that type's operator, so its value has the type
+/// rather than C's promoted `int32`. `None` when `value` is not such
+/// arithmetic. Each spine node is visited once.
+pub(super) fn narrow_arithmetic_value_type(
+    value: &ContractExpression,
+    expected: &ClickType,
+    position: &str,
+    infer: &mut dyn FnMut(&ContractExpression) -> Result<SpecValueType, ClickError>,
+) -> Result<Option<SpecValueType>, ClickError> {
+    let ClickType::C(c_type @ (C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16)) =
+        expected
+    else {
+        return Ok(None);
+    };
+    fn spine(
+        value: &ContractExpression,
+        c_type: C0Type,
+        position: &str,
+        infer: &mut dyn FnMut(&ContractExpression) -> Result<SpecValueType, ClickError>,
+        root: bool,
+    ) -> Result<bool, ClickError> {
+        match value {
+            ContractExpression::Add(left, right)
+            | ContractExpression::Subtract(left, right)
+            | ContractExpression::Multiply(left, right)
+            | ContractExpression::BitwiseAnd(left, right)
+            | ContractExpression::BitwiseOr(left, right)
+            | ContractExpression::BitwiseXor(left, right) => {
+                Ok(spine(left, c_type, position, infer, false)?
+                    && spine(right, c_type, position, infer, false)?)
+            }
+            ContractExpression::BitwiseNot(operand) => {
+                spine(operand, c_type, position, infer, false)
+            }
+            _ if root => Ok(false),
+            ContractExpression::IntegerLiteral(_) => Ok(true),
+            leaf => match infer(leaf)? {
+                SpecValueType::Scalar(Some(actual)) if actual == c_type => Ok(true),
+                // An operand of another machine type: a conversion that can
+                // change its value is written.
+                SpecValueType::Scalar(Some(actual))
+                    if !actual.is_pointer()
+                        && !matches!(actual, C0Type::Float32 | C0Type::Float64 | C0Type::Bool) =>
+                {
+                    Err(ClickError::new(
+                        crate::surface::parser::mixed_narrow_arithmetic_message(
+                            position,
+                            &describe_c0_type(c_type),
+                            &crate::surface::diagnostics::describe_contract_expression(leaf),
+                            &describe_c0_type(actual),
+                        ),
+                    ))
+                }
+                _ => Ok(false),
+            },
+        }
+    }
+    Ok(spine(value, *c_type, position, infer, true)?
+        .then_some(SpecValueType::Scalar(Some(*c_type))))
+}
+
 pub(super) fn describe_spec_value_type(value_type: &SpecValueType) -> String {
     match value_type {
         SpecValueType::Scalar(Some(c_type)) => describe_c0_type(*c_type),
@@ -1204,7 +1274,7 @@ pub(super) fn infer_scoped_spec_value_type(
         } => {
             let value_expected_integer =
                 expected_integer || matches!(click_type, Some(ClickType::Integer));
-            let value_type = infer_scoped_spec_value_type(
+            let mut value_type = infer_scoped_spec_value_type(
                 value,
                 variables,
                 integer_bindings,
@@ -1212,6 +1282,26 @@ pub(super) fn infer_scoped_spec_value_type(
                 context,
                 value_expected_integer,
             )?;
+            if let Some(expected) = click_type
+                && !spec_value_matches_click_type(&value_type, expected)
+                && let Some(narrow) = narrow_arithmetic_value_type(
+                    value,
+                    expected,
+                    &format!("`let {name}`"),
+                    &mut |leaf| {
+                        infer_scoped_spec_value_type(
+                            leaf,
+                            variables,
+                            integer_bindings,
+                            click_functions,
+                            context,
+                            false,
+                        )
+                    },
+                )?
+            {
+                value_type = narrow;
+            }
             if let Some(expected) = click_type
                 && !spec_value_matches_click_type(&value_type, expected)
             {
@@ -2149,13 +2239,24 @@ fn infer_spec_value_type(
             // its surrounding spec expression supplies a context.  A typed
             // Integer let is one such context, including a theorem with no
             // Integer parameter at all.
-            let value_type = if matches!(click_type, Some(ClickType::Integer))
+            let mut value_type = if matches!(click_type, Some(ClickType::Integer))
                 && is_untyped_integer_literal_expression(value)
             {
                 SpecValueType::Integer
             } else {
                 infer_spec_value_type(value, variables, click_functions, context)?
             };
+            if let Some(expected) = click_type
+                && !spec_value_matches_click_type(&value_type, expected)
+                && let Some(narrow) = narrow_arithmetic_value_type(
+                    value,
+                    expected,
+                    &format!("`let {name}`"),
+                    &mut |leaf| infer_spec_value_type(leaf, variables, click_functions, context),
+                )?
+            {
+                value_type = narrow;
+            }
             if let Some(expected) = click_type
                 && !spec_value_matches_click_type(&value_type, expected)
             {
@@ -3187,7 +3288,18 @@ pub(super) fn infer_contract_expression_type(
             value,
             body,
         } => {
-            let value_type = infer_spec_value_type(value, variables, click_functions, context)?;
+            let mut value_type = infer_spec_value_type(value, variables, click_functions, context)?;
+            if let Some(expected) = click_type
+                && !spec_value_matches_click_type(&value_type, expected)
+                && let Some(narrow) = narrow_arithmetic_value_type(
+                    value,
+                    expected,
+                    &format!("`let {name}`"),
+                    &mut |leaf| infer_spec_value_type(leaf, variables, click_functions, context),
+                )?
+            {
+                value_type = narrow;
+            }
             if let Some(expected) = click_type
                 && !spec_value_matches_click_type(&value_type, expected)
             {
@@ -4120,6 +4232,13 @@ fn validate_predicate_calls_in_proposition_one(
                     )));
                 }
                 return validate_contract_expression_calls(&arguments[0], click_functions, context);
+            }
+            if name == "little_endian" {
+                return if arguments.is_empty() {
+                    Ok(())
+                } else {
+                    Err(ClickError::new("little_endian expects no arguments"))
+                };
             }
             if name == "same_object" {
                 if arguments.len() != 2 {

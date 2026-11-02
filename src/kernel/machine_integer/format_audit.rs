@@ -21,23 +21,21 @@ use std::io::Write;
 /// One use of the word identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum WordIdentity {
-    /// A sign cast σ removed from an operand, so the operand's word stands
-    /// for the cast (rules K1 to K4).
+    /// A sign cast σ removed from an element index, so the operand's word
+    /// stands for the cast in `int32` index coordinates (decision G1, the
+    /// address-only exception; σ is a node of its own everywhere else).
     SignCastPeeled,
-    /// The widening of an 8- or 16-bit value into 32 bits removed from an
-    /// operand, so the narrow value's word stands for it (rule K8).
-    WideningPeeled,
     /// A `uint32` constant read as the `int32` constant of its bits (K1).
     UInt32ConstantPeeled,
     /// A sign-free `uint32` operation (`+ - * << & | ^ ~`) built as the
     /// `int32` node of its words (the 32-bit operator merge).
     UInt32OperatorAtInt32,
-    /// A `uint32` equality filed as the `int32` one (rule K6).
-    UInt32EqualityAtInt32,
     /// A narrow value observed whose term is a 32-bit operation's word
     /// rather than a value of its format.
     NarrowValueAsWord,
-    /// Rust narrow arithmetic lowered as a 32-bit operation and a cast back.
+    /// Rust narrow arithmetic lowered as a 32-bit operation and a cast back:
+    /// `/ % >>`, and `<<` by a count that is not 32 bits (decision G4); the
+    /// other operators are native.
     PromotedNarrowArithmetic,
 }
 
@@ -45,10 +43,8 @@ impl WordIdentity {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::SignCastPeeled => "sign-cast-peeled",
-            Self::WideningPeeled => "widening-peeled",
             Self::UInt32ConstantPeeled => "uint32-constant-peeled",
             Self::UInt32OperatorAtInt32 => "uint32-operator-at-int32",
-            Self::UInt32EqualityAtInt32 => "uint32-equality-at-int32",
             Self::NarrowValueAsWord => "narrow-value-as-word",
             Self::PromotedNarrowArithmetic => "promoted-narrow-arithmetic",
         }
@@ -177,37 +173,52 @@ mod tests {
             .collect()
     }
 
-    /// Building a 32-bit operator over σ and a `uint32` constant records
-    /// both peels; an operator over plain `int32` operands records nothing.
+    /// Building an `int32` operator over a `uint32` constant records the
+    /// constant's peel; an operator over plain `int32` operands records
+    /// nothing, and σ is not peeled: it stays the operand ("Every format
+    /// its own nodes", step 4b). An element index's σ is peeled into its
+    /// word (decision G1) and recorded.
     #[test]
-    fn an_operator_over_a_sign_cast_and_a_uint32_constant_records_both_peels() {
+    fn an_operator_keeps_its_sign_cast_and_an_index_records_its_peel() {
         let x = Bitvector32Term::Variable(Variable(1));
         let plain = capture(|| {
             let _ = Bitvector32Term::add(x.clone(), Bitvector32Term::Constant(1));
         });
         assert!(plain.is_empty(), "{plain:?}");
         let sigma = Bitvector32Term::sign_cast32(
-            MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
+            MachineIntegerType::Int32,
             x.clone(),
         );
+        let mut sum = None;
         let lines = capture(|| {
-            let _ = Bitvector32Term::add(sigma, Bitvector32Term::UInt32Constant(1));
+            sum = Some(Bitvector32Term::add(
+                sigma.clone(),
+                Bitvector32Term::UInt32Constant(1),
+            ));
         });
-        let kinds = kinds(&lines);
-        assert!(kinds.contains(&"sign-cast-peeled"), "{lines:?}");
-        assert!(kinds.contains(&"uint32-constant-peeled"), "{lines:?}");
-        // The site is the constructor that peeled, not the audit itself.
+        assert_eq!(kinds(&lines), vec!["uint32-constant-peeled"], "{lines:?}");
+        assert!(matches!(
+            sum,
+            Some(Bitvector32Term::Binary { left, .. }) if *left == sigma
+        ));
+        let lines = capture(|| {
+            let _ = sigma.clone().into_index_word32();
+        });
+        assert_eq!(kinds(&lines), vec!["sign-cast-peeled"], "{lines:?}");
+        // The site is the caller that peeled, not the audit itself.
         assert!(
-            lines.iter().all(|line| line.contains("term_operations.rs")),
+            lines.iter().all(|line| line.contains("format_audit.rs")),
             "{lines:?}"
         );
     }
 
-    /// A `uint32` value whose term is an `int32` sign-free operator, and a
-    /// `uint32` equality, record their identities; the `int32` ones do not.
+    /// A `uint32` value whose term is an `int32` sign-free operator records
+    /// its filing; an `int32` one does not, nor does a `uint32` equality, a
+    /// `uint32` term whose identity with the `int32` equality is read at
+    /// lookup (rule K6).
     #[test]
-    fn a_uint32_sum_and_a_uint32_equality_record_their_int32_filing() {
+    fn a_uint32_value_spelled_by_an_int32_sum_records_its_filing() {
         let (a, b) = (
             Bitvector32Term::Variable(Variable(1)),
             Bitvector32Term::Variable(Variable(2)),
@@ -221,9 +232,7 @@ mod tests {
             let _ = crate::kernel::uint32(Bitvector32Term::add(a.clone(), b.clone()));
             let _ = crate::kernel::ConditionTerm::uint32_equal(a.clone(), b.clone());
         });
-        let kinds = kinds(&lines);
-        assert!(kinds.contains(&"uint32-operator-at-int32"), "{lines:?}");
-        assert!(kinds.contains(&"uint32-equality-at-int32"), "{lines:?}");
+        assert_eq!(kinds(&lines), vec!["uint32-operator-at-int32"], "{lines:?}");
     }
 
     /// A narrow observation of a 32-bit sum records it; a narrow

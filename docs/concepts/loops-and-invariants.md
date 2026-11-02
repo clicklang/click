@@ -410,9 +410,8 @@ bare rule; see
 
 A `continue` is the back edge, reached early. Everything the body's end owes is
 owed there: the loop's binders are bound again on the state the `continue`
-reached, the invariants are closed there with `close_invariants()` written
-after the `continue` is stepped, and a declared measure must have descended
-there.
+reached, the invariants are closed there by `solve()` once the `continue` is
+stepped, and a declared measure must have descended there.
 
 <!-- verified-example: mdtests/loop_body_continue_back_edge.md -->
 ```click
@@ -788,13 +787,13 @@ void bump_n(struct cell* p, int32 n) {
 
 The binder's arguments are read where they are used. The head builds the
 binder's instance at the loop's own havocked values, so a cursor the body
-reassigns is already the head's cursor, and `close_invariants()` reads the
+reassigns is already the head's cursor, and the back edge reads the
 clause again in the state the body reached. That is what lets a body hand a
 child to the next iteration: after `root = root->left`, an
 `owns sub: tree_at(root);` binder names the subtree at the new cursor by
 proved argument equality.
 
-`close_invariants()` selects the instance the same way the head did, with the
+The back edge selects the instance the same way the head did, with the
 arguments read in the current state, and binds the loop's name to it whatever
 the body called it. A body that folds its result as `let d = fold(counter(p),
 ...)` still hands `c` back, because `d` is the owned `counter(p)`. A body that
@@ -903,7 +902,7 @@ does not unfold the function or search for a proof. The usual route is to match
 on the model so that its parts have names. State each side with `have`, by
 `unfold` and `rewrite`. Apply a lemma for nonnegativity, typically one proved
 once by structural `induct`. Then let `solve` close the comparison before
-`close_invariants()`.
+the back edge.
 
 A `Nat`-valued function of the model ranks by its Integer image `to_integer`,
 whose nonnegativity is the checked law `nat::to_integer_nonnegative`. Such a
@@ -1176,11 +1175,11 @@ owes the function's postcondition and resource obligations. Expansion writes
 its checked closing steps into the returning `preserve` arm, including for
 natural cycles and nested loops.
 
-A `preserve` script ends by discharging the whole invariant bundle at the loop's
-back edge. `close_invariants()` is the surface tactic for that step. It is
-accepted only inside `preserve by { ... }` — elsewhere it fails with
-`` `close_invariants` is only available in a loop-region proof `` — and at most
-once on a path.
+A `preserve` script works like a function proof: when it ends, the loop's
+back edge owes the whole invariant bundle, and each member is closed by
+`solve()`, as a function's exit closes each `ensures`. There is no tactic to
+write for it; the retired `close_invariants` is rejected by the parser
+(`mdtests/close_invariants_is_retired.md`).
 
 <!-- verified-example: mdtests/c_decreases_count_up.md -->
 ```click
@@ -1189,10 +1188,9 @@ preserve by {
 }
 ```
 
-Writing it is optional. If a `preserve` script does not close the bundle,
-Click appends the closer implicitly after the last written tactic. The
-expanded proof contains an explicit `close_invariants` leaf either way, so it
-always appears in an expanded proof.
+`click expand` prints the closure as one `have <member> by { ... }` per
+member at the end of the `preserve` script, omitting members already
+available as facts.
 
 Stepping to the back edge is optional too. A path whose tactics run out
 inside the body runs the rest of it as an omitted `preserve` runs a whole
@@ -1207,10 +1205,9 @@ the steps that need proof work and ends where that work ends
 (`mdtests/preserve_runs_the_rest_of_the_body.md`). Expansion writes the steps
 that ran.
 
-A bare `close_invariants()` closes the bundle as `close_invariants() by { ... }`
-with `solve()` on each member: it descends the bundle's conjunctions and each
-member's guards with `both` and `intro`, and closes every member with `solve()`
-alone, which reads the facts in scope like any other `solve()`. Each member
+The back edge closes every member with `solve()` alone, which reads the facts
+in scope like any other `solve()`; each member is guarded by the invariants
+declared before it. Each member
 is spelled as its clause writes it, as a function's exit closes each `ensures`
 as written: an invariant over the back-edge locals, and the descent member of
 `decreases m` as `m < at(<iteration entry>, m)`, a tuple's as the
@@ -1219,8 +1216,8 @@ unsigned or 64-bit bound such as `i <= n` after `i += 1` from the guard
 `i < n`, and the descent of `n - i`
 (`mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md`,
 `mdtests/a_64_bit_countdown_closes_its_back_edge.md`). A member `solve()`
-misses is named in the refusal; prove it by hand in a
-`close_invariants() by { ... }` body.
+misses is named in the refusal; prove it, or a fact it needs, with
+`have <invariant> by { ... }` before the back edge, as for an `ensures`.
 
 The bundle is a conjunction with one member per declared clause, in
 declaration order. A clause that reads memory is preceded by members for what
@@ -1232,12 +1229,11 @@ clause is a guard in its bare form rather than as the whole earlier member,
 so the bundle gains one guard per earlier declaration instead of doubling
 with each one (`mdtests/loop_frame_keeps_two_header_cells_of_a_field_map.md`).
 
-A written `close_invariants() by { both { ... } and { ... } }` splits the
-bundle as it is. When the whole bundle has no source form, for instance
-because one member is at the loop entry beside members at the iteration
-entry, each member is spelled on its own at the one snapshot it names, the
-spelling the smart closer gives the leaf it closes, so `intro` names a
-member's quantified index as the expanded proof writes it.
+When the whole bundle has no source form, for instance because one member is
+at the loop entry beside members at the iteration entry, each member is
+spelled on its own at the one snapshot it names, which is how the expanded
+proof's `have` writes it, so `intro` names a member's quantified index as that
+`have` does.
 
 Successful initialization and preservation proofs certify and apply a
 verified loop rule. The enclosing proof is already at the loop exit when the
@@ -1293,6 +1289,6 @@ those endings, because such a path did not stop inside the body at all.
 An unfinished path does not stop the region's other paths. Each arm of a
 proof `match` that does reach an ending still closes its invariants and its
 measure, and a failure there is reported before the unfinished sibling's
-frontier: a wrong `close_invariants` on a finished arm is named while the
+frontier: a back-edge member a finished arm fails to close is named while the
 next arm is still being written, rather than staying silent until every arm
 is finished (`mdtests/preserve_finished_arm_checked_before_frontier.md`).

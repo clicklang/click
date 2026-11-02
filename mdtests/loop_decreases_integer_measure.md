@@ -63,7 +63,6 @@ int32 drain(int32 n) {
                 };
             }
             step();
-            close_invariants() by solve();
         }
     }
     step();

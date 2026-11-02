@@ -72,6 +72,13 @@ and the available premises. Those premises are what an explicit proof of the
 goal can use. [Reading trace output](#reading-trace-output) describes the
 notation.
 
+A structural join is marked `(joined)`. After a source `branch` joins, only
+facts established in both arms are available. A failed back-edge obligation
+there names the branch, not an arm's successful last step. Use
+`branch ensuring { ... }` to carry a shared fact across the join, or a proof
+`if` to keep the cases apart. A trace targeted inside an arm still shows that
+arm and its own checked steps.
+
 A goal about memory, such as a `transport` target or any goal that reads
 `read<...>(snapshot#N, pointer=value#M)`, depends on what its labels denote.
 Record the legend line defining each label the goal uses: two spellings of one

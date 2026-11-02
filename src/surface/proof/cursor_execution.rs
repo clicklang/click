@@ -2213,7 +2213,10 @@ fn execute_step_from_frontier_position_selecting_path(
         ));
     }
     if let Some(transport) = &function_environment.selected_call_binders
-        && !matches!(source_region.kind, SourceStatementKind::Plain)
+        && !matches!(
+            source_region.kind,
+            SourceStatementKind::Plain | SourceStatementKind::Try { .. }
+        )
     {
         return Err(ClickError::new(format!(
             "`step({}, {{ ... }})` requires a call to `{}` at the current frontier",

@@ -1133,13 +1133,8 @@ fn checked_narrowing_identity_readings(
     else {
         return None;
     };
-    // A σ operand's word is its operand (rule K1), as is a widened narrow
-    // value's (rule K8): the conversion of either is built as the
-    // conversion of `w` from `w`'s format.
-    let (word_source, word) = operand
-        .word_cast32_operand()
-        .unwrap_or((source_type, operand));
-    if *cast_source != word_source || value.as_ref() != word {
+    // The conversion names the operand as written, σ included.
+    if *cast_source != source_type || value.as_ref() != operand {
         return None;
     }
 
@@ -2049,6 +2044,76 @@ fn evaluate_bool_value_paths(
         .collect())
 }
 
+/// A Rust operator on 8- or 16-bit values (`CIntegerCastMode::NarrowArithmetic`):
+/// the operands are evaluated as written, in order, and the value is the
+/// operator's native node at `target_type`. An operand of another type is a
+/// type mismatch, never a silent promotion.
+fn evaluate_narrow_arithmetic_paths(
+    state: &CState,
+    expression: &CExpression,
+    target_type: CType,
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Vec<CExpressionPath>> {
+    use crate::kernel::MachineBinaryOp as Op;
+    let format = MachineIntegerType::from_c_type(target_type)
+        .filter(|format| super::operators::is_narrow_format(*format));
+    let outcome = |value: Option<CValue>| match value {
+        Some(value) => CExpressionOutcome::Value(value),
+        None => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+    };
+    let (op, left, right) = match expression {
+        CExpression::Add(left, right) => (Op::Add, left, right),
+        CExpression::Subtract(left, right) => (Op::Subtract, left, right),
+        CExpression::Multiply(left, right) => (Op::Multiply, left, right),
+        CExpression::BitwiseAnd(left, right) => (Op::BitwiseAnd, left, right),
+        CExpression::BitwiseOr(left, right) => (Op::BitwiseOr, left, right),
+        CExpression::BitwiseXor(left, right) => (Op::BitwiseXor, left, right),
+        CExpression::ShiftLeft(left, right) => (Op::ShiftLeft, left, right),
+        CExpression::BitwiseNot(operand) => {
+            return Ok(
+                evaluate_c_expression_paths(state, operand, assumptions, budget)?
+                    .into_iter()
+                    .map(|path| CExpressionPath {
+                        outcome: match path.outcome {
+                            CExpressionOutcome::Value(value) => {
+                                outcome(format.and_then(|format| {
+                                    super::operators::native_narrow_not(format, &value)
+                                }))
+                            }
+                            outcome => outcome,
+                        },
+                        ..path
+                    })
+                    .collect(),
+            );
+        }
+        _ => {
+            return Ok(vec![CExpressionPath {
+                outcome: outcome(None),
+                facts: ExecutionFacts::new(),
+                obligations: Vec::new(),
+            }]);
+        }
+    };
+    evaluate_c_value_binary_paths(
+        state,
+        left,
+        right,
+        assumptions,
+        budget,
+        |left, right, facts, obligations| {
+            vec![CExpressionPath {
+                outcome: outcome(format.and_then(|format| {
+                    super::operators::native_narrow_binary(format, op, &left, &right)
+                })),
+                facts,
+                obligations,
+            }]
+        },
+    )
+}
+
 #[allow(clippy::too_many_arguments)] // Cast mode and pointee qualifiers are independent.
 fn evaluate_c_cast_paths(
     state: &CState,
@@ -2063,6 +2128,15 @@ fn evaluate_c_cast_paths(
 ) -> ExecutionResult<Vec<CExpressionPath>> {
     if integer_mode == CIntegerCastMode::BoolValue {
         return evaluate_bool_value_paths(state, expression, assumptions, budget);
+    }
+    if integer_mode == CIntegerCastMode::NarrowArithmetic {
+        return evaluate_narrow_arithmetic_paths(
+            state,
+            expression,
+            target_type,
+            assumptions,
+            budget,
+        );
     }
     let _word_representation = target_type
         .is_pointer()
@@ -2100,7 +2174,9 @@ fn evaluate_c_cast_paths(
                 // establishes the range the identity needs.
                 let conversion = if matches!(
                     integer_mode,
-                    CIntegerCastMode::CConversion | CIntegerCastMode::Modulo
+                    CIntegerCastMode::CConversion
+                        | CIntegerCastMode::ResultConversion
+                        | CIntegerCastMode::Modulo
                 ) {
                     IntegerConversion::Modular
                 } else {
@@ -2139,8 +2215,10 @@ fn evaluate_c_cast_paths(
                     }
                     _ => None,
                 };
-                let implicit_pointer_conversion = integer_mode == CIntegerCastMode::CConversion
-                    && !explicit_qualification
+                let implicit_pointer_conversion = matches!(
+                    integer_mode,
+                    CIntegerCastMode::CConversion | CIntegerCastMode::ResultConversion
+                ) && !explicit_qualification
                     && target_type.is_pointer()
                     && matches!(&value, CValue::Pointer(_));
                 let coerced = if integer_mode == CIntegerCastMode::PointerCoercion
@@ -2259,7 +2337,9 @@ fn evaluate_c_cast_paths(
                 if let Ok(value) = &coerced
                     && matches!(
                         integer_mode,
-                        CIntegerCastMode::CConversion | CIntegerCastMode::Modulo
+                        CIntegerCastMode::CConversion
+                            | CIntegerCastMode::ResultConversion
+                            | CIntegerCastMode::Modulo
                     )
                     && matches!(
                         crate::kernel::c_narrow_integer_range(value),

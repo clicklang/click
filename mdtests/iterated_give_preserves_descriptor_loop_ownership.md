@@ -210,25 +210,6 @@ void release_run(struct arena* arena, int32 start, int32 end) {
                 next: at(opened, i) + 1
             });
             have start <= end;
-            close_invariants() by {
-                both { normalize(); } and {
-                    both { solve(); } and {
-                        both { solve(); } and {
-                            both { solve() using {
-                                at(opened, i) < end;
-                                0 <= at(opened, i);
-                                end <= arena->capacity;
-                                arena->capacity <= 536870911;
-                            }; } and { solve() using {
-                                at(opened, i) < end;
-                                0 <= at(opened, i);
-                                end <= arena->capacity;
-                                arena->capacity <= 536870911;
-                            }; }
-                        }
-                    }
-                }
-            }
         }
     }
     let { next: n } = unfold(w);

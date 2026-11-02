@@ -17,7 +17,11 @@ operand of `+`, `-`, `*` and negation is observed with `to_integer` (the
 lists the positions). `src/surface/parser/spec_arithmetic.rs` decides it
 while parsing, from the expected types of comparison operands, declared
 `Integer` parameters and fields, `-> Integer` results and typed `let`s; an
-untyped `let` of machine arithmetic is refused. A `match` arm and an `if`
+untyped `let` of machine arithmetic is refused. At an 8- or 16-bit position
+(a typed `let`, an argument at its parameter's type, a pure function's body
+at its result type) lowering marks the arithmetic spine with
+`SpecExpression::at_machine_type`, so `+ - * & | ^ ~` over operands of that
+type is the type's native operator (decision G2). A `match` arm and an `if`
 branch are in the position of their match or conditional; an `if`'s
 condition stays a proposition. So in an Integer position
 `if c { a + 1 } else { b }` reads `if c { to_integer(a) + 1 } else {
@@ -571,32 +575,37 @@ constructor folds a constant and undoes a σ, so `σ(σ(x))` is `x`.
 The widening of an 8- or 16-bit value into `int32` or `uint32` is also
 a `MachineIntegerCast`, read as its operand's word by rule K8 (below).
 
-σ keeps every bit, so the kernel reads σ(x) as `x`'s 32-bit word
-(decision of 2026-10-25):
+σ keeps every bit. From 2026-10-25 the kernel read σ(x) as `x`'s 32-bit
+word (rules K1 to K4); step 4b of "Every format its own nodes"
+(`design/machine-integers.md`) makes σ a node of its own and deletes K1
+and K2, keeping each relation as reasoning:
 
 | Rule | Statement | Where |
 |---|---|---|
-| K1 word identity | `σ(x) == x` as a 32-bit word | 32-bit operator, comparison, overflow and 32-to-64 extension constructors read operands through `word32`; the e-graph interns σ(x) as `x` |
-| K2 observation | `to_integer(σ(x))` at `int32` or `uint32` has the value of `to_integer(x)` at that format; the observation keeps σ as written | rule W: `SharedMachineIntegerTerm::value_reading` |
-| K3 orders and indices | σ(x) has `x`'s `Int32` and `UInt32` difference-graph nodes; an element index is its word; `integer_cast_identity` and the checked-narrowing identity compare conversions by word | `difference_graph::word`, `canonicalized_offset_index_term`, `conversion::cast`, `checked_narrowing_identity` |
-| K4 modular equality | an observation of σ(x) contributes `x`'s word | through K2 |
+| K1 word identity | Deleted. σ(x) is a node of its own: no constructor, observation, e-graph or difference-graph reader peels it | the e-graph's R0 (`σ(σ(x))` in `x`'s class) and R-dist (σ of `+ - * & \| ^ ~ <<` is the operator at the other format over σ of the operands; σ of a low word is that low word), `terms/machine_relations.rs` |
+| K2 observation | Deleted as a rewrite. `to_integer(σ(x))` keeps σ and reads as `to_integer(x)` at that format | rule W: `machine_value_reading` |
+| K3 orders and indices | Restated. Either 32-bit difference-graph reading of σ(x) is linked to the same reading of `x` with offset 0; an element index reads σ's operand in `int32` index coordinates (decision G1); a sign test of σ is its operand's half-range test; `integer_cast_identity` compares a conversion of a written σ as written | `difference_graph::link_parts`, `structural_interval`, `into_index_word32`, `condition_reasoning/sign_bit.rs`, `conversion::cast` |
+| K4 modular equality | Restated: an observation of σ(x) reads `x` | through rule W |
+| K6 equality | A lookup-level equivalence: a 32-bit equality is a term of its written format; its identity and keys read it at `int32`, each side through one σ | `comparison_identity`, `condition_match_key` |
+| C quotient | σ of a quotient or remainder on a nonnegative dividend and a positive divisor is the quotient or remainder at the other signedness of σ of its operands | `condition_reasoning/sign_cast_division.rs`, `nonnegative_division_bound_guards` |
 
 Soundness: σ_{S→F}(x) is `to_integer_S(x) mod 2^32` read in `F`. Reducing
 modulo 2^32 and reading two's complement are inverse bijections between
-either format's range and the 32-bit words, so `bits(σ(x)) = bits(x)`.
-Every 32-bit operator, comparison and observation is a function of its
-operands' bits, so each may read `x` for σ(x). The peel is one match on a
-term's root (`word32`), with no scan or clone; nested σ are reached as each
-subterm is built, interned or keyed.
+either format's range and the 32-bit words, so `bits(σ(x)) = bits(x)`, and
+σ_{F→S}(σ_{S→F}(x)) = x (R0). A sign-free operator computes its result's
+bits from its operands' bits alone, so σ distributes over it (R-dist). An
+equality compares bits, so it reads through σ (K6). For rule C, `0 <= A <
+2^31` and `0 < B < 2^31` have the same value in both formats, truncating
+and unsigned division agree on such values, and the quotient and remainder
+lie in `[0, A]`, which both formats hold.
 
-Because operators and comparisons read words, σ stays visible only on a
-value at rest: a local, a stored cell, a returned value, or an argument.
-Printed facts and steps show it as `(x as uint32)` or `(x as int32)` there and
-nowhere else. A comparison reads its operands' words, so an `int32` order
-of a `uint32` value's word is spelled with the operand converted: the case
-condition the implicit tail synthesizes for `bool set = (int)u < 0;` is
-`u as int32 < 0`, which lowers back to that order, where the bare `u < 0` would
-be the `uint32` order (`surface_synthesis::bitvector_spells_uint32`,
+A term keeps σ as its source wrote it: printed facts and steps show
+`(x as uint32)` or `(x as int32)` wherever σ is, inside operators and
+comparisons too. An `int32` order of a `uint32` value is spelled with the
+operand converted: the case condition the implicit tail synthesizes for
+`bool set = (int)u < 0;` is `u as int32 < 0`, which lowers back to that
+order, where the bare `u < 0` would be the `uint32` order
+(`surface_synthesis::bitvector_spells_uint32`,
 `mdtests/execute_splits_a_sign_cast_order_as_a_signed_comparison.md`,
 `rust_execute_splits_a_sign_cast_order_as_a_signed_comparison` in
 `tests/rust_import.rs`).
@@ -611,46 +620,60 @@ at the other signedness S returns σ_{S→F} of the stored word
 `mdtests/cpp_an_unsigned_cell_read_as_int_is_its_sign_cast.md`,
 `rust_a_u32_cell_read_as_i32_is_its_sign_cast` in `tests/rust_import.rs`).
 Soundness: the read returns the same four bytes in F, which is the modular
-conversion. A load *term* is a word, so a route that answers a load term
-from a cell reads the stored word whichever signedness stored it
-(`LoadKind::reads_value` and `LoadKind::read_cell` compare word kinds,
-`LoadKind::reads_word_of`), which K1 makes the same word. Each read is its
-own load: a `UInt32` read has a load variable of its own, defined by its
-own read (`load_variable_for_term`, `mint_load_variable_identity`), and the
-equality graph relates the two reads of one cell by σ (R-mem): both are
-the cell's word load application, which K1 makes one value. Kernel-internal
-reads (index arithmetic, pointer words) are `Int32`.
+conversion. Each read is its own load: a `UInt32` read has a load variable
+of its own, defined by its own read (`load_variable_for_term`,
+`mint_load_variable_identity`). The equality graph relates the two reads of
+one cell by σ (R-mem): the `int32` read is the cell's word load
+application, and the `uint32` read is σ of it; an `int32` read of a cell
+storing a `uint32` value is σ of that value. Kernel-internal reads (index
+arithmetic, pointer words) are `Int32`.
 
 A 32-bit constant has a format too: `Bitvector32Term::Constant(v)` is
 `int32`, the format of every kernel-internal constant, and
 `Bitvector32Term::UInt32Constant(v)` is `uint32`. A C, C++ or Rust value at
 `uint32` takes `UInt32Constant`: literals, `MachineIntegerType::constant_term`
 and every conversion that folds to `uint32`, `kernel::uint32` and
-`value_from_term` (`Bitvector32Term::in_format32`). Under K1 its word is
-`Constant(v)`: the 32-bit constructors and raw builders read it so
-(`into_word32`, `constant_word32`), the e-graph interns it so
-(`MachineAtom::int32`), the difference graph reads its value, and the
-kernel's matches on a 32-bit constant's bits read either format
+`value_from_term` (`Bitvector32Term::in_format32`). Inside an `int32`
+operator, comparison or overflow test a `uint32` constant is read as its
+bits' `Constant` (`into_word32`, `constant_word32`), and the e-graph
+interns both spellings as one atom (`MachineAtom::int32`), until constants
+carry their format (decision G9). The difference graph reads its value,
+and the kernel's matches on a 32-bit constant's bits read either format
 (`constant32`, `as_const`, or a `UInt32Constant` alternative beside the
-`Constant` pattern). A formatted constant therefore stays on a value at
-rest, and prints in its own type (`4000000000u32`, not `-294967296`)
-wherever a renderer reaches it
+`Constant` pattern). A formatted constant prints in its own type
+(`4000000000u32`, not `-294967296`) wherever a renderer reaches it
 (`mdtests/a_uint32_constant_above_int32_max_is_stated_stored_and_read_as_itself.md`,
 `mdtests/cpp_a_uint32_constant_above_int32_max_is_stored_and_read_as_itself.md`,
 `rust_a_u32_constant_above_i32_max_is_stated_stored_and_read_as_itself` in
 `tests/rust_import.rs`).
 
-A 32-bit equality is one fact at either signedness (rule K6, 2026-10-25).
-An equality of `uint32` values is filed as `Compare { UInt32, Equal }`
-(`ConditionTerm::uint32_equal`), with word operands as every 32-bit
-comparison has, and prints in its own type (`old(u[0]) == 4294967295u32`,
-not `== -1`). `ConditionTerm` and `BitvectorComparisonOp` compare, hash and
-order it as the `int32` equality of the same words
-(`ConditionTerm::fact_format`, one match on the root), so every fact index,
-key and lookup finds it at either format, and it is never filed twice
+A 32-bit equality is one fact at either signedness (rule K6, restated as a
+lookup-level equivalence by step 4b). An equality of `uint32` values is a
+`Compare { UInt32, Equal }` term over its `uint32` operands
+(`ConditionTerm::uint32_equal`), and prints in its own type
+(`old(u[0]) == 4294967295u32`, not `== -1`); no rewrite re-files it at
+`int32`. `ConditionTerm` and `BitvectorComparisonOp` compare, hash and
+order it as the `int32` equality of the same bits: `comparison_identity`
+reads each side through one σ and a constant of either spelling as its
+bits, one match per side with no clone, and `condition_match_key` and the
+structural fact keys read the same form, so every fact index, key and
+lookup finds it at either format, and it is never filed twice
 (`mdtests/a_uint32_equality_above_int32_max_is_one_fact_with_its_int32_word.md`,
 `a_32_bit_equality_is_one_fact_at_either_signedness`,
 `rust_a_u32_equality_above_i32_max_is_stated_used_and_printed_as_itself`).
+
+Rule C (decision of 2026-11-02): σ of a 32-bit quotient or remainder is the
+quotient or remainder at the other signedness of σ of its operands, when
+the dividend's `int32` reading is nonnegative and the divisor's positive.
+It is read where a comparison naming σ of a quotient is decided
+(`decide_by_sign_cast_division`, after the sign-bit rule) and filed beside
+such a fact when it is assumed, one match on each side's root and two sign
+decisions per side; the quotient bound guards of `normalize using` read
+it too (`nonnegative_division_bound_guards`)
+(`mdtests/a_sign_cast_of_a_nonnegative_quotient_is_the_quotient_at_the_other_signedness.md`
+and its refusal,
+`mdtests/a_sign_cast_of_a_quotient_with_a_dividend_of_unknown_sign_is_not_the_other_quotient.md`,
+`mdtests/machine_quotient_remainder_bounds.md`).
 
 ## The word of a narrow cast
 
@@ -685,12 +708,10 @@ Integer promotion, the usual arithmetic conversions, and every widening
 assignment, return, argument or cast of an 8- or 16-bit value into `int32`
 or `uint32` build the conversion table's `Cast` in C, C++ and Rust (Rust's
 `From` included). Rule K8 (decision of 2026-10-26): the 32-bit word of
-`Cast(S -> F, v)`, `S` narrow and `F` of 32 bits, is `v`'s word.
-`Bitvector32Term::word32` and `into_word32` peel it as they peel σ
-(`is_word_cast32`, one match on the root), so the 32-bit operators,
-comparisons, overflow tests and extensions, Integer observations, the
-e-graph, the difference graph and element indices read `v`. A widening
-into 64 bits is the legacy extension of that word.
+`Cast(S -> F, v)`, `S` narrow and `F` of 32 bits, is `v`'s word. The
+widening is a node of its own, related to `v` by value (K8 as a relation,
+step 6); no constructor peels it. A widening into 64 bits is the legacy
+extension of that word.
 
 Soundness: by the narrow-value invariant `v`'s word is the sign or zero
 extension of its value `n` to 32 bits, and `n` fits `F` (or, for a signed

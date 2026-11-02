@@ -5,6 +5,8 @@
 // a proof unfolds it. The library defines the same functions for every
 // integer type; a signed type's wrapping and unsigned results are its values
 // as the unsigned type of its width, which a cast converts modularly.
+// At 8 and 16 bits a wrapping operator is the type's own: a body `a + b`
+// at a narrow result type is that type's operator, modulo 2^N (decision G2).
 
 function min(a: uint16, b: uint16) -> uint16 {
     if a <= b { a } else { b }
@@ -15,15 +17,15 @@ function max(a: uint16, b: uint16) -> uint16 {
 }
 
 function wrapping_add(a: uint16, b: uint16) -> uint16 {
-    (a + b) as uint16
+    a + b
 }
 
 function wrapping_sub(a: uint16, b: uint16) -> uint16 {
-    (a - b) as uint16
+    a - b
 }
 
 function wrapping_mul(a: uint16, b: uint16) -> uint16 {
-    (a * b) as uint16
+    a * b
 }
 
 function saturating_add(a: uint16, b: uint16) -> uint16 {

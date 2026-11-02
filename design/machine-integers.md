@@ -641,7 +641,48 @@ Progress:
      from its `uint32` result rather than through `int32`, so its
      identities read at one format. Step 4b makes σ a node of its own and
      removes K1, K2 and K6, with R0 at 32 bits and the difference graph's
-     σ links.
+     σ links. Step 4b is done (2026-11-02): σ is a node of its own wherever
+     a term is built. No constructor peels it (`word32`,
+     `word_cast32_operand` and `is_word_cast32` are gone; `into_word32`
+     reads only a `uint32` constant as its bits, decision G9), nor do the
+     e-graph (σ is an `Int32Unary::Cast` node, related to its operand by R0
+     and R-dist at 32 bits, and σ of a low word is that low word), the
+     difference graph (a σ link of offset 0 in either 32-bit domain, and
+     σ's interval is its operand's), or observations (rule W reads σ; K2's
+     rewrite is gone). An element index alone reads σ's operand, in `int32`
+     index coordinates (`into_index_word32`, decision G1). K6 is a
+     lookup-level equivalence (maintainer direction, 2026-11-01): a `uint32`
+     equality stays a `uint32` term, and `comparison_identity` reads each
+     32-bit equality's sides through one σ, at `int32`; no rewrite re-files
+     it. R-mem at 32 bits is σ's relation: a `uint32` read is σ of its
+     cell's `int32` read, and an `int32` read of a `uint32` store is σ of
+     the stored value. The sign-bit rule reads σ (its equivalent is built
+     through σ, and a test of σ files its equivalent), and rule C relates
+     σ of a quotient or remainder to the other signedness's on nonnegative
+     operands ([Decisions](#decisions), 2026-11-02, step 4b). Scaling
+     regressions: `sign_cast32_distribution_is_linear_in_the_operation_chain`
+     (about 174 units per operation, a bound of 200 per operation; σ's
+     inverse interns a node where the 64-bit reinterpretation's does not),
+     `sign_cast32_inverse_is_constant_work_per_cast` and
+     `uint32_and_int32_chains_cost_alike` (equal work at every size). Two
+     readers see through one σ for the smart search's cheap closers, each
+     one match at a side's root: a 32-bit equality `σ(x) == x` is vacuous
+     as a rewrite and is not a rewrite candidate (`Bitvector32Term::is_sign_cast32_of`), and a
+     `uint32` bound below the sign bit, `σ(y) <=u c`, files and decides its
+     signed range on `y` (`unsigned_upper_bound_below_sign_bit`). Known
+     remaining items, for a separate follow-up PR: two word identities at
+     32 bits remain. The e-graph joins the `int32` and `uint32` widenings
+     of one narrow value as one word (`join_widening_sibling`, beside K7'),
+     and a load-term answer from a cell reads the stored word at either
+     signedness (`LoadKind::reads_value` and `LoadKind::read_cell`, K5's
+     naming). The second still leaves a `uint32` comparison of an `int32`
+     cell's bare word in the facts where the source spelling lowers to σ
+     of the read, so a smart search spells that premise by a longer route
+     (the residual audit work of `owned-vector`). The constructor still
+     folds σ(σ(x)) to `x`: without the fold,
+     `a_bounded_wrapped_difference_does_not_define_the_signed_one` stops
+     at a lowering error instead of its signed-overflow refusal, so its
+     removal waits on that.
   5. Reads by their own kind, with R-mem; typed index coordinates (G1).
      Steps 5 and 6 land before step 4b removes K1 and K6 (maintainer
      direction, 2026-10-30), so 4b removes no rule a read or a widening
@@ -736,8 +777,24 @@ Progress:
      the native readings of Integer comparisons, the in-range and cast
      identities and their planners, and the Integer rewrite's occurrence
      match. The audit of the other normalizations is in
-     [Decisions](#decisions), 2026-11-01 (PR 4).
-  8. Rust native narrow `+ - * & | ^ ! <<` (G4).
+     [Decisions](#decisions), 2026-11-01 (PR 4). The fifth PR (2026-11-02)
+     makes specification narrow arithmetic native (G2): at an 8- or 16-bit
+     position (a typed `let`, an argument at its parameter's type, a pure
+     function's body at its result type) `+ - * & | ^ ~` over operands of
+     that type is the type's native node (`SpecExpression::NarrowArithmetic`,
+     marked by `SpecExpression::at_machine_type`), with no domain
+     obligation; an operand of another machine type is refused (the
+     conversion is written), and a cast's operand keeps the
+     promoted reading. Rule N relates a native operator to C's promoted
+     spelling in the e-graph. See [Decisions](#decisions), 2026-11-02.
+  8. Rust native narrow `+ - * & | ^ ! <<` (G4). Done with step 7's fifth
+     PR (2026-11-02): a Rust `+ - * & | ^ !` on `u8`, `i8`, `u16` or `i16`,
+     and `<<` by a 32-bit count, is the native node of its type
+     (`CIntegerCastMode::NarrowArithmetic`); the checked overflow stays its
+     own panic assertion; `/ % >>` stay promoted (G4) and are what the
+     format audit's `promoted-narrow-arithmetic` still records. The core
+     library's narrow `wrapping_add`, `wrapping_sub` and `wrapping_mul` are
+     `a + b`, `a - b` and `a * b` at their result type.
   9. The 64-bit relations and the legacy conversions merged into `Cast`.
   10. Generic `T: intn` / `T: uintn` library theorems.
 
@@ -823,10 +880,9 @@ Progress:
   `uint8` to `uint16`; K8 covers 32-bit destinations only), and the
   legacy mask readers of `integer_cast_identity`, since a byte stored into
   a wider cell still builds `b & 0xFF` (`byte_view::integer_cell_with_byte`).
-  Remaining for Stage 4: Rust narrow checked arithmetic as `Binary` in the
-  operand's format with `not Overflows` panic checks, in place of its
-  `int32` computation and width-specific checks, once Stage 3 gives the
-  narrow formats operator nodes; and the library families.
+  Rust narrow checked arithmetic is `Binary` in the operand's format
+  (step 7's fifth PR, 2026-11-02); its panic checks keep their 32-bit
+  spelling. Remaining for Stage 4: the library families.
 
 ### Stage 5. A logical `bool`
 
@@ -1345,3 +1401,78 @@ Maintainer direction, 2026-11-01 (`from_machine` stops folding, PR 4):
   The 32-bit cast-chain collapse in `Bitvector32Term::machine_integer_cast`
   is a constructor of the conversion, not of the observation, and is
   outside this audit.
+
+Decision, 2026-11-02 (native narrow arithmetic, PR 5; step 8):
+
+- **Specification narrow arithmetic is native at its position (G2).** The
+  type-directed rule chose machine arithmetic for every non-Integer
+  position but never read the position's machine type: `let s: uint8 =
+  a + b;` was the promoted `int32` sum, unconverted. Now a typed `let`, an
+  argument at its parameter's type and a pure function's body at its result
+  type mark their arithmetic spine (through `if` branches and `let`
+  bodies); at 8 or 16 bits `+ - * & | ^ ~` over operands of that type, or
+  over `int32` literals it holds, is the native node, which wraps and owes
+  no domain obligation, as C's promote-and-convert at that type owes none.
+  A cast's operand has no expected type, so `(a + b) as uint8` stays
+  promoted as written. An operand of another machine type at a narrow
+  position is refused, naming the conversion to write (maintainer direction,
+  2026-11-02): `let s: uint8 = x + 1;` with an `int32` `x` was the
+  unconverted `int32` sum before.
+  A contract `let` of narrow arithmetic stays a typed binding rather than
+  being substituted, since substituting would drop its type; the validator
+  gives such arithmetic its position's type. Specification `<<` at a narrow
+  position stays promoted for now (its count obligation at the narrow
+  width is a separate question).
+- **Rust narrow arithmetic is native (G4).** `+ - * & | ^ !` and `<<` by a
+  32-bit count; the panic assertions are unchanged. A native narrow shift's
+  count is a 32-bit word (the width check requires it), interned as a word,
+  as a 32-bit shift's is.
+- **Rule N.** A native narrow operator is in the class of C's promoted
+  spelling, `Cast(int32 -> F, widen(a) op widen(b))`, so C, C++ and Rust
+  meet: R-dist and R-comp take C's spelling to the native node, and K7'
+  takes the native node's widening to the masked word operator. The rule
+  fires on demand, where the operator is widened and for a shift: fired
+  eagerly it cost about 30 times a bare chain's interning work, which CI's
+  timeout on `narrow_operator_chains_intern_with_constant_work_per_node`
+  caught. It is an
+  e-graph relation; no term is rewritten, and terms print as written
+  (`a + b` for the native `uint8` sum).
+
+
+Maintainer direction, 2026-11-02 (σ a node of its own, step 4b):
+
+- **Lowering keeps the term structure of the original; equivalences live
+  in reasoning.** σ is built where the source writes or its language
+  inserts a conversion between `int32` and `uint32`, and kept: no
+  constructor, observation, e-graph or difference-graph reader peels it.
+  The relations are e-graph facts (R0, R-dist), difference-graph links,
+  rule W's reading, fact identity and lookup keys, and the decision rules
+  below. An element index is the one reader of σ's operand, in `int32`
+  index coordinates (G1).
+- **K6 is a lookup-level equivalence.** A `uint32` equality stays a
+  `uint32` term as written; fact identity, hashing, order and every
+  structural fact key read a 32-bit equality at `int32`, each side through
+  one σ and a constant of either spelling as its bits
+  (`comparison_identity`, `condition_match_key`): one match per side, no
+  clone. No rewrite re-files the term at `int32` (the rewriting and
+  reversing helpers keep the written format).
+- **Rule C.** σ of a 32-bit quotient or remainder is the quotient or
+  remainder at the other signedness of σ of its operands when the
+  dividend's `int32` reading is nonnegative and the divisor's is positive:
+  `(a / b) as int32 == (a as int32) / (b as int32)` for `uint32` `a`, `b`,
+  and `(x / y) as uint32 == (x as uint32) / (y as uint32)` for `int32` `x`,
+  `y`, and the same for `%`. The divisor must be positive, not only
+  nonnegative, because a quotient by zero is not folded and is not related
+  across the signednesses. It is read at decision time like the sign-bit
+  rule, O(1) at the root (a match on each side and two sign decisions per
+  side), filed beside a fact naming σ of a quotient when the fact is
+  assumed, and read by the quotient bound guards of `normalize using`.
+  Soundness: values in `[0, 2^31)` have the same number in both formats,
+  truncating and unsigned division agree on them, and the result lies in
+  `[0, A]`.
+- **R-mem at 32 bits is σ's relation.** The `int32` read of a cell is its
+  word load application; the `uint32` read is σ of it; an `int32` read of
+  a cell storing a `uint32` value is σ of that value.
+- **The sign-bit rule reads σ.** The equivalent of `u as int32 < 0` is
+  `u > 2^31 - 1`, built through σ, whose constructor folds σ of σ; a test
+  of σ files its equivalent when assumed, as an 8- or 16-bit one does.

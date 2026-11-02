@@ -848,7 +848,6 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
             })],
             else_tactics: vec![ProofTactic::Normalize],
         }),
-        ProofTactic::CloseInvariantsBy(vec![ProofTactic::Assumption]),
     ];
     let certificate = ProofCertificate::from_proof_tactics(&tactics)
         .expect("test tactics should form a surface certificate");

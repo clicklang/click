@@ -23,10 +23,12 @@ memoization nor a warmed history cache may hide the cost of a cold query.
 
 ## Remaining landing checks
 
-Integrate current upstream and rerun the ordinary fixture corpus, the full
-scaling selection, and the named expansion/replay checks below. No full
-nightly run is needed. Keep the pointer rejection fixtures reaching their
-intended false claims; do not accept failures in their prerequisites.
+Run the ordinary fixture corpus, full normal gate (including scaling), and the
+named expansion/replay checks below before publishing. Keep the repaired Rust
+`recursive-drop`, `generic-stack`, and `generic-container` negative contract
+tests reaching their intended refusals. Keep the pointer rejection fixtures
+reaching their intended false claims; do not accept prerequisite failures.
+No full nightly run is needed.
 
 Statement footprints must include their automatic storage cleanup. Loop-exit
 snapshots still name the state before enclosing scope cleanup, so exit facts
@@ -61,6 +63,8 @@ Keep these expansion/replay checks passing:
 - `recursive_call_resource_bound_is_explicit_and_replays`
 - `destructor_footprint_cleanup_expands_and_replays`
 - `pointer_rejection_prefixes_expand_and_replay`
+- `charon_stack_transport_repairs_expand_and_replay`
+- `separation_history_repairs_expand_and_replay`
 
 The recursive witness proof now selects the call's containment, applies
 `separation::restrict`, and preserves the complete pointer read. It needs no

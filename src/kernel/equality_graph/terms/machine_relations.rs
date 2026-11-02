@@ -32,22 +32,22 @@
 //! kind it holds, so a firing interns at most three nodes and one union, a
 //! union fires a bounded number of pairs, and each pair fires once.
 //!
-//! The 32-bit operators are word operators while the term arena files a
-//! `uint32` operation at `int32` (rule K1), so they read either 32-bit
-//! format here; σ at 32 bits is peeled before the e-graph sees it (K1). A
-//! narrow widening into 32 bits is a node of its own width, linked to its
-//! operand by value (K8, a relation across widths). The rules act on the
-//! 64-bit conversions (`UInt64FromInt64`, the low word, the extensions), on
-//! conversions into and between 8 and 16 bits, on narrow widenings, and on
-//! conversions involving 128-bit intermediates; they reach σ at 32 bits once
-//! it is a node (step 4b).
+//! The 32-bit operators are word operators: an `int32` and a `uint32`
+//! operator of one kind are one e-graph operator over their operands'
+//! classes, so they read either 32-bit format here. σ at 32 bits is a node
+//! of its own (step 4b), so R-dist distributes it over them and R0 inverts
+//! it. A narrow widening into 32 bits is a node of its own width, linked to
+//! its operand by value (K8, a relation across widths). The rules act on σ,
+//! on the 64-bit conversions (`UInt64FromInt64`, the low word, the
+//! extensions), on conversions into and between 8 and 16 bits, on narrow
+//! widenings, and on conversions involving 128-bit intermediates.
 
 use super::*;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{BitvectorBinaryOp as B, BitvectorUnaryOp as U, MachineUnaryOp};
 
-/// The format an operator node computes in: the 32-bit word (rule K1), or
-/// one format.
+/// The format an operator node computes in: the 32-bit word (either 32-bit
+/// format's operator of one kind), or one format.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum OperatorFormat {
     Word32,
@@ -158,6 +158,12 @@ impl CastKey {
         self.destination.format().bits() <= self.source.bits()
     }
 
+    /// Whether the conversion is a 32-bit widening of an 8- or 16-bit value.
+    fn widens_narrow(self) -> bool {
+        matches!(self.source, CastSource::Format(source) if source.format().bits() < 32)
+            && self.destination.format().bits() == 32
+    }
+
     /// Whether the conversion keeps its operand's value: a widening into a
     /// format that contains the source.
     fn preserves_value(self) -> bool {
@@ -166,6 +172,11 @@ impl CastKey {
             CastSource::Word64 => false,
         }
     }
+}
+
+/// Whether an operator computes in an 8- or 16-bit format.
+fn is_narrow_operator(format: OperatorFormat) -> bool {
+    matches!(format, OperatorFormat::Format(narrow) if narrow.format().bits() < 32)
 }
 
 /// A machine operator or conversion head, by node.
@@ -181,6 +192,7 @@ pub(super) enum Relation {
     Distribute,
     Compose,
     Invert,
+    Promote,
 }
 
 /// A machine application, read structurally: its operand IDs are the ones
@@ -322,6 +334,19 @@ impl TermClasses {
         match decoded {
             Decoded::Operator { format, op, .. } => {
                 let class = self.root(id);
+                // Rule N on demand: a native narrow operator meets C's
+                // spelling of it through R-dist and R-comp already; its
+                // promoted word is needed only where its class is widened,
+                // or for a shift, whose symbolic count R-dist cannot move.
+                if is_narrow_operator(format)
+                    && (op == SignFree::ShiftLeft
+                        || self
+                            .casts_of_class
+                            .get(&class)
+                            .is_some_and(|casts| casts.keys().any(|key| key.widens_narrow())))
+                {
+                    self.queue_machine_relation(Relation::Promote, id, id);
+                }
                 let mut operators = self
                     .class_operators
                     .get(&class)
@@ -361,6 +386,19 @@ impl TermClasses {
                     .iter()
                 {
                     self.queue_machine_relation(Relation::Distribute, id, *operator);
+                }
+                if key.widens_narrow() {
+                    for (&(format, _), operator) in self
+                        .class_operators
+                        .get(&operand)
+                        .cloned()
+                        .unwrap_or_default()
+                        .iter()
+                    {
+                        if is_narrow_operator(format) {
+                            self.queue_machine_relation(Relation::Promote, *operator, *operator);
+                        }
+                    }
                 }
                 for (_, inner) in self
                     .class_casts
@@ -406,8 +444,11 @@ impl TermClasses {
                     continue;
                 }
                 kept_operators.insert(*key, *operator);
-                for (_, cast) in outer.iter() {
+                for (cast_key, cast) in outer.iter() {
                     self.queue_machine_relation(Relation::Distribute, *cast, *operator);
+                    if cast_key.widens_narrow() && is_narrow_operator(key.0) {
+                        self.queue_machine_relation(Relation::Promote, *operator, *operator);
+                    }
                 }
             }
             self.class_operators.insert(kept, kept_operators);
@@ -432,7 +473,7 @@ impl TermClasses {
 
     fn queue_machine_relation(&mut self, relation: Relation, first: u64, second: u64) {
         let key = match relation {
-            Relation::Invert => (first, first),
+            Relation::Invert | Relation::Promote => (first, first),
             _ => (first, second),
         };
         if !self.fired_machine_relations.contains(&key) {
@@ -459,6 +500,7 @@ impl TermClasses {
             Relation::Distribute => self.distribute(first, second, pending),
             Relation::Compose => self.compose(first, second, pending),
             Relation::Invert => self.invert(first, second, pending),
+            Relation::Promote => self.promote(first, pending),
         }
         self.relating_machine_terms = false;
     }
@@ -484,7 +526,10 @@ impl TermClasses {
             return;
         }
         let destination_bits = key.destination.format().bits();
-        if op == SignFree::ShiftLeft {
+        // σ keeps the width, and a 32-bit shift is one word operator at
+        // either format, so σ distributes over a shift by any count; a
+        // narrowing only over a constant count below its width.
+        if op == SignFree::ShiftLeft && destination_bits < key.source.bits() {
             let count =
                 right.and_then(|count| self.int32_constants.get(&self.root(count)).copied());
             if !count.is_some_and(|count| count >= 0 && (count as u32) < destination_bits) {
@@ -507,6 +552,12 @@ impl TermClasses {
         if let Some(result) =
             self.intern_machine_operator(OperatorFormat::of(key.destination), op, left, right)
         {
+            // The distributed operator is the narrowing `cast` of a wider
+            // one: it has its promoted spelling, so rule N does not fire on
+            // it. Firing would spell the word again over fresh narrowings of
+            // its operands, before R-comp merges them, without end.
+            self.fired_machine_relations =
+                self.fired_machine_relations.with_value((result, result));
             pending.push((cast, result));
         }
     }
@@ -528,6 +579,18 @@ impl TermClasses {
             return;
         };
         let CastSource::Format(source) = inner_key.source else {
+            // The low word is one legacy node at either 32-bit destination
+            // (`conversion::lower`'s `LowWord`), a word of no signedness, so
+            // σ of a low word is that low word.
+            if let CastSource::Format(outer_source) = outer_key.source
+                && crate::kernel::is_sign_cast32(outer_source, outer_key.destination)
+                && !self.fired_machine_relations.contains(&(outer, inner))
+            {
+                self.fired_machine_relations =
+                    self.fired_machine_relations.with_value((outer, inner));
+                crate::instrumentation::record_deterministic_work(1);
+                pending.push((outer, inner));
+            }
             return;
         };
         let destination = outer_key.destination;
@@ -547,6 +610,13 @@ impl TermClasses {
         self.fired_machine_relations = self.fired_machine_relations.with_value((outer, inner));
         crate::instrumentation::record_deterministic_work(1);
         let operand = self.root(operand);
+        // The low word is one legacy node at either 32-bit destination, a
+        // word of no signedness: the low word of a 32-bit value's extension
+        // is that value's word, whichever signedness reads it.
+        if outer_key.source == CastSource::Word64 && source.format().bits() == 32 {
+            pending.push((outer, operand));
+            return;
+        }
         if let Some(result) = self.intern_conversion(source, destination, operand, pending) {
             pending.push((outer, result));
         }
@@ -598,11 +668,92 @@ impl TermClasses {
         }
     }
 
+    /// Rule N for the native 8- or 16-bit operator `operator`: it is the
+    /// narrowing of the `int32` operator over its operands' widenings, as
+    /// C's promotion spells it, `a op b == Cast(int32 -> F, widen(a) op
+    /// widen(b))`, and a shift's 32-bit count is the promoted shift's count.
+    /// The narrowing is interned as every narrow cast is, with its rule-K7'
+    /// word, so the widening of the native operator meets the masked word
+    /// operator. Once per operator: at most seven nodes, the cast's word and
+    /// two unions. An operator R-dist built is a narrowing already and is
+    /// skipped (`distribute` marks it).
+    fn promote(&mut self, operator: u64, pending: &mut PendingUnions) {
+        if self.fired_machine_relations.contains(&(operator, operator)) {
+            return;
+        }
+        let Some(Decoded::Operator {
+            format: OperatorFormat::Format(format),
+            op,
+            left,
+            right,
+        }) = self.decode_machine(operator)
+        else {
+            return;
+        };
+        if format.format().bits() >= 32 {
+            return;
+        }
+        self.fired_machine_relations = self
+            .fired_machine_relations
+            .with_value((operator, operator));
+        crate::instrumentation::record_deterministic_work(1);
+        let widen = |classes: &mut Self, value: u64| {
+            let value = classes.root(value);
+            classes.intern_node(Node::Int32Unary(
+                Int32Unary::Cast(format, MachineIntegerType::Int32),
+                value,
+            ))
+        };
+        let left = widen(self, left);
+        let right = match (op, right) {
+            (SignFree::ShiftLeft, Some(count)) => Some(self.root(count)),
+            (_, Some(right)) => Some(widen(self, right)),
+            (_, None) => None,
+        };
+        let Some(word) = self.intern_machine_operator(OperatorFormat::Word32, op, left, right)
+        else {
+            return;
+        };
+        // The term constructors order a commutative operator's operands
+        // (`bitwise_xor` puts the smaller term first), so C's spelling may
+        // have them swapped: the swapped word is the same value.
+        let mut swapped = None;
+        if let (Some(right), true) = (right, op != SignFree::Subtract && op != SignFree::ShiftLeft)
+            && let Some(other) =
+                self.intern_machine_operator(OperatorFormat::Word32, op, right, Some(left))
+            && self.root(other) != self.root(word)
+        {
+            pending.push((word, other));
+            swapped = Some(other);
+        }
+        let narrowed =
+            self.narrow_cast_parts(MachineIntegerType::Int32, format, self.root(word), pending);
+        // R-dist of this narrowing over `word` would only rebuild `operator`
+        // from fresh narrowings of the widened operands, which R-comp then
+        // folds back: the result is known, so the pair is marked fired.
+        // Without this each operator cost a cascade of narrowings and K7'
+        // words, a large constant per firing.
+        for word in [Some(word), swapped].into_iter().flatten() {
+            self.fired_machine_relations =
+                self.fired_machine_relations.with_value((narrowed, word));
+        }
+        pending.push((operator, narrowed));
+    }
+
     /// The conversion `cast` applies, applied to the class `value`.
     fn convert_like(&mut self, cast: u64, value: u64, pending: &mut PendingUnions) -> Option<u64> {
         match *self.applications.get(&cast)? {
-            Application::Int32Unary(Int32Unary::Cast(source, destination), _) => {
+            Application::Int32Unary(Int32Unary::Cast(source, destination), _)
+                if representation::narrow_carrier_mask(destination).is_some() =>
+            {
                 Some(self.narrow_cast_parts(source, destination, value, pending))
+            }
+            // σ, a node of its own.
+            Application::Int32Unary(Int32Unary::Cast(source, destination), _) => {
+                Some(self.intern_node(Node::Int32Unary(
+                    Int32Unary::Cast(source, destination),
+                    value,
+                )))
             }
             Application::Apply(function, _) => match self.machine_heads.get(&function).copied()? {
                 MachineHead::Unary(U::MachineIntegerCast {
@@ -639,8 +790,11 @@ impl TermClasses {
                 .lowering
             {
                 L::Identity => value,
-                // σ names its operand's word (rule K1).
-                L::SignCast => value,
+                // σ is a node of its own, as the term arena interns it.
+                L::SignCast => self.intern_node(Node::Int32Unary(
+                    Int32Unary::Cast(source, destination),
+                    value,
+                )),
                 L::Cast if representation::narrow_carrier_mask(destination).is_some() => {
                     self.narrow_cast_parts(source, destination, value, pending)
                 }

@@ -35,6 +35,24 @@ pub(crate) fn clear_arithmetic_comparison_cache() {
     ARITHMETIC_COMPARISONS.with(|cache| cache.borrow_mut().clear());
 }
 
+fn collect_machine_carriers(machine: &SharedMachineIntegerTerm, variables: &mut CarrierVariables) {
+    let Some(root) = machine.shared_operand() else {
+        collect_bitvector_carriers(machine.value(), variables);
+        return;
+    };
+    let written = shared_machine_syntax_variables(root, || variables.visit());
+    let Some(written) = written else {
+        return;
+    };
+    for variable in written.iter() {
+        if !variables.visit() {
+            return;
+        }
+        variables.c.insert(*variable);
+        collect_registered_load_carriers(*variable, variables);
+    }
+}
+
 #[derive(Clone, Default)]
 struct RewriteScope {
     c: BTreeMap<Variable, Variable>,
@@ -437,7 +455,7 @@ fn collect_integer_carriers(
         IntegerTerm::Variable(variable) => {
             variables.integer.insert(*variable);
         }
-        IntegerTerm::Machine(value) => collect_bitvector_carriers(value.value(), variables),
+        IntegerTerm::Machine(value) => collect_machine_carriers(value, variables),
         IntegerTerm::Negate(value) => collect_integer_shared_carriers(value, variables, seen),
         crate::kernel::binary_integer_term!(left, right) => {
             collect_integer_shared_carriers(left, variables, seen);
@@ -956,11 +974,11 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
                 .unwrap_or(condition)
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::equal(*left, *right),
+        } => ConditionTerm::machine_compare(format, CompareRelation::Equal, *left, *right),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,

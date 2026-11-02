@@ -323,10 +323,28 @@ int32 allocated_vector_push(struct vector* owner, int32 value) {
     if owner->len == owner->cap {
         open(allocated_vector(owner)) {
             step();
+            have separate(statement(0).footprint, memory(owner->data)) by { normalize() using {}; }
+            have owner->data == at(statement(0).entry, owner->data) by {
+                transport_certificate {
+                    premise 0: separate(statement(0).footprint, memory(owner->data)) => separate(statement(0).footprint, memory(owner->data));
+                    preserve 0 => owner->data == at(statement(0).entry, owner->data);
+                    conclusion 1;
+                }
+            }
             step();
+            have separate(statement(1).footprint, memory(owner->data)) by { normalize() using {}; }
+            have owner->data == at(statement(1).entry, owner->data) by {
+                transport_certificate {
+                    premise 0: separate(statement(1).footprint, memory(owner->data)) => separate(statement(1).footprint, memory(owner->data));
+                    preserve 0 => owner->data == at(statement(1).entry, owner->data);
+                    conclusion 1;
+                }
+            }
             step();
         }
+        mark before_grow;
         step();
+        have c(grown) == 0 implies owner->data == at(before_grow, owner->data) by { assumption(); }
         if c(grown) == 0 {
             step();
             step();

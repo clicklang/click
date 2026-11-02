@@ -1000,7 +1000,7 @@ impl PropositionSearch for PureFactContext {
         // Range conjunctions are also conclusions of the signed arithmetic
         // theorems. Try those whole-goal certificates before splitting the
         // two bounds; retain the ordinary conjunction as their conclusion.
-        if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
+        if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
             .is_some()
             && let Some(rule) = self.derive_atomic_rule(proposition, extended_rules)
         {
@@ -1974,6 +1974,21 @@ pub(crate) fn connected_equalities(
         // A registered read's defining equation is kernel metadata, not a
         // source equality. It cannot supply a new rewrite or source spelling.
         if crate::kernel::is_verified_load_variable_defining_fact(&fact) {
+            continue;
+        }
+        // `σ(x) == x` is `x == x` under rule K6: true of every word and no
+        // rewrite (`Bitvector32Term::is_sign_cast32_of`).
+        if let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) = &fact
+            && left.is_sign_cast32_of(right)
+        {
             continue;
         }
         if matches!(

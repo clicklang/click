@@ -8,7 +8,7 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::proof::arithmetic_special::{
     SpecialArithmeticCertificate as KernelCertificate, SpecialArithmeticNode as KernelNode,
-    signed_constant_bound_on, signed_definedness_operands,
+    signed_constant_bound_on_view, signed_definedness_query,
 };
 use crate::kernel::{CFloatClassification, CFloatCondition, ConditionTerm, Proposition};
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -45,17 +45,16 @@ pub(super) fn plan_special_arithmetic_certificate(
     // exactly the listed premises that bound an operand by a constant of
     // the goal's width. The kernel recomputes the operand ranges and
     // refuses a result that can leave that width.
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    if let Some((width, left, right, _)) =
-        signed_definedness_operands(interval_query.as_ref().unwrap_or(goal))
-    {
+    if let Some((width, operands, _)) = signed_definedness_query(goal) {
         let bounds = premises
             .iter()
             .enumerate()
             .filter_map(|(i, p)| {
                 (charge_proposition(p)
-                    && (signed_constant_bound_on(width, p, left).is_some()
-                        || signed_constant_bound_on(width, p, right).is_some()))
+                    && (signed_constant_bound_on_view(width, p, operands[0].operand_view())
+                        .is_some()
+                        || signed_constant_bound_on_view(width, p, operands[1].operand_view())
+                            .is_some()))
                 .then_some(i)
             })
             .collect();
@@ -1174,4 +1173,9 @@ mod tests {
             KernelNode::FloatReflexive { finite: 64, .. }
         ));
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/surface/checking/special_arithmetic_planner/tests.rs");
 }

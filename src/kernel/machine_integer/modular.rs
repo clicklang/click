@@ -9,14 +9,10 @@ use super::{Operation, Relation, range, representation};
 use crate::kernel::{Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType};
 use num_bigint::BigInt;
 
-/// The word equality an Integer equality over 32-bit machine observations
-/// implies, which built-in checks reading machine facts (a population count
-/// retired at zero) can use. The result is filed as a consequence and never
-/// used to decide the Integer equality. Terms of more than 64 nodes are
-/// left alone.
-///
-/// The rule holds at every width ([`wrapped_equality_at`]); the fact
-/// context files it at 32 bits, where its consumers read.
+/// Reference spelling of the old 32-bit admission consequence, retained for
+/// differential tests. Admission now registers the residue relation directly
+/// in the graph; explicit equality rewriting still uses `wrapped_equality_at`.
+#[cfg(test)]
 pub(crate) fn wrapped_equality_of_integer_equality(
     condition: &ConditionTerm,
     value: bool,
@@ -96,4 +92,36 @@ pub(crate) fn wrapped_equality_at(
     let right = word(right, &mut nodes, &mut observed)?;
     let (wrapped, _) = representation::comparison(modulus, Relation::Equal, left, right)?;
     (observed && !matches!(wrapped, ConditionTerm::Constant(_))).then_some(wrapped)
+}
+
+/// Whether the bounded 32-bit residue projection applies. Admission records
+/// that consequence in the graph from the original Integer equality.
+pub(crate) fn has_word_equality_projection(condition: &ConditionTerm, value: bool) -> bool {
+    let ((ConditionTerm::IntegerEqual(left, right), true)
+    | (ConditionTerm::IntegerNotEqual(left, right), false)) = (condition, value)
+    else {
+        return false;
+    };
+    let mut pending = vec![left.as_ref(), right.as_ref()];
+    let (mut count, mut observed) = (0, false);
+    while let Some(term) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        count += 1;
+        if count > 64 {
+            return false;
+        }
+        match term {
+            IntegerTerm::Machine(machine) if machine.ty().format().bits() == 32 => observed = true,
+            IntegerTerm::Constant(_) => {}
+            IntegerTerm::Negate(inner) => pending.push(inner),
+            _ => {
+                let Some((_, left, right)) = Operation::of_exact(term) else {
+                    return false;
+                };
+                pending.push(right);
+                pending.push(left);
+            }
+        }
+    }
+    observed
 }

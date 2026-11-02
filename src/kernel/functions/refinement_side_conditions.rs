@@ -336,6 +336,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             }
             crate::kernel::binary_spec_expression!(_, _)
             | SpecExpression::BitwiseNot(_)
+            | SpecExpression::NarrowArithmetic(..)
             | SpecExpression::Cast(..)
             | SpecExpression::PointerCoercion(..)
             | SpecExpression::If { .. }

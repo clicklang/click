@@ -2588,8 +2588,12 @@ fn unsigned_comparison_is_spelled_over_uint32_operands() {
         }
     }
     let signed = CState::new().with_local("y", CValue::Int32(x.clone()));
+    // The signed local's unsigned reading is σ, a node of its own.
     let fact = Proposition::ConditionIs(
-        ConditionTerm::unsigned_less_than(x, Bitvector32Term::Constant(4)),
+        ConditionTerm::unsigned_less_than(
+            Bitvector32Term::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, x),
+            Bitvector32Term::Constant(4),
+        ),
         true,
     );
     let synthesized = synthesize_surface_proposition(&fact, ParameterBinding::default(), &signed)
@@ -2609,27 +2613,36 @@ fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
         .with_local("x", CValue::Int32(x.clone()))
         .with_local("divisor", CValue::Int32(divisor.clone()))
         .with_local("result", CValue::Int32(result.clone()));
+    // The signed locals' unsigned readings are σ, a node of its own.
+    let unsigned = |value| {
+        Bitvector32Term::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, value)
+    };
     let quotient = binary_node!(
         UInt32,
         Divide,
         Box::new(Bitvector32Term::UInt32Constant(u32::MAX)),
-        Box::new(divisor.clone()),
+        Box::new(unsigned(divisor.clone())),
     );
-    let remainder = binary_node!(UInt32, Remainder, Box::new(x.clone()), Box::new(divisor));
+    let remainder = binary_node!(
+        UInt32,
+        Remainder,
+        Box::new(unsigned(x.clone())),
+        Box::new(unsigned(divisor))
+    );
     for condition in [
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: Box::new(quotient.clone()),
-            right: Box::new(result.clone()),
+            right: Box::new(unsigned(result.clone())),
         },
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: MachineIntegerType::UInt32,
             relation: CompareRelation::Equal,
             left: Box::new(remainder),
-            right: Box::new(result),
+            right: Box::new(unsigned(result)),
         },
-        ConditionTerm::unsigned_less_equal(x, quotient),
+        ConditionTerm::unsigned_less_equal(unsigned(x), quotient),
     ] {
         for polarity in [true, false] {
             let fact = Proposition::ConditionIs(condition.clone(), polarity);

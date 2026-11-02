@@ -325,6 +325,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "reverse",
     "scale",
     "same_object",
+    "little_endian",
     "scatter",
     "separate",
     "sizeof",
@@ -459,6 +460,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/option.click",
         include_str!("../library/option.click"),
+    ),
+    (
+        "library/result.click",
+        include_str!("../library/result.click"),
     ),
     (
         "library/permutation.click",
@@ -5433,16 +5438,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         id: "contradiction",
         syntax: "contradiction(P)",
         class: "simple",
-    },
-    PublicTacticForm {
-        id: "close-invariants",
-        syntax: "close_invariants()",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "close-invariants-by",
-        syntax: "close_invariants() by",
-        class: "control",
     },
     PublicTacticForm {
         id: "rewrite",

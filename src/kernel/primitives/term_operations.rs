@@ -1,6 +1,5 @@
 use super::*;
 use crate::kernel::binary_node;
-use crate::kernel::machine_integer::format_audit as audit;
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
 
@@ -209,21 +208,7 @@ impl Bitvector32Term {
     /// that source type's range. This inspects only the root, never
     /// assumptions or subterms, so a constructor may call it for free.
     pub(in crate::kernel) fn int64_width_interval(&self) -> Option<(i64, i64)> {
-        match self {
-            Self::Int64Constant(value) => Some((*value, *value)),
-            Self::Int64From32(_) => Some((i64::from(i32::MIN), i64::from(i32::MAX))),
-            Self::Int64FromUInt32(_) => Some((0, i64::from(u32::MAX))),
-            Self::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::BitwiseAnd,
-                left,
-                right,
-            } => {
-                let mask = left.int64_as_const().or_else(|| right.int64_as_const())?;
-                (mask >= 0).then_some((0, mask))
-            }
-            _ => None,
-        }
+        crate::kernel::MachineOperandView::Legacy(self).int64_width_interval()
     }
 
     // Local structural bounds only: do not search assumptions or traverse an
@@ -1058,7 +1043,7 @@ fn int64_constant(term: &Bitvector32Term) -> Option<i64> {
                 }
                 MachineBinaryOp::ShiftRight => {
                     let count = int64_shift_count_constant(right)?;
-                    (count < 64).then_some(left >> count)
+                    (count < 64).then(|| left >> count)
                 }
                 MachineBinaryOp::BitwiseAnd => Some(left & int64_constant(right)?),
                 MachineBinaryOp::BitwiseOr => Some(left | int64_constant(right)?),
@@ -3789,15 +3774,11 @@ impl ConditionTerm {
         }
     }
 
-    /// The equality of two `uint32` words: [`Self::equal`] filed at
-    /// `uint32`, which is the same fact as at `int32` (rule K6;
-    /// [`ConditionTerm::fact_format`]) and prints its operands as `uint32`.
-    #[track_caller]
+    /// The equality of two `uint32` values, a `uint32` term as written. It
+    /// is the same fact as the `int32` equality of the same bits at the
+    /// fact-identity and lookup-key level only (rule K6,
+    /// [`ConditionTerm::comparison_fact`]).
     pub(crate) fn uint32_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
-        audit::record(
-            audit::WordIdentity::UInt32EqualityAtInt32,
-            std::panic::Location::caller(),
-        );
         match Self::equal(left, right) {
             Self::Compare {
                 format: _,
@@ -6079,12 +6060,12 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
             ConditionTerm::AlgebraicEqual(right.clone(), left.clone())
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: *format,
             relation: CompareRelation::Equal,
             left: right.clone(),
             right: left.clone(),

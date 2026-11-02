@@ -50,7 +50,6 @@ int32 last_element(int32 arr[], int32 n, int32 cap) {
                     at(region(5).entry, i) < at(region(5).entry, n);
                 };
             }
-            close_invariants() by solve();
         }
     }
     step();

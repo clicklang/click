@@ -12,6 +12,7 @@ mod rust_syntax;
 mod rust_trait_objects;
 mod spec_arithmetic;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
+pub(in crate::surface) use spec_arithmetic::mixed_narrow_arithmetic_message;
 pub(super) use spec_arithmetic::written_integer_parameters;
 pub(super) mod tokenizer;
 use cpp_model::rewrite_model_accessors;
@@ -120,6 +121,7 @@ const CONTRACT_LET_RECURSION_LIMIT: usize = 8;
 /// `guarded_by` associated a resource with a mutex field by declaration. A
 /// mutex's protected resource now comes from its checked initialization, so
 /// the spelling is refused with that direction.
+const RETIRED_CLOSE_INVARIANTS: &str = "`close_invariants` is retired: a `preserve` script closes the loop's invariants and `decreases` when it reaches the back edge, as a function proof closes its `ensures` at the exit, each by `solve()`; prove one that needs help with `have <invariant> by { ... }` before the back edge";
 const RETIRED_GUARDED_BY: &str = "`guarded_by` is retired: a mutex protects the resource its checked `pthread_mutex_init` step deposits, so remove the clause and pass the resource to that step";
 /// `special` named the pointer, finite-float, definedness, and exact
 /// Integer rule family of `arithmetic_certificate`; the family is now spelled
@@ -5032,7 +5034,11 @@ impl Parser {
             // arithmetic on a machine value has no meaning.
             let value = match &click_type {
                 Some(ClickType::Integer) => self.at_integer_position(value),
-                Some(ClickType::C(c_type)) => self.typed_let_literal(&name, *c_type, value)?,
+                Some(ClickType::C(c_type)) => {
+                    let value = self.typed_let_literal(&name, *c_type, value)?;
+                    self.refuse_mixed_narrow_arithmetic(&name, *c_type, &value)?;
+                    value
+                }
                 Some(_) => value,
                 None => {
                     self.refuse_untyped_machine_arithmetic(&name, &value)?;
@@ -9911,14 +9917,7 @@ impl Parser {
                 return self.parse_step_proof(step);
             }
             "close_invariants" => {
-                self.expect_empty_tactic_args(&name)?;
-                if self.peek_ident() == Some("by") {
-                    self.position += 1;
-                    let body = self.parse_close_invariants_body()?;
-                    self.skip_redundant_semicolon();
-                    return Ok(ProofTactic::CloseInvariantsBy(body));
-                }
-                ProofTactic::CloseInvariants
+                return Err(self.error(RETIRED_CLOSE_INVARIANTS));
             }
             "step_until" => {
                 self.expect(Token::LParen)?;
@@ -10544,24 +10543,6 @@ impl Parser {
                 "expected a proof after a step's `by`, got {token}: write one tactic call or a block `{{ ... }}`"
             ))),
             None => Err(self.error("expected a proof after a step's `by`, got end of input")),
-        }
-    }
-
-    // `close_invariants() by T(...);` is the one-step body
-    // `close_invariants() by { T(...); }`, as after `have` and `ensures`.
-    #[inline(never)]
-    fn parse_close_invariants_body(&mut self) -> Result<Vec<ProofTactic>, ClickError> {
-        if self.peek() == Some(&Token::LBrace) {
-            return self.parse_possibly_empty_tactic_block();
-        }
-        match self.peek() {
-            Some(Token::Ident(_)) => Ok(vec![self.parse_implicit_proof_tactic()?]),
-            Some(token) => Err(self.error(format!(
-                "expected a proof after `close_invariants() by`, got {token}: write one tactic call or a block `{{ ... }}`"
-            ))),
-            None => Err(self.error(
-                "expected a proof after `close_invariants() by`, got end of input",
-            )),
         }
     }
 
@@ -16793,11 +16774,6 @@ mod tactic_classification_tests {
         ("intro-as", "intro() as name;"),
         ("enumerate", "enumerate();"),
         ("contradiction", "contradiction(x == 1);"),
-        ("close-invariants", "close_invariants();"),
-        (
-            "close-invariants-by",
-            "close_invariants() by { normalize(); }",
-        ),
         ("rewrite", "rewrite(x == 1);"),
         ("transport", "transport(x == 1, y == 1);"),
         (

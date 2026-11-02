@@ -40,18 +40,10 @@ int32 loop_preserve_branch(int32 n) {
             if i < 0 {
                 step();
                 step();
-                close_invariants() by {
-                    both { solve(); }
-                    and {
-                        both { solve(); }
-                        and { contradiction(at(region(3).entry, i) < 0); }
-                    }
-                }
             } else {
                 have to_integer(i + 1) >= 0;
                 step();
                 step();
-                close_invariants() by solve();
             }
         }
     }

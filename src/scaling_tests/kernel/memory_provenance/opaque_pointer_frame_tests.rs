@@ -488,3 +488,72 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn complete_word_frame_reuses_named_versions_across_observations() {
+    let costs = [4u32, 16, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = Pointer::symbolic(Variable(9_950_001));
+        let write = Pointer::symbolic(Variable(9_950_002));
+        let base = intern_c_memory(CMemory::new());
+        let mut observed = base.memory().clone();
+        for index in 0..size {
+            observed = observed.materialize_cell_from_source(
+                field.offset_by_bytes(index * 8),
+                CType::UInt64,
+                base.clone(),
+            );
+        }
+        let before = intern_c_memory(observed);
+        // This is the actual read producer, not a warm-up of the query:
+        // its designation names the pre-observation version of the word.
+        let value = CPointerValue::from_read(
+            Pointer::integer_address(Bitvector32Term::UInt64Constant(8)),
+            CType::Int32Pointer,
+            &before,
+            &field,
+        );
+        let after = intern_c_memory(before.memory().clone().store(
+            write.clone(),
+            CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+        ));
+        let target = CPointerValue::from_read(
+            Pointer::integer_address(Bitvector32Term::UInt64Constant(8)),
+            CType::Int32Pointer,
+            &after,
+            &field,
+        );
+        let range = |p| {
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                p,
+                0u32.into(),
+                1u32.into(),
+                8,
+            ))
+        };
+        let context = PureFactContext::new().assume_proposition(Proposition::CResourceSeparate {
+            left: Box::new(range(write)),
+            right: Box::new(range(field.clone())),
+        });
+        let overwritten = intern_c_memory(
+            before
+                .memory()
+                .clone()
+                .store(field.offset_by_bytes(4), CValue::UInt32(0u32.into())),
+        );
+        let changed = Pointer::loaded_value(&overwritten, &field);
+        let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
+            complete_pointer_reads_equal_across_frame(
+                value.designation(),
+                target.designation(),
+                &context,
+            ) && !complete_pointer_reads_equal_across_frame(value.designation(), &changed, &context)
+        });
+        assert!(holds, "observation count {size}");
+        work
+    });
+    assert!(
+        costs[0] > 0 && costs.iter().all(|work| *work <= costs[0] + 128),
+        "{costs:?}"
+    );
+}

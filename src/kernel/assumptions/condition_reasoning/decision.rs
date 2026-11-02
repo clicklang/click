@@ -422,6 +422,15 @@ impl PureFactContext {
         {
             return Some(true);
         }
+        // These range rules read the original comparison's operand views.
+        // Dispatch them before the native compatibility conversion so shared
+        // arithmetic does not need a boxed tree to answer a range query.
+        if let Some(value) = self.decide_masked_order(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_widened_sum_bound(condition) {
+            return Some(value);
+        }
         // An Integer comparison of exact observations of one machine type
         // has the truth of its native comparison, which the machine
         // reasoning below decides (`native_comparison_of_integer_observation`).
@@ -455,16 +464,13 @@ impl PureFactContext {
         if let Some(value) = self.decide_indexed_greater_equal(condition) {
             return Some(value);
         }
-        if let Some(value) = self.decide_masked_order(condition) {
-            return Some(value);
-        }
-        if let Some(value) = self.decide_widened_sum_bound(condition) {
-            return Some(value);
-        }
         if let Some(value) = self.decide_unsigned_order_of_nonnegative_signed(condition) {
             return Some(value);
         }
         if let Some(value) = self.decide_by_sign_bit(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_by_sign_cast_division(condition) {
             return Some(value);
         }
         // Wide comparisons may use a recorded constant equality. Consult only

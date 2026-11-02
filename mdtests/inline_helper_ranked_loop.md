@@ -43,13 +43,6 @@ int32 drain_to_zero(int32 value) {
         preserve by {
             have 0 <= to_integer(value - 1);
             step();
-            close_invariants() by {
-                both { solve() using { 0 <= value; }; }
-                and {
-                    both { solve() using { 0 <= value; }; }
-                    and { solve() using { 0 <= value; }; }
-                }
-            }
         }
     }
     step();

@@ -867,7 +867,8 @@ integer type, and `unsigned_abs` of a signed one, by the callee's identity and
 signature. A `checked_*` result is the library's `Option`. `o.unwrap_or(d)` of
 an `Option` of a scalar calls `Option::unwrap_or` the same way, whose contract
 states its result with `option::unwrap_or(o, d)`; that module is implicit, so
-a sidecar needs no import. `unwrap` and `expect` are described under
+a sidecar needs no import. `Result::unwrap_or` is the same with
+`click::result::unwrap_or` ([Result values](#result-values)). `unwrap` and `expect` are described under
 [Panics](#panics). The library
 function is opaque until `unfold` gives its definition, so a claim that needs
 the value, `result <= a`, unfolds it, and a proof of one arm states the value
@@ -1003,7 +1004,8 @@ its goal, ``could not show `x > 3u32` ``. A message with formatted arguments is
 named `formatted message`. `o.unwrap()` and `o.expect("...")` of an `Option` of
 a scalar call `Option::unwrap<T>` and `Option::expect<T>`, whose contract
 requires `o != Option<T>::None` and ensures `o == Option<T>::Some(result)`;
-`expect`'s message is not passed. `assert_eq!(a, b)` asserts `a == b` and
+`expect`'s message is not passed. `Result`'s `unwrap` and `expect` are
+described under [Result values](#result-values). `assert_eq!(a, b)` asserts `a == b` and
 `assert_ne!(a, b)` asserts `a != b` of scalar operands, named ``Rust panic
 `assertion left == right failed` `` or `left != right` whatever their own
 message; the pair of borrows the macro compares through, `(&a, &b)`, reads
@@ -1608,6 +1610,48 @@ over its local's `Some(x)`. A fact a call adds that matches on the enum behind
 a reference the facts already equate to a constructor is kept reduced, as for
 a variable. The same fixture borrows a local of a type parameter in
 `replaced<T: Copy>` and a `u32` local in `bumped`.
+
+## Result values
+
+A Rust `Result<T, E>` whose `T` and `E` are each `i32`, `u8`, `u16`, `u32`,
+`usize` or `bool`, or in generic code the function's own type parameters, is a
+value of the library's [`spec enum Result<T, E>`](library/index.md#results):
+`Ok(x)` and `Err(e)` construct it, and `match`, `if let` and `matches!` on it
+step and split as on any enum. A sidecar writes the type as Rust does,
+`Result<u32, u8>`, and constructs `Result<u32, u8>::Ok(x)`; a pattern is
+`Result::Ok(v)`. A `Result` of another type, such as a crate enum or a
+record, is refused by name.
+
+`r?` on such a `Result` returns `r`'s `Err` unchanged and otherwise reads
+`Ok`'s payload: the importer checks that the compiler's `branch` and
+`from_residual` calls are the library's own `impl Try for Result<T, E>` and
+`impl FromResidual<Result<!, E>> for Result<T, F>`, and rewrites them to the
+`match` they define. Only a `?` whose function returns the same error type,
+`F == E`, is read, where the `From::from` the library applies is the
+identity; one that converts the error is refused ("`?` that converts the
+error type with `From`").
+
+`r.unwrap()` and `r.expect("...")` of a `Result` of scalars call
+`Result::unwrap<T, E>` and `Result::expect<T, E>`, whose contract requires
+`exists (value: T) { r == Result<T, E>::Ok(value) }` and ensures
+`r == Result<T, E>::Ok(result)`; the panic on `Err` is that requirement, and
+`expect`'s message is not passed. A caller that knows `r ==
+Result<u32, u8>::Ok(5u32)` meets the requirement by `solve`, which takes the
+known constructor's payload as the witness, and a contract that reads the
+result through `match r { .. }` reduces the `match` by the call's
+`r == Ok(result)`.
+`r.unwrap_or(d)` calls `Result::unwrap_or`, whose contract is
+`ensures result == click::result::unwrap_or(r, d);`.
+
+[`design/charon-trial/result-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-values/results.click)
+verifies `ok_if`, `or_zero` and a caller `round` composing them, `plus_one`
+(`let v = r?; Ok(v + 1)`), `quarter`, whose `?` on `divide(x, 2)` feeds a
+second `divide`, `error_code` (`if let Err(code) = r`), a generic `same<T, E>`
+with a caller at `Result<i32, bool>`, and `must`, `must_say` and `or_default`
+over `unwrap`, `expect` and `unwrap_or`; each false claim mutated into the
+sidecar is refused (`tests/rust_import.rs::charon_result_values_read_as_click_results`).
+Other `Result` methods, `map_err`, and `?` across error types remain later
+work.
 
 ## Enums and `match`
 

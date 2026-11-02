@@ -347,8 +347,13 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
                 ("narrow operator", "narrow shift")
             };
             // A shift count is its own operand: C promotes it separately.
+            // A native narrow shift's count is a 32-bit word (rule N).
             if matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight) {
-                term_width(right)?;
+                if width == Bits64 {
+                    term_width(right)?;
+                } else {
+                    expect("narrow shift count", Bits32, right)?;
+                }
                 operands(shift_site, width, &[left])
             } else {
                 operands(site, width, &[left, right])

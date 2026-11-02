@@ -2192,6 +2192,17 @@ pub fn c_bool_value(expression: CExpression) -> CExpression {
     result
 }
 
+/// A Rust operator on 8- or 16-bit operands at their type `target_type`
+/// (decision G4): `operation` is the operator over the operands as written,
+/// and its value is the native node of that type, with no promotion.
+pub fn c_narrow_arithmetic(operation: CExpression, target_type: CType) -> CExpression {
+    let mut result = c_cast(operation, target_type);
+    if let CExpression::Cast { integer_mode, .. } = &mut result {
+        *integer_mode = CIntegerCastMode::NarrowArithmetic;
+    }
+    result
+}
+
 /// The C++20 uint64-to-int64 rule, distinct from an ordinary C cast.
 pub fn c_uint64_bits_to_int64(expression: CExpression) -> CExpression {
     let mut result = c_cast(expression, CType::Int64);
@@ -6831,6 +6842,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
             return CFunctionContractExecution::failed(reason);
         }
     };
+    let base_assumptions = base_assumptions.assume_proposition(environment.byte_order_fact());
     let Some(resource_condition_cases) = crate::instrumentation::measure_operation(
         function.name(),
         "contract certification",

@@ -65,7 +65,7 @@ documentation inventory keep the following accepted words synchronized.
 | `and`, `or`, `implies`, `not`, `in` | Proposition connectives and sequence membership. `and`, `or`, and `implies` have increasing precedence except right-associative `implies`; `in` has comparison precedence. |
 | `forall`, `exists` | Universal and existential quantifiers; `exists (x: T, y: U) { P }` binds multiple variables. |
 | `all`, `any`, `fold` | Range proposition and expression methods. |
-| `defined`, `viewable`, `same_object`, `separate`, `aligned` | Definedness, readable-memory, pointer-provenance, resource-separation, and pointer-alignment propositions. |
+| `defined`, `viewable`, `same_object`, `separate`, `aligned`, `little_endian` | Definedness, readable-memory, pointer-provenance, resource-separation, pointer-alignment, and target-byte-order propositions. |
 | `old`, `at`, `c` | Snapshot selection and embedded C-fragment forms. |
 | `sizeof`, `byte_offset`, `address` | Supported scalar, pointer, and struct-layout sizes, byte-granularity pointer-offset expressions, and the LP64 integer representation of an object pointer. |
 | `load_int32`, `load_uint8`, `load_uint16`, `load_uint32`, `load_int64`, `load_uint64`, `load_int32_pointer`, `load_uint8_pointer`, `load_uint16_pointer`, `load_int32_pointer_pointer`, `load_uint8_pointer_pointer`, `load_uint16_pointer_pointer` | Typed memory-load expressions used by checked expansion when no higher-level source spelling is available. |
@@ -79,11 +79,12 @@ documentation inventory keep the following accepted words synchronized.
 | `assumption`, `extract`, `normalize`, `intro`, `enumerate`, `contradiction` | Explicit proposition tactics. |
 | `sorry` | Dev-only proof hole `sorry()`. It parses only under `click verify --allow-sorry`; see [Dev-only proof hole](../cli/verify.md#dev-only-proof-hole). A user-defined tactic may not take the name. |
 | `auto`, `arithmetic`, `execute`, `execute_until` | Removed tactic spellings. The parser refuses each with a diagnostic that names its replacement: the omitted proof for `by auto();` and `solve();` for a written `auto();`; `solve() using { ... }` for `arithmetic() using { ... }` and `solve() using {}` for bare `arithmetic()`; the implicit tail, or `step_until(function.exit)` to work at function exit, for `execute()`; and `step_until` for `execute_until`. |
+| `close_invariants` | Retired loop tactic, still reserved. The parser rejects it with `` `close_invariants` is retired ``; a loop's back edge now closes each bundle member with `solve()`, helped by `have` facts proved before it. |
 | `split`, `left`, `right` | Retired tactic spellings. Unless a user-defined tactic has the name, the parser rejects each with a diagnostic that names `assumption()`. |
 | `transport_certificate`, `preserve`, `transitive` | Explicit transport certificate: import facts with `premise`, preserve a read over a cited transition, compose equalities, and select `conclusion`. |
 | `changes_only` | Transition proposition naming recorded before/after snapshots and the resources allowed to change. |
 | `arithmetic_certificate` | Starts the typed arithmetic-certificate envelope. The canonical mathematical family is `arithmetic_certificate { ... }`; checked machine families are `arithmetic_certificate signed_int32 { ... }` and `arithmetic_certificate rules { ... }`. Its step words are listed under [Arithmetic-certificate words](#arithmetic-certificate-words). |
-| `rewrite`, `transport`, `instantiate`, `solve`, `induct`, `close_invariants` | Equality, snapshot, quantifier, closing, induction, and loop-proof tactics. |
+| `rewrite`, `transport`, `instantiate`, `solve`, `induct` | Equality, snapshot, quantifier, closing, and induction tactics. |
 | `as`, `else`, `ensuring`, `then` | Names and branches inside structural proof forms. `as` also introduces the target contract's proof instances on an `executes` conclusion. |
 | `function`, `loop`, `region`, `statement`, `call`, `assignment`, `read`, `back_edge`, `entry`, `exit` | Program-region and program-point selectors. Each names a region. `region(N)` is the `N`th atomic region, one `step()` crosses; `statement(i)` is a statement as written, and a chain continues it with `.statement(j)` and ends it with `.region(j)`, `.call(f, j)`, `.assignment(x, j)` or `.read(j)`. Unchained `assignment(local, N)` and `read(N)`, and `back_edge()` or `loop(i).back_edge()`, are execution targets only. |
 

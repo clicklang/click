@@ -7,14 +7,14 @@ join across the back edge — so the loop rule is certified from two paths and
 the preservation certificate is reassembled as the `match` that produced them.
 
 The `Neg` arm of this `preserve` has been written only as far as its
-`unfold`, while the `Pos` arm after it reaches its back edge with a closer
-that proves nothing. Both are wrong, but only one is a mistake: a script still being
+`unfold`, while the `Pos` arm after it reaches its back edge with a `have`
+whose proof fails. Both are wrong, but only one is a mistake: a script still being
 written is reported by the frontier it reached, and a finished path that does
 not close the invariants is a failed proof. The finished arm's back edge is
 checked first, so its failure is what the author sees, and the unfinished
 sibling is reported once that is fixed. Before, the frontier report for the
 unfinished arm was emitted the moment the region met it, so the arm after it
-never ran and a wrong `close_invariants` there stayed silent until every arm
+never ran and a wrong `have` there stayed silent until every arm
 was finished.
 
 ```c filename=preserve_finished_arm_checked_before_frontier.c
@@ -78,9 +78,7 @@ void spin(struct cell* node, int32 n) {
                     unfold(c);
                     step();
                     let c = fold(cell(node), { model: Sign::Pos(value) });
-                    close_invariants() by {
-                        normalize();
-                    }
+                    have c.model == old(c.model) by { normalize(); }
                 },
             }
         }

@@ -3407,7 +3407,7 @@ fn execute_verified_function_applications_with_suspension(
                 && interface.aggregate_return_mode() != CAggregateReturnMode::Construction
                 && interface.construction_parameter().is_none()
             {
-                effect.resource_effect_bound = transfer.resource_effect_bound.clone();
+                effect.resource_effect_bound = transfer.resource_effect_bound.clone().map(Arc::new);
             }
             facts.push(effect);
         }
@@ -13842,7 +13842,8 @@ pub(crate) struct ResourceInstanceRewriteResult {
 /// of refusing; anything else keeps the generic conditional-proof
 /// diagnostic.
 fn is_pure_undefined_behavior_condition(proposition: &Proposition) -> bool {
-    if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition).is_some()
+    if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
+        .is_some()
     {
         return true;
     }

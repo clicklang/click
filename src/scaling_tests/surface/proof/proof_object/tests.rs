@@ -103,7 +103,12 @@ fn same_block_offset_rewrite_work(
         },
     };
     let remaining = Bitvector32Term::Variable(Variable(8_179_101));
-    let k = Bitvector32Term::UInt32From64(Box::new(remaining.clone()));
+    // `k as uint32 as int32`: σ of the low word, as written.
+    let k = Bitvector32Term::sign_cast32(
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int32,
+        Bitvector32Term::UInt32From64(Box::new(remaining.clone())),
+    );
     let shifted = Pointer {
         block: base.block.clone(),
         offset: PointerOffsetTerm::Add(

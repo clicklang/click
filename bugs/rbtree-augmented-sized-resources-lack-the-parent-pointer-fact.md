@@ -154,3 +154,45 @@ Both rotation callbacks remain in the proof. This repairs the left-right
 three-node insertion without changing the C, contracts, resources, or verifier.
 The mirrored double rotation, remaining context sidecars, and directory-wide
 audit are still outside this completed repair; keep the broader report open.
+
+## Mirrored double rotation
+
+All four selected proofs in `rbtree_size_insert_mirrored_double_rotation.click`
+now verify, including a root-case contract for `__rb_rotate_set_parents`.
+The insertion proof also expands and rechecks in the retained verification
+session. The C and the three original insertion contracts are unchanged.
+
+Small owned resources retain the complete parent-word relationships and the
+unchanged right link across writes. Opening and immediately refolding the
+right subtree exposes its node identity before retaining that link. The root
+helper contract proves both updated parent words and the root link separately;
+explicit color bounds retain the pointer representation through the tagged
+store. The outer proof uses those postconditions and states the promoted
+root's typed null-parent relationship before folding.
+
+This is a proof repair, with no verifier change. The remaining context sidecars
+and directory-wide audit still leave the broader report open.
+
+## Context color flip and black-parent stop
+
+All three selected proofs in `rbtree_size_insert_context_color_flip.click`
+now verify. The proof retains the root pointer and all six child links in an
+owned frame across the recolorings. It retains the grandparent's parent word
+until the parent read, then retains each newly black parent word across the
+remaining stores before refolding the subtrees. The C and original contracts
+are unchanged; this part is a proof repair.
+
+The grouped insertion proof's expansion exposed a separate serialization bug:
+a back-edge certificate split into guarded conjunction members still printed
+the retired `close_invariants` syntax. Expansion now emits those members as
+ordered `have` proofs, preserving each member's body and the dependencies on
+earlier members. The expanded source rechecks.
+
+`rbtree_size_insert_context_stop.click` already verifies all three selected
+proofs on `2bab9ff83`, without changes.
+
+The mirrored context color flip now also verifies all three selected proofs.
+It uses the same owned frames across its recoloring calls, with the frame
+definitions shared by both sidecars in `rbtree_size_context_flip_frames.click`.
+Its C and contracts are unchanged, and the insertion proof expands and rechecks.
+Other remaining sidecars and the directory-wide audit still leave this report open.

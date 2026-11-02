@@ -6449,29 +6449,11 @@ pub(super) fn prepare_loop_top_state(
     // requirements, so a folded matched instance publishes the cells of the
     // arm they select. That is what lets a guard such as `root->left != 0`
     // read through the focused subtree the binder holds.
-    let guard_state = with_selected_arm_views(
-        &top_state,
-        &top_state,
-        invariant_checks,
-        definitions,
-        assumptions,
-        budget,
-    )?;
-    let body_state = with_selected_arm_views(
-        &body_state,
-        &top_state,
-        invariant_checks,
-        definitions,
-        assumptions,
-        budget,
-    )?;
-    // The loop's exit outcome is `top`. Holding an instance lets C read the
-    // cells of the arm its model selects, and after the loop the invariants
-    // are what select it, so `top` carries those views too: attached to the
-    // owned instance, so that they leave the head only with their owner and
-    // retire with it.
+    // Publish owned projections with their support before adding any remaining
+    // arm views. A bare view inserted first would make the attachment pass
+    // skip that cell, leaving call recovery with no supporting occurrence.
     let guard_state = with_selected_arm_views_attached(
-        guard_state,
+        top_state.clone(),
         &top_state,
         invariant_checks,
         definitions,
@@ -6486,6 +6468,23 @@ pub(super) fn prepare_loop_top_state(
         assumptions,
         budget,
     )?;
+    let guard_state = with_selected_arm_views(
+        &guard_state,
+        &top_state,
+        invariant_checks,
+        definitions,
+        assumptions,
+        budget,
+    )?;
+    let body_state = with_selected_arm_views(
+        &body_state,
+        &top_state,
+        invariant_checks,
+        definitions,
+        assumptions,
+        budget,
+    )?;
+    // The exit also keeps each observation attached to its owned instance.
     let premise_state = top_state.clone();
     let top_state = with_selected_arm_views_attached(
         top_state,
@@ -6643,9 +6642,27 @@ fn with_selected_arm_views(
     if views.is_empty() {
         return Ok(state.clone());
     }
-    Ok(state
-        .clone()
-        .with_resource_context(state.resources().clone().unchecked_with_facts(views)))
+    Ok(with_arm_views_preserving_support(state, views))
+}
+
+// Re-publishing a view must not add an unsupported copy beside an existing
+// owned projection: that copy could survive consumption of the owner. Each
+// explicit output view uses the exact membership index, without scanning
+// owners or other representations of the view.
+fn with_arm_views_preserving_support(state: &CState, views: Vec<CResourceFact>) -> CState {
+    let mut resources = state.resources().clone();
+    for view in views {
+        crate::instrumentation::record_deterministic_work(1);
+        if !resources.contains_exact_representation(&view) {
+            resources = resources.unchecked_with_fact(view);
+        }
+    }
+    state.clone().with_resource_context(resources)
+}
+
+#[cfg(test)]
+mod arm_view_support_tests {
+    include!("../scaling_tests/kernel/loops/arm_view_support.rs");
 }
 
 /// Builds the resource context a declaring loop's body executes with.
@@ -8503,9 +8520,7 @@ fn with_guard_prefix_arm_views(
     if views.is_empty() {
         return state.clone();
     }
-    state
-        .clone()
-        .with_resource_context(state.resources().clone().unchecked_with_facts(views))
+    with_arm_views_preserving_support(state, views)
 }
 
 /// One evaluation of a whole guard at one state.

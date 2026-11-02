@@ -5,7 +5,7 @@ the ranking inequalities, so the back-edge bundle is a right-nested chain of
 five conjuncts, and each of the first three needs its own short derivation
 from the body's assignments.
 
-`close_invariants()` must split the chain and close each conjunct, rather than
+The back edge's closer must split the chain and close each conjunct, rather than
 first running the premise-selecting derivation, the indexed goal-equality
 rewrite, and the other whole-goal strategies over the complete chain and then
 again over every suffix of it as the structural closure descends. Those
@@ -13,7 +13,7 @@ strategies still run on each conjunct, and still run on the whole goal when
 the split misses, so the closer proves the same goals, but a chain of `n`
 conjuncts now costs work linear in `n` instead of quadratic.
 
-```c filename=close_invariants_splits_a_conjunction_chain_first.c
+```c filename=the_back_edge_splits_a_conjunction_chain_first.c
 int32 count_up(int32 n) {
     int32 i = 0;
     int32 run = 0;
@@ -27,7 +27,7 @@ int32 count_up(int32 n) {
 ```
 
 ```click
-verifying "close_invariants_splits_a_conjunction_chain_first.c";
+verifying "the_back_edge_splits_a_conjunction_chain_first.c";
 
 int32 count_up(int32 n) {
     requires 0 <= n;
@@ -62,7 +62,6 @@ int32 count_up(int32 n) {
                     0 <= n;
                 };
             }
-            close_invariants();
         }
     }
     step();

@@ -719,6 +719,14 @@ fn rbtree_sized_uncle_rotation_origin_order_and_expansion_recheck() {
     check_sized_context_rotation_retained_expansion(SIDECAR);
 }
 
+#[test]
+#[ignore = "nightly: verifies and replays the mirrored sized root double rotation"]
+fn rbtree_sized_mirrored_double_rotation_retained_session_expansion_rechecks() {
+    check_sized_context_rotation_retained_expansion(
+        "rbtree_size_insert_mirrored_double_rotation.click",
+    );
+}
+
 fn check_sized_context_rotation_retained_expansion(sidecar: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("examples/rbtree/rbtree-augmented")
@@ -2994,27 +3002,20 @@ fn replay_cell_source_example(example: &str, sidecar: &str, claim: &str) {
     let path = root.join(sidecar);
     let source = fs::read_to_string(&path).unwrap();
     let project = read_click_project_at_root(&path, &source, &root).unwrap();
-    let CInput::Bundle(inputs) = read_c_inputs_for_project(&path, &source, &project).unwrap()
-    else {
-        panic!("C bundle expected");
-    };
-    let sources = source_refs(&inputs);
-    let expanded = click::surface::expand_project_claim_source_by_label(
-        &project,
-        &ProgramInputs::Bundle(sources.clone()),
-        claim,
-    )
-    .unwrap_or_else(|error| {
-        panic!(
-            "{example}: {}\n{}",
-            error.report(),
-            error.trace_context_report().unwrap_or_default()
-        )
-    });
+    let prepared = read_c_inputs_for_project(&path, &source, &project).unwrap();
+    let inputs = prepared.program_inputs();
+    let expanded = click::surface::expand_project_claim_source_by_label(&project, &inputs, claim)
+        .unwrap_or_else(|error| {
+            panic!(
+                "{example}: {}\n{}",
+                error.report(),
+                error.trace_context_report().unwrap_or_default()
+            )
+        });
     click::surface::without_implicit_auto_for_claim(claim, || {
         click::surface::verify_project_functions(
             &project.with_entry_source(expanded),
-            &ProgramInputs::Bundle(sources.clone()),
+            &inputs,
             [claim.strip_suffix(".contract").unwrap().to_string()],
         )
         .map(|_| ())
@@ -3061,6 +3062,28 @@ fn pointer_history_repair_arena_replays() {
     for name in ["arena_alloc", "arena_free"] {
         click::surface::with_proof_trace(name, || {
             replay_cell_source_example("arena", "arena_cells.click", &format!("{name}.contract"));
+        });
+    }
+}
+
+#[test]
+#[ignore = "nightly: selected history-removal example expansion and cold replay"]
+fn separation_history_repairs_expand_and_replay() {
+    for (example, sidecar, function) in [
+        ("arena", "arena_cells.click", "arena_free"),
+        ("owned-vector", "vector.click", "allocated_vector_push"),
+        (
+            "marked-linked-list",
+            "marked_linked_list.click",
+            "list_count_live",
+        ),
+        ("cpp-stack", "stack.click", "pushed_size"),
+    ] {
+        if std::env::var("CLICK_FRAME_REPAIR_EXAMPLE").is_ok_and(|selected| selected != example) {
+            continue;
+        }
+        click::surface::with_proof_trace(function, || {
+            replay_cell_source_example(example, sidecar, &format!("{function}.contract"));
         });
     }
 }

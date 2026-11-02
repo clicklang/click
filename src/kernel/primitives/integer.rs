@@ -5,8 +5,12 @@
 //! and overflow semantics.  Mathematical integers have no C representation.
 
 use super::*;
+mod machine_view;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
+pub(crate) use machine_view::{
+    MachineOperandView, clear_shared_machine_variable_cache, shared_machine_syntax_variables,
+};
 use num_bigint::BigInt;
 #[cfg(test)]
 use num_traits::ToPrimitive;
@@ -506,6 +510,20 @@ impl Clone for SharedMachineIntegerTerm {
     }
 }
 
+// Retained observations have exact, format-tagged identities. Hashing or
+// comparing a lookup key must not request the boxed operand.
+impl PartialEq for SharedMachineIntegerTerm {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+impl Eq for SharedMachineIntegerTerm {}
+impl std::hash::Hash for SharedMachineIntegerTerm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
+    }
+}
+
 thread_local! {
     // Reuse explicit boxed imports within one verification, but never make a
     // later verification's work depend on an earlier session's warm interner.
@@ -611,18 +629,39 @@ impl SharedMachineIntegerTerm {
     /// through this. Computed once per interned observation: a bounded walk
     /// through at most three conversions, one interning of the operand.
     pub fn value_reading(&self) -> Option<&IntegerTerm> {
+        // Reading work is session-local even when the interned observation's
+        // OnceLock survives an earlier verification. Warm global nodes must
+        // not change the work charged for otherwise identical input.
+        let shared_reading = self.shared_operand().map(|root| {
+            let reading = if matches!(
+                root.node(),
+                KernelTermNode::MachineCast { .. } | KernelTermNode::MachineLiteral(_)
+            ) {
+                machine_view::shared_value_reading(self.ty(), root)
+            } else {
+                Some((self.ty(), root.clone()))
+            };
+            (root, reading)
+        });
         self.0
             .reading
             .get_or_init(|| {
-                if self.shared_operand().is_some_and(|term| {
-                    matches!(
-                        term.node(),
-                        KernelTermNode::Variable(_)
-                            | KernelTermNode::MachineBinary { .. }
-                            | KernelTermNode::MachineUnary { .. }
-                    )
-                }) {
-                    return None;
+                if let Some((root, reading)) = shared_reading {
+                    let (ty, read) = reading?;
+                    if let KernelTermNode::MachineLiteral(value) = read.node() {
+                        return Some(IntegerTerm::constant(
+                            ty.constant_from_term(&value.legacy_term())?.to_integer(),
+                        ));
+                    }
+                    if ty == self.ty() && read.id() == root.id() {
+                        return None;
+                    }
+                    let read = SharedMachineIntegerTerm::from_shared(
+                        ty,
+                        read.with_machine_observation_type(ty),
+                    )?;
+                    let _ = read.0.reading.set(None);
+                    return Some(IntegerTerm::Machine(read));
                 }
                 let reading = machine_value_reading(self.ty(), self.value())?;
                 match &reading {
@@ -1316,7 +1355,11 @@ pub(crate) fn machine_value_reading(
     value: &Bitvector32Term,
 ) -> Option<ValueReading<'_>> {
     let value = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
-        value.word32()
+        // Rule W: σ keeps its operand's 32 bits, so σ(x) observed at
+        // either 32-bit format is `x` read there.
+        value
+            .sign_cast32_operand()
+            .map_or(value, |(_, operand)| operand)
     } else {
         value
     };

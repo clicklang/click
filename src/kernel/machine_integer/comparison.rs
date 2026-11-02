@@ -5,7 +5,8 @@
 
 use super::{Relation, identity, range, representation};
 use crate::kernel::{
-    Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition, SharedIntegerTerm,
+    Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition,
+    SharedIntegerTerm, SharedMachineIntegerTerm,
 };
 
 /// An Integer comparison as `left REL right` with its truth folded in:
@@ -45,6 +46,92 @@ pub(crate) fn native_comparison_of_integer_observation(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(ConditionTerm, bool)> {
+    native_comparison_view(condition, value)?.boxed_condition()
+}
+
+/// A comparison query retaining its original shared operand identities.
+/// Boxed conditions are an explicit compatibility output for unmigrated callers.
+#[derive(Clone)]
+pub(crate) struct NativeComparisonView<'a> {
+    pub(crate) format: MachineIntegerType,
+    pub(crate) relation: Relation,
+    pub(crate) operands: [ComparisonOperand<'a>; 2],
+}
+
+#[derive(Clone)]
+pub(crate) enum ComparisonOperand<'a> {
+    Observation(SharedMachineIntegerTerm),
+    Constant(Bitvector32Term),
+    Written(&'a Bitvector32Term),
+}
+
+impl ComparisonOperand<'_> {
+    pub(crate) fn operand_view(&self) -> crate::kernel::MachineOperandView<'_> {
+        match self {
+            Self::Observation(machine) => machine.operand_view(),
+            Self::Constant(value) => crate::kernel::MachineOperandView::Legacy(value),
+            Self::Written(value) => crate::kernel::MachineOperandView::Legacy(value),
+        }
+    }
+
+    pub(super) fn boxed_value(&self) -> &Bitvector32Term {
+        match self {
+            Self::Observation(machine) => machine.value(),
+            Self::Constant(value) => value,
+            Self::Written(value) => value,
+        }
+    }
+}
+
+impl NativeComparisonView<'_> {
+    fn boxed_condition(&self) -> Option<(ConditionTerm, bool)> {
+        representation::comparison(
+            self.format,
+            self.relation,
+            self.operands[0].boxed_value().clone(),
+            self.operands[1].boxed_value().clone(),
+        )
+    }
+}
+
+/// One view for written native comparisons and exact Integer observations.
+/// Native operands are borrowed; Integer operands retain their shared handles.
+pub(crate) fn comparison_view(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<NativeComparisonView<'_>> {
+    use crate::kernel::CompareRelation as R;
+    let ConditionTerm::Compare {
+        format,
+        relation,
+        left,
+        right,
+    } = condition
+    else {
+        return native_comparison_view(condition, value);
+    };
+    let (relation, left, right) = match (relation, value) {
+        (R::Equal, true) => (Relation::Equal, left, right),
+        (R::Equal, false) => (Relation::NotEqual, left, right),
+        (R::LessThan, true) | (R::GreaterEqual, false) => (Relation::Less, left, right),
+        (R::LessEqual, true) | (R::GreaterThan, false) => (Relation::LessEqual, left, right),
+        (R::GreaterThan, true) | (R::LessEqual, false) => (Relation::Less, right, left),
+        (R::GreaterEqual, true) | (R::LessThan, false) => (Relation::LessEqual, right, left),
+    };
+    Some(NativeComparisonView {
+        format: *format,
+        relation,
+        operands: [
+            ComparisonOperand::Written(left),
+            ComparisonOperand::Written(right),
+        ],
+    })
+}
+
+pub(crate) fn native_comparison_view(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<NativeComparisonView<'static>> {
     // Numeric evaluation belongs in the checking comparison form. Surface
     // lowering uses the structural reading below, retaining arithmetic.
     // An observation is read through its value relations (rule W):
@@ -81,13 +168,20 @@ pub(crate) fn native_comparison_of_integer_observation(
         }
         _ => return None,
     };
-    structural_native_comparison_of_integer_observation(&condition, value)
+    structural_native_comparison_view(&condition, value)
 }
 
 pub(crate) fn structural_native_comparison_of_integer_observation(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(ConditionTerm, bool)> {
+    structural_native_comparison_view(condition, value)?.boxed_condition()
+}
+
+pub(crate) fn structural_native_comparison_view(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<NativeComparisonView<'static>> {
     // A 128-bit comparison has a native node, but the kernel's order
     // reasoning (the difference graph, interval bounds) works on its
     // Integer form, so an Integer comparison of 128-bit observations keeps
@@ -106,7 +200,7 @@ pub(crate) fn structural_native_comparison_of_integer_observation(
     {
         return None;
     }
-    native_comparison_at_format(condition, value)
+    comparison_view_at_format(condition, value)
 }
 
 /// [`native_comparison_of_integer_observation`] at every format, whatever
@@ -115,6 +209,13 @@ fn native_comparison_at_format(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(ConditionTerm, bool)> {
+    comparison_view_at_format(condition, value)?.boxed_condition()
+}
+
+fn comparison_view_at_format(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<NativeComparisonView<'static>> {
     let (relation, left, right) = integer_relation(condition, value)?;
     let ty = match (&**left, &**right) {
         (IntegerTerm::Machine(left), IntegerTerm::Machine(right)) if left.ty() == right.ty() => {
@@ -129,24 +230,30 @@ fn native_comparison_at_format(
     // whose operand is a word of another width (the byte of a 32-bit sum)
     // has no native comparison: its root width, read in O(1), decides.
     let narrow = ty.format().bits() < 32;
-    let carrier = |side: &IntegerTerm| -> Option<Bitvector32Term> {
+    let carrier = |side: &IntegerTerm| -> Option<ComparisonOperand<'static>> {
         match side {
             IntegerTerm::Machine(machine)
                 if narrow
-                    && crate::kernel::root_width(machine.value()).is_some_and(|width| {
+                    && machine.operand_view().root_width().is_some_and(|width| {
                         width != crate::kernel::CarrierWidth::of_machine_type(ty)
                     }) =>
             {
                 None
             }
-            IntegerTerm::Machine(machine) => Some(machine.value().clone()),
-            IntegerTerm::Constant(constant) => range::constant_word(ty, constant),
+            IntegerTerm::Machine(machine) => Some(ComparisonOperand::Observation(machine.clone())),
+            IntegerTerm::Constant(constant) => Some(ComparisonOperand::Constant(
+                range::constant_word(ty, constant)?,
+            )),
             _ => None,
         }
     };
     let left = carrier(left)?;
     let right = carrier(right)?;
-    representation::comparison(ty, relation, left, right)
+    Some(NativeComparisonView {
+        format: ty,
+        relation,
+        operands: [left, right],
+    })
 }
 
 /// The native comparison an Integer comparison holds exactly when, read
@@ -429,4 +536,52 @@ pub(crate) fn integer_observations_of_native_comparison(
         }
     }
     lifted
+}
+
+#[cfg(test)]
+mod borrowed_comparison_tests {
+    use super::*;
+    use crate::kernel::{CompareRelation as R, MachineOperandView, Variable};
+
+    #[test]
+    fn written_comparison_views_borrow_and_normalize_every_relation() {
+        for format in super::super::FORMATS {
+            for (relation, truth, expected, swapped) in [
+                (R::Equal, true, Relation::Equal, false),
+                (R::Equal, false, Relation::NotEqual, false),
+                (R::LessThan, true, Relation::Less, false),
+                (R::LessThan, false, Relation::LessEqual, true),
+                (R::LessEqual, true, Relation::LessEqual, false),
+                (R::LessEqual, false, Relation::Less, true),
+                (R::GreaterThan, true, Relation::Less, true),
+                (R::GreaterThan, false, Relation::LessEqual, false),
+                (R::GreaterEqual, true, Relation::LessEqual, true),
+                (R::GreaterEqual, false, Relation::Less, false),
+            ] {
+                let condition = ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left: Box::new(Bitvector32Term::Variable(Variable(982412))),
+                    right: Box::new(Bitvector32Term::Variable(Variable(982413))),
+                };
+                let ConditionTerm::Compare { left, right, .. } = &condition else {
+                    unreachable!()
+                };
+                let view = comparison_view(&condition, truth).unwrap();
+                assert_eq!(view.format, format);
+                assert_eq!(view.relation, expected);
+                let written = if swapped {
+                    [right.as_ref(), left.as_ref()]
+                } else {
+                    [left.as_ref(), right.as_ref()]
+                };
+                for (operand, written) in view.operands.iter().zip(written) {
+                    let MachineOperandView::Legacy(value) = operand.operand_view() else {
+                        panic!("borrowed input")
+                    };
+                    assert!(std::ptr::eq(value, written));
+                }
+            }
+        }
+    }
 }

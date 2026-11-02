@@ -180,14 +180,14 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
         }
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
             },
             true,
         ) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: *format,
             relation: CompareRelation::Equal,
             left: b.clone(),
             right: a.clone(),
@@ -591,7 +591,8 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
 }
 
 /// Whether rewriting by this equality cannot change any goal: it states
-/// that a term equals itself, or it has already simplified to `true`.
+/// that a term equals itself (a 32-bit word up to one σ, rule K6), or it has
+/// already simplified to `true`.
 ///
 /// Both arise when the prover resolves two forms a proof script still
 /// distinguishes. The step is then vacuous rather than wrong, so it must not
@@ -605,6 +606,7 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
     }
     match equality {
         Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) => left == right,
+        // σ(x) == x is x == x under rule K6: the same bits.
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -613,7 +615,7 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
                 right,
             },
             true,
-        ) => left == right,
+        ) => left == right || left.is_sign_cast32_of(right),
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
@@ -1343,12 +1345,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         right: Box::new(rewrite_term(right)),
                     },
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                        format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     } => ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: *format,
                         relation: CompareRelation::Equal,
                         left: Box::new(rewrite_term(left)),
                         right: Box::new(rewrite_term(right)),
@@ -1683,12 +1685,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         right: Box::new(rewrite_term(goal_right)),
                     },
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                        format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                         relation: CompareRelation::Equal,
                         left: goal_left,
                         right: goal_right,
                     } => ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: *format,
                         relation: CompareRelation::Equal,
                         left: Box::new(rewrite_term(goal_left)),
                         right: Box::new(rewrite_term(goal_right)),
@@ -2768,6 +2770,53 @@ mod tests {
 
     fn integer_equality(a: IntegerTerm, b: IntegerTerm) -> Proposition {
         Proposition::ConditionIs(ConditionTerm::IntegerEqual(a.into(), b.into()), true)
+    }
+
+    /// `σ(x) == x` compares `x`'s bits with themselves (rule K6), at either
+    /// orientation, and so does the residue of `to_integer(σ(x)) ==
+    /// to_integer(x)`: rewriting by either leaves the goal as it is, so a
+    /// rewrite search never stacks σ(σ(x)) or files `x` at `uint32`.
+    #[test]
+    fn a_sign_cast_equality_with_its_operand_is_a_vacuous_rewrite() {
+        let x = Bitvector32Term::Variable(Variable(73_101));
+        let tag = Bitvector32Term::Variable(Variable(73_102));
+        let sigma_x = Bitvector32Term::sign_cast32(
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            x.clone(),
+        );
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_equal(
+                Bitvector32Term::add_at(MachineIntegerType::UInt32, tag, sigma_x.clone()),
+                Bitvector32Term::UInt32Constant(2000),
+            ),
+            true,
+        );
+        let observed = |ty, term: &Bitvector32Term| {
+            IntegerTerm::from_machine(ty, term.clone()).expect("a symbolic observation")
+        };
+        for equality in [
+            Proposition::ConditionIs(
+                ConditionTerm::uint32_equal(sigma_x.clone(), x.clone()),
+                true,
+            ),
+            Proposition::ConditionIs(
+                ConditionTerm::uint32_equal(x.clone(), sigma_x.clone()),
+                true,
+            ),
+            equality(x.clone(), sigma_x.clone()),
+            integer_equality(
+                observed(MachineIntegerType::UInt32, &sigma_x),
+                observed(MachineIntegerType::Int32, &x),
+            ),
+        ] {
+            assert!(!equality_rewrite_applies(&goal, &equality), "{equality:?}");
+            assert_eq!(
+                rewrite_with_admitted_equality(&goal, &equality).ok(),
+                Some(goal.clone()),
+                "{equality:?}"
+            );
+        }
     }
 
     #[test]

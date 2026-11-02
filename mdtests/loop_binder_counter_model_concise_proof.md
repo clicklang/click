@@ -2,7 +2,7 @@
 
 This checks the unexpanded `bump_n` proof: the body states `c.count == i`
 before the increment, refolds `counter(p)` with the new model, and lets
-`close_invariants()` discharge the bundle at the back edge.
+the back edge close the bundle with `solve()`.
 
 ```c filename=loop_binder_counter_model_concise_proof.c
 struct cell { int32 value; };

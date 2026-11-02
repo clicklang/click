@@ -36,7 +36,6 @@ void follow(struct node* p, int32 more) {
             have p->parent_word == address(p) by { assumption(); }
             step(); step();
             let held = fold(self_link(old(p)), { word: saved_word });
-            close_invariants() by solve();
         }
     }
 }

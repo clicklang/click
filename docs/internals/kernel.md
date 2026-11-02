@@ -513,11 +513,15 @@ In `src/kernel/`:
   64-bit format. Every operator of a `uint32` value is built at `uint32`
   over operands and constants in that format (`UInt32Constant`), through
   the format-parametric constructors (`add_at`, `subtract_at`, ...,
-  `machine_binary`); the width check refuses any other format. The
-  operands are still words: σ and a narrow widening are peeled from them
-  (rules K1 and K8), and the e-graph, the difference graph, the signed
-  interval rules and the representation map read a 32-bit sign-free
-  operator by its bits at either format. Code that compares nodes by
+  `machine_binary`); the width check refuses any other format. An operand
+  keeps its structure: σ and a narrow widening are nodes of their own
+  (rule K1 and K8's peels are deleted), and the e-graph, the difference
+  graph, the signed interval rules and the representation map read a
+  32-bit sign-free operator by its bits at either format, relating σ to
+  its operand (R0, R-dist, the difference graph's σ link). A `uint32`
+  constant is still read as its bits' `Constant` inside an `int32`
+  operator, comparison or overflow test (`into_word32`), until constants
+  carry their format (decision G9). Code that compares nodes by
   variant also compares
   `machine_operator()`, since one variant spells every operator. This word
   identity is being removed (`design/machine-integers.md`, "Every format
@@ -651,18 +655,22 @@ Scalar `uint32`
 addition, subtraction, and multiplication use the same 32-bit operator
 nodes as `int32`, without signed overflow obligations: the operators read
 words. A conversion between `int32` and `uint32` is the sign cast σ, a
-`MachineIntegerCast` node, not a reuse of the word; the kernel reads σ(x) as
-`x`'s word in every 32-bit operator, comparison, observation, the e-graph,
-the difference graph and element indices
+`MachineIntegerCast` node of its own (step 4b of "Every format its own
+nodes"): operators, comparisons and observations keep it as written, the
+e-graph relates it to its operand by R0 and R-dist, the difference graph
+links either 32-bit reading of σ(x) to the same reading of `x`, rule W
+reads an observation of it as its operand, and only an element index
+peels it, in `int32` index coordinates (`into_index_word32`, decision G1)
 (`docs/internals/mathematical-integers.md`, "The 32-bit sign cast"). A
 32-bit load has the reader's signedness (`LoadKind::Int32`, `UInt32`; a
 pointer read is `Int32`), and a typed read of a cell stored at the other
-signedness returns σ of the stored word (rule K5); both reads name one word
-and one load variable. A `uint32` constant is `UInt32Constant`, an `int32`
-or kernel-internal one `Constant`; both name one word, so the format
-survives only on a value at rest. An equality of `uint32` values is filed
-at `uint32` and is the same fact as the `int32` equality of its words
-(rule K6, `ConditionTerm::fact_format`). Unsigned division and
+signedness returns σ of the stored word (rule K5); the two reads of one
+cell are two loads, the `uint32` read σ of the `int32` read (R-mem).
+A `uint32` constant is `UInt32Constant`, an `int32` or kernel-internal one
+`Constant`; inside a signed operator or comparison it is read as its bits'
+`Constant` (decision G9). An equality of `uint32` values is a `uint32`
+term as written, and the same fact as the `int32` equality of the same bits
+at the fact-identity and lookup-key level only (rule K6). Unsigned division and
 remainder have distinct term nodes so high-bit operands do not inherit signed
 division, and unsigned right shift has a distinct logical-shift node. Equality
 and ordered comparisons select the unsigned conditions. Stores and function
@@ -723,14 +731,21 @@ the widths a rule supports; it asks the module
 | Conversion | `conversion::cast` and the narrow-widening helpers | a cast preserves a value its destination holds; a widening needs no premise |
 | Conversion table | `conversion::lower`, `convert_term`, `convert_value` | the node a conversion from `S` to `F` builds in every language, and whether a specification's conversion owes the range |
 | Usual arithmetic conversions | `conversion::usual_arithmetic_format` | C11 6.3.1.8 in LP64: the format two integer operands are converted to, after promoting narrow formats to `int32` |
-| Narrow widening (K8, a relation) | `primitives::is_narrow_widening32`, `Bitvector32Term::narrow_widening32_operand`; the e-graph's value link and `join_widening_sibling`; the difference graph's `link_parts` and `structural_interval`; rule W below | `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` has `v`'s value: `to_integer(widen(v)) == to_integer(v)`, a link with `v`'s range, never a union across widths; the `int32` and `uint32` widenings of one value are one word (K1) |
+| Narrow widening (K8, a relation) | `primitives::is_narrow_widening32`, `Bitvector32Term::narrow_widening32_operand`; the e-graph's value link and `join_widening_sibling`; the difference graph's `link_parts` and `structural_interval`; rule W below | `Cast(S -> F, v)` for a narrow `S` and a 32-bit `F` has `v`'s value: `to_integer(widen(v)) == to_integer(v)`, a link with `v`'s range, never a union across widths; the e-graph still joins the `int32` and `uint32` widenings of one value as one word (`join_widening_sibling`, as K7' joins a narrow cast's two widenings), the one 32-bit word identity step 4b leaves |
 | Observation value relations (W) | `SharedMachineIntegerTerm::value_reading`, `machine_value_reading`, `IntegerTerm::value_read`, `SharedIntegerTerm::read_through`; the readers: Integer affine atoms (`collect_integer_affine_terms`), `ConditionTerm` identity of Integer comparisons, `range::observation_range`, `native_comparison_of_integer_observation`, `native_comparison_through_integer_operations`, `identity::mathematical`, `conversion::cast`, the Integer rewrite's occurrence match | `IntegerTerm::from_machine` builds an observation as written and folds no conversion; its value is related, not rewritten: `to_integer(widen(v)) == to_integer(v)` for a value-preserving widening at any width, `to_integer` of σ(x) at `int32` or `uint32` is `x` read at that format, and a conversion observed at a type containing its destination is observed at the destination. The reading is computed once per interned observation (at most three conversions) and per Integer node (`read_through`), cached on the node, so each reader's step is O(1) after the first; terms are printed as written |
 | Native narrow nodes | `CarrierWidth::Bits8`, `Bits16`, `CarrierWidth::native`, `is_native_narrow_operator`; `Bitvector32Term::narrow_constant`, `machine_binary`, `machine_unary`; the e-graph's `Node::MachineNarrow` and `narrow_constants` | an 8- or 16-bit operator `+ - * & \| ^ << ~`, constant, binder or load is a value of its own width, `(a op b) mod 2^N`; narrow constant atoms are keyed by their unsigned bits, a cast of a constant class folds to the destination's constant, and a narrow equation is decided by one class (true) or two different constants (false) |
 | Narrow-cast word (K7') | `representation::narrow_carrier_mask`; the e-graph's `narrow_cast_node`, `narrow_cast_word` | the `int32` and `uint32` widenings of `Cast(S -> F, x)` into an 8- or 16-bit `F` meet `w & m`, or `((w & m) ^ s) - s` for a signed `F`, with `w` the operand's word or low word (a narrow operand is widened first) |
 | Narrow loads and byte R-mem | `Application::NarrowLoad`, `CellRead::Narrow`, `Node::NarrowRead`, `enqueue_narrow_load`, `enqueue_signed_byte_read` | an 8- or 16-bit read is a load application of its snapshot, address and kind, equal to a stored value of its width and, for a canonical projection, to the same read of its recorded source (one indexed edge); the `int8` read of a byte is `Cast(UInt8 -> Int8, u)` of its `uint8` read `u` |
 | Promoted comparison reading | `comparison::integer_readings_with_promotions`, `integer_comparisons_of_widenings`; `integer_affine_claims` | a signed `int32` comparison whose sides are narrow widenings or constants is the Integer comparison of the sides' values (`0 <= widen(x)` is `0 <= to_integer(x)`); a native 8- or 16-bit comparison has the readings of its promoted spelling |
 | Native narrow comparison (one fact, K8) | `ConditionTerm::comparison_fact`, `as_fact_comparison`, `ComparisonSide`; `comparison::narrow_comparison_as_int32`, `narrow_fact_widening`, `native_narrow_comparison`; `condition_match_key`; the `adjust_*` wrappers of `PureFactContext` and `EqualityGraph::add_condition` | a specification or Rust comparison `a R b` of two values of one 8- or 16-bit format `S` is native at `S`, and is the same fact as the `int32` comparison of the operands' widenings (a constant side in `S`'s range reads as its value): identity, hashing, order and every structural fact key read both as one, in O(1) per side; the 32-bit indexes also file a native fact under its `int32` spelling. Terms are built and printed as written; C comparisons and a written `x as int32 R c` stay promoted |
+| Sign cast σ (K1 deleted) | `Bitvector32Term::sign_cast32`, `sign_cast32_operand`; the e-graph's `intern_conversion` and `convert_like` (σ an `Int32Unary::Cast` node); the difference graph's `link_parts` and `structural_interval`; `into_index_word32` (G1) | σ(x) between `int32` and `uint32` is a node of its own wherever a term is built: no constructor, observation, e-graph or difference-graph reader peels it. The e-graph relates it to `x` by R0 and R-dist (σ of a sign-free operator is the operator at the other format over σ of its operands; σ of a low word is that low word), the difference graph links either 32-bit reading of σ(x) to the same reading of `x` with offset 0, and an element index alone reads σ's operand in `int32` index coordinates. The constructor still folds a constant and σ(σ(x)) to `x`. Two smart-search readers see through one σ at a side's root: `σ(x) == x` is a vacuous rewrite and no rewrite candidate (`is_sign_cast32_of`, `equality_is_vacuous`, `connected_equalities`), and `σ(y) <=u c` below the sign bit is the signed range of `y` (`unsigned_upper_bound_below_sign_bit`) |
+| Observation of σ (K2 deleted) | rule W: `machine_value_reading` | `to_integer` of σ(x) at `int32` or `uint32` keeps σ as written and reads as `x` at that format |
+| 32-bit equality one fact (K6, lookup-level) | `comparison_identity` (`ConditionTerm::comparison_fact`, `as_fact_comparison`, `fact_format`), `Bitvector32Term::sign_cast32_bits`; `condition_match_key` | a 32-bit equality is a term of the format it is written at, `u == v` at `uint32` over `uint32` operands; identity, hashing, order and every structural fact key read it at `int32`, each side through one σ and a constant of either spelling as its bits, so `u == v` at `uint32` and `u as int32 == v as int32` are one fact. One match per side, no clone; no term is re-filed |
+| Sign test of σ (sign bit at 32 bits) | `condition_reasoning/sign_bit.rs`: `sign_bit_equivalents`, `names_sign_cast32` | `u as int32 < 0` is `u > 2^31 - 1`, and `x as uint32 > 2^31 - 1` is `x < 0`, the equivalent built through σ (whose constructor folds σ of σ); a decision or known-condition lookup of either reads the other, and assuming a test of σ also files its equivalent |
+| Sign cast of a quotient (C) | `condition_reasoning/sign_cast_division.rs`: `decide_by_sign_cast_division`, `sign_cast_division_equivalent`, `names_sign_cast_division`; `Bitvector32Term::sign_cast_division_operands`; `ConditionTerm::nonnegative_division_bound_guards` | `(a / b) as int32 == (a as int32) / (b as int32)` for `uint32` `a`, `b` with `0 <= a as int32` and `0 < b as int32`, and `(x / y) as uint32 == (x as uint32) / (y as uint32)` for `int32` `x`, `y` with `0 <= x` and `0 < y`, and the same for `%`. Read at decision time on a comparison naming σ of a quotient, and filed beside such a fact when it is assumed: one match on each side's root and two sign decisions per side; the quotient bound guards read it too. A quotient by zero is not related |
 | Cross-format relations (R0, R-dist, R-comp) | the e-graph's `terms/machine_relations.rs`: `relate_machine_application`, `merge_machine_relations` | a conversion to a format no wider than its source distributes over `+ - * & \| ^ ~` and a constant `<<` below the destination's width; a conversion of a value-preserving conversion it reads exactly, or one keeping no more bits than either, is one conversion; a same-width conversion of at least 32 bits has its inverse in its operand's class |
+| Native narrow arithmetic (G2, G4) | `SpecExpression::NarrowArithmetic`, `SpecExpression::at_machine_type`; `CIntegerCastMode::NarrowArithmetic`, `c_narrow_arithmetic`; `CIntegerCastMode::ResultConversion`; `eval::native_narrow_binary`, `native_narrow_not` | specification arithmetic `+ - * & \| ^ ~` at an 8- or 16-bit position (a typed `let`, a pure function's argument at its parameter's type, a pure function's body at its result type) over operands of that type, and Rust `+ - * & \| ^ !` and `<<` by a 32-bit count on `u8`, `i8`, `u16`, `i16`, are the native node of the type, `(a op b) mod 2^N`, with no promotion and no domain obligation; an `int32` literal the type holds takes it. Rust's checked overflow stays its own panic assertion. An operand of another machine type at a specification position is refused by the parser or type checker, which names the conversion to write; inside the kernel, operands of another type keep the promoted reading. C keeps promote, operate, convert |
+| Promoted spelling of a native narrow operator (N) | the e-graph's `terms/machine_relations.rs`: `promote` (`Relation::Promote`) | a native 8- or 16-bit operator `a op b` (and `~a`, and `a << c` for a 32-bit count `c`) is in the class of `Cast(int32 -> F, widen(a) op widen(b))`, interned with its K7' word, so its widening meets the masked word operator. It fires on demand: when the operator's class is widened to 32 bits, and for a shift (whose symbolic count R-dist cannot move); C's spelling meets the native node through R-dist and R-comp without it. Once per operator, at most seven nodes and two unions; an operator R-dist built is skipped, and R-dist of the rule's own narrowing over its word is marked fired |
 | `Bool` conditional (L-If) | `ConditionTerm::open_bool_if`; `PureFactContext::decide_bool_value` | `if c { a } else { b }` holds exactly when `(c and a) or (not c and b)`; opened only when the conditional itself is decided or split |
 | `Bool` equality (L-Eq) | the e-graph's `bool_node`, `admit_bool_condition`, `knows_bool_condition` | a true `a == b` merges the classes of `a` and `b`, which share their truth; a false one contradicts the merge; applications of one function to equal arguments are one class |
 | `Bool` unfolding (L-Unfold) | `ConditionTerm::bool_unfold_equation`; `unfold` lowers `f(args) == body` to `BoolEqual` | unfolding a `-> Bool` function's application files `application == body` |
@@ -807,8 +822,30 @@ conversion per kind it holds, and each pair fires once, from a queue the
 closing loop drains one relation at a time, so a firing is at most three
 interned nodes and one union, and a chain under a conversion is a loop, not
 a recursion (`equality_graph/machine_relations_tests.rs` and its scaling
-tests). While σ and narrow widenings at 32 bits are peeled (K1, K8) the
-rules act on the 64-bit conversions and on conversions into 8 and 16 bits.
+tests). σ at 32 bits is a node of its own (step 4b), so the rules act on
+it as on the 64-bit conversions and on conversions into 8 and 16 bits; σ's
+inverse interns its own node, so σ over a chain costs about three times
+the 64-bit reinterpretation per operation, whose inverse is the word itself
+(`sign_cast32_distribution_is_linear_in_the_operation_chain`).
+
+Rule N (decision of 2026-11-02, `design/machine-integers.md`) relates a
+native 8- or 16-bit operator to C's promoted spelling of it. Soundness: a
+widening keeps its operand's value, so `widen(a) op widen(b)` computed
+modulo `2^32` is congruent to `a op b` modulo `2^N`, and the narrowing reads
+exactly those low bits (R-dist read in reverse, with R-comp); a left shift
+by `c` below 32 is multiplication by `2^c`, and at or above the narrow width
+both sides are 0. Cost: it fires from the same queue as R-dist, once per
+operator, and only where it is needed: when the operator's class gets a
+32-bit widening, the case R-dist cannot reach (the widened native value
+meeting a masked word), and for a shift. C's promoted arithmetic meets a
+native operator through R-dist and R-comp alone. An operator R-dist built
+is already a narrowing and is skipped, and R-dist of the rule's own
+narrowing over its word is marked fired, since it would only rebuild the
+operator: without these, each firing respelled the word over fresh
+narrowings without end, and fired eagerly a bare chain of native sums cost
+about 30 times the work of interning it
+(`equality_graph/machine_relations_tests.rs` and its scaling tests;
+`narrow_tests.rs` bounds a bare chain's work per node).
 
 Conditions carry their format (`Compare`, `Overflows`), but the term arena
 still spells each width with its own operator nodes, so one file,

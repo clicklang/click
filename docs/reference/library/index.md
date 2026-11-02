@@ -804,6 +804,39 @@ import.
 
 **Verified use:** [`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click).
 
+## Results
+
+### `Result`
+
+```click
+spec enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+```
+
+**Meaning:** A value or an error. A Rust `Result<u32, u8>` parameter or result
+is this value in a contract: `ensures result == Result<u32, u8>::Ok(x);`. As
+for `Option`, the importer lays the Rust value out itself.
+
+### `result::unwrap_or`
+
+```click
+function unwrap_or<T, E>(r: Result<T, E>, default: T) -> T {
+    match r {
+        Result::Ok(value) => value,
+        Result::Err(error) => default,
+    }
+}
+```
+
+**Meaning:** Rust's `Result::unwrap_or`: the payload of `Ok`, else `default`.
+A call `r.unwrap_or(d)` in imported Rust calls an external function whose
+contract is `ensures result == click::result::unwrap_or(r, d);`. The module is
+implicit; a sidecar writes `click::result::unwrap_or(r, d)` with no import.
+
+**Verified use:** [`design/charon-trial/result-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-values/results.click).
+
 ## Signed `int32` theorems
 
 ### `integer::int32_increment_upper_bound`
@@ -4084,7 +4117,7 @@ function max(a: int8, b: int8) -> int8 {
 
 ```click
 function wrapping_add(a: int8, b: int8) -> int8 {
-    ((a as uint8) + (b as uint8)) as int8
+    a + b
 }
 ```
 
@@ -4092,7 +4125,7 @@ function wrapping_add(a: int8, b: int8) -> int8 {
 
 ```click
 function wrapping_sub(a: int8, b: int8) -> int8 {
-    ((a as uint8) - (b as uint8)) as int8
+    a - b
 }
 ```
 
@@ -4100,7 +4133,7 @@ function wrapping_sub(a: int8, b: int8) -> int8 {
 
 ```click
 function wrapping_mul(a: int8, b: int8) -> int8 {
-    ((a as uint8) * (b as uint8)) as int8
+    a * b
 }
 ```
 
@@ -4196,7 +4229,7 @@ function max(a: int16, b: int16) -> int16 {
 
 ```click
 function wrapping_add(a: int16, b: int16) -> int16 {
-    ((a as uint16) + (b as uint16)) as int16
+    a + b
 }
 ```
 
@@ -4204,7 +4237,7 @@ function wrapping_add(a: int16, b: int16) -> int16 {
 
 ```click
 function wrapping_sub(a: int16, b: int16) -> int16 {
-    ((a as uint16) - (b as uint16)) as int16
+    a - b
 }
 ```
 
@@ -4212,7 +4245,7 @@ function wrapping_sub(a: int16, b: int16) -> int16 {
 
 ```click
 function wrapping_mul(a: int16, b: int16) -> int16 {
-    ((a as uint16) * (b as uint16)) as int16
+    a * b
 }
 ```
 
@@ -4644,7 +4677,7 @@ function max(a: uint8, b: uint8) -> uint8 {
 
 ```click
 function wrapping_add(a: uint8, b: uint8) -> uint8 {
-    (a + b) as uint8
+    a + b
 }
 ```
 
@@ -4652,7 +4685,7 @@ function wrapping_add(a: uint8, b: uint8) -> uint8 {
 
 ```click
 function wrapping_sub(a: uint8, b: uint8) -> uint8 {
-    (a - b) as uint8
+    a - b
 }
 ```
 
@@ -4660,7 +4693,7 @@ function wrapping_sub(a: uint8, b: uint8) -> uint8 {
 
 ```click
 function wrapping_mul(a: uint8, b: uint8) -> uint8 {
-    (a * b) as uint8
+    a * b
 }
 ```
 
@@ -4728,7 +4761,7 @@ function max(a: uint16, b: uint16) -> uint16 {
 
 ```click
 function wrapping_add(a: uint16, b: uint16) -> uint16 {
-    (a + b) as uint16
+    a + b
 }
 ```
 
@@ -4736,7 +4769,7 @@ function wrapping_add(a: uint16, b: uint16) -> uint16 {
 
 ```click
 function wrapping_sub(a: uint16, b: uint16) -> uint16 {
-    (a - b) as uint16
+    a - b
 }
 ```
 
@@ -4744,7 +4777,7 @@ function wrapping_sub(a: uint16, b: uint16) -> uint16 {
 
 ```click
 function wrapping_mul(a: uint16, b: uint16) -> uint16 {
-    (a * b) as uint16
+    a * b
 }
 ```
 
@@ -5091,6 +5124,59 @@ Use `restrict` to pass separation from a containing resource to a selected part.
 **Checked examples:** `mdtests/separation_conjunction.md` and
 `mdtests/separation_conjunction_missing_premise.md`.
 
+### `separation::contains_refl`
+
+```click
+theorem contains_refl(A: Resource) { ensures contains(A, A); }
+```
+
+### `separation::contains_trans`
+
+```click
+theorem contains_trans(A: Resource, B: Resource, C: Resource) {
+    requires contains(A, B);
+    requires contains(B, C);
+    ensures contains(A, C);
+}
+```
+
+### `separation::contains_left`
+
+```click
+theorem contains_left(A: Resource, B: Resource) { ensures contains(A * B, A); }
+```
+
+### `separation::contains_right`
+
+```click
+theorem contains_right(A: Resource, B: Resource) { ensures contains(A * B, B); }
+```
+
+### `separation::separate_symm`
+
+```click
+theorem separate_symm(A: Resource, B: Resource) {
+    requires separate(A, B);
+    ensures separate(B, A);
+}
+```
+
+### `separation::separate_star`
+
+```click
+theorem separate_star(A: Resource, B: Resource, C: Resource) {
+    requires separate(A, C);
+    requires separate(B, C);
+    ensures separate(A * B, C);
+}
+```
+
+### `separation::separate_emp`
+
+```click
+theorem separate_emp(A: Resource) { ensures separate(separation::emp, A); }
+```
+
 ### `separation::elements`
 
 ```click
@@ -5133,3 +5219,28 @@ are permitted. Memory access and separation still require their usual validity
 conditions.
 
 **Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md) and [`mdtests/generic_pointer_struct_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_struct_parameters.md), including padded structs and struct-pointer elements.
+
+### `integer::uint32_from_le_bytes`
+
+```click
+theorem uint32_from_le_bytes(p: uint32*) {
+    requires little_endian();
+    views p[0..1];
+    requires defined(p[0]);
+    ensures p[0] ==
+        (((p as (uint8 *))[0] as uint32) |
+         ((p as (uint8 *))[1] as uint32) << 8u32 |
+         ((p as (uint8 *))[2] as uint32) << 16u32 |
+         ((p as (uint8 *))[3] as uint32) << 24u32);
+}
+```
+
+Relates one readable unsigned 32-bit object to its four character representation
+bytes at the same program point. `little_endian()` is a built-in target fact;
+C proofs receive it only from a little-endian execution environment. Pure
+theorems must state it as a premise. The rule does not grant read permission,
+initialize memory, or reinterpret pointer representations. Its kernel
+constructor constructs five reads and a fixed packing expression without
+searching memory history. Applications retain the named lemma in expansion.
+
+Checked use: [`integer_uint32_from_le_bytes_initialization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_uint32_from_le_bytes_initialization.md).

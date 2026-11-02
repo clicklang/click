@@ -166,9 +166,10 @@ expansion output.
   to its checked abstract exit. Its nested `initialize`, `preserve`, invariant,
   invariant, and resource clauses construct the kernel rule; it never seeks to a
   numbered source loop.
-- `close_invariants()`: discharge a loop's whole invariant bundle at the back
-  edge. It is accepted only inside `preserve by { ... }`, and at most once per
-  path. Omitting it makes Click append the closer implicitly.
+- The back edge of a `preserve by { ... }` script closes each member of the
+  loop's invariant bundle with `solve()`, as a function's exit closes each
+  `ensures`; prove a member `solve()` misses with `have` before the back edge.
+  The retired `close_invariants` tactic is rejected.
 - `unfold(name);`: make the predicate `name` transparent for the rest of the
   branch, in its facts, the current goal, and later goals.
 - `unfold(resource);`: consume one owned composite resource fact and expose its

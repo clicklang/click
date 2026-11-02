@@ -2,7 +2,8 @@
 
 This checks the unexpanded proof `match` inside `preserve`: the excluded arm
 closes by `contradiction`, and the live arm relates its binding to the entry
-model, refolds the binder, and closes the invariants with `close_invariants()`.
+model, refolds the binder, and leaves the invariants to the back edge's
+`solve()`.
 
 ```c filename=loop_body_proof_match_concise_proof.c
 struct cell { int32 value; };

@@ -40,6 +40,7 @@ use super::machine_integer::comparison::{
 use super::machine_integer::definedness::{
     definedness_of_integer_bound, integer_bounds_of_definedness,
 };
+#[cfg(test)]
 use super::machine_integer::modular::wrapped_equality_of_integer_equality;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
 pub(in crate::kernel) use condition_reasoning::held_order_at;
@@ -414,7 +415,11 @@ pub(in crate::kernel) fn condition_match_key(
             left,
             right,
         } => {
-            let (left, right) = ordered(canonical(left), canonical(right));
+            // A 32-bit equality compares bits at either signedness, through
+            // σ (rule K6, as its fact identity reads it).
+            let side =
+                |term: &Bitvector32Term| canonical(term.sign_cast32_bits()).constant_word32();
+            let (left, right) = ordered(side(left), side(right));
             ConditionMatchKey::Equal(left, right)
         }
         ConditionTerm::Overflows {
@@ -5675,7 +5680,7 @@ impl PureFactContext {
         !self.algebraic_variable_constructors.is_empty()
     }
 
-    pub(in crate::kernel) fn known_algebraic_constructor(
+    pub(crate) fn known_algebraic_constructor(
         &self,
         value: &AlgebraicTerm,
     ) -> Option<AlgebraicTerm> {
@@ -7247,16 +7252,23 @@ impl PureFactContext {
         // An 8- or 16-bit signedness conversion's sign test, which names a
         // cast no plain comparison of its operand does, also files its
         // operand's half-range test, and the reverse
-        // (`condition_reasoning::sign_bit`). A 32- or 64-bit one needs no
-        // filing: both tests compare one word, and a lookup of either finds
-        // the other.
-        let sign_bit_equivalents = if condition.names_narrow_signedness_cast()
+        // (`condition_reasoning::sign_bit`). So does a 32-bit test of σ,
+        // the 32-bit sign cast, a node of its own: `u as int32 < 0` files
+        // `u > 2^31 - 1`. A 64-bit one needs no filing: both tests compare
+        // one word, and a lookup of either finds the other.
+        let sign_bit_equivalents = if (condition.names_narrow_signedness_cast()
+            || condition.names_sign_cast32())
             && self.condition_facts.get(&condition) != Some(&value)
         {
             self.sign_bit_equivalent_conditions(&condition)
         } else {
             Vec::new()
         };
+        // Rule C's probe: only a comparison naming σ of a quotient or
+        // remainder (one match on the root and each side) is kept.
+        let sign_cast_division = (condition.names_sign_cast_division()
+            && self.condition_facts.get(&condition) != Some(&value))
+        .then(|| condition.clone());
         let mut next = self.assume_condition_once(condition, value);
         if !sign_bit_equivalents.is_empty() {
             next = Self::without_sign_bit_rule(|| {
@@ -7267,6 +7279,15 @@ impl PureFactContext {
                         next.assume_condition_once(equivalent, value)
                     })
             });
+        }
+        // Rule C: a comparison naming σ of a quotient or remainder on
+        // operands of known sign also files its reading at the other
+        // signedness (`condition_reasoning::sign_cast_division`).
+        if let Some(probe) = sign_cast_division
+            && let Some(reading) = next.sign_cast_division_equivalent(&probe)
+            && reading != probe
+        {
+            next = next.assume_condition_once(reading, value);
         }
         if let Some((condition, value, selected)) = decided {
             next = next.assume_decided_algebraic_if(condition, value, selected);
@@ -7338,14 +7359,17 @@ impl PureFactContext {
             );
         }
         if let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } = &condition
             && let Some((left, right)) = bitvector_equality_after_additive_cancellation(left, right)
         {
-            self = self.assume_condition_uncharged(ConditionTerm::equal(left, right), value);
+            self = self.assume_condition_uncharged(
+                ConditionTerm::machine_compare(*format, CompareRelation::Equal, left, right),
+                value,
+            );
         }
         // An equality naming a C narrowing conversion whose operand this
         // context already places inside the destination range also files the
@@ -7433,8 +7457,6 @@ impl PureFactContext {
             && native != condition
         {
             self = self.assume_condition_uncharged(native, truth);
-        } else if let Some(wrapped) = wrapped_equality_of_integer_equality(&condition, value) {
-            self = self.assume_condition_uncharged(wrapped, true);
         }
         // The same rule through an in-range machine `+` or `-`: an Integer
         // comparison whose side is the exact value of such an operation,
@@ -7445,7 +7467,9 @@ impl PureFactContext {
         // must be a fact here (`IntegerOperationRangeBound`). At most two
         // sides and two bounds of three spellings each are looked up.
         else if let Some((native, truth, bounds)) =
-            native_comparison_through_integer_operations(&condition, value)
+            (!super::machine_integer::modular::has_word_equality_projection(&condition, value))
+                .then(|| native_comparison_through_integer_operations(&condition, value))
+                .flatten()
             && native != condition
             && bounds.iter().all(|bound| {
                 bound

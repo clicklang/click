@@ -23,7 +23,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
         let kernel = match kernel {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                     relation: CompareRelation::Equal,
                     left,
                     right,
@@ -31,7 +31,7 @@ pub(in crate::surface) fn plan_explicit_equality_rewrites_from(
                 true,
             ) => Proposition::ConditionIs(
                 ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
+                    format: *format,
                     relation: CompareRelation::Equal,
                     left: right.clone(),
                     right: left.clone(),

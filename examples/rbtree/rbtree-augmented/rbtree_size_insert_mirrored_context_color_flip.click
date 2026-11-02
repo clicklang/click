@@ -2,7 +2,7 @@
 verifying "rb_insert_augmented.c";
 verifying "rbtree_size_compute.c";
 verifying "rbtree_size_copy.c";
-import "rbtree_size_context_resources.click";
+import "rbtree_size_context_flip_frames.click";
 
 spec enum SizedMirroredContextFlipPhase {
     Before(struct rb_node*, struct rb_node*, struct rb_node*),
@@ -294,7 +294,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             let { metadata: p_size, sibling: p_left, up: g_path } = unfold(path);
                             let { metadata: g_size, sibling: u_tree, up: top } = unfold(g_path);
                             let { metadata: u_size, right: u_right, left: u_left } = unfold(u_tree);
-                            mark before_recolor;
                             have x->rb_left != x by assumption();
                             have x->rb_right != x by assumption();
                             have y->rb_left != y by assumption();
@@ -309,27 +308,32 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                             }
                             step(); step(); step(); step(); step(); step(); step(); step();
                             step();
-                            step(); step(); step(); step(); step();
+                            have tmp == z by { assumption(); }
+                            have gparent == x by { assumption(); }
+                            have parent == y by { assumption(); }
+                            let links = fold(sized_context_flip_links(root, x, y, z), {
+                                top: root->rb_node, xl: x->rb_left, xr: x->rb_right,
+                                yl: y->rb_left, yr: y->rb_right, zl: z->rb_left, zr: z->rb_right
+                            });
+                            let parent_word = fold(sized_context_flip_parent_word(x), {
+                                up: ((x->__rb_parent_color & ~3) as (struct rb_node*)),
+                                word: x->__rb_parent_color
+                            });
+                            step();
+                            let uncle_word = fold(sized_context_flip_black_word(tmp, gparent), {
+                                word: tmp->__rb_parent_color
+                            });
+                            step();
+                            let black_parent_word = fold(sized_context_flip_black_word(parent, gparent), {
+                                word: parent->__rb_parent_color
+                            });
+                            unfold(parent_word);
+                            step(); step(); step();
+                            unfold(uncle_word);
+                            unfold(black_parent_word);
+                            unfold(links);
                             have to_integer(sized_value(old(state.uncle))) == 1 + to_integer(sized_value(sized_left(old(state.uncle)))) + to_integer(sized_value(sized_right(old(state.uncle)))) by {
                                 assumption();
-                            }
-                            have x->rb_left != x by {
-                                transport(at(before_recolor, x->rb_left != x), x->rb_left != x);
-                            }
-                            have x->rb_right != x by {
-                                transport(at(before_recolor, x->rb_right != x), x->rb_right != x);
-                            }
-                            have y->rb_left != y by {
-                                transport(at(before_recolor, y->rb_left != y), y->rb_left != y);
-                            }
-                            have y->rb_right != y by {
-                                transport(at(before_recolor, y->rb_right != y), y->rb_right != y);
-                            }
-                            have z->rb_left != z by {
-                                transport(at(before_recolor, z->rb_left != z), z->rb_left != z);
-                            }
-                            have z->rb_right != z by {
-                                transport(at(before_recolor, z->rb_right != z), z->rb_right != z);
                             }
                             let u_tree = fold(sized_at(z), { model: SizedTree::Node(z, x, Color::Black, sized_value(old(state.uncle)), sized_left(old(state.uncle)), sized_right(old(state.uncle))) }, { metadata: u_size, right: u_right, left: u_left });
                             have sized_parent_is(focus.model,y) == 1 by {
@@ -384,7 +388,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 unfold(sized_mirrored_context_flip_running(SizedMirroredContextFlipPhase::After(x, y, z))); normalize();
                             }
                             step();
-                            close_invariants() by solve();
                         },
                     }
                 }

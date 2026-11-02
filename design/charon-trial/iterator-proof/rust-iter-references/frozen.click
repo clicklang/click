@@ -335,7 +335,6 @@ fn sum(bytes: &[u8]) -> i32 {
                     0 <= ((bytes.len() as uint32) as int32);
                 }
             }
-            close_invariants();
         }
     }
     have __rust_iter_3_5_remaining == 0 by { solve(); }

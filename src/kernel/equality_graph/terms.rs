@@ -8,7 +8,8 @@
 //! arithmetic definedness. Floating-point expressions and binders stay opaque.
 //! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. Equal addresses in one block also equate their byte offsets.
-//! No scalar arithmetic solving, cancellation, or general injectivity runs here.
+//! No general scalar arithmetic solving or injectivity runs here. Residue
+//! projection retains word-constructor folding identities via indexed nodes.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
 use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable};
@@ -21,6 +22,7 @@ use std::sync::Arc;
 mod congruence;
 pub(super) mod constants;
 mod machine_relations;
+mod shared_machine;
 pub(super) use congruence::has_machine_operands;
 
 /// The sort of a read that may meet a stored cell under an aliased address.
@@ -354,6 +356,7 @@ enum Node {
     ),
     ArgumentTag(congruence::ArgumentTag),
     OpaqueArgument(crate::kernel::SharedPureApplication),
+    OpaqueMachineCount(MachineAtom),
     Condition(congruence::ConditionKind, u64, u64),
     UInt64(MachineAtom),
     UInt64Binary(UInt64Binary, u64, u64),
@@ -528,6 +531,13 @@ pub(super) struct BoolCastLink {
 
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
+    // Derived residue operations use shallow graph IDs. Repeated cancellation
+    // of shared prefixes reuses this cache; restriction rebuilds the graph.
+    modular_word_operations: PersistentMap<(MachineBinaryOp, u64, u64), u64>,
+    // Exact shared operands retain their handles. Class IDs are stable even
+    // after union; callers use root(), and persistent clones isolate branches.
+    shared_machine_classes:
+        PersistentMap<(u64, crate::kernel::CarrierWidth), (crate::kernel::KernelTerm, u64)>,
     scalar_witnesses: constants::ScalarWitnesses,
     scalar_conflicts: PersistentSet<u64>,
     /// Source propositions follow address and condition classes. Only the moved class is
@@ -684,6 +694,9 @@ pub(super) struct TermClasses {
     )>,
     // Signed byte reads still to be related to their unsigned read (R-mem).
     pending_signed_byte_reads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
+    // `uint32` reads still to be related to their cell's `int32` read by σ
+    // (R-mem at 32 bits).
+    pending_unsigned_word_reads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
     // 8- and 16-bit reads whose load application is still to be registered
     // (`enqueue_narrow_load`).
     pending_narrow_loads: Vec<(
@@ -1557,23 +1570,25 @@ impl TermClasses {
                 Some(Application::Int64Scaled(*value, *width, *unsigned))
             }
             Node::Int32(value) => {
-                if let Some(value) = value.value().as_const() {
+                if let Some(value) = value.operand_view().word32_constant() {
                     self.int32_constants.insert(id, value as i32);
                 }
                 None
             }
             Node::MachineNarrow(atom) => {
-                if let crate::kernel::Bitvector32Term::MachineIntegerConstant(constant) =
-                    atom.value()
+                if let Some(crate::kernel::Bitvector32Term::MachineIntegerConstant(constant)) =
+                    atom.operand_view().literal()
                 {
                     self.narrow_constants.insert(id, constant.bits() as u32);
                 }
                 None
             }
             Node::UInt64(value) => {
-                let literal = match value.value() {
-                    crate::kernel::Bitvector32Term::UInt64Constant(value) => Some(*value),
-                    crate::kernel::Bitvector32Term::Int64Constant(value) => Some(*value as u64),
+                let literal = match value.operand_view().literal() {
+                    Some(crate::kernel::Bitvector32Term::UInt64Constant(value)) => Some(value),
+                    Some(crate::kernel::Bitvector32Term::Int64Constant(value)) => {
+                        Some(value as u64)
+                    }
                     _ => None,
                 };
                 if let Some(value) = literal {
@@ -1597,26 +1612,32 @@ impl TermClasses {
 
     fn enqueue_int32_load(&mut self, id: u64, node: &Node) {
         let Node::Int32(atom) = node else { return };
-        let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
+        let Some(variable) = atom.operand_view().variable() else {
             return;
         };
         // Only a four-byte integer read is a word load application: a
         // narrower read named at an address a wider read was recorded at
-        // carries that wider width, and is still another value. A read of
-        // either 32-bit signedness reads the cell's word, so the two reads
-        // of one cell are one application (R-mem, with σ the word identity
-        // of rule K1).
+        // carries that wider width, and is still another value. The `int32`
+        // read of a cell is its word load application; its `uint32` read is
+        // σ of that read (R-mem at 32 bits, σ a node of its own).
         if !crate::kernel::is_load_variable(variable)
             || self.registered_int32_loads.contains(&id)
             || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
-            || !crate::kernel::registered_load_kind_for_variable(variable)
-                .is_some_and(crate::kernel::LoadKind::is_word32)
         {
+            return;
+        }
+        let kind = crate::kernel::registered_load_kind_for_variable(variable);
+        if !kind.is_some_and(crate::kernel::LoadKind::is_word32) {
             return;
         }
         let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
             return;
         };
+        if kind == Some(crate::kernel::LoadKind::UInt32) {
+            self.registered_int32_loads = self.registered_int32_loads.with_value(id);
+            self.pending_unsigned_word_reads.push((id, memory, pointer));
+            return;
+        }
         // Start at the registered defining snapshot, not the mutable live
         // origin. Registration below also retains the exact source equation
         // already recorded by a canonical projection's producer.
@@ -1633,7 +1654,7 @@ impl TermClasses {
         let Node::MachineNarrow(atom) = node else {
             return;
         };
-        let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
+        let Some(variable) = atom.operand_view().variable() else {
             return;
         };
         if !crate::kernel::is_load_variable(variable) || self.registered_int32_loads.contains(&id) {
@@ -1669,7 +1690,7 @@ impl TermClasses {
         let Node::MachineNarrow(atom) = node else {
             return;
         };
-        let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
+        let Some(variable) = atom.operand_view().variable() else {
             return;
         };
         if !crate::kernel::is_load_variable(variable)
@@ -1715,6 +1736,30 @@ impl TermClasses {
                 crate::instrumentation::record_deterministic_work(1);
                 let value = self.intern_pointer_call_identity(&application);
                 self.close_with_affine_definition(vec![(identity, value)], true);
+                continue;
+            }
+            // R-mem at 32 bits: a `uint32` read is σ of its cell's `int32`
+            // read, whose own registration makes it the cell's word load
+            // application. One read interned, one σ node, one union.
+            if let Some((unsigned, memory, pointer)) = self.pending_unsigned_word_reads.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                let signed = crate::kernel::Bitvector32Term::Variable(
+                    crate::kernel::eval::load_variable_for_exact_cell(
+                        &memory,
+                        &pointer,
+                        crate::kernel::LoadKind::Int32,
+                        4,
+                    ),
+                );
+                let signed = self.intern_machine(&signed, false);
+                let cast = self.intern_node(Node::Int32Unary(
+                    Int32Unary::Cast(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineIntegerType::UInt32,
+                    ),
+                    signed,
+                ));
+                self.close(vec![(unsigned, cast)]);
                 continue;
             }
             if let Some((signed, memory, pointer)) = self.pending_signed_byte_reads.pop() {
@@ -1868,7 +1913,16 @@ impl TermClasses {
             use crate::kernel::CValue as V;
             found = match (stored, kind) {
                 (Some(V::Int64(value) | V::UInt64(value)), CellRead::UInt64)
-                | (Some(V::Int32(value) | V::UInt32(value)), CellRead::Int32) => Some(Ok(value)),
+                | (Some(V::Int32(value)), CellRead::Int32) => Some(Ok(value)),
+                // The `int32` read of a cell storing a `uint32` value is σ of
+                // that value (rule K5's reinterpretation, σ a node).
+                (Some(V::UInt32(value)), CellRead::Int32) => {
+                    Some(Ok(crate::kernel::Bitvector32Term::sign_cast32(
+                        crate::kernel::MachineIntegerType::UInt32,
+                        crate::kernel::MachineIntegerType::Int32,
+                        value,
+                    )))
+                }
                 (
                     Some(V::Bool(value) | V::Int8(value) | V::UInt8(value)),
                     CellRead::Narrow(crate::kernel::CarrierWidth::Bits8),
@@ -2086,11 +2140,16 @@ impl TermClasses {
 
     fn retain_signed_int32_interval(
         &mut self,
-        term: &crate::kernel::Bitvector32Term,
+        term: crate::kernel::MachineOperandView<'_>,
         lower: i64,
         upper: i64,
     ) {
-        let node = self.intern_int32(term);
+        let node = match term {
+            crate::kernel::MachineOperandView::Shared(term) => {
+                self.intern_shared_machine(term, crate::kernel::CarrierWidth::Bits32)
+            }
+            crate::kernel::MachineOperandView::Legacy(term) => self.intern_int32(term),
+        };
         self.register_pending_loads();
         let root = self.root(node);
         let previous = self
@@ -2192,8 +2251,8 @@ impl TermClasses {
             for atom in [&left_atom, &right_atom].into_iter().flatten() {
                 if let Node::Int32(value) = atom
                     && !matches!(
-                        value.value(),
-                        Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+                        value.operand_view().literal(),
+                        Some(Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_))
                     )
                     && !self.nodes.contains_key(atom)
                 {

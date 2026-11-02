@@ -221,16 +221,37 @@ impl<'a> Proof<'a> {
         // conjunction and implication structure is nevertheless checked by
         // the kernel, so descend that structure directly and retain the
         // ordinary Both/Intro certificate nodes.
-        if let Some(surfaces) = self.wide_conjunction_surfaces() {
+        // The bundle is closed member by member, `have m by { ... }` for
+        // each and then `assumption`, as a function's exit closes its
+        // `ensures`; expansion writes those `have`s at the back edge. A
+        // member's own proof does not take this path again.
+        if !IN_BUNDLE_MEMBER_HAVE.with(std::cell::Cell::get)
+            && let Some(surfaces) = self.conjunction_leaf_surfaces(1)
+        {
             let mut proof = self.clone();
             for surface in surfaces {
                 let nested = proof.begin_have(surface)?;
-                let Some(closed) = nested.plan_invariant_bundle_closure()? else {
+                let previous = IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.replace(true));
+                let closed = nested.plan_invariant_bundle_closure();
+                IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.set(previous));
+                let Some(closed) = closed? else {
                     return Ok(None);
                 };
                 proof = closed.join()?;
             }
-            return attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption));
+            if let Some(closed) =
+                attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))?
+            {
+                return Ok(Some(closed));
+            }
+            // A member's `have` publishes its written spelling as lowered,
+            // which can differ from the kernel member in form, as a
+            // quantified read projected at the back edge does. The bundle
+            // then closes member by member from those facts.
+            let previous = IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.replace(true));
+            let closed = proof.plan_invariant_bundle_closure();
+            IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.set(previous));
+            return closed;
         }
         if matches!(goal, Proposition::And(_, _)) {
             let (split_proof, split, ids) = self.split_focused_both()?;
@@ -368,6 +389,57 @@ impl<'a> Proof<'a> {
             state,
             node: self.node.clone(),
         }
+    }
+
+    /// The back-edge bundle's members as the loop head writes them, split
+    /// at conjunctions as the bundle's leaves are: each declared invariant
+    /// guarded by the invariants declared before it, and bare, as the member
+    /// reads once the closer has introduced those guards; one `0 <= m` per
+    /// `decreases` component, then the descent member
+    /// ([`ranking_descent_surface`]). None outside a loop preservation proof.
+    pub(in crate::surface::proof) fn written_bundle_member_surfaces(
+        &self,
+    ) -> Option<Vec<ClickProposition>> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return None;
+        };
+        let bundle = context.constants.invariant_body_context.as_deref()?;
+        let mut members = Vec::new();
+        let declared = &bundle.declared_invariant_surfaces;
+        for (index, invariant) in declared.iter().enumerate() {
+            let guarded = declared[..index]
+                .iter()
+                .rev()
+                .fold(invariant.clone(), |body, guard| {
+                    ClickProposition::Implies(Box::new(guard.clone()), Box::new(body))
+                });
+            // A member whose guards the closer has already introduced is the
+            // invariant itself.
+            let mut pending = if index == 0 {
+                vec![guarded]
+            } else {
+                vec![invariant.clone(), guarded]
+            };
+            while let Some(member) = pending.pop() {
+                if let ClickProposition::And(left, right) = member {
+                    pending.push(*right);
+                    pending.push(*left);
+                } else {
+                    members.push(member);
+                }
+            }
+        }
+        if bundle.ranking_surfaces.len() == bundle.ranking_measures.len() {
+            for component in &bundle.ranking_surfaces {
+                members.push(ClickProposition::Comparison {
+                    left: ContractExpression::IntegerLiteral("0".to_string()),
+                    operator: ComparisonOperator::LessEqual,
+                    right: component.clone(),
+                });
+            }
+            members.extend(ranking_descent_surface(bundle));
+        }
+        Some(members)
     }
 
     /// One bundle member's source form, synthesized at the current state
@@ -1127,23 +1199,33 @@ impl<'a> Proof<'a> {
                     FrontierPosition::StatementEntry { remaining } => Some(remaining.as_ref()),
                     _ => None,
                 });
-        let call = remaining
+        // C++ cleanup wrappers do not introduce an executable step. Select
+        // the same first operation that ordinary `step()` will execute, while
+        // leaving the wrapper intact for the kernel's exception continuation.
+        let mut operation = remaining
             .and_then(|remaining| split_next_source_operation(remaining).ok())
-            .and_then(|(statement, _)| match statement {
-                CStatement::Call {
-                    function_name,
-                    arguments,
-                }
-                | CStatement::CallAssign {
-                    function_name,
-                    arguments,
-                    ..
-                } => Some(FrontierCall {
-                    callee: function_name,
-                    arguments,
-                }),
-                _ => None,
-            });
+            .map(|(statement, _)| statement);
+        while let Some(CStatement::TryCatchInt32 { try_body, .. }) = operation.as_ref() {
+            crate::instrumentation::record_deterministic_work(1);
+            operation = split_next_source_operation(try_body)
+                .ok()
+                .map(|(statement, _)| statement);
+        }
+        let call = operation.and_then(|statement| match statement {
+            CStatement::Call {
+                function_name,
+                arguments,
+            }
+            | CStatement::CallAssign {
+                function_name,
+                arguments,
+                ..
+            } => Some(FrontierCall {
+                callee: function_name,
+                arguments,
+            }),
+            _ => None,
+        });
         let names_written = |callee: &str| {
             callee == written
                 || crate::surface::call_source_spelling(callee) == written
@@ -1939,8 +2021,17 @@ impl<'a> Proof<'a> {
             } else {
                 String::new()
             };
+            let branch_join = if matches!(
+                self.node.step.as_deref(),
+                Some(ProofStep::Branch { then_proof, else_proof, .. })
+                    if !then_proof.is_pruned_execution_arm() && !else_proof.is_pruned_execution_arm()
+            ) {
+                ". The obligation is checked after the `branch` join, which keeps only facts both arms agree on. Use `branch ensuring { ... }` to carry a shared fact across the join, or a proof `if` to keep the cases apart"
+            } else {
+                ""
+            };
             let error = root.step_error(format!(
-                "closure body did not prove every invariant obligation{open_member}{}{rejoined}",
+                "closure body did not prove every invariant obligation{open_member}{}{rejoined}{branch_join}",
                 ranking_member_diagnostic(&bundle.ranking_measures)
             ));
             return Err(error.with_search_failures(search.finish()));
@@ -2843,4 +2934,10 @@ fn ranking_descent_surface(bundle: &InvariantBodyContext) -> Option<ClickProposi
             Some(rest) => ClickProposition::Or(Box::new(arm(pivot)), Box::new(rest)),
         })
     })
+}
+
+thread_local! {
+    /// Set while one invariant bundle member is proved in its own `have`, so
+    /// that proof closes the member itself rather than wrapping it again.
+    static IN_BUNDLE_MEMBER_HAVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

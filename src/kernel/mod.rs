@@ -25,7 +25,7 @@ pub(crate) use source_loans::{
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 73;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 75;
 
 pub(crate) mod assumptions;
 mod difference_graph;
@@ -83,8 +83,10 @@ pub use loans::{
     LoanOriginKind, LoanOverlapStatus, LoanRefusalCategory, LoanRefusalDiagnostic,
     LoanRefusalOperation, LoanRefusalSubject,
 };
+mod byte_representation_laws;
 mod integer_truncation_laws;
 mod resource_conjunction;
+pub(crate) use byte_representation_laws::prove_uint32_from_le_bytes;
 mod separation_laws;
 pub use resource_conjunction::ResourceConjunction;
 pub(crate) use separation_laws::prove_resource_law;
@@ -364,6 +366,10 @@ impl VerificationSession {
             current == 0
         });
         if outermost {
+            // Structural operand identities read no registry or proof state;
+            // retain them across function epochs and state restores.
+            proof::signed_arithmetic::clear_shared_operand_keys();
+            primitives::clear_shared_machine_variable_cache();
             VERIFICATION_SESSION_GENERATION
                 .with(|generation| generation.set(generation.get().wrapping_add(1)));
 
