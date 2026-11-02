@@ -257,6 +257,29 @@ The explicit equality-rewrite mapper still has boxed outputs; higher-level
 comparison decisions, inverse operation mappings and remaining interval adapters
 need migration before nested signed preparation is enabled.
 
+## Shared inverse-operation operands (2026-11-02)
+
+The inverse map from an exact Integer sum/difference to its machine operation
+now retains same-format observations and builds the result from shared operand
+handles. The 32-bit compatibility operator still uses its original signed word
+format and literal spelling; no arithmetic is folded into stored terms.
+Conversion candidates and opaque operands retain their existing compatibility
+representation. This is a bounded portion of step 3, not a complete shared
+comparison-decision or interval migration. In particular, differing-format
+casts, mixed opaque operands, native comparison outputs, bound spellings and
+interval-query outputs can still require boxed trees. Nested signed preparation
+remains disabled pending those consumers.
+
+Differential coverage compares acceptance, returned operation spelling and range
+premises against the previous mapper across all source/destination formats.
+The no-export regression grows repeated shared operands through 8/32/96 levels,
+checks both sum/difference mappings and the unsupported multiplication refusal,
+and measures deterministic work beside unrelated terms at four machine formats.
+
+Validation: 1,232 selected arithmetic, scaling, search-boundary and fixture tests
+passed. The arithmetic fact-stability audit reported zero differences. CI and
+the merge queue run the full `scripts/check.sh` gate; no nightly run was made.
+
 ## Shared interval-certificate source matching (2026-11-02)
 
 The signed certificate's source matcher reads ordinary definedness conjunctions

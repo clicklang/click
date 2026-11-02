@@ -12,7 +12,10 @@
 //! the observation names, with the two bounds as premises.
 
 use super::{Operation, definedness, range, representation};
-use crate::kernel::{Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
+use crate::kernel::{
+    Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition,
+    SharedMachineIntegerTerm,
+};
 use num_bigint::BigInt;
 
 /// The format of the machine `+`, `-` or `*` that `observed` reads, and
@@ -159,11 +162,15 @@ pub(crate) fn machine_operation_of_integer_value(
     // An operand's word is the one, as written or widened, whose
     // observation in `ty` gives the operand back; its range is its own
     // format's, or the constant itself.
-    let operand = |side: &IntegerTerm| -> Option<(Bitvector32Term, BigInt, BigInt)> {
+    let operand = |side: &IntegerTerm| -> Option<(SharedMachineIntegerTerm, BigInt, BigInt)> {
         // An observation is read through its value relations (rule W): the
         // range of `to_integer(x as uint32)` is `x`'s own format's.
         match side.value_read() {
             IntegerTerm::Machine(machine) => {
+                if machine.ty() == ty {
+                    let (low, high) = range::range(ty);
+                    return Some((machine.clone(), low, high));
+                }
                 let word = machine.value().clone();
                 let widened = Bitvector32Term::MachineIntegerCast {
                     value: Box::new(word.clone()),
@@ -179,10 +186,10 @@ pub(crate) fn machine_operation_of_integer_value(
                         .is_some_and(|observed| observed.value_read() == side.value_read())
                 })?;
                 let (low, high) = range::range(machine.ty());
-                Some((word, low, high))
+                Some((SharedMachineIntegerTerm::intern(ty, word), low, high))
             }
             IntegerTerm::Constant(value) => Some((
-                range::constant_word(ty, value)?,
+                SharedMachineIntegerTerm::intern(ty, range::constant_word(ty, value)?),
                 value.clone(),
                 value.clone(),
             )),
@@ -191,9 +198,7 @@ pub(crate) fn machine_operation_of_integer_value(
     };
     let (left_word, left_low, left_high) = operand(left)?;
     let (right_word, right_low, right_high) = operand(right)?;
-    let word =
-        representation::operation_word(ty, operation, Box::new(left_word), Box::new(right_word))?;
-    let observed = IntegerTerm::from_machine(ty, word)?;
+    let observed = representation::operation_observation(ty, operation, &left_word, &right_word)?;
     let (read_ty, value) = mathematical(&observed)?;
     if read_ty != ty || !same_exact_value(&value, exact) {
         return None;
@@ -260,4 +265,172 @@ fn explicit_operation_identity_keeps_its_read_operands() {
             IntegerTerm::add(observe(x), IntegerTerm::constant(1.into()))
         ))
     );
+}
+
+#[cfg(test)]
+fn boxed_machine_operation_of_integer_value(
+    exact: &IntegerTerm,
+    ty: MachineIntegerType,
+) -> Option<(IntegerTerm, Vec<IntegerOperationRangeBound>)> {
+    let (operation, left, right) = match Operation::of_exact(exact)? {
+        found @ (Operation::Add | Operation::Subtract, _, _) => found,
+        (Operation::Multiply, _, _) => return None,
+    };
+    // An operand's word is the one, as written or widened, whose
+    // observation in `ty` gives the operand back; its range is its own
+    // format's, or the constant itself.
+    let operand = |side: &IntegerTerm| -> Option<(Bitvector32Term, BigInt, BigInt)> {
+        // An observation is read through its value relations (rule W): the
+        // range of `to_integer(x as uint32)` is `x`'s own format's.
+        match side.value_read() {
+            IntegerTerm::Machine(machine) => {
+                let word = machine.value().clone();
+                let widened = Bitvector32Term::MachineIntegerCast {
+                    value: Box::new(word.clone()),
+                    source: machine.ty(),
+                    destination: ty,
+                };
+                // A value of another width is never `ty`'s word as written:
+                // its word in `ty` is its widening, a node of its own.
+                let as_written =
+                    (machine.ty().format().bits() == ty.format().bits()).then_some(word);
+                let word = as_written.into_iter().chain([widened]).find(|word| {
+                    IntegerTerm::from_machine(ty, word.clone())
+                        .is_some_and(|observed| observed.value_read() == side.value_read())
+                })?;
+                let (low, high) = range::range(machine.ty());
+                Some((word, low, high))
+            }
+            IntegerTerm::Constant(value) => Some((
+                range::constant_word(ty, value)?,
+                value.clone(),
+                value.clone(),
+            )),
+            _ => None,
+        }
+    };
+    let (left_word, left_low, left_high) = operand(left)?;
+    let (right_word, right_low, right_high) = operand(right)?;
+    let word =
+        representation::operation_word(ty, operation, Box::new(left_word), Box::new(right_word))?;
+    let observed = IntegerTerm::from_machine(ty, word)?;
+    let (read_ty, value) = mathematical(&observed)?;
+    if read_ty != ty || !same_exact_value(&value, exact) {
+        return None;
+    }
+    let (low, high) = if operation == Operation::Subtract {
+        (left_low - right_high, left_high - right_low)
+    } else {
+        (left_low + right_low, left_high + right_high)
+    };
+    let (minimum, maximum) = range::range(ty);
+    let mut bounds = Vec::new();
+    if low < minimum {
+        bounds.push(IntegerOperationRangeBound {
+            exact: exact.clone(),
+            bound: minimum,
+            lower: true,
+        });
+    }
+    if high > maximum {
+        bounds.push(IntegerOperationRangeBound {
+            exact: exact.clone(),
+            bound: maximum,
+            lower: false,
+        });
+    }
+    Some((observed, bounds))
+}
+
+#[test]
+fn inverse_operation_mapping_matches_boxed_conversion_routes() {
+    use crate::kernel::{KernelTermExport, Variable};
+    let _session = crate::kernel::VerificationSession::enter();
+    for source in super::FORMATS {
+        let value =
+            IntegerTerm::from_machine(source, Bitvector32Term::Variable(Variable(989781))).unwrap();
+        for target in super::FORMATS {
+            for rhs in [
+                value.clone(),
+                IntegerTerm::constant(1.into()),
+                IntegerTerm::constant((-1).into()),
+                IntegerTerm::from_machine(
+                    source,
+                    Bitvector32Term::IntegerToMachine {
+                        value: IntegerTerm::Variable(Variable(989782)).into(),
+                        destination: source,
+                    },
+                )
+                .unwrap(),
+            ] {
+                for exact in [
+                    IntegerTerm::Add(value.clone().into(), rhs.clone().into()),
+                    IntegerTerm::Subtract(value.clone().into(), rhs.into()),
+                ] {
+                    let old = boxed_machine_operation_of_integer_value(&exact, target);
+                    let new = machine_operation_of_integer_value(&exact, target);
+                    assert_eq!(
+                        new.is_some(),
+                        old.is_some(),
+                        "{source:?} -> {target:?}: {exact:?}"
+                    );
+                    if let (Some((new, bounds)), Some((old, old_bounds))) = (new, old) {
+                        assert_eq!(bounds, old_bounds);
+                        let IntegerTerm::Machine(new) = new else {
+                            panic!("machine operation")
+                        };
+                        let IntegerTerm::Machine(old) = old else {
+                            panic!("machine operation")
+                        };
+                        let new_word = new
+                            .shared_operand()
+                            .map(KernelTermExport::machine)
+                            .transpose()
+                            .unwrap();
+                        assert_eq!(
+                            new_word.as_ref().unwrap_or_else(|| new.value()),
+                            old.value()
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn inverse_operation_mapping_preserves_constant_operation_structure() {
+    use crate::kernel::{KernelTerm, KernelTermImport, MachineBinaryOp};
+    let _session = crate::kernel::VerificationSession::enter();
+    for ty in super::FORMATS {
+        for a in [-1, 0, 1, 127, 255] {
+            for b in [-1, 0, 1] {
+                let exact = IntegerTerm::Add(
+                    IntegerTerm::constant(a.into()).into(),
+                    IntegerTerm::constant(b.into()).into(),
+                );
+                assert_eq!(
+                    machine_operation_of_integer_value(&exact, ty),
+                    boxed_machine_operation_of_integer_value(&exact, ty)
+                );
+            }
+        }
+        if representation::word_bits(ty).is_some() {
+            let literal = KernelTermImport::default()
+                .machine_arithmetic(ty, &range::constant_word(ty, &1.into()).unwrap())
+                .unwrap();
+            let root = KernelTerm::machine_binary_shared(
+                ty,
+                MachineBinaryOp::Add,
+                [literal.clone(), literal],
+            );
+            let observed =
+                IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
+            let exact = IntegerTerm::Add(observed.into(), IntegerTerm::constant(1.into()).into());
+            assert_eq!(
+                machine_operation_of_integer_value(&exact, ty),
+                boxed_machine_operation_of_integer_value(&exact, ty)
+            );
+        }
+    }
 }
