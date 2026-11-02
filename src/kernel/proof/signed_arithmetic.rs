@@ -2671,11 +2671,32 @@ fn interval_remainder(
 }
 
 fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool {
-    let ordinary =
-        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
-            .map(|condition| Proposition::ConditionIs(condition, false));
-    let Proposition::ConditionIs(condition, false) = ordinary.as_ref().unwrap_or(proposition)
-    else {
+    if let Some(query) =
+        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
+    {
+        if !matches!(
+            term,
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int32,
+                ..
+            }
+        ) {
+            return false;
+        }
+        let Some((operation, left, right)) =
+            crate::kernel::machine_integer::representation::word_operation(
+                MachineIntegerType::Int32,
+                term,
+            )
+        else {
+            return false;
+        };
+        return query.format == MachineIntegerType::Int32
+            && query.operation == operation
+            && signed_operand_matches(query.operands[0].operand_view(), left)
+            && signed_operand_matches(query.operands[1].operand_view(), right);
+    }
+    let Proposition::ConditionIs(condition, false) = proposition else {
         return false;
     };
     match (condition, term) {
@@ -2726,6 +2747,70 @@ fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bo
         ) => signed_arithmetic_terms_equal(left, a) && signed_arithmetic_terms_equal(right, b),
         _ => false,
     }
+}
+
+/// Match the shared guard operand against the explicit certificate input.
+/// Work follows only the supplied tree, never expands the shared DAG, and
+/// preserves the signed atom fragment (including the two 32-bit literal tags).
+fn signed_operand_matches(
+    operand: crate::kernel::MachineOperandView<'_>,
+    written: &Bitvector32Term,
+) -> bool {
+    use crate::kernel::{KernelTermNode, MachineOperandView, MachineUnaryOp};
+    let root = match operand {
+        MachineOperandView::Shared(root) => root,
+        MachineOperandView::Legacy(value) => return signed_arithmetic_terms_equal(value, written),
+    };
+    let mut pending = vec![(root, written)];
+    while let Some((shared, written)) = pending.pop() {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return false;
+        }
+        match (shared.node(), written) {
+            (KernelTermNode::Variable(a), Bitvector32Term::Variable(b)) if a == b => {}
+            (
+                KernelTermNode::MachineLiteral(_),
+                Bitvector32Term::Constant(b) | Bitvector32Term::UInt32Constant(b),
+            ) => {
+                if MachineOperandView::Shared(shared)
+                    .literal()
+                    .and_then(|v| v.as_const())
+                    != Some(*b)
+                {
+                    return false;
+                }
+            }
+            (
+                KernelTermNode::MachineUnary {
+                    format: MachineIntegerType::Int32,
+                    operator: MachineUnaryOp::BitwiseNot,
+                    operand,
+                },
+                unary_term!(Int32, BitwiseNot, written),
+            ) => pending.push((operand, written)),
+            (
+                KernelTermNode::MachineBinary {
+                    format,
+                    operator,
+                    arguments,
+                },
+                written,
+            ) => {
+                let Some((BitvectorBinaryOp::Machine(written_format, written_operator), a, b)) =
+                    signed_binary(written)
+                else {
+                    return false;
+                };
+                if *format != written_format || *operator != written_operator {
+                    return false;
+                }
+                pending.push((&arguments[1], b));
+                pending.push((&arguments[0], a));
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 fn signed_arithmetic_terms_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
@@ -3329,6 +3414,96 @@ fn propositions_match(left: &Proposition, right: &Proposition) -> bool {
 mod tests {
     use super::*;
     use crate::kernel::{Pointer, Variable};
+
+    #[test]
+    fn shared_guard_operand_matching_preserves_signed_atoms() {
+        use crate::kernel::{KernelTermImport, MachineOperandView};
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut words = vec![
+            Bitvector32Term::Constant(1),
+            Bitvector32Term::UInt32Constant(1),
+            Bitvector32Term::Constant(2),
+            x(),
+            y(),
+        ];
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for op in [
+                MachineBinaryOp::Add,
+                MachineBinaryOp::Subtract,
+                MachineBinaryOp::Multiply,
+                MachineBinaryOp::ShiftRight,
+            ] {
+                words.push(Bitvector32Term::Binary {
+                    format,
+                    op,
+                    left: Box::new(x()),
+                    right: Box::new(y()),
+                });
+            }
+        }
+        words.push(Bitvector32Term::Unary {
+            format: MachineIntegerType::Int32,
+            op: crate::kernel::MachineUnaryOp::BitwiseNot,
+            operand: Box::new(x()),
+        });
+        for word in &words {
+            for (op, overflow_op) in [
+                (MachineBinaryOp::Add, OverflowOperation::Add),
+                (MachineBinaryOp::Subtract, OverflowOperation::Subtract),
+                (MachineBinaryOp::Multiply, OverflowOperation::Multiply),
+            ] {
+                let legacy = Proposition::ConditionIs(
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: overflow_op,
+                        left: Box::new(word.clone()),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
+                    false,
+                );
+                let bounds =
+                    crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
+                        &legacy,
+                    );
+                let guard =
+                    Proposition::And(Box::new(bounds[0].clone()), Box::new(bounds[1].clone()));
+                for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+                    let expression = Bitvector32Term::Binary {
+                        format,
+                        op,
+                        left: Box::new(word.clone()),
+                        right: Box::new(Bitvector32Term::UInt32Constant(1)),
+                    };
+                    assert_eq!(
+                        is_exact_definedness(&guard, &expression),
+                        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(
+                            &guard
+                        )
+                        .is_some_and(|condition| is_exact_definedness(
+                            &Proposition::ConditionIs(condition, false),
+                            &expression
+                        )),
+                        "{expression:?}"
+                    );
+                }
+            }
+        }
+        for left in &words {
+            let shared = KernelTermImport::default().machine(MachineIntegerType::Int32, left);
+            for right in &words {
+                assert_eq!(
+                    signed_operand_matches(MachineOperandView::Shared(&shared), right),
+                    signed_arithmetic_terms_equal(left, right),
+                    "{left:?} against {right:?}",
+                );
+            }
+        }
+    }
 
     #[test]
     fn mathematical_certificate_results_keep_machine_sums_opaque() {

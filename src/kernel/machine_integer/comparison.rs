@@ -72,7 +72,7 @@ impl ComparisonOperand {
         }
     }
 
-    fn boxed_value(&self) -> &Bitvector32Term {
+    pub(super) fn boxed_value(&self) -> &Bitvector32Term {
         match self {
             Self::Observation(machine) => machine.value(),
             Self::Constant(value) => value,
