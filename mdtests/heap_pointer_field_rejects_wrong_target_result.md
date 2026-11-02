@@ -29,6 +29,35 @@ void put(struct holder* h, int32* p) {
 }
 int32 run() {
     ensures result == -1 or result == 0;
+} by {
+    step(); step();
+    if p == 0 {
+        step_until(function.exit);
+    } else {
+        step(); step(); step(); step();
+        if h == 0 {
+            step_until(function.exit);
+        } else {
+            step(); step();
+            step(put, {});
+            have defined(h->target) by { assumption(); }
+            mark stored;
+            step();
+            have defined(h->target) by {
+                transport(at(stored, defined(h->target)), defined(h->target)) using {
+                    at(stored, defined(h->target));
+                };
+            }
+            mark declared;
+            step();
+            have defined(h->target) by {
+                transport(at(declared, defined(h->target)), defined(h->target)) using {
+                    at(declared, defined(h->target));
+                };
+            }
+            step_until(function.exit);
+        }
+    }
 }
 ```
 

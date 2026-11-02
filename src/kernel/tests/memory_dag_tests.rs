@@ -4770,3 +4770,42 @@ fn abstract_read_naming_retains_its_selected_width_origin() {
             .are_algebraic_equal(&named, &changed_read)
     );
 }
+
+#[test]
+fn program_store_cache_cleanup_records_only_the_original_store_edge() {
+    for partial in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let field = arc_pointer(0);
+        let root = CMemory::new().with_block("arg-memory", 32);
+        let before = intern_c_memory(root.clone().store(
+            field.clone(),
+            CValue::Int64(Bitvector32Term::Int64Constant(7)),
+        ));
+        let write = if partial {
+            field.offset_by_bytes(4)
+        } else {
+            Pointer::symbolic(Variable(998_950))
+        };
+        let after = intern_c_memory(before.memory().clone().store_classed_with_context(
+            write.clone(),
+            int32(2),
+            &PureFactContext::new(),
+            None,
+        ));
+        let edge = after.derivation().expect("completed store has an edge");
+        assert!(matches!(edge.as_ref(), CMemoryDerivation::Store { base, .. } if base == &before));
+        assert!(
+            after.known_value(&field).is_none(),
+            "possibly overwritten cached value is discarded"
+        );
+        assert!(
+            before.known_value(&field).is_some(),
+            "the persistent parent retains its value"
+        );
+        assert_ne!(
+            after.memory(),
+            &root.store(write, int32(2)),
+            "losing a possible value must retain the original memory identity"
+        );
+    }
+}

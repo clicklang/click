@@ -58,12 +58,11 @@ facts do not establish flat cost as the queried class or bucket grows.
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 
-Investigate the read-initialization loop `typed_read_has_same_memory_source`
-with its own checking regression before choosing a removal. Keep it separate
-from complete-pointer equality and provenance comparison, which may inspect
-only one predecessor per endpoint. Retain the repeated-query, adjacent-state,
-explicit-composition, cold-refusal and partial-overwrite controls in
-`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`.
+Pointer read naming still reaches a cell-version history walk; isolate and
+design that removal separately, as described in
+[Fact-aware frame walks](fact-aware-frame-walks.md). Retain repeated-query,
+adjacent-state, exact, explicit-composition, cold-refusal and partial-overwrite
+controls in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`.
 
 Repair affected proofs with explicit separation and transport certificates,
 preserving C and contracts. Structural read equality needs positive evidence;

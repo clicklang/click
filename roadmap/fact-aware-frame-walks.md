@@ -4,11 +4,23 @@ Priority: P1.
 
 ## Remaining targets
 
-The `typed_read_has_same_memory_source` loop in
-`src/kernel/memory_provenance.rs` supplies initialization checks through
-`PureFactContext`'s read-definedness evidence. Establish a deterministic scaling
-regression through that checking caller, then discuss the explicit proof needed
-to replace its history traversal before implementing the removal.
+**Pointer read naming needs a separate design cycle.**
+`CPointerValue::from_read` calls `resource_tracker::last_same_point`, which
+reaches `cell_last_same_version` and its history traversal. Naming program
+pointer reads at the actual input snapshot, rather than a reduced cache view,
+exposes this cost: the existing
+`unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors` regression
+measures 1266/1290/1386/1770 units at 4/16/64/256 descriptors in that experiment.
+Keep the current scalar-read spelling fix separate from pointer naming. First
+isolate this path with a cold repeated-query regression; discuss how an exact
+typed read should acquire its designation and extent without searching history.
+Do not simply drop provenance or width checks.
+
+Read-side `CellsForgotten` projections and bulk-write preparation remain
+separate from scalar-store invalidation. Removing them requires preserving
+read spelling and branch-scoped alias reasoning. `read_identity` is not
+initialization/lifetime authority. Do not broaden the producer change into
+these paths without a concrete reproduction and design review.
 
 Keep complete-pointer equality and provenance comparison bounded to one
 immediate predecessor per endpoint. Retain the repeated-query, adjacent-state,

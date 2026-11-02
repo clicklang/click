@@ -97,13 +97,27 @@ kinds:
 | `CallHavoc` | A call may have changed the callee's owned ranges, and none of the memory its caller kept owning. |
 | `BlockDeclared` | A new non-havoc block entered the memory model. |
 | `ObjectInitializationRecorded` | Initialized-byte metadata was extended after writes already recorded in the DAG. Stored values are unchanged. |
-| `CellsForgotten` | Possibly aliasing cached cells were discarded on a write path, or cells the loaded pointer is separate from were discarded on a read path. |
+| `CellsForgotten` | Standalone cache projection used by bulk producers and symbolic-read reduction. Ordinary scalar program stores perform invalidation internally and record only `Store`. |
 | `HeapAllocationPending` | An allocation request has an unresolved base and extent but no successful storage yet. |
 | `HeapAllocated` | A fresh allocation identity and extent became live. |
 | `HeapFreed` | An allocation identity and extent stopped being live. |
 
 Entry states have no parent edge. Failed allocation returns to the existing
 pre-allocation identity instead of recording a backward edge.
+
+A scalar program store retains its original input before invalidating cached
+values, records initialization and effective types, and interns only the completed
+store. Cache cleanup is not a separate transition on this path. If invalidation
+loses knowledge, the completed snapshot retains the `ForgottenFrom` marker for
+the original input; discarding a cached value must not make a post-write state
+identical to an older state. The low-level store constructor used for already
+prepared cells remains distinct from the program-store operation.
+
+Unresolved scalar program reads name their actual input snapshot, so an explicit
+fact about that state matches the returned value. Temporary cache reduction can
+resolve a read but does not choose the state named by an unresolved scalar
+result. Pointer-read naming retains its existing projection and provenance
+behavior; its cell-version naming walk is a separate removal target.
 
 ## Shared byte separation for stores
 

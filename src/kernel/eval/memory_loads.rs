@@ -718,7 +718,9 @@ struct DistinctLoadCase {
 /// this memory decides, with the distinct case of an undecided cell left in
 /// `distinct_case` for the caller. `written` is the memory the load was read
 /// at, which every uninitialized-read check asks: `memory` may be a distinct
-/// case's, without cells the program wrote.
+/// case's, without cells the program wrote. Scalar program reads also use
+/// `written` for their symbolic result: reducing a cache must not change the
+/// program point named by an unresolved read.
 #[allow(clippy::too_many_arguments)]
 fn evaluate_c_memory_load_case(
     memory: &CMemory,
@@ -835,7 +837,11 @@ fn evaluate_c_memory_load_case(
         && !matches!(value_type, CType::Parameter(_))
     {
         let Some(value) = canonicalized_symbolic_load_value_with_identity(
-            memory,
+            if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
+                written
+            } else {
+                memory
+            },
             &pointer,
             value_type,
             &mut facts,
@@ -1065,7 +1071,11 @@ fn evaluate_c_memory_load_case(
 
     if allow_symbolic_external_load && assumptions.should_prefer_symbolic_external_loads() {
         let Some(value) = canonicalized_symbolic_load_value_with_identity(
-            memory,
+            if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
+                written
+            } else {
+                memory
+            },
             &pointer,
             value_type,
             &mut facts,
@@ -1177,7 +1187,11 @@ fn evaluate_c_memory_load_case(
 
     if pointer.has_symbolic_block() && allow_symbolic_external_load {
         let Some(value) = canonicalized_symbolic_load_value_with_identity(
-            &memory,
+            if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
+                written
+            } else {
+                &memory
+            },
             &pointer,
             value_type,
             &mut facts,
@@ -1376,7 +1390,11 @@ fn evaluate_c_memory_load_case(
                 // load's value is its load over this snapshot, which keeps
                 // the cell, and no further case is split from it.
                 let outcome = match canonicalized_symbolic_load_value_with_identity(
-                    &memory,
+                    if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
+                        written
+                    } else {
+                        &memory
+                    },
                     &pointer,
                     value_type,
                     &mut distinct_facts,
@@ -1444,7 +1462,11 @@ fn evaluate_c_memory_load_case(
 
     if memory.is_loadable_concretely(&pointer, value_type.byte_width()) {
         if let Some(value) = cell_value_recorded_on_path(
-            &memory,
+            if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
+                written
+            } else {
+                &memory
+            },
             &pointer,
             value_type,
             &mut facts,
@@ -1459,7 +1481,11 @@ fn evaluate_c_memory_load_case(
             }];
         }
         let Some(value) = canonicalized_symbolic_load_value_with_identity(
-            &memory,
+            if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
+                written
+            } else {
+                &memory
+            },
             &pointer,
             value_type,
             &mut facts,
@@ -1539,8 +1565,14 @@ fn evaluate_c_memory_load_case(
         }];
     }
 
+    // Query the actual program snapshot. The reduced cache above is a
+    // hypothetical view for this read, not another execution transition.
     if let Some(value) = cell_value_recorded_on_path(
-        &memory,
+        if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
+            written
+        } else {
+            &memory
+        },
         &pointer,
         value_type,
         &mut facts,
@@ -1556,7 +1588,11 @@ fn evaluate_c_memory_load_case(
     }
 
     let Some(value) = canonicalized_symbolic_load_value_with_identity(
-        &memory,
+        if purpose == LoadPurpose::Program && value_type.pointee_type().is_none() {
+            written
+        } else {
+            &memory
+        },
         &pointer,
         value_type,
         &mut facts,
