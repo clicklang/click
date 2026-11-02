@@ -9244,11 +9244,11 @@ fn check_return_cleanup_cases(selected_type: &str) {
             "is_seven",
             "bool",
             "int32* slot",
-            "owns slot[0..1]; requires slot[0] == 7; ensures result == 1; ensures slot[0] == old(slot[0]);",
-            "1",
+            "owns slot[0..1]; requires slot[0] == 7; ensures result == true; ensures slot[0] == old(slot[0]);",
+            "true",
         ),
         ("ordinary_wide", "", "int64", "", "", "4294967303i64"),
-        ("ordinary_bool", "", "bool", "", "", "1"),
+        ("ordinary_bool", "", "bool", "", "", "true"),
     ] {
         if value_type != selected_type {
             continue;
@@ -9289,7 +9289,10 @@ Restore::~Restore() {{
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
             &format!("ensures result == {expected}; ensures value =="),
-            "ensures result == 0; ensures value ==",
+            &format!(
+                "ensures result == {}; ensures value ==",
+                if value_type == "bool" { "false" } else { "0" }
+            ),
         );
         fs::write(project.directory.join("bad.click"), &hostile).unwrap();
         let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
@@ -14667,11 +14670,21 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
-    for (value, expected) in [(0, 1), (3, 2)] {
+    for (value, empty, expected) in [(0, true, 1), (3, false, 2)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
-        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }}
-        int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }}
+        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ true }} else {{ false }}); }}
+        int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }} by {{
+            step();
+            let {{ result: empty }} = step(Base::Empty, {{}});
+            have empty == {empty} by {{
+                rewrite(empty == (if state.left.base.value == 0 {{ true }} else {{ false }}));
+                rewrite(state.left.base.value == {value});
+                normalize();
+            }}
+            step_until(function.exit);
+            solve();
+        }}
         "#
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
@@ -15641,14 +15654,14 @@ fn converted_return_calls_preserve_modulo_boolean_and_ordered_chains() {
             "bool",
             "static_cast<bool>(echo(value))",
             "value == 4294967296i64",
-            "1",
+            "true",
         ),
         (
             "bool",
             "bool",
             "uint64",
             "static_cast<unsigned long>(echo(value))",
-            "value == 1",
+            "value == true",
             "1u64",
         ),
         (
@@ -15684,7 +15697,10 @@ fn converted_return_calls_preserve_modulo_boolean_and_ordered_chains() {
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
             &format!("ensures result == {expected}"),
-            "ensures result == 0",
+            &format!(
+                "ensures result == {}",
+                if result_type == "bool" { "false" } else { "0" }
+            ),
         );
         let path = project.directory.join("hostile.click");
         fs::write(&path, &hostile).unwrap();
