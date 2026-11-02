@@ -13795,7 +13795,8 @@ pub(crate) struct ResourceInstanceRewriteResult {
 /// of refusing; anything else keeps the generic conditional-proof
 /// diagnostic.
 fn is_pure_undefined_behavior_condition(proposition: &Proposition) -> bool {
-    if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition).is_some()
+    if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
+        .is_some()
     {
         return true;
     }

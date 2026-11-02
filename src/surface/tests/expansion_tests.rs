@@ -19712,7 +19712,7 @@ fn signed_byte_swap_selected_frame_expands_without_search() {
 }
 
 #[test]
-fn theorem_entry_requirements_expand_to_explicit_haves() {
+fn theorem_entry_type_bounds_discharge_without_search() {
     let source = r#"
         theorem entry_conversion() {
             ensures forall (k: uint8) {
@@ -19721,11 +19721,11 @@ fn theorem_entry_requirements_expand_to_explicit_haves() {
         }
     "#;
     without_implicit_auto(|| verify_click_theorems(source))
-        .expect_err("the entry requirement needs an explicit proof without implicit search");
+        .expect("the byte binder itself establishes the conversion domain");
     verify_click_theorems(source).expect("entry requirements use ordinary proof checking");
     let expanded = expand_c0_claim_source_by_label(source, &[], "entry_conversion.ensures_0")
-        .expect("entry requirement certificates are retained");
-    assert!(expanded.contains("have "), "{expanded}");
+        .expect("entry conversion expands without redundant requirement proofs");
+    assert!(!expanded.contains("have "), "{expanded}");
     assert!(!expanded.contains("solve();"), "{expanded}");
     without_implicit_auto(|| verify_click_theorems(&expanded))
         .expect("expanded entry requirements check without search");
@@ -19908,4 +19908,94 @@ fn machine_subtraction_fact_bridges_expand_without_implicit_search() {
         let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
         without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
     }
+}
+
+#[test]
+fn single_store_definedness_transport_expands_and_replays() {
+    let (source, c_sources) = mdtest_sources("mdtests/read_initialization_step_transport.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified =
+        verify_c0_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_checked_grouped_claim(&source, &verified, "change").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
+
+#[test]
+#[ignore = "nightly: explicit scalar framing expansion and replay"]
+fn atomic_store_scalar_framing_expands_and_replays() {
+    for (fixture, function) in [
+        ("scalar_read_after_atomic_store", "later"),
+        (
+            "a_case_split_inside_a_c_if_arm_continues_past_the_arm",
+            "read_back",
+        ),
+        ("heap_pointer_field_keeps_target_identity", "run"),
+        (
+            "a_local_addressed_in_another_function_is_framed_by_ownership",
+            "read_literal",
+        ),
+        ("conditional_call_indexed_result_fact", "caller"),
+        (
+            "order_bounds_place_a_store_off_a_constant_element",
+            "through_parameter",
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = c_sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = verify_c0_sources(&source, &sources)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    }
+}
+
+// The reconstruction rule must survive checked tactic expansion and retained
+// verification, rather than working only during ordinary execution search.
+#[test]
+fn uint32_from_le_bytes_expands_and_retains() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/integer_uint32_from_le_bytes_initialization.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).unwrap();
+    let position = expansion::position_at_offset(source, source.find("step_until").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let claim = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
+    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+    session
+        .verify_at(&expanded, claim.line, claim.column)
+        .unwrap();
+    verify_c0_sources(&expanded.replace("4293820433u32", "17u32"), &sources)
+        .expect_err("a single stored byte is not the reconstructed word");
+}
+
+#[test]
+fn loop_owned_view_call_expands_and_replays() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/loop_owned_view_survives_unrelated_read_call.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified =
+        verify_c0_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_checked_grouped_claim(&source, &verified, "caller").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
 }

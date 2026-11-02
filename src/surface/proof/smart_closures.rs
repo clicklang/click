@@ -1454,13 +1454,17 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
     // The narrow observations by word, so a wider observation of the same
     // word finds the value it widens by one lookup.
     let mut narrow_by_word =
-        std::collections::HashMap::<crate::kernel::Bitvector32Term, Vec<_>>::new();
+        std::collections::HashMap::<crate::kernel::SharedMachineIntegerTerm, Vec<_>>::new();
     for observation in &observations {
         if let crate::kernel::IntegerTerm::Machine(machine) = observation
             && machine.ty().format().bits() < 32
         {
             narrow_by_word
-                .entry(machine.value().clone())
+                .entry(
+                    machine
+                        .operand_view()
+                        .retain(crate::kernel::MachineIntegerType::Int32),
+                )
                 .or_default()
                 .push(observation.clone());
         }
@@ -1488,7 +1492,10 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
                     // legacy 32-to-64-bit conversion also offers.
                     .or_else(|| {
                         widened_narrow_word(&observed)
-                            .and_then(|word| narrow_by_word.get(word))
+                            .and_then(|word| {
+                                narrow_by_word
+                                    .get(&word.retain(crate::kernel::MachineIntegerType::Int32))
+                            })
                             .and_then(|narrow| {
                                 narrow
                                     .iter()
@@ -9927,7 +9934,7 @@ impl<'a> Proof<'a> {
         if matches!(self.goal(), Some(Proposition::And(..)))
             && !matches!(self.surface_goal(), Some(ClickProposition::And(..)))
             && !self.goal().is_some_and(|goal| {
-                crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(goal)
+                crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                     .is_some()
             })
         {
@@ -10052,7 +10059,7 @@ impl<'a> Proof<'a> {
             proof.check_typed_atomic_solve_candidate(goal, &derivation, &premise_pairs)
         };
         let arithmetic_domain = signed_definedness_operands(goal).is_some()
-            || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(goal)
+            || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(goal)
                 .is_some();
         let typed_first = signed_order || arithmetic_domain;
         if typed_first && let Some(closed) = try_typed_derivation() {

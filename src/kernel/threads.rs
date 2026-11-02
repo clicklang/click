@@ -335,8 +335,11 @@ impl PendingThreadCreate {
                         memory.with_block(block.clone(), *bytes)
                     }
                     PendingThreadMemoryDelta::Store { pointer, value } => memory
-                        .without_possible_aliasing_cells(pointer, value.byte_width(), assumptions)
-                        .store_with_context(pointer.clone(), value.clone(), assumptions),
+                        .store_invalidating_with_context(
+                            pointer.clone(),
+                            value.clone(),
+                            assumptions,
+                        ),
                 };
             }
             selected.set_memory(memory);

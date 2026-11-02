@@ -5,7 +5,7 @@
 //! A single bound identifies a candidate query, but only both bounds establish
 //! representability. Unsigned overflow remains wrapping arithmetic.
 
-use super::{FORMATS, Operation, range, representation};
+use super::{FORMATS, Operation, comparison::ComparisonOperand, range, representation};
 use crate::kernel::{Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
 
 /// The formats whose definedness facts the kernel files, narrowest first:
@@ -37,9 +37,12 @@ pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Pr
     ) else {
         return Vec::new();
     };
-    let (minimum, maximum) = range::range(ty);
-    let exact = operation.exact(left, right);
-    vec![
+    ordinary_bounds(ty, operation.exact(left, right)).into()
+}
+
+fn ordinary_bounds(format: MachineIntegerType, exact: IntegerTerm) -> [Proposition; 2] {
+    let (minimum, maximum) = range::range(format);
+    [
         Proposition::ConditionIs(
             ConditionTerm::integer_less_equal(exact.clone(), IntegerTerm::constant(maximum)),
             true,
@@ -67,6 +70,39 @@ pub(crate) fn overflow_fact_of_integer_bound(
     bound: &Proposition,
     formats: impl Iterator<Item = MachineIntegerType>,
 ) -> Option<Proposition> {
+    let query = overflow_query_of_integer_bound(bound, formats)?;
+    Some(Proposition::ConditionIs(query.boxed_condition()?, false))
+}
+
+/// Private query over the original operand handles. Ordinary bounds remain
+/// the facts; materializing a legacy condition is a compatibility output only.
+#[derive(Clone)]
+pub(crate) struct OverflowQueryView {
+    pub(crate) format: MachineIntegerType,
+    pub(crate) operation: Operation,
+    pub(crate) operands: [ComparisonOperand<'static>; 2],
+    exact: IntegerTerm,
+}
+
+impl OverflowQueryView {
+    pub(crate) fn bounds(&self) -> [Proposition; 2] {
+        ordinary_bounds(self.format, self.exact.clone())
+    }
+
+    fn boxed_condition(&self) -> Option<ConditionTerm> {
+        representation::overflow_condition(
+            self.format,
+            self.operation,
+            Box::new(self.operands[0].boxed_value().clone()),
+            Box::new(self.operands[1].boxed_value().clone()),
+        )
+    }
+}
+
+pub(crate) fn overflow_query_of_integer_bound(
+    bound: &Proposition,
+    formats: impl Iterator<Item = MachineIntegerType>,
+) -> Option<OverflowQueryView> {
     let Proposition::ConditionIs(
         ConditionTerm::IntegerLessEqual(first, second)
         | ConditionTerm::IntegerGreaterEqual(first, second),
@@ -75,60 +111,64 @@ pub(crate) fn overflow_fact_of_integer_bound(
     else {
         return None;
     };
-    // The comparison constructors may put the constant on either side.
     let exact = if Operation::of_exact(first).is_some() {
         first
     } else {
         second
     };
-    let (_, left, right) = Operation::of_exact(exact)?;
-    // An operand is an observation in the operation's format, or a
-    // constant, which the forward map produces for a literal operand such
-    // as `x + 1`. An `int32` observation of a narrow load or of a widened
-    // narrow value reads as the narrow format's
-    // (`IntegerTerm::from_machine`), so an operand's word is the one, as
-    // written or widened, whose observation in the format gives the
-    // operand back.
-    let carrier = |ty: MachineIntegerType, side: &IntegerTerm| -> Option<Bitvector32Term> {
+    let (operation, left, right) = Operation::of_exact(exact)?;
+    if !matches!(left, IntegerTerm::Machine(_)) && !matches!(right, IntegerTerm::Machine(_)) {
+        return None;
+    }
+    let carrier = |ty: MachineIntegerType,
+                   side: &IntegerTerm|
+     -> Option<ComparisonOperand<'static>> {
         match side {
             IntegerTerm::Machine(machine) => {
-                let word = machine.value().clone();
+                let view = machine.operand_view();
+                if machine.ty().format().bits() == ty.format().bits()
+                    && view.observe(ty).as_ref() == Some(side)
+                {
+                    return Some(ComparisonOperand::Observation(view.retain(ty)));
+                }
+                // A cast would add a root absent from a shared arithmetic
+                // operand, so its observation cannot be this exact side.
+                // Legacy cast/opaque inputs retain their prior widening test.
+                let crate::kernel::MachineOperandView::Legacy(word) = view else {
+                    return None;
+                };
                 let widened = Bitvector32Term::MachineIntegerCast {
                     value: Box::new(word.clone()),
                     source: machine.ty(),
                     destination: ty,
                 };
-                // A value of another width is never `ty`'s word as written:
-                // its word in `ty` is its widening, a node of its own.
-                let as_written =
-                    (machine.ty().format().bits() == ty.format().bits()).then_some(word);
-                as_written
-                    .into_iter()
-                    .chain([widened])
-                    .find(|word| IntegerTerm::from_machine(ty, word.clone()).as_ref() == Some(side))
+                (IntegerTerm::from_machine(ty, widened.clone()).as_ref() == Some(side)).then(|| {
+                    ComparisonOperand::Observation(crate::kernel::SharedMachineIntegerTerm::intern(
+                        ty, widened,
+                    ))
+                })
             }
-            IntegerTerm::Constant(value) => range::constant_word(ty, value),
+            IntegerTerm::Constant(value) => {
+                range::constant_word(ty, value).map(ComparisonOperand::Constant)
+            }
             _ => None,
         }
     };
-    if !matches!(left, IntegerTerm::Machine(_)) && !matches!(right, IntegerTerm::Machine(_)) {
-        return None;
-    }
     formats
-        .filter_map(|ty| {
-            let (a, b) = (Box::new(carrier(ty, left)?), Box::new(carrier(ty, right)?));
-            Some(Operation::ALL.map(|operation| {
-                representation::overflow_condition(ty, operation, a.clone(), b.clone())
-            }))
-        })
-        .flatten()
-        .flatten()
-        .find_map(|condition| {
-            let fact = Proposition::ConditionIs(condition, false);
-            integer_bounds_of_definedness(&fact)
+        .filter(|ty| representation::has_overflow_test(*ty))
+        .find_map(|format| {
+            let operands = [carrier(format, left)?, carrier(format, right)?];
+            let query = OverflowQueryView {
+                format,
+                operation,
+                operands,
+                exact: exact.as_ref().clone(),
+            };
+            query
+                .bounds()
                 .iter()
                 .any(|expected| same_integer_bound(expected, bound))
-                .then_some(fact)
+                .then_some(query)
         })
 }
 
@@ -148,23 +188,20 @@ fn same_integer_bound(left: &Proposition, right: &Proposition) -> bool {
 /// query. This is a structural adapter for existing interval certificates;
 /// it neither adds an overflow fact nor searches the context for bounds.
 pub(crate) fn ordinary_arithmetic_guard(proposition: &Proposition) -> Option<ConditionTerm> {
+    ordinary_arithmetic_guard_view(proposition)?.boxed_condition()
+}
+
+pub(crate) fn ordinary_arithmetic_guard_view(
+    proposition: &Proposition,
+) -> Option<OverflowQueryView> {
     let Proposition::And(first, second) = proposition else {
         return None;
     };
-    let fact = definedness_of_integer_bound(first)?;
-    let bounds = integer_bounds_of_definedness(&fact);
-    let [upper, lower] = bounds.as_slice() else {
-        return None;
-    };
-    if !(same_integer_bound(first, upper) && same_integer_bound(second, lower)
-        || same_integer_bound(first, lower) && same_integer_bound(second, upper))
-    {
-        return None;
-    }
-    let Proposition::ConditionIs(condition, false) = fact else {
-        return None;
-    };
-    Some(condition)
+    let query = overflow_query_of_integer_bound(first, defined_formats())?;
+    let [upper, lower] = query.bounds();
+    ((same_integer_bound(first, &upper) && same_integer_bound(second, &lower))
+        || (same_integer_bound(first, &lower) && same_integer_bound(second, &upper)))
+    .then_some(query)
 }
 
 /// Private input form for the existing interval proof rules. Stored facts,
@@ -185,4 +222,136 @@ pub(crate) fn interval_query_form(proposition: &Proposition) -> Option<Propositi
         }
     }
     None
+}
+
+#[cfg(test)]
+mod shared_query_tests {
+    use super::*;
+    fn legacy_overflow_query(
+        bound: &Proposition,
+        formats: impl Iterator<Item = MachineIntegerType>,
+    ) -> Option<Proposition> {
+        let Proposition::ConditionIs(
+            ConditionTerm::IntegerLessEqual(first, second)
+            | ConditionTerm::IntegerGreaterEqual(first, second),
+            true,
+        ) = bound
+        else {
+            return None;
+        };
+        // The comparison constructors may put the constant on either side.
+        let exact = if Operation::of_exact(first).is_some() {
+            first
+        } else {
+            second
+        };
+        let (_, left, right) = Operation::of_exact(exact)?;
+        // An operand is an observation in the operation's format, or a
+        // constant, which the forward map produces for a literal operand such
+        // as `x + 1`. An `int32` observation of a narrow load or of a widened
+        // narrow value reads as the narrow format's
+        // (`IntegerTerm::from_machine`), so an operand's word is the one, as
+        // written or widened, whose observation in the format gives the
+        // operand back.
+        let carrier = |ty: MachineIntegerType, side: &IntegerTerm| -> Option<Bitvector32Term> {
+            match side {
+                IntegerTerm::Machine(machine) => {
+                    let word = machine.value().clone();
+                    let widened = Bitvector32Term::MachineIntegerCast {
+                        value: Box::new(word.clone()),
+                        source: machine.ty(),
+                        destination: ty,
+                    };
+                    // A value of another width is never `ty`'s word as written:
+                    // its word in `ty` is its widening, a node of its own.
+                    let as_written =
+                        (machine.ty().format().bits() == ty.format().bits()).then_some(word);
+                    as_written.into_iter().chain([widened]).find(|word| {
+                        IntegerTerm::from_machine(ty, word.clone()).as_ref() == Some(side)
+                    })
+                }
+                IntegerTerm::Constant(value) => range::constant_word(ty, value),
+                _ => None,
+            }
+        };
+        if !matches!(left, IntegerTerm::Machine(_)) && !matches!(right, IntegerTerm::Machine(_)) {
+            return None;
+        }
+        formats
+            .filter_map(|ty| {
+                let (a, b) = (Box::new(carrier(ty, left)?), Box::new(carrier(ty, right)?));
+                Some(Operation::ALL.map(|operation| {
+                    representation::overflow_condition(ty, operation, a.clone(), b.clone())
+                }))
+            })
+            .flatten()
+            .flatten()
+            .find_map(|condition| {
+                let fact = Proposition::ConditionIs(condition, false);
+                integer_bounds_of_definedness(&fact)
+                    .iter()
+                    .any(|expected| same_integer_bound(expected, bound))
+                    .then_some(fact)
+            })
+    }
+
+    #[test]
+    fn shared_overflow_queries_preserve_the_legacy_reverse_map() {
+        use crate::kernel::{MachineBinaryOp, Variable};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in FORMATS {
+            let variable = Bitvector32Term::Variable(Variable(982201));
+            let words = [
+                variable.clone(),
+                Bitvector32Term::Binary {
+                    format,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(variable.clone()),
+                    right: Box::new(variable.clone()),
+                },
+                Bitvector32Term::MachineIntegerCast {
+                    source: MachineIntegerType::Int32,
+                    destination: format,
+                    value: Box::new(variable),
+                },
+            ];
+            for word in words {
+                let Some(observed) = IntegerTerm::from_machine(format, word) else {
+                    continue;
+                };
+                for operation in Operation::ALL {
+                    let exact = operation.exact(observed.clone(), IntegerTerm::constant(1.into()));
+                    for bounds_format in FORMATS {
+                        let (min, max) = range::range(bounds_format);
+                        for bound in [
+                            Proposition::ConditionIs(
+                                ConditionTerm::integer_less_equal(
+                                    exact.clone(),
+                                    IntegerTerm::constant(max),
+                                ),
+                                true,
+                            ),
+                            Proposition::ConditionIs(
+                                ConditionTerm::integer_greater_equal(
+                                    exact.clone(),
+                                    IntegerTerm::constant(min),
+                                ),
+                                true,
+                            ),
+                        ] {
+                            assert_eq!(
+                                overflow_fact_of_integer_bound(&bound, FORMATS.into_iter()),
+                                legacy_overflow_query(&bound, FORMATS.into_iter()),
+                                "{format:?} {operation:?}: {bound:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/machine_integer/definedness/tests.rs");
+    }
 }

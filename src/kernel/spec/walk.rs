@@ -121,6 +121,7 @@ impl<'a> SpecNode<'a> {
                     visit(N::Expression(right));
                 }
                 SpecExpression::BitwiseNot(body)
+                | SpecExpression::NarrowArithmetic(body, _)
                 | SpecExpression::Cast(body, _)
                 | SpecExpression::PointerCoercion(body, _)
                 | SpecExpression::LoopEntrySnapshot(body) => visit(N::Expression(body)),

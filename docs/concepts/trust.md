@@ -46,7 +46,11 @@ and the glossary entry for axiom). Fifteen `prove_int32_*` operations are also
 exposed as named standard theorems. `separation::restrict` is likewise a named
 trusted axiom, implemented in `src/kernel/separation_laws.rs`: separate parents
 and explicit containment premises imply separate parts. Its `Resource`
-parameters describe resources without granting ownership.
+parameters describe resources without granting ownership. `integer::uint32_from_le_bytes`
+is backed by `src/kernel/byte_representation_laws.rs`; it relates a defined
+unsigned word to its four representation bytes under an explicit
+`little_endian()` premise and a readable-word premise. The selected execution
+environment supplies the target premise; pure theorems must require it.
 
 The kernel deliberately contains domain-specific reasoning about C memory,
 resources, integers, and allocation, so that verification is fast and proofs

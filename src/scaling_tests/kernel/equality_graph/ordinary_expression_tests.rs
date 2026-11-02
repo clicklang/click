@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn ordinary_expression_queries_ignore_unrelated_classes() {
-    let _session = crate::kernel::VerificationSession::enter();
     let mut previous = None;
     for size in [16, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
         let mut graph = EqualityGraph::default();
         for i in 0..size {
             graph.add_int32_equality(&word(950_000 + 2 * i), &word(950_001 + 2 * i));

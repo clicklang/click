@@ -11,7 +11,9 @@
 //! branch of an `if` in one of those positions
 //! (an `if`'s condition stays a proposition). Where a machine type is
 //! expected the
-//! operation is C's at that type, as written. An untyped `let` has no
+//! operation is C's at that type, as written; at an 8- or 16-bit type it is
+//! that type's own operator (decision G2), which lowering marks
+//! (`SpecExpression::at_machine_type`). An untyped `let` has no
 //! expected type, so one whose value does arithmetic on a machine value is
 //! refused and names both annotations. An untyped `let` has its value's
 //! type, and each `let` in scope is an operand of its type, so arithmetic
@@ -265,6 +267,58 @@ impl Parser {
              meaning from the type its result is used at, so write `let {name}: Integer = ...;` \
              for the exact value or `let {name}: {machine} = ...;` for the C operation"
         )))
+    }
+
+    /// Refuses `let name: T = value;` at an 8- or 16-bit `T` whose value
+    /// does arithmetic on an operand of another machine type. Arithmetic at
+    /// `T` is `T`'s own operator (decision G2), which needs operands of `T`;
+    /// a conversion that can change a value is written. Unsuffixed literals
+    /// take `T`, and an operand whose type its spelling does not show is
+    /// left to the type checker. One visit per spine node.
+    pub(super) fn refuse_mixed_narrow_arithmetic(
+        &self,
+        name: &str,
+        c_type: C0Type,
+        value: &ContractExpression,
+    ) -> Result<(), ClickError> {
+        if !matches!(
+            c_type,
+            C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16
+        ) || !is_narrow_arithmetic(value)
+        {
+            return Ok(());
+        }
+        let mut pending = vec![value];
+        while let Some(expression) = pending.pop() {
+            match expression {
+                ContractExpression::Add(left, right)
+                | ContractExpression::Subtract(left, right)
+                | ContractExpression::Multiply(left, right)
+                | ContractExpression::BitwiseAnd(left, right)
+                | ContractExpression::BitwiseOr(left, right)
+                | ContractExpression::BitwiseXor(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                ContractExpression::BitwiseNot(operand) => pending.push(operand),
+                ContractExpression::IntegerLiteral(_) => {}
+                leaf => {
+                    if let Some(actual) = self.machine_operand_type(leaf)
+                        && actual != c_type
+                    {
+                        return Err(self
+                            .error(mixed_narrow_arithmetic_message(
+                                &format!("`let {name}: {}`", self.machine_type_spelling(c_type)),
+                                &self.machine_type_spelling(c_type),
+                                &crate::surface::diagnostics::describe_contract_expression(leaf),
+                                &self.machine_type_spelling(actual),
+                            ))
+                            .with_kind(ClickErrorKind::Type));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// `c_type` as the sidecar's language spells it.
@@ -734,6 +788,38 @@ impl Parser {
             _ => None,
         }
     }
+}
+
+/// Whether `expression` is `+ - * & | ^ ~` at its root, the arithmetic a
+/// narrow position makes its type's own (decision G2).
+pub(in crate::surface) fn is_narrow_arithmetic(expression: &ContractExpression) -> bool {
+    matches!(
+        expression,
+        ContractExpression::Add(..)
+            | ContractExpression::Subtract(..)
+            | ContractExpression::Multiply(..)
+            | ContractExpression::BitwiseAnd(..)
+            | ContractExpression::BitwiseOr(..)
+            | ContractExpression::BitwiseXor(..)
+            | ContractExpression::BitwiseNot(..)
+    )
+}
+
+/// The refusal of arithmetic at the 8- or 16-bit `expected` type over an
+/// operand `operand` of type `actual` (decision G2), with the explicit
+/// conversion it names.
+pub(in crate::surface) fn mixed_narrow_arithmetic_message(
+    position: &str,
+    expected: &str,
+    operand: &str,
+    actual: &str,
+) -> String {
+    format!(
+        "{position} does arithmetic at {expected}, which is {expected}'s own operator and \
+         needs {expected} operands, but `{operand}` is {actual}; write the conversion \
+         explicitly, as in `{operand} as {expected}`, or compute at a wider type and \
+         convert the result"
+    )
 }
 
 /// Whether `expression` or an operand of its arithmetic is a population

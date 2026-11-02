@@ -522,3 +522,37 @@ fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
         previous = Some((depth, work));
     }
 }
+
+#[test]
+fn signed_wide_interval_queries_ignore_bound_bucket_size() {
+    let mut baseline = None;
+    for size in [4, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = Bitvector32Term::Variable(Variable(982002));
+        let mut facts = PureFactContext::new();
+        for offset in 0..size {
+            facts = facts.assume_condition(
+                ConditionTerm::int64_signed_less_equal(
+                    Bitvector32Term::Int64Constant(-1000 - offset),
+                    x.clone(),
+                ),
+                true,
+            );
+            facts = facts.assume_condition(
+                ConditionTerm::int64_signed_less_equal(
+                    x.clone(),
+                    Bitvector32Term::Int64Constant(1000 + offset),
+                ),
+                true,
+            );
+        }
+        let (range, work) =
+            crate::instrumentation::measure_deterministic_work(|| facts.int64_interval(&x));
+        assert_eq!(range, Some((-1000, 1000)));
+        if let Some(expected) = baseline {
+            assert_eq!(work, expected, "size={size}");
+        } else {
+            baseline = Some(work);
+        }
+    }
+}

@@ -57,6 +57,9 @@ fn machine_operation_chain(format: MachineIntegerType, size: u32) -> Bitvector32
 #[test]
 fn machine_operator_chains_cost_the_same_per_node_at_every_format() {
     let measure = |format: MachineIntegerType, size: u32| {
+        // Compare cold verifications, not a later format against observation
+        // imports retained by the preceding format in the same session.
+        let _session = crate::kernel::VerificationSession::enter();
         let chain = machine_operation_chain(format, size);
         let target = Bitvector32Term::Variable(Variable(152_000));
         let equality = ConditionTerm::machine_compare(

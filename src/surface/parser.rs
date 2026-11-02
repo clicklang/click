@@ -12,6 +12,7 @@ mod rust_syntax;
 mod rust_trait_objects;
 mod spec_arithmetic;
 pub(crate) use rust_trait_objects::implementation_interface_contract;
+pub(in crate::surface) use spec_arithmetic::mixed_narrow_arithmetic_message;
 pub(super) use spec_arithmetic::written_integer_parameters;
 pub(super) mod tokenizer;
 use cpp_model::rewrite_model_accessors;
@@ -5033,7 +5034,11 @@ impl Parser {
             // arithmetic on a machine value has no meaning.
             let value = match &click_type {
                 Some(ClickType::Integer) => self.at_integer_position(value),
-                Some(ClickType::C(c_type)) => self.typed_let_literal(&name, *c_type, value)?,
+                Some(ClickType::C(c_type)) => {
+                    let value = self.typed_let_literal(&name, *c_type, value)?;
+                    self.refuse_mixed_narrow_arithmetic(&name, *c_type, &value)?;
+                    value
+                }
                 Some(_) => value,
                 None => {
                     self.refuse_untyped_machine_arithmetic(&name, &value)?;

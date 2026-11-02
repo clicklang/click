@@ -1058,7 +1058,7 @@ fn int64_constant(term: &Bitvector32Term) -> Option<i64> {
                 }
                 MachineBinaryOp::ShiftRight => {
                     let count = int64_shift_count_constant(right)?;
-                    (count < 64).then_some(left >> count)
+                    (count < 64).then(|| left >> count)
                 }
                 MachineBinaryOp::BitwiseAnd => Some(left & int64_constant(right)?),
                 MachineBinaryOp::BitwiseOr => Some(left | int64_constant(right)?),

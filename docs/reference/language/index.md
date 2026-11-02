@@ -982,7 +982,18 @@ and each machine operand is observed with `to_integer`, so `x + 1 > x` reads
 `to_integer(x) + 1 > to_integer(x)` and holds for every `int32` and `uint32`.
 Where a machine type is expected they are the C operation at that type:
 partial, with a definedness obligation, for signed types, and wrapping for
-unsigned ones. Unsuffixed literals are Integer unless their context gives
+unsigned ones. At an 8- or 16-bit type (`let s: uint8 = a + b;`, an
+argument for a `uint8` parameter, the body of a `-> uint8` function),
+`+ - * & | ^ ~` over operands of that type, or unsuffixed literals it holds,
+are that type's own operators, which wrap modulo 2^8 or 2^16 at either
+signedness and owe nothing
+(`mdtests/narrow_specification_arithmetic_is_the_operator_at_its_type.md`,
+`mdtests/narrow_arithmetic_at_a_narrow_result_or_parameter_is_native.md`);
+arithmetic there over an operand of another machine type is refused, naming
+the conversion to write, such as `x as uint8`
+(`mdtests/a_narrow_typed_let_of_mixed_operands_is_refused.md`); the operand
+of a cast such as `(a + b) as uint8` has no expected type and keeps C's
+promoted `int` operation. Unsuffixed literals are Integer unless their context gives
 them a machine type
 ([standard library roadmap item](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md)).
 
@@ -4130,3 +4141,12 @@ owns, which is the default footprint an omitted clause already means.
 
 Loop frames are described in [proof-workflow.md](../../concepts/proof-workflow.md)
 and [memory-model.md](../../concepts/memory-model.md).
+
+### Target byte order
+
+`little_endian()` states that the selected execution target stores the least
+significant byte first. It takes no arguments and is reserved as a built-in
+proposition. C proofs receive this fact from a little-endian execution
+environment; a big-endian environment supplies its negation. Pure theorems
+have no target assumption and must require the fact explicitly. It is the
+target premise of `integer::uint32_from_le_bytes`.

@@ -709,6 +709,7 @@ fn relabelling_work_is_n_log_n_across_sizes() {
 fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
     let mut samples = Vec::new();
     for size in [16_u64, 64, 256, 1024] {
+        let _session = crate::kernel::VerificationSession::enter();
         let memory = crate::kernel::intern_c_memory(CMemory::new());
         let mut graph = EqualityGraph::default();
         for item in 0..size {

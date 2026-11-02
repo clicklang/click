@@ -134,6 +134,7 @@ fn old_collect_spec_expression_c_variables(
         SpecExpression::Subobject { pointer: value, .. }
         | SpecExpression::BitwiseNot(value)
         | SpecExpression::Cast(value, _)
+        | SpecExpression::NarrowArithmetic(value, _)
         | SpecExpression::PointerCoercion(value, _) => {
             old_collect_spec_expression_c_variables(value, reads)
         }

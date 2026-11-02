@@ -1813,6 +1813,8 @@ fn check_unrelated_functions(select: bool) {
     let contracts = contracts.iter().collect::<Vec<_>>();
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {
+        // Keep term-bridge imports cold at every sample size.
+        crate::kernel::clear_integer_bridge_memo();
         let mut environment = CExecutionEnvironment::new();
         for index in 0..count {
             environment = environment.with_function(c_function(

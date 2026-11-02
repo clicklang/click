@@ -1,10 +1,12 @@
 # Shared-parent lifecycles preserve the payload and reclaim the final child
 
 The unchanged C exercises both destruction orders, all allocation failures,
-the surviving parent's payload read, and final reclamation. Count observations
-and transitions resolve proved aliases to the same population ledger entry.
-The final detach removes that entry rather than leaving a stale body invariant
-for certification to demand after free.
+the surviving parent's payload read, and final reclamation. The control resource
+equates the child's reference field with its population count, so detach's
+conditional return uses the reference field that the C branches on. Callers
+observe the count through the owned child and prove aliased field equalities
+explicitly. The final detach removes the population entry rather than leaving
+a stale body invariant for certification to demand after free.
 
 ```c filename=shared_parent.c
 struct child {
@@ -213,7 +215,7 @@ void parent_attach(struct parent* p, struct child* kid) {
     requires to_integer(count(child_ref(kid))) < 2147483647;
     requires kid != 0;
     requires separate(memory(p->kid), memory(kid->payload));
-    consumes p->kid;
+    consumes uninitialized(p->kid);
     owns child_control(kid);
     owns child_ref(kid);
     produces child_ref(kid);
@@ -258,11 +260,11 @@ void parent_detach(struct parent* p) {
     requires 1 <= p->kid->refs;
     consumes child_control(p->kid);
     consumes child_ref(p->kid);
-    if to_integer(old(count(child_ref(p->kid)))) > 1 {
+    if old(p->kid->refs) > 1 {
         produces child_control(old(p->kid));
     }
     produces p->kid;
-    ensures to_integer(old(count(child_ref(p->kid)))) > 1 implies old(p->kid)->payload == old(p->kid->payload);
+    ensures old(p->kid->refs) > 1 implies old(p->kid)->payload == old(p->kid->payload);
 } by {
     match link.link {
         ParentLink::Empty => {
@@ -318,14 +320,27 @@ int32 run_first_destroyed(int32 payload) {
     have first->kid == kid;
     have kid->payload == payload;
     open(child_control(kid)) {
-        have to_integer(count(child_ref(first->kid))) > 1;
-        have 1 <= first->kid->refs by { rewrite(first->kid == kid); solve(); }
+        have to_integer(count(child_ref(kid))) > 1;
+        have 2 <= to_integer(kid->refs) by {
+            rewrite(to_integer(kid->refs) == to_integer(count(child_ref(kid))));
+            solve();
+        }
     }
     have first->kid->payload == payload by { rewrite(first->kid == kid); solve(); }
+    have first->kid->refs == kid->refs by {
+        normalize() using { first->kid == kid; };
+    }
+    have first->kid->refs > 1 by {
+        rewrite(first->kid->refs == kid->refs);
+        solve() using { 2 <= to_integer(kid->refs); };
+    }
     mark detaching;
     step(parent_detach, { link: first_link });
     have at(detaching, first->kid) == kid by assumption();
-    have at(detaching, first->kid)->payload == at(detaching, first->kid->payload);
+    have at(detaching, first->kid)->payload == at(detaching, first->kid->payload) by {
+        extract(at(detaching, first->kid)->payload == at(detaching, first->kid->payload));
+        assumption();
+    }
     have at(detaching, first->kid->payload) == payload by assumption();
     have at(detaching, first->kid)->payload == payload by {
         solve() using {
@@ -348,7 +363,10 @@ int32 run_first_destroyed(int32 payload) {
     have out == payload;
     have second->kid == kid;
     open(child_control(kid)) {
-        have 1 <= second->kid->refs by { rewrite(second->kid == kid); solve(); }
+        have 1 <= to_integer(kid->refs) by {
+            rewrite(to_integer(kid->refs) == to_integer(count(child_ref(kid))));
+            solve();
+        }
     }
     step(parent_detach, { link: second_link });
     step();
@@ -380,14 +398,27 @@ int32 run_second_destroyed(int32 payload) {
     have second->kid == kid;
     have kid->payload == payload;
     open(child_control(kid)) {
-        have to_integer(count(child_ref(second->kid))) > 1;
-        have 1 <= second->kid->refs by { rewrite(second->kid == kid); solve(); }
+        have to_integer(count(child_ref(kid))) > 1;
+        have 2 <= to_integer(kid->refs) by {
+            rewrite(to_integer(kid->refs) == to_integer(count(child_ref(kid))));
+            solve();
+        }
     }
     have second->kid->payload == payload by { rewrite(second->kid == kid); solve(); }
+    have second->kid->refs == kid->refs by {
+        normalize() using { second->kid == kid; };
+    }
+    have second->kid->refs > 1 by {
+        rewrite(second->kid->refs == kid->refs);
+        solve() using { 2 <= to_integer(kid->refs); };
+    }
     mark detaching;
     step(parent_detach, { link: second_link });
     have at(detaching, second->kid) == kid by assumption();
-    have at(detaching, second->kid)->payload == at(detaching, second->kid->payload);
+    have at(detaching, second->kid)->payload == at(detaching, second->kid->payload) by {
+        extract(at(detaching, second->kid)->payload == at(detaching, second->kid->payload));
+        assumption();
+    }
     have at(detaching, second->kid->payload) == payload by assumption();
     have at(detaching, second->kid)->payload == payload by {
         solve() using {
@@ -410,7 +441,10 @@ int32 run_second_destroyed(int32 payload) {
     have out == payload;
     have first->kid == kid;
     open(child_control(kid)) {
-        have 1 <= first->kid->refs by { rewrite(first->kid == kid); solve(); }
+        have 1 <= to_integer(kid->refs) by {
+            rewrite(to_integer(kid->refs) == to_integer(count(child_ref(kid))));
+            solve();
+        }
     }
     step(parent_detach, { link: first_link });
     step();

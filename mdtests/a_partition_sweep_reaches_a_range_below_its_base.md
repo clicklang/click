@@ -64,6 +64,7 @@ int32 below_the_owner(int32* p) {
 ```
 
 ```click
+import click::separation;
 verifying "a_partition_sweep_reaches_a_range_below_its_base.c";
 
 extern int32 lend_below(int32* r, int32 s, int32 e) {
@@ -77,6 +78,51 @@ int32 write_then_read(int32* a, int32* b, int32 s, int32 e, int32 i) {
     owns a[5..6];
     consumes b[s..e];
     ensures result == 1;
+} by {
+    step();
+    step();
+    have a[0] == 1 by { normalize(); }
+    have s <= e by { solve() using { s <= i; i < e; }; }
+    have separate(memory(a[0..2]), memory(b[s..e]));
+    have contains(memory(a[0..2]), memory(a[0])) by { normalize(); }
+    have i <= 2147483646 by { solve() using { i < e; }; }
+    have defined(i + 1) by { solve() using { i <= 2147483646; }; }
+    have i <= ((i + 1) as int32) by { solve() using { i <= 2147483646; }; }
+    have ((i + 1) as int32) <= e by { solve() using { i < e; }; }
+    have contains(memory(b[s..e]), memory(b[i..i+1])) by {
+        apply(separation::subrange(b, s, e, i, i+1)) using {
+            defined(i + 1); s <= i; i <= ((i+1) as int32); ((i+1) as int32) <= e;
+        };
+    }
+    have separate(memory(a[0]), memory(b[i..i+1])) by {
+        apply(separation::restrict(memory(a[0..2]), memory(b[s..e]), memory(a[0]), memory(b[i..i+1]))) using {
+            defined(i + 1); separate(memory(a[0..2]), memory(b[s..e]));
+            contains(memory(a[0..2]), memory(a[0])); contains(memory(b[s..e]), memory(b[i..i+1]));
+        };
+    }
+    have contains(memory(b[i..i+1]), memory(b[i])) by { normalize(); }
+    have contains(memory(a[0]), memory(a[0])) by { normalize(); }
+    have separate(memory(a[0]), memory(b[i])) by {
+        apply(separation::restrict(memory(a[0]), memory(b[i..i+1]), memory(a[0]), memory(b[i]))) using {
+            defined(i + 1); separate(memory(a[0]), memory(b[i..i+1]));
+            contains(memory(a[0]), memory(a[0])); contains(memory(b[i..i+1]), memory(b[i]));
+        };
+    }
+    mark before;
+    step();
+    have separate(statement(2).footprint, memory(a[0])) by {
+        normalize() using { separate(memory(a[0]), memory(b[i])); };
+    }
+    have a[0] == at(before, a[0]) by {
+        transport_certificate {
+            premise 0: separate(statement(2).footprint, memory(a[0]))
+                => separate(statement(2).footprint, memory(a[0]));
+            preserve 0 => a[0] == at(before, a[0]);
+            conclusion 1;
+        }
+    }
+    have a[0] == 1 by { normalize() using { a[0] == at(before, a[0]); at(before, a[0]) == 1; }; }
+    step(); step();
 }
 
 int32 beside_the_owner(int32* p) {

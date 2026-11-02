@@ -42,5 +42,5 @@ int32 read_after_a_pruned_store(int32* a, int32 n, int32 i, int32 j, int32 m) {
 ```
 
 ```expect
-fail: the store to `a[i]` may have written it. If `m` and `i` differ, state `m != i`
+fail: the two sides read the same address in different memory snapshots (`result` reads the outcome state, `old(a[m])` reads function entry)
 ```

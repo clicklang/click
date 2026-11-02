@@ -235,6 +235,125 @@ fn a_narrow_same_width_conversion_is_not_inverted() {
     }
 }
 
+/// The carrier width of an 8- or 16-bit format.
+fn narrow_width(format: Ty) -> crate::kernel::CarrierWidth {
+    crate::kernel::CarrierWidth::native(format)
+}
+
+/// Rule N with R-dist and R-comp: a native 8- or 16-bit operator and C's
+/// promoted spelling of it, the narrowing of the `int32` operator over the
+/// operands' widenings, are one value, at either signedness and from either
+/// widening; a native shift by a 32-bit count is the narrowed promoted shift.
+#[test]
+fn a_native_narrow_operator_meets_its_promoted_spelling() {
+    let _session = VerificationSession::enter();
+    use crate::kernel::MachineBinaryOp as Op;
+    for format in [Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16] {
+        for op in [
+            Op::Add,
+            Op::Subtract,
+            Op::Multiply,
+            Op::BitwiseAnd,
+            Op::BitwiseOr,
+            Op::BitwiseXor,
+            Op::ShiftLeft,
+        ] {
+            for word in [Ty::Int32, Ty::UInt32] {
+                // The two 32-bit left shifts are distinct nodes; rule N
+                // spells the `int32` one, as C's promotion does.
+                if op == Op::ShiftLeft && word == Ty::UInt32 {
+                    continue;
+                }
+                let (a, b) = (var(181_081), var(181_082));
+                let count = var(181_083);
+                let right = if op == Op::ShiftLeft {
+                    count.clone()
+                } else {
+                    b.clone()
+                };
+                let native = Bitvector32Term::machine_binary(format, op, a.clone(), right);
+                let promoted_right = if op == Op::ShiftLeft {
+                    count
+                } else {
+                    cast(format, word, b)
+                };
+                let promoted = cast(
+                    word,
+                    format,
+                    Bitvector32Term::machine_binary(
+                        word,
+                        op,
+                        cast(format, word, a),
+                        promoted_right,
+                    ),
+                );
+                for native_first in [true, false] {
+                    let graph = EqualityGraph::default();
+                    let mut state = graph.state.lock().expect("equality graph");
+                    let (first, second) = if native_first {
+                        (&native, &promoted)
+                    } else {
+                        (&promoted, &native)
+                    };
+                    assert!(
+                        state
+                            .terms
+                            .are_typed_equal(narrow_width(format), first, second),
+                        "{format:?} {op:?} {word:?} {native_first}"
+                    );
+                }
+            }
+        }
+        // The complement too.
+        let a = var(181_084);
+        let native = Bitvector32Term::machine_unary(
+            format,
+            crate::kernel::MachineUnaryOp::BitwiseNot,
+            a.clone(),
+        );
+        let promoted = cast(
+            Ty::Int32,
+            format,
+            Bitvector32Term::bitwise_not_at(Ty::Int32, cast(format, Ty::Int32, a)),
+        );
+        let graph = EqualityGraph::default();
+        let mut state = graph.state.lock().expect("equality graph");
+        assert!(
+            state
+                .terms
+                .are_typed_equal(narrow_width(format), &native, &promoted),
+            "{format:?} ~"
+        );
+    }
+}
+
+/// Rule N relates a native operator to its promoted spelling, not to a
+/// different operator: a native sum is not the narrowed promoted difference.
+#[test]
+fn a_native_narrow_operator_is_not_another_operators_promotion() {
+    let _session = VerificationSession::enter();
+    use crate::kernel::MachineBinaryOp as Op;
+    let (a, b) = (var(181_091), var(181_092));
+    let native = Bitvector32Term::machine_binary(Ty::UInt8, Op::Add, a.clone(), b.clone());
+    let promoted = cast(
+        Ty::Int32,
+        Ty::UInt8,
+        Bitvector32Term::machine_binary(
+            Ty::Int32,
+            Op::Subtract,
+            cast(Ty::UInt8, Ty::Int32, a),
+            cast(Ty::UInt8, Ty::Int32, b),
+        ),
+    );
+    let graph = EqualityGraph::default();
+    let mut state = graph.state.lock().expect("equality graph");
+    assert!(
+        !state
+            .terms
+            .are_typed_equal(crate::kernel::CarrierWidth::Bits8, &native, &promoted)
+    );
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/equality_graph/machine_relations_tests.rs");

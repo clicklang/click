@@ -331,6 +331,7 @@ fn collect_spec_expression_carriers(
             collect_spec_expression_carriers(right, variables, integer_seen);
         }
         SpecExpression::BitwiseNot(value)
+        | SpecExpression::NarrowArithmetic(value, _)
         | SpecExpression::Cast(value, _)
         | SpecExpression::PointerCoercion(value, _) => {
             collect_spec_expression_carriers(value, variables, integer_seen)
@@ -1191,6 +1192,10 @@ impl<'a> TermRewrite<'a> {
             SpecExpression::BitwiseNot(value) => {
                 SpecExpression::BitwiseNot(Box::new(self.rewrite_spec_expression(value)?))
             }
+            SpecExpression::NarrowArithmetic(value, format) => SpecExpression::NarrowArithmetic(
+                Box::new(self.rewrite_spec_expression(value)?),
+                *format,
+            ),
             SpecExpression::Cast(value, target_type) => {
                 SpecExpression::Cast(Box::new(self.rewrite_spec_expression(value)?), *target_type)
             }

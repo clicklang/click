@@ -44,6 +44,7 @@ int32 through_parameter(int32* a, int32 u) {
 ```
 
 ```click
+import click::separation;
 verifying "order_bounds_place_a_store_off_a_constant_element.c";
 
 int32 below(int32 u) {
@@ -63,6 +64,28 @@ int32 through_parameter(int32* a, int32 u) {
     requires u < 2;
     consumes a[0..2];
     ensures result == 5;
+} by {
+    step(); step();
+    have a[0] == 5 by { normalize(); }
+    have u != 0 by { solve() using { 1 <= u; }; }
+    have separate(memory(a[u]), memory(a[0])) by {
+        apply(separation::elements(a, u, 0)) using { u != 0; };
+    }
+    mark before;
+    step();
+    have separate(statement(2).footprint, memory(a[0])) by {
+        normalize() using { separate(memory(a[u]), memory(a[0])); };
+    }
+    have a[0] == at(before, a[0]) by {
+        transport_certificate {
+            premise 0: separate(statement(2).footprint, memory(a[0]))
+                => separate(statement(2).footprint, memory(a[0]));
+            preserve 0 => a[0] == at(before, a[0]);
+            conclusion 1;
+        }
+    }
+    have a[0] == 5 by { normalize() using { a[0] == at(before, a[0]); at(before, a[0]) == 5; }; }
+    step();
 }
 ```
 

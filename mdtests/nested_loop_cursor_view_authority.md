@@ -64,6 +64,16 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
    }
   }
   have cursor == bytes + (4 * outer) by { assumption(); }
+  have at(after_inner, outer) == at(outer_head, outer);
+  have 0 <= 2 - to_integer(outer) by { solve() using { outer <= 2; }; }
+  have 2 - to_integer(outer) < 2 - to_integer(at(outer_head, outer)) by {
+   solve() using {
+    to_integer(outer) == to_integer(at(after_inner, outer) + 1);
+    at(after_inner, outer) == at(outer_head, outer);
+    0 <= at(after_inner, outer);
+    at(after_inner, outer) < 2;
+   };
+  }
   have viewable(bytes[0..8]) by { transport(at(outer_head,viewable(bytes[0..8])),viewable(bytes[0..8])) using { at(outer_head,viewable(bytes[0..8])); bytes == old(bytes); 0 <= 8; }; }
  }
  }

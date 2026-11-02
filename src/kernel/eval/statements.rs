@@ -963,23 +963,15 @@ fn write_c_lvalue_paths_without_local_reference(
                     }
                     None => effective_assumptions,
                 };
-            let next_memory = state
-                .memory
-                .clone()
-                .without_possible_aliasing_cells(
-                    &written_pointer,
-                    written_value.byte_width(),
-                    &effective_assumptions,
-                )
-                .store_classed_with_context(
-                    written_pointer.clone(),
-                    written_value.clone(),
-                    &effective_assumptions,
-                    lvalue_classes
-                        .0
-                        .as_ref()
-                        .and_then(|class| class.effective_type_of_store()),
-                );
+            let next_memory = state.memory.clone().store_classed_with_context(
+                written_pointer.clone(),
+                written_value.clone(),
+                &effective_assumptions,
+                lvalue_classes
+                    .0
+                    .as_ref()
+                    .and_then(|class| class.effective_type_of_store()),
+            );
             state.set_memory_with_checked_stores(next_memory, true);
             if !iterated_plan.is_empty() {
                 match iterated_plan.after_store(state.resources().clone()) {

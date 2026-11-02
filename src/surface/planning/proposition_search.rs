@@ -1000,7 +1000,7 @@ impl PropositionSearch for PureFactContext {
         // Range conjunctions are also conclusions of the signed arithmetic
         // theorems. Try those whole-goal certificates before splitting the
         // two bounds; retain the ordinary conjunction as their conclusion.
-        if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
+        if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
             .is_some()
             && let Some(rule) = self.derive_atomic_rule(proposition, extended_rules)
         {

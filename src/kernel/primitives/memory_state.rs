@@ -5902,7 +5902,7 @@ impl CMemory {
         value: CValue,
         context: &PureFactContext,
     ) -> Self {
-        self.store_with_effective_type(pointer, value, context, None)
+        self.store_with_effective_type(pointer, value, context, None, false)
     }
 
     /// [`Self::store_with_context`] for a C store through an lvalue of
@@ -5917,7 +5917,17 @@ impl CMemory {
         context: &PureFactContext,
         class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
-        self.store_with_effective_type(pointer, value, context, Some(class))
+        self.store_with_effective_type(pointer, value, context, Some(class), true)
+    }
+
+    /// Apply a program store and its cache invalidation as one transition.
+    pub(in crate::kernel) fn store_invalidating_with_context(
+        self,
+        pointer: Pointer,
+        value: CValue,
+        context: &PureFactContext,
+    ) -> Self {
+        self.store_with_effective_type(pointer, value, context, None, true)
     }
 
     fn store_with_effective_type(
@@ -5926,19 +5936,25 @@ impl CMemory {
         value: CValue,
         context: &PureFactContext,
         effective_type: Option<Option<crate::kernel::effective_type::CAccessClass>>,
+        invalidate_aliases: bool,
     ) -> Self {
         crate::kernel::debug_assert_widths(
             "a stored value",
             || crate::kernel::value_mismatch(&value),
             &value,
         );
-        // Most scalar stores have no union views to displace. When one is
-        // present, forget views at every possibly overlapping spelling before
-        // recording the new scalar cell.
-        if !self.union_cells.is_empty() {
-            self = self.without_possible_aliasing_cells(&pointer, value.byte_width(), context);
-        }
         let base = intern_derivation_base(&mut self);
+        // Cache invalidation is internal to this store, not a memory event.
+        // Retain its original input, and never intern the intermediate cache.
+        if (invalidate_aliases || !self.union_cells.is_empty())
+            && let Some((mut prepared, lost_knowledge)) =
+                self.prepare_store_cache(&pointer, value.byte_width(), context)
+        {
+            if lost_knowledge {
+                prepared.mark_forgotten_from(&base);
+            }
+            self = prepared;
+        }
         std::sync::Arc::make_mut(&mut self.cells).insert(pointer.clone(), value.clone());
         if (self.is_live_heap_address(&pointer, context)
             || !self.heap.uninitialized_objects.is_empty())
@@ -6729,6 +6745,34 @@ impl CMemory {
         bytes: u32,
         assumptions: &PureFactContext,
     ) -> Self {
+        let mut source = self.clone();
+        let base = intern_derivation_base(&mut source);
+        let Some((mut memory, lost_knowledge)) =
+            source.prepare_store_cache(pointer, bytes, assumptions)
+        else {
+            return source;
+        };
+        if lost_knowledge {
+            memory.mark_forgotten_from(&base);
+        }
+        let base_id = base.arena_id();
+        record_c_memory_derivation(&mut memory, CMemoryDerivation::CellsForgotten { base });
+        debug_assert!(
+            !lost_knowledge || intern_c_memory_ref(&memory).arena_id() > base_id,
+            "a forget that lost knowledge landed on an older snapshot"
+        );
+        memory
+    }
+
+    /// Prepare cached observations for a store without publishing a snapshot.
+    /// The boolean identifies lost knowledge requiring an origin marker in the
+    /// completed result. Initialization records outlive discarded values.
+    fn prepare_store_cache(
+        &self,
+        pointer: &Pointer,
+        bytes: u32,
+        assumptions: &PureFactContext,
+    ) -> Option<(Self, bool)> {
         let normalized_pointer = Pointer {
             block: pointer.block.clone(),
             offset: normalize_exact_memory_loads_in_pointer_offset(&pointer.offset, assumptions),
@@ -6737,7 +6781,6 @@ impl CMemory {
         // are the same-block ones, so the write's own atoms never change.
         let written = crate::kernel::reasoning::StoreByteInterval::of(&normalized_pointer, bytes);
         let mut memory = self.clone();
-        let base = Some(intern_derivation_base(&mut memory));
         // An overwritten value is stale, not forgotten: the store about to
         // run replaces exactly what was dropped, so the result still says
         // everything about the state it describes. A possibly aliasing value,
@@ -6975,31 +7018,9 @@ impl CMemory {
         if memory.cells.len() == self.cells.len()
             && memory.union_cells.len() == self.union_cells.len()
         {
-            return self.clone();
+            return None;
         }
-        // A store never de-initializes: the heap marks of the cells it may
-        // alias stay as they are, and `forget_cached_values` recorded the
-        // automatic cells it forgot beside them.
-        if let Some(base) = base {
-            // The mark goes on before interning, because it is what the
-            // result is interned *as*. Without it the emptied cell map can
-            // re-intern as an older node — in the smallest case the function
-            // entry state — and then this edge would run backwards, be
-            // dropped, and leave the store that filled those cells off every
-            // recorded history.
-            if forgot_live_knowledge {
-                memory.mark_forgotten_from(&base);
-            }
-            let base_id = base.arena_id();
-            record_c_memory_derivation(&mut memory, CMemoryDerivation::CellsForgotten { base });
-            // Check after producer recording: first interning also fixes the
-            // read-congruence identity, so debug checks must not preempt it.
-            debug_assert!(
-                !forgot_live_knowledge || intern_c_memory_ref(&memory).arena_id() > base_id,
-                "a forget that lost knowledge landed on an older snapshot"
-            );
-        }
-        memory
+        Some((memory, forgot_live_knowledge))
     }
 
     /// Value-only parameters never own storage. Give their pseudo-slots a

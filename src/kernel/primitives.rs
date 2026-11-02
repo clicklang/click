@@ -14,6 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, OnceLock};
 
+pub(crate) const LITTLE_ENDIAN_PREDICATE_NAME: &str = "__click_little_endian";
+
 pub(crate) const SAME_OBJECT_PREDICATE_NAME: &str = "__click_same_object";
 /// The prefix of the fact that an opaque subobject extent covers a range of
 /// `element_width`-byte elements: `{prefix}{element_width}(start, from, to)`
@@ -29,6 +31,7 @@ pub(crate) fn predicate_source_name(name: &str) -> Option<&str> {
     match name {
         MUTEX_HELD_PREDICATE_NAME => Some("held"),
         SAME_OBJECT_PREDICATE_NAME => Some("same_object"),
+        LITTLE_ENDIAN_PREDICATE_NAME => Some("little_endian"),
         _ => CFunctionContract::surface_name_from_predicate(name)
             .or_else(|| (!name.starts_with("__click_")).then_some(name)),
     }
@@ -78,6 +81,7 @@ pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
 };
 mod remainder_rules;
+pub(crate) use integer::MachineOperandView;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
     SharedIntegerApplication, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedPureApplication,
@@ -3166,6 +3170,18 @@ pub enum CIntegerCastMode {
     /// decision D5): its operand's condition is the value, built with no
     /// path split. Only the Rust front end writes it, at target `bool`.
     BoolValue,
+    /// A Rust operator `+ - * & | ^ <<` or `!` on an 8- or 16-bit value
+    /// (decision G4): its operand is the operator over operands of the
+    /// target's type as written, and its value is that operator's native
+    /// node at the target's format, `(a op b) mod 2^N`, with no promotion
+    /// and no conversion. Only the Rust front end writes it; Rust's
+    /// overflow panics are separate checked assertions.
+    NarrowArithmetic,
+    /// The conversion lowering inserts from a pure function's body to its
+    /// declared result type: C's conversion, as `CConversion`, at whose
+    /// type the body's arithmetic is (decision G2), so a body `a + b` of a
+    /// `-> uint8` function is the `uint8` operator.
+    ResultConversion,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -3506,6 +3522,12 @@ pub enum SpecExpression {
     BitwiseXor(Box<SpecExpression>, Box<SpecExpression>),
     BitwiseNot(Box<SpecExpression>),
     Cast(Box<SpecExpression>, CType),
+    /// The operator at the root of the expression, one of `+ - * & | ^ ~`,
+    /// at the 8- or 16-bit format its position expects (decision G2): over
+    /// two operands of that format (an `int32` literal it holds takes the
+    /// format), the operator's native node, `(a op b) mod 2^N`. Over operands
+    /// of another type the operator keeps its promoted reading.
+    NarrowArithmetic(Box<SpecExpression>, MachineIntegerType),
     /// An implicit pointer conversion retains the complete designation.
     PointerCoercion(Box<SpecExpression>, CType),
     If {
@@ -3557,6 +3579,63 @@ pub enum SpecExpression {
         pointer: Box<SpecExpression>,
         value_type: CType,
     },
+}
+
+impl SpecExpression {
+    /// `self` at the position of a value of machine type `target`
+    /// (decision G2, the type-directed arithmetic rule): at an 8- or 16-bit
+    /// `target`, each `+ - * & | ^ ~` of its arithmetic spine, through the
+    /// branches of a conditional and the body of a `let`, is that type's
+    /// operator ([`Self::NarrowArithmetic`]). Every other expression, and
+    /// every expression at another type, is unchanged. One visit per spine
+    /// node.
+    pub fn at_machine_type(self, target: CType) -> Self {
+        let Some(format) = MachineIntegerType::from_c_type(target).filter(|format| {
+            matches!(
+                format,
+                MachineIntegerType::Int8
+                    | MachineIntegerType::UInt8
+                    | MachineIntegerType::Int16
+                    | MachineIntegerType::UInt16
+            )
+        }) else {
+            return self;
+        };
+        self.at_narrow_format(format)
+    }
+
+    fn at_narrow_format(self, format: MachineIntegerType) -> Self {
+        let at = |expression: Box<Self>| Box::new(expression.at_narrow_format(format));
+        let operation = match self {
+            Self::Add(left, right) => Self::Add(at(left), at(right)),
+            Self::Subtract(left, right) => Self::Subtract(at(left), at(right)),
+            Self::Multiply(left, right) => Self::Multiply(at(left), at(right)),
+            Self::BitwiseAnd(left, right) => Self::BitwiseAnd(at(left), at(right)),
+            Self::BitwiseOr(left, right) => Self::BitwiseOr(at(left), at(right)),
+            Self::BitwiseXor(left, right) => Self::BitwiseXor(at(left), at(right)),
+            Self::BitwiseNot(operand) => Self::BitwiseNot(at(operand)),
+            Self::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                return Self::If {
+                    condition,
+                    then_branch: at(then_branch),
+                    else_branch: at(else_branch),
+                };
+            }
+            Self::Let { name, value, body } => {
+                return Self::Let {
+                    name,
+                    value,
+                    body: at(body),
+                };
+            }
+            other => return other,
+        };
+        Self::NarrowArithmetic(Box::new(operation), format)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]

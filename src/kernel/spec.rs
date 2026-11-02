@@ -1130,7 +1130,7 @@ fn lower_spec_universal_chain_in(
     for binder in binders.into_iter().rev() {
         paths = paths
             .into_iter()
-            .map(|path| wrap_spec_universal_path(path, &binder))
+            .map(|path| wrap_spec_universal_path(path, &binder, assumptions))
             .collect();
     }
     Ok(Some(paths))
@@ -1145,6 +1145,7 @@ fn machine_quantifier_range_facts(_sort: &Sort, _variable: Variable) -> Executio
 fn wrap_spec_universal_path(
     path: SpecPropositionPath,
     binder: &SpecUniversalBinder,
+    assumptions: &PureFactContext,
 ) -> SpecPropositionPath {
     let (body, guards) = wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
     let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
@@ -1166,6 +1167,18 @@ fn wrap_spec_universal_path(
         obligations: path
             .obligations
             .into_iter()
+            // An old-state expression can retain an evaluation requirement
+            // already established in the current scope. Discharge it before
+            // wrapping it in a binder: the ordinary requirement checker does
+            // not introduce quantifiers. Consult only the incoming facts,
+            // never the body's path guards or its assumable obligations.
+            .filter(|obligation| {
+                obligation.is_assumable()
+                    || !ProofObligation::evaluation_requirement_is_established(
+                        assumptions,
+                        obligation.proposition(),
+                    )
+            })
             .map(|obligation| {
                 obligation.map_proposition(|proposition| Proposition::ForAll {
                     var: binder.variable,
@@ -1706,6 +1719,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                         pointer: false,
                         integer: false,
                     },
+                    assumptions,
                 )
             })
             .collect())
@@ -5389,6 +5403,21 @@ fn lower_spec_predicate_proposition_at_state_in(
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
+    // Byte order belongs to the target, not to a memory or resource state.
+    if name == LITTLE_ENDIAN_PREDICATE_NAME {
+        if !arguments.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Ok(vec![SpecPropositionPath {
+            introductions: Vec::new(),
+            proposition: Proposition::Predicate {
+                name: name.into(),
+                arguments: vec![],
+            },
+            facts: ExecutionFacts::new(),
+            obligations: Vec::new(),
+        }]);
+    }
     if name == MUTEX_HELD_PREDICATE_NAME {
         let [SpecPredicateArgument::Value(mutex)] = arguments else {
             return Ok(vec![invalid_mutex_held_path(
@@ -5640,17 +5669,18 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
             SpecExpression::Add(..) | SpecExpression::Subtract(..) | SpecExpression::Multiply(..)
         );
     if candidate {
-        if let Some(value) = shared_machine::prepare(expression, budget)? {
+        if let Some(mut prepared) = shared_machine::prepare(expression, budget)? {
             let PureFunctionArgument::Value(value) = KernelTermExport::default()
-                .argument(&value)
+                .argument(&prepared.value)
                 .map_err(|_| ExecutionLimit::Paths)?
             else {
                 unreachable!()
             };
+            apply_held_resource_domain_policy(&mut prepared.obligations, assumptions);
             return Ok(vec![SpecExpressionPath {
                 value,
                 facts: Vec::new().into(),
-                obligations: Vec::new(),
+                obligations: prepared.obligations,
             }]);
         }
         budget.machine_preparation_disabled = true;
@@ -6821,6 +6851,128 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             budget,
             apply_c_bitwise_not,
         )?,
+        SpecExpression::NarrowArithmetic(operation, format) => 'narrow: {
+            let scope = SpecScope::new(state, loop_entry_state, algebraic_bindings);
+            let format = *format;
+            let (op, left, right) = match operation.as_ref() {
+                SpecExpression::Add(left, right) => (MachineBinaryOp::Add, left, right),
+                SpecExpression::Subtract(left, right) => (MachineBinaryOp::Subtract, left, right),
+                SpecExpression::Multiply(left, right) => (MachineBinaryOp::Multiply, left, right),
+                SpecExpression::BitwiseAnd(left, right) => {
+                    (MachineBinaryOp::BitwiseAnd, left, right)
+                }
+                SpecExpression::BitwiseOr(left, right) => (MachineBinaryOp::BitwiseOr, left, right),
+                SpecExpression::BitwiseXor(left, right) => {
+                    (MachineBinaryOp::BitwiseXor, left, right)
+                }
+                SpecExpression::BitwiseNot(operand) => {
+                    break 'narrow evaluate_spec_scalar_unary_paths_in(
+                        scope,
+                        operand,
+                        assumptions,
+                        budget,
+                        |value, facts, obligations| match crate::kernel::eval::native_narrow_not(
+                            format, &value,
+                        ) {
+                            Some(value) => vec![CExpressionPath {
+                                outcome: CExpressionOutcome::Value(value),
+                                facts,
+                                obligations,
+                            }],
+                            None => apply_c_bitwise_not(value, facts, obligations),
+                        },
+                    )?;
+                }
+                operation => {
+                    break 'narrow evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                        scope,
+                        operation,
+                        assumptions,
+                        budget,
+                    )?;
+                }
+            };
+            let left_step_width = spec_expression_pointer_step_width(state, left);
+            let right_step_width = spec_expression_pointer_step_width(state, right);
+            evaluate_spec_scalar_binary_paths_in(
+                scope,
+                left,
+                right,
+                assumptions,
+                budget,
+                |left, right, facts, obligations| {
+                    if let Some(value) =
+                        crate::kernel::eval::native_narrow_binary(format, op, &left, &right)
+                    {
+                        return vec![CExpressionPath {
+                            outcome: CExpressionOutcome::Value(value),
+                            facts,
+                            obligations,
+                        }];
+                    }
+                    // Operands of another type, which the parser and type
+                    // checker refuse at a written narrow position, keep the
+                    // operator's promoted reading, as the bare operator has it.
+                    let bitwise = |operation| {
+                        apply_c_bitwise_binary(
+                            left.clone(),
+                            right.clone(),
+                            facts.clone(),
+                            obligations.clone(),
+                            assumptions,
+                            operation,
+                        )
+                    };
+                    match op {
+                        MachineBinaryOp::BitwiseAnd => bitwise(CBitwiseOperation::And),
+                        MachineBinaryOp::BitwiseOr => bitwise(CBitwiseOperation::Or),
+                        MachineBinaryOp::BitwiseXor => bitwise(CBitwiseOperation::Xor),
+                        MachineBinaryOp::Multiply => apply_spec_arithmetic(
+                            op,
+                            left,
+                            right,
+                            facts,
+                            obligations,
+                            assumptions,
+                            apply_c_multiply,
+                        ),
+                        _ => apply_spec_arithmetic(
+                            op,
+                            left,
+                            right,
+                            facts,
+                            obligations,
+                            assumptions,
+                            |left, right, facts, obligations, context| {
+                                if op == MachineBinaryOp::Add {
+                                    apply_c_add(
+                                        state,
+                                        left,
+                                        right,
+                                        left_step_width,
+                                        right_step_width,
+                                        facts,
+                                        obligations,
+                                        context,
+                                    )
+                                } else {
+                                    apply_c_subtract(
+                                        state,
+                                        left,
+                                        right,
+                                        left_step_width,
+                                        right_step_width,
+                                        facts,
+                                        obligations,
+                                        context,
+                                    )
+                                }
+                            },
+                        ),
+                    }
+                },
+            )?
+        }
         SpecExpression::If {
             condition,
             then_branch,
@@ -7679,19 +7831,26 @@ fn apply_spec_arithmetic(
     if let Some(mut path) =
         crate::kernel::eval::apply_spec_machine_arithmetic(op, &left, &right, &facts, &obligations)
     {
-        // A held body's projection assumes the domain its fold established.
-        // Keep the debt while distinguishing it from a new proof obligation.
-        // Ordinary entry requirements, calls and folds retain mandatory domains.
-        if assumptions.should_assume_held_resource_domains() {
-            for obligation in path.obligations.iter_mut().skip(obligations.len()) {
-                if obligation.evaluation_domain {
-                    obligation.assumable = true;
-                }
-            }
-        }
+        apply_held_resource_domain_policy(&mut path.obligations[obligations.len()..], assumptions);
         return vec![path];
     }
     apply(left, right, facts, obligations, assumptions)
+}
+
+fn apply_held_resource_domain_policy(
+    obligations: &mut [ProofObligation],
+    assumptions: &PureFactContext,
+) {
+    // A held body's projection assumes the domain its fold established.
+    // Keep the debt while distinguishing it from a new proof obligation.
+    // Ordinary entry requirements, calls and folds retain mandatory domains.
+    if assumptions.should_assume_held_resource_domains() {
+        for obligation in obligations {
+            if obligation.evaluation_domain {
+                obligation.assumable = true;
+            }
+        }
+    }
 }
 
 fn evaluate_spec_scalar_binary_paths_in(

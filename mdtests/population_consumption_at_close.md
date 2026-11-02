@@ -1085,7 +1085,10 @@ uint32 sequential_early(struct counter* p) {
                 add 5, 4 => ((3 - to_integer(count(remaining(p)))) + to_integer(count(remaining(p)))
                     + to_integer(old(count(remaining(p))))) < (to_integer(p->value) +
                     (to_integer(old(count(remaining(p)))) + 3) + 0);
-                conclusion 6;
+                premise 2: to_integer(p->value) == 0 => to_integer(p->value) == 0;
+                less_equal_from_equal 7 => to_integer(p->value) <= 0;
+                add 6, 8 => to_integer(p->value) < to_integer(p->value);
+                conclusion 9;
             }
         }
         have (3 - to_integer(count(remaining(p)))) <= to_integer(p->value) by {
@@ -1103,7 +1106,10 @@ uint32 sequential_early(struct counter* p) {
                 add 4, 3 => (to_integer(p->value) + (to_integer(old(count(remaining(p)))) + 3) + 0)
                     < ((3 - to_integer(count(remaining(p)))) + to_integer(count(remaining(p))) +
                     to_integer(old(count(remaining(p)))));
-                conclusion 5;
+                premise 2: to_integer(p->value) == 0 => to_integer(p->value) == 0;
+                less_equal_from_equal 6 reverse => 0 <= to_integer(p->value);
+                add 5, 7 => to_integer(p->value) < to_integer(p->value);
+                conclusion 8;
             }
         }
         arithmetic_certificate {

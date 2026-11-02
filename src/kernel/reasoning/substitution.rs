@@ -6795,6 +6795,12 @@ fn substitute_pointer_variable_in_spec_expression(
             )),
             *target_type,
         ),
+        SpecExpression::NarrowArithmetic(expression, format) => SpecExpression::NarrowArithmetic(
+            Box::new(substitute_pointer_variable_in_spec_expression(
+                expression, from, to,
+            )),
+            *format,
+        ),
         SpecExpression::PointerCoercion(expression, target_type) => {
             SpecExpression::PointerCoercion(
                 Box::new(substitute_pointer_variable_in_spec_expression(

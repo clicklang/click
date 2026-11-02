@@ -17,7 +17,11 @@ operand of `+`, `-`, `*` and negation is observed with `to_integer` (the
 lists the positions). `src/surface/parser/spec_arithmetic.rs` decides it
 while parsing, from the expected types of comparison operands, declared
 `Integer` parameters and fields, `-> Integer` results and typed `let`s; an
-untyped `let` of machine arithmetic is refused. A `match` arm and an `if`
+untyped `let` of machine arithmetic is refused. At an 8- or 16-bit position
+(a typed `let`, an argument at its parameter's type, a pure function's body
+at its result type) lowering marks the arithmetic spine with
+`SpecExpression::at_machine_type`, so `+ - * & | ^ ~` over operands of that
+type is the type's native operator (decision G2). A `match` arm and an `if`
 branch are in the position of their match or conditional; an `if`'s
 condition stays a proposition. So in an Integer position
 `if c { a + 1 } else { b }` reads `if c { to_integer(a) + 1 } else {

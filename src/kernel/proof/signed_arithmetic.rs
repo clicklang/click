@@ -17,6 +17,9 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::{BTreeMap, HashMap};
 
+mod shared_operands;
+pub(crate) use shared_operands::clear_shared_operand_keys;
+
 const SIGNED_MIN: i64 = i32::MIN as i64;
 const SIGNED_MAX: i64 = i32::MAX as i64;
 
@@ -2671,11 +2674,32 @@ fn interval_remainder(
 }
 
 fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool {
-    let ordinary =
-        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
-            .map(|condition| Proposition::ConditionIs(condition, false));
-    let Proposition::ConditionIs(condition, false) = ordinary.as_ref().unwrap_or(proposition)
-    else {
+    if let Some(query) =
+        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
+    {
+        if !matches!(
+            term,
+            Bitvector32Term::Binary {
+                format: MachineIntegerType::Int32,
+                ..
+            }
+        ) {
+            return false;
+        }
+        let Some((operation, left, right)) =
+            crate::kernel::machine_integer::representation::word_operation(
+                MachineIntegerType::Int32,
+                term,
+            )
+        else {
+            return false;
+        };
+        return query.format == MachineIntegerType::Int32
+            && query.operation == operation
+            && signed_operand_matches(query.operands[0].operand_view(), left)
+            && signed_operand_matches(query.operands[1].operand_view(), right);
+    }
+    let Proposition::ConditionIs(condition, false) = proposition else {
         return false;
     };
     match (condition, term) {
@@ -2726,6 +2750,70 @@ fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bo
         ) => signed_arithmetic_terms_equal(left, a) && signed_arithmetic_terms_equal(right, b),
         _ => false,
     }
+}
+
+/// Match the shared guard operand against the explicit certificate input.
+/// Work follows only the supplied tree, never expands the shared DAG, and
+/// preserves the signed atom fragment (including the two 32-bit literal tags).
+fn signed_operand_matches(
+    operand: crate::kernel::MachineOperandView<'_>,
+    written: &Bitvector32Term,
+) -> bool {
+    use crate::kernel::{KernelTermNode, MachineOperandView, MachineUnaryOp};
+    let root = match operand {
+        MachineOperandView::Shared(root) => root,
+        MachineOperandView::Legacy(value) => return signed_arithmetic_terms_equal(value, written),
+    };
+    let mut pending = vec![(root, written)];
+    while let Some((shared, written)) = pending.pop() {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return false;
+        }
+        match (shared.node(), written) {
+            (KernelTermNode::Variable(a), Bitvector32Term::Variable(b)) if a == b => {}
+            (
+                KernelTermNode::MachineLiteral(_),
+                Bitvector32Term::Constant(b) | Bitvector32Term::UInt32Constant(b),
+            ) => {
+                if MachineOperandView::Shared(shared)
+                    .literal()
+                    .and_then(|v| v.as_const())
+                    != Some(*b)
+                {
+                    return false;
+                }
+            }
+            (
+                KernelTermNode::MachineUnary {
+                    format: MachineIntegerType::Int32,
+                    operator: MachineUnaryOp::BitwiseNot,
+                    operand,
+                },
+                unary_term!(Int32, BitwiseNot, written),
+            ) => pending.push((operand, written)),
+            (
+                KernelTermNode::MachineBinary {
+                    format,
+                    operator,
+                    arguments,
+                },
+                written,
+            ) => {
+                let Some((BitvectorBinaryOp::Machine(written_format, written_operator), a, b)) =
+                    signed_binary(written)
+                else {
+                    return false;
+                };
+                if *format != written_format || *operator != written_operator {
+                    return false;
+                }
+                pending.push((&arguments[1], b));
+                pending.push((&arguments[0], a));
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 fn signed_arithmetic_terms_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
@@ -3157,18 +3245,15 @@ pub(crate) fn signed_arithmetic_source_matches(left: &Proposition, right: &Propo
     ) {
         return charge_claim_pair_work(&left, &right) && left == right;
     }
-    let left_query = crate::kernel::machine_integer::definedness::interval_query_form(left);
-    let right_query = crate::kernel::machine_integer::definedness::interval_query_form(right);
     match (
-        exact_definedness_parts(left_query.as_ref().unwrap_or(left)),
-        exact_definedness_parts(right_query.as_ref().unwrap_or(right)),
+        exact_definedness_parts(left),
+        exact_definedness_parts(right),
     ) {
-        (
-            Some((left_operator, left_left, left_right)),
-            Some((right_operator, right_left, right_right)),
-        ) if left_operator == right_operator => {
-            signed_arithmetic_terms_equal(left_left, right_left)
-                && signed_arithmetic_terms_equal(left_right, right_right)
+        (Some((left_operator, left)), Some((right_operator, right)))
+            if left_operator == right_operator =>
+        {
+            shared_operands::operands_equal(left[0].operand_view(), right[0].operand_view())
+                && shared_operands::operands_equal(left[1].operand_view(), right[1].operand_view())
         }
         _ => false,
     }
@@ -3176,43 +3261,50 @@ pub(crate) fn signed_arithmetic_source_matches(left: &Proposition, right: &Propo
 
 fn exact_definedness_parts(
     proposition: &Proposition,
-) -> Option<(u8, &Bitvector32Term, &Bitvector32Term)> {
-    let Proposition::ConditionIs(condition, false) = proposition else {
+) -> Option<(
+    u8,
+    [crate::kernel::machine_integer::comparison::ComparisonOperand<'_>; 2],
+)> {
+    use crate::kernel::machine_integer::{Operation, comparison::ComparisonOperand};
+    if let Some(query) =
+        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
+    {
+        if query.format != MachineIntegerType::Int32 {
+            return None;
+        }
+        let operator = match query.operation {
+            Operation::Add => 0,
+            Operation::Subtract => 1,
+            Operation::Multiply => 2,
+        };
+        return Some((operator, query.operands));
+    }
+    let Proposition::ConditionIs(
+        ConditionTerm::Overflows {
+            format: MachineIntegerType::Int32,
+            op,
+            left,
+            right,
+        },
+        false,
+    ) = proposition
+    else {
         return None;
     };
-    match condition {
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left,
-            right,
-        } => Some((0, left, right)),
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Subtract,
-            left,
-            right,
-        } => Some((1, left, right)),
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Multiply,
-            left,
-            right,
-        } => Some((2, left, right)),
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::ShiftLeft,
-            left,
-            right,
-        } => Some((3, left, right)),
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Divide,
-            left,
-            right,
-        } => Some((4, left, right)),
-        _ => None,
-    }
+    let operator = match op {
+        OverflowOperation::Add => 0,
+        OverflowOperation::Subtract => 1,
+        OverflowOperation::Multiply => 2,
+        OverflowOperation::ShiftLeft => 3,
+        OverflowOperation::Divide => 4,
+    };
+    Some((
+        operator,
+        [
+            ComparisonOperand::Written(left),
+            ComparisonOperand::Written(right),
+        ],
+    ))
 }
 
 fn affine_difference(
@@ -3329,6 +3421,199 @@ fn propositions_match(left: &Proposition, right: &Proposition) -> bool {
 mod tests {
     use super::*;
     use crate::kernel::{Pointer, Variable};
+
+    #[test]
+    fn shared_guard_operand_matching_preserves_signed_atoms() {
+        use crate::kernel::{KernelTermImport, MachineOperandView};
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut words = vec![
+            Bitvector32Term::Constant(1),
+            Bitvector32Term::UInt32Constant(1),
+            Bitvector32Term::Constant(2),
+            x(),
+            y(),
+        ];
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for op in [
+                MachineBinaryOp::Add,
+                MachineBinaryOp::Subtract,
+                MachineBinaryOp::Multiply,
+                MachineBinaryOp::ShiftRight,
+            ] {
+                words.push(Bitvector32Term::Binary {
+                    format,
+                    op,
+                    left: Box::new(x()),
+                    right: Box::new(y()),
+                });
+            }
+        }
+        words.push(Bitvector32Term::Unary {
+            format: MachineIntegerType::Int32,
+            op: crate::kernel::MachineUnaryOp::BitwiseNot,
+            operand: Box::new(x()),
+        });
+        for word in &words {
+            for (op, overflow_op) in [
+                (MachineBinaryOp::Add, OverflowOperation::Add),
+                (MachineBinaryOp::Subtract, OverflowOperation::Subtract),
+                (MachineBinaryOp::Multiply, OverflowOperation::Multiply),
+            ] {
+                let legacy = Proposition::ConditionIs(
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: overflow_op,
+                        left: Box::new(word.clone()),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
+                    false,
+                );
+                let bounds =
+                    crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
+                        &legacy,
+                    );
+                let guard =
+                    Proposition::And(Box::new(bounds[0].clone()), Box::new(bounds[1].clone()));
+                for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+                    let expression = Bitvector32Term::Binary {
+                        format,
+                        op,
+                        left: Box::new(word.clone()),
+                        right: Box::new(Bitvector32Term::UInt32Constant(1)),
+                    };
+                    assert_eq!(
+                        is_exact_definedness(&guard, &expression),
+                        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(
+                            &guard
+                        )
+                        .is_some_and(|condition| is_exact_definedness(
+                            &Proposition::ConditionIs(condition, false),
+                            &expression
+                        )),
+                        "{expression:?}"
+                    );
+                }
+            }
+        }
+        for left in &words {
+            let shared = KernelTermImport::default().machine(MachineIntegerType::Int32, left);
+            for right in &words {
+                let shared_right =
+                    KernelTermImport::default().machine(MachineIntegerType::UInt32, right);
+                assert_eq!(
+                    shared_operands::operands_equal(
+                        MachineOperandView::Shared(&shared),
+                        MachineOperandView::Shared(&shared_right)
+                    ),
+                    signed_arithmetic_terms_equal(left, right),
+                    "shared {left:?} against {right:?}",
+                );
+                assert_eq!(
+                    signed_operand_matches(MachineOperandView::Shared(&shared), right),
+                    signed_arithmetic_terms_equal(left, right),
+                    "{left:?} against {right:?}",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn definedness_source_views_preserve_interval_adapter_answers() {
+        use crate::kernel::machine_integer::definedness::{
+            integer_bounds_of_definedness, interval_query_form,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut sources = Vec::new();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+            for op in [
+                OverflowOperation::Add,
+                OverflowOperation::Subtract,
+                OverflowOperation::Multiply,
+                OverflowOperation::Divide,
+                OverflowOperation::ShiftLeft,
+            ] {
+                for operand in [
+                    x(),
+                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::UInt32Constant(1),
+                    Bitvector32Term::logical_machine_binary(
+                        MachineIntegerType::Int32,
+                        MachineBinaryOp::Add,
+                        x(),
+                        y(),
+                    ),
+                ] {
+                    let source = Proposition::ConditionIs(
+                        ConditionTerm::Overflows {
+                            format,
+                            op,
+                            left: Box::new(operand),
+                            right: Box::new(y()),
+                        },
+                        false,
+                    );
+                    let bounds = integer_bounds_of_definedness(&source);
+                    if bounds.len() == 2 {
+                        sources.push(Proposition::And(
+                            Box::new(bounds[0].clone()),
+                            Box::new(bounds[1].clone()),
+                        ));
+                        sources.push(bounds[0].clone());
+                    }
+                    sources.push(source);
+                }
+            }
+        }
+        let old_parts = |source: &Proposition| {
+            let Proposition::ConditionIs(
+                ConditionTerm::Overflows {
+                    format: MachineIntegerType::Int32,
+                    op,
+                    left,
+                    right,
+                },
+                false,
+            ) = source
+            else {
+                return None;
+            };
+            Some((*op, left.clone(), right.clone()))
+        };
+        for left in &sources {
+            for right in &sources {
+                // This matrix covers only overflow source matching; ordinary
+                // one-bound affine claims keep their existing earlier route.
+                if signed_arithmetic_claim(left).is_some()
+                    && signed_arithmetic_claim(right).is_some()
+                {
+                    continue;
+                }
+                let a = interval_query_form(left);
+                let b = interval_query_form(right);
+                let expected = match (
+                    old_parts(a.as_ref().unwrap_or(left)),
+                    old_parts(b.as_ref().unwrap_or(right)),
+                ) {
+                    (Some((a, al, ar)), Some((b, bl, br))) => {
+                        a == b
+                            && signed_arithmetic_terms_equal(&al, &bl)
+                            && signed_arithmetic_terms_equal(&ar, &br)
+                    }
+                    _ => false,
+                };
+                assert_eq!(
+                    signed_arithmetic_source_matches(left, right),
+                    expected,
+                    "{left:?} against {right:?}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn mathematical_certificate_results_keep_machine_sums_opaque() {

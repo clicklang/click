@@ -2649,7 +2649,8 @@ fn index_bitvector_equality_fact(
 /// Whether a proposition is only a C definedness guard: a conjunction of
 /// the no-overflow conditions lowering attaches to partial arithmetic.
 pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
-    if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition).is_some()
+    if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
+        .is_some()
     {
         return true;
     }
