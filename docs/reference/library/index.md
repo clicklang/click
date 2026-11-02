@@ -5131,4 +5131,4 @@ initialize memory, or reinterpret pointer representations. Its kernel
 constructor constructs five reads and a fixed packing expression without
 searching memory history. Applications retain the named lemma in expansion.
 
-Checked use: [`byte_representation_initializes_declared_uint32.md`](https://github.com/clicklang/click/blob/master/mdtests/byte_representation_initializes_declared_uint32.md).
+Checked use: [`integer_uint32_from_le_bytes_initialization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_uint32_from_le_bytes_initialization.md).
