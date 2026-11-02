@@ -41,7 +41,6 @@ int32 f(int32 n) {
                 step();
                 step();
                 step();
-                close_invariants();
             }
         }
     }

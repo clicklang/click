@@ -61,7 +61,6 @@ fn walk(bytes: &[u8]) -> u32 {
             have __rust_mir_6_remaining < at(iteration, __rust_mir_6_remaining) by {
                 solve() using { __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4u64; 4u64 <= at(iteration, __rust_mir_6_remaining); };
             }
-            close_invariants();
         }
     }
 }

@@ -22,7 +22,6 @@ int32 wait_for_zero(int32 x) {
         initialize by solve();
         preserve by {
             step();
-            close_invariants() by { solve(); }
         }
     }
     step();

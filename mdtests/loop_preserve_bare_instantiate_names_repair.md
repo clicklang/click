@@ -41,7 +41,6 @@ int32 walk(int32 next[8], int32 start) {
                 0 < k and k < 8 implies 0 <= next[k] and next[k] < k
             }, cur) using { 0 < cur; cur < 8; };
             step();
-            close_invariants();
         }
     }
     step();

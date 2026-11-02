@@ -500,7 +500,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    have 0 <= to_integer(len) by solve() using { to_integer(len) == 0; };
    have at(before_block, to_integer(len)) == 16 by assumption();
    have to_integer(len) < at(before_block, to_integer(len)) by solve() using { to_integer(len) == 0; at(before_block, to_integer(len)) == 16; };
-   close_invariants();
   }
  }
  have len == 0u64 by {

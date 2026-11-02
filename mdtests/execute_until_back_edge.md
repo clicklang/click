@@ -23,7 +23,7 @@ int32 count(int32 n) {
  loop {
   decreases n-i;
   invariant 0 <= i and i <= n;
-  preserve by { step_until(back_edge()); close_invariants(); }
+  preserve by { step_until(back_edge()); }
  }
 }
 ```

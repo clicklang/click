@@ -6,8 +6,10 @@ If the two were one snapshot, the read of `a[m]` at the end would be named by
 the entry state and `result == old(a[m])` would hold by spelling, with no rule
 having decided it. The C returns 7 when `i` and `m` are the same index.
 
-The forget mark is what keeps the two apart, so the read stops at the store to
-`a[i]` and the refusal names the premise that would let it past.
+The forget mark keeps the two apart. The refusal must compare distinct
+snapshots rather than treating the final read as an entry read. Its supplemental,
+fact-free history explanation may stop at the later store to `a[j]`: program
+reads name the actual state, not a cache projection that removed that store.
 
 ```c filename=a_pruned_store_is_not_forgotten.c
 int32 read_after_a_pruned_store(int32* a, int32 i, int32 j, int32 m) {
@@ -34,5 +36,5 @@ int32 read_after_a_pruned_store(int32* a, int32 i, int32 j, int32 m) {
 ```
 
 ```expect
-fail: the store to `a[i]` may have written it. If `m` and `i` differ, state `m != i`
+fail: the two sides read the same address in different memory snapshots (`result` reads the outcome state, `old(a[m])` reads function entry)
 ```

@@ -33,7 +33,6 @@ int32 count_once(int32 flag) {
                 i == 0 => { have i <= 1; }
                 i == 1 => { have i <= 1; }
             }
-            close_invariants();
         }
     }
     step();

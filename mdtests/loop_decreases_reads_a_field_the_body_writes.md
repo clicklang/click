@@ -34,7 +34,6 @@ int32 drain(struct box* box) {
         preserve by {
             have 0 <= to_integer(box->len - 1);
             step();
-            close_invariants();
         }
     }
     step();

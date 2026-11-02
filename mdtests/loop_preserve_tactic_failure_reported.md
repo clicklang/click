@@ -39,7 +39,6 @@ int32 count_down(int32 n) {
         preserve by {
             have i < 0 by solve();
             step();
-            close_invariants();
         }
     }
     step();

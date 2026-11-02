@@ -105,7 +105,6 @@ fn walk(bytes: &[u8]) -> usize {
                 };
             }
             step_until(back_edge());
-            close_invariants();
         }
     }
     have iter_remaining < 4u64 by {

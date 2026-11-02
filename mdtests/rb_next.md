@@ -1966,7 +1966,6 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                                 right_model, ctx.model) },
                                                         { sibling: rt, up: ctx });
                                                     step();
-                                                    close_invariants();
                                                 },
                                             }
                                         },
@@ -2472,7 +2471,6 @@ struct rb_node* rb_next(struct rb_node* node) {
                                                         RbTree::Node(identity, par, color,
                                                             left_model, right_model)) },
                                                 { left: s, right: t });
-                                            close_invariants();
                                         },
                                     }
                                 },

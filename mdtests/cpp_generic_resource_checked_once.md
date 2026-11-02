@@ -252,7 +252,6 @@ template<class T> Stack<T>::~Stack() {
                     step();
                     step();
                     step();
-                    close_invariants();
                 },
             }
         }

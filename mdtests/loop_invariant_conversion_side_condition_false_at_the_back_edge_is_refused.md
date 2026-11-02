@@ -33,7 +33,6 @@ int32 walk(int32 n) {
         invariant to_integer(i + 1) == to_integer(i + 1);
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();

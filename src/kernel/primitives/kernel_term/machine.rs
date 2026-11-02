@@ -3,16 +3,19 @@
 use super::*;
 
 impl KernelTerm {
-    /// Construct one unsigned operation structurally from shared children.
-    /// Definedness is separate; this total fragment has no domain debt.
-    pub(crate) fn unsigned_binary(
+    /// Construct one arithmetic operation structurally from shared children.
+    /// Signed definedness belongs to the evaluator's separate obligations.
+    pub(crate) fn arithmetic_binary(
         format: MachineIntegerType,
         operator: MachineBinaryOp,
         arguments: [Self; 2],
     ) -> Result<Self, &'static str> {
         if !matches!(
             format,
-            MachineIntegerType::UInt32 | MachineIntegerType::UInt64
+            MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int64
+                | MachineIntegerType::UInt64
         ) || !matches!(
             operator,
             MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply
@@ -20,7 +23,7 @@ impl KernelTerm {
             .iter()
             .any(|arg| arg.ty() != &KernelType::C(format.c_type()))
         {
-            return Err("unsigned arithmetic requires matching uint32 or uint64 operands");
+            return Err("arithmetic requires matching 32-bit or 64-bit integer operands");
         }
         Ok(Self::intern(
             KernelType::C(format.c_type()),
@@ -76,7 +79,54 @@ pub(super) fn wrap_exact(format: MachineIntegerType, term: Bitvector32Term) -> C
 }
 
 impl KernelTermImport {
-    pub(super) fn machine(
+    /// Import only the arithmetic storage fragment. Do not traverse a Bool,
+    /// Integer conversion, pointer, or other opaque payload to reject it.
+    pub(crate) fn machine_arithmetic(
+        &mut self,
+        result: MachineIntegerType,
+        term: &Bitvector32Term,
+    ) -> Option<KernelTerm> {
+        use Bitvector32Term as Old;
+        use KernelMachineLiteral as Literal;
+        let node = match term {
+            Old::Binary {
+                op,
+                format,
+                left,
+                right,
+            } => KernelTermNode::MachineBinary {
+                format: *format,
+                operator: *op,
+                arguments: [
+                    self.machine_arithmetic(*format, left)?,
+                    self.machine_arithmetic(*format, right)?,
+                ],
+            },
+            Old::Unary {
+                op,
+                format,
+                operand,
+            } => KernelTermNode::MachineUnary {
+                format: *format,
+                operator: *op,
+                operand: self.machine_arithmetic(*format, operand)?,
+            },
+            Old::Variable(value) => KernelTermNode::Variable(*value),
+            Old::Constant(value) => KernelTermNode::MachineLiteral(Literal::Word32(*value)),
+            Old::UInt32Constant(value) => KernelTermNode::MachineLiteral(Literal::UInt32(*value)),
+            Old::Int64Constant(value) => KernelTermNode::MachineLiteral(Literal::Int64(*value)),
+            Old::UInt64Constant(value) => KernelTermNode::MachineLiteral(Literal::UInt64(*value)),
+            Old::MachineIntegerConstant(value) => {
+                KernelTermNode::MachineLiteral(Literal::Wide(*value))
+            }
+            _ => return None,
+        };
+        // Interning charges the one selected source node; no other bridge
+        // or evaluator is invoked for these literal/variable leaves.
+        Some(KernelTerm::intern(KernelType::C(result.c_type()), node))
+    }
+
+    pub(crate) fn machine(
         &mut self,
         result: MachineIntegerType,
         term: &Bitvector32Term,
@@ -172,7 +222,7 @@ impl KernelTermImport {
 }
 
 impl KernelTermExport {
-    pub(super) fn machine(term: &KernelTerm) -> Result<Bitvector32Term, &'static str> {
+    pub(crate) fn machine(term: &KernelTerm) -> Result<Bitvector32Term, &'static str> {
         use Bitvector32Term as Old;
         use KernelMachineLiteral as Literal;
         use KernelTermNode as Node;

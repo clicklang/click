@@ -32,7 +32,6 @@ void wipe(int32 a[], int32 n) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
     transport(

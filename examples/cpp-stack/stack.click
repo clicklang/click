@@ -175,7 +175,6 @@ Stack<int>::~Stack() {
                     step();
                     step();
                     step();
-                    close_invariants();
                 },
             }
         }

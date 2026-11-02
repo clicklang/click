@@ -187,7 +187,6 @@ struct tree_node* tree_leftmost(struct tree_node* root) {
                         model: Context::Left(root, value, right_model, Context::Top)
                     }, { sibling: rt, up: ctx });
                     step();
-                    close_invariants();
                 },
             }
         }

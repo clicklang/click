@@ -764,7 +764,6 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         k < arena->capacity;
                     };
                 }
-                close_invariants();
             } else {
                 branch {
                     contradiction(arena->occupied[i] == 0);

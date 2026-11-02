@@ -1572,7 +1572,6 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             } else { assumption(); }
                                                         }
                                                         step(); step(); // A live parent continues with the strict child context.
-                                                        close_invariants();
                                                     }
                                                 },
                                             }
@@ -3064,7 +3063,6 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                             } else { assumption(); }
                                                         }
                                                         step(); step(); // A live parent continues with the strict child context.
-                                                        close_invariants();
                                                     }
                                                 },
                                             }

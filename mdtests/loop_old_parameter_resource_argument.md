@@ -50,7 +50,6 @@ void advance(int32* rb, int32* stop) {
                 unfold(remaining(rb, stop));
                 normalize() using { address(rb) == address(stop); };
             }
-            close_invariants();
         }
     }
 }
@@ -65,7 +64,7 @@ void change_index(int32* p, int32 index) {
         invariant index >= 0;
         invariant cell.value == old(cell.value);
         initialize by solve();
-        preserve by { step(); close_invariants(); }
+        preserve by { step(); }
     }
 }
 ```

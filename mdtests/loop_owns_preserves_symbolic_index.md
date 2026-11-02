@@ -37,7 +37,6 @@ int32 loop_owns_preserves_symbolic_index(int32 p[], int32 n) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
     step();

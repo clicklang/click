@@ -79,7 +79,6 @@ fn quad::walk(bytes: &[u8]) -> u32 {
             have __rust_mir_6_cursor == bytes + (16 - __rust_mir_6_remaining) by {
                 rewrite(16 - __rust_mir_6_remaining == at(iteration, 16 - __rust_mir_6_remaining) + 4); solve();
             }
-            close_invariants();
         }
     }
 }

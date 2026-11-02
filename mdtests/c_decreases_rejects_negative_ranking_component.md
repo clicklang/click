@@ -30,7 +30,6 @@ int32 drift(int32 n) {
         preserve by {
             have 0 <= to_integer(n - 1);
             step();
-            close_invariants() by { solve(); }
         }
     }
     step();

@@ -37,7 +37,6 @@ int32 uprec(int32 a, int64* p) {
         preserve by {
             have 0 < a by { solve() using { a >= 0; a != 0; }; }
             step();
-            close_invariants();
         }
     }
     step();

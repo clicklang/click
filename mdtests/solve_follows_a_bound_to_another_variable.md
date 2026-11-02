@@ -33,7 +33,6 @@ int32 count_to(int32 n) {
         preserve by {
             have to_integer(i + 1) <= 101;
             step();
-            close_invariants();
         }
     }
 }

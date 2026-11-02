@@ -25,7 +25,6 @@ int32 fill(uint32 x) {
         initialize by { solve(); }
         preserve by {
             step();
-            close_invariants();
         }
     }
 }

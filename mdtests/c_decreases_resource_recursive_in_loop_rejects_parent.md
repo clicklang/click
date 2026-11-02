@@ -52,13 +52,11 @@ void repeat_node_loop(struct node* node) {
                 step();
                 solve();
                 step();
-                close_invariants();
             } else {
                 step();
                 step();
                 solve();
                 step();
-                close_invariants();
             }
         }
     }

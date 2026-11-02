@@ -76,7 +76,6 @@ struct node* skip(struct node* p, struct node* q, int32 n) {
             }
             step();
             step();
-            close_invariants();
         }
     }
     step();

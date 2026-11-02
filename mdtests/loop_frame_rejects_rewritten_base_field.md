@@ -66,7 +66,6 @@ void mark_and_swap(struct arena* arena, int32 start, int32 end) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
 }

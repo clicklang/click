@@ -34,7 +34,6 @@ int32 count_once(int32 flag) {
             } else {
                 have not (flag == i) by assumption();
             }
-            close_invariants();
         }
     }
     step();

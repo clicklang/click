@@ -488,7 +488,6 @@ struct rb_node* rb_first(const struct rb_root* root) {
                                 model: Context::Left(n, n, color, right_model, ctx.model)
                             }, { sibling: rt, up: ctx });
                             step();
-                            close_invariants();
                         }
                     }
                 }

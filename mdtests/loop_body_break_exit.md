@@ -149,7 +149,6 @@ int32 stop_at(int32 n) {
                     step();
                     step();
                     step();
-                    close_invariants();
                 }
             }
         }

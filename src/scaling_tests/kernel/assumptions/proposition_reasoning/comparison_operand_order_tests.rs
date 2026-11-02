@@ -4,12 +4,12 @@ use super::*;
 
 #[test]
 fn rejecting_comparison_bound_ignores_unrelated_getter_payload() {
-    let _session = crate::kernel::VerificationSession::enter();
     let x = Bitvector32Term::Variable(Variable(9_991_011));
     let y = Bitvector32Term::Variable(Variable(9_991_012));
     for mirrored in [false, true] {
         let mut baseline = None;
         for size in [4, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
             let fact = ConditionTerm::signed_less_equal(
                 getter(size),
                 Bitvector32Term::Constant(2147483646),

@@ -42,7 +42,6 @@ int32 walk(int32 next[8], int32 start) {
                 assumption();
             }
             step();
-            close_invariants();
         }
     }
     step();

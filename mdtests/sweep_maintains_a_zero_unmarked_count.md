@@ -74,7 +74,6 @@ void sweep(int32 visited[], int32 n) {
                 solve();
             }
             step();
-            close_invariants();
         }
     }
 }

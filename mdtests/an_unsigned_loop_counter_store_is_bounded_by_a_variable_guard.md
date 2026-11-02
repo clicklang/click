@@ -40,7 +40,6 @@ void clear(int32* values, uint32 n) {
             step();
             step();
             have at(region(3).entry, x) < 4u32;
-            close_invariants();
         }
     }
 }

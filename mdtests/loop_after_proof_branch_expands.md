@@ -51,7 +51,6 @@ int32 count_after_guard(int32 n) {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();

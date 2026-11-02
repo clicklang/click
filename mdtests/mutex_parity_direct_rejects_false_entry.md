@@ -99,7 +99,6 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
                     step();
                     step();
                     step();
-                    close_invariants();
                 } else {
                     have (i + 1) % 2 == 0 by apply(odd_successor(i));
                     have 0 <= i % 2 by { solve() using { 0 <= i; }; }
@@ -109,7 +108,6 @@ int32 alternate_mutex(struct parity_mutex *object, int32 n) {
                     step();
                     step();
                     step();
-                    close_invariants();
                 }
             }
         }

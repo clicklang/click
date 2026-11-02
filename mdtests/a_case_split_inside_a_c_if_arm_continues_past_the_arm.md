@@ -38,12 +38,46 @@ int32 nested(int32 x, int32 y) {
 ```
 
 ```click
+import click::separation;
 verifying "a_case_split_inside_a_c_if_arm_continues_past_the_arm.c";
 
 int32 read_back(int32 u, int32 c) {
     requires 0 <= u;
     requires u < 2;
     ensures result == 0 or result == 3 or result == 7;
+} by {
+    step(); step(); step(); step();
+    have loc[0] == 3 by { normalize(); }
+    mark before_store;
+    step();
+    have loc[u] == 7 by { normalize(); }
+    have loc[0] == 3 or loc[0] == 7 by {
+        if u == 0 {
+            have loc[0] == 7 by { normalize() using { loc[u] == 7; u == 0; }; }
+            assumption();
+        } else {
+            have separate(memory(loc[u]), memory(loc[0])) by {
+                apply(separation::elements(loc, u, 0)) using { u != 0; };
+            }
+            have separate(statement(4).footprint, memory(loc[0])) by {
+                normalize() using { separate(memory(loc[u]), memory(loc[0])); };
+            }
+            have loc[0] == at(before_store, loc[0]) by {
+                transport_certificate {
+                    premise 0: separate(statement(4).footprint, memory(loc[0]))
+                        => separate(statement(4).footprint, memory(loc[0]));
+                    preserve 0 => loc[0] == at(before_store, loc[0]);
+                    conclusion 1;
+                }
+            }
+            have loc[0] == 3 by { normalize() using { loc[0] == at(before_store, loc[0]); at(before_store, loc[0]) == 3; }; }
+            assumption();
+        }
+    }
+    mark stored;
+    step();
+    have loc[0] == at(stored, loc[0]) by { normalize(); }
+    have loc[0] == 3 or loc[0] == 7 by { solve(); }
 }
 
 int32 nested(int32 x, int32 y) {

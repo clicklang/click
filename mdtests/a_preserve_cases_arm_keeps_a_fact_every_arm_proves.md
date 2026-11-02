@@ -56,7 +56,6 @@ uint64 f(uint64 b) {
                     have at(head, b) / 1000u64 <= 18446744073u64;
                     have at(head, i) + 1 == 1 and at(head, b) / 1000u64 <= 18446744073u64 by { solve(); }
                     have (at(head, i) + 1 == 0 and at(head, b) / 1000u64 <= 18446744073709u64) or (at(head, i) + 1 == 1 and at(head, b) / 1000u64 <= 18446744073u64) or (at(head, i) + 1 == 2 and at(head, b) / 1000u64 <= 18446744u64) by { solve(); }
-                    close_invariants() by { solve(); }
                 }
                 i == 1 and b <= 18446744073u64 => {
                     mark head;
@@ -68,7 +67,6 @@ uint64 f(uint64 b) {
                     have at(head, b) / 1000u64 <= 18446744u64;
                     have at(head, i) + 1 == 2 and at(head, b) / 1000u64 <= 18446744u64 by { solve(); }
                     have (at(head, i) + 1 == 0 and at(head, b) / 1000u64 <= 18446744073709u64) or (at(head, i) + 1 == 1 and at(head, b) / 1000u64 <= 18446744073u64) or (at(head, i) + 1 == 2 and at(head, b) / 1000u64 <= 18446744u64) by { solve(); }
-                    close_invariants() by { solve(); }
                 }
             }
         }

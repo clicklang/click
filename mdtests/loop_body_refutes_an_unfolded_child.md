@@ -85,7 +85,6 @@ void countdown_two(int32 n) {
                                 let { rest: r2 } = unfold(r);
                                 step();
                                 step();
-                                close_invariants();
                             },
                         }
                     } else {
@@ -93,7 +92,6 @@ void countdown_two(int32 n) {
                         step();
                         step();
                         let c = fold(chain(n), { model: Chain::Nil });
-                        close_invariants();
                     }
                 },
             }

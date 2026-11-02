@@ -486,10 +486,8 @@ fn promoted_integer_ranking_expands_without_search() {
 fn smart_ranking_closure_expands_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
-    assert!(
-        click.contains("close_invariants() by { solve(); }"),
-        "the fixture must exercise the smart closer: {click}"
-    );
+    // The fixture's `preserve` scripts end at the back edge, where the
+    // implicit closer, the smart ranking closure, closes each member.
     let expanded = expand_function_proof_source(&click, &sources, "nested_count")
         .unwrap_or_else(|error| panic!("nested-loop expansion failed: {}", error.message()));
     assert!(

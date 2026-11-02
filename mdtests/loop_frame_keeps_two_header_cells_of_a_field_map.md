@@ -52,7 +52,6 @@ void mark_tail(struct arena* arena, int32 end) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
 }

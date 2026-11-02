@@ -63,7 +63,6 @@ int32 spin(struct cell* node, int32 n) {
                     unfold(c);
                     step();
                     step();
-                    close_invariants();
                 },
             }
         }

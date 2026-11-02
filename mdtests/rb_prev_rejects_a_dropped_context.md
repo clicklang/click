@@ -1931,7 +1931,6 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                                 right_model, ctx.model) },
                                                         { sibling: rt, up: ctx });
                                                     step();
-                                                    close_invariants();
                                                 },
                                             }
                                         },
@@ -2437,7 +2436,6 @@ struct rb_node* rb_prev(struct rb_node* node) {
                                                             right_model, left_model),
                                                         frame_left) },
                                                 { right: s, left: t });
-                                            close_invariants();
                                         },
                                     }
                                 },

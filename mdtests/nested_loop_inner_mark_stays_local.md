@@ -35,12 +35,10 @@ int32 count() {
                     mark inner_head;
                     have at(outer_head, i) < 3 by { assumption(); }
                     step_until(back_edge());
-                    close_invariants();
                 }
             }
             have at(inner_head, j) <= 2 by { solve(); }
             step_until(back_edge());
-            close_invariants();
         }
     }
 }

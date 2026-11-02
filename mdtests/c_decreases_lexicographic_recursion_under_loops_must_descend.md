@@ -45,7 +45,6 @@ int32 grid(int32 m, int32 n) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
     step();
@@ -58,7 +57,6 @@ int32 grid(int32 m, int32 n) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
     step();

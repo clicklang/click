@@ -3882,7 +3882,7 @@ loop's diagnostic names the ranking obligations. Spell
 `close_invariants() by { ... }` with explicit steps when needed. Expansion emits the retained body and never repeats
 invariant discovery while checking it.
 
-**Checked examples:** [`c_decreases_count_up.md`](https://github.com/clicklang/click/blob/master/mdtests/c_decreases_count_up.md)
+**Checked examples:** [`close_invariants_ranks_a_reassigned_parameter.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_ranks_a_reassigned_parameter.md)
 
 ### Explicit invariant closure
 

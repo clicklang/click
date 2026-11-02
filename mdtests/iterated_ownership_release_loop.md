@@ -155,7 +155,6 @@ void release_run(int32* data, int32* occupied, int32 capacity, int32 start, int3
                     0 <= start;
                 };
             }
-            close_invariants();
         }
     }
     have i >= start;

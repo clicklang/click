@@ -34,7 +34,7 @@ int32 count_to_bound(int32 n) {
             decreases 0;
             invariant 0 <= i and i <= n;
             initialize by solve();
-            preserve by { step(); close_invariants(); }
+            preserve by { step(); }
         }
     }
 }

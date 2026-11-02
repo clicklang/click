@@ -28,6 +28,81 @@ impl ConditionTerm {
     }
 }
 
+#[cfg(test)]
+mod construction_tests {
+    use super::*;
+
+    #[test]
+    fn domain_construction_retains_symbolic_truths_for_obligation_discharge() {
+        let value = IntegerTerm::from_machine(
+            MachineIntegerType::Int64,
+            Bitvector32Term::Variable(Variable(987000)),
+        )
+        .unwrap();
+        // An already written symbolic bound stays a proposition. The domain
+        // builder's root-type rule below does not fold ordinary comparisons.
+        let domain = Proposition::And(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::integer_less_equal(
+                    value.clone(),
+                    IntegerTerm::constant_i64(i64::MAX),
+                ),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::integer_greater_equal(value, IntegerTerm::constant_i64(i64::MIN)),
+                true,
+            )),
+        );
+        // A machine value fits its type, but proving that is not construction.
+        let (retained, work) = crate::instrumentation::measure_deterministic_work(|| {
+            Proposition::arithmetic_domain([domain.clone()])
+        });
+        assert_eq!(retained, Some(domain));
+        assert_eq!(
+            work, 3,
+            "only the conjunction and its two conditions are visited"
+        );
+        assert_eq!(
+            Proposition::arithmetic_domain([
+                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                Proposition::ConditionIs(ConditionTerm::Constant(false), false),
+            ]),
+            None
+        );
+        let falsehood = Proposition::ConditionIs(ConditionTerm::Constant(false), true);
+        assert_eq!(
+            Proposition::arithmetic_domain([falsehood.clone()]),
+            Some(falsehood)
+        );
+    }
+
+    #[test]
+    fn an_exact_machine_value_needs_a_range_only_for_a_noncontaining_type() {
+        use MachineIntegerType as Ty;
+        for (source, destination, fits) in [
+            (Ty::Int32, Ty::Int32, true),
+            (Ty::Int8, Ty::Int32, true),
+            (Ty::UInt32, Ty::Int64, true),
+            (Ty::Int32, Ty::Int8, false),
+            (Ty::UInt32, Ty::Int32, false),
+            (Ty::Int32, Ty::UInt32, false),
+        ] {
+            let value =
+                IntegerTerm::from_machine(source, Bitvector32Term::Variable(Variable(987001)))
+                    .unwrap();
+            let range = Proposition::arithmetic_result_range(destination, value);
+            assert_eq!(
+                matches!(
+                    range,
+                    Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+                ),
+                fits
+            );
+        }
+    }
+}
+
 impl Proposition {
     pub(crate) fn signed_division_exclusion(
         format: MachineIntegerType,
@@ -67,6 +142,15 @@ impl Proposition {
     /// Mathematical arithmetic is total, so these bounds introduce no debt
     /// for the machine operation whose definedness they describe.
     pub(crate) fn arithmetic_result_range(format: MachineIntegerType, exact: IntegerTerm) -> Self {
+        // An identity such as x + 0 can leave the exact result as one machine
+        // observation. Its type already guarantees this range. Inspect only
+        // the root type, never its operand or any facts; ordinary written
+        // comparisons and the machine operation itself remain structural.
+        if let IntegerTerm::Machine(value) = &exact
+            && format.format().contains(value.ty().format())
+        {
+            return Self::ConditionIs(ConditionTerm::Constant(true), true);
+        }
         let (minimum, maximum) = format.format().bounds();
         Self::And(
             Box::new(Self::ConditionIs(
@@ -97,13 +181,16 @@ impl Proposition {
         Self::arithmetic_result_range(format, exact)
     }
 
-    /// Conjoin an operation's domain once. Only intrinsic truths disappear;
-    /// no ambient facts participate in constructing the obligation.
+    /// Conjoin an operation's domain once, discarding literal truths only.
+    /// Symbolic conditions belong to ordinary obligation discharge. Running
+    /// even the empty-context proof checker here repeatedly normalizes growing
+    /// operand trees while the evaluator is only trying to construct a debt.
     pub(crate) fn arithmetic_domain(parts: impl IntoIterator<Item = Self>) -> Option<Self> {
         fn retain(part: Proposition) -> Option<Proposition> {
+            crate::instrumentation::record_deterministic_work(1);
             match part {
-                Proposition::ConditionIs(ref condition, value)
-                    if PureFactContext::decide_intrinsically(condition) == Some(value) =>
+                Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
+                    if actual == expected =>
                 {
                     None
                 }

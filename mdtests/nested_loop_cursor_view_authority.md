@@ -43,7 +43,6 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
    invariant 0 <= outer and outer < 2;
    preserve by { mark inner_head; step(); step(); step();
     have viewable(chunk[0..4]) by { transport(at(inner_head,viewable(chunk[0..4])),viewable(chunk[0..4])) using { at(inner_head,viewable(chunk[0..4])); 0 <= 4; }; }
-    close_invariants() by { solve(); }
    }
   }
   mark after_inner;
@@ -66,7 +65,6 @@ int32 f(const uint8* bytes) { views bytes[0..8]; ensures result == 0; } by {
   }
   have cursor == bytes + (4 * outer) by { assumption(); }
   have viewable(bytes[0..8]) by { transport(at(outer_head,viewable(bytes[0..8])),viewable(bytes[0..8])) using { at(outer_head,viewable(bytes[0..8])); bytes == old(bytes); 0 <= 8; }; }
-  close_invariants() by { solve(); }
  }
  }
 }

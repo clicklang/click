@@ -2681,3 +2681,93 @@ fn cold_pointer_frame_refusals_do_not_scan_history() {
         );
     }
 }
+
+/// Query the same read-validity index used by ordinary typed loads and call
+/// initialization. Store construction and premise admission are outside the
+/// measurement: the charged work is only N constant-size checking queries.
+/// Keep one source in the bucket so ambiguous-source refusal cannot hide the walk.
+fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, usize)> {
+    let mut samples = Vec::new();
+    for size in [16u32, 32, 64, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let read = Pointer {
+            block: PointerBlock::Heap(998_940),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let write = Pointer {
+            block: PointerBlock::Heap(998_941),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let initial = CMemory::new();
+        let defined = |memory: &CMemory| {
+            PureFactContext::new().assume_proposition(Proposition::CMemoryReadDefined {
+                memory: memory.clone(),
+                pointer: read.clone(),
+                value_type: CType::Int32,
+            })
+        };
+        let original = defined(&initial);
+        let mut memory = initial;
+        let mut total = 0;
+        for index in 0..size {
+            let previous = memory.clone();
+            memory = memory.store_classed_with_context(
+                write.clone(),
+                int32(index),
+                &PureFactContext::new(),
+                None,
+            );
+            let facts = if exact {
+                defined(&memory)
+            } else if adjacent {
+                defined(&previous)
+            } else {
+                original.clone()
+            };
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.has_memory_read_defined_evidence(&memory, &read, CType::Int32)
+            });
+            if adjacent || exact || index == 0 {
+                assert!(proved, "read initialization at query {index} of {size}");
+            } else {
+                assert!(
+                    !proved,
+                    "long initialization history must need explicit links"
+                );
+            }
+            total += work;
+        }
+        samples.push((size, total));
+    }
+    samples
+}
+
+#[test]
+fn repeated_read_initialization_queries_have_near_linear_total_work() {
+    let samples = repeated_read_initialization_work(false, false);
+    eprintln!("entry-to-current read-initialization checks: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * 3,
+            "read-initialization checking exceeds the near-linear doubling envelope: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn adjacent_read_initialization_queries_have_near_linear_total_work() {
+    let samples = repeated_read_initialization_work(true, false);
+    eprintln!("adjacent read-initialization checks: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 3, "adjacent control: {samples:?}");
+    }
+}
+
+#[test]
+fn exact_read_initialization_queries_have_near_linear_total_work() {
+    let samples = repeated_read_initialization_work(false, true);
+    eprintln!("exact read-initialization checks: {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 3, "exact control: {samples:?}");
+    }
+}

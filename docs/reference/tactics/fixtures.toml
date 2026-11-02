@@ -224,7 +224,7 @@ needle = "contradiction(x == x);"
 
 [[form]]
 id = "close-invariants"
-path = "mdtests/c_decreases_count_up.md"
+path = "mdtests/close_invariants_ranks_a_reassigned_parameter.md"
 needle = "close_invariants();"
 
 [[form]]

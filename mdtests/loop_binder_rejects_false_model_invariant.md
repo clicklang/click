@@ -47,7 +47,6 @@ void bump_n(struct cell* p, int32 n) {
             step();
             step();
             let c = fold(counter(p), { count: old(c.count) + 1 });
-            close_invariants();
         }
     }
 }

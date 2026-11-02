@@ -58,7 +58,6 @@ int32 spin(struct cell* node, int32 n) {
                     unfold(c);
                     step();
                     let c = fold(cell(node), { model: Maybe::Some(value) });
-                    close_invariants();
                 },
             }
         }

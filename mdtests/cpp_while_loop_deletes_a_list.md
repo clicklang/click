@@ -89,7 +89,6 @@ void destroy(Node* p) {
                     step();
                     step();
                     step();
-                    close_invariants();
                 },
             }
         }

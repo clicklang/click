@@ -106,7 +106,6 @@ fn cover(bytes: &[u8]) -> usize {
                 rewrite(((bytes.len() - bytes.len() % 4u64) as uint32 as int32 - chunks_remaining) == at(iteration, (bytes.len() - bytes.len() % 4u64) as uint32 as int32 - chunks_remaining) + 4); solve();
             }
             step_until(back_edge());
-            close_invariants();
         }
     }
     have chunks_remaining < 4 by {

@@ -29,7 +29,6 @@ void probe(struct holder* h, int32* data, int32 n) {
             unfold(cells(h->data, n));
             step(); step();
             fold(cells(h->data, n));
-            close_invariants();
         }
     }
 }

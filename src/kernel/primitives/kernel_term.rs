@@ -133,6 +133,7 @@ struct NodeKeyData {
     fingerprint: u64,
     ty: KernelType,
     node: KernelTermNode,
+    shared_machine_operand: bool,
 }
 #[derive(Clone)]
 struct NodeKey(Arc<NodeKeyData>);
@@ -152,8 +153,23 @@ impl NodeKey {
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         ty.hash(&mut hash);
         node.hash(&mut hash);
+        // This migration fragment has exact structural identities all the way
+        // to its leaves. Opaque payloads and conversions keep their old storage
+        // until their checker views migrate; inspect immediate children only.
+        let shared_machine_operand = match &node {
+            KernelTermNode::MachineLiteral(_) => true,
+            KernelTermNode::Variable(_) => {
+                matches!(&ty, KernelType::C(c) if MachineIntegerType::from_c_type(*c).is_some())
+            }
+            KernelTermNode::MachineBinary { arguments, .. } => {
+                arguments.iter().all(KernelTerm::is_shared_machine_operand)
+            }
+            KernelTermNode::MachineUnary { operand, .. } => operand.is_shared_machine_operand(),
+            _ => false,
+        };
         Self(Arc::new(NodeKeyData {
             fingerprint: hash.finish(),
+            shared_machine_operand,
             ty,
             node,
         }))
@@ -230,10 +246,15 @@ thread_local! {
 }
 
 pub(crate) fn clear_integer_bridge_memo() {
+    super::integer::clear_machine_observation_memo();
     SESSION_INTEGER_BRIDGES.with(|memo| memo.borrow_mut().clear());
 }
 
 impl KernelTerm {
+    pub(crate) fn is_shared_machine_operand(&self) -> bool {
+        self.0.key.0.shared_machine_operand
+    }
+
     fn legacy_integer(&self) -> Option<SharedIntegerTerm> {
         self.0
             .integer
@@ -428,7 +449,10 @@ impl KernelTermImport {
                 KernelType::Integer,
                 KernelTermNode::MachineObservation {
                     format: machine.ty(),
-                    operand: self.machine(machine.ty(), machine.value()),
+                    operand: machine
+                        .shared_operand()
+                        .cloned()
+                        .unwrap_or_else(|| self.machine(machine.ty(), machine.value())),
                 },
             ),
             IntegerTerm::Negate(inner) => {
@@ -528,6 +552,69 @@ mod tests {
         assert_eq!(common.ty(), &KernelType::Integer);
         let reconstructed = KernelTermExport::default().integer(&common).unwrap();
         assert_eq!(reconstructed.kernel_term(), Some(&common));
+    }
+
+    #[test]
+    fn shared_observation_keeps_identity_across_lazy_boxing_and_source_drop() {
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let leaf = KernelTerm::variable(KernelType::C(format.c_type()), Variable(87654325));
+            let operand =
+                KernelTerm::arithmetic_binary(format, MachineBinaryOp::Add, [leaf.clone(), leaf])
+                    .unwrap();
+            let observation =
+                SharedMachineIntegerTerm::from_shared(format, operand.clone()).unwrap();
+            assert!(!observation.has_boxed_operand());
+            assert!(observation.value_reading().is_none());
+            assert!(!observation.has_boxed_operand());
+            let source: SharedIntegerTerm = IntegerTerm::Machine(observation.clone()).into();
+            let common = KernelTermImport::default().integer(&source);
+            assert_eq!(common.children()[0], operand);
+            drop(source);
+            clear_integer_bridge_memo();
+            let restored = KernelTermExport::default().integer(&common).unwrap();
+            let IntegerTerm::Machine(restored) = restored.as_ref() else {
+                panic!("machine observation");
+            };
+            assert_eq!(restored.id(), observation.id());
+            assert!(!observation.has_boxed_operand());
+            let boxed = KernelTermExport::machine(&operand).unwrap();
+            let old_entry = SharedMachineIntegerTerm::intern(format, boxed.clone());
+            assert_eq!(old_entry.id(), observation.id());
+            assert_eq!(restored.value(), &boxed);
+            assert!(observation.has_boxed_operand());
+            assert!(
+                SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int8, operand).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn observation_storage_keeps_conversion_and_opaque_compatibility_boundaries() {
+        let format = MachineIntegerType::Int32;
+        let cast = Bitvector32Term::MachineIntegerCast {
+            source: MachineIntegerType::Int8,
+            destination: format,
+            value: Box::new(Bitvector32Term::Variable(Variable(87654326))),
+        };
+        let term = KernelTermImport::default().machine(format, &cast);
+        assert!(SharedMachineIntegerTerm::from_shared(format, term).is_none());
+        let observation = SharedMachineIntegerTerm::intern(format, cast.clone());
+        assert!(observation.shared_operand().is_none());
+        assert_eq!(observation.value(), &cast);
+        assert!(observation.value_reading().is_some());
+        let opaque = KernelTerm::legacy(PureFunctionArgument::Value(CValue::Int32(
+            Bitvector32Term::Variable(Variable(87654327)),
+        )));
+        let parent =
+            KernelTerm::arithmetic_binary(format, MachineBinaryOp::Add, [opaque.clone(), opaque])
+                .unwrap();
+        assert!(!parent.is_shared_machine_operand());
+        assert!(SharedMachineIntegerTerm::from_shared(format, parent).is_none());
     }
 
     #[test]
@@ -724,10 +811,14 @@ impl KernelTermExport {
             }
             KernelTermNode::MachineObservation { format, operand } => {
                 PureFunctionArgument::Integer(
-                    IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
-                        *format,
-                        Self::machine(operand)?,
-                    ))
+                    IntegerTerm::Machine(
+                        match SharedMachineIntegerTerm::from_shared(*format, operand.clone()) {
+                            Some(value) => value,
+                            None => {
+                                SharedMachineIntegerTerm::intern(*format, Self::machine(operand)?)
+                            }
+                        },
+                    )
                     .into(),
                 )
             }

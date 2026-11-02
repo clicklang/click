@@ -486,10 +486,18 @@ pub struct SharedMachineIntegerTerm(Arc<SharedMachineIntegerNode>);
 struct SharedMachineIntegerNode {
     id: u64,
     ty: MachineIntegerType,
-    value: Bitvector32Term,
+    operand: MachineIntegerOperand,
     /// The observation's value reading ([`SharedMachineIntegerTerm::value_reading`]),
     /// computed once on first use.
     reading: OnceLock<Option<IntegerTerm>>,
+}
+
+enum MachineIntegerOperand {
+    Shared {
+        term: KernelTerm,
+        boxed: OnceLock<Bitvector32Term>,
+    },
+    Legacy(Bitvector32Term),
 }
 
 impl Clone for SharedMachineIntegerTerm {
@@ -498,14 +506,86 @@ impl Clone for SharedMachineIntegerTerm {
     }
 }
 
+thread_local! {
+    // Reuse explicit boxed imports within one verification, but never make a
+    // later verification's work depend on an earlier session's warm interner.
+    static MACHINE_OBSERVATION_IMPORTS: std::cell::RefCell<std::collections::HashMap<u64, SharedMachineIntegerTerm>> = Default::default();
+}
+
+pub(super) fn clear_machine_observation_memo() {
+    MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow_mut().clear());
+}
+
 impl SharedMachineIntegerTerm {
     pub fn intern(ty: MachineIntegerType, value: Bitvector32Term) -> Self {
+        // Legacy callers already supply a boxed tree. Reuse its existing
+        // interned observation before importing, and retain that explicit tree
+        // instead of exporting it again on the first checker read.
+        let key = MachineIntegerKey::Legacy { ty, value };
+        let interner =
+            MACHINE_INTEGER_INTERNER.get_or_init(|| Mutex::new(MachineIntegerInterner::default()));
+        if let Some(found) = interner
+            .lock()
+            .expect("machine Integer interner lock poisoned")
+            .find(&key)
+            && (found.shared_operand().is_none()
+                || MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow().contains_key(&found.id())))
+        {
+            return found;
+        }
+        let MachineIntegerKey::Legacy { value, .. } = &key else {
+            unreachable!()
+        };
+        if let Some(term) = KernelTermImport::default().machine_arithmetic(ty, value) {
+            let shared = Self::from_shared(ty, term).expect("arithmetic storage fragment");
+            let MachineIntegerOperand::Shared { boxed, .. } = &shared.0.operand else {
+                unreachable!()
+            };
+            let _ = boxed.set(value.clone());
+            interner
+                .lock()
+                .expect("machine Integer interner lock poisoned")
+                .remember(key, &shared);
+            MACHINE_OBSERVATION_IMPORTS
+                .with(|seen| seen.borrow_mut().insert(shared.id(), shared.clone()));
+            return shared;
+        }
+        Self::intern_key(key)
+    }
+
+    /// Observe an already shared arithmetic operand without materializing its
+    /// boxed prefixes. The compatibility boundary deliberately excludes opaque
+    /// leaves whose KernelTerm identities are producer-specific.
+    pub(crate) fn from_shared(ty: MachineIntegerType, term: KernelTerm) -> Option<Self> {
+        if term.ty() != &KernelType::C(ty.c_type()) || !term.is_shared_machine_operand() {
+            return None;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        Some(Self::intern_key(MachineIntegerKey::Shared { ty, term }))
+    }
+
+    fn intern_key(key: MachineIntegerKey) -> Self {
         MACHINE_INTEGER_INTERNER
             .get_or_init(|| Mutex::new(MachineIntegerInterner::default()))
             .lock()
             .expect("machine Integer interner lock poisoned")
-            .intern(ty, value)
+            .intern(key)
     }
+
+    pub(crate) fn shared_operand(&self) -> Option<&KernelTerm> {
+        match &self.0.operand {
+            MachineIntegerOperand::Shared { term, .. } => Some(term),
+            MachineIntegerOperand::Legacy(_) => None,
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn has_boxed_operand(&self) -> bool {
+        match &self.0.operand {
+            MachineIntegerOperand::Shared { boxed, .. } => boxed.get().is_some(),
+            MachineIntegerOperand::Legacy(_) => true,
+        }
+    }
+
     pub fn id(&self) -> u64 {
         self.0.id
     }
@@ -513,7 +593,11 @@ impl SharedMachineIntegerTerm {
         self.0.ty
     }
     pub fn value(&self) -> &Bitvector32Term {
-        &self.0.value
+        match &self.0.operand {
+            MachineIntegerOperand::Shared { term, boxed } => boxed
+                .get_or_init(|| KernelTermExport::machine(term).expect("shared machine operand")),
+            MachineIntegerOperand::Legacy(value) => value,
+        }
     }
 
     /// The Integer term this observation equals by the value relations of
@@ -530,6 +614,16 @@ impl SharedMachineIntegerTerm {
         self.0
             .reading
             .get_or_init(|| {
+                if self.shared_operand().is_some_and(|term| {
+                    matches!(
+                        term.node(),
+                        KernelTermNode::Variable(_)
+                            | KernelTermNode::MachineBinary { .. }
+                            | KernelTermNode::MachineUnary { .. }
+                    )
+                }) {
+                    return None;
+                }
                 let reading = machine_value_reading(self.ty(), self.value())?;
                 match &reading {
                     ValueReading::Observation(ty, value)
@@ -552,9 +646,15 @@ impl SharedMachineIntegerTerm {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-struct MachineIntegerKey {
-    ty: MachineIntegerType,
-    value: Bitvector32Term,
+enum MachineIntegerKey {
+    Shared {
+        ty: MachineIntegerType,
+        term: KernelTerm,
+    },
+    Legacy {
+        ty: MachineIntegerType,
+        value: Bitvector32Term,
+    },
 }
 
 #[derive(Default)]
@@ -567,11 +667,35 @@ struct MachineIntegerInterner {
 static MACHINE_INTEGER_INTERNER: OnceLock<Mutex<MachineIntegerInterner>> = OnceLock::new();
 
 impl MachineIntegerInterner {
-    fn intern(
-        &mut self,
-        ty: MachineIntegerType,
-        value: Bitvector32Term,
-    ) -> SharedMachineIntegerTerm {
+    fn find(&self, key: &MachineIntegerKey) -> Option<SharedMachineIntegerTerm> {
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        self.values
+            .get(&hasher.finish())?
+            .iter()
+            .find_map(|(candidate, node)| {
+                (candidate == key)
+                    .then(|| node.upgrade().map(SharedMachineIntegerTerm))
+                    .flatten()
+            })
+    }
+
+    fn remember(&mut self, key: MachineIntegerKey, node: &SharedMachineIntegerTerm) {
+        if self.find(&key).is_some() {
+            return;
+        }
+        let mut hasher = DefaultHasher::new();
+        key.hash(&mut hasher);
+        let fingerprint = hasher.finish();
+        self.values
+            .entry(fingerprint)
+            .or_default()
+            .push((key, Arc::downgrade(&node.0)));
+        self.cleanup_queue
+            .push_back((fingerprint, Arc::as_ptr(&node.0) as usize));
+    }
+
+    fn intern(&mut self, key: MachineIntegerKey) -> SharedMachineIntegerTerm {
         for _ in 0..8 {
             let Some((fingerprint, pointer)) = self.cleanup_queue.pop_front() else {
                 break;
@@ -591,10 +715,6 @@ impl MachineIntegerInterner {
                 }
             }
         }
-        let key = MachineIntegerKey {
-            ty,
-            value: value.clone(),
-        };
         let mut hasher = DefaultHasher::new();
         key.hash(&mut hasher);
         let fingerprint = hasher.finish();
@@ -612,10 +732,22 @@ impl MachineIntegerInterner {
             .next_id
             .checked_add(1)
             .expect("machine Integer identity exhausted");
+        let (ty, operand) = match &key {
+            MachineIntegerKey::Shared { ty, term } => (
+                *ty,
+                MachineIntegerOperand::Shared {
+                    term: term.clone(),
+                    boxed: OnceLock::new(),
+                },
+            ),
+            MachineIntegerKey::Legacy { ty, value } => {
+                (*ty, MachineIntegerOperand::Legacy(value.clone()))
+            }
+        };
         let node = Arc::new(SharedMachineIntegerNode {
             id,
             ty,
-            value,
+            operand,
             reading: OnceLock::new(),
         });
         self.values
@@ -1724,6 +1856,41 @@ impl ConditionTerm {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn boxed_observation_imports_are_session_local_and_released_on_reset() {
+        let value = Bitvector32Term::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Add,
+            left: Box::new(Bitvector32Term::Variable(Variable(953000))),
+            right: Box::new(Bitvector32Term::Int64Constant(1)),
+        };
+        let mut costs = Vec::new();
+        let mut previous = Weak::<SharedMachineIntegerNode>::new();
+        for _ in 0..3 {
+            let _session = crate::kernel::VerificationSession::enter();
+            assert!(previous.upgrade().is_none());
+            let (observation, work) = crate::instrumentation::measure_deterministic_work(|| {
+                SharedMachineIntegerTerm::intern(MachineIntegerType::Int64, value.clone())
+            });
+            assert_eq!(observation.value(), &value);
+            let id = observation.id();
+            previous = Arc::downgrade(&observation.0);
+            drop(observation);
+            // Dropping a caller must not make later imports in this session
+            // depend on the weak interner's cleanup order.
+            assert!(previous.upgrade().is_some());
+            assert_eq!(
+                SharedMachineIntegerTerm::intern(MachineIntegerType::Int64, value.clone()).id(),
+                id
+            );
+            costs.push(work);
+        }
+        assert!(costs[0] > 0);
+        assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+        clear_machine_observation_memo();
+        assert!(previous.upgrade().is_none());
+    }
 
     fn shared_node_count(root: &SharedIntegerTerm) -> usize {
         let mut pending = vec![root.clone()];

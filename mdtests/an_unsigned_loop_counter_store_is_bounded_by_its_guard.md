@@ -34,7 +34,6 @@ void clear(int32* values) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
 }

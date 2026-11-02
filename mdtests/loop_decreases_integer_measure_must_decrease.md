@@ -39,7 +39,6 @@ int32 drain(int32 n, int32 m) {
                 unfold(level(n));
             }
             step();
-            close_invariants() by { solve(); }
         }
     }
     step();

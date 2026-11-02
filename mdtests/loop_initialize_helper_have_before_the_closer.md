@@ -44,7 +44,6 @@ int spin(int n) {
         }
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();

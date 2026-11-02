@@ -33,7 +33,6 @@ int32 walk(int32 n) {
             have i == at(loop(0).statement(0).entry, i) + 1 by solve();
             have i == at(statement(2).statement(0).entry, i) + 1 by solve();
             have at(loop(0).statement(0).entry, i) < n by solve();
-            close_invariants();
         }
     }
 }

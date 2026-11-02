@@ -68,7 +68,6 @@ int32 count_up(int32 *a, int32 n) {
                 extract(k <= n);
                 solve();
             }
-            close_invariants();
         }
     }
 }

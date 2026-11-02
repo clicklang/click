@@ -46,7 +46,6 @@ int32 count(struct cell* p) {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
 }

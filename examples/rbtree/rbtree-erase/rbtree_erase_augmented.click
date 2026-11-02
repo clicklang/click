@@ -574,7 +574,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             have successor == erase_spine_parent(frame.model, child);
                                                             if tmp == 0 {
                                                             } else {
-                                                                close_invariants();
                                                             }
                                                         },
                                                     }
@@ -1001,7 +1000,6 @@ struct rb_node* __rb_erase_augmented(struct rb_node* node, struct rb_root* root,
                                                             step(); step(); step();
                                                             if tmp == 0 {
                                                             } else {
-                                                                close_invariants();
                                                             }
                                                         },
                                                     }
