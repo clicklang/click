@@ -61,9 +61,10 @@ Memory-history traversal is also tracked in
 Finish the bounded read-initialization experiment for
 `typed_read_has_same_memory_source`. The repeated-query regression is now
 linear locally, but a single C store's cache-forgetting node blocks explicit
-`transport` of `defined(...)` even with proved footprint separation. Discuss
-the definedness-preservation primitive described in
-[Fact-aware frame walks](fact-aware-frame-walks.md) before extending the checker.
+`transport` of `defined(...)` even with proved footprint separation. First investigate folding cache invalidation into the store producer, as
+described in [Fact-aware frame walks](fact-aware-frame-walks.md), so it records
+one real statement transition. Do not add a certificate primitive to compensate
+for the bookkeeping edge before trying that representation fix.
 Keep this separate from complete-pointer equality and provenance comparison,
 which may inspect only one predecessor per endpoint. Retain the repeated-query, adjacent-state,
 explicit-composition, cold-refusal and partial-overwrite controls in

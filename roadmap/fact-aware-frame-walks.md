@@ -22,16 +22,35 @@ explicitly selects both that separation and `at(before, defined(*p))` in
 the underlying memories are two internal edges apart. This fixture intentionally
 remains red in the experimental checkpoint; do not publish the removal as ready.
 
-Discuss a single-statement definedness primitive before continuing implementation:
-from a selected typed defined-read fact at the recorded footprint's entry and
-separation of the footprint from the read's complete range, construct the same
-typed defined-read fact at its exit. Use the effect's recorded endpoints, not
-ancestry reconstruction. Existing certificate `preserve` handles observation
-equalities, not this definedness result. Value equality alone must never grant
-initialization or lifetime authority. Keep type, alias, overwrite, havoc and
-allocation-retirement refusal controls. After the primitive decision, repair
-ordinary proofs, check expansion/replay, and run the full ordinary corpus before
-landing. No new primitive or search fallback has been added in this experiment.
+**Producer design investigation:** the store caller in
+`src/kernel/eval/statements.rs` chains `without_possible_aliasing_cells` with
+`store_classed_with_context`. The former records `CellsForgotten`; the latter
+records `Store` from that intermediate snapshot. Even removing the exact cached
+cell the store will overwrite creates this extra edge. Do not compensate by
+adding a definedness axiom yet.
+
+Proposed next experiment: make invalidation an internal part of the store
+producer, retain the original input as the store's base, and record only the
+completed store. Do not intern an observable intermediate cleared-cache state,
+relabel the walk, or recover the original input by scanning derivations. Preserve
+initialization, effective types, partial-overwrite behavior and snapshot identity:
+`ForgottenFrom` currently prevents a loss of cached knowledge from re-interning
+as an older state. Its protection cannot simply be deleted. Establish that the
+reduced explicit transport passes and repeated checking stays linear before
+broadening the change to other producers.
+
+There is a second `CellsForgotten` producer in `eval/memory_loads.rs`: it creates
+a reduced snapshot to name one symbolic read, based on the selected read and
+assumptions. It is not a C write either, but removing it requires preserving
+read spelling and branch-scoped alias reasoning; do not conflate that projection
+with store invalidation. `read_identity` already shares unchanged-byte identities
+across these nodes, but is explicitly not initialization/lifetime authority.
+
+The bounded experiment and intended passing fixture remain local, not ready
+to land. After the producer design is settled, repair ordinary proofs, check
+expansion/replay, and run the full ordinary corpus. Only reconsider a new
+certificate primitive if a real inference remains missing after bookkeeping
+stops interrupting the actual statement transition.
 
 Keep complete-pointer equality and provenance comparison bounded to one
 immediate predecessor per endpoint. Retain the repeated-query, adjacent-state,
