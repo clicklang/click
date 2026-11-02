@@ -2896,15 +2896,41 @@ pub(in crate::surface) fn contract_let_substitutions(
             // Mathematical lets remain abbreviations until Integer lowering.
             // Substituting them here duplicates every referenced tree and
             // makes repeated binary let chains exponential in source size.
-            (binding.click_type != Some(ClickType::Integer))
-                .then(|| {
-                    binding
-                        .value()
-                        .map(|value| (binding.name.clone(), value.clone()))
-                })
-                .flatten()
+            // A machine `let` at an 8- or 16-bit type whose value does
+            // arithmetic stays a binding too: its value's operators are that
+            // type's (G2), which only the typed binding records.
+            (binding.click_type != Some(ClickType::Integer)
+                && !narrow_typed_arithmetic_let(binding))
+            .then(|| {
+                binding
+                    .value()
+                    .map(|value| (binding.name.clone(), value.clone()))
+            })
+            .flatten()
         })
         .collect()
+}
+
+/// Whether `binding` is `let name: T = value;` at an 8- or 16-bit `T` with
+/// arithmetic at the root of its value.
+fn narrow_typed_arithmetic_let(binding: &ContractLetBinding) -> bool {
+    matches!(
+        binding.click_type,
+        Some(ClickType::C(
+            C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16
+        ))
+    ) && matches!(
+        binding.value(),
+        Some(
+            ContractExpression::Add(..)
+                | ContractExpression::Subtract(..)
+                | ContractExpression::Multiply(..)
+                | ContractExpression::BitwiseAnd(..)
+                | ContractExpression::BitwiseOr(..)
+                | ContractExpression::BitwiseXor(..)
+                | ContractExpression::BitwiseNot(..)
+        )
+    )
 }
 
 /// The new surface name an execution theorem's `as` map gives one resource
@@ -3168,7 +3194,16 @@ pub(in crate::surface) fn pure_function_result_value(
             contract_expression_as_c_fragment(&value).unwrap_or(CExpression::Value(int32(0))),
         ),
         target_type,
-        integer_mode: crate::kernel::CIntegerCastMode::CConversion,
+        // At an 8- or 16-bit result the body's arithmetic is at that type
+        // (G2); any other result keeps C's conversion as before.
+        integer_mode: if matches!(
+            target_type,
+            CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16
+        ) {
+            crate::kernel::CIntegerCastMode::ResultConversion
+        } else {
+            crate::kernel::CIntegerCastMode::CConversion
+        },
         pointee_struct: None,
         pointee_volatile: false,
         pointee_constant: false,

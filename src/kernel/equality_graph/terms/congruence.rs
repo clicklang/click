@@ -720,10 +720,26 @@ impl TermClasses {
                                     | MachineIntegerType::UInt8
                                     | MachineIntegerType::Int16
                                     | MachineIntegerType::UInt16,
-                                MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+                                MachineBinaryOp::ShiftRight
+                            ) | crate::kernel::BitvectorBinaryOp::Machine(
+                                MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                                MachineBinaryOp::ShiftLeft
                             )
                         ) {
                             pending.push(Work::OpaqueCount(b));
+                        } else if matches!(
+                            op,
+                            crate::kernel::BitvectorBinaryOp::Machine(
+                                MachineIntegerType::Int8
+                                    | MachineIntegerType::UInt8
+                                    | MachineIntegerType::Int16
+                                    | MachineIntegerType::UInt16,
+                                MachineBinaryOp::ShiftLeft
+                            )
+                        ) {
+                            // A native narrow shift's count is a 32-bit word,
+                            // as a 32-bit shift's is (rule N).
+                            pending.push(Work::Machine(b, W::Bits32));
                         } else {
                             pending.push(Work::Machine(b, width));
                         }

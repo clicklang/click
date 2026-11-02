@@ -5936,11 +5936,15 @@ impl AnnotationLowerer<'_> {
             // name as that C value.
             ContractExpression::Let {
                 name,
-                click_type: None | Some(ClickType::C(_)),
+                click_type: click_type @ (None | Some(ClickType::C(_))),
                 value,
                 body,
             } if !self.contract_expression_is_integer(value, environment) => {
-                let value = self.lower_contract_expression_to_spec(value, environment)?;
+                let mut value = self.lower_contract_expression_to_spec(value, environment)?;
+                // A typed `let`'s value is at its declared type (G2).
+                if let Some(ClickType::C(c_type)) = click_type {
+                    value = value.at_machine_type(c_type.to_kernel_type());
+                }
                 let mut body_environment = environment.clone();
                 body_environment.integer_values.remove(name);
                 body_environment.algebraic_values.remove(name);
@@ -6070,6 +6074,15 @@ impl AnnotationLowerer<'_> {
                         Ok(
                             if *integer_mode == crate::kernel::CIntegerCastMode::PointerCoercion {
                                 SpecExpression::PointerCoercion(Box::new(value), *target_type)
+                            } else if *integer_mode
+                                == crate::kernel::CIntegerCastMode::ResultConversion
+                            {
+                                // A pure function's body is at its result
+                                // type (G2).
+                                SpecExpression::Cast(
+                                    Box::new(value.at_machine_type(*target_type)),
+                                    *target_type,
+                                )
                             } else {
                                 SpecExpression::Cast(Box::new(value), *target_type)
                             },
@@ -6730,7 +6743,11 @@ impl AnnotationLowerer<'_> {
                             .to_string(),
                     );
                 }
-                let value = self.lower_contract_expression_to_spec(value, environment)?;
+                let mut value = self.lower_contract_expression_to_spec(value, environment)?;
+                // A typed `let`'s value is at its declared type (G2).
+                if let Some(ClickType::C(c_type)) = click_type {
+                    value = value.at_machine_type(c_type.to_kernel_type());
+                }
                 if let (Some(ClickType::C(c_type)), SpecExpression::Value(fixed)) =
                     (click_type, &value)
                     && !c_value_matches_click_type(fixed, *c_type)
@@ -7378,7 +7395,18 @@ impl AnnotationLowerer<'_> {
                             element_type: array_ref.element_type,
                         })
                     }
-                    ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                    ClickType::C(c_type) => {
+                        // An argument is at its parameter's type (G2).
+                        let value = self
+                            .lower_pure_parameter_argument_to_spec(
+                                parameter,
+                                argument,
+                                environment,
+                            )?
+                            .at_machine_type(c_type.to_kernel_type());
+                        Ok(crate::kernel::SpecPureFunctionArgument::Value(value))
+                    }
+                    ClickType::CObjectPointer { .. } => {
                         let value = self.lower_pure_parameter_argument_to_spec(
                             parameter,
                             argument,

@@ -4084,7 +4084,7 @@ function max(a: int8, b: int8) -> int8 {
 
 ```click
 function wrapping_add(a: int8, b: int8) -> int8 {
-    ((a as uint8) + (b as uint8)) as int8
+    a + b
 }
 ```
 
@@ -4092,7 +4092,7 @@ function wrapping_add(a: int8, b: int8) -> int8 {
 
 ```click
 function wrapping_sub(a: int8, b: int8) -> int8 {
-    ((a as uint8) - (b as uint8)) as int8
+    a - b
 }
 ```
 
@@ -4100,7 +4100,7 @@ function wrapping_sub(a: int8, b: int8) -> int8 {
 
 ```click
 function wrapping_mul(a: int8, b: int8) -> int8 {
-    ((a as uint8) * (b as uint8)) as int8
+    a * b
 }
 ```
 
@@ -4196,7 +4196,7 @@ function max(a: int16, b: int16) -> int16 {
 
 ```click
 function wrapping_add(a: int16, b: int16) -> int16 {
-    ((a as uint16) + (b as uint16)) as int16
+    a + b
 }
 ```
 
@@ -4204,7 +4204,7 @@ function wrapping_add(a: int16, b: int16) -> int16 {
 
 ```click
 function wrapping_sub(a: int16, b: int16) -> int16 {
-    ((a as uint16) - (b as uint16)) as int16
+    a - b
 }
 ```
 
@@ -4212,7 +4212,7 @@ function wrapping_sub(a: int16, b: int16) -> int16 {
 
 ```click
 function wrapping_mul(a: int16, b: int16) -> int16 {
-    ((a as uint16) * (b as uint16)) as int16
+    a * b
 }
 ```
 
@@ -4644,7 +4644,7 @@ function max(a: uint8, b: uint8) -> uint8 {
 
 ```click
 function wrapping_add(a: uint8, b: uint8) -> uint8 {
-    (a + b) as uint8
+    a + b
 }
 ```
 
@@ -4652,7 +4652,7 @@ function wrapping_add(a: uint8, b: uint8) -> uint8 {
 
 ```click
 function wrapping_sub(a: uint8, b: uint8) -> uint8 {
-    (a - b) as uint8
+    a - b
 }
 ```
 
@@ -4660,7 +4660,7 @@ function wrapping_sub(a: uint8, b: uint8) -> uint8 {
 
 ```click
 function wrapping_mul(a: uint8, b: uint8) -> uint8 {
-    (a * b) as uint8
+    a * b
 }
 ```
 
@@ -4728,7 +4728,7 @@ function max(a: uint16, b: uint16) -> uint16 {
 
 ```click
 function wrapping_add(a: uint16, b: uint16) -> uint16 {
-    (a + b) as uint16
+    a + b
 }
 ```
 
@@ -4736,7 +4736,7 @@ function wrapping_add(a: uint16, b: uint16) -> uint16 {
 
 ```click
 function wrapping_sub(a: uint16, b: uint16) -> uint16 {
-    (a - b) as uint16
+    a - b
 }
 ```
 
@@ -4744,7 +4744,7 @@ function wrapping_sub(a: uint16, b: uint16) -> uint16 {
 
 ```click
 function wrapping_mul(a: uint16, b: uint16) -> uint16 {
-    (a * b) as uint16
+    a * b
 }
 ```
 

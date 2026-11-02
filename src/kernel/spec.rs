@@ -6851,6 +6851,128 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             budget,
             apply_c_bitwise_not,
         )?,
+        SpecExpression::NarrowArithmetic(operation, format) => 'narrow: {
+            let scope = SpecScope::new(state, loop_entry_state, algebraic_bindings);
+            let format = *format;
+            let (op, left, right) = match operation.as_ref() {
+                SpecExpression::Add(left, right) => (MachineBinaryOp::Add, left, right),
+                SpecExpression::Subtract(left, right) => (MachineBinaryOp::Subtract, left, right),
+                SpecExpression::Multiply(left, right) => (MachineBinaryOp::Multiply, left, right),
+                SpecExpression::BitwiseAnd(left, right) => {
+                    (MachineBinaryOp::BitwiseAnd, left, right)
+                }
+                SpecExpression::BitwiseOr(left, right) => (MachineBinaryOp::BitwiseOr, left, right),
+                SpecExpression::BitwiseXor(left, right) => {
+                    (MachineBinaryOp::BitwiseXor, left, right)
+                }
+                SpecExpression::BitwiseNot(operand) => {
+                    break 'narrow evaluate_spec_scalar_unary_paths_in(
+                        scope,
+                        operand,
+                        assumptions,
+                        budget,
+                        |value, facts, obligations| match crate::kernel::eval::native_narrow_not(
+                            format, &value,
+                        ) {
+                            Some(value) => vec![CExpressionPath {
+                                outcome: CExpressionOutcome::Value(value),
+                                facts,
+                                obligations,
+                            }],
+                            None => apply_c_bitwise_not(value, facts, obligations),
+                        },
+                    )?;
+                }
+                operation => {
+                    break 'narrow evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                        scope,
+                        operation,
+                        assumptions,
+                        budget,
+                    )?;
+                }
+            };
+            let left_step_width = spec_expression_pointer_step_width(state, left);
+            let right_step_width = spec_expression_pointer_step_width(state, right);
+            evaluate_spec_scalar_binary_paths_in(
+                scope,
+                left,
+                right,
+                assumptions,
+                budget,
+                |left, right, facts, obligations| {
+                    if let Some(value) =
+                        crate::kernel::eval::native_narrow_binary(format, op, &left, &right)
+                    {
+                        return vec![CExpressionPath {
+                            outcome: CExpressionOutcome::Value(value),
+                            facts,
+                            obligations,
+                        }];
+                    }
+                    // Operands of another type, which the parser and type
+                    // checker refuse at a written narrow position, keep the
+                    // operator's promoted reading, as the bare operator has it.
+                    let bitwise = |operation| {
+                        apply_c_bitwise_binary(
+                            left.clone(),
+                            right.clone(),
+                            facts.clone(),
+                            obligations.clone(),
+                            assumptions,
+                            operation,
+                        )
+                    };
+                    match op {
+                        MachineBinaryOp::BitwiseAnd => bitwise(CBitwiseOperation::And),
+                        MachineBinaryOp::BitwiseOr => bitwise(CBitwiseOperation::Or),
+                        MachineBinaryOp::BitwiseXor => bitwise(CBitwiseOperation::Xor),
+                        MachineBinaryOp::Multiply => apply_spec_arithmetic(
+                            op,
+                            left,
+                            right,
+                            facts,
+                            obligations,
+                            assumptions,
+                            apply_c_multiply,
+                        ),
+                        _ => apply_spec_arithmetic(
+                            op,
+                            left,
+                            right,
+                            facts,
+                            obligations,
+                            assumptions,
+                            |left, right, facts, obligations, context| {
+                                if op == MachineBinaryOp::Add {
+                                    apply_c_add(
+                                        state,
+                                        left,
+                                        right,
+                                        left_step_width,
+                                        right_step_width,
+                                        facts,
+                                        obligations,
+                                        context,
+                                    )
+                                } else {
+                                    apply_c_subtract(
+                                        state,
+                                        left,
+                                        right,
+                                        left_step_width,
+                                        right_step_width,
+                                        facts,
+                                        obligations,
+                                        context,
+                                    )
+                                }
+                            },
+                        ),
+                    }
+                },
+            )?
+        }
         SpecExpression::If {
             condition,
             then_branch,
