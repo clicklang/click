@@ -665,11 +665,24 @@ Progress:
      inverse interns a node where the 64-bit reinterpretation's does not),
      `sign_cast32_inverse_is_constant_work_per_cast` and
      `uint32_and_int32_chains_cost_alike` (equal work at every size). Two
-     word identities at 32 bits remain, named here: the e-graph joins the
-     `int32` and `uint32` widenings of one narrow value as one word
-     (`join_widening_sibling`, beside K7'), and a load-term answer from a
-     cell reads the stored word at either signedness
-     (`LoadKind::reads_value`, K5's naming).
+     readers see through one σ for the smart search's cheap closers, each
+     one match at a side's root: a 32-bit equality `σ(x) == x` is vacuous
+     as a rewrite and is not a rewrite candidate (`Bitvector32Term::is_sign_cast32_of`), and a
+     `uint32` bound below the sign bit, `σ(y) <=u c`, files and decides its
+     signed range on `y` (`unsigned_upper_bound_below_sign_bit`). Known
+     remaining items, for a separate follow-up PR: two word identities at
+     32 bits remain. The e-graph joins the `int32` and `uint32` widenings
+     of one narrow value as one word (`join_widening_sibling`, beside K7'),
+     and a load-term answer from a cell reads the stored word at either
+     signedness (`LoadKind::reads_value` and `LoadKind::read_cell`, K5's
+     naming). The second still leaves a `uint32` comparison of an `int32`
+     cell's bare word in the facts where the source spelling lowers to σ
+     of the read, so a smart search spells that premise by a longer route
+     (the residual audit work of `owned-vector`). The constructor still
+     folds σ(σ(x)) to `x`: without the fold,
+     `a_bounded_wrapped_difference_does_not_define_the_signed_one` stops
+     at a lowering error instead of its signed-overflow refusal, so its
+     removal waits on that.
   5. Reads by their own kind, with R-mem; typed index coordinates (G1).
      Steps 5 and 6 land before step 4b removes K1 and K6 (maintainer
      direction, 2026-10-30), so 4b removes no rule a read or a widening

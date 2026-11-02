@@ -1483,7 +1483,10 @@ fn split_constant_displacement(
 /// written in, so the condition checker decides it by deciding those two, and
 /// a context that assumes it files those two beside it
 /// (`PureFactContext::assume_condition`), so every reader of signed order
-/// facts sees the range an unsigned test established. The recognizer is a
+/// facts sees the range an unsigned test established. The returned operand
+/// is `x`'s bits read through one σ (`Bitvector32Term::sign_cast32_bits`):
+/// the signed reading of `σ(y) <=u c` is a range of `y` itself, never a
+/// signed comparison of the `uint32` term `σ(y)`. The recognizer is a
 /// constant-size match on the condition's own shape.
 pub(in crate::kernel) fn unsigned_upper_bound_below_sign_bit(
     condition: &ConditionTerm,
@@ -1495,7 +1498,7 @@ pub(in crate::kernel) fn unsigned_upper_bound_below_sign_bit(
     }
     let bound = right.as_const()?;
     let bound = if strict { bound.checked_sub(1)? } else { bound };
-    (bound <= i32::MAX as u32).then_some((left, bound, strict))
+    (bound <= i32::MAX as u32).then_some((left.sign_cast32_bits(), bound, strict))
 }
 
 /// The operand, inclusive bound, and source strictness of a sixty-four-bit

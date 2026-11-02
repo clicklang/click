@@ -1976,6 +1976,21 @@ pub(crate) fn connected_equalities(
         if crate::kernel::is_verified_load_variable_defining_fact(&fact) {
             continue;
         }
+        // `σ(x) == x` is `x == x` under rule K6: true of every word and no
+        // rewrite (`Bitvector32Term::is_sign_cast32_of`).
+        if let Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                relation: CompareRelation::Equal,
+                left,
+                right,
+            },
+            true,
+        ) = &fact
+            && left.is_sign_cast32_of(right)
+        {
+            continue;
+        }
         if matches!(
             fact,
             Proposition::ConditionIs(

@@ -539,6 +539,19 @@ impl Bitvector32Term {
             .map_or(self, |(_, operand)| operand)
     }
 
+    /// Whether the 32-bit equality `self == other` reads as `x == x` under
+    /// rule K6: σ(x) and x, in either order, are the same bits. Such an
+    /// equality is true of every `x` and names no rewrite: replacing x by
+    /// σ(x) only stacks casts. A root without a σ costs one match on each
+    /// side; a σ root compares its operand with the other side.
+    pub(crate) fn is_sign_cast32_of(&self, other: &Self) -> bool {
+        self.sign_cast32_operand()
+            .is_some_and(|(_, operand)| operand == other)
+            || other
+                .sign_cast32_operand()
+                .is_some_and(|(_, operand)| operand == self)
+    }
+
     /// When this term is σ of a 32-bit quotient or remainder at σ's source
     /// signedness: that signedness, the operator and its operands, which
     /// rule C reads at the other signedness on nonnegative operands
