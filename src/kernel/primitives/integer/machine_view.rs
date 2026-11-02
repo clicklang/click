@@ -338,6 +338,29 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
+    /// The legacy int64 root-width range, without expanding a shared cast or
+    /// arithmetic operand. Generic casts deliberately retain their old refusal.
+    pub(crate) fn int64_width_interval(self) -> Option<(i64, i64)> {
+        use crate::kernel::KernelMachineCastEncoding as E;
+        if let Some(Bitvector32Term::Int64Constant(value)) = self.literal() {
+            return Some((value, value));
+        }
+        match self.cast() {
+            Some((E::Int64From32, _, _, _)) => {
+                return Some((i64::from(i32::MIN), i64::from(i32::MAX)));
+            }
+            Some((E::Int64FromUInt32, _, _, _)) => return Some((0, i64::from(u32::MAX))),
+            _ => {}
+        }
+        let (MachineIntegerType::Int64, MachineBinaryOp::BitwiseAnd, [left, right]) =
+            self.binary()?
+        else {
+            return None;
+        };
+        let mask = left.int64_constant().or_else(|| right.int64_constant())?;
+        (mask >= 0).then_some((0, mask))
+    }
+
     pub(crate) fn root_width(self) -> Option<CarrierWidth> {
         match self {
             Self::Legacy(value) => crate::kernel::root_width(value),
@@ -612,6 +635,81 @@ mod tests {
 #[cfg(test)]
 mod cast_tests {
     use super::*;
+
+    #[test]
+    fn shared_widening_ranges_preserve_signedness_without_exporting() {
+        use crate::kernel::{KernelMachineCastEncoding as E, KernelType};
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(
+            KernelType::C(MachineIntegerType::Int32.c_type()),
+            Variable(985004),
+        );
+        for _ in 0..96 {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root.clone()],
+            );
+        }
+        for (encoding, source, destination, expected) in [
+            (
+                E::Int64From32,
+                MachineIntegerType::Int32,
+                MachineIntegerType::Int64,
+                Some((i64::from(i32::MIN), i64::from(i32::MAX))),
+            ),
+            (
+                E::Int64FromUInt32,
+                MachineIntegerType::UInt32,
+                MachineIntegerType::Int64,
+                Some((0, i64::from(u32::MAX))),
+            ),
+            (
+                E::UInt64From32,
+                MachineIntegerType::UInt32,
+                MachineIntegerType::UInt64,
+                None,
+            ),
+            (
+                E::UInt64FromInt32,
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt64,
+                None,
+            ),
+            (
+                E::UInt64FromInt64,
+                MachineIntegerType::Int64,
+                MachineIntegerType::UInt64,
+                None,
+            ),
+            (
+                E::UInt32From64,
+                MachineIntegerType::UInt64,
+                MachineIntegerType::UInt32,
+                None,
+            ),
+            (
+                E::Generic,
+                MachineIntegerType::UInt32,
+                MachineIntegerType::Int64,
+                None,
+            ),
+        ] {
+            let cast = KernelTerm::machine_cast_shared(
+                encoding,
+                source,
+                destination,
+                root.with_machine_observation_type(source),
+            );
+            let machine = SharedMachineIntegerTerm::from_shared(destination, cast).unwrap();
+            assert_eq!(machine.operand_view().int64_width_interval(), expected);
+            assert!(!machine.has_boxed_operand());
+            let explicit = encoding
+                .unary(source, destination)
+                .build_raw(Bitvector32Term::Variable(Variable(985005)));
+            assert_eq!(explicit.int64_width_interval(), expected);
+        }
+    }
 
     #[test]
     fn checking_cast_cache_survives_restore_but_not_a_new_verification() {

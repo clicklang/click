@@ -1295,29 +1295,10 @@ fn signed_width_interval(
     width: SignedDefinedWidth,
     term: crate::kernel::MachineOperandView<'_>,
 ) -> (i64, i64) {
-    use crate::kernel::MachineOperandView as V;
-    match (width, term) {
-        (SignedDefinedWidth::Int32, term) => signed_width_constant_view(width, term)
+    match width {
+        SignedDefinedWidth::Int32 => signed_width_constant_view(width, term)
             .map_or_else(|| width.range(), |value| (value, value)),
-        (SignedDefinedWidth::Int64, V::Legacy(term)) => {
-            term.int64_width_interval().unwrap_or(width.range())
-        }
-        (SignedDefinedWidth::Int64, term) => {
-            if let Some(Bitvector32Term::Int64Constant(value)) = term.literal() {
-                return (value, value);
-            }
-            if let Some((
-                MachineIntegerType::Int64,
-                crate::kernel::MachineBinaryOp::BitwiseAnd,
-                [left, right],
-            )) = term.binary()
-                && let Some(mask) = left.int64_constant().or_else(|| right.int64_constant())
-                && mask >= 0
-            {
-                return (0, mask);
-            }
-            width.range()
-        }
+        SignedDefinedWidth::Int64 => term.int64_width_interval().unwrap_or(width.range()),
     }
 }
 

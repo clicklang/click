@@ -282,6 +282,13 @@ uses comparison/operand views, with differential true/false/refusal coverage and
 a no-export regression over growing shared operands. A cache-lifetime test
 checks reuse across proof-state restoration and reset at a new verification.
 
+The full fixture run exposed the missing int64 root-width adapter: a shared
+`Int64FromUInt32` lost its `[0, 2^32 - 1]` range in `int64_defined` certificates.
+`MachineOperandView::int64_width_interval` now supplies the common root rule to
+both boxed callers and interval certificates, preserving signed-extension,
+unsigned-extension, mask and refusal behavior. The existing
+`int64_defined_from_bounds` and refusal fixtures remain unchanged.
+
 The cast representation prerequisite is complete for the shared arithmetic
 fragment; opaque operands retain their compatibility storage. Higher-level
 comparison dispatch and interval-query outputs still have boxed boundaries.
