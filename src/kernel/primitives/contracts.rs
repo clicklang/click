@@ -3296,9 +3296,10 @@ pub(crate) fn admitted_memory_range_extent_facts(range: &CMemoryRange) -> Vec<Pr
 /// Bound variables under quantifiers or implications stay in their own scope.
 pub(crate) fn stated_separation_extent_bounds(proposition: &Proposition) -> Vec<Proposition> {
     let mut guards = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
     for range in stated_separation_memory_ranges(proposition) {
         for guard in memory_range_extent_guards(range) {
-            if !guards.contains(&guard) {
+            if seen.insert(guard.clone()) {
                 guards.push(guard);
             }
         }
@@ -3313,6 +3314,7 @@ pub(crate) fn stated_separation_extent_bounds(proposition: &Proposition) -> Vec<
 /// are not traversed, so their local bounds cannot escape into the outer scope.
 pub(crate) fn stated_separation_extent_guards(proposition: &Proposition) -> Vec<Proposition> {
     let mut guards = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
     for range in stated_separation_memory_ranges(proposition) {
         // A wide range's validity is its own pair of 64-bit guards.
         let range_guards = match wide_memory_range_extent_guards(range) {
@@ -3324,7 +3326,7 @@ pub(crate) fn stated_separation_extent_guards(proposition: &Proposition) -> Vec<
             ),
         };
         for guard in range_guards {
-            if !guards.contains(&guard) {
+            if seen.insert(guard.clone()) {
                 guards.push(guard);
             }
         }
@@ -3355,9 +3357,16 @@ fn collect_stated_separation_memory_ranges<'a>(
             collect_stated_separation_memory_ranges(right, ranges);
         }
         Proposition::CResourceSeparate { left, right } => {
-            for resource in [left, right] {
-                if let CResource::Memory(range) = &**resource {
-                    ranges.push(range);
+            let mut pending = vec![right.as_ref(), left.as_ref()];
+            while let Some(resource) = pending.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                match resource {
+                    CResource::Memory(range) => ranges.push(range),
+                    CResource::Star(pair) => {
+                        pending.push(&pair.1);
+                        pending.push(&pair.0);
+                    }
+                    _ => {}
                 }
             }
         }

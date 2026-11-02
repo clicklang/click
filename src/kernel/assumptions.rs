@@ -10268,6 +10268,7 @@ impl ExecutionPureFact {
             certified: false,
             logical_read_equation: false,
             join_summary: false,
+            resource_effect_bound: None,
             certified_store: None,
             transport: None,
             generated_load_binding: None,
@@ -10283,6 +10284,7 @@ impl ExecutionPureFact {
             certified: false,
             logical_read_equation: false,
             join_summary: false,
+            resource_effect_bound: None,
             certified_store: None,
             transport: None,
             generated_load_binding: None,
@@ -10302,6 +10304,7 @@ impl ExecutionPureFact {
     pub(super) fn certified_join_summary(proposition: Proposition) -> Self {
         Self {
             join_summary: true,
+            resource_effect_bound: None,
             ..Self::certified(proposition)
         }
     }
@@ -10317,6 +10320,7 @@ impl ExecutionPureFact {
             certified: true,
             logical_read_equation: false,
             join_summary: false,
+            resource_effect_bound: None,
             certified_store: None,
             transport: None,
             generated_load_binding: None,
@@ -10364,6 +10368,7 @@ impl ExecutionPureFact {
             certified: true,
             logical_read_equation: false,
             join_summary: false,
+            resource_effect_bound: None,
             certified_store: Some(Box::new(CertifiedMemoryStore {
                 before,
                 after,
@@ -10395,6 +10400,7 @@ impl ExecutionPureFact {
             // producer equation.  Retaining its binding would let a later
             // surface consumer infer an epoch or pointer from a different
             // proposition.
+            self.resource_effect_bound = None;
             self.logical_read_equation = false;
             self.generated_load_binding = None;
             self.generated_load_source_events = Default::default();
@@ -10435,6 +10441,7 @@ impl ExecutionPureFact {
             certified: true,
             logical_read_equation: false,
             join_summary: false,
+            resource_effect_bound: None,
             certified_store: None,
             transport: Some(Box::new(CertifiedExecutionFactTransport {
                 source,

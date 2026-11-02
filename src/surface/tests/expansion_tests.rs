@@ -20062,10 +20062,8 @@ fn explicit_pointer_alias_repairs_expand_and_cold_replay() {
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
-// Red while recursive-call effects lose the resource identity needed for
-// explicit preservation. Ordinary verification succeeds; fresh replay must too.
+// Explicit call containment and preservation must survive fresh expansion replay.
 #[test]
-#[ignore = "recursive witness expansion still depends on implicit call framing"]
 fn recursive_witness_pointer_preservation_expands_and_cold_replays() {
     let (source, inputs) = mdtest_sources("mdtests/c_decreases_resource_witness_child.md");
     let inputs = inputs

@@ -202,7 +202,10 @@ pub(in crate::kernel) fn evaluate_resource_population_fact_propositions(
     let mut populations = BTreeSet::<(String, ResourceArguments)>::new();
     for fact in context.facts() {
         let (name, arguments) = match fact.resource() {
-            CResource::Footprint(_) | CResource::Parameter(_) => continue,
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => continue,
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 (name, arguments)
             }

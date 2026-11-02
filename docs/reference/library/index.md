@@ -5065,6 +5065,32 @@ history or discover containment facts.
 
 **Verified use:** [`mdtests/resource_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_theorem_parameters.md).
 
+### Separating conjunction laws
+
+`A * B` is a resource descriptor for separating conjunction; `separation::emp`
+is the empty descriptor. Neither grants ownership. The following named axioms
+construct their conclusions from exactly the written premises, without opening
+resource definitions or discovering containment paths.
+
+| Theorem | Required premises | Conclusion |
+| --- | --- | --- |
+| `contains_refl(A)` | none | `contains(A, A)` |
+| `contains_trans(A, B, C)` | `contains(A, B)`; `contains(B, C)` | `contains(A, C)` |
+| `contains_left(A, B)` | none | `contains(A * B, A)` |
+| `contains_right(A, B)` | none | `contains(A * B, B)` |
+| `separate_symm(A, B)` | `separate(A, B)` | `separate(B, A)` |
+| `separate_star(A, B, C)` | `separate(A, C)`; `separate(B, C)` | `separate(A * B, C)` |
+| `separate_emp(A)` | none | `separate(separation::emp, A)` |
+
+Import `click::separation`; each theorem above is in the `separation::`
+namespace. All parameters have type `Resource`. There is no rule deriving
+separation between the two operands merely from writing their conjunction.
+For example, `A * A` retains two occurrences and is not identified with `A`.
+Use `restrict` to pass separation from a containing resource to a selected part.
+
+**Checked examples:** `mdtests/separation_conjunction.md` and
+`mdtests/separation_conjunction_missing_premise.md`.
+
 ### `separation::elements`
 
 ```click

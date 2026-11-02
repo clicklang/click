@@ -2190,6 +2190,10 @@ impl Printer<'_> {
             .map_or((&[][..], &[][..]), |(p, a)| (p.as_slice(), a.as_slice()));
         let binding = ParameterBinding::new(parameters, arguments);
         match resource {
+            CResource::Emp => "separation::emp".into(),
+            CResource::Star(pair) => {
+                format!("({} * {})", self.resource(&pair.0), self.resource(&pair.1))
+            }
             CResource::Footprint(fp) => fp.source.clone(),
             CResource::Parameter(v) => self
                 .variable_name(*v)

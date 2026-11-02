@@ -7656,6 +7656,11 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Result<SpecResource, String> {
         match resource {
+            ResourceSubject::Emp => Ok(SpecResource::Value(CResource::Emp)),
+            ResourceSubject::Star(left, right) => Ok(SpecResource::Star(
+                Box::new(self.lower_resource_subject_to_spec(left, environment)?),
+                Box::new(self.lower_resource_subject_to_spec(right, environment)?),
+            )),
             ResourceSubject::Instance { identity, name } => {
                 if let Some(state) = environment.snapshot_state.as_ref() {
                     let instance =

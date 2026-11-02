@@ -2336,6 +2336,11 @@ fn validate_resource_subject_expression_types(
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceSubject::Emp => Ok(()),
+        ResourceSubject::Star(left, right) => {
+            validate_resource_subject_expression_types(left, variables, click_functions, context)?;
+            validate_resource_subject_expression_types(right, variables, click_functions, context)
+        }
         ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
         | ResourceSubject::Instance { .. }
@@ -4361,6 +4366,11 @@ fn validate_resource_subject_calls(
     context: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceSubject::Emp => Ok(()),
+        ResourceSubject::Star(left, right) => {
+            validate_resource_subject_calls(left, click_functions, context)?;
+            validate_resource_subject_calls(right, click_functions, context)
+        }
         ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
         | ResourceSubject::Instance { .. }

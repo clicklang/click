@@ -6400,6 +6400,44 @@ impl Parser {
     }
 
     fn parse_resource_subject(&mut self) -> Result<ResourceSubject, ClickError> {
+        let mut left = self.parse_resource_subject_atom()?;
+        let mut operands = 1;
+        while self.peek() == Some(&Token::Star) {
+            self.check_expression_chain_limit(operands)?;
+            operands += 1;
+            self.position += 1;
+            left = ResourceSubject::Star(
+                Box::new(left),
+                Box::new(self.parse_resource_subject_atom()?),
+            );
+        }
+        Ok(left)
+    }
+
+    fn empty_resource_token_len(&self, position: usize) -> Option<usize> {
+        let mut start = position;
+        if self.tokens.get(start) == Some(&Token::Ident("click".into()))
+            && self.tokens.get(start + 1) == Some(&Token::ColonColon)
+        {
+            start += 2;
+        }
+        (self.tokens.get(start) == Some(&Token::Ident("separation".into()))
+            && self.tokens.get(start + 1) == Some(&Token::ColonColon)
+            && self.tokens.get(start + 2) == Some(&Token::Ident("emp".into())))
+        .then_some(start + 3 - position)
+    }
+
+    fn parse_resource_subject_atom(&mut self) -> Result<ResourceSubject, ClickError> {
+        if self.peek() == Some(&Token::LParen) {
+            self.position += 1;
+            let resource = self.parse_resource_subject()?;
+            self.expect(Token::RParen)?;
+            return Ok(resource);
+        }
+        if let Some(length) = self.empty_resource_token_len(self.position) {
+            self.position += length;
+            return Ok(ResourceSubject::Emp);
+        }
         if let Some(name) = self.peek_ident()
             && self.peek_next() != Some(&Token::LParen)
             && let Some((identity, _)) = self.names.resource_bindings.get(name)
@@ -11864,6 +11902,23 @@ impl Parser {
     }
 
     fn parse_contract_expression(&mut self) -> Result<ContractExpression, ClickError> {
+        let mut atom = self.position;
+        while self.tokens.get(atom) == Some(&Token::LParen) {
+            atom += 1;
+        }
+        let resource_start = match self.tokens.get(atom) {
+            Some(Token::Ident(name)) => {
+                self.resource_parameters.contains_key(name)
+                    || self.empty_resource_token_len(atom).is_some()
+                    || (name == "memory" && self.tokens.get(atom + 1) == Some(&Token::LParen))
+            }
+            _ => false,
+        };
+        if resource_start {
+            return self
+                .parse_resource_subject()
+                .map(|r| ContractExpression::Resource(Box::new(r)));
+        }
         if self.peek_ident().is_some_and(|name| {
             self.resource_parameters.contains_key(name)
                 || (self.names.resource_bindings.contains_key(name)

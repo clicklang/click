@@ -1308,7 +1308,11 @@ pub(in crate::kernel) fn collect_c_resource_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
-        CResource::Footprint(_) | CResource::Parameter(_) => {}
+        CResource::Star(pair) => {
+            collect_c_resource_bitvector_variables(&pair.0, variables);
+            collect_c_resource_bitvector_variables(&pair.1, variables);
+        }
+        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp => {}
         CResource::PopulationAuthority(description) => {
             description.visit_values(|value| {
                 collect_algebraic_value_bitvector_variables(value, variables)

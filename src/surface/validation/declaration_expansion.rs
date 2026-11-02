@@ -2990,6 +2990,17 @@ fn expand_declared_resource_subject(
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<ResourceSubject, ClickError> {
     match resource {
+        ResourceSubject::Emp => Ok(ResourceSubject::Emp),
+        ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
+            Box::new(expand_declared_resource_subject(
+                *left,
+                resource_definitions,
+            )?),
+            Box::new(expand_declared_resource_subject(
+                *right,
+                resource_definitions,
+            )?),
+        )),
         ResourceSubject::Declared {
             kind: _,
             name,
@@ -3720,9 +3731,12 @@ fn expand_declared_resource_binary_expression(
         ContractExpression::Subtract(left, right) => {
             ContractExpression::Subtract(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }
-        ContractExpression::Multiply(left, right) => {
-            ContractExpression::Multiply(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
-        }
+        ContractExpression::Multiply(left, right) => match (recurse(*left)?, recurse(*right)?) {
+            (ContractExpression::Resource(left), ContractExpression::Resource(right)) => {
+                ContractExpression::Resource(Box::new(ResourceSubject::Star(left, right)))
+            }
+            (left, right) => ContractExpression::Multiply(Box::new(left), Box::new(right)),
+        },
         ContractExpression::Divide(left, right) => {
             ContractExpression::Divide(Box::new(recurse(*left)?), Box::new(recurse(*right)?))
         }

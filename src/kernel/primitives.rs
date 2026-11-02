@@ -4677,6 +4677,7 @@ pub enum SequenceTermNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecResource {
+    Star(Box<SpecResource>, Box<SpecResource>),
     Instance {
         identity: Variable,
         at_entry: bool,
@@ -10087,6 +10088,10 @@ pub type ResourceArguments = std::sync::Arc<[AlgebraicValue]>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResource {
+    /// Separating conjunction; repeated components retain their multiplicity.
+    Star(std::sync::Arc<super::ResourceConjunction>),
+    /// Empty resource descriptor.
+    Emp,
     Footprint(Arc<super::RegionFootprint>),
     /// Rigid descriptor for a resource-valued theorem parameter.
     Parameter(Variable),
@@ -10221,11 +10226,18 @@ impl MutexIdentity {
 }
 
 impl CResource {
+    pub(crate) fn star(left: Self, right: Self) -> Self {
+        Self::Star(super::resource_conjunction::intern(left, right))
+    }
+
     /// The resource's name in a diagnostic, with no argument or address
     /// spelling: the kernel has no source names for those.
     pub(crate) fn diagnostic_name(&self) -> &str {
         match self {
-            CResource::Footprint(_) | CResource::Parameter(_) => "resource parameter",
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => "resource parameter",
             CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
             CResource::Memory(_) => "memory",
             CResource::PopulationAuthority(_) => "population authority",
@@ -13505,6 +13517,8 @@ pub struct ExecutionPureFact {
     /// arms' own checked effects. See
     /// [`ExecutionPureFact::certified_join_summary`].
     pub(super) join_summary: bool,
+    /// Checked resource bound for this modular memory effect, retained by its producer.
+    pub(super) resource_effect_bound: Option<CResource>,
     pub(super) certified_store: Option<Box<CertifiedMemoryStore>>,
     pub(super) transport: Option<Box<CertifiedExecutionFactTransport>>,
     /// Exact producer metadata for a kernel-minted load variable.  This is

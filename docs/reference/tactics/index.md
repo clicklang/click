@@ -1858,6 +1858,23 @@ conservatively include more than the exact mutated cells. Selecting it uses
 recorded region boundaries, never a memory-history search. A boundary without
 a complete recorded effect sequence is refused.
 
+For an ordinary preserving call whose mutable effect comes from full owned
+resource inputs, execution can publish `contains(R, region.footprint)` directly.
+`R` is the checked caller-side resource selected for the call input, or
+their separating conjunction in contract order. The producer retains those abstract resources without unfolding their
+bodies. This initial form requires matching resource requirements/guarantees;
+consumed inputs, non-unit quantities, construction, extra runtime effects, or
+additional unaccounted changes do not receive this bound. A one-transition
+source selector names the same descriptor that the step published.
+
+Use `assumption()` to select the published containment, then apply
+`separation::contains_refl` and `separation::restrict` with the explicitly
+available resource separation. For several inputs, first use
+`separation::separate_star`. The resulting footprint separation is an ordinary
+premise of `preserve`; this route needs no footprint normalization.
+See `mdtests/recursive_call_footprint_containment.md` and
+`mdtests/recursive_call_pair_footprint_containment.md`.
+
 For one checked transition, prove `separate(region.footprint, B)` with
 `normalize() using { ... };`, listing an exact separation for each affected resource. Restrict parent
 separations or rewrite aliases in preceding explicit proof steps. Spatial ranges

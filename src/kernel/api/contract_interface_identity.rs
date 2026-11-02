@@ -511,6 +511,10 @@ impl Names {
     }
     fn resource(&mut self, resource: &mut SpecResource) {
         match resource {
+            SpecResource::Star(a, b) => {
+                self.resource(a);
+                self.resource(b);
+            }
             SpecResource::Instance { .. } | SpecResource::Value(_) => {}
             SpecResource::Memory {
                 base, start, end, ..

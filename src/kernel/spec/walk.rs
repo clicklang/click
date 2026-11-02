@@ -278,6 +278,10 @@ impl<'a> SpecNode<'a> {
                 }
             },
             N::Resource(resource) => match resource {
+                SpecResource::Star(a, b) => {
+                    visit(N::Resource(a));
+                    visit(N::Resource(b));
+                }
                 SpecResource::Instance { .. } | SpecResource::Value(_) => {}
                 SpecResource::Memory {
                     base, start, end, ..

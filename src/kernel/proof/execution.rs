@@ -7988,6 +7988,17 @@ impl ExecutionProofCore {
                 execution_facts,
             )
         });
+        if let Some(fp) = &self.last_footprint
+            && let Some(bound) = &fp.resource_bound
+        {
+            let fact = Proposition::CResourceContains {
+                parent: Box::new(bound.clone()),
+                child: Box::new(CResource::Footprint(fp.clone())),
+            };
+            self.effect_facts
+                .push(ExecutionPureFact::new(fact.clone()).into_certified());
+            self.retain_step_case(fact);
+        }
         let memory_effects = self.append_statement_effects(execution_facts);
         self.advance_path_context(&context);
         for trace in self.execution_evidence.iter_mut() {

@@ -7658,7 +7658,10 @@ impl ResourceNormalizationIndex {
     fn keys(&self, fact: &CResourceFact) -> Vec<ResourceNormalizationKey> {
         let mut keys = vec![ResourceNormalizationKey::Resource(fact.resource().clone())];
         match fact.resource() {
-            CResource::Footprint(_) | CResource::Parameter(_) => {}
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => {}
             CResource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
@@ -7803,7 +7806,10 @@ impl ResourceNormalizationIndex {
     ) -> Vec<usize> {
         let mut keys = vec![ResourceNormalizationKey::Resource(fact.resource().clone())];
         match fact.resource() {
-            CResource::Footprint(_) | CResource::Parameter(_) => {}
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => {}
             CResource::Instance(instance) => {
                 keys.push(ResourceNormalizationKey::Instance(instance.identity))
             }
@@ -8017,9 +8023,10 @@ pub(in crate::kernel) enum OwnedMemberKey {
 impl OwnedMemberKey {
     pub(in crate::kernel) fn of(fact: &CResourceFact) -> Option<Self> {
         Some(match fact.resource() {
-            resource @ (CResource::Footprint(_) | CResource::Parameter(_)) => {
-                Self::Resource(resource.clone())
-            }
+            resource @ (CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_)) => Self::Resource(resource.clone()),
             CResource::Memory(_) => return None,
             resource @ (CResource::PopulationAuthority(_)
             | CResource::MutexGuard(_)
@@ -9422,7 +9429,9 @@ pub(in crate::kernel) fn iterated_memories_proven_equal(
 
 pub(super) fn resource_fact_read_core_range(resource: &CResourceFact) -> Option<CMemoryRange> {
     match resource.core()? {
-        CResourceFact::View(CResource::Footprint(_) | CResource::Parameter(_)) => None,
+        CResourceFact::View(
+            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+        ) => None,
         CResourceFact::View(CResource::Memory(range)) => Some(range),
         CResourceFact::View(
             CResource::Composite { .. }
@@ -9467,7 +9476,10 @@ fn memory_resource_fact_permits_write(
     assumptions: &PureFactContext,
 ) -> bool {
     match resource {
-        CResourceFact::Own(CResource::Footprint(_) | CResource::Parameter(_), _) => false,
+        CResourceFact::Own(
+            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+            _,
+        ) => false,
         CResourceFact::Own(CResource::Memory(range), quantity) if range.wide_bounds().is_some() => {
             resource_quantity_is_positive(quantity, assumptions)
                 && assumptions.pointer_access_in_wide_range(pointer, byte_width, range)
@@ -10308,8 +10320,13 @@ fn memory_range_covered_by_some_route(
 
 fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
     match fact {
-        CResourceFact::Own(CResource::Footprint(_) | CResource::Parameter(_), _)
-        | CResourceFact::View(CResource::Footprint(_) | CResource::Parameter(_)) => None,
+        CResourceFact::Own(
+            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+            _,
+        )
+        | CResourceFact::View(
+            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+        ) => None,
         CResourceFact::Own(CResource::Memory(range), _)
         | CResourceFact::View(CResource::Memory(range)) => Some(range),
         CResourceFact::Own(
@@ -10991,7 +11008,9 @@ fn memory_range_covers_with_exact_index(
 impl CResource {
     pub fn family(&self) -> ResourceFamily {
         match self {
-            Self::Footprint(_) | Self::Parameter(_) => ResourceFamily::Parameter,
+            Self::Footprint(_) | Self::Parameter(_) | Self::Emp | Self::Star(_) => {
+                ResourceFamily::Parameter
+            }
             Self::Memory(_) => ResourceFamily::Memory,
             Self::PopulationAuthority(_) => ResourceFamily::PopulationAuthority,
             Self::Composite { .. } => ResourceFamily::Composite,
@@ -11147,7 +11166,7 @@ impl CResourceFact {
 
     pub(in crate::kernel) fn may_refer_to_memory_block(&self, block: &PointerBlock) -> bool {
         match self.resource() {
-        CResource::Footprint(_) | CResource::Parameter(_) => true,
+        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_) => true,
             CResource::Memory(range) => &range.base().block == block,
             CResource::Composite { arguments, .. } => arguments.iter().any(
                 |argument| matches!(argument, AlgebraicValue::C(CValue::Pointer(pointer)) if &pointer.block == block),
@@ -11255,7 +11274,13 @@ impl CResourceFact {
 
     pub fn memory_own_range(&self) -> Option<&CMemoryRange> {
         match self {
-            Self::Own(CResource::Footprint(_) | CResource::Parameter(_), _) => None,
+            Self::Own(
+                CResource::Footprint(_)
+                | CResource::Parameter(_)
+                | CResource::Emp
+                | CResource::Star(_),
+                _,
+            ) => None,
             Self::Own(CResource::Memory(range), _) => Some(range),
             Self::Own(
                 CResource::Composite { .. }
@@ -11275,7 +11300,12 @@ impl CResourceFact {
 
     pub fn memory_view_range(&self) -> Option<&CMemoryRange> {
         match self {
-            Self::View(CResource::Footprint(_) | CResource::Parameter(_)) => None,
+            Self::View(
+                CResource::Footprint(_)
+                | CResource::Parameter(_)
+                | CResource::Emp
+                | CResource::Star(_),
+            ) => None,
             Self::View(CResource::Memory(range)) => Some(range),
             Self::View(
                 CResource::Composite { .. }
@@ -11294,8 +11324,19 @@ impl CResourceFact {
 
     pub fn memory_range(&self) -> Option<&CMemoryRange> {
         match self {
-            Self::Own(CResource::Footprint(_) | CResource::Parameter(_), _)
-            | Self::View(CResource::Footprint(_) | CResource::Parameter(_)) => None,
+            Self::Own(
+                CResource::Footprint(_)
+                | CResource::Parameter(_)
+                | CResource::Emp
+                | CResource::Star(_),
+                _,
+            )
+            | Self::View(
+                CResource::Footprint(_)
+                | CResource::Parameter(_)
+                | CResource::Emp
+                | CResource::Star(_),
+            ) => None,
             Self::Own(CResource::Memory(range), _) | Self::View(CResource::Memory(range)) => {
                 Some(range)
             }

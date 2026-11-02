@@ -18,6 +18,7 @@ pub struct RegionFootprint {
     pub(crate) after_resources: ResourceContext,
     pub(crate) members: imbl::Vector<CResource>,
     pub(crate) complete: bool,
+    pub(crate) resource_bound: Option<CResource>,
     is_sequence: bool,
 }
 impl std::fmt::Debug for RegionFootprint {
@@ -55,10 +56,15 @@ impl RegionFootprint {
         effects: &(impl ExecutionFactSource + ?Sized),
     ) -> Arc<Self> {
         let mut members = imbl::Vector::new();
+        let mut resource_bound = None;
+        let mut bound_members = std::collections::BTreeSet::new();
+        let mut effect_count = 0;
+        let mut extra_effect = false;
         for fact in effects.fact_iter() {
             crate::instrumentation::record_deterministic_work(1);
             match fact.proposition() {
                 Proposition::CMemoryMutatesOnly { writes, .. } => {
+                    extra_effect |= !writes.is_empty();
                     for (pointer, bytes) in writes {
                         members.push_back(CResource::Memory(CMemoryRange::new_with_element_width(
                             pointer.clone(),
@@ -69,6 +75,26 @@ impl RegionFootprint {
                     }
                 }
                 Proposition::CMemoryEffectSummary { mutable_ranges, .. } => {
+                    effect_count += 1;
+                    resource_bound = fact.resource_effect_bound.clone();
+                    if let Some(bound) = &resource_bound {
+                        let mut pending = vec![bound];
+                        while let Some(resource) = pending.pop() {
+                            crate::instrumentation::record_deterministic_work(1);
+                            match resource {
+                                CResource::Star(pair) => {
+                                    pending.push(&pair.0);
+                                    pending.push(&pair.1);
+                                }
+                                other => {
+                                    bound_members.insert(other.clone());
+                                }
+                            }
+                        }
+                    }
+                    // Keep the recorded concrete projection for existing
+                    // explicit memory framing. The abstract containment bound
+                    // is a separate fact, not a replacement for these members.
                     members.extend(mutable_ranges.iter().cloned().map(CResource::Memory));
                 }
                 Proposition::CHeapAllocationFreed {
@@ -76,6 +102,7 @@ impl RegionFootprint {
                     bytes,
                     ..
                 } => {
+                    extra_effect = true;
                     members.push_back(CResource::Memory(CMemoryRange::new_with_element_width(
                         allocation_base.clone(),
                         0u32.into(),
@@ -101,6 +128,7 @@ impl RegionFootprint {
                     if contents.size.as_const() == Some(0) {
                         continue;
                     }
+                    extra_effect = true;
                     members.push_back(CResource::Memory(CMemoryRange::new_with_element_width(
                         Pointer {
                             block: block.clone(),
@@ -126,11 +154,18 @@ impl RegionFootprint {
                     // its taken-out markers when a guard changes. Those map
                     // edits do not write bytes. Writes and lifetime effects are recorded
                     // above; retain changes to named resource observations.
+                    // Lending and returning a recorded input is already
+                    // included in the call's resource bound.
+                    extra_effect |= !bound_members.contains(&resource);
                     members.push_back(resource);
                 }
             }
         }
+        if effect_count != 1 || extra_effect || !complete {
+            resource_bound = None;
+        }
         Arc::new(Self {
+            resource_bound,
             source,
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             before: before.memory().clone(),
@@ -151,6 +186,7 @@ impl RegionFootprint {
         complete: bool,
     ) -> Arc<Self> {
         Arc::new(Self {
+            resource_bound: None,
             source,
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             before: before.memory().clone(),

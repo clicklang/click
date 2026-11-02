@@ -23,6 +23,7 @@ uint32 count_nodes(struct node *node) {
 ```
 
 ```click
+import click::separation;
 resource marked_list(node: struct node*) {
     if node != 0 {
         owns allocation(node, sizeof(struct node));
@@ -59,6 +60,26 @@ uint32 count_nodes(struct node* node) {
             }
         }
         have ((node->word & ~1) as (struct node *)) == child by { assumption(); }
+        have separate(marked_list(child), memory(node->word)) by { assumption(); }
+        mark before_call;
+        step();
+        have contains(marked_list(child), statement(1).region(1).footprint) by { assumption(); }
+        apply(separation::contains_refl(memory(node->word))) using {};
+        apply(separation::restrict(marked_list(child), memory(node->word), statement(1).region(1).footprint, memory(node->word))) using {
+            separate(marked_list(child), memory(node->word));
+            contains(marked_list(child), statement(1).region(1).footprint);
+            contains(memory(node->word), memory(node->word));
+        };
+        have *((&node->word) as (int32 **)) == at(before_call, *((&node->word) as (int32 **))) by {
+            transport_certificate {
+                premise 0: separate(statement(1).region(1).footprint, memory(node->word))
+                    => separate(statement(1).region(1).footprint, memory(node->word));
+                preserve 0 => *((&node->word) as (int32 **)) == at(before_call, *((&node->word) as (int32 **)));
+                conclusion 1;
+            }
+        }
+        have ((node->word & ~1) as (struct node *)) == child by { assumption(); }
+
     }
 }
 ```

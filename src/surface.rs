@@ -1991,6 +1991,8 @@ pub struct ResourceFieldAccess {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ResourceSubject {
+    Star(Box<ResourceSubject>, Box<ResourceSubject>),
+    Emp,
     Instance {
         name: String,
         identity: crate::kernel::Variable,
@@ -2679,6 +2681,11 @@ fn collect_current_resource_subject_variables(
     names: &mut BTreeSet<String>,
 ) {
     match subject {
+        ResourceSubject::Emp => (),
+        ResourceSubject::Star(left, right) => {
+            collect_current_resource_subject_variables(left, names);
+            collect_current_resource_subject_variables(right, names);
+        }
         ResourceSubject::Footprint(_) => {}
         ResourceSubject::Parameter { name, .. } | ResourceSubject::Instance { name, .. } => {
             names.insert(name.clone());
@@ -3431,6 +3438,13 @@ impl RecordedSnapshots {
         };
         if !covered {
             return Err("region footprint is not recorded across this execution boundary".into());
+        }
+        // A single atomic effect already is the execution-produced descriptor.
+        // Keep its identity so its published containment fact names this term.
+        if end == start + 1
+            && let Some(crate::kernel::CResource::Footprint(effect)) = self.effect_log.get(start)
+        {
+            return Ok(crate::kernel::CResource::Footprint(effect.clone()));
         }
         let key = (
             before.clone(),
