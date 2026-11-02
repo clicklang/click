@@ -390,3 +390,61 @@ fn mathematical_certificate_result_decoding_scales_with_explicit_atoms() {
         );
     }
 }
+
+#[test]
+fn exact_definedness_refuses_small_mismatch_without_expanding_shared_guard() {
+    use crate::kernel::{IntegerTerm, KernelTerm, KernelType, SharedMachineIntegerTerm};
+    let format = MachineIntegerType::Int32;
+    let mut measurements = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982300));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::arithmetic_binary(
+                    format,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                )
+                .unwrap();
+                let observation =
+                    SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+                let exact = IntegerTerm::add(
+                    IntegerTerm::Machine(observation.clone()),
+                    IntegerTerm::constant_i64(1),
+                );
+                let guard = Proposition::And(
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::integer_less_equal(
+                            exact.clone(),
+                            IntegerTerm::constant_i64(i32::MAX as i64),
+                        ),
+                        true,
+                    )),
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::integer_greater_equal(
+                            exact,
+                            IntegerTerm::constant_i64(i32::MIN as i64),
+                        ),
+                        true,
+                    )),
+                );
+                let small = Bitvector32Term::Binary {
+                    format,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(x()),
+                    right: Box::new(Bitvector32Term::Constant(1)),
+                };
+                assert!(!is_exact_definedness(&guard, &small));
+                assert!(!observation.has_boxed_operand());
+            }
+        });
+        measurements.push((size, work));
+    }
+    for pair in measurements.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{measurements:?}");
+    }
+}
