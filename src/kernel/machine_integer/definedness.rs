@@ -80,7 +80,7 @@ pub(crate) fn overflow_fact_of_integer_bound(
 pub(crate) struct OverflowQueryView {
     pub(crate) format: MachineIntegerType,
     pub(crate) operation: Operation,
-    pub(crate) operands: [ComparisonOperand; 2],
+    pub(crate) operands: [ComparisonOperand<'static>; 2],
     exact: IntegerTerm,
 }
 
@@ -120,7 +120,9 @@ pub(crate) fn overflow_query_of_integer_bound(
     if !matches!(left, IntegerTerm::Machine(_)) && !matches!(right, IntegerTerm::Machine(_)) {
         return None;
     }
-    let carrier = |ty: MachineIntegerType, side: &IntegerTerm| -> Option<ComparisonOperand> {
+    let carrier = |ty: MachineIntegerType,
+                   side: &IntegerTerm|
+     -> Option<ComparisonOperand<'static>> {
         match side {
             IntegerTerm::Machine(machine) => {
                 let view = machine.operand_view();

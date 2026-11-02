@@ -29,8 +29,8 @@ impl CheckedOrderBounds {
         if self.adjust_signed_wide(condition, value, insert) {
             return;
         }
-        use crate::kernel::machine_integer::{Relation, comparison::native_comparison_view};
-        if let Some(view) = native_comparison_view(condition, value) {
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        if let Some(view) = comparison_view(condition, value) {
             let kind = match view.format {
                 MachineIntegerType::Int32 => 0,
                 MachineIntegerType::UInt32 => 1,
@@ -50,27 +50,7 @@ impl CheckedOrderBounds {
                 value,
                 insert,
             );
-            return;
         }
-        let (kind, left, right, strict) =
-            if let Some((left, right, strict)) = condition_as_order_fact(condition, value) {
-                (0, left, right, strict)
-            } else if let Some((left, right, strict)) =
-                condition_reasoning::condition_as_uint32_order_fact(condition, value)
-            {
-                (1, left, right, strict)
-            } else {
-                return;
-            };
-        self.adjust_word_endpoints(
-            kind,
-            MachineOperandView::Legacy(&left),
-            MachineOperandView::Legacy(&right),
-            strict,
-            condition,
-            value,
-            insert,
-        );
     }
 
     fn word_key(term: MachineOperandView<'_>) -> MachineAtom {
@@ -184,8 +164,8 @@ impl CheckedOrderBounds {
     }
 
     fn adjust_signed_wide(&mut self, condition: &ConditionTerm, value: bool, insert: bool) -> bool {
-        use crate::kernel::machine_integer::{Relation, comparison::native_comparison_view};
-        if let Some(view) = native_comparison_view(condition, value)
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        if let Some(view) = comparison_view(condition, value)
             && view.format == MachineIntegerType::Int64
         {
             let strict = match view.relation {
@@ -223,25 +203,7 @@ impl CheckedOrderBounds {
             }
             return true;
         }
-        let Some((left, right, strict)) = condition_as_int64_order_fact(condition, value) else {
-            return false;
-        };
-        for (endpoint, other, upper) in [(&left, &right, true), (&right, &left, false)] {
-            let Some(number) = other
-                .int64_as_const()
-                .and_then(|number| Self::wide_endpoint(number, strict, upper))
-            else {
-                continue;
-            };
-            let canonical = crate::kernel::eval::canonical_term(endpoint);
-            for term in
-                std::iter::once(endpoint).chain((&canonical != endpoint).then_some(&canonical))
-            {
-                let key = MachineAtom::uint64(term.clone());
-                self.adjust_wide_endpoint(key, number, upper, condition, value, insert);
-            }
-        }
-        true
+        false
     }
 
     fn wide_endpoint(number: i64, strict: bool, upper: bool) -> Option<i64> {
