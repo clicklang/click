@@ -110,15 +110,20 @@ impl TermClasses {
                     operator,
                     arguments: [left, right],
                 } => {
+                    // A native narrow left shift's count is a 32-bit word,
+                    // as the legacy registration interns it (rule N).
+                    let word_count = matches!(width, W::Bits8 | W::Bits16)
+                        && *operator == MachineBinaryOp::ShiftLeft;
                     let opaque_count = width != W::Bits32
                         && format.format().bits() != 128
+                        && !word_count
                         && matches!(
                             operator,
                             MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
                         );
                     if !finish {
                         pending.push((term, true));
-                        if !opaque_count {
+                        if !opaque_count && !word_count {
                             pending.push((right, false));
                         }
                         pending.push((left, false));
@@ -129,7 +134,11 @@ impl TermClasses {
                         .get(&(left.id(), width))
                         .unwrap()
                         .1;
-                    let b = if opaque_count {
+                    let b = if word_count {
+                        // One more registration at 32 bits, where a narrow
+                        // operator is opaque, so the recursion stops there.
+                        self.intern_shared_machine(right, W::Bits32)
+                    } else if opaque_count {
                         let operand = crate::kernel::SharedMachineIntegerTerm::from_shared(
                             MachineIntegerType::UInt64,
                             right.with_machine_observation_type(MachineIntegerType::UInt64),

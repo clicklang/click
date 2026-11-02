@@ -714,8 +714,16 @@ impl TermClasses {
                         if matches!(
                             op,
                             crate::kernel::BitvectorBinaryOp::Machine(
+                                MachineIntegerType::Int64
+                                    | MachineIntegerType::UInt64
+                                    | MachineIntegerType::Int8
+                                    | MachineIntegerType::UInt8
+                                    | MachineIntegerType::Int16
+                                    | MachineIntegerType::UInt16,
+                                MachineBinaryOp::ShiftRight
+                            ) | crate::kernel::BitvectorBinaryOp::Machine(
                                 MachineIntegerType::Int64 | MachineIntegerType::UInt64,
-                                MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+                                MachineBinaryOp::ShiftLeft
                             )
                         ) {
                             pending.push(Work::OpaqueCount(b));
