@@ -221,3 +221,91 @@ fn fold_endpoint_congruence_keeps_the_bound_body_exact() {
     ));
     assert!(!graph.are_integer_equal(&fold(restored, body), &fold(endpoint, I::constant_i64(1))));
 }
+
+#[test]
+fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
+    use crate::kernel::machine_integer::{
+        Operation, modular::wrapped_equality_of_integer_equality,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let observe = |n| I::from_machine(M::Int32, Bitvector32Term::Variable(Variable(n))).unwrap();
+    let (x, y, z) = (observe(982700), observe(982701), observe(982702));
+    let mut expressions = vec![x.clone(), I::Negate(x.clone().into())];
+    for op in Operation::ALL {
+        for right in [I::constant_i64(0), I::constant_i64(1), y.clone()] {
+            expressions.push(op.exact(x.clone(), right));
+        }
+    }
+    expressions
+        .push(Operation::Add.exact(x.clone(), Operation::Subtract.exact(y.clone(), x.clone())));
+    expressions
+        .push(Operation::Subtract.exact(Operation::Add.exact(x.clone(), y.clone()), x.clone()));
+    for left in expressions {
+        for right in [I::constant_i64(0), I::constant_i64(4294967296), z.clone()] {
+            let condition = ConditionTerm::IntegerEqual(left.clone().into(), right.clone().into());
+            let Some(wrapped) = wrapped_equality_of_integer_equality(&condition, true) else {
+                continue;
+            };
+            let mut graph = EqualityGraph::default();
+            graph.add_integer_equality(&left.clone().into(), &right.clone().into());
+            assert!(
+                graph.knows_condition(&wrapped, true),
+                "missing {wrapped:?} from {condition:?}"
+            );
+            let parent = graph.clone();
+            graph.add_int32_equality(
+                &Bitvector32Term::Variable(Variable(982702)),
+                &Bitvector32Term::Constant(7),
+            );
+            assert!(parent.knows_condition(&wrapped, true));
+        }
+    }
+}
+
+#[test]
+fn integer_residue_consequence_is_withdrawn_with_its_source() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let x = Bitvector32Term::Variable(Variable(982703));
+    let y = Bitvector32Term::Variable(Variable(982704));
+    let source = eq(
+        I::Subtract(
+            I::from_machine(M::Int32, x.clone()).unwrap().into(),
+            I::from_machine(M::Int32, y.clone()).unwrap().into(),
+        ),
+        I::constant_i64(0),
+    );
+    let goal = Proposition::ConditionIs(
+        ConditionTerm::equal(
+            Bitvector32Term::subtract(x, y),
+            Bitvector32Term::Constant(0),
+        ),
+        true,
+    );
+    let context = PureFactContext::new().assume_proposition(source.clone());
+    assert!(context.contains_known(&goal));
+    assert!(!context.without_exact_fact(&source).contains_known(&goal));
+    assert!(!context.restricted_to_facts(&[], &[]).contains_known(&goal));
+}
+
+#[test]
+fn constant_residue_projection_preserves_the_operation_alias_route() {
+    use crate::kernel::machine_integer::{
+        comparison::native_comparison_through_integer_operations,
+        modular::wrapped_equality_of_integer_equality,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let x = I::from_machine(M::Int32, Bitvector32Term::Variable(Variable(982709))).unwrap();
+    let exact = I::Subtract(x.clone().into(), x.into());
+    let condition = ConditionTerm::IntegerEqual(exact.into(), I::constant_i64(0).into());
+    assert!(wrapped_equality_of_integer_equality(&condition, true).is_none());
+    let (native, truth, bounds) = native_comparison_through_integer_operations(&condition, true)
+        .expect("the old operation alias route");
+    let mut context = PureFactContext::new();
+    for bound in bounds {
+        for premise in bound.stating_facts() {
+            context = context.assume_proposition(premise);
+        }
+    }
+    let context = context.assume_condition(condition, true);
+    assert!(context.contains_known(&Proposition::ConditionIs(native, truth)));
+}

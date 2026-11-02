@@ -44,3 +44,95 @@ fn heap_variable_counts_follow_local_edits_and_keep_siblings_isolated() {
         assert_eq!(heap_variable_counts(&changed, WholeCount::Charged), counts);
     }
 }
+
+#[test]
+fn shared_machine_variable_bookkeeping_reuses_prefixes_in_each_collection_mode() {
+    use crate::kernel::{
+        KernelTerm, KernelType, MachineBinaryOp, MachineIntegerType, SharedMachineIntegerTerm,
+    };
+    let mut samples = Vec::new();
+    for size in [8usize, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = Variable(crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE + 123);
+        let format = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+                let condition = ConditionTerm::IntegerEqual(
+                    IntegerTerm::Machine(machine.clone()).into(),
+                    IntegerTerm::constant_i64(0).into(),
+                );
+                assert_eq!(
+                    condition_syntax_execution_variable_ceiling(&condition),
+                    (Some(variable), false)
+                );
+                let mut found = BTreeSet::new();
+                assert!(!collect_condition_index_variables(&condition, &mut found));
+                assert_eq!(found, BTreeSet::from([variable]));
+                assert!(!machine.has_boxed_operand());
+            }
+        });
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+}
+
+#[test]
+fn shared_machine_variable_collection_keeps_snapshot_deferral_and_load_addresses() {
+    use crate::kernel::{
+        KernelTerm, KernelType, MachineBinaryOp, MachineIntegerType, SharedMachineIntegerTerm,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Variable(crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE + 124);
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let load = crate::kernel::eval::load_variable_for_exact_cell(
+        &memory,
+        &Pointer::symbolic(address),
+        crate::kernel::LoadKind::Int32,
+        4,
+    );
+    let format = MachineIntegerType::Int32;
+    let leaf = KernelTerm::variable(KernelType::C(CType::Int32), load);
+    let machine = SharedMachineIntegerTerm::from_shared(
+        format,
+        KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [leaf.clone(), leaf]),
+    )
+    .unwrap();
+    let shared = ConditionTerm::IntegerEqual(
+        IntegerTerm::Machine(machine.clone()).into(),
+        IntegerTerm::constant_i64(0).into(),
+    );
+    let written = ConditionTerm::IntegerEqual(
+        IntegerTerm::from_machine(format, Bitvector32Term::Variable(load))
+            .unwrap()
+            .into(),
+        IntegerTerm::constant_i64(0).into(),
+    );
+    let collect = |condition: &ConditionTerm| {
+        let mut variables = BTreeSet::new();
+        let deferred = collect_condition_index_variables(condition, &mut variables);
+        (variables, deferred)
+    };
+    assert_eq!(collect(&shared), collect(&written));
+    assert!(collect(&shared).0.contains(&address));
+    assert!(collect(&shared).1);
+    assert_eq!(
+        condition_syntax_execution_variable_ceiling(&shared),
+        condition_syntax_execution_variable_ceiling(&written)
+    );
+    assert!(!machine.has_boxed_operand());
+    crate::kernel::eval::clear_load_variable_registry();
+    assert_eq!(collect(&shared), (BTreeSet::from([load]), false));
+    assert!(!machine.has_boxed_operand());
+}

@@ -2632,7 +2632,26 @@ fn collect_integer_variables_seen(
                 }
             }
         }
-        IntegerTerm::Machine(value) => collect_bitvector_variables(value.value(), variables),
+        IntegerTerm::Machine(value) => match value.operand_view() {
+            MachineOperandView::Legacy(value) => collect_bitvector_variables(value, variables),
+            MachineOperandView::Shared(root) => {
+                if let Some(written) =
+                    shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
+                {
+                    for variable in written.iter() {
+                        if checked_collection_checkpoint() {
+                            return;
+                        }
+                        // Preserve snapshot deferral, connection and frame modes
+                        // by using the ordinary variable-leaf collector.
+                        collect_bitvector_variables(
+                            &Bitvector32Term::Variable(*variable),
+                            variables,
+                        );
+                    }
+                }
+            }
+        },
         IntegerTerm::If {
             condition,
             then_term,

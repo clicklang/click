@@ -106,3 +106,51 @@ fn filing_a_quantified_integer_antecedent_visits_only_its_own_bounds() {
         "filing a quantified antecedent's reading scanned unrelated facts: {samples:?}"
     );
 }
+
+#[test]
+fn admitting_modular_equalities_does_not_export_shared_operands() {
+    use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm};
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982705));
+        let mut context = PureFactContext::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for step in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+                let exact = IntegerTerm::Add(
+                    IntegerTerm::Machine(machine.clone()).into(),
+                    IntegerTerm::constant(1.into()).into(),
+                );
+                context = context.clone().assume_condition(
+                    ConditionTerm::IntegerEqual(
+                        exact.into(),
+                        IntegerTerm::from_machine(
+                            format,
+                            crate::kernel::Bitvector32Term::Variable(Variable(
+                                983000 + step as u64,
+                            )),
+                        )
+                        .unwrap()
+                        .into(),
+                    ),
+                    true,
+                );
+                assert!(!machine.has_boxed_operand());
+            }
+        });
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+}
