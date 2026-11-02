@@ -135,6 +135,7 @@ struct NodeKeyData {
     node: KernelTermNode,
     shared_machine_operand: bool,
     shared_native_width: Option<CarrierWidth>,
+    machine_constant: Option<KernelMachineLiteral>,
 }
 #[derive(Clone)]
 struct NodeKey(Arc<NodeKeyData>);
@@ -212,7 +213,9 @@ impl NodeKey {
                 }),
             _ => None,
         };
+        let machine_constant = machine::constant_reading(&node);
         Self(Arc::new(NodeKeyData {
+            machine_constant,
             fingerprint: hash.finish(),
             shared_machine_operand,
             shared_native_width,
@@ -299,6 +302,10 @@ pub(crate) fn clear_integer_bridge_memo() {
 impl KernelTerm {
     pub(crate) fn id(&self) -> u64 {
         self.0.id
+    }
+
+    pub(crate) fn machine_constant_reading(&self) -> Option<&KernelMachineLiteral> {
+        self.0.key.0.machine_constant.as_ref()
     }
 
     pub(crate) fn shared_native_width(&self) -> Option<CarrierWidth> {

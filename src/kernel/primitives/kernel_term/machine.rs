@@ -72,6 +72,74 @@ pub enum KernelMachineLiteral {
     Wide(MachineIntegerConstant),
 }
 
+impl KernelMachineLiteral {
+    pub(crate) fn legacy_term(&self) -> Bitvector32Term {
+        match self {
+            Self::Word32(bits) => Bitvector32Term::Constant(*bits),
+            Self::UInt32(bits) => Bitvector32Term::UInt32Constant(*bits),
+            Self::Int64(value) => Bitvector32Term::Int64Constant(*value),
+            Self::UInt64(value) => Bitvector32Term::UInt64Constant(*value),
+            Self::Wide(value) => Bitvector32Term::MachineIntegerConstant(*value),
+        }
+    }
+}
+
+/// Cached checking metadata, never a replacement for the structural node.
+/// Apply the existing constant readers to one operator over literal children;
+/// signed overflow and undefined division/shift readings remain absent.
+pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLiteral> {
+    let (format, root) = match node {
+        KernelTermNode::MachineLiteral(value) => return Some(value.clone()),
+        KernelTermNode::MachineBinary {
+            format,
+            operator,
+            arguments: [left, right],
+        } => {
+            // The legacy wide reader accepts only literal shift counts.
+            // Preserve that admission rule even if a count has a cached value.
+            if matches!(
+                format,
+                MachineIntegerType::Int64 | MachineIntegerType::UInt64
+            ) && matches!(
+                operator,
+                MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+            ) && !matches!(right.node(), KernelTermNode::MachineLiteral(_))
+            {
+                return None;
+            }
+            (
+                *format,
+                Bitvector32Term::Binary {
+                    format: *format,
+                    op: *operator,
+                    left: Box::new(left.machine_constant_reading()?.legacy_term()),
+                    right: Box::new(right.machine_constant_reading()?.legacy_term()),
+                },
+            )
+        }
+        KernelTermNode::MachineUnary {
+            format,
+            operator,
+            operand,
+        } => (
+            *format,
+            Bitvector32Term::Unary {
+                format: *format,
+                op: *operator,
+                operand: Box::new(operand.machine_constant_reading()?.legacy_term()),
+            },
+        ),
+        _ => return None,
+    };
+    match format {
+        MachineIntegerType::Int32 => root.as_const().map(KernelMachineLiteral::Word32),
+        MachineIntegerType::UInt32 => root.as_const().map(KernelMachineLiteral::UInt32),
+        MachineIntegerType::Int64 => root.int64_as_const().map(KernelMachineLiteral::Int64),
+        MachineIntegerType::UInt64 => root.uint64_as_const().map(KernelMachineLiteral::UInt64),
+        _ => None,
+    }
+}
+
 /// Transitional checker encoding, kept distinct from cast semantics so an
 /// import/export round trip preserves the exact old constructor. Remove this
 /// distinction when checker consumers no longer require the old tree.
@@ -249,17 +317,10 @@ impl KernelTermImport {
 impl KernelTermExport {
     pub(crate) fn machine(term: &KernelTerm) -> Result<Bitvector32Term, &'static str> {
         use Bitvector32Term as Old;
-        use KernelMachineLiteral as Literal;
         use KernelTermNode as Node;
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
-            Node::MachineLiteral(value) => match value {
-                Literal::Word32(bits) => Old::Constant(*bits),
-                Literal::UInt32(bits) => Old::UInt32Constant(*bits),
-                Literal::Int64(value) => Old::Int64Constant(*value),
-                Literal::UInt64(value) => Old::UInt64Constant(*value),
-                Literal::Wide(value) => Old::MachineIntegerConstant(*value),
-            },
+            Node::MachineLiteral(value) => value.legacy_term(),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::BoolCast {
                 destination,
