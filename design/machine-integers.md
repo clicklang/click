@@ -641,7 +641,35 @@ Progress:
      from its `uint32` result rather than through `int32`, so its
      identities read at one format. Step 4b makes σ a node of its own and
      removes K1, K2 and K6, with R0 at 32 bits and the difference graph's
-     σ links.
+     σ links. Step 4b is done (2026-11-02): σ is a node of its own wherever
+     a term is built. No constructor peels it (`word32`,
+     `word_cast32_operand` and `is_word_cast32` are gone; `into_word32`
+     reads only a `uint32` constant as its bits, decision G9), nor do the
+     e-graph (σ is an `Int32Unary::Cast` node, related to its operand by R0
+     and R-dist at 32 bits, and σ of a low word is that low word), the
+     difference graph (a σ link of offset 0 in either 32-bit domain, and
+     σ's interval is its operand's), or observations (rule W reads σ; K2's
+     rewrite is gone). An element index alone reads σ's operand, in `int32`
+     index coordinates (`into_index_word32`, decision G1). K6 is a
+     lookup-level equivalence (maintainer direction, 2026-11-01): a `uint32`
+     equality stays a `uint32` term, and `comparison_identity` reads each
+     32-bit equality's sides through one σ, at `int32`; no rewrite re-files
+     it. R-mem at 32 bits is σ's relation: a `uint32` read is σ of its
+     cell's `int32` read, and an `int32` read of a `uint32` store is σ of
+     the stored value. The sign-bit rule reads σ (its equivalent is built
+     through σ, and a test of σ files its equivalent), and rule C relates
+     σ of a quotient or remainder to the other signedness's on nonnegative
+     operands ([Decisions](#decisions), 2026-11-02, step 4b). Scaling
+     regressions: `sign_cast32_distribution_is_linear_in_the_operation_chain`
+     (about 174 units per operation, a bound of 200 per operation; σ's
+     inverse interns a node where the 64-bit reinterpretation's does not),
+     `sign_cast32_inverse_is_constant_work_per_cast` and
+     `uint32_and_int32_chains_cost_alike` (equal work at every size). Two
+     word identities at 32 bits remain, named here: the e-graph joins the
+     `int32` and `uint32` widenings of one narrow value as one word
+     (`join_widening_sibling`, beside K7'), and a load-term answer from a
+     cell reads the stored word at either signedness
+     (`LoadKind::reads_value`, K5's naming).
   5. Reads by their own kind, with R-mem; typed index coordinates (G1).
      Steps 5 and 6 land before step 4b removes K1 and K6 (maintainer
      direction, 2026-10-30), so 4b removes no rule a read or a widening
@@ -1397,3 +1425,41 @@ Decision, 2026-11-02 (native narrow arithmetic, PR 5; step 8):
   e-graph relation; no term is rewritten, and terms print as written
   (`a + b` for the native `uint8` sum).
 
+
+Maintainer direction, 2026-11-02 (σ a node of its own, step 4b):
+
+- **Lowering keeps the term structure of the original; equivalences live
+  in reasoning.** σ is built where the source writes or its language
+  inserts a conversion between `int32` and `uint32`, and kept: no
+  constructor, observation, e-graph or difference-graph reader peels it.
+  The relations are e-graph facts (R0, R-dist), difference-graph links,
+  rule W's reading, fact identity and lookup keys, and the decision rules
+  below. An element index is the one reader of σ's operand, in `int32`
+  index coordinates (G1).
+- **K6 is a lookup-level equivalence.** A `uint32` equality stays a
+  `uint32` term as written; fact identity, hashing, order and every
+  structural fact key read a 32-bit equality at `int32`, each side through
+  one σ and a constant of either spelling as its bits
+  (`comparison_identity`, `condition_match_key`): one match per side, no
+  clone. No rewrite re-files the term at `int32` (the rewriting and
+  reversing helpers keep the written format).
+- **Rule C.** σ of a 32-bit quotient or remainder is the quotient or
+  remainder at the other signedness of σ of its operands when the
+  dividend's `int32` reading is nonnegative and the divisor's is positive:
+  `(a / b) as int32 == (a as int32) / (b as int32)` for `uint32` `a`, `b`,
+  and `(x / y) as uint32 == (x as uint32) / (y as uint32)` for `int32` `x`,
+  `y`, and the same for `%`. The divisor must be positive, not only
+  nonnegative, because a quotient by zero is not folded and is not related
+  across the signednesses. It is read at decision time like the sign-bit
+  rule, O(1) at the root (a match on each side and two sign decisions per
+  side), filed beside a fact naming σ of a quotient when the fact is
+  assumed, and read by the quotient bound guards of `normalize using`.
+  Soundness: values in `[0, 2^31)` have the same number in both formats,
+  truncating and unsigned division agree on them, and the result lies in
+  `[0, A]`.
+- **R-mem at 32 bits is σ's relation.** The `int32` read of a cell is its
+  word load application; the `uint32` read is σ of it; an `int32` read of
+  a cell storing a `uint32` value is σ of that value.
+- **The sign-bit rule reads σ.** The equivalent of `u as int32 < 0` is
+  `u > 2^31 - 1`, built through σ, whose constructor folds σ of σ; a test
+  of σ files its equivalent when assumed, as an 8- or 16-bit one does.
