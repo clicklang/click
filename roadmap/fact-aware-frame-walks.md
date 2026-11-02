@@ -4,14 +4,6 @@ Priority: P1.
 
 ## Remaining targets
 
-Finish validation of the bounded read-initialization experiment on
-`codex/read-initialization-walk`: ordinary corpus, affected examples, and
-expansion/replay must pass before landing. The scalar store producer now folds
-cache invalidation into its single `Store` edge. Keep its original input and
-`ForgottenFrom` identity protection; do not reintroduce a standalone cache edge
-or a history search to recover that input. The explicit one-store `defined`
-transport has a regression in `mdtests/read_initialization_step_transport.md`.
-
 **Pointer read naming needs a separate design cycle.**
 `CPointerValue::from_read` calls `resource_tracker::last_same_point`, which
 reaches `cell_last_same_version` and its history traversal. Naming program

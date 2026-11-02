@@ -58,11 +58,8 @@ facts do not establish flat cost as the queried class or bucket grows.
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 
-Finish validation of the bounded read-initialization experiment for
-`typed_read_has_same_memory_source`, including explicit transport expansion
-and the ordinary corpus. Keep scalar-store cache invalidation inside the
-producer's single transition. Pointer read naming still reaches a cell-version
-history walk; isolate and design that removal separately, as described in
+Pointer read naming still reaches a cell-version history walk; isolate and
+design that removal separately, as described in
 [Fact-aware frame walks](fact-aware-frame-walks.md). Retain repeated-query,
 adjacent-state, exact, explicit-composition, cold-refusal and partial-overwrite
 controls in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`.
