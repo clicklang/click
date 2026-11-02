@@ -212,3 +212,49 @@ fn integer_comparison_bridge_reconstructs_shared_operands_linearly() {
         }
     }
 }
+
+#[test]
+fn observing_every_shared_machine_prefix_does_not_materialize_operands() {
+    for unrelated in [0, 128, 512] {
+        let _unrelated = (0..unrelated)
+            .map(|i| KernelTerm::variable(KernelType::Integer, Variable(951000 + i)))
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let format = MachineIntegerType::Int64;
+            let mut term = KernelTerm::variable(KernelType::C(CType::Int64), Variable(952000));
+            let mut retained = Vec::new();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..size {
+                    // The boxed expansion would double at every level. Both
+                    // observation construction and its Integer bridge must
+                    // retain handles, including after bridge memo reset.
+                    term = KernelTerm::arithmetic_binary(
+                        format,
+                        MachineBinaryOp::Add,
+                        [term.clone(), term.clone()],
+                    )
+                    .unwrap();
+                    let observation =
+                        SharedMachineIntegerTerm::from_shared(format, term.clone()).unwrap();
+                    let source: SharedIntegerTerm =
+                        IntegerTerm::Machine(observation.clone()).into();
+                    let common = KernelTermImport::default().integer(&source);
+                    drop(source);
+                    clear_integer_bridge_memo();
+                    let restored = KernelTermExport::default().integer(&common).unwrap();
+                    let IntegerTerm::Machine(actual) = restored.as_ref() else {
+                        panic!("machine observation");
+                    };
+                    assert_eq!(actual.id(), observation.id());
+                    assert!(actual.value_reading().is_none());
+                    assert!(!actual.has_boxed_operand());
+                    retained.push(restored);
+                }
+            });
+            assert!(
+                work <= 20 * size,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}

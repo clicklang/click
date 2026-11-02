@@ -395,6 +395,8 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
     assert_ne!(signed, unsigned, "each read is its own load");
     let mut samples = Vec::new();
     for unrelated in [4_u64, 64, 512] {
+        // Keep term-bridge imports cold at every sample size.
+        crate::kernel::clear_integer_bridge_memo();
         let mut graph = EqualityGraph::default();
         for index in 0..unrelated {
             graph.add_int32_equality(&var(500 + index), &var(5_000 + index));
@@ -438,6 +440,8 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
     let sizes = [8_u64, 32, 128, 512];
     let mut samples = Vec::new();
     for size in sizes {
+        // Keep term-bridge imports cold at every sample size.
+        crate::kernel::clear_integer_bridge_memo();
         let word = |value: Bitvector32Term| Bitvector32Term::MachineIntegerCast {
             value: Box::new(value),
             source: MachineIntegerType::UInt8,

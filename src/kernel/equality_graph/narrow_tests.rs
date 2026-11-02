@@ -118,6 +118,8 @@ fn narrow_operator_chains_intern_with_constant_work_per_node() {
         let sizes = [8_u64, 32, 128, 512];
         let mut samples = Vec::new();
         for size in sizes {
+            // Keep term-bridge imports cold at every sample size.
+            crate::kernel::clear_integer_bridge_memo();
             let mut sum = var(10_000);
             for index in 1..size {
                 sum = Bitvector32Term::machine_binary(format, Op::Add, sum, var(10_000 + index));

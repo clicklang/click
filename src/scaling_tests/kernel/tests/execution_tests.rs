@@ -74,6 +74,8 @@ fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts()
             .collect::<Vec<_>>();
         let mut ambient_samples = Vec::new();
         for ambient in [0usize, 128, 512] {
+            // Keep term-bridge imports cold at every sample size.
+            crate::kernel::clear_integer_bridge_memo();
             let mut assumptions = PureFactContext::new();
             for index in 0..ambient {
                 assumptions = assumptions.assume_proposition(Proposition::Predicate {

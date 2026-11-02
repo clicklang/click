@@ -123,10 +123,21 @@ result is one machine observation (for example, the domain calculation for
 type. This root-type rule never walks the operand or folds the machine value.
 Conjoining domain conditions then drops literal truths only; symbolic conditions go to ordinary obligation discharge,
 without invoking the proof checker while building the domain. Nested signed expressions
-retain the legacy evaluator: their `IntegerTerm::Machine` obligation operands
-still own boxed machine trees, so exporting every shared prefix would copy a
-growing expression repeatedly. Shared observation storage/checker views are a
-prerequisite to migrating that case. Other partial operators also remain on
+retain the legacy evaluator while obligation producers and checker views migrate.
+`IntegerTerm::Machine` now stores an arithmetic operand as a `KernelTerm`
+handle when its leaves are literals or variables and its nodes are machine
+unary/binary operations. Observation interning keys this fragment by format and
+child identity. The old boxed entry point imports the same identities and
+retains its supplied boxed input. Imports are reused within one verification;
+session-scoped bookkeeping prevents earlier warm caches from changing later
+verification work. Its arithmetic importer stops at conversion/opaque leaves
+without traversing them. Neither Integer bridging nor root value-reading
+materializes operands created directly from shared nodes. The old
+`value()` boundary materializes one boxed tree lazily. Conversions and opaque
+payloads retain exact legacy storage until their checker views migrate; cached
+eligibility depends only on immediate children, never facts. This storage step
+does not yet permit nested signed production: consumers that request every
+prefix through `value()` would still expand those prefixes repeatedly. Other partial operators also remain on
 legacy producers with separate obligations. C execution has not migrated. Shifts use the
 same shared binary nodes: lowering has already converted a count to the
 left operand's carrier width, and the bridge preserves that explicit conversion

@@ -654,6 +654,8 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
     let second_quantity = Bitvector32Term::Variable(Variable(992_002));
     let total = Bitvector32Term::add(first_quantity.clone(), second_quantity.clone());
     let samples = [16, 64, 256].map(|size| {
+        // Keep term-bridge imports cold at every sample size.
+        crate::kernel::clear_integer_bridge_memo();
         let mut entry = CreationEvents::new();
         let mut facts = PureFactContext::new();
         for index in 0..size {

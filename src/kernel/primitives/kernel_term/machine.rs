@@ -79,7 +79,54 @@ pub(super) fn wrap_exact(format: MachineIntegerType, term: Bitvector32Term) -> C
 }
 
 impl KernelTermImport {
-    pub(super) fn machine(
+    /// Import only the arithmetic storage fragment. Do not traverse a Bool,
+    /// Integer conversion, pointer, or other opaque payload to reject it.
+    pub(crate) fn machine_arithmetic(
+        &mut self,
+        result: MachineIntegerType,
+        term: &Bitvector32Term,
+    ) -> Option<KernelTerm> {
+        use Bitvector32Term as Old;
+        use KernelMachineLiteral as Literal;
+        let node = match term {
+            Old::Binary {
+                op,
+                format,
+                left,
+                right,
+            } => KernelTermNode::MachineBinary {
+                format: *format,
+                operator: *op,
+                arguments: [
+                    self.machine_arithmetic(*format, left)?,
+                    self.machine_arithmetic(*format, right)?,
+                ],
+            },
+            Old::Unary {
+                op,
+                format,
+                operand,
+            } => KernelTermNode::MachineUnary {
+                format: *format,
+                operator: *op,
+                operand: self.machine_arithmetic(*format, operand)?,
+            },
+            Old::Variable(value) => KernelTermNode::Variable(*value),
+            Old::Constant(value) => KernelTermNode::MachineLiteral(Literal::Word32(*value)),
+            Old::UInt32Constant(value) => KernelTermNode::MachineLiteral(Literal::UInt32(*value)),
+            Old::Int64Constant(value) => KernelTermNode::MachineLiteral(Literal::Int64(*value)),
+            Old::UInt64Constant(value) => KernelTermNode::MachineLiteral(Literal::UInt64(*value)),
+            Old::MachineIntegerConstant(value) => {
+                KernelTermNode::MachineLiteral(Literal::Wide(*value))
+            }
+            _ => return None,
+        };
+        // Interning charges the one selected source node; no other bridge
+        // or evaluator is invoked for these literal/variable leaves.
+        Some(KernelTerm::intern(KernelType::C(result.c_type()), node))
+    }
+
+    pub(crate) fn machine(
         &mut self,
         result: MachineIntegerType,
         term: &Bitvector32Term,
@@ -175,7 +222,7 @@ impl KernelTermImport {
 }
 
 impl KernelTermExport {
-    pub(super) fn machine(term: &KernelTerm) -> Result<Bitvector32Term, &'static str> {
+    pub(crate) fn machine(term: &KernelTerm) -> Result<Bitvector32Term, &'static str> {
         use Bitvector32Term as Old;
         use KernelMachineLiteral as Literal;
         use KernelTermNode as Node;

@@ -2493,6 +2493,8 @@ fn first_pass_resource_section_does_not_expand_the_frame() {
     let samples = [4_u64, 16, 64]
         .into_iter()
         .map(|held| {
+            // Keep term-bridge imports cold at every sample size.
+            crate::kernel::clear_integer_bridge_memo();
             let frame = ResourceContext::new().unchecked_with_facts((1..=held).map(|index| {
                 CResourceFact::own_composite(
                     "cell".to_string(),
