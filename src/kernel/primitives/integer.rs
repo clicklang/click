@@ -508,6 +508,20 @@ impl Clone for SharedMachineIntegerTerm {
     }
 }
 
+// Retained observations have exact, format-tagged identities. Hashing or
+// comparing a lookup key must not request the boxed operand.
+impl PartialEq for SharedMachineIntegerTerm {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+impl Eq for SharedMachineIntegerTerm {}
+impl std::hash::Hash for SharedMachineIntegerTerm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
+    }
+}
+
 thread_local! {
     // Reuse explicit boxed imports within one verification, but never make a
     // later verification's work depend on an earlier session's warm interner.
