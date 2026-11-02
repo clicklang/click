@@ -1683,7 +1683,7 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
             "bool probe(bool flag) noexcept { return !flag; }",
             "",
             "bool flag",
-            "flag == 0",
+            "flag == false",
         ),
         (
             "bool probe(unsigned long value) noexcept { return !value; }",
@@ -1693,13 +1693,13 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
         ),
         (
             "bool ready() noexcept { return false; } bool probe() noexcept { return !ready(); }",
-            "bool ready() { ensures result == 0; }",
+            "bool ready() { ensures result == false; }",
             "",
             "1 == 1",
         ),
         (
             "bool ready() noexcept { return false; } bool probe() noexcept { if (!ready()) { return true; } else { return false; } }",
-            "bool ready() { ensures result == 0; }",
+            "bool ready() { ensures result == false; }",
             "",
             "1 == 1",
         ),
@@ -1709,10 +1709,10 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
         let source = format!(
-            "verifying \"negation.cpp\";\n{helper}\nbool probe({parameters}) {{ requires {requires}; ensures result == 1; }}\n"
+            "verifying \"negation.cpp\";\n{helper}\nbool probe({parameters}) {{ requires {requires}; ensures result == true; }}\n"
         );
         check_selected_claim_certificate(&project, &import, &source);
-        let hostile = source.replace("ensures result == 1;", "ensures result == 0;");
+        let hostile = source.replace("ensures result == true;", "ensures result == false;");
         let path = project.directory.join("bad.click");
         fs::write(&path, &hostile).unwrap();
         assert!(
@@ -1722,7 +1722,7 @@ fn logical_negation_checks_full_width_truth_and_observer_results_offline() {
         if parameters == "uint64 value" {
             let high = source
                 .replace("value == 0u64", "value == 4294967296u64")
-                .replace("result == 1", "result == 0");
+                .replace("result == true", "result == false");
             check_selected_claim_certificate(&project, &import, &high);
         }
     }
@@ -15599,7 +15599,7 @@ fn converted_call_initializers_preserve_boolean_results() {
         &import,
         r#"verifying "converted.cpp";
 bool echo(bool value) { ensures result == value; }
-int32 relay(bool value) { requires value == 1; ensures result == 1; }
+int32 relay(bool value) { requires value == true; ensures result == 1; }
 "#,
     );
 }
