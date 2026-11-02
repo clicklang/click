@@ -1155,14 +1155,31 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
                 ConditionTerm::pointer_equal(alias.clone(), address.clone()),
                 true,
             );
+        let initial = intern_c_memory_ref(&memory);
+        let initial_read = Pointer::loaded_value(&initial, &address);
+        context.register_checked_pointer_read(&initial_read, &initial, &address);
+        assert!(context.pointers_known_equal(&stored, &initial_read));
         for index in 0..count {
-            memory = memory.store(
-                Pointer {
-                    block: PointerBlock::Heap(96_000 + index),
-                    offset: PointerOffsetTerm::Constant(0),
-                },
-                int32(7),
-            );
+            let before = memory.clone();
+            let write = Pointer {
+                block: PointerBlock::Heap(96_000 + index),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            memory = memory.store(write.clone(), int32(7));
+            let (_, _, equality) = crate::kernel::tests::explicit_frame(
+                &before,
+                &memory,
+                &address,
+                CType::Int64Pointer,
+                &[Proposition::CMemoryMutatesOnly {
+                    before: before.clone(),
+                    after: memory.clone(),
+                    writes: vec![(write, 4)],
+                }],
+                &context,
+            )
+            .expect("an explicit complete-pointer frame across this fresh heap store");
+            context = context.assume_proposition(equality);
             context = context.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(97_000 + index)),

@@ -327,17 +327,35 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             });
         assert!(one_theorem.is_some());
         assert!(unrelated_work > 0);
-        let mut after = before.memory().clone();
-        for index in 0..size {
-            after = after.store(
-                field.offset_by_bytes(24),
-                CValue::Int32(Bitvector32Term::Constant(index)),
-            );
-        }
-        let (theorem, work) = crate::instrumentation::measure_deterministic_work(|| {
-            prove_c_condition_fact_transport(&source, &after, &context)
+        // The long case supplies each preservation link explicitly. A query
+        // naming only the two endpoints must not discover this history.
+        let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut after = before.memory().clone();
+            let mut current = source.clone();
+            let mut explicit_context = context.clone();
+            for index in 0..size {
+                after = after.store(
+                    field.offset_by_bytes(24),
+                    CValue::Int32(Bitvector32Term::Constant(index)),
+                );
+                let theorem = prove_c_condition_fact_transport(&current, &after, &explicit_context)
+                    .expect("the supplied adjacent transition preserves the packed pointer");
+                let (premises, target) = c_condition_fact_transport_parts(&theorem, &current)
+                    .expect("a condition transport retains its explicit premises");
+                assert!(
+                    premises
+                        .iter()
+                        .all(|premise| explicit_context.proves_exact(premise))
+                );
+                current = target.clone();
+                explicit_context = explicit_context.assume_proposition(current.clone());
+            }
+            after
         });
-        assert!(theorem.is_some());
+        assert!(
+            prove_c_condition_fact_transport(&source, &after, &context).is_none(),
+            "a cold endpoint query must not search the older stores"
+        );
         assert!(work > 0);
         (unrelated_work, work)
     });

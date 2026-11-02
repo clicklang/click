@@ -6253,18 +6253,17 @@ fn transport_framed_atomic_pointer_value(
     let reconstructed_word = value.pointer().integer_address_bits().is_some();
     value.try_map_pointers(|pointer| {
         if reconstructed_word && let Some(read) = pointer.as_loaded_value() {
-            // Use the complete word's cached version, as its read producer
-            // does, so unrelated history is not traversed for its designation.
+            // The supplied endpoint names this observation. Check its one
+            // immediate frame; discovering an older version would be a hidden
+            // history search even if a previous query happened to cache it.
             let after = crate::kernel::intern_c_memory_ref(after);
-            let version = cell_version_point(&after, &read.defining_address, C_POINTER_BYTE_WIDTH)
-                .unwrap_or(after);
-            let mut target = Pointer::loaded_value(&version, &read.defining_address);
+            let mut target = Pointer::loaded_value(&after, &read.defining_address);
             target.offset = pointer.offset.clone();
-            if assumptions.is_some_and(|(context, _)| {
-                complete_pointer_reads_equal_across_frame(pointer, &target, context)
-            }) {
-                return Some(target);
-            }
+            return assumptions
+                .is_some_and(|(context, _)| {
+                    complete_pointer_reads_equal_across_frame(pointer, &target, context)
+                })
+                .then_some(target);
         }
         transport_framed_atomic_pointer(pointer, after, assumptions)
     })

@@ -233,7 +233,7 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         context = context.assume_proposition(selected_fact.clone());
         let range = CMemoryRange::new(selected.clone(), 0u32.into(), 2u32.into());
         let kept = CallKeptOwnership::new(
-            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range)),
+            ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(range.clone())),
             CallKeptRanges::new(ResourceContext::new(), vec![], None),
             &context,
         );
@@ -244,6 +244,28 @@ fn recent_pointer_read_origin_avoids_older_alias_histories() {
         )];
         let after =
             memory.with_call_memory_havoc(Variable(994_003), &writes, &context, Some(&kept));
+        let separation = Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(writes[0].clone())),
+            right: Box::new(CResource::Memory(range)),
+        };
+        let frame_context = PureFactContext::new().assume_proposition(
+            crate::kernel::region_footprint::byte_premise(&separation).unwrap(),
+        );
+        let (_, _, preservation) = crate::kernel::tests::explicit_frame(
+            &before,
+            &after,
+            &selected,
+            CType::Int32Pointer,
+            &[Proposition::CMemoryEffectSummary {
+                before: before.memory().clone(),
+                after: after.clone(),
+                mutable_ranges: writes.to_vec(),
+            }],
+            &frame_context,
+        )
+        .expect("the explicitly separated call preserves the selected pointer");
+        let context = context.assume_proposition(preservation.clone());
+        let missing = missing.assume_proposition(preservation);
         let target = read(&intern_c_memory_ref(&after), &selected);
         let (matched, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.pointer_designations_match(&target, &value)

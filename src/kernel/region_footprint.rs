@@ -178,6 +178,26 @@ impl RegionFootprint {
         })
     }
 
+    /// Finish one statement's footprint with its automatic scope cleanup.
+    /// Both deltas are supplied by the executing producer; this does not select
+    /// or traverse earlier statements. Their effect descriptors are shared.
+    pub(crate) fn with_scope_cleanup(statement: &Arc<Self>, cleanup: &Arc<Self>) -> Arc<Self> {
+        let mut members = statement.members.clone();
+        members.append(cleanup.members.clone());
+        Arc::new(Self {
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            source: statement.source.clone(),
+            before: statement.before.clone(),
+            after: cleanup.after.clone(),
+            before_resources: statement.before_resources.clone(),
+            after_resources: cleanup.after_resources.clone(),
+            members,
+            complete: statement.complete && cleanup.complete,
+            resource_bound: None,
+            is_sequence: false,
+        })
+    }
+
     pub(crate) fn sequence(
         source: String,
         before: &CState,

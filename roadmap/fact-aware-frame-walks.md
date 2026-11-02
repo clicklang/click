@@ -4,8 +4,8 @@ Priority: P1.
 
 ## Current branch boundary
 
-`codex/pointer-read-naming-regression` is not ready to land. Keep its two
-removals while repairing the remaining proofs:
+`codex/pointer-read-naming-regression` requires final integration validation. Keep these
+checking boundaries:
 
 - `CPointerValue::from_read` uses the supplied address and snapshot's O(1)
   `unchanged_bytes_source()` link instead of `resource_tracker::last_same_point`.
@@ -21,34 +21,17 @@ Preserve `fresh_pointer_read_naming_across_store_history_has_near_linear_total_w
 and `bounded_cell_source_is_independent_of_history_cache`. Neither ordinary
 memoization nor a warmed history cache may hide the cost of a cold query.
 
-## Remaining proof repairs and validation
+## Remaining landing checks
 
-Three ordinary fixtures still fail:
+Integrate current upstream and rerun the ordinary fixture corpus, the full
+scaling selection, and the named expansion/replay checks below. No full
+nightly run is needed. Keep the pointer rejection fixtures reaching their
+intended false claims; do not accept failures in their prerequisites.
 
-- `cpp_generic_class_state_in_a_resource`
-- `joined_pointer_field_read_rejects_different_field`
-- `mutex_protected_pointer_footprint_stale_read_rejected`
-
-The latter two fail before their intended refusal. Keep their expected errors
-and repair the prerequisites. The mutex fixture stops at the first dereference
-after locking, before the local assignment; preserving across that assignment
-cannot repair it.
-
-Three scaling cases remain red:
-
-- `cached_pointer_reads_retain_their_current_cell_identity`
-- `packed_word_transport_visits_only_the_selected_word_and_delta`
-- `recent_pointer_read_origin_avoids_older_alias_histories`
-
-The separate `cached_typed_pointer_read_emits_only_complete_owned_store_frames`
-unit is also a known blocker. Keep its positive and negative assertions until
-explicit replacement evidence is established.
-
-The full scaling selection reports 1146/1149 passing. The ordinary corpus ran
-4987 fixtures with the three failures above and one call-footprint regression;
-the latter is repaired and all four `region_footprint` fixtures pass on rerun.
-No full nightly run is required for this work. Rerun the ordinary corpus before
-publishing once the remaining blockers are repaired.
+Statement footprints must include their automatic storage cleanup. Loop-exit
+snapshots still name the state before enclosing scope cleanup, so exit facts
+can refer to the loop's locals. Preserve both boundaries without searching
+back through execution history.
 
 ## Preserve the explicit proof route
 
@@ -76,18 +59,14 @@ Keep these expansion/replay checks passing:
 - `explicit_pointer_alias_repairs_expand_and_cold_replay`
 - `recursive_witness_pointer_preservation_expands_and_cold_replays`
 - `recursive_call_resource_bound_is_explicit_and_replays`
+- `destructor_footprint_cleanup_expands_and_replays`
+- `pointer_rejection_prefixes_expand_and_replay`
 
 The recursive witness proof now selects the call's containment, applies
 `separation::restrict`, and preserves the complete pointer read. It needs no
 recursive resource unfolding or footprint reasoning in `normalize`.
 
 ## Next walks and invariants
-
-`transport_framed_atomic_pointer_value` still calls `cell_version_point` for
-reconstructed complete words. Its one-write work is 288/336/528/1296 for
-4/16/64/256 unrelated entries. Do not restore constructor warming or raise the
-bound. Search that discovers a path must emit preservation steps; warming a
-memo is not a certificate.
 
 Read-side `CellsForgotten` projections and bulk-write preparation remain
 separate from scalar-store invalidation. Removing them requires preserving

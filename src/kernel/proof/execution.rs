@@ -9818,6 +9818,7 @@ impl ExecutionProofCore {
         state: &CState,
         names: &[String],
     ) -> Result<CState, CRuntimeError> {
+        self.last_footprint = None;
         if names.is_empty() {
             return Ok(state.clone());
         }
@@ -9830,6 +9831,12 @@ impl ExecutionProofCore {
                 "automatic lifetime end does not start from the running state".into(),
             ));
         }
+        self.last_footprint = Some(crate::kernel::RegionFootprint::transition(
+            format!("region({}).footprint", self.frontier.next_statement_index),
+            state,
+            &after_state,
+            &ExecutionFacts::new(),
+        ));
         let end = CheckedAutomaticLifetimeEnd {
             before_state: state.clone(),
             after_state: after_state.clone(),
