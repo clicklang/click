@@ -26,12 +26,6 @@ fn charon_loop_control_verifies_break_and_continue() {
             "        invariant 0i32 <= i and i <= n and 0i32 <= evens;\n",
             "count_evens",
         ),
-        // `break i` returns the counter as the test found it.
-        (
-            "    ensures 0i32 <= result and result <= limit and result <= n;\n",
-            "    ensures result == limit;\n",
-            "first_stop",
-        ),
     ] {
         // The successful run above checks the entire fixture. Each mutation
         // only needs to recheck the function whose proof it invalidates.
@@ -46,15 +40,40 @@ fn charon_loop_control_verifies_break_and_continue() {
             "verifying \"control.rs\";\n{}",
             function.replacen(before, after, 1)
         );
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
-            .err()
-            .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
-        assert_eq!(
-            error.kind(),
-            click::surface::ClickErrorKind::Proof,
-            "{expected}: {error}"
-        );
-        let rendered = format!("{error:?} {error}");
-        assert!(rendered.contains(expected), "{expected}: {rendered}");
+        assert_proof_failure(&invalid, &prepared, expected);
     }
+
+    // `break i` can return before `i` reaches `limit`. A concrete witness
+    // exercises that exit without rechecking the general loop invariant and
+    // searching for an impossible symbolic postcondition. Check its true
+    // result first so an execution failure cannot pass the negative test.
+    let witness = r#"verifying "control.rs";
+fn first_stop(n: i32, limit: i32) -> i32 {
+    requires n == 0i32 and limit == 1i32;
+    ensures result == 0i32;
+} by {
+    step_until(function.exit);
+}"#;
+    C0VerificationSession::new_program_prepared(witness, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let invalid = witness.replace("ensures result == 0i32;", "ensures result == limit;");
+    assert_ne!(witness, invalid);
+    assert_proof_failure(&invalid, &prepared, "first_stop");
+}
+
+fn assert_proof_failure(
+    source: &str,
+    prepared: &click::languages::rust::PreparedRustImport,
+    function: &str,
+) {
+    let error = C0VerificationSession::new_program_prepared(source, prepared)
+        .err()
+        .unwrap_or_else(|| panic!("false claim in `{function}` must fail"));
+    assert_eq!(
+        error.kind(),
+        click::surface::ClickErrorKind::Proof,
+        "{function}: {error}"
+    );
+    let rendered = format!("{error:?} {error}");
+    assert!(rendered.contains(function), "{function}: {rendered}");
 }
