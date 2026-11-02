@@ -1024,7 +1024,9 @@ fn direct_constant_lookup_ignores_unrelated_condition_facts() {
     for size in [16u64, 64, 256, 1024] {
         let mut context = PureFactContext::new()
             .assume_condition(ConditionTerm::equal(var(97_000), var(97_001)), true)
-            .assume_condition(ConditionTerm::equal(var(97_001), 7u32.into()), true);
+            // Direct lookup requires the endpoint to be stated; equality-chain
+            // refusal is covered separately below.
+            .assume_condition(ConditionTerm::equal(var(97_000), 7u32.into()), true);
         for index in 0..size {
             context = context
                 .assume_condition(
