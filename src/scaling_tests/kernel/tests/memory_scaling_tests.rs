@@ -2711,7 +2711,12 @@ fn repeated_read_initialization_work(adjacent: bool, exact: bool) -> Vec<(u32, u
         let mut total = 0;
         for index in 0..size {
             let previous = memory.clone();
-            memory = memory.store(write.clone(), int32(index));
+            memory = memory.store_classed_with_context(
+                write.clone(),
+                int32(index),
+                &PureFactContext::new(),
+                None,
+            );
             let facts = if exact {
                 defined(&memory)
             } else if adjacent {

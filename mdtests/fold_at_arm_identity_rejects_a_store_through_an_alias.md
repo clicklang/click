@@ -43,7 +43,22 @@ void roundtrip(struct node* p, struct node* q) {
         Tree::Empty => { contradiction(t.model == Tree::Empty); },
         Tree::Node(id, lm, rm) => {
             let { left: l, right: r } = unfold(t);
+            have separate(memory(q->right), memory(p->left)) by {
+                assumption();
+            }
+            mark before;
             step();
+            have separate(statement(0).footprint, memory(p->left)) by {
+                normalize() using { separate(memory(q->right), memory(p->left)); };
+            }
+            have p->left == at(before, p->left) by {
+                transport_certificate {
+                    premise 0: separate(statement(0).footprint, memory(p->left))
+                        => separate(statement(0).footprint, memory(p->left));
+                    preserve 0 => p->left == at(before, p->left);
+                    conclusion 1;
+                }
+            }
             let t = fold(tree(id), { model: Tree::Node(id, lm, rm) }, { left: l, right: r });
         },
     }

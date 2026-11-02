@@ -3,8 +3,9 @@
 The same shape as
 [`a_pruned_store_is_not_forgotten.md`](a_pruned_store_is_not_forgotten.md) with
 a third store in between, which writes `a[m]` back with the value it just read.
-The store to `a[i]` is the one that may have changed the answer, and it is the
-one the refusal has to name however many steps later the read happens.
+The store to `a[i]` may have changed the answer. The final read must still be
+distinct from the entry read, even after the value is read and stored again.
+The supplemental, fact-free history explanation need not cross `a[j]`.
 
 ```c filename=a_pruned_store_survives_two_later_stores.c
 int32 read_after_three_stores(int32* a, int32 i, int32 j, int32 m) {
@@ -32,5 +33,5 @@ int32 read_after_three_stores(int32* a, int32 i, int32 j, int32 m) {
 ```
 
 ```expect
-fail: the store to `a[i]` may have written it. If `m` and `i` differ, state `m != i`
+fail: the two sides read the same address in different memory snapshots (`result` reads the outcome state, `old(a[m])` reads function entry)
 ```

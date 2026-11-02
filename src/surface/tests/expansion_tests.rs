@@ -19973,3 +19973,50 @@ fn machine_subtraction_fact_bridges_expand_without_implicit_search() {
         without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
     }
 }
+
+#[test]
+fn single_store_definedness_transport_expands_and_replays() {
+    let (source, c_sources) = mdtest_sources("mdtests/read_initialization_step_transport.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified =
+        verify_c0_sources(&source, &sources).unwrap_or_else(|error| panic!("{}", error.report()));
+    let expanded = expand_checked_grouped_claim(&source, &verified, "change").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
+
+#[test]
+#[ignore = "nightly: explicit scalar framing expansion and replay"]
+fn atomic_store_scalar_framing_expands_and_replays() {
+    for (fixture, function) in [
+        ("scalar_read_after_atomic_store", "later"),
+        (
+            "a_case_split_inside_a_c_if_arm_continues_past_the_arm",
+            "read_back",
+        ),
+        ("heap_pointer_field_keeps_target_identity", "run"),
+        (
+            "a_local_addressed_in_another_function_is_framed_by_ownership",
+            "read_literal",
+        ),
+        ("conditional_call_indexed_result_fact", "caller"),
+        (
+            "order_bounds_place_a_store_off_a_constant_element",
+            "through_parameter",
+        ),
+    ] {
+        let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = c_sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = verify_c0_sources(&source, &sources)
+            .unwrap_or_else(|error| panic!("{}", error.report()));
+        let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    }
+}

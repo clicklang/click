@@ -1,8 +1,8 @@
 # A framed graph index in a conditional call fact
 
-C evaluation reuses the graph cell from before the separated store. An explicit
-transport equality lets the caller rewrite its post-store historical index to
-that evaluated value, including inside another memory read.
+C evaluation names the graph cell at the state where the call argument is
+read. The post-store historical index therefore matches the call fact directly.
+The explicit transport also proves its equality to the entry value.
 
 ```c filename=conditional_call_indexed_result_fact.c
 extern int32 visit(int32 *next, int32 *visited, int32 n, int32 from);
@@ -40,7 +40,7 @@ int32 caller(int32 *next, int32 *visited, int32 n, int32 cur) {
         assumption();
     }
     let { result: r } = step(visit, {});
-    have r == 0 implies visited[at(entry, next[cur])] != 0 by { rewrite(at(entry, next[cur]) == old(next[cur])); assumption(); }
+    have r == 0 implies visited[at(entry, next[cur])] != 0 by { assumption(); }
     branch { step(); solve(); } else {}
     step(); solve();
 }

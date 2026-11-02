@@ -58,17 +58,14 @@ facts do not establish flat cost as the queried class or bucket grows.
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 
-Finish the bounded read-initialization experiment for
-`typed_read_has_same_memory_source`. The repeated-query regression is now
-linear locally, but a single C store's cache-forgetting node blocks explicit
-`transport` of `defined(...)` even with proved footprint separation. First investigate folding cache invalidation into the store producer, as
-described in [Fact-aware frame walks](fact-aware-frame-walks.md), so it records
-one real statement transition. Do not add a certificate primitive to compensate
-for the bookkeeping edge before trying that representation fix.
-Keep this separate from complete-pointer equality and provenance comparison,
-which may inspect only one predecessor per endpoint. Retain the repeated-query, adjacent-state,
-explicit-composition, cold-refusal and partial-overwrite controls in
-`src/scaling_tests/kernel/tests/memory_scaling_tests.rs`.
+Finish validation of the bounded read-initialization experiment for
+`typed_read_has_same_memory_source`, including explicit transport expansion
+and the ordinary corpus. Keep scalar-store cache invalidation inside the
+producer's single transition. Pointer read naming still reaches a cell-version
+history walk; isolate and design that removal separately, as described in
+[Fact-aware frame walks](fact-aware-frame-walks.md). Retain repeated-query,
+adjacent-state, exact, explicit-composition, cold-refusal and partial-overwrite
+controls in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`.
 
 Repair affected proofs with explicit separation and transport certificates,
 preserving C and contracts. Structural read equality needs positive evidence;

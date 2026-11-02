@@ -65,6 +65,28 @@ void taker() {
 
 int32 read_literal() {
     ensures result == 'k' + 3;
+} by {
+    step(); step();
+    let { result: r } = step(literal_source, {});
+    have r[1] == 'k' by { assumption(); }
+    have message == r by { normalize(); }
+    have message[1] == 'k' by { normalize() using { message == r; r[1] == 'k'; }; }
+    have separate(memory(guard), memory(message[1])) by { assumption(); }
+    mark before;
+    step();
+    have separate(statement(3).footprint, memory(message[1])) by {
+        normalize() using { separate(memory(guard), memory(message[1])); };
+    }
+    have message[1] == at(before, message[1]) by {
+        transport_certificate {
+            premise 0: separate(statement(3).footprint, memory(message[1]))
+                => separate(statement(3).footprint, memory(message[1]));
+            preserve 0 => message[1] == at(before, message[1]);
+            conclusion 1;
+        }
+    }
+    have message[1] == 'k' by { normalize() using { message[1] == at(before, message[1]); at(before, message[1]) == 'k'; }; }
+    step();
 }
 ```
 

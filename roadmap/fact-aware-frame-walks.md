@@ -4,53 +4,31 @@ Priority: P1.
 
 ## Remaining targets
 
-The `typed_read_has_same_memory_source` loop in
-`src/kernel/memory_provenance.rs` supplies initialization checks through
-`PureFactContext`'s read-definedness evidence. The local bounded experiment
-on `codex/read-initialization-walk` accepts only identical snapshots or one
-checked predecessor. At 16/32/64/128 repeated queries the cost falls from
-488/1744/6560/25408 to 232/472/952/1912 work units. Adjacent and exact controls
-remain linear. Long implicit queries now decline; preserving their former
-automatic success is not required.
+Finish validation of the bounded read-initialization experiment on
+`codex/read-initialization-walk`: ordinary corpus, affected examples, and
+expansion/replay must pass before landing. The scalar store producer now folds
+cache invalidation into its single `Store` edge. Keep its original input and
+`ForgottenFrom` identity protection; do not reintroduce a standalone cache edge
+or a history search to recover that input. The explicit one-store `defined`
+transport has a regression in `mdtests/read_initialization_step_transport.md`.
 
-**Design blocker before landing:** even one C store may create a cache-forgetting
-node followed by the actual store. The intended passing reproduction is
-`mdtests/read_initialization_step_transport.md`: it starts with `defined(*p)`,
-executes `*q = 1`, proves `separate(statement(0).footprint, memory(*p))`, and
-explicitly selects both that separation and `at(before, defined(*p))` in
-`transport`. The footprint premise succeeds, but the transport refuses because
-the underlying memories are two internal edges apart. This fixture intentionally
-remains red in the experimental checkpoint; do not publish the removal as ready.
+**Pointer read naming needs a separate design cycle.**
+`CPointerValue::from_read` calls `resource_tracker::last_same_point`, which
+reaches `cell_last_same_version` and its history traversal. Naming program
+pointer reads at the actual input snapshot, rather than a reduced cache view,
+exposes this cost: the existing
+`unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors` regression
+measures 1266/1290/1386/1770 units at 4/16/64/256 descriptors in that experiment.
+Keep the current scalar-read spelling fix separate from pointer naming. First
+isolate this path with a cold repeated-query regression; discuss how an exact
+typed read should acquire its designation and extent without searching history.
+Do not simply drop provenance or width checks.
 
-**Producer design investigation:** the store caller in
-`src/kernel/eval/statements.rs` chains `without_possible_aliasing_cells` with
-`store_classed_with_context`. The former records `CellsForgotten`; the latter
-records `Store` from that intermediate snapshot. Even removing the exact cached
-cell the store will overwrite creates this extra edge. Do not compensate by
-adding a definedness axiom yet.
-
-Proposed next experiment: make invalidation an internal part of the store
-producer, retain the original input as the store's base, and record only the
-completed store. Do not intern an observable intermediate cleared-cache state,
-relabel the walk, or recover the original input by scanning derivations. Preserve
-initialization, effective types, partial-overwrite behavior and snapshot identity:
-`ForgottenFrom` currently prevents a loss of cached knowledge from re-interning
-as an older state. Its protection cannot simply be deleted. Establish that the
-reduced explicit transport passes and repeated checking stays linear before
-broadening the change to other producers.
-
-There is a second `CellsForgotten` producer in `eval/memory_loads.rs`: it creates
-a reduced snapshot to name one symbolic read, based on the selected read and
-assumptions. It is not a C write either, but removing it requires preserving
-read spelling and branch-scoped alias reasoning; do not conflate that projection
-with store invalidation. `read_identity` already shares unchanged-byte identities
-across these nodes, but is explicitly not initialization/lifetime authority.
-
-The bounded experiment and intended passing fixture remain local, not ready
-to land. After the producer design is settled, repair ordinary proofs, check
-expansion/replay, and run the full ordinary corpus. Only reconsider a new
-certificate primitive if a real inference remains missing after bookkeeping
-stops interrupting the actual statement transition.
+Read-side `CellsForgotten` projections and bulk-write preparation remain
+separate from scalar-store invalidation. Removing them requires preserving
+read spelling and branch-scoped alias reasoning. `read_identity` is not
+initialization/lifetime authority. Do not broaden the producer change into
+these paths without a concrete reproduction and design review.
 
 Keep complete-pointer equality and provenance comparison bounded to one
 immediate predecessor per endpoint. Retain the repeated-query, adjacent-state,
