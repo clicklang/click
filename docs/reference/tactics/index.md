@@ -1281,6 +1281,14 @@ An argument nothing fixes stays folded
 ([`solve_evaluates_a_recursive_function_over_known_constructors.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_evaluates_a_recursive_function_over_known_constructors.md),
 [`solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_evaluate_a_recursive_function_past_an_unknown_argument.md)).
 
+An existential `exists v { x == C(.., v, ..) }` whose `x` a fact fixes to a
+constructor of the same variant, `x == C(.., t, ..)`, takes `t` as its witness:
+`solve` writes `witness { v: t }` and closes the instance. A constant payload is
+written as itself and any other value by the local, parameter or binder that
+holds it; a value of another variant gives no witness
+([`solve_takes_a_known_constructor_payload_as_the_witness.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_takes_a_known_constructor_payload_as_the_witness.md),
+[`solve_finds_no_witness_in_another_variant.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_finds_no_witness_in_another_variant.md)).
+
 A disequality between an algebraic value and a constructor closes from an exact
 equality fixing that value to a different constructor: the equality rewrites the
 goal and normalization decides the constructors differ

@@ -5680,7 +5680,7 @@ impl PureFactContext {
         !self.algebraic_variable_constructors.is_empty()
     }
 
-    pub(in crate::kernel) fn known_algebraic_constructor(
+    pub(crate) fn known_algebraic_constructor(
         &self,
         value: &AlgebraicTerm,
     ) -> Option<AlgebraicTerm> {

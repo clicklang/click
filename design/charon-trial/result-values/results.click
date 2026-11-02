@@ -44,21 +44,17 @@ fn result_values::kept(x: i32) -> Result<i32, bool> {
 
 // `unwrap` and `expect` panic on `Err`, so a caller shows the value is `Ok`:
 // their contract requires `exists (value: T) { r == Result<T, E>::Ok(value) }`
-// and ensures `r == Result<T, E>::Ok(result)`.
+// and ensures `r == Result<T, E>::Ok(result)`, which reduces a `match` on `r`.
 fn result_values::must(r: Result<u32, u8>) -> u32 {
     requires exists (v: u32) { r == Result<u32, u8>::Ok(v) };
-    ensures r == Result<u32, u8>::Ok(result);
+    ensures result == (match r { Result::Ok(v) => v, Result::Err(e) => 0u32 });
 }
 
-// A caller that knows the payload names it as the requirement's witness.
+// A caller that knows the payload meets the requirement: `solve` takes the
+// payload of the constructor it knows as the witness.
 fn result_values::must_say(r: Result<u32, u8>) -> u32 {
     requires r == Result<u32, u8>::Ok(5u32);
     ensures result == 5u32;
-} by {
-    have exists (value: u32) { r == Result<u32, u8>::Ok(value) } by {
-        witness { value: 5u32 };
-        solve();
-    }
 }
 
 fn result_values::or_default(r: Result<u32, u8>, d: u32) -> u32 {

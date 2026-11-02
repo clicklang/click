@@ -1635,9 +1635,11 @@ error type with `From`").
 `Result::unwrap<T, E>` and `Result::expect<T, E>`, whose contract requires
 `exists (value: T) { r == Result<T, E>::Ok(value) }` and ensures
 `r == Result<T, E>::Ok(result)`; the panic on `Err` is that requirement, and
-`expect`'s message is not passed. A caller that knows the payload states the
-requirement with `witness`: `have exists (value: u32) { r ==
-Result<u32, u8>::Ok(value) } by { witness { value: 5u32 }; solve(); }`.
+`expect`'s message is not passed. A caller that knows `r ==
+Result<u32, u8>::Ok(5u32)` meets the requirement by `solve`, which takes the
+known constructor's payload as the witness, and a contract that reads the
+result through `match r { .. }` reduces the `match` by the call's
+`r == Ok(result)`.
 `r.unwrap_or(d)` calls `Result::unwrap_or`, whose contract is
 `ensures result == click::result::unwrap_or(r, d);`.
 

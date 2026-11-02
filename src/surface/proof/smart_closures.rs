@@ -6791,6 +6791,13 @@ impl<'a> Proof<'a> {
         {
             return self.try_implication_solve_closure(&surface_antecedent, introduced_surfaces);
         }
+        if let (ClickProposition::Exists { name, .. }, Proposition::Exists { var, body, .. }) =
+            (surface_goal, goal)
+            && let Some(closed) =
+                self.try_constructor_witness_exists_closure(name, *var, body, introduced_surfaces)?
+        {
+            return Ok(Some(closed));
+        }
         match (surface_goal, goal) {
             (ClickProposition::Exists { name, .. }, goal @ Proposition::Exists { .. })
                 if quantified_external_range_goal(goal) =>
@@ -6811,6 +6818,152 @@ impl<'a> Proof<'a> {
             }
             _ => Ok(None),
         }
+    }
+
+    /// `exists v { x == C(.., v, ..) }` where the facts already give `x` a
+    /// constructor `C(.., t, ..)` of the same variant: the witness is `t`,
+    /// read off that constructor, as a proof would name it with `witness`.
+    /// One lookup in the constructor index; the checked `witness` step and
+    /// an ordinary closure of the instance decide it.
+    #[inline(never)]
+    fn try_constructor_witness_exists_closure(
+        &self,
+        name: &str,
+        var: Variable,
+        body: &Proposition,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<Self>, ClickError> {
+        use crate::kernel::{AlgebraicTermNode, AlgebraicValue};
+        let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = body else {
+            return Ok(None);
+        };
+        let is_bound = |field: &AlgebraicValue| match field {
+            AlgebraicValue::C(
+                CValue::Int32(term)
+                | CValue::UInt32(term)
+                | CValue::Int8(term)
+                | CValue::Int16(term)
+                | CValue::UInt8(term)
+                | CValue::UInt16(term)
+                | CValue::Int64(term)
+                | CValue::UInt64(term)
+                | CValue::Bool(term),
+            ) => *term == Bitvector32Term::Variable(var),
+            _ => false,
+        };
+        // The written pattern and the value it describes, in either order.
+        let split = |pattern: &crate::kernel::AlgebraicTerm| match &pattern.node {
+            AlgebraicTermNode::Constructor { variant, fields } => fields
+                .iter()
+                .position(is_bound)
+                .map(|index| (variant.clone(), index)),
+            _ => None,
+        };
+        let Some((value, (variant, index))) = split(right)
+            .map(|found| (left, found))
+            .or_else(|| split(left).map(|found| (right, found)))
+        else {
+            return Ok(None);
+        };
+        let Some(known) = self
+            .facts()
+            .assumptions()
+            .known_algebraic_constructor(value)
+        else {
+            return Ok(None);
+        };
+        let AlgebraicTermNode::Constructor {
+            variant: known_variant,
+            fields,
+        } = &known.node
+        else {
+            return Ok(None);
+        };
+        let Some(AlgebraicValue::C(field)) =
+            fields.get(index).filter(|_| *known_variant == variant)
+        else {
+            return Ok(None);
+        };
+        // A constant is written as itself; any other value by the local,
+        // parameter or binder that holds it.
+        let constant = matches!(
+            field,
+            CValue::Int32(term)
+                | CValue::UInt32(term)
+                | CValue::Int8(term)
+                | CValue::Int16(term)
+                | CValue::UInt8(term)
+                | CValue::UInt16(term)
+                | CValue::Int64(term)
+                | CValue::UInt64(term)
+                | CValue::Bool(term)
+                if matches!(
+                    term,
+                    Bitvector32Term::Constant(_)
+                        | Bitvector32Term::UInt32Constant(_)
+                        | Bitvector32Term::Int64Constant(_)
+                        | Bitvector32Term::UInt64Constant(_)
+                )
+        );
+        let variable = match field {
+            CValue::Int32(term)
+            | CValue::UInt32(term)
+            | CValue::Int8(term)
+            | CValue::Int16(term)
+            | CValue::UInt8(term)
+            | CValue::UInt16(term)
+            | CValue::Int64(term)
+            | CValue::UInt64(term)
+            | CValue::Bool(term) => match term {
+                Bitvector32Term::Variable(variable) => Some(*variable),
+                _ => None,
+            },
+            _ => None,
+        };
+        let spelled = if constant {
+            Some(ContractExpression::CFragment(CExpression::Value(
+                field.clone(),
+            )))
+        } else if let ProofContext::Pure(context) = self.context.as_ref() {
+            // A theorem's values are its parameters and binders, by name.
+            let (intro_names, local_names) = self.binder_variable_names();
+            context
+                .theorem_context
+                .values
+                .iter()
+                .find(|(_, value)| *value == field)
+                .map(|(name, _)| name.clone())
+                .or_else(|| {
+                    variable.and_then(|variable| {
+                        context
+                            .source_names
+                            .get(&variable)
+                            .cloned()
+                            .or_else(|| local_names.get(&variable).cloned())
+                            .or_else(|| intro_names.get(&variable).cloned())
+                    })
+                })
+                .map(|name| ContractExpression::CFragment(CExpression::Variable(name)))
+        } else {
+            self.premise_fixed_state_view().and_then(|view| {
+                super::surface_synthesis::synthesize_surface_value(
+                    field,
+                    view.parameter_binding,
+                    view.fixed_state.state,
+                )
+            })
+        };
+        let Some(spelled) = spelled else {
+            return Ok(None);
+        };
+        check_verification_deadline()?;
+        let witness = ProofWitness::single(name.to_string(), spelled);
+        let Some(introduced) =
+            attempt::candidate_outcome(self.apply_step(ProofStep::Witness(witness)))?
+        else {
+            return Ok(None);
+        };
+        introduced.try_solve_closure_with_surfaces(introduced_surfaces)
     }
 
     // These helpers preserve the dispatcher's search order and checked steps;
