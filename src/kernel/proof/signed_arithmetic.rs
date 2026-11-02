@@ -3481,7 +3481,13 @@ mod tests {
                     };
                     assert_eq!(
                         is_exact_definedness(&guard, &expression),
-                        is_exact_definedness(&legacy, &expression),
+                        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(
+                            &guard
+                        )
+                        .is_some_and(|condition| is_exact_definedness(
+                            &Proposition::ConditionIs(condition, false),
+                            &expression
+                        )),
                         "{expression:?}"
                     );
                 }
