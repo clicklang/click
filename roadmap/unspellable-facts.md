@@ -97,9 +97,25 @@ No limits changed and no nightly suite ran. The final nested-partial regression
 checks. The integrated arithmetic audit passed all 124 fixtures with zero
 differences. The integrated unsigned audit again reported zero differences,
 with the same one failing byte-copy transport fixture out of 96. The ordinary
-`MDTEST_FILTER=unsigned` run fails that same transport too, although the full
-corpus passes. Investigate the isolation/proof-context dependency next; it is
-not solely a fact-stability instrumentation failure.
+`MDTEST_FILTER=unsigned` run fails that same transport too. Correction from
+2026-11-02: this fixture is in `tests/mdtests.rs::NIGHTLY`. The ordinary gate
+skips it; an explicit filter includes it. The earlier inference that the full
+corpus passes this fixture, and therefore that isolation/proof-context changes
+cause the discrepancy, was incorrect. Investigate the actual transport refusal;
+there is no evidence here of order dependence or an audit-only failure.
+
+The isolated unsigned fixture fails at its written quantified `transport`;
+the neighboring variable-length `char*` fixture passes. Under the explicit
+`uint64` guard, `assumption()` obtains separation of `dst[4]` and `dst[0u64+k]`.
+A single-statement footprint certificate then proves that the latter read
+matches its value at `copied`. Stating this quantified destination frame makes
+the original transport pass, and the separate `copy_u_smart` function still
+verifies with its omitted proof. This is a bounded transport-search miss,
+repaired with existing explicit proof rules, not a term-lowering difference.
+No C, contracts, memory rules or work limits change. All 96 unsigned-filter
+fixtures now pass with fact-stability enabled and zero lowering differences;
+the explicit single-fixture probe and neighboring variable-length fixture also
+pass. The full nightly suite was not run.
 
 The ordinary obligations also exposed a retained-proof bug: a post-execution
 `have` can retain prerequisite proofs before its own certificate. Replay now
