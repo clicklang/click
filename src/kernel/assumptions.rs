@@ -414,7 +414,11 @@ pub(in crate::kernel) fn condition_match_key(
             left,
             right,
         } => {
-            let (left, right) = ordered(canonical(left), canonical(right));
+            // A 32-bit equality compares bits at either signedness, through
+            // σ (rule K6, as its fact identity reads it).
+            let side =
+                |term: &Bitvector32Term| canonical(term.sign_cast32_bits()).constant_word32();
+            let (left, right) = ordered(side(left), side(right));
             ConditionMatchKey::Equal(left, right)
         }
         ConditionTerm::Overflows {
@@ -7247,10 +7251,12 @@ impl PureFactContext {
         // An 8- or 16-bit signedness conversion's sign test, which names a
         // cast no plain comparison of its operand does, also files its
         // operand's half-range test, and the reverse
-        // (`condition_reasoning::sign_bit`). A 32- or 64-bit one needs no
-        // filing: both tests compare one word, and a lookup of either finds
-        // the other.
-        let sign_bit_equivalents = if condition.names_narrow_signedness_cast()
+        // (`condition_reasoning::sign_bit`). So does a 32-bit test of σ,
+        // the 32-bit sign cast, a node of its own: `u as int32 < 0` files
+        // `u > 2^31 - 1`. A 64-bit one needs no filing: both tests compare
+        // one word, and a lookup of either finds the other.
+        let sign_bit_equivalents = if (condition.names_narrow_signedness_cast()
+            || condition.names_sign_cast32())
             && self.condition_facts.get(&condition) != Some(&value)
         {
             self.sign_bit_equivalent_conditions(&condition)
@@ -7338,14 +7344,17 @@ impl PureFactContext {
             );
         }
         if let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } = &condition
             && let Some((left, right)) = bitvector_equality_after_additive_cancellation(left, right)
         {
-            self = self.assume_condition_uncharged(ConditionTerm::equal(left, right), value);
+            self = self.assume_condition_uncharged(
+                ConditionTerm::machine_compare(*format, CompareRelation::Equal, left, right),
+                value,
+            );
         }
         // An equality naming a C narrowing conversion whose operand this
         // context already places inside the destination range also files the

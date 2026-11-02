@@ -32,22 +32,22 @@
 //! kind it holds, so a firing interns at most three nodes and one union, a
 //! union fires a bounded number of pairs, and each pair fires once.
 //!
-//! The 32-bit operators are word operators while the term arena files a
-//! `uint32` operation at `int32` (rule K1), so they read either 32-bit
-//! format here; σ at 32 bits is peeled before the e-graph sees it (K1). A
-//! narrow widening into 32 bits is a node of its own width, linked to its
-//! operand by value (K8, a relation across widths). The rules act on the
-//! 64-bit conversions (`UInt64FromInt64`, the low word, the extensions), on
-//! conversions into and between 8 and 16 bits, on narrow widenings, and on
-//! conversions involving 128-bit intermediates; they reach σ at 32 bits once
-//! it is a node (step 4b).
+//! The 32-bit operators are word operators: an `int32` and a `uint32`
+//! operator of one kind are one e-graph operator over their operands'
+//! classes, so they read either 32-bit format here. σ at 32 bits is a node
+//! of its own (step 4b), so R-dist distributes it over them and R0 inverts
+//! it. A narrow widening into 32 bits is a node of its own width, linked to
+//! its operand by value (K8, a relation across widths). The rules act on σ,
+//! on the 64-bit conversions (`UInt64FromInt64`, the low word, the
+//! extensions), on conversions into and between 8 and 16 bits, on narrow
+//! widenings, and on conversions involving 128-bit intermediates.
 
 use super::*;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{BitvectorBinaryOp as B, BitvectorUnaryOp as U, MachineUnaryOp};
 
-/// The format an operator node computes in: the 32-bit word (rule K1), or
-/// one format.
+/// The format an operator node computes in: the 32-bit word (either 32-bit
+/// format's operator of one kind), or one format.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum OperatorFormat {
     Word32,
@@ -526,7 +526,10 @@ impl TermClasses {
             return;
         }
         let destination_bits = key.destination.format().bits();
-        if op == SignFree::ShiftLeft {
+        // σ keeps the width, and a 32-bit shift is one word operator at
+        // either format, so σ distributes over a shift by any count; a
+        // narrowing only over a constant count below its width.
+        if op == SignFree::ShiftLeft && destination_bits < key.source.bits() {
             let count =
                 right.and_then(|count| self.int32_constants.get(&self.root(count)).copied());
             if !count.is_some_and(|count| count >= 0 && (count as u32) < destination_bits) {
@@ -576,6 +579,18 @@ impl TermClasses {
             return;
         };
         let CastSource::Format(source) = inner_key.source else {
+            // The low word is one legacy node at either 32-bit destination
+            // (`conversion::lower`'s `LowWord`), a word of no signedness, so
+            // σ of a low word is that low word.
+            if let CastSource::Format(outer_source) = outer_key.source
+                && crate::kernel::is_sign_cast32(outer_source, outer_key.destination)
+                && !self.fired_machine_relations.contains(&(outer, inner))
+            {
+                self.fired_machine_relations =
+                    self.fired_machine_relations.with_value((outer, inner));
+                crate::instrumentation::record_deterministic_work(1);
+                pending.push((outer, inner));
+            }
             return;
         };
         let destination = outer_key.destination;
@@ -595,6 +610,13 @@ impl TermClasses {
         self.fired_machine_relations = self.fired_machine_relations.with_value((outer, inner));
         crate::instrumentation::record_deterministic_work(1);
         let operand = self.root(operand);
+        // The low word is one legacy node at either 32-bit destination, a
+        // word of no signedness: the low word of a 32-bit value's extension
+        // is that value's word, whichever signedness reads it.
+        if outer_key.source == CastSource::Word64 && source.format().bits() == 32 {
+            pending.push((outer, operand));
+            return;
+        }
         if let Some(result) = self.intern_conversion(source, destination, operand, pending) {
             pending.push((outer, result));
         }
@@ -721,8 +743,17 @@ impl TermClasses {
     /// The conversion `cast` applies, applied to the class `value`.
     fn convert_like(&mut self, cast: u64, value: u64, pending: &mut PendingUnions) -> Option<u64> {
         match *self.applications.get(&cast)? {
-            Application::Int32Unary(Int32Unary::Cast(source, destination), _) => {
+            Application::Int32Unary(Int32Unary::Cast(source, destination), _)
+                if representation::narrow_carrier_mask(destination).is_some() =>
+            {
                 Some(self.narrow_cast_parts(source, destination, value, pending))
+            }
+            // σ, a node of its own.
+            Application::Int32Unary(Int32Unary::Cast(source, destination), _) => {
+                Some(self.intern_node(Node::Int32Unary(
+                    Int32Unary::Cast(source, destination),
+                    value,
+                )))
             }
             Application::Apply(function, _) => match self.machine_heads.get(&function).copied()? {
                 MachineHead::Unary(U::MachineIntegerCast {
@@ -759,8 +790,11 @@ impl TermClasses {
                 .lowering
             {
                 L::Identity => value,
-                // σ names its operand's word (rule K1).
-                L::SignCast => value,
+                // σ is a node of its own, as the term arena interns it.
+                L::SignCast => self.intern_node(Node::Int32Unary(
+                    Int32Unary::Cast(source, destination),
+                    value,
+                )),
                 L::Cast if representation::narrow_carrier_mask(destination).is_some() => {
                     self.narrow_cast_parts(source, destination, value, pending)
                 }

@@ -180,14 +180,14 @@ pub(crate) fn reverse_equality(equality: &Proposition) -> Option<Proposition> {
         }
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                 relation: CompareRelation::Equal,
                 left: a,
                 right: b,
             },
             true,
         ) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: *format,
             relation: CompareRelation::Equal,
             left: b.clone(),
             right: a.clone(),
@@ -1337,12 +1337,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         right: Box::new(rewrite_term(right)),
                     },
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                        format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                         relation: CompareRelation::Equal,
                         left,
                         right,
                     } => ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: *format,
                         relation: CompareRelation::Equal,
                         left: Box::new(rewrite_term(left)),
                         right: Box::new(rewrite_term(right)),
@@ -1677,12 +1677,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
                         right: Box::new(rewrite_term(goal_right)),
                     },
                     ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                        format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                         relation: CompareRelation::Equal,
                         left: goal_left,
                         right: goal_right,
                     } => ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
+                        format: *format,
                         relation: CompareRelation::Equal,
                         left: Box::new(rewrite_term(goal_left)),
                         right: Box::new(rewrite_term(goal_right)),

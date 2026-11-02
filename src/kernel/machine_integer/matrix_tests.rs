@@ -795,18 +795,6 @@ fn conversion_preserves_every_value_its_destination_holds() {
             let original = observe(source, operand.clone());
             let converted =
                 Bitvector32Term::machine_integer_cast(source, destination, operand.clone());
-            // A narrow widening into 32 bits names its operand's word (rule
-            // K8), so its observation is the observation of that word.
-            if converted.sign_cast32_operand().is_none()
-                && converted.word_cast32_operand().is_some()
-            {
-                assert_eq!(
-                    IntegerTerm::from_machine(destination, converted),
-                    IntegerTerm::from_machine(destination, operand),
-                    "{source:?} -> {destination:?}"
-                );
-                continue;
-            }
             let Some(observed) = IntegerTerm::from_machine(destination, converted) else {
                 panic!("{source:?} -> {destination:?} is observable");
             };
@@ -983,8 +971,6 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
             let operand = value(source, 172_091);
             let cast = conversion::convert_term(source, destination, operand.clone());
             assert!(matches!(cast, Bitvector32Term::MachineIntegerCast { .. }));
-            assert_eq!(cast.word32(), &cast, "{source:?} -> {destination:?}");
-            assert_eq!(cast.word_cast32_operand(), None);
             assert_eq!(cast.narrow_widening32_operand(), Some((source, &operand)));
             assert_eq!(cast.clone().into_word32(), cast);
             assert_ne!(
@@ -1006,15 +992,11 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
             let operand = value(source, 172_092);
             let converted = conversion::convert_term(source, destination, operand.clone());
             assert!(
-                converted.word_cast32_operand().is_none(),
+                converted.sign_cast32_operand().is_none(),
                 "{source:?} -> {destination:?}"
             );
             if destination != source && destination.format().bits() < 32 {
-                assert_ne!(
-                    converted.word32(),
-                    &operand,
-                    "{source:?} -> {destination:?}"
-                );
+                assert_ne!(&converted, &operand, "{source:?} -> {destination:?}");
             }
         }
     }

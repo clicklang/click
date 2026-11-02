@@ -3560,8 +3560,9 @@ pub(crate) fn canonicalized_offset_index_term(
 ) -> Bitvector32Term {
     // An element index is a 32-bit word in `int32` index coordinates, so
     // the address takes the index's word: a sign-cleared `unsigned` index's
-    // σ to `int32` indexes by the word itself (rule K3).
-    let bits = bits.into_word32();
+    // σ to `int32` indexes by the word itself (rule K3, kept inside an
+    // address until index coordinates are typed, decision G1).
+    let bits = bits.into_index_word32();
     if !term_mentions_a_memory_load(&bits) {
         return bits;
     }

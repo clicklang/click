@@ -654,8 +654,12 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
     let second_quantity = Bitvector32Term::Variable(Variable(992_002));
     let total = Bitvector32Term::add(first_quantity.clone(), second_quantity.clone());
     let samples = [16, 64, 256].map(|size| {
-        // Keep term-bridge imports cold at every sample size.
+        // Keep term-bridge imports and canonical forms cold at every sample
+        // size: a sign-bit equivalent names σ, whose canonical form is
+        // built on a cache miss.
         crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::eval::clear_load_canonicalization_caches();
+        crate::kernel::memory_provenance::clear_canonical_form_caches();
         let mut entry = CreationEvents::new();
         let mut facts = PureFactContext::new();
         for index in 0..size {

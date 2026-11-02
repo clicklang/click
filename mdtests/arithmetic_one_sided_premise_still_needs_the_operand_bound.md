@@ -38,5 +38,5 @@ int32 next_index(int32 i, int32 n) {
 ```
 
 ```expect
-fail: to_integer((i + 1) as uint32) <= 1073741823u32
+fail: goal: (i + 1) as uint32 <= 1073741823u32
 ```

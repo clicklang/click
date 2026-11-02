@@ -376,10 +376,10 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order_and_withdraws() {
 }
 
 /// R-mem: each 32-bit read is its own load, and the two reads of one cell
-/// at the two signednesses are related by σ, which is the word identity
-/// while rule K1 holds: the graph proves them equal, and reads of two cells
-/// stay distinct until their addresses are. Registering either read is one
-/// application, whatever else the graph holds.
+/// at the two signednesses are related by σ, a node of its own: the
+/// `uint32` read is σ of the `int32` read, and reads of two cells stay
+/// distinct until their addresses are. Relating them is the same work
+/// whatever else the graph holds.
 #[test]
 fn reads_of_one_cell_at_both_signednesses_are_related() {
     let _session = crate::kernel::VerificationSession::enter();
@@ -392,22 +392,36 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
     let signed = read(&address(1), crate::kernel::LoadKind::Int32);
     let unsigned = read(&address(1), crate::kernel::LoadKind::UInt32);
     let other = read(&address(2), crate::kernel::LoadKind::UInt32);
+    let sigma = |value| {
+        Bitvector32Term::sign_cast32(
+            crate::kernel::MachineIntegerType::Int32,
+            crate::kernel::MachineIntegerType::UInt32,
+            value,
+        )
+    };
     assert_ne!(signed, unsigned, "each read is its own load");
     let mut samples = Vec::new();
     for unrelated in [4_u64, 64, 512] {
-        // Keep term-bridge imports cold at every sample size.
+        // Keep term-bridge imports and canonical forms cold at every sample
+        // size.
         crate::kernel::clear_integer_bridge_memo();
+        crate::kernel::eval::clear_load_canonicalization_caches();
+        crate::kernel::memory_provenance::clear_canonical_form_caches();
         let mut graph = EqualityGraph::default();
         for index in 0..unrelated {
             graph.add_int32_equality(&var(500 + index), &var(5_000 + index));
         }
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            graph.are_int32_equal(&signed, &unsigned)
+            graph.are_int32_equal(&sigma(signed.clone()), &unsigned)
         });
-        assert!(equal, "R-mem relates the two reads of one cell");
+        assert!(equal, "R-mem relates the two reads of one cell by σ");
+        assert!(
+            !graph.are_int32_equal(&unsigned, &signed),
+            "σ is a node of its own"
+        );
         assert!(!graph.are_int32_equal(&unsigned, &other));
         graph.add_int32_equality(&var(1), &var(2));
-        assert!(graph.are_int32_equal(&signed, &other));
+        assert!(graph.are_int32_equal(&sigma(signed.clone()), &other));
         samples.push(work);
     }
     assert!(

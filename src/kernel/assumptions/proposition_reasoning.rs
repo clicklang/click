@@ -89,13 +89,13 @@ pub(super) fn canonical_contradiction_condition(condition: &ConditionTerm) -> Co
 
     match condition {
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } => {
             let (left, right) = ordered(left.as_ref(), right.as_ref());
-            ConditionTerm::equal(left, right)
+            ConditionTerm::machine_compare(*format, CompareRelation::Equal, left, right)
         }
         ConditionTerm::PointerOffsetEqual(left, right) => {
             let (left, right) = ordered(left.as_ref(), right.as_ref());

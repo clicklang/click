@@ -690,6 +690,9 @@ pub(super) struct TermClasses {
     )>,
     // Signed byte reads still to be related to their unsigned read (R-mem).
     pending_signed_byte_reads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
+    // `uint32` reads still to be related to their cell's `int32` read by σ
+    // (R-mem at 32 bits).
+    pending_unsigned_word_reads: Vec<(u64, crate::kernel::SharedCMemory, crate::kernel::Pointer)>,
     // 8- and 16-bit reads whose load application is still to be registered
     // (`enqueue_narrow_load`).
     pending_narrow_loads: Vec<(
@@ -1610,21 +1613,27 @@ impl TermClasses {
         };
         // Only a four-byte integer read is a word load application: a
         // narrower read named at an address a wider read was recorded at
-        // carries that wider width, and is still another value. A read of
-        // either 32-bit signedness reads the cell's word, so the two reads
-        // of one cell are one application (R-mem, with σ the word identity
-        // of rule K1).
+        // carries that wider width, and is still another value. The `int32`
+        // read of a cell is its word load application; its `uint32` read is
+        // σ of that read (R-mem at 32 bits, σ a node of its own).
         if !crate::kernel::is_load_variable(variable)
             || self.registered_int32_loads.contains(&id)
             || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
-            || !crate::kernel::registered_load_kind_for_variable(variable)
-                .is_some_and(crate::kernel::LoadKind::is_word32)
         {
+            return;
+        }
+        let kind = crate::kernel::registered_load_kind_for_variable(variable);
+        if !kind.is_some_and(crate::kernel::LoadKind::is_word32) {
             return;
         }
         let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
             return;
         };
+        if kind == Some(crate::kernel::LoadKind::UInt32) {
+            self.registered_int32_loads = self.registered_int32_loads.with_value(id);
+            self.pending_unsigned_word_reads.push((id, memory, pointer));
+            return;
+        }
         // Start at the registered defining snapshot, not the mutable live
         // origin. Registration below also retains the exact source equation
         // already recorded by a canonical projection's producer.
@@ -1723,6 +1732,30 @@ impl TermClasses {
                 crate::instrumentation::record_deterministic_work(1);
                 let value = self.intern_pointer_call_identity(&application);
                 self.close_with_affine_definition(vec![(identity, value)], true);
+                continue;
+            }
+            // R-mem at 32 bits: a `uint32` read is σ of its cell's `int32`
+            // read, whose own registration makes it the cell's word load
+            // application. One read interned, one σ node, one union.
+            if let Some((unsigned, memory, pointer)) = self.pending_unsigned_word_reads.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                let signed = crate::kernel::Bitvector32Term::Variable(
+                    crate::kernel::eval::load_variable_for_exact_cell(
+                        &memory,
+                        &pointer,
+                        crate::kernel::LoadKind::Int32,
+                        4,
+                    ),
+                );
+                let signed = self.intern_machine(&signed, false);
+                let cast = self.intern_node(Node::Int32Unary(
+                    Int32Unary::Cast(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineIntegerType::UInt32,
+                    ),
+                    signed,
+                ));
+                self.close(vec![(unsigned, cast)]);
                 continue;
             }
             if let Some((signed, memory, pointer)) = self.pending_signed_byte_reads.pop() {
@@ -1876,7 +1909,16 @@ impl TermClasses {
             use crate::kernel::CValue as V;
             found = match (stored, kind) {
                 (Some(V::Int64(value) | V::UInt64(value)), CellRead::UInt64)
-                | (Some(V::Int32(value) | V::UInt32(value)), CellRead::Int32) => Some(Ok(value)),
+                | (Some(V::Int32(value)), CellRead::Int32) => Some(Ok(value)),
+                // The `int32` read of a cell storing a `uint32` value is σ of
+                // that value (rule K5's reinterpretation, σ a node).
+                (Some(V::UInt32(value)), CellRead::Int32) => {
+                    Some(Ok(crate::kernel::Bitvector32Term::sign_cast32(
+                        crate::kernel::MachineIntegerType::UInt32,
+                        crate::kernel::MachineIntegerType::Int32,
+                        value,
+                    )))
+                }
                 (
                     Some(V::Bool(value) | V::Int8(value) | V::UInt8(value)),
                     CellRead::Narrow(crate::kernel::CarrierWidth::Bits8),

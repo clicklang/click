@@ -76,10 +76,10 @@ pub use kernel_term::{
 };
 pub(crate) use kernel_term::{KernelTermExport, KernelTermImport, clear_integer_bridge_memo};
 mod machine_integer;
-pub(crate) use machine_integer::is_narrow_widening32;
 pub use machine_integer::{
     MachineIntegerConstant, MachineIntegerDivisionError, MachineIntegerFormat, MachineIntegerWidth,
 };
+pub(crate) use machine_integer::{is_narrow_widening32, is_sign_cast32};
 mod remainder_rules;
 pub(crate) use integer::MachineOperandView;
 pub use integer::{
@@ -1122,7 +1122,8 @@ enum ConditionIdentity<'a> {
 
 /// A comparison side as its fact identity reads it
 /// ([`ConditionTerm::comparison_fact`]): a term, or the value of a
-/// constant of the comparison's 8- or 16-bit identity format.
+/// constant of the comparison's identity format (an 8- or 16-bit format, or
+/// `int32` for a 32-bit equality's constant of either spelling).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum ComparisonSide<'a> {
     Term(&'a Bitvector32Term),
@@ -1135,6 +1136,9 @@ impl<'a> ComparisonSide<'a> {
     pub(crate) fn term(self, format: MachineIntegerType) -> std::borrow::Cow<'a, Bitvector32Term> {
         match self {
             Self::Term(term) => std::borrow::Cow::Borrowed(term),
+            Self::Value(value) if format.format().bits() == 32 => {
+                std::borrow::Cow::Owned(Bitvector32Term::constant_at32(format, value as u32))
+            }
             Self::Value(value) => std::borrow::Cow::Owned(Bitvector32Term::MachineIntegerConstant(
                 MachineIntegerConstant::from_signed(format.format(), value)
                     .expect("an identity value lies in its narrow format's range"),
@@ -1160,6 +1164,13 @@ thread_local! {
 /// operands. Terms keep their written spelling; only identity, hashing,
 /// order and the fact keys read this form. One match on each side; no
 /// clone.
+///
+/// A 32-bit equality compares bits, which σ keeps (rule K6, a lookup-level
+/// equivalence since σ is a node of its own): it is identified at `int32`
+/// whichever signedness it is written at, each side read through one σ and
+/// a constant of either spelling read as its bits. So `u == v` at `uint32`,
+/// `u as int32 == v as int32` and `u == x as uint32` with `v == x as
+/// uint32` are one fact. The terms keep their format and their σ.
 fn comparison_identity<'a>(
     format: MachineIntegerType,
     relation: CompareRelation,
@@ -1170,6 +1181,18 @@ fn comparison_identity<'a>(
     COMPARISON_IDENTITY_VISITS.with(|visits| visits.set(visits.get() + 1));
     let format = ConditionTerm::fact_format(format, relation);
     let bits = format.format().bits();
+    let (left, right) = if relation == CompareRelation::Equal && bits == 32 {
+        (left.sign_cast32_bits(), right.sign_cast32_bits())
+    } else {
+        (left, right)
+    };
+    // A 32-bit equality's constant side, of either spelling, as its bits.
+    let side = |term: &'a Bitvector32Term| match term.constant32() {
+        Some(bits) if relation == CompareRelation::Equal && format == MachineIntegerType::Int32 => {
+            ComparisonSide::Value(i128::from(bits as i32))
+        }
+        _ => ComparisonSide::Term(term),
+    };
     if bits < 32 {
         let side = |term: &'a Bitvector32Term| match term {
             Bitvector32Term::MachineIntegerConstant(constant)
@@ -1199,6 +1222,12 @@ fn comparison_identity<'a>(
                 }
             };
             let side = |term: &'a Bitvector32Term| match term {
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
+                    if relation == CompareRelation::Equal =>
+                {
+                    let value = i128::from(*value as i32);
+                    (low <= value && value <= high).then_some(ComparisonSide::Value(value))
+                }
                 Bitvector32Term::Constant(value) => {
                     let value = i128::from(*value as i32);
                     (low <= value && value <= high).then_some(ComparisonSide::Value(value))
@@ -1215,17 +1244,15 @@ fn comparison_identity<'a>(
             }
         }
     }
-    (
-        format,
-        ComparisonSide::Term(left),
-        ComparisonSide::Term(right),
-    )
+    (format, side(left), side(right))
 }
 
 impl ConditionTerm {
-    /// The format a comparison is filed at as a fact: a 32-bit equality is
-    /// filed at `int32` whichever signedness reads it (rule K6); every other
-    /// comparison at its own format.
+    /// The format a comparison is identified at as a fact: a 32-bit
+    /// equality at `int32` whichever signedness it is written at (rule K6,
+    /// a lookup-level equivalence; [`comparison_identity`] also reads its
+    /// sides through σ); every other comparison at its own format. The
+    /// term keeps the format it is written at.
     pub(crate) fn fact_format(
         format: MachineIntegerType,
         relation: CompareRelation,

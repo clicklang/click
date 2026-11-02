@@ -956,11 +956,11 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
                 .unwrap_or(condition)
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
-        } => ConditionTerm::equal(*left, *right),
+        } => ConditionTerm::machine_compare(format, CompareRelation::Equal, *left, *right),
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,

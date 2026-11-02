@@ -1332,7 +1332,11 @@ pub(crate) fn machine_value_reading(
     value: &Bitvector32Term,
 ) -> Option<ValueReading<'_>> {
     let value = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
-        value.word32()
+        // Rule W: σ keeps its operand's 32 bits, so σ(x) observed at
+        // either 32-bit format is `x` read there.
+        value
+            .sign_cast32_operand()
+            .map_or(value, |(_, operand)| operand)
     } else {
         value
     };

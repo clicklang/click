@@ -9789,6 +9789,11 @@ fn universal_consequents_ignore_unrelated_propositions() {
     let work = [16_usize, 64, 256]
         .into_iter()
         .map(|unrelated| {
+            // Canonical forms stay cold at every sample size: the sign-bit
+            // equivalent of `x < 0` names σ, whose canonical form is built
+            // on a cache miss.
+            crate::kernel::eval::clear_load_canonicalization_caches();
+            crate::kernel::memory_provenance::clear_canonical_form_caches();
             let mut assumptions = PureFactContext::new().assume_proposition(universal.clone());
             for index in 0..unrelated {
                 let unrelated = Pointer {

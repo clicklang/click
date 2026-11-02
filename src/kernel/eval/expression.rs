@@ -1133,13 +1133,8 @@ fn checked_narrowing_identity_readings(
     else {
         return None;
     };
-    // A σ operand's word is its operand (rule K1), as is a widened narrow
-    // value's (rule K8): the conversion of either is built as the
-    // conversion of `w` from `w`'s format.
-    let (word_source, word) = operand
-        .word_cast32_operand()
-        .unwrap_or((source_type, operand));
-    if *cast_source != word_source || value.as_ref() != word {
+    // The conversion names the operand as written, σ included.
+    if *cast_source != source_type || value.as_ref() != operand {
         return None;
     }
 

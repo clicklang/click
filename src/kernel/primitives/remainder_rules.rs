@@ -37,17 +37,17 @@ impl C {
             binary_term!(Int32, Divide, n, d)
             | binary_term!(UInt32, Divide, n, d)
             | binary_term!(Int32, Remainder, n, d)
-            | binary_term!(UInt32, Remainder, n, d) => (n, d),
+            | binary_term!(UInt32, Remainder, n, d) => (n.as_ref().clone(), d.as_ref().clone()),
             _ => return None,
         };
         let mut guards = vec![
-            C::signed_less_equal(B::Constant(0), n.as_ref().clone()),
-            C::signed_less_than(B::Constant(0), d.as_ref().clone()),
+            C::signed_less_equal(B::Constant(0), n.clone()),
+            C::signed_less_than(B::Constant(0), d),
         ];
         if let Some(upper) = upper
-            && n.as_ref() != upper
+            && &n != upper
         {
-            guards.push(C::signed_less_equal(n.as_ref().clone(), upper.clone()));
+            guards.push(C::signed_less_equal(n, upper.clone()));
         }
         Some(guards)
     }
@@ -161,7 +161,17 @@ impl B {
                 if k <= 0 {
                     return None;
                 }
-                if let B::UInt32From64(wide) = n.as_ref()
+                // The low word is a word of no signedness; σ of it, `x as
+                // uint32 as int32`, has its bits.
+                let low = match n.as_ref() {
+                    B::MachineIntegerCast {
+                        value,
+                        source: MachineIntegerType::UInt32,
+                        destination: MachineIntegerType::Int32,
+                    } => value.as_ref(),
+                    n => n,
+                };
+                if let B::UInt32From64(wide) = low
                     && let B::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Subtract,

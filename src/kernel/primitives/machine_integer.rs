@@ -515,42 +515,6 @@ impl Bitvector32Term {
         Self::machine_integer_cast(source, destination, value)
     }
 
-    /// The 32-bit word this term names. σ(x) names `x`'s word (rule K1), and
-    /// so does the widening of a narrow `x` into `int32` or `uint32` (rule
-    /// K8), so both are peeled; every other term is its own word. One match on the
-    /// root: no scan, no clone. Nodes that read a 32-bit word (the 32-bit
-    /// operators, comparisons and extensions, Integer observations, the
-    /// e-graph and the difference graph) read their operands through it.
-    #[track_caller]
-    pub(crate) fn word32(&self) -> &Self {
-        match self {
-            Self::MachineIntegerCast {
-                value,
-                source,
-                destination,
-            } if is_word_cast32(*source, *destination) => {
-                record_word_cast_peel(*source, std::panic::Location::caller());
-                value
-            }
-            term => term,
-        }
-    }
-
-    /// The source format and operand of a conversion whose 32-bit word is
-    /// its operand's (σ, rule K1, or a narrow widening, rule K8), if this
-    /// term is one: the conversion [`Self::word32`] peels.
-    pub(crate) fn word_cast32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
-        match self {
-            Self::MachineIntegerCast {
-                value,
-                source,
-                destination,
-            } if is_word_cast32(*source, *destination) => Some((*source, value)),
-            _ => None,
-        }
-    }
-
-    /// The source format and operand of a σ, if this term is one.
     /// The source format and operand of a 32-bit widening of an 8- or
     /// 16-bit value, if this term is one: a node of its own, whose word is
     /// its operand's (rule K8, a relation). One match on the root.
@@ -565,6 +529,18 @@ impl Bitvector32Term {
         }
     }
 
+    /// The term whose 32 bits this term's are, read through one σ: σ(x)'s
+    /// operand `x`, every other term itself. A 32-bit equality compares
+    /// bits, so its fact identity and keys read each side through this
+    /// (rule K6, a lookup-level equivalence); terms keep their σ. One match
+    /// on the root.
+    pub(crate) fn sign_cast32_bits(&self) -> &Self {
+        self.sign_cast32_operand()
+            .map_or(self, |(_, operand)| operand)
+    }
+
+    /// The source format and operand of a σ, if this term is one. One
+    /// match on the root.
     pub(crate) fn sign_cast32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
         match self {
             Self::MachineIntegerCast {
@@ -640,27 +616,35 @@ impl Bitvector32Term {
         }
     }
 
-    /// [`Self::word32`] of an owned term.
+    /// A `uint32` constant as its word's `Constant`; every other term,
+    /// σ included, unchanged. The signed 32-bit operator, comparison and
+    /// overflow constructors read their operands through it. σ is a node of
+    /// its own ("Every format its own nodes", step 4b); a 32-bit constant
+    /// keeps one spelling per format until constants carry their format
+    /// (decision G9). One match on the root.
     #[track_caller]
     pub(crate) fn into_word32(self) -> Self {
+        self.constant_word32()
+    }
+
+    /// The word an element index names in `int32` index coordinates: σ is
+    /// peeled, so a sign-cleared `unsigned` index's σ to `int32` indexes by
+    /// its word, and a `uint32` constant is its word's `Constant`. Index
+    /// coordinates stay words, the address-only exception decision G1 names
+    /// (`design/machine-integers.md`); everywhere else σ is a node of its
+    /// own. One match on the root.
+    #[track_caller]
+    pub(crate) fn into_index_word32(self) -> Self {
         match self {
             Self::MachineIntegerCast {
                 value,
                 source,
                 destination,
-            } if is_word_cast32(source, destination) => {
-                record_word_cast_peel(source, std::panic::Location::caller());
+            } if is_sign_cast32(source, destination) => {
+                format_audit::record(WordIdentity::SignCastPeeled, std::panic::Location::caller());
                 *value
             }
-            // A `uint32` constant's word is the `Constant` of its bits (K1).
-            Self::UInt32Constant(value) => {
-                format_audit::record(
-                    WordIdentity::UInt32ConstantPeeled,
-                    std::panic::Location::caller(),
-                );
-                Self::Constant(value)
-            }
-            term => term,
+            term => term.constant_word32(),
         }
     }
 
@@ -731,20 +715,6 @@ impl Bitvector32Term {
     }
 }
 
-/// Whether a conversion from `source` to `destination` names its operand's
-/// 32-bit word: the sign cast σ (rule K1), or the widening of an 8- or
-/// 16-bit value into `int32` or `uint32` (rule K8,
-/// `design/machine-integers.md`, Decisions, 2026-10-26).
-///
-/// K8's soundness: a narrow value's word is the canonical carrier of its
-/// value `n`, the sign or zero extension to 32 bits (the narrow-value
-/// invariant, `docs/internals/kernel.md`), and `n` fits the 32-bit format,
-/// whose word for `n` is `n mod 2^32`: the same 32 bits. A widening into 64
-/// bits keeps its legacy extension node over that word.
-pub(crate) fn is_word_cast32(source: MachineIntegerType, destination: MachineIntegerType) -> bool {
-    is_sign_cast32(source, destination)
-}
-
 /// Whether a conversion from `source` to `destination` widens an 8- or
 /// 16-bit value into `int32` or `uint32`. Where the widening is a node (a
 /// value at rest; the constructors still peel it inside an operator,
@@ -757,19 +727,6 @@ pub(crate) fn is_narrow_widening32(
     destination: MachineIntegerType,
 ) -> bool {
     source.format().bits() < 32 && destination.format().bits() == 32
-}
-
-/// Records a peeled word cast for the signedness audit: σ, or a narrow
-/// widening when the source is narrower than 32 bits.
-fn record_word_cast_peel(source: MachineIntegerType, site: &'static std::panic::Location<'static>) {
-    format_audit::record(
-        if source.format().bits() < 32 {
-            WordIdentity::WideningPeeled
-        } else {
-            WordIdentity::SignCastPeeled
-        },
-        site,
-    );
 }
 
 /// Whether a conversion from `source` to `destination` is the 32-bit sign

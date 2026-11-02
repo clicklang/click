@@ -217,7 +217,7 @@ impl PureFactContext {
                 right,
             } if left == right => Some(true),
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -234,7 +234,12 @@ impl PureFactContext {
                 if let Some((left, right)) =
                     bitvector_equality_after_additive_cancellation(&left, &right)
                 {
-                    return self.decide(&ConditionTerm::equal(left, right));
+                    return self.decide(&ConditionTerm::machine_compare(
+                        *format,
+                        CompareRelation::Equal,
+                        left,
+                        right,
+                    ));
                 }
 
                 if let Some(equal) = self.exact_signed_intervals_equal(&left, &right) {
