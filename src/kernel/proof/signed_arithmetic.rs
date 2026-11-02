@@ -251,6 +251,19 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
                 });
                 pending.push(value);
             }
+            // σ, the 32-bit sign cast, is a node of its own: `u as int32` is
+            // an opaque observation of its operand, as a variable is.
+            Bitvector32Term::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } if crate::kernel::is_sign_cast32(*source, *destination) => {
+                push_token!(SignedArithmeticAtomToken::Cast {
+                    source: *source,
+                    destination: *destination,
+                });
+                pending.push(value);
+            }
             term => {
                 let (operator, left, right) = signed_binary(term)?;
                 push_token!(SignedArithmeticAtomToken::Binary(operator));
@@ -2849,9 +2862,27 @@ fn comparison_proposition_matches(
         ) else {
             return false;
         };
-        return held_strict == strict
-            && terms.equivalent_explicit(left, lower)
-            && terms.equivalent_explicit(right, upper);
+        // The certificate's terms are `int32` words, and `ule` compares
+        // their `uint32` readings, σ of each. A `uint32` side is σ of an
+        // `int32` term the certificate names (σ is a node of its own), or a
+        // `uint32` term the certificate names through σ (`u as int32`); a
+        // constant is its bits.
+        let reads = |index: usize, term: &Bitvector32Term| match term.sign_cast32_operand() {
+            Some((MachineIntegerType::Int32, operand)) => terms.equivalent_explicit(index, operand),
+            _ => {
+                terms.equivalent_explicit(index, term)
+                    || term.as_const().is_none()
+                        && terms.equivalent_explicit(
+                            index,
+                            &Bitvector32Term::sign_cast32(
+                                MachineIntegerType::UInt32,
+                                MachineIntegerType::Int32,
+                                term.clone(),
+                            ),
+                        )
+            }
+        };
+        return held_strict == strict && reads(left, lower) && reads(right, upper);
     }
     let (expected_left, expected_right) = match (comparison, condition, *value) {
         (

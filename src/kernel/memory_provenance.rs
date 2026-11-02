@@ -4708,14 +4708,14 @@ pub(crate) fn rewrite_condition_through_certified_stores(
             }
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: *format,
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -7122,14 +7122,14 @@ pub(super) fn condition_with_canonicalized_loads(
             }
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } => {
             let (left, right) = binary(left, right);
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format: *format,
                 relation: CompareRelation::Equal,
                 left,
                 right,

@@ -4044,6 +4044,43 @@ fn unsigned_extent_bound_below_the_sign_bit_is_decided_by_signed_order() {
     assert_eq!(above.decide(&fits), Some(false));
 }
 
+/// A `uint32` bound below the sign bit on σ of a signed word, `(y as uint32)
+/// <= c`, files its signed range on `y` itself: σ keeps `y`'s bits, so the
+/// range is read through σ (one match at the root), never as a signed
+/// comparison of the `uint32` term σ(y).
+#[test]
+fn a_sign_cast_bound_below_the_sign_bit_files_its_operand_s_signed_range() {
+    let y = Bitvector32Term::Variable(Variable(89_210));
+    let sigma = Bitvector32Term::sign_cast32(
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        y.clone(),
+    );
+    let limit = Bitvector32Term::Constant(1_073_741_823);
+    let context = PureFactContext::new().assume_condition(
+        ConditionTerm::unsigned_less_equal(sigma.clone(), limit.clone()),
+        true,
+    );
+    let zero = || Bitvector32Term::Constant(0);
+    let filed = |condition: ConditionTerm| {
+        context.contains_assumed_exact(&Proposition::ConditionIs(condition, true))
+    };
+    assert!(filed(ConditionTerm::signed_less_equal(zero(), y.clone())));
+    assert!(filed(ConditionTerm::signed_less_equal(
+        y.clone(),
+        limit.clone()
+    )));
+    assert!(!filed(ConditionTerm::signed_less_equal(
+        zero(),
+        sigma.clone()
+    )));
+    assert!(!filed(ConditionTerm::signed_less_equal(sigma, limit)));
+    assert_eq!(
+        context.decide(&ConditionTerm::signed_less_equal(zero(), y)),
+        Some(true)
+    );
+}
+
 /// A `uint32` order fact answers its mirrored spelling, as a signed one
 /// does, and never the signed order of the same words.
 #[test]
@@ -9789,6 +9826,11 @@ fn universal_consequents_ignore_unrelated_propositions() {
     let work = [16_usize, 64, 256]
         .into_iter()
         .map(|unrelated| {
+            // Canonical forms stay cold at every sample size: the sign-bit
+            // equivalent of `x < 0` names σ, whose canonical form is built
+            // on a cache miss.
+            crate::kernel::eval::clear_load_canonicalization_caches();
+            crate::kernel::memory_provenance::clear_canonical_form_caches();
             let mut assumptions = PureFactContext::new().assume_proposition(universal.clone());
             for index in 0..unrelated {
                 let unrelated = Pointer {

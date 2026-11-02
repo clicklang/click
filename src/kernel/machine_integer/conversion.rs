@@ -278,7 +278,7 @@ pub(crate) fn widened_narrow_word(
         (16 | 32, View::Shared(_)) => Some(view),
         (16 | 32, View::Legacy(word)) => Some(View::Legacy(
             word.narrow_widening32_operand()
-                .map_or(word.word32(), |(_, operand)| operand),
+                .map_or(word, |(_, operand)| operand),
         )),
         (
             64,
@@ -327,6 +327,50 @@ pub(crate) fn narrow_widening(observed: &IntegerTerm, original: &IntegerTerm) ->
 }
 
 pub(crate) fn cast(
+    observed: &IntegerTerm,
+    original: &IntegerTerm,
+) -> Option<crate::kernel::primitives::MachineIntegerFormat> {
+    cast_through_readings(observed, original)
+        .or_else(|| cast_of_written_sign_cast(observed, original))
+}
+
+/// [`cast`] of an `original` that observes σ as written: rule W reads it
+/// as σ's operand, but a conversion of the original as written names σ
+/// itself (`count as uint32 as int32 as uint64` converts `count as uint32
+/// as int32`, σ of the low word). The observed conversion is compared with
+/// the conversion of the written term; the caller still checks the bounds
+/// on the original. One match on the original's root and one conversion.
+fn cast_of_written_sign_cast(
+    observed: &IntegerTerm,
+    original: &IntegerTerm,
+) -> Option<crate::kernel::primitives::MachineIntegerFormat> {
+    let (IntegerTerm::Machine(machine), IntegerTerm::Machine(written)) =
+        (observed.value_read(), original)
+    else {
+        return None;
+    };
+    let crate::kernel::MachineOperandView::Legacy(_) = written.operand_view() else {
+        return None;
+    };
+    written.value().sign_cast32_operand()?;
+    if !representation::has_legacy_conversions(written.ty())
+        || !representation::has_legacy_conversions(machine.ty())
+    {
+        return None;
+    }
+    let converted = convert_value(
+        written.ty().value_from_term(written.value().clone()),
+        machine.ty(),
+    )?;
+    (matches_converted_value(machine, &converted)
+        || matches!(
+            converted.numeric_value(),
+            crate::kernel::integer_c_value!(term) if matches_word(machine, term)
+        ))
+    .then(|| machine.ty().format())
+}
+
+fn cast_through_readings(
     observed: &IntegerTerm,
     original: &IntegerTerm,
 ) -> Option<crate::kernel::primitives::MachineIntegerFormat> {
@@ -436,7 +480,7 @@ pub(crate) fn cast(
             || legacy.as_ref().is_some_and(|value| {
                 matches!(
                     value.numeric_value(),
-                    crate::kernel::integer_c_value!(term) if matches_word(machine, term.word32())
+                    crate::kernel::integer_c_value!(term) if matches_word(machine, term)
                         || machine.operand_view().literal().and_then(|value| value.constant32()).is_some_and(|bits| term.constant32() == Some(bits))
                 )
             })
@@ -716,7 +760,7 @@ mod shared_operand_tests {
             || legacy.as_ref().is_some_and(|value| {
                 matches!(
                     value.numeric_value(),
-                    crate::kernel::integer_c_value!(term) if term.word32() == machine.value()
+                    crate::kernel::integer_c_value!(term) if term == machine.value()
                         || machine.value().constant32().is_some_and(|bits| term.constant32() == Some(bits))
                 )
             })

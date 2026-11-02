@@ -9,9 +9,12 @@
 //! - `(uintN)x > 2^(N-1) - 1` holds exactly when `x < 0`, for `x` signed,
 //!   and `(uintN)x <= 2^(N-1) - 1` exactly when `x >= 0`.
 //!
-//! At 32 and 64 bits a conversion reuses the word (a 64-bit unsigned
-//! reading of a signed value wraps it in `UInt64FromInt64`), so the rule is
-//! the identity of one word's two readings and holds for every word. At 8
+//! At 32 bits the conversion is σ, a node of its own: the equivalent reads
+//! the operand through σ, which the constructor folds against a σ the
+//! operand already is, so `u as int32 < 0` and `u > 2^31 - 1` are each
+//! other's equivalents. At 64 bits a conversion reuses the word (a 64-bit
+//! unsigned reading of a signed value wraps it in `UInt64FromInt64`). At 32
+//! and 64 bits the rule holds for every word. At 8
 //! and 16 bits the conversion is a `MachineIntegerCast` of a canonical
 //! carrier, read in an `int32` comparison; the rule holds when the operand
 //! lies in its own format's range, which the context must decide.
@@ -19,9 +22,9 @@
 //! [`PureFactContext::decide_by_sign_bit`] answers one such comparison by
 //! deciding its equivalent, and a lookup of a known condition also looks up
 //! its equivalent: one rewrite of the root and one decision or lookup, with
-//! no visit of any other fact. An 8- or 16-bit sign test names a cast no
-//! plain comparison of its operand does, so assuming one also files its
-//! operand's half-range test. The equivalent of the equivalent is the
+//! no visit of any other fact. An 8- or 16-bit sign test, or a 32-bit test
+//! of σ, names a cast no plain comparison of its operand does, so assuming
+//! one also files its operand's half-range test. The equivalent of the equivalent is the
 //! original comparison, so the rule is not applied again inside it.
 
 use super::*;
@@ -62,6 +65,28 @@ fn constant(term: &Bitvector32Term) -> Option<i64> {
         Bitvector32Term::Int64Constant(value) => Some(*value),
         Bitvector32Term::UInt64Constant(value) => i64::try_from(*value).ok(),
         _ => None,
+    }
+}
+
+/// σ of `operand` as `Bitvector32Term::sign_cast32` builds it (a constant
+/// in the destination's spelling, σ of σ undone), read off the root with
+/// no charge: the rule's equivalent is a reading of the condition, and a
+/// decision memoized after its first use must cost the same as before it.
+fn sign_cast(source: Ty, destination: Ty, operand: Bitvector32Term) -> Bitvector32Term {
+    match operand {
+        Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {
+            Bitvector32Term::constant_at32(destination, bits)
+        }
+        Bitvector32Term::MachineIntegerCast {
+            value,
+            source: inner_source,
+            destination: inner_destination,
+        } if inner_source == destination && inner_destination == source => *value,
+        operand => Bitvector32Term::MachineIntegerCast {
+            value: Box::new(operand),
+            source,
+            destination,
+        },
     }
 }
 
@@ -291,11 +316,14 @@ impl PureFactContext {
                     unsigned(Bitvector32Term::UInt64FromInt64(Box::new(operand))),
                 ]
             } else {
+                // The word read unsigned is σ of the operand, which undoes a
+                // σ the operand is (`u as int32 < 0` is `u > 2^31 - 1`).
                 let maximum = constant(i64::from(i32::MAX));
+                let word = sign_cast(Ty::Int32, Ty::UInt32, operand);
                 vec![if negative {
-                    ConditionTerm::unsigned_greater_than(operand, maximum)
+                    ConditionTerm::unsigned_greater_than(word, maximum)
                 } else {
-                    ConditionTerm::unsigned_less_equal(operand, maximum)
+                    ConditionTerm::unsigned_less_equal(word, maximum)
                 }]
             }),
             (false, Test::Half { above }) => Some(if wide {
@@ -310,10 +338,13 @@ impl PureFactContext {
                     ConditionTerm::int64_signed_less_equal(zero, operand)
                 }]
             } else {
+                // The word read signed is σ of the operand, which undoes a
+                // σ the operand is (`x as uint32 > 2^31 - 1` is `x < 0`).
+                let word = sign_cast(Ty::UInt32, Ty::Int32, operand);
                 vec![if above {
-                    ConditionTerm::signed_less_than(operand, constant(0))
+                    ConditionTerm::signed_less_than(word, constant(0))
                 } else {
-                    ConditionTerm::signed_less_equal(constant(0), operand)
+                    ConditionTerm::signed_less_equal(constant(0), word)
                 }]
             }),
             _ => None,
@@ -322,6 +353,25 @@ impl PureFactContext {
 }
 
 impl ConditionTerm {
+    /// Whether this is a 32-bit comparison with a side that is σ, the
+    /// 32-bit sign cast: its sign or half-range test names a node no
+    /// comparison of σ's operand does, as a narrow conversion's does. One
+    /// match on the root and each side.
+    pub(crate) fn names_sign_cast32(&self) -> bool {
+        let ConditionTerm::Compare {
+            format: Ty::Int32 | Ty::UInt32,
+            left,
+            right,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        [left, right]
+            .into_iter()
+            .any(|side| side.sign_cast32_operand().is_some())
+    }
+
     /// Whether this is an `int32` comparison of an 8- or 16-bit conversion
     /// between the two signednesses of one width. One match on the root.
     pub(crate) fn names_narrow_signedness_cast(&self) -> bool {

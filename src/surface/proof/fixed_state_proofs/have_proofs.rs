@@ -1338,7 +1338,7 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
         Proposition::Equal(left, right) => Some(Proposition::Equal(right, left)),
         Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
                 relation: CompareRelation::Equal,
                 left,
                 right,
@@ -1346,7 +1346,7 @@ pub(in crate::surface::proof) fn reverse_kernel_equality(
             true,
         ) => Some(Proposition::ConditionIs(
             ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
+                format,
                 relation: CompareRelation::Equal,
                 left: right,
                 right: left,

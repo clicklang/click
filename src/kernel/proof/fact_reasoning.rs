@@ -807,12 +807,19 @@ fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComp
                 | Bitvector32Term::UInt64Constant(_)
         )
     };
+    // σ keeps its operand's bits: a cited condition on `x` selects a
+    // comparison of σ(x) and the reverse, decided in the selected context,
+    // which relates the two (the difference graph's σ link, R0). The
+    // subject is a key; the terms keep their σ. One match on the root.
+    let subject = |term: &Bitvector32Term| {
+        ConstantComparisonSubject::Machine(term.sign_cast32_bits().clone())
+    };
     let machine = |left: &Bitvector32Term, right: &Bitvector32Term| match (
         machine_constant(left),
         machine_constant(right),
     ) {
-        (false, true) => Some(ConstantComparisonSubject::Machine(left.clone())),
-        (true, false) => Some(ConstantComparisonSubject::Machine(right.clone())),
+        (false, true) => Some(subject(left)),
+        (true, false) => Some(subject(right)),
         _ => None,
     };
     let integer = |left: &SharedIntegerTerm, right: &SharedIntegerTerm| match (

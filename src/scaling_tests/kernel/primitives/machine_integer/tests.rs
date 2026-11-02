@@ -142,10 +142,11 @@ fn machine_integer_constant_work_is_linear_and_oversized_integer_rejection_is_co
     }
 }
 
-/// Building σ, the 32-bit sign cast, and reading a term's word through it
-/// (`word32`) inspect only the operand's root: the work is the same for
-/// operands of 16 to 1,024 nodes, and a 32-bit operator over σ(x) is the
-/// operator over `x`.
+/// Building σ, the 32-bit sign cast, inverting it, and reading an index's
+/// word through it (`into_index_word32`, decision G1) inspect only the
+/// operand's root: the work is the same for operands of 16 to 1,024 nodes.
+/// σ is a node of its own: a 32-bit operator over σ(x) keeps σ(x) as its
+/// operand ("Every format its own nodes", step 4b).
 #[test]
 fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
     use crate::kernel::Variable;
@@ -167,11 +168,17 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
             )
         });
         assert_eq!(work, 1, "size {size}");
-        assert!(std::ptr::eq(
-            cast.word32(),
-            cast.sign_cast32_operand().unwrap().1
-        ));
-        assert_eq!(cast.word32(), &operand, "size {size}");
+        let ((), read_work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                cast.sign_cast32_operand(),
+                Some((MachineIntegerType::Int32, &operand))
+            );
+        });
+        assert_eq!(read_work, 0, "size {size}");
+        let (index, index_work) =
+            crate::instrumentation::measure_deterministic_work(|| cast.clone().into_index_word32());
+        assert_eq!(index, operand, "size {size}");
+        assert_eq!(index_work, 0, "size {size}");
         let (back, work) = crate::instrumentation::measure_deterministic_work(|| {
             Bitvector32Term::sign_cast32(
                 MachineIntegerType::UInt32,
@@ -181,9 +188,13 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
         });
         assert_eq!(back, operand, "σ(σ(x)) is x, size {size}");
         assert_eq!(work, 2, "size {size}");
-        assert_eq!(
-            Bitvector32Term::add(cast.clone(), Bitvector32Term::Constant(1)),
-            Bitvector32Term::add(operand.clone(), Bitvector32Term::Constant(1)),
+        let sum = Bitvector32Term::add_at(
+            MachineIntegerType::UInt32,
+            cast.clone(),
+            Bitvector32Term::UInt32Constant(1),
+        );
+        assert!(
+            matches!(&sum, Bitvector32Term::Binary { left, .. } if **left == cast),
             "size {size}"
         );
     }
@@ -227,8 +238,7 @@ fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands
                     cast.narrow_widening32_operand(),
                     Some((MachineIntegerType::UInt8, &operand))
                 );
-                assert!(std::ptr::eq(cast.word32(), &cast));
-                assert_eq!(cast.word_cast32_operand(), None);
+                assert_eq!(cast.sign_cast32_operand(), None);
             });
             assert_eq!(read_work, 0, "size {size}");
             assert_ne!(

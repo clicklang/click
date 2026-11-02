@@ -549,12 +549,6 @@ impl TermClasses {
                     continue;
                 }
                 Work::Machine(term, width) => {
-                    // σ(x) is `x`'s 32-bit word (rule K1): one class.
-                    let term = if width == W::Bits32 {
-                        term.word32()
-                    } else {
-                        term
-                    };
                     let wide = width == W::Bits64;
                     // Structural arithmetic stays intact in logical terms.
                     // Register its total word identities only for comparison.
@@ -608,8 +602,9 @@ impl TermClasses {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))
                     } else if width == W::Bits32 {
                         // The e-graph reads a 32-bit sign-free operator as
-                        // the word operator it computes, at either format
-                        // (rule K1, until σ is a node of its own).
+                        // the word operator it computes, at either format:
+                        // its operands are of that format, and σ, a node of
+                        // its own, relates the two (R0, R-dist).
                         match term {
                             binary_term!(Bits32, Add, a, b) => {
                                 Some((Binary::Int32Add, a.as_ref(), b.as_ref()))

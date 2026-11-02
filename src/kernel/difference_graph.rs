@@ -682,7 +682,6 @@ impl DifferenceGraph {
 
     /// The node for `term`, created with its pending links when new.
     fn node(&mut self, domain: Domain, term: &Bitvector32Term) -> NodeId {
-        let term = word(domain, term);
         if let Some(node) = self.nodes.get(&(domain, term.clone())) {
             return *node;
         }
@@ -782,7 +781,6 @@ impl DifferenceGraph {
     /// values `x + 1`, `x + 2`, ... share `x`'s node instead of each
     /// hanging an edge pair off it that every bound on `x` must walk.
     fn affine(&mut self, domain: Domain, term: &Bitvector32Term) -> Affine {
-        let term = word(domain, term);
         if let Some(value) = constant(domain, term) {
             return (None, value);
         }
@@ -848,7 +846,6 @@ impl DifferenceGraph {
     /// A term not in the graph resolves through a link its base's interval
     /// already justifies; otherwise `None`.
     fn resolve(&self, domain: Domain, term: &Bitvector32Term) -> Option<Affine> {
-        let term = word(domain, term);
         if let Some(value) = constant(domain, term) {
             return Some((None, value));
         }
@@ -1278,7 +1275,6 @@ impl DifferenceGraph {
     /// `domain`. Work is the term's size, plus the difference reads of
     /// `difference_interval`.
     fn term_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
-        let term = word(domain, term);
         // A compound term a fact mentioned has a node of its own, whose
         // interval holds only what facts about the term said; its operands'
         // intervals may say more, so both are read.
@@ -1543,6 +1539,18 @@ impl DifferenceGraph {
                     (0, a_high.min(b_high - 1))
                 };
                 wrap_interval(domain, low, high)
+            }
+            // σ keeps every bit: the signed reading of σ(x) is `x`'s (the
+            // unsigned reading wraps it above, as for any word).
+            (
+                Domain::Int32,
+                T::MachineIntegerCast {
+                    value,
+                    source,
+                    destination,
+                },
+            ) if crate::kernel::is_sign_cast32(*source, *destination) => {
+                self.term_interval(domain, value)
             }
             // Unsigned narrowing keeps the operand modulo 2^32.
             (Domain::Int32, T::UInt32From64(inner)) => {
@@ -2026,15 +2034,6 @@ fn narrow_cast_parts(
     let destination_range = narrow_range(*destination)?;
     let modulus = destination_range.1 - destination_range.0 + 1;
     Some((value, source_range, destination_range, modulus))
-}
-
-/// The term whose node `term` reads in `domain`: a 32-bit reading of σ(x)
-/// is the same reading of `x`'s word (rule K1), so σ shares `x`'s nodes.
-fn word(domain: Domain, term: &Bitvector32Term) -> &Bitvector32Term {
-    match domain {
-        Domain::Int32 | Domain::UInt32 => term.word32(),
-        Domain::Int64 | Domain::UInt64 | Domain::Narrow(_) => term,
-    }
 }
 
 /// When `term` is `x ^ MIN` in a signed `domain`: `x`. Flipping the sign
@@ -2739,6 +2738,19 @@ fn link_parts(
             },
         ) if crate::kernel::is_narrow_widening32(*source, *destination) => {
             Some((Domain::Narrow(*source), value.as_ref(), 0, false))
+        }
+        // σ keeps every bit, so either 32-bit reading of σ(x) is the same
+        // reading of `x`: a link of offset 0 in the domain ("Every format
+        // its own nodes", step 4b; rule K3 read through σ's node).
+        (
+            Domain::Int32 | Domain::UInt32,
+            T::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            },
+        ) if crate::kernel::is_sign_cast32(*source, *destination) => {
+            Some((domain, value.as_ref(), 0, false))
         }
         (Domain::Int32, binary_term!(Bits32, Add, left, right))
         | (

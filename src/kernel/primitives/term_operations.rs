@@ -1,6 +1,5 @@
 use super::*;
 use crate::kernel::binary_node;
-use crate::kernel::machine_integer::format_audit as audit;
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
 
@@ -3789,15 +3788,11 @@ impl ConditionTerm {
         }
     }
 
-    /// The equality of two `uint32` words: [`Self::equal`] filed at
-    /// `uint32`, which is the same fact as at `int32` (rule K6;
-    /// [`ConditionTerm::fact_format`]) and prints its operands as `uint32`.
-    #[track_caller]
+    /// The equality of two `uint32` values, a `uint32` term as written. It
+    /// is the same fact as the `int32` equality of the same bits at the
+    /// fact-identity and lookup-key level only (rule K6,
+    /// [`ConditionTerm::comparison_fact`]).
     pub(crate) fn uint32_equal(left: Bitvector32Term, right: Bitvector32Term) -> Self {
-        audit::record(
-            audit::WordIdentity::UInt32EqualityAtInt32,
-            std::panic::Location::caller(),
-        );
         match Self::equal(left, right) {
             Self::Compare {
                 format: _,
@@ -6079,12 +6074,12 @@ pub(crate) fn mirrored_equality(proposition: &Proposition) -> Option<Proposition
             ConditionTerm::AlgebraicEqual(right.clone(), left.clone())
         }
         ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+            format: format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32),
             relation: CompareRelation::Equal,
             left,
             right,
         } => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format: *format,
             relation: CompareRelation::Equal,
             left: right.clone(),
             right: left.clone(),
