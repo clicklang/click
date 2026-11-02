@@ -40,7 +40,6 @@ void follow_model(struct model_node* p, int32 more) {
             have p->parent_word == address(q) by { assumption(); }
             step(); step();
             let held = fold(model_link(old(p)), { word: saved_word, model: PackedLink::At(q) });
-            close_invariants() by solve();
             } }
         }
     }

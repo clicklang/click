@@ -15,8 +15,10 @@ chunk-size rejection. This port adds no generated processed count.
 `execute_until(loop(0))`, `execute_until(read(1))`, and
 `execute_until(back_edge())` replace compiler statement counts. The last
 selector finishes only the current preservation region via checked steps.
-It grants no invariant or termination authority; `close_invariants()` remains
-required. Explicit branches must be proved separately.
+It grants no invariant or termination authority; `close_invariants()` remained
+required (that tactic has since been retired: the back edge now closes each
+invariant and ranking member with `solve()`). Explicit branches must be proved
+separately.
 
 Run `click verify design/charon-trial/chunk-proof/chunks.click`. Locked tests
 check verify/profile/audit and expansion rechecking. The live parity sweep

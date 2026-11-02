@@ -47,10 +47,6 @@ int32 loop_stdlib_permutation_invariant(int32 p[3]) {
             unfold(permutation::permutation);
             step();
             have i >= 0 and i <= 3;
-            close_invariants() by {
-                both { solve() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; }
-                and { solve() using { at(iteration, i) < 3; at(iteration, i) >= 0; }; }
-            }
         }
     }
     step();

@@ -221,16 +221,37 @@ impl<'a> Proof<'a> {
         // conjunction and implication structure is nevertheless checked by
         // the kernel, so descend that structure directly and retain the
         // ordinary Both/Intro certificate nodes.
-        if let Some(surfaces) = self.wide_conjunction_surfaces() {
+        // The bundle is closed member by member, `have m by { ... }` for
+        // each and then `assumption`, as a function's exit closes its
+        // `ensures`; expansion writes those `have`s at the back edge. A
+        // member's own proof does not take this path again.
+        if !IN_BUNDLE_MEMBER_HAVE.with(std::cell::Cell::get)
+            && let Some(surfaces) = self.conjunction_leaf_surfaces(1)
+        {
             let mut proof = self.clone();
             for surface in surfaces {
                 let nested = proof.begin_have(surface)?;
-                let Some(closed) = nested.plan_invariant_bundle_closure()? else {
+                let previous = IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.replace(true));
+                let closed = nested.plan_invariant_bundle_closure();
+                IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.set(previous));
+                let Some(closed) = closed? else {
                     return Ok(None);
                 };
                 proof = closed.join()?;
             }
-            return attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption));
+            if let Some(closed) =
+                attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))?
+            {
+                return Ok(Some(closed));
+            }
+            // A member's `have` publishes its written spelling as lowered,
+            // which can differ from the kernel member in form, as a
+            // quantified read projected at the back edge does. The bundle
+            // then closes member by member from those facts.
+            let previous = IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.replace(true));
+            let closed = proof.plan_invariant_bundle_closure();
+            IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.set(previous));
+            return closed;
         }
         if matches!(goal, Proposition::And(_, _)) {
             let (split_proof, split, ids) = self.split_focused_both()?;
@@ -368,6 +389,57 @@ impl<'a> Proof<'a> {
             state,
             node: self.node.clone(),
         }
+    }
+
+    /// The back-edge bundle's members as the loop head writes them, split
+    /// at conjunctions as the bundle's leaves are: each declared invariant
+    /// guarded by the invariants declared before it, and bare, as the member
+    /// reads once the closer has introduced those guards; one `0 <= m` per
+    /// `decreases` component, then the descent member
+    /// ([`ranking_descent_surface`]). None outside a loop preservation proof.
+    pub(in crate::surface::proof) fn written_bundle_member_surfaces(
+        &self,
+    ) -> Option<Vec<ClickProposition>> {
+        let ProofContext::Execution(context) = self.context.as_ref() else {
+            return None;
+        };
+        let bundle = context.constants.invariant_body_context.as_deref()?;
+        let mut members = Vec::new();
+        let declared = &bundle.declared_invariant_surfaces;
+        for (index, invariant) in declared.iter().enumerate() {
+            let guarded = declared[..index]
+                .iter()
+                .rev()
+                .fold(invariant.clone(), |body, guard| {
+                    ClickProposition::Implies(Box::new(guard.clone()), Box::new(body))
+                });
+            // A member whose guards the closer has already introduced is the
+            // invariant itself.
+            let mut pending = if index == 0 {
+                vec![guarded]
+            } else {
+                vec![invariant.clone(), guarded]
+            };
+            while let Some(member) = pending.pop() {
+                if let ClickProposition::And(left, right) = member {
+                    pending.push(*right);
+                    pending.push(*left);
+                } else {
+                    members.push(member);
+                }
+            }
+        }
+        if bundle.ranking_surfaces.len() == bundle.ranking_measures.len() {
+            for component in &bundle.ranking_surfaces {
+                members.push(ClickProposition::Comparison {
+                    left: ContractExpression::IntegerLiteral("0".to_string()),
+                    operator: ComparisonOperator::LessEqual,
+                    right: component.clone(),
+                });
+            }
+            members.extend(ranking_descent_surface(bundle));
+        }
+        Some(members)
     }
 
     /// One bundle member's source form, synthesized at the current state
@@ -2843,4 +2915,10 @@ fn ranking_descent_surface(bundle: &InvariantBodyContext) -> Option<ClickProposi
             Some(rest) => ClickProposition::Or(Box::new(arm(pivot)), Box::new(rest)),
         })
     })
+}
+
+thread_local! {
+    /// Set while one invariant bundle member is proved in its own `have`, so
+    /// that proof closes the member itself rather than wrapping it again.
+    static IN_BUNDLE_MEMBER_HAVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

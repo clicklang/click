@@ -186,10 +186,12 @@ No `ProofStep` is smart or internal-only, and both certificate constructors
 apply one admission rule: `from_proof_tactics` classifies source tactics and
 `from_steps` classifies serialized provenance, so a leaf that no explicit
 proof could spell is rejected from either direction. A smart tactic therefore
-has no step of its own. `close_invariants()`, for example, plans the
-back-edge bundle body, and the step retained for it is `close_invariants() by`
-carrying that planned body; the bare closure request is a semantic-core
-update with no certificate leaf. Nested certificates are admitted where they
+has no step of its own. The implicit back-edge closure of a loop's
+`preserve` script, for example, plans the bundle body, and the step retained
+for it is the internal `ProofStep::CloseInvariantsBy` carrying that planned
+body, which has no surface spelling (the `close_invariants` tactic is retired);
+the closure request itself is a semantic-core update with no certificate
+leaf. Nested certificates are admitted where they
 are built, so validating one certificate costs a single pass over its own
 steps.
 

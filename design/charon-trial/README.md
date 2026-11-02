@@ -756,7 +756,8 @@ that the migration or Rust-language support is complete.
 the imported iterator's cursor, remaining length, and remainder directly.
 `execute_until(back_edge())` checks the rest of a loop preservation region
 without counting compiler cleanup statements. `close_invariants()` still
-checks every invariant and the decreasing measure separately.
+checked every invariant and the decreasing measure separately; that tactic has
+since been retired, and the back edge now closes each member with `solve()`.
 
 This advances original-source/contract coverage with proof ports from 13/16
 (81.25%) to **14/16 (87.5%)**. Frozen sidecars remain 11/16 (68.75%), imports

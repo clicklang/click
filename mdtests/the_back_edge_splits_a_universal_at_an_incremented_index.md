@@ -1,4 +1,4 @@
-# `close_invariants` splits a universal at an incremented index
+# The back edge splits a universal at an incremented index
 
 After `p[j] = 0; j = j + 1;`, the invariant
 `forall (k: int32) { 0 <= k and k < j implies p[k] == 0 }` at the back edge
@@ -38,7 +38,6 @@ int32 zero3(int32 p[3]) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
         owns p[0..3];
     }

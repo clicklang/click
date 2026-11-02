@@ -2327,7 +2327,6 @@ const STORED_GUARD_PROOF: &str = r#"int adler_stored_guard(int remaining, uint64
    have 0 <= remaining by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
    have remaining % 22208 == 0 by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
    have remaining < at(head, remaining) by { rewrite(remaining == at(head, remaining) - 22208); assumption(); }
-   close_invariants() by solve();
   }
  }
  have not (0 < remaining) or not (size as uint32 as int32 <= remaining) by assumption();

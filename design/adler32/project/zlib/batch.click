@@ -768,7 +768,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
       have to_integer(n) < at(before_advance, to_integer(n)) by solve() using {
        to_integer(n) == at(before_advance, to_integer(n)) - 1;
       };
-      close_invariants() by assumption();
      }
     }
    }
@@ -843,7 +842,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     to_integer(len) == 0;
     at(batch_entry, to_integer(len)) == 5552;
    };
-   close_invariants() by assumption();
   }
  }
  have len < 5552u64 by assumption();

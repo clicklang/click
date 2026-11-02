@@ -31,16 +31,6 @@ int32 drain_to_zero(int32 n) {
                 solve() using { n >= 0; n <= at(drain.entry, n); };
             }
             step();
-            close_invariants() by {
-                both { solve() using { 0 <= n; }; }
-                and {
-                    both { solve(); }
-                    and {
-                        both { solve() using { 0 <= n; }; }
-                        and { solve(); }
-                    }
-                }
-            }
         }
     }
     step();

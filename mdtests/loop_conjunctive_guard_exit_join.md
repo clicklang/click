@@ -57,9 +57,6 @@ int32 uses_exit_disjunction(int32 a, int32* p) {
                 }
             }
             step();
-            close_invariants() by {
-                solve();
-            }
         }
     }
     branch {

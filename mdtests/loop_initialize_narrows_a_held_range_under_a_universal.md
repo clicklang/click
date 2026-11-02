@@ -15,7 +15,7 @@ refused to narrow it, although an explicit `transport` of the same fact checked.
 A fixed-state proof now offers its own state to that planner.
 
 The back edge owes the invariant's extent bound for every `k`, the `uint32`
-order `k <=u 1073741823`. `close_invariants()` closes that member the way it closes
+order `k <=u 1073741823`. The back edge closes that member the way it closes
 an unquantified one: it introduces `k` and the antecedent `0 <= k and k <= n`,
 and decides the bound from those two conjuncts and `n <= 1073741823` by signed
 order. It used to stop at the quantifier, so the preservation proof had to

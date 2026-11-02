@@ -6,8 +6,8 @@ the loop's back edge, so it is the back edge the invariants close at. The rule
 is the one the body's end already had, applied one statement earlier: the
 loop's binders are bound again on the state the `continue` reached, the
 invariants are closed there, and a declared measure must have descended there.
-`close_invariants()` is written at the `continue`, after stepping it, exactly
-as it is written at the body's end.
+The script steps the `continue`, and the back edge closes each member with
+`solve()` there, exactly as it does at the body's end.
 
 Linux's `__rb_insert` uses `continue` for both uncle-red cases, the ones that
 recolour and climb two frames. `count_down` is that shape reduced to one

@@ -7,14 +7,14 @@ entry, and the declared invariant gives only `0 <= i`.
 
 Nothing in the loop head says `i != 0`. The C `if` does, and the body took its
 else arm, so the closer may name it: a branch the path took is as written as
-the loop guard is. `close_invariants()` records each branch condition where the
+the loop guard is. The back edge's closer records each branch condition where the
 path decided it, at that statement's entry snapshot, and names it beside the
 invariants and the guard — a fixed, small list per path, not a search over the
 facts in scope. Here the cells the condition read are unchanged since iteration
 entry, so the premise is cited in the iteration-entry spelling the invariant
 already uses and `less_than_from_not_equal` pairs the two.
 
-```c filename=close_invariants_cites_a_branch_condition.c
+```c filename=the_back_edge_cites_a_branch_condition.c
 int32 stop_at_zero(int32 n) {
     int32 i = n;
 
@@ -29,7 +29,7 @@ int32 stop_at_zero(int32 n) {
 ```
 
 ```click
-verifying "close_invariants_cites_a_branch_condition.c";
+verifying "the_back_edge_cites_a_branch_condition.c";
 
 int32 stop_at_zero(int32 n) {
     requires n >= 0;

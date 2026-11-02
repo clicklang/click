@@ -107,17 +107,17 @@ fn loop_clauses_in(tactics: &[ProofTactic], clauses: &mut Vec<StructuralClause>)
 /// must leave `initialize` and `preserve` bodies that contain no smart tactic,
 /// so nothing in them is a leaf `ProofCertificate` refuses. In particular the
 /// automatic preservation planner's own closer is expanded before the phase is
-/// retained; a bare `close_invariants()` or a trailing `solve()` would be
-/// rejected here exactly as `ProofCertificate::from_proof_tactics` rejects it.
+/// retained; a trailing `solve()` would be rejected here exactly as
+/// `ProofCertificate::from_proof_tactics` rejects it.
 #[test]
 #[ignore = "nightly: 7s in the parallel gate"]
 fn expanded_loop_phase_proofs_are_certificates() {
     for (filename, function) in [
         // Automatically planned initialization and preservation.
         ("count_to_n_loop_invariant", "count_to_n_loop_invariant"),
-        // A source `close_invariants()` inside an explicit `preserve by`.
+        // A ranked loop whose explicit `preserve by` ends at the back edge.
         ("c_decreases_count_up", "count_to_n"),
-        // An explicit `close_invariants() by` body.
+        // A `preserve by` that proves a member in a `have` first.
         ("loop_invariant_body", "count"),
         // Guarded entry judgments survive more than two declarations.
         ("loop_three_invariant_initialization", "probe_fill"),
@@ -142,7 +142,7 @@ fn expanded_loop_phase_proofs_are_certificates() {
         let expanded = expand_checked_grouped_claim(click, &verified, function)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         assert!(
-            !expanded.contains("close_invariants();"),
+            !expanded.contains("close_invariants"),
             "{filename}: {expanded}"
         );
         let parsed = crate::surface::verification::parse_c0_click_file(&expanded, &sources)
@@ -292,21 +292,21 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
 
 /// The lexicographic pivot is an arm choice, not a kernel search. Only the
 /// second component decreases on the `j > 0` path and only the first on the
-/// other, so the expansion proves the arm that holds in a `have`, closes the
-/// disjunction by `assumption()`, and reverifies through the ordinary entry
-/// point.
+/// other, so the expansion proves the descent member in a `have` at the back
+/// edge, proving the arm that holds and closing the disjunction by
+/// `assumption()`, and reverifies through the ordinary entry point.
 #[test]
 fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_lexicographic_loop");
     let sources = borrowed_sources(&sources);
     let expanded = expand_function_proof_source(&click, &sources, "phase_count")
         .unwrap_or_else(|error| panic!("lexicographic expansion failed: {}", error.message()));
-    let closer = expanded
-        .find("close_invariants() by {")
-        .expect("the expansion keeps an explicit bundle closer");
-    let closers = &expanded[closer..];
     assert!(
-        closers.contains("assumption();"),
+        !expanded.contains("close_invariants"),
+        "the back edge closes as a function's exit does, from `have`s: {expanded}"
+    );
+    assert!(
+        expanded.contains("assumption();"),
         "each pivot is proved in a `have` and closed by `assumption`: {expanded}"
     );
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| {
@@ -315,60 +315,6 @@ fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
             error.message()
         )
     });
-}
-
-/// Every bundle member is separately proved. Dropping the conjunct that
-/// closes one member, or exchanging two members' proofs, leaves the bundle
-/// open: membership and order are part of the checked judgment, not a
-/// convention the closer body may reinterpret.
-#[test]
-fn ranking_bundle_rejects_a_missing_or_exchanged_member() {
-    let (click, sources) = loop_fixture("c_decreases_loop");
-    let sources = borrowed_sources(&sources);
-    verify_c0_sources(&click, &sources).expect("the fixture verifies as written");
-
-    let complete = "close_invariants() by {
-                both { solve() using { 0 <= n; }; }
-                and {
-                    both { solve() using { 0 <= n; }; }
-                    and { solve() using { 0 <= n; }; }
-                }
-            }";
-    assert!(click.contains(complete), "fixture closer changed: {click}");
-
-    // `solve() using` proves a conjunction of members as well as one member,
-    // so the closer that drops a member uses the explicit certificate of the
-    // first one, which proves exactly `0 <= n`.
-    let missing = click.replace(
-        complete,
-        "close_invariants() by {
-                both { arithmetic_certificate { premise 0: 0 <= n => 0 <= n; conclusion 0; } }
-                and { arithmetic_certificate { premise 0: 0 <= n => 0 <= n; conclusion 0; } }
-            }",
-    );
-    let error = verify_c0_sources(&missing, &sources)
-        .expect_err("a closer that proves one member too few must be rejected");
-    assert!(
-        error.message().contains("certificate rejected"),
-        "{}",
-        error.message()
-    );
-
-    let exchanged = click.replace(
-        complete,
-        "close_invariants() by {
-                both { solve() using { 0 <= n; }; }
-                and {
-                    both {
-                        both { solve() using { 0 <= n; }; }
-                        and { solve() using { 0 <= n; }; }
-                    }
-                    and { solve() using { 0 <= n; }; }
-                }
-            }",
-    );
-    verify_c0_sources(&exchanged, &sources)
-        .expect_err("a closer nested against the bundle's own order must be rejected");
 }
 
 /// The premise lists of every generated signed certificate printed in
@@ -400,33 +346,29 @@ fn arithmetic_certificate_premises(region: &str) -> Vec<Vec<String>> {
     blocks
 }
 
-/// A bare `close_invariants()` closes the ranking members the loop's
-/// `decreases` clause adds to the bundle, and the smart success expands into
-/// the explicit operations that produced it: a `both` per bundle member and
-/// one checked signed certificate per arithmetic member. The printed source
+/// The back edge closes the ranking members the loop's `decreases` clause
+/// adds to the bundle, and the smart success expands into the explicit
+/// operations that produced it: a `have` per bundle member and one checked
+/// signed certificate per arithmetic member. The printed source
 /// must reverify through the ordinary entry point without replanning.
 #[test]
 #[ignore = "nightly: Integer ranking expansion exceeds 0.5s in the parallel gate"]
 fn smart_ranking_closure_expands_to_explicit_bundle_members() {
     let (click, sources) = loop_fixture("c_decreases_count_up");
     let sources = borrowed_sources(&sources);
-    assert!(
-        click.contains("close_invariants();"),
-        "the fixture must exercise the smart closer: {click}"
-    );
     let expanded = expand_function_proof_source(&click, &sources, "count_to_n")
         .unwrap_or_else(|error| panic!("count-up expansion failed: {}", error.message()));
     let closer = expanded
-        .find("close_invariants() by {")
-        .expect("the expansion spells the bundle closer");
+        .find("preserve by {")
+        .expect("the expansion spells the preservation proof");
     let closer = &expanded[closer..];
     assert!(
-        !closer.contains("close_invariants();") && !closer.contains("solve();"),
+        !closer.contains("close_invariants") && !closer.contains("solve();"),
         "the expanded closer must contain no smart leaf: {expanded}"
     );
     assert!(
-        closer.contains("both {"),
-        "the expanded closer must split the bundle conjunction: {expanded}"
+        closer.contains("have i >= 0 implies i <= n by {"),
+        "the expanded closer must prove each bundle member in a `have`: {expanded}"
     );
     // The invariants keep their signed certificates. The ranking members
     // now observe the C increment through an Integer operation identity.
@@ -502,7 +444,7 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
     });
 }
 
-/// `close_invariants()` closes each member with `solve()`, which reads the
+/// The back edge closes each member with `solve()`, which reads the
 /// facts in scope. The nested fixture's outer measure needs `j <= m` at the
 /// back edge; dropping the outer `invariant j <= m` leaves that fact in scope
 /// from the inner loop's exit, so the ranking member still closes.
@@ -592,8 +534,7 @@ fn remaining_loop_migration_fixtures_expand_and_recheck() {
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         let expanded = expand_checked_grouped_claim(click, &verified_for_expansion, function)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        assert!(!expanded.contains("close_invariants();"), "{filename}");
-        assert!(expanded.contains("close_invariants() by {"), "{filename}");
+        assert!(!expanded.contains("close_invariants"), "{filename}");
         verify_c0_sources(&expanded, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
     }
@@ -719,15 +660,12 @@ fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        let explicit = fixture
-            .click_source
-            .unwrap()
-            .replace("close_invariants();", "close_invariants() by { solve(); }");
+        let explicit = fixture.click_source.unwrap();
         let verified_for_expansion = verify_c0_sources(&explicit, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
         let expanded = expand_checked_grouped_claim(&explicit, &verified_for_expansion, function)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
-        assert!(!expanded.contains("close_invariants();"));
+        assert!(!expanded.contains("close_invariants"));
         verify_c0_sources(&expanded, &sources)
             .unwrap_or_else(|e| panic!("{filename}: {}", e.message()));
     }
@@ -832,10 +770,8 @@ fn explicit_swap_loop_fixture(include_transports: bool) -> (&'static str, String
                     if p[j + 1] < p[j] {{
                         step(); step(); step(); step(); step();
                         {transport}
-                        close_invariants() by {{ solve(); }}
                     }} else {{
                         step(); step(); step();
-                        close_invariants() by {{ solve(); }}
                     }}
                 }}
             }}
@@ -856,7 +792,7 @@ fn explicit_swap_loop_transports_both_entry_bounds_and_expands() {
     let expanded = expand_checked_grouped_claim(&click, &verified_for_expansion, "swap")
         .unwrap_or_else(|e| panic!("{}", e.message()));
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|e| panic!("{}", e.message()));
-    assert!(!expanded.contains("close_invariants();"));
+    assert!(!expanded.contains("close_invariants"));
 }
 
 #[test]
@@ -873,62 +809,13 @@ fn explicit_swap_loop_rejects_missing_entry_bound_transports() {
     );
 }
 
-#[test]
-fn explicit_invariant_body_checks_expands_and_rejects_incomplete_proofs() {
-    let c_source = "int32 count() { int32 i; i = 0; while (i < 3) { i = i + 1; } return i; }";
-    let source = r#"
-        verifying "count.c";
-        int32 count() { ensures result == 3; } by {
-            step(); step();
-            loop {
-                decreases 3 - i;
-                invariant i >= 0;
-                invariant i <= 3;
-                initialize by solve();
-                preserve by {
-                    step();
-                    close_invariants() by { solve(); }
-                }
-            }
-            step(); solve();
-        }
-    "#;
-    let sources = [("count.c", c_source)];
-    verify_c0_sources(source, &sources).expect("the body must prove the exact closure obligations");
-    let position =
-        expansion::position_at_offset(source, source.find("close_invariants() by").unwrap());
-    let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
-        .expect("the checked body should expand");
-    assert!(expanded.contains("close_invariants() by {"), "{expanded}");
-    assert!(expanded.contains("both {"), "{expanded}");
-    verify_c0_sources(&expanded, &sources).expect("expanded closure body must recheck");
-    for replacement in [
-        "close_invariants() by { }",
-        "close_invariants() by { assumption(); }",
-        "close_invariants() by { both { solve(); } and { } }",
-        "close_invariants { solve(); }",
-        "close_invariants() by { solve(); } close_invariants() by { solve(); }",
-    ] {
-        let invalid = source.replace("close_invariants() by { solve(); }", replacement);
-        assert!(
-            verify_c0_sources(&invalid, &sources).is_err(),
-            "accepted {replacement}"
-        );
-    }
-    let premature = source.replace(
-        "step();\n                    close_invariants() by",
-        "close_invariants() by",
-    );
-    assert!(verify_c0_sources(&premature, &sources).is_err());
-}
-
 /// Exact observations leave the completed bundle available as a fact. The
-/// smart closer should retain that direct proof and recheck explicitly.
+/// back edge should retain that direct proof and recheck explicitly.
 #[test]
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn observed_member_closure_expands_to_direct_assumptions() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/close_invariants_closes_a_guarded_member_by_intro.md");
+        .join("mdtests/the_back_edge_closes_a_guarded_member_by_intro.md");
     let source = std::fs::read_to_string(&path).unwrap();
     let fixture = crate::cli::parse_mdtest(&path, &source).unwrap();
     let sources = fixture
@@ -938,32 +825,12 @@ fn observed_member_closure_expands_to_direct_assumptions() {
         .collect::<Vec<_>>();
     let click = fixture.click_source.as_deref().unwrap();
     verify_c0_sources(click, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
-    // Select the `else` arm's closer; expansion may insert imports before it.
-    let offset = click
-        .rfind("close_invariants();")
-        .expect("the else arm closes with the smart closer");
-    let position = expansion::position_at_offset(click, offset);
-    let expanded = expand_c0_tactic_source_at(click, &sources, position.line, position.column)
+    let expanded = expand_function_proof_source(click, &sources, "count_run")
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    let expanded_offset = expanded.rfind("close_invariants() by").unwrap();
-    let explicit = expanded[expanded_offset..]
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert!(
-        explicit
-            .starts_with("close_invariants() by { both { assumption(); } and { assumption(); } }"),
-        "{expanded}"
-    );
+    assert!(!expanded.contains("solve();"), "{expanded}");
+    assert!(expanded.contains("assumption();"), "{expanded}");
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}", error.message()));
-    let empty = format!(
-        "{}{}",
-        &expanded[..expanded_offset],
-        expanded[expanded_offset..].replacen("assumption();", "", 1)
-    );
-    assert_ne!(empty, expanded, "the selected closure must be mutated");
-    assert!(without_implicit_auto(|| verify_c0_sources(&empty, &sources)).is_err());
 }
 
 #[test]
@@ -981,10 +848,7 @@ fn explicit_invariant_body_quantified_bubble_census() {
     let click = fixture.click_source.as_deref().unwrap();
     verify_c0_sources(click, &sources).unwrap();
     let expanded = expand_function_proof_source(click, &sources, "bubble_pass3").unwrap();
-    assert!(expanded.contains("close_invariants() by {"));
-    let explicit = expanded.replace("close_invariants();", "close_invariants() by { solve(); }");
-    verify_c0_sources(&explicit, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
-    let expanded = expand_function_proof_source(&explicit, &sources, "bubble_pass3").unwrap();
+    assert!(!expanded.contains("close_invariants"));
     verify_c0_sources(&expanded, &sources).unwrap();
 }
 
@@ -1003,11 +867,7 @@ fn explicit_invariant_body_copy3_checks_and_expands() {
     let click = fixture.click_source.as_deref().unwrap();
     verify_c0_sources(click, &sources).unwrap();
     let expanded = expand_function_proof_source(click, &sources, "copy3").unwrap();
-    assert!(expanded.contains("close_invariants() by {"));
-    let explicit = expanded.replace("close_invariants();", "close_invariants() by { solve(); }");
-    verify_c0_sources(&explicit, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
-    let expanded = expand_function_proof_source(&explicit, &sources, "copy3").unwrap();
-    assert!(!expanded.contains("close_invariants();"));
+    assert!(!expanded.contains("close_invariants"));
     verify_c0_sources(&expanded, &sources).unwrap_or_else(|error| panic!("{}", error.message()));
 }
 
@@ -1038,7 +898,6 @@ fn frontier_local_loop_verifies_and_advances_to_exit() {
                     initialize by solve();
                     preserve by {
                         step();
-                        close_invariants();
                     }
                 }
                 have at(count.entry, i) == 0 by solve();
@@ -1080,7 +939,6 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
                     initialize by solve();
                     preserve by {
                         step();
-                        close_invariants();
                     }
                 }
                 have at(count.entry, i) == 0 by solve();
@@ -1220,7 +1078,6 @@ fn loop_initialization_solve_retains_checked_fixed_state_proof() {
                     initialize by solve();
                     preserve by {
                         step();
-                        close_invariants();
                     }
                 }
                 step();
@@ -1382,50 +1239,6 @@ fn frontier_loop_preservation_reports_a_rest_that_does_not_run() {
 }
 
 #[test]
-fn closing_invariants_on_a_break_path_is_refused() {
-    let c_source = r#"
-            int32 break_once(int32 n) {
-                int32 i = n;
-                while (i > 0) {
-                    break;
-                }
-                return i;
-            }
-        "#;
-    let click_source = r#"
-            verifying "break_once.c";
-
-            int32 break_once(int32 n) {
-                requires n >= 0;
-                ensures result >= 0;
-            } by {
-                step();
-                step();
-                loop {
-                    invariant i >= 0;
-                    initialize by solve();
-                    preserve by {
-                        step();
-                        close_invariants();
-                    }
-                }
-                step();
-                solve();
-            }
-        "#;
-
-    let error = verify_c0_sources(click_source, &[("break_once.c", c_source)])
-        .expect_err("a `break` path has no back edge to close");
-    assert!(
-        error
-            .message()
-            .contains("has no back edge on a `break` path"),
-        "{}",
-        error.message()
-    );
-}
-
-#[test]
 fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1451,7 +1264,6 @@ fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
                     preserve by {
                         step();
                         step();
-                        close_invariants();
                     }
                 }
                 step();
@@ -1497,7 +1309,6 @@ fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
                         initialize by solve();
                         preserve by {
                             step();
-                            close_invariants();
                         }
                     }
                     step();
@@ -1612,11 +1423,9 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
                             initialize by solve();
                             preserve by {
                                 step();
-                                close_invariants();
                             }
                         }
                         step();
-                        close_invariants();
                     }
                 }
                 step();
@@ -1666,7 +1475,6 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
                     preserve by {
                         step();
                         step();
-                        close_invariants();
                     }
                 }
                 step();
@@ -1730,13 +1538,6 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
                             solve() using { n > 0; }
                         }
                         step();
-                        close_invariants() by {
-                            both { solve() using { 0 <= n; }; }
-                            and {
-                                both { solve() using { 0 <= n; }; }
-                                and { solve() using { 0 <= n; }; }
-                            }
-                        }
                     }
                 }
                 step();
@@ -1963,7 +1764,6 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
                     initialize by solve();
                     preserve by {
                         step();
-                        close_invariants();
                     }
                 }
                 step();
@@ -2043,13 +1843,6 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
                             solve() using { n > 0; }
                         }
                         step();
-                        close_invariants() by {
-                            both { solve() using { 0 <= n; }; }
-                            and {
-                                both { solve() using { 0 <= n; }; }
-                                and { solve() using { 0 <= n; }; }
-                            }
-                        }
                     }
                 }
                 step();
@@ -2104,7 +1897,6 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
                     initialize by solve();
                     preserve by {
                         step();
-                        close_invariants();
                     }
                 }
                 step();
@@ -2173,7 +1965,6 @@ fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
                     initialize by solve();
                     preserve by {
                         step();
-                        close_invariants();
                     }
                 }
                 step();
@@ -2243,7 +2034,6 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
         r#"preserve by {
                         step();
                         branch ensuring { fact parity >= 0 and parity <= 1; } then { step(); } else { step(); }
-                        close_invariants();
                     }"#,
     );
     let sources = [("flip_to_n.c", c_source)];
@@ -2265,7 +2055,6 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
         r#"preserve by {
                         step();
                         branch ensuring { fact parity >= 0 and parity <= 1; } then { step(); } else { step(); }
-                        close_invariants();
                     }"#,
     );
     let broken = broken.replace(
@@ -2313,7 +2102,6 @@ fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
                     initialize by solve();
                     preserve by {
                         step();
-                        close_invariants();
                     }
                 }
                 step();
@@ -2371,7 +2159,6 @@ fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
                             match marker() {
                                 Marker::Active => {
                                     step();
-                                    close_invariants();
                                 },
                                 Marker::Inactive => {
                                     contradiction(marker() == Marker::Inactive);

@@ -6213,7 +6213,7 @@ mod evidence_tests {
             verifying "spin.c";
             int32 spin() diverges { ensures 0 == 1; } by {
                 loop diverges { invariant 0 == 0; initialize by solve();
-                    preserve by { step(); close_invariants(); }
+                    preserve by { step(); }
                 }
                 solve();
             }

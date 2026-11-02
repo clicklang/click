@@ -30,7 +30,7 @@
     "diagnostic": "local `i` has no value at this frontier",
     "migrated_sidecar": "design/charon-trial/loop-headers/sum-proof.click",
     "frozen_sidecar": "design/charon-trial/loop-headers/sum.click",
-    "frozen_sha256": "6eedb5596f1fbba32469855dc26c0b5d4f8a9a96453410088e58449b9fcf7750",
+    "frozen_sha256": "3c051e7216d4940cb4d9edc8510da7918d59f733ef60936516fb3e3daa15469c",
     "original_sha256": "1afb6f97d57a035f80f0ec44493ad3494592af572349068f500c05d76e740149"
   },
   {
@@ -39,7 +39,7 @@
     "diagnostic": "local `chunks_remaining` has no value at this frontier",
     "migrated_sidecar": "design/charon-trial/chunk-proof/chunks.click",
     "frozen_sidecar": "design/charon-trial/chunk-proof/frozen.click",
-    "frozen_sha256": "9d9733fc4653f521257850d7e939f0979cdb64b271537617d5547113c8ce79b7",
+    "frozen_sha256": "02a3efb2a49e6dd2016ef3503edac5b3629074542dd9776ed61b4f39a3fffc04",
     "original_sha256": "204ae1f5cd7ef4f0ceb5ed697674a9c0510300728d6964c85be45f51cbaa448c"
   },
   {
@@ -63,7 +63,7 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iter-references/frozen.click",
-    "frozen_sha256": "819a95f694ec4f47187d06fd90f3ab24c0b535779bc25b9f3c62be473942e106",
+    "frozen_sha256": "d369a54e359f3f375f614045cc26156855f28ec20008c1f209ec57174918d296",
     "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
   },
   {
@@ -72,7 +72,7 @@
     "diagnostic": "unbound variable `__rust_iter_3_5_remaining`",
     "migrated_sidecar": "design/charon-trial/iterator-proof/rust-iterators/sum.click",
     "frozen_sidecar": "design/charon-trial/iterator-proof/rust-iterators/frozen.click",
-    "frozen_sha256": "819a95f694ec4f47187d06fd90f3ab24c0b535779bc25b9f3c62be473942e106",
+    "frozen_sha256": "d369a54e359f3f375f614045cc26156855f28ec20008c1f209ec57174918d296",
     "original_sha256": "b36a9f6fd4f25cf172e82ed3df23f8811f1862c89f992093f4d7bc62948553d8"
   },
   {

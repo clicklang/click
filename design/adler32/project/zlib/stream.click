@@ -905,7 +905,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
         16u64 * n as uint64 + len <= 9223372036854775807u64;
        };
       }
-      close_invariants() by assumption();
      }
     }
    }
@@ -999,7 +998,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
    };
    have 0 <= to_integer(len); have to_integer(len) <= 18446744073709551615;
    have to_integer(len) < at(batch_entry, to_integer(len)) by solve() using { to_integer(len) == at(batch_entry, to_integer(len)) - 5552; };
-   close_invariants() by assumption();
   }
 
  }
@@ -1718,7 +1716,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
     zlib_prefix_count(old(len), len) == zlib_prefix_count(old(len), at(before_block, len)) + 16;
     old(buf) + (old(len) - len) == old(buf) + zlib_prefix_count(old(len), len);
    };
-   close_invariants() by assumption();
   }
  }
  have len <= 15u64 by solve() using { not (len >= 16u64); len <= at(loop(3).entry, len); at(loop(3).entry, len) <= 5551u64; };
@@ -1896,7 +1893,6 @@ uint64 adler32_z(uint64 adler, const uint8* buf, uint64 len) {
      }
      have 0 <= to_integer(len); have to_integer(len) <= 18446744073709551615;
      have to_integer(len) < at(before_decrement, to_integer(len)) by solve() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };
-     close_invariants() by assumption();
     }
    }
   }

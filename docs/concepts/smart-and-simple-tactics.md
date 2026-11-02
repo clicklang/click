@@ -36,8 +36,9 @@ work expands into simple tactics:
   the contract `produces`, a fold of that resource. It has no spelling of its
   own. The same closer proves a requirement that a bare `step()` or `fold`
   left open, and is reported as `implicit closer` there.
-- `close_invariants()` is a fixed expansion into
-  `close_invariants() by { ... }` with `solve()` on each invariant member.
+- At a loop back edge, the closure of the invariant bundle runs `solve()` on
+  each member and expands to one `have <member> by { ... }` per member not
+  already a fact.
 - The searches behind elided arguments, below.
 
 `step_until(target)` repeats `step()` up to its target, and each requirement

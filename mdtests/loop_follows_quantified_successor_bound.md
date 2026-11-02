@@ -4,7 +4,7 @@
 to `n`. The loop never writes `next`, so the quantified invariant bounding every
 `next` element holds at the back edge, and its instance at the old `cur`, whose
 guard `0 <= cur and cur < n` the scalar invariants decide, bounds the new `cur`
-when `close_invariants()` closes the loop. This catches a loop-closing order
+when the back edge closes the loop. This catches a loop-closing order
 search that drops a guarded quantified instance whose guard the context already
 decides.
 

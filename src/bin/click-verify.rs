@@ -2050,7 +2050,7 @@ void walk(int32 n) { requires n >= 0; ensures 0 == 0; } by {
         preserve by {
             have i >= 0 by { assumption(); }
             apply(positive(0));
-            step(); close_invariants();
+            step();
         }
     }
     step(); normalize();
@@ -2104,7 +2104,7 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         }
         source.push_str(
             r#"        initialize by solve();
-        preserve by { step(); close_invariants(); }
+        preserve by { step(); }
     }
     have 0 == 1 by { normalize(); }
     step_until(function.exit); solve();
