@@ -8,7 +8,8 @@
 //! arithmetic definedness. Floating-point expressions and binders stay opaque.
 //! Application signatures use operand classes; parent-use indexes propagate late
 //! merges. Equal addresses in one block also equate their byte offsets.
-//! No scalar arithmetic solving, cancellation, or general injectivity runs here.
+//! No general scalar arithmetic solving or injectivity runs here. Residue
+//! projection retains word-constructor folding identities via indexed nodes.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
 use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable};
@@ -530,6 +531,9 @@ pub(super) struct BoolCastLink {
 
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
+    // Derived residue operations use shallow graph IDs. Repeated cancellation
+    // of shared prefixes reuses this cache; restriction rebuilds the graph.
+    modular_word_operations: PersistentMap<(MachineBinaryOp, u64, u64), u64>,
     // Exact shared operands retain their handles. Class IDs are stable even
     // after union; callers use root(), and persistent clones isolate branches.
     shared_machine_classes:

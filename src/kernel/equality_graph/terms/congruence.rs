@@ -182,6 +182,255 @@ impl TermClasses {
         self.close(vec![(a, b)])
     }
 
+    /// Equality of Integers implies equality of their 32-bit residues.
+    /// Visit only the rule's bounded Integer skeleton; machine observations
+    /// register their existing shared graph, never a boxed expansion.
+    pub(in crate::kernel::equality_graph) fn add_modular_integer_equality(
+        &mut self,
+        left: &crate::kernel::IntegerTerm,
+        right: &crate::kernel::IntegerTerm,
+    ) -> bool {
+        let (mut remaining, mut observed) = (64, false);
+        let mut pending = Vec::new();
+        let Some(left) =
+            self.modular_integer_word32(left, &mut remaining, &mut observed, &mut pending)
+        else {
+            return false;
+        };
+        let Some(right) =
+            self.modular_integer_word32(right, &mut remaining, &mut observed, &mut pending)
+        else {
+            return false;
+        };
+        if !observed {
+            return false;
+        }
+        self.register_pending_loads();
+        pending.push((left, right));
+        self.close(pending)
+    }
+
+    fn modular_integer_word32(
+        &mut self,
+        term: &crate::kernel::IntegerTerm,
+        remaining: &mut usize,
+        observed: &mut bool,
+        pending: &mut Vec<(u64, u64)>,
+    ) -> Option<u64> {
+        use crate::kernel::machine_integer::Operation;
+        use crate::kernel::{IntegerTerm as I, MachineOperandView as V};
+        use num_traits::ToPrimitive;
+        crate::instrumentation::record_deterministic_work(1);
+        *remaining = remaining.checked_sub(1)?;
+        Some(match term {
+            I::Machine(machine) if machine.ty().format().bits() == 32 => {
+                *observed = true;
+                match machine.operand_view() {
+                    V::Shared(term) => self.intern_shared_machine(term, W::Bits32),
+                    V::Legacy(term) => self.intern_int32(term),
+                }
+            }
+            I::Constant(value) => {
+                let modulus = num_bigint::BigInt::from(1u64 << 32);
+                let residue = ((value % &modulus) + &modulus) % &modulus;
+                self.intern_int32(&T::Constant(residue.to_u32()?))
+            }
+            I::Negate(inner) => {
+                let inner = self.modular_integer_word32(inner, remaining, observed, pending)?;
+                let zero = self.intern_int32(&T::Constant(0));
+                self.modular_word_operation(MachineBinaryOp::Subtract, zero, inner, pending)
+            }
+            _ => {
+                let (operation, left, right) = Operation::of_exact(term)?;
+                let left = self.modular_integer_word32(left, remaining, observed, pending)?;
+                let right = self.modular_integer_word32(right, remaining, observed, pending)?;
+                let op = match operation {
+                    Operation::Add => MachineBinaryOp::Add,
+                    Operation::Subtract => MachineBinaryOp::Subtract,
+                    Operation::Multiply => MachineBinaryOp::Multiply,
+                };
+                self.modular_word_operation(op, left, right, pending)
+            }
+        })
+    }
+
+    /// The old residue map used folded word constructors. Preserve those
+    /// identities in checking, using indexed graph nodes rather than exporting
+    /// operands. Cancellation follows one smaller operation at a time and memoizes
+    /// every visited pair, including shared prefixes across admissions.
+    fn modular_word_operation(
+        &mut self,
+        op: MachineBinaryOp,
+        mut left: u64,
+        mut right: u64,
+        pending: &mut Vec<(u64, u64)>,
+    ) -> u64 {
+        use crate::kernel::BitvectorBinaryOp as B;
+        use MachineBinaryOp::{Add, Multiply, Subtract};
+        let mut visited = Vec::new();
+        let result = loop {
+            crate::instrumentation::record_deterministic_work(1);
+            let key = (op, left, right);
+            // Keep the structural operation connected to its folded result.
+            // These are checking equalities, never replacement stored terms.
+            let raw = self.intern_node(if op == Add {
+                Node::Int32Add(left, right)
+            } else {
+                Node::Int32Binary(
+                    Int32Binary::Other(B::Machine(MachineIntegerType::Int32, op)),
+                    left,
+                    right,
+                )
+            });
+            if let Some(&known) = self.modular_word_operations.get(&key) {
+                pending.push((raw, known));
+                break known;
+            }
+            visited.push((key, raw));
+            let constant = |id| {
+                self.int32_constants
+                    .get(&self.root(id))
+                    .copied()
+                    .map(|v| v as u32)
+            };
+            let (a, b) = (constant(left), constant(right));
+            if let (Some(a), Some(b)) = (a, b) {
+                let bits = match op {
+                    Add => a.wrapping_add(b),
+                    Subtract => a.wrapping_sub(b),
+                    Multiply => a.wrapping_mul(b),
+                    _ => unreachable!(),
+                };
+                break self.intern_int32(&T::Constant(bits));
+            }
+            let addition = |id| match self.applications.get(&id) {
+                Some(Application::Int32Add(a, b)) => Some((*a, *b)),
+                _ => None,
+            };
+            let subtraction = |id| match self.applications.get(&id) {
+                Some(Application::Int32Binary(
+                    Int32Binary::Other(B::Machine(MachineIntegerType::Int32, Subtract)),
+                    a,
+                    b,
+                )) => Some((*a, *b)),
+                _ => None,
+            };
+            match op {
+                Add => {
+                    if b == Some(0) {
+                        break left;
+                    }
+                    if a == Some(0) {
+                        break right;
+                    }
+                    if let Some((base, removed)) = subtraction(right) {
+                        if removed == left {
+                            break base;
+                        }
+                    }
+                    if let Some((base, removed)) = subtraction(left) {
+                        if removed == right {
+                            break base;
+                        }
+                    }
+                    let mut cancelled = None;
+                    for (negation, sum) in [(left, right), (right, left)] {
+                        if let (Some((zero, removed)), Some((a, b))) =
+                            (subtraction(negation), addition(sum))
+                        {
+                            if constant(zero) == Some(0) {
+                                if removed == a {
+                                    cancelled = Some(b);
+                                }
+                                if removed == b {
+                                    cancelled = Some(a);
+                                }
+                            }
+                        }
+                    }
+                    if let Some(id) = cancelled {
+                        break id;
+                    }
+                }
+                Subtract => {
+                    if b == Some(0) {
+                        break left;
+                    }
+                    if left == right {
+                        break self.intern_int32(&T::Constant(0));
+                    }
+                    let (l, r) = (addition(left), addition(right));
+                    if let (Some((a, b)), Some((c, d))) = (l, r) {
+                        let next = if a == c {
+                            Some((b, d))
+                        } else if a == d {
+                            Some((b, c))
+                        } else if b == c {
+                            Some((a, d))
+                        } else if b == d {
+                            Some((a, c))
+                        } else {
+                            None
+                        };
+                        if let Some((a, b)) = next {
+                            left = a;
+                            right = b;
+                            continue;
+                        }
+                    }
+                    if let Some((a, b)) = l {
+                        if a == right {
+                            break b;
+                        }
+                        if b == right {
+                            break a;
+                        }
+                    }
+                    if let Some((a, b)) = r {
+                        let remaining = if a == left {
+                            Some(b)
+                        } else if b == left {
+                            Some(a)
+                        } else {
+                            None
+                        };
+                        if let Some(remaining) = remaining {
+                            left = self.intern_int32(&T::Constant(0));
+                            right = remaining;
+                            continue;
+                        }
+                    }
+                }
+                Multiply => {
+                    if a == Some(0) || b == Some(0) {
+                        break self.intern_int32(&T::Constant(0));
+                    }
+                    if a == Some(1) {
+                        break right;
+                    }
+                    if b == Some(1) {
+                        break left;
+                    }
+                }
+                _ => unreachable!(),
+            }
+            break self.intern_node(if op == Add {
+                Node::Int32Add(left, right)
+            } else {
+                Node::Int32Binary(
+                    Int32Binary::Other(B::Machine(MachineIntegerType::Int32, op)),
+                    left,
+                    right,
+                )
+            });
+        };
+        for (key, raw) in visited {
+            self.modular_word_operations.insert(key, result);
+            pending.push((raw, result));
+        }
+        result
+    }
+
     pub(in crate::kernel::equality_graph) fn are_integer_equal(
         &mut self,
         left: &crate::kernel::IntegerTerm,

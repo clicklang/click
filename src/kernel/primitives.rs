@@ -81,12 +81,14 @@ pub use machine_integer::{
 };
 pub(crate) use machine_integer::{is_narrow_widening32, is_sign_cast32};
 mod remainder_rules;
-pub(crate) use integer::MachineOperandView;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
     SharedIntegerApplication, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedPureApplication,
 };
 pub use integer::{MachineIntegerType, SharedMachineIntegerTerm, SignedDefinedWidth};
+pub(crate) use integer::{
+    MachineOperandView, clear_shared_machine_variable_cache, shared_machine_syntax_variables,
+};
 mod alias_candidates;
 pub(crate) use alias_candidates::{AliasCandidates, BlockKeyed};
 mod cell_store;

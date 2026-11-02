@@ -171,6 +171,22 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared fresh-variable bookkeeping (2026-11-02)
+
+The immutable machine-variable summary now lives beside `MachineOperandView`
+and is shared by capture-avoidance collection and the general variable collector.
+Integer observations no longer export their machine expression just to compute
+execution-variable ceilings or condition-index dependencies. Each named variable
+still goes through the ordinary leaf collector, preserving snapshot deferral,
+load-address dependencies, connection collection and frame-collection modes.
+No proof-state or registry-dependent result is cached in the syntax summary.
+
+Regressions exercise repeated ceiling and index collection over 8/32/96-level
+shared prefixes without exporting, and compare shared/written load dependency
+collection before and after a registry reset. The integrated modular admission scaling regression passes without exporting.
+Comparison decisions, operation mappings and other interval adapters remain in
+progress.
+
 ## Shared capture-avoidance variable collection (2026-11-02)
 
 `IntegerSubstitutionVariableCollector` now reads shared machine observations
@@ -211,6 +227,35 @@ without exporting shared operands. The full gate and arithmetic fact-stability
 audit passed; this increment merged in #2277. The higher-level
 comparison dispatcher, operation/modular mappings and other interval adapters
 remain in progress; nested signed preparation remains disabled.
+## Shared modular equality admission (2026-11-02)
+
+The 32-bit residue consequence of an Integer equality is now registered directly
+in the equality graph from the original Integer input. The bounded 64-node
+Integer skeleton retains existing shared machine operands. Graph replay and
+withdrawal retain the original source, rather than an independently filed boxed
+word equality. Only the forward implication is used.
+
+Word-operation mapping retains the old constant, zero/one and cancellation
+identities using indexed graph nodes and cached shallow operation pairs. Each
+structural operation stays connected to its folded result by a graph equality.
+This also preserves the previous operation-alias route when the residue equality
+folds to a constant. Stored and lowered expressions are not simplified.
+
+The fresh-variable bookkeeping migration unblocks the original no-export
+admission regression over 8/32/96-level shared DAGs. Its repeated assumptions use
+independent result variables, avoiding contradictory premises. Differential
+coverage compares the old wrapped consequences, and source-withdrawal and
+restriction tests ensure derived equalities disappear with their source.
+
+Validation passed: 1,193 integrated arithmetic/scaling tests, plus 298 selected
+equality-graph and arithmetic-fixture tests. The arithmetic fact-stability audit
+reported zero differences. CI and the merge queue run the full `scripts/check.sh`
+gate for this increment; no local full gate or nightly suite was run.
+
+This increment covers 32-bit modular fact admission, not every modular consumer.
+The explicit equality-rewrite mapper still has boxed outputs; higher-level
+comparison decisions, inverse operation mappings and remaining interval adapters
+need migration before nested signed preparation is enabled.
 
 ## Shared interval-certificate source matching (2026-11-02)
 

@@ -1932,6 +1932,9 @@ impl EqualityGraph {
         let mut state = self.state.lock().expect("equality graph");
         self.register_expression_operands(&mut state, [], [], [left.as_ref(), right.as_ref()]);
         let changed = state.terms.add_integer_equality(left, right);
+        let modular = state.terms.add_modular_integer_equality(left, right);
+        state.has_scalar_inputs |= modular;
+        let changed = changed || modular;
         state.close(Vec::new());
         if changed {
             state.remember_input(inputs::Input::Integer(left.clone(), right.clone()));

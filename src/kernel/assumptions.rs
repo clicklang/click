@@ -40,6 +40,7 @@ use super::machine_integer::comparison::{
 use super::machine_integer::definedness::{
     definedness_of_integer_bound, integer_bounds_of_definedness,
 };
+#[cfg(test)]
 use super::machine_integer::modular::wrapped_equality_of_integer_equality;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
 pub(in crate::kernel) use condition_reasoning::held_order_at;
@@ -7456,8 +7457,6 @@ impl PureFactContext {
             && native != condition
         {
             self = self.assume_condition_uncharged(native, truth);
-        } else if let Some(wrapped) = wrapped_equality_of_integer_equality(&condition, value) {
-            self = self.assume_condition_uncharged(wrapped, true);
         }
         // The same rule through an in-range machine `+` or `-`: an Integer
         // comparison whose side is the exact value of such an operation,
@@ -7468,7 +7467,9 @@ impl PureFactContext {
         // must be a fact here (`IntegerOperationRangeBound`). At most two
         // sides and two bounds of three spellings each are looked up.
         else if let Some((native, truth, bounds)) =
-            native_comparison_through_integer_operations(&condition, value)
+            (!super::machine_integer::modular::has_word_equality_projection(&condition, value))
+                .then(|| native_comparison_through_integer_operations(&condition, value))
+                .flatten()
             && native != condition
             && bounds.iter().all(|bound| {
                 bound

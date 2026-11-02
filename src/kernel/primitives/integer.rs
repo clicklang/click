@@ -8,7 +8,9 @@ use super::*;
 mod machine_view;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
-pub(crate) use machine_view::MachineOperandView;
+pub(crate) use machine_view::{
+    MachineOperandView, clear_shared_machine_variable_cache, shared_machine_syntax_variables,
+};
 use num_bigint::BigInt;
 #[cfg(test)]
 use num_traits::ToPrimitive;
