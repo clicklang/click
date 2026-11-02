@@ -51,7 +51,6 @@ void bump_n(struct cell* p, int32 n) {
             unfold(c);
             step();
             step();
-            close_invariants();
         }
     }
     have i == n by solve();

@@ -49,10 +49,8 @@ void count_to(int32 n) {
                 Bound::At(end) => {
                     if i < end {
                         step();
-                        close_invariants();
                     } else {
                         step();
-                        close_invariants();
                     }
                 },
             }

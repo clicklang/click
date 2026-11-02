@@ -40,7 +40,7 @@ void probe(struct node *p, struct node *q, struct node *value) {
         invariant parent == p;
         invariant successor == value;
         initialize by solve();
-        preserve by { step(); step(); step(); close_invariants(); }
+        preserve by { step(); step(); step(); }
     }
     match a.model ensuring {
         owns parent->next;

@@ -134,7 +134,6 @@ void mark_run(int32* occupied, int32 capacity, int32 start, int32 end) {
                     end <= capacity;
                 };
             }
-            close_invariants();
         }
     }
     let { next: n } = unfold(w);

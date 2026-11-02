@@ -32,7 +32,6 @@ int32 walk(int32 n) {
         preserve by {
             step();
             have i <= n by { solve() using { at(region(3).entry, i) < n; }; }
-            close_invariants();
         }
     }
 }

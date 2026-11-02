@@ -38,7 +38,7 @@ int32 peek(struct node* p) {
     loop {
         invariant i >= 0 and i <= 1;
         initialize by solve();
-        preserve by { step(); close_invariants(); }
+        preserve by { step(); }
     }
     have p == p by normalize();
     match x.model {

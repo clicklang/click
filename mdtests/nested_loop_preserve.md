@@ -38,11 +38,9 @@ int32 nested_loop_preserve() {
                 invariant j >= 0 and j <= 1;
                 preserve by {
                     step();
-                    close_invariants();
                 }
             }
             step();
-            close_invariants();
         }
     }
     step();

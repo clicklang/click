@@ -66,7 +66,6 @@ int32 f(struct holder* h, struct holder* g) {
             step(); step(); step(); step();
             fold(holder(h));
             fold(holder(g));
-            close_invariants();
         }
     }
     unfold(holder(g));

@@ -325,7 +325,6 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                         model: RbTree::Node(identity, grandparent, color,
                                             t.model, sibling_model)
                     }, { left: t, right: s });
-                    close_invariants();
                 },
                 Context::Right(identity, grandparent, color, sibling_model, up_model) => {
                     have ctx_reroot(Context::Right(identity, grandparent, color,
@@ -367,7 +366,6 @@ struct rb_node* rb_root_of(struct rb_node* node, struct rb_node* parent,
                         model: RbTree::Node(identity, grandparent, color,
                                             sibling_model, t.model)
                     }, { left: s, right: t });
-                    close_invariants();
                 },
             }
         }

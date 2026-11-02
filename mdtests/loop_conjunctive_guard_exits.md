@@ -68,7 +68,6 @@ int32 uprec_owned(int32 a, int32* p) {
         preserve by {
             have 0 < a by { solve() using { a >= 0; a != 0; }; }
             step();
-            close_invariants();
         }
     }
     step();
@@ -92,7 +91,6 @@ int32 ufor_owned(int32 a, int32* p) {
             have 0 < i by { solve() using { i >= 0; i != 0; }; }
             step();
             step();
-            close_invariants();
         }
     }
     step();
@@ -127,7 +125,6 @@ int32 either(int32 a, int32 b) {
             }
             step();
             step();
-            close_invariants();
         }
     }
     step();

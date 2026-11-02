@@ -104,7 +104,6 @@ int32 claim(int32* data, int32* occupied, int32 capacity) {
                     0 <= p;
                 };
             }
-            close_invariants();
         }
     }
     have i == p by {

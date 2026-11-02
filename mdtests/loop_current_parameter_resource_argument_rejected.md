@@ -28,7 +28,6 @@ void advance(int32* rb, int32* stop) {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
 }

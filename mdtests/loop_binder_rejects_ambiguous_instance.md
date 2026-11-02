@@ -38,7 +38,6 @@ int32 spin(int32 n) {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();

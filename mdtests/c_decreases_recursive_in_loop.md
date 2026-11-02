@@ -45,13 +45,11 @@ int32 recursive_loop(int32 n) {
                 step();
                 solve();
                 step();
-                close_invariants();
             } else {
                 step();
                 step();
                 solve();
                 step();
-                close_invariants();
             }
         }
     }

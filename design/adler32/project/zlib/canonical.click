@@ -342,7 +342,6 @@ have viewable(buf[0u64..len]) by solve();
      }
      have 0 <= to_integer(len); have to_integer(len) <= 18446744073709551615;
      have to_integer(len) < at(before_decrement, to_integer(len)) by solve() using { to_integer(len) == at(before_decrement, to_integer(len)) - 1; };
-     close_invariants() by { solve(); }
     }
    }
   }

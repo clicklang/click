@@ -29,7 +29,6 @@ int32 count(uint32 n) {
         initialize by { solve(); }
         preserve by {
             step();
-            close_invariants();
         }
     }
 }

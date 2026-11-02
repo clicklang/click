@@ -47,7 +47,6 @@ void bump_other(struct cell* p, struct cell* q, int32 n) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
 }

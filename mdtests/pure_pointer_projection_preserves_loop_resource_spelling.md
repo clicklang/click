@@ -52,7 +52,6 @@ void round_trip(struct Box* p, int32 n) {
                     unfold(f);
                     let b = fold(box(p), { model: Shape::Node(identity) });
                     step(); step();
-                    close_invariants();
                 },
             }
         }

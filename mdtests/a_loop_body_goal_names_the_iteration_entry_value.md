@@ -36,7 +36,6 @@ int32 walk(int32 n) {
         preserve by {
             step();
             have i <= n by { solve() using { }; }
-            close_invariants();
         }
     }
 }

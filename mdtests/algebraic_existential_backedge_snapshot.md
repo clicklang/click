@@ -72,7 +72,6 @@ void traverse(int32 *next, int32 *visited) diverges {
                 unfold(walk(next, 0, Nat::Succ(Nat::Zero)));
                 solve();
             }
-            close_invariants();
         }
     }
 }

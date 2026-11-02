@@ -25,7 +25,6 @@ int32 spin() diverges {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
     solve();

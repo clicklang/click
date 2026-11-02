@@ -25,7 +25,6 @@ int32 drain(int32 n) diverges {
         initialize by solve();
         preserve by {
             step();
-            close_invariants() by { solve(); }
         }
     }
     step();

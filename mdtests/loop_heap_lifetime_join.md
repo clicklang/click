@@ -43,7 +43,6 @@ int32 loop_heap_lifetime_join(int32* data) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
 }

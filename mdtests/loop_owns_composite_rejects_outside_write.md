@@ -47,7 +47,6 @@ void loop_owns_composite_rejects_outside_write(struct cell* node, int32 q[], int
             step();
             step();
             step();
-            close_invariants();
         }
     }
     step();
