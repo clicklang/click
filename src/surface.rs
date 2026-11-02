@@ -5421,16 +5421,6 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
-        id: "close-invariants",
-        syntax: "close_invariants()",
-        class: "smart",
-    },
-    PublicTacticForm {
-        id: "close-invariants-by",
-        syntax: "close_invariants() by",
-        class: "control",
-    },
-    PublicTacticForm {
         id: "rewrite",
         syntax: "rewrite(P)",
         class: "simple",

@@ -1158,8 +1158,6 @@ impl adler2::Adler32 {
       solve();
      }
      have truncating_remainder(adler_lane_b(to_integer(b), to_integer(a_vec.0[1]), to_integer(a_vec.0[2]), to_integer(a_vec.0[3]), to_integer(b_vec.0[0]), to_integer(b_vec.0[1]), to_integer(b_vec.0[2]), to_integer(b_vec.0[3])), 65521) == adler_spec_b_u64(bytes, ((bytes.len() - bytes.len() % 4u64) - (bytes.len() - bytes.len() % 4u64) % 22208u64) - __rust_mir_27_remaining, to_integer(a), old(to_integer((self.b as u32)))) by solve();
-     close_invariants() by solve();
-
      }
      }
      have __rust_mir_27_remaining < 22208u64 by { cases {
@@ -1633,7 +1631,6 @@ impl adler2::Adler32 {
         rewrite(to_integer(b_vec.0[3]) == to_integer(at(vector_a, b_vec.0[3]) + (at(vector_a, a_vec.0[3]) + at(vector_a, __rust_mir_68.0[3]))));
         solve();
        }
-       close_invariants() by solve();
       }
      }
      have __rust_mir_62_remaining < 4u64 by { cases {
@@ -2319,7 +2316,6 @@ impl adler2::Adler32 {
         have to_integer(bytes.len() - __rust_mir_138_remaining) == to_integer((bytes.len() - at(tail_head, __rust_mir_138_remaining)) + 1u64) by solve() using { to_integer(__rust_mir_138_remaining) == to_integer(at(tail_head, __rust_mir_138_remaining) - 1u64); 1u64 <= at(tail_head, __rust_mir_138_remaining); at(tail_head, __rust_mir_138_remaining) <= remainder_len; remainder_len <= bytes.len(); };
         have __rust_mir_138_cursor == bytes + (bytes.len() - __rust_mir_138_remaining) by { rewrite(to_integer(bytes.len() - __rust_mir_138_remaining) == to_integer((bytes.len() - at(tail_head, __rust_mir_138_remaining)) + 1u64)); solve(); }
         have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by solve() using { to_integer(__rust_mir_138_remaining) == to_integer(at(tail_head, __rust_mir_138_remaining) - 1u64); 1u64 <= at(tail_head, __rust_mir_138_remaining); };
-       close_invariants() by solve();
       }
      }
 

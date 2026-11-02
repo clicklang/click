@@ -59,38 +59,6 @@ int32 count_up(int32 *a, int32 n) {
                 extract(k <= n);
                 solve();
             }
-            close_invariants() by {
-                both { solve(); } and {
-                    both { solve(); } and {
-                        both {
-                            intro();
-                            intro();
-                            extract(0 <= k);
-                            extract(k <= n);
-                            solve() using { 0 <= k; k <= n; n <= 1073741823; };
-                        } and {
-                            both {
-                                intro();
-                                intro();
-                                intro();
-                                assumption();
-                            } and {
-                                both {
-                                    solve() using {
-                                        at(region(5).entry, 0) <= at(region(5).entry, i);
-                                        at(region(5).entry, i) < at(region(5).entry, n);
-                                    };
-                                } and {
-                                    solve() using {
-                                        at(region(5).entry, 0) <= at(region(5).entry, i);
-                                        at(region(5).entry, i) < at(region(5).entry, n);
-                                    };
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }

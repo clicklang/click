@@ -656,8 +656,8 @@ ordinary Integer goals with a source spelling, and the closer then has them as
 exact facts.
 
 A loop's ranking obligations are members of the back-edge invariant bundle,
-not a separate kernel pass. When a loop declares `decreases`, the bundle its
-`close_invariants` closer proves gains, after the invariants in declaration
+not a separate kernel pass. When a loop declares `decreases`, the bundle the
+back edge closes gains, after the invariants in declaration
 order, one `0 <= component` obligation per declared component in declaration
 order, then one decrease obligation. For a single component that obligation is
 `post < pre`; for a tuple it is the disjunction over pivots, `post[0] < pre[0]`
@@ -666,18 +666,16 @@ component at the start of the iteration and `post` at the back edge. Choosing
 the pivot is therefore an ordinary proof of one disjunct, closed with
 `assumption()`, that the proof makes and [`click expand`](../cli/expand.md)
 prints, not a search the kernel
-performs. `close_invariants()` plans those members with the same bounded
-search it uses for the invariants; where it misses, spell them in a
-`close_invariants() by { ... }` body, whose `both { ... } and { ... }` structure
-follows the member order above. An explicit closer body written before a
-`decreases` clause existed fails promptly, and the diagnostic names the
-ranking obligations the bundle now carries.
+performs. The back edge closes each of those members with `solve()`, as it
+closes each invariant and as a function's exit closes each `ensures`; where
+`solve()` misses one, prove it, or a fact it needs, with `have ... by { ... }`
+before the back edge, for example by `solve() using { ... }` naming the guard,
+precondition, and invariant facts it needs. A missed member's diagnostic
+names the ranking obligations the bundle carries.
 
-In a written body, a member is closed with `solve() using { ... }` naming
-the guard, precondition, and invariant facts it needs. The iteration's entry
-values are available as `at(region(N).entry, x)`, the same spelling loop-body
-premises use. A bare `close_invariants()` closes each member with `solve()`,
-which reads the facts in scope: the loop's declared invariants and guard at
+The iteration's entry values are available as `at(region(N).entry, x)`, the
+same spelling loop-body premises use. `solve()` at the back edge reads the
+facts in scope: the loop's declared invariants and guard at
 iteration entry, the function's preconditions, and the C branch conditions
 this path took to reach the back edge are among them.
 <!-- verified-example: mdtests/c_decreases_lexicographic_loop.md -->
@@ -695,7 +693,7 @@ at the branching statement's entry as `at(region(N).entry, x)`. A measure
 that depends on which arm ran closes from it: `stop_at_zero` leaves through a `break` inside an `if`, so the
 only path that reaches the back edge is the one where `i == 0` was false, and
 `0 < i` follows from that disequality and the declared `i >= 0`.
-<!-- verified-example: mdtests/close_invariants_cites_a_branch_condition.md -->
+<!-- verified-example: mdtests/the_back_edge_cites_a_branch_condition.md -->
 ```click
 loop {
     decreases i;
@@ -1380,7 +1378,7 @@ A loop header holds `invariant` items, an optional `decreases` clause, the
 Those resource clauses take the same forms a contract's do, including the
 instance binder `owns name: resource(args);`. A declared binder takes the one
 enclosing owned instance of that family and arguments, the invariants may read
-`name.field`, and `close_invariants()` binds the name again at the back edge
+`name.field`, and the back edge binds the name again
 from the family and arguments rather than from whatever the body called the
 instance. Instances the loop does not declare are unavailable in the body and
 returned after it. A declared binder's arguments are read where they are used:

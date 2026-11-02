@@ -12,14 +12,14 @@ and both ranking inequalities with `solve() using`. The member compares exact
 observations, `to_integer(2 + run) == to_integer(i)`, which name `2 + run` only
 where it is defined, so the `else` arm first derives `defined(2 + run)` from the
 Integer bounds of the incremented `run`. The closing proof is
-`both { intro(); assumption(); } and { assumption(); }`, and `close_invariants()`
+`both { intro(); assumption(); } and { assumption(); }`, and the back edge's closer
 must find it by splitting the bundle and closing each conjunct with the
 direct logical steps, before the premise-selecting and rewriting strategies
 run over the whole bundle. Before that, this arm fell through to the indexed
 goal-equality rewrite and the structural derivation, and on the arena
 example the same shape crossed the smart tactic's time limit.
 
-```c filename=close_invariants_closes_a_guarded_member_by_intro.c
+```c filename=the_back_edge_closes_a_guarded_member_by_intro.c
 int32 count_run(int32 n) {
     int32 i = 0;
     int32 run = 0;
@@ -38,7 +38,7 @@ int32 count_run(int32 n) {
 
 ```click
 import click::integer;
-verifying "close_invariants_closes_a_guarded_member_by_intro.c";
+verifying "the_back_edge_closes_a_guarded_member_by_intro.c";
 
 int32 count_run(int32 n) {
     requires 0 <= n;
@@ -80,7 +80,6 @@ int32 count_run(int32 n) {
                         0 <= n;
                     };
                 }
-                close_invariants();
             } else {
                 have 2 <= i by { solve() using { not (i < 2); }; }
                 have to_integer(2 + run) == to_integer(i) by {
@@ -132,7 +131,6 @@ int32 count_run(int32 n) {
                         0 <= n;
                     };
                 }
-                close_invariants();
             }
         }
     }

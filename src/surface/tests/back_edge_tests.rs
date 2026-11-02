@@ -9,7 +9,7 @@ int32 count(int32 n) {
  loop {
   decreases n-i;
   invariant 0 <= i and i <= n;
-  preserve by { step_until(back_edge()); close_invariants(); }
+  preserve by { step_until(back_edge());  }
  }
  step_until(function.exit); solve();
 }"#;
@@ -41,10 +41,6 @@ fn back_edge_rejects_exits_wrong_phase_and_false_invariants() {
     let c = source("i=i+1;");
     for proof in [
         PROOF.replacen("step_until(loop(0));", "step_until(back_edge());", 1),
-        PROOF.replace(
-            "close_invariants();",
-            "step_until(back_edge()); close_invariants();",
-        ),
         PROOF.replace("decreases n-i;", "decreases i;"),
     ] {
         assert!(verify_c0_sources(&proof, &[("count.c", &c)]).is_err());

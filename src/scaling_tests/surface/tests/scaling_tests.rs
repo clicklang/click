@@ -2306,13 +2306,6 @@ fn ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, String
          \x20               solve() using { n > 0; }\n\
          \x20           }\n\
          \x20           step();\n\
-         \x20           close_invariants() by {\n\
-         \x20               both { solve() using { 0 <= n; } }\n\
-         \x20               and {\n\
-         \x20                   both { solve() using { 0 <= n; } }\n\
-         \x20                   and { solve() using { 0 <= n; } }\n\
-         \x20               }\n\
-         \x20           }\n\
          \x20       }\n\
          \x20   }\n\
          \x20   step();\n\
@@ -2431,7 +2424,6 @@ fn model_ranked_loops(loop_count: usize) -> (String, String) {
              \x20                   }}\n\
              \x20                   let {{ rest: r }} = unfold(c);\n\
              \x20                   step();\n\
-             \x20                   close_invariants();\n\
              \x20               }},\n\
              \x20           }}\n\
              \x20       }}\n\
@@ -2536,7 +2528,7 @@ fn repeated_tactic_applications_scale_near_linearly() {
     assert_near_linear_scaling_at_sampled_sizes("repeated tactic applications", &samples);
 }
 
-/// The same ranked loop closed by the smart `close_invariants()` planner.
+/// The same ranked loop closed by the back edge's smart closer.
 /// The planner's candidate premises are the loop head's clauses and the
 /// contract's own requirements, so growing the function's unrelated
 /// inequalities must grow the closure's work no faster than the clauses it
@@ -2561,7 +2553,6 @@ fn smart_ranked_loop_with_unrelated_inequalities(fact_count: usize) -> (String, 
          \x20               solve() using { n > 0; }\n\
          \x20           }\n\
          \x20           step();\n\
-         \x20           close_invariants();\n\
          \x20       }\n\
          \x20   }\n\
          \x20   step();\n\
@@ -2645,7 +2636,6 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
          \x20                   0 <= n;\n\
          \x20               }}\n\
          \x20           }}\n\
-         \x20           close_invariants();\n\
          \x20       }}\n\
          \x20   }}\n\
          \x20   step();\n\
@@ -2655,7 +2645,7 @@ fn guarded_member_bundle(conjuncts: usize) -> (String, String) {
     (c_source, click_source)
 }
 
-/// `close_invariants()` closes a bundle whose conjuncts sit under guards with
+/// The back edge closes a bundle whose conjuncts sit under guards with
 /// the direct logical steps alone, so its work follows the bundle's size.
 /// Before, the closer ran the premise-selecting and rewriting strategies over
 /// the whole bundle and every suffix of it first, and four guarded members
@@ -2686,14 +2676,14 @@ fn smart_guarded_member_bundle_scales_near_linearly_with_conjuncts() {
             size: sample.size,
             work: sample
                 .named_work
-                .get("smart tactic `close_invariants`")
+                .get("operation `close invariants: members`")
                 .copied()
                 .unwrap_or(0),
             named_work: BTreeMap::new(),
         })
         .collect::<Vec<_>>();
     assert!(closer.iter().all(|sample| sample.work > 0), "{closer:?}");
-    assert_near_linear_scaling("smart close_invariants over guarded members", &closer);
+    assert_near_linear_scaling("back-edge closure over guarded members", &closer);
     // Far below the smart budget of 2,000,000 units, which four members
     // alone exhausted before the closer tried its direct steps first.
     assert!(closer.last().unwrap().work < 20_000, "{closer:?}");
@@ -3990,34 +3980,14 @@ struct holder {
 
 /// A loop that marks `arena->occupied[i]` for `i` in `[start, end)` and
 /// frames `cells` constant cells below `start`, one invariant per cell.
-/// The explicit back-edge closure cites each cell's frame fact after
-/// introducing the preceding written invariant clauses. Logical reads do
-/// not add viewability goals or introductions to that certificate.
+/// The back edge closes each cell's guarded member from its frame fact.
+/// Logical reads do not add viewability goals or introductions to that
+/// closure.
 fn framed_field_cells_loop(cells: usize) -> (String, String) {
     let c_source = "struct arena {\n    int32* data;\n    int32* occupied;\n    int32 capacity;\n};\n\n\
         void mark_tail(struct arena* arena, int32 start, int32 end) {\n    int32 i;\n    i = start;\n    \
         while (i < end) {\n        arena->occupied[i] = 1;\n        i = i + 1;\n    }\n}\n"
         .to_string();
-    let ranking = "solve() using { 0 <= at(region(3).entry, i); \
-        at(region(3).entry, i) < at(region(3).entry, end); end <= 1000000; }";
-    let mut members = vec!["solve();".to_string()];
-    for cell in 0..cells {
-        members.push(format!(
-            "{}arithmetic_certificate signed_int32 {{ premise 0: arena->occupied[{cell}] == \
-             old(arena->occupied[{cell}]) => arena->occupied[{cell}] == \
-             old(arena->occupied[{cell}]); conclusion 0; }}",
-            "intro(); ".repeat(1 + cell)
-        ));
-    }
-    members.push(ranking.to_string());
-    members.push(ranking.to_string());
-    let closure = members
-        .iter()
-        .rev()
-        .skip(1)
-        .fold(members.last().unwrap().clone(), |rest, member| {
-            format!("both {{ {member} }} and {{ {rest} }}")
-        });
     let invariants = (0..cells)
         .map(|cell| {
             format!("        invariant arena->occupied[{cell}] == old(arena->occupied[{cell}]);\n")
@@ -4050,7 +4020,6 @@ fn framed_field_cells_loop(cells: usize) -> (String, String) {
          \x20           have 0 <= i by {{ solve(); }}\n\
          \x20           step();\n\
          \x20           step();\n\
-         \x20           close_invariants() by {{ {closure} }}\n\
          \x20       }}\n\
          \x20   }}\n\
          \x20   step_until(function.exit);\n\
@@ -4112,7 +4081,7 @@ fn framed_field_cells_back_edge_closure_follows_its_certificate() {
 }
 
 /// A counting loop with `clauses` pure invariant declarations beside its
-/// bound, closed by the smart `close_invariants()`.
+/// bound, closed by the back edge's smart closer.
 fn many_clause_loop(clauses: usize) -> (String, String) {
     let c_source =
         "void count(int32 n) {\n    int32 i;\n    i = 0;\n    while (i < n) {\n        i = i + 1;\n    }\n}\n"
@@ -4136,7 +4105,6 @@ fn many_clause_loop(clauses: usize) -> (String, String) {
          \x20       initialize by solve();\n\
          \x20       preserve by {{\n\
          \x20           step();\n\
-         \x20           close_invariants();\n\
          \x20       }}\n\
          \x20   }}\n\
          \x20   step_until(function.exit);\n\
@@ -5150,7 +5118,7 @@ fn a_constant_view_costs_the_same_whatever_its_length() {
     );
 }
 
-/// A smart `close_invariants()` whose quantified invariant is not restated
+/// A back-edge closure whose quantified invariant is not restated
 /// at the back edge closes it from the loop head's own universal, not by
 /// whole-bundle simplification. `search_terminates_by_unmarked_count.md`
 /// transports the quantified `next` bound explicitly before closing; the
@@ -5160,7 +5128,7 @@ fn a_constant_view_costs_the_same_whatever_its_length() {
 /// succeeded) against about 19k for the explicit proof.
 #[test]
 #[ignore = "nightly: 4s in the parallel gate"]
-fn close_invariants_without_the_explicit_transport_costs_a_small_multiple() {
+fn the_back_edge_without_the_explicit_transport_costs_a_small_multiple() {
     let markdown = include_str!("../../../../mdtests/search_terminates_by_unmarked_count.md");
     let mdtest = crate::cli::parse_mdtest(
         std::path::Path::new("search_terminates_by_unmarked_count.md"),
@@ -6600,9 +6568,7 @@ fn loop_body_reasoning_ifs_project(count: usize) -> (String, String) {
             "            if x <= {index} {{\n                have x <= {index} or x > {index} by {{ solve(); }}\n            }} else {{\n                have x <= {index} or x > {index} by {{ solve(); }}\n            }}\n"
         ));
     }
-    click_source.push_str(
-        "            close_invariants();\n        }\n    }\n    step();\n    solve();\n}\n",
-    );
+    click_source.push_str("        }\n    }\n    step();\n    solve();\n}\n");
     (c_source, click_source)
 }
 
@@ -9184,11 +9150,11 @@ fn proof_if_split_ignores_earlier_unrelated_facts() {
         // Arms that each close the iteration have no continuation to rejoin,
         // so the split is taken rather than tried as a straight-line join.
         let close = if split {
-            "            if flag == i {\n                have flag == i by assumption();\n                \
-             close_invariants();\n            } else {\n                have not (flag == i) by assumption();\n                \
-             close_invariants();\n            }\n"
+            "            if flag == i {\n                have flag == i by assumption();\n            \
+             } else {\n                have not (flag == i) by assumption();\n            \
+             }\n"
         } else {
-            "            close_invariants();\n"
+            ""
         };
         let click_source = format!(
             "verifying \"split.c\";\n\n\

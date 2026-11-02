@@ -197,7 +197,6 @@ fn sum(bytes: &[u8]) -> i32 {
                     i <= 1000u64;
                 }
             }
-            close_invariants();
         }
     }
     have i == bytes.len() by {

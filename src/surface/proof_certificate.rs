@@ -310,7 +310,36 @@ impl ProofCertificate {
     }
 
     pub fn to_proof_tactics(&self) -> Vec<ProofTactic> {
-        self.steps.iter().map(ProofStep::to_proof_tactic).collect()
+        let mut tactics = Vec::with_capacity(self.steps.len());
+        for step in self.steps.iter() {
+            // A loop's back edge closes as a function's exit does: a bundle
+            // closed member by member, `have m by { ... }` for each and then
+            // the bundle from those facts, is written as those `have`s, and
+            // the end of the `preserve` script closes each member from them.
+            if let ProofStep::CloseInvariantsBy(body) = step {
+                let body = body.to_proof_tactics();
+                let haves = body
+                    .iter()
+                    .take_while(|tactic| matches!(tactic, ProofTactic::Have(_)))
+                    .count();
+                if haves > 0 && haves < body.len() {
+                    // A member that was already a fact closes by itself at
+                    // the end of the script; its `have` would only restate it.
+                    tactics.extend(
+                        body[..haves]
+                            .iter()
+                            .filter(|tactic| {
+                                !matches!(tactic, ProofTactic::Have(have)
+                            if have.proof.tactics() == Some(&[ProofTactic::Assumption][..]))
+                            })
+                            .cloned(),
+                    );
+                    continue;
+                }
+            }
+            tactics.push(step.to_proof_tactic());
+        }
+        tactics
     }
 
     /// Returns whether this certificate contains the source-only arithmetic

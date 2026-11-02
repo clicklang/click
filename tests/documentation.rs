@@ -1117,7 +1117,6 @@ fn tactic_form_inventory_is_bidirectional() {
     for form in PUBLIC_TACTIC_FORMS {
         let matches_surface = |surface: &str| match form.id {
             "step" => surface == "`step()`",
-            "close-invariants" => surface == "`close_invariants()`",
             "apply-induction" => surface == "`apply(ih(m))`",
             "apply-induction-using" => surface == "`apply(ih(m)) using { P; ... }`",
             "apply-theorem" => surface == "`apply(theorem(args))`",
@@ -1281,9 +1280,10 @@ fn every_tactic_form_has_a_checked_positive_fixture() {
 }
 
 /// Proof-object operations with a canonical name but no surface spelling:
-/// the implicit tail's closer, `choose`, and the arithmetic engine that
+/// the implicit tail's closer, the loop back edge's closer
+/// (`close_invariants`), `choose`, and the arithmetic engine that
 /// `solve() using` runs last.
-const INTERNAL_TACTICS: &[&str] = &["arithmetic", "choose", "implicit tail"];
+const INTERNAL_TACTICS: &[&str] = &["arithmetic", "choose", "close_invariants", "implicit tail"];
 
 #[test]
 fn cli_inventory_matches_argument_parsers() {

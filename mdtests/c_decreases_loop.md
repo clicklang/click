@@ -23,13 +23,6 @@ int32 drain(int32 n) {
         preserve by {
             have 0 <= to_integer(n - 1);
             step();
-            close_invariants() by {
-                both { solve() using { 0 <= n; }; }
-                and {
-                    both { solve() using { 0 <= n; }; }
-                    and { solve() using { 0 <= n; }; }
-                }
-            }
         }
     }
     step();

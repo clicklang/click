@@ -1081,57 +1081,6 @@ fn post_execution_have_expansion_preserves_later_smart_proofs() {
 }
 
 #[test]
-#[ignore = "nightly: 0.9s in the parallel gate"]
-fn an_arms_invariant_closer_expands_with_that_arms_checked_body() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("mdtests/c_decreases_recursive_in_loop.md");
-    let markdown = std::fs::read_to_string(&path).unwrap();
-    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
-    let source = fixture.click_source.as_deref().unwrap();
-    let sources = fixture
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    verify_c0_sources(source, &sources).unwrap();
-    let position =
-        expansion::position_at_offset(source, source.find("close_invariants();").unwrap());
-    let expanded = expand_c0_tactic_source_at(source, &sources, position.line, position.column)
-        .expect("the first arm's closer expands with that arm's checked body");
-    // Each arm of the proof `if` closes the invariants itself: the arms end
-    // in different states, so nothing after the `if` is shared. Expanding
-    // the first arm's closer leaves the other arm's as written.
-    assert_eq!(
-        expanded.matches("close_invariants();").count(),
-        1,
-        "{expanded}"
-    );
-    assert_eq!(
-        expanded.matches("close_invariants() by").count(),
-        1,
-        "{expanded}"
-    );
-    assert_eq!(expanded.matches("if n > 0").count(), 1, "{expanded}");
-    assert!(expanded.contains("initialize by solve();"), "{expanded}");
-    assert!(
-        expanded.contains("    step();\n    solve();\n}"),
-        "the phase's unselected successor stays written: {expanded}"
-    );
-    verify_c0_sources(&expanded, &sources).unwrap();
-    let claim = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
-    verify_c0_sources_at(&expanded, &sources, claim.line, claim.column).unwrap();
-    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
-    session
-        .verify_at(&expanded, claim.line, claim.column)
-        .unwrap();
-    verify_c0_sources(
-        &expanded.replace("ensures result == 0", "ensures result == 1"),
-        &sources,
-    )
-    .expect_err("the expansion must still reject a false result claim");
-}
-
-#[test]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn repeated_loop_guard_closer_expands_at_original_execution_leaves() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -6334,7 +6283,6 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_preserve_phase() {
         \x20               solve();\n\
         \x20           }\n\
         \x20           step();\n\
-        \x20           close_invariants();\n\
         \x20       }\n\
         \x20   }\n\
         \x20   step();\n\
@@ -6371,7 +6319,6 @@ fn count_up_with_initialize(phase: &str) -> String {
         \x20       }}\n\
         \x20       preserve by {{\n\
         \x20           step();\n\
-        \x20           close_invariants();\n\
         \x20       }}\n\
         \x20   }}\n\
         \x20   step();\n\
@@ -12681,7 +12628,6 @@ fn bound_universal_outcome_retains_instantiation_and_transport() {
                     }
                     step();
                     unfold(all_le_range);
-                    close_invariants();
                 }
             }
             step();
@@ -15183,7 +15129,6 @@ fn loop_preservation_case_after_step_expands_in_place() {
                     } else {
                         have not (flag == i) by { assumption(); }
                     }
-                    close_invariants();
                 }
             }
             step();
@@ -15242,7 +15187,6 @@ fn loop_preservation_case_before_step_expands_in_place() {
                         have not (flag == i) by { assumption(); }
                     }
                     step();
-                    close_invariants();
                 }
             }
             step();
@@ -15936,7 +15880,6 @@ int spin(int n) {
         }
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();
@@ -16181,7 +16124,7 @@ fn an_unfold_bound_scalar_field_expands_and_reverifies() {
         "the expansion should keep the field binding: {expanded}"
     );
     assert!(
-        !expanded.contains("solve();") && !expanded.contains("close_invariants();"),
+        !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -16218,7 +16161,7 @@ fn a_decided_branch_in_a_loop_body_expands_and_reverifies() {
         "the decided branch should be printed as its checked split: {expanded}"
     );
     assert!(
-        !expanded.contains("solve();") && !expanded.contains("close_invariants();"),
+        !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -16252,7 +16195,7 @@ fn expand_iterated_ownership_claim(fixture: &str, claim: &str, kept: &[&str]) {
         );
     }
     assert!(
-        !expanded.contains("solve();") && !expanded.contains("close_invariants();"),
+        !expanded.contains("solve();"),
         "every smart site should be replaced: {expanded}"
     );
     verify_c0_sources(&expanded, &sources)
@@ -17051,7 +16994,6 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
         \x20       initialize by { solve(); }\n\
         \x20       preserve by {\n\
         \x20           step();\n\
-        \x20           close_invariants();\n\
         \x20       }\n\
         \x20   }\n\
         \x20   step_until(function.exit);\n\

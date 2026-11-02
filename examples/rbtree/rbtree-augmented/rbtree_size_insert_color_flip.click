@@ -344,7 +344,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 unfold(sized_flip_running(SizedFlipPhase::After(x, y, z))); normalize();
                             }
                             step();
-                            close_invariants() by solve();
                         },
                     }
                 }

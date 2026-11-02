@@ -4758,7 +4758,7 @@ fn rust_nested_while_loop_invariants_keep_preorder_indices() {
     );
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { step_until(loop(0)); loop { decreases 1-i; invariant 0<=i and i<=1; preserve by { step_until(loop(1)); loop { decreases 1-j; invariant 0<=j and j<=1; } step_until(back_edge()); close_invariants(); } } step_until(function.exit); solve(); }";
+    let sidecar = "verifying \"borrow.rs\"; fn nested() -> i32 { ensures result == 1; } by { step_until(loop(0)); loop { decreases 1-i; invariant 0<=i and i<=1; preserve by { step_until(loop(1)); loop { decreases 1-j; invariant 0<=j and j<=1; } step_until(back_edge()); } } step_until(function.exit); solve(); }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     fs::write(p.root.join("borrow.click"), sidecar).unwrap();
     assert_cli(&p, &["expand", "--claim", "nested.contract", "--in-place"]);

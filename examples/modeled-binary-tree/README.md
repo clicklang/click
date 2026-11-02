@@ -222,7 +222,7 @@ One iteration is one proof:
    parent's cells, the untaken sibling, and the old frame. Both children are
    consumed by that fold, which is what makes the frame stack linear.
 4. `step()` runs `root = root->left`.
-5. `close_invariants()` rebinds `ctx` to the new frame and `t` to the left
+5. The back edge rebinds `ctx` to the new frame and `t` to the left
    child by proved argument equality, and the structural measure sees a direct
    contained child of the instance the head held.
 

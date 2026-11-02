@@ -220,7 +220,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     step();
-                                                    close_invariants() by solve();
                                                 },
                                             }
                                         },
@@ -364,7 +363,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)), SizedTree::Node(u, g, Color::Black, uv, ul, ur))));
                                                     step();
-                                                    close_invariants() by solve();
                                                 },
                                             }
                                         },
@@ -509,7 +507,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, at(iteration,state.model), other))));
                                                     step();
-                                                    close_invariants() by solve();
                                                 },
                                             }
                                         },
@@ -654,7 +651,6 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                                     unfold(sized_flip_node(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)))));
                                                     unfold(sized_flip_color(SizedTree::Node(g, sized_flip_parent(up), Color::Red, gv, SizedTree::Node(u, g, Color::Black, uv, ul, ur), SizedTree::Node(p, g, Color::Black, pv, other, at(iteration,state.model)))));
                                                     step();
-                                                    close_invariants() by solve();
                                                 },
                                             }
                                         },

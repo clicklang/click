@@ -73,7 +73,8 @@ Expansion writes what a site's search found. A smart tactic (`solve`,
 `solve() using`, `step_until`, or the implicit tail that ends every script and
 is all of an omitted proof) is replaced by the simple steps it checked: for the
 tail, the steps, splits, and closers that run the remaining C and close each
-goal. A simple tactic written with
+goal, and at a loop back edge one `have <member> by { ... }` per invariant
+bundle member not already available as a fact. A simple tactic written with
 an elided argument, such as `apply(t(x))` or a bare `transport(P, Q)`, keeps
 its place, and the argument is written into it: `apply(t(x)) using { P; Q; }`.
 The implicit closer that proves a `step()` or `fold` requirement is written
@@ -81,8 +82,8 @@ into that step, as
 `step() by { ... }` or as its `requires` entries.
 
 A smart tactic that owns its body is one site. The `solve` written in a smart
-`have` (`have P by { solve(); }`) or anywhere inside a smart `both` or
-`close_invariants() by` bundle selects that enclosing tactic, and expansion
+`have` (`have P by { solve(); }`) or anywhere inside a smart `both`
+selects that enclosing tactic, and expansion
 rewrites the whole site. A `have` whose body mixes several tactics is not a
 site itself; each smart tactic written in its body is, and expanding one
 rewrites exactly that tactic's source, leaving its neighbors as written. The

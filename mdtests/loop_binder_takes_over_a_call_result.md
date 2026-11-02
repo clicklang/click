@@ -10,8 +10,7 @@ the loop by it from the first iteration.
 The call is `let { d: d } = step(touch, { c: c });`: the transport names which of
 the caller's instances the callee's `consumes` takes, and `d` names what its
 `produces` gives back. Nothing in the loop header mentions `d`; the loop finds
-the instance at `chain(n)` the way `close_invariants()` finds it at every back
-edge.
+the instance at `chain(n)` the way the back edge finds it on every iteration.
 
 ```c filename=call_before_ranked_loop.c
 int32 touch(int32 n) {

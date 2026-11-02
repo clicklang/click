@@ -32,7 +32,6 @@ fn guarded_walk(value: &mut i32, n: i32) -> i32 {
             apply(integer::int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
             apply(integer::int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
             step_until(back_edge());
-            close_invariants() by solve();
         }
         owns value[0..1];
         views guard.slot;
@@ -61,7 +60,6 @@ fn final_header(n: i32) -> i32 {
             apply(integer::int32_positive_predecessor_is_nonnegative(n - i)) using { 0 < n - i; };
             apply(integer::int32_positive_predecessor_strictly_decreases(n - i)) using { 0 < n - i; };
             step_until(back_edge());
-            close_invariants() by solve();
         }
         invariant 0 <= i and i <= n;
     }

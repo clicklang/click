@@ -10,7 +10,7 @@ to split it. A value the current locals cannot name is no longer spelled by
 a parameter that has been reassigned; the ranking obligations then close from
 the guard with nothing written but the clause.
 
-```c filename=close_invariants_ranks_a_reassigned_parameter.c
+```c filename=the_back_edge_ranks_a_reassigned_parameter.c
 int32 drain_to_zero(int32 n) {
     while (n > 0) {
         n = n - 1;
@@ -20,7 +20,7 @@ int32 drain_to_zero(int32 n) {
 ```
 
 ```click
-verifying "close_invariants_ranks_a_reassigned_parameter.c";
+verifying "the_back_edge_ranks_a_reassigned_parameter.c";
 
 int32 drain_to_zero(int32 n) {
     requires n >= 0;
@@ -38,7 +38,6 @@ int32 drain_to_zero(int32 n) {
                 solve() using { n >= 0; n <= at(drain.entry, n); };
             }
             step();
-            close_invariants();
         }
     }
     step();

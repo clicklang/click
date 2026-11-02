@@ -8,8 +8,8 @@ declared invariants and the two members `decreases n - i;` adds, `0 <= n - i`
 and a strict decrease.
 
 Those ranking members are ordinary arithmetic over the loop head's own clauses,
-so the automatic closer cites the same fixed premise list an explicit
-`close_invariants()` would: the invariants and the guard read at iteration
+so the automatic closer cites the same fixed premise list a written
+`preserve` script's back edge would: the invariants and the guard read at iteration
 entry, the function's `requires`, and the C branch condition this arm took.
 Nothing here is searched for. Each arm's ranking member expands to an
 `arithmetic_certificate`, and `click expand` reprints the closer as a proof

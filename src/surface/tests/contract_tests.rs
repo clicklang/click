@@ -2803,7 +2803,6 @@ uint64 nested(uint64 total) {
      have to_integer(n) < at(before_inner, to_integer(n)) by solve() using {
       to_integer(n) == at(before_inner, to_integer(n)) - 1;
      };
-     close_invariants() by assumption();
     }
    }
    have remaining <= total by solve() using { remaining <= total - 16u64; 16u64 <= total; total <= 64u64; };

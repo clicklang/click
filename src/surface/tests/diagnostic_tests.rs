@@ -268,50 +268,32 @@ fn callback_sources_keep_field_names_through_subobject_lowering() {
 }
 
 #[test]
-fn implicit_loop_closure_is_smart_while_written_closure_is_simple() {
+fn implicit_loop_closure_is_smart() {
     use crate::instrumentation::{VerificationEvent, collect};
     let c = "int f(int n) { while (n > 0) { n = n - 1; } return n; }";
-    for (declaration, closer, name, class) in [
-        ("invariant n == 2;", "", "solve", "smart"),
-        (
-            "decreases n; invariant 0 <= n;",
-            "close_invariants() by solve();",
-            "close_invariants",
-            "simple",
-        ),
-    ] {
-        let source = format!(
-            r#"
-            verifying "f.c";
-            int32 f(int32 n) {{ requires n == 2; ensures result == 0; }} by {{
-                loop {{ {declaration} preserve by {{ step(); {closer} }} }}
-                step_until(function.exit); solve();
-            }}
-        "#
-        );
-        let (result, events) = collect(|| verify_c0_sources(&source, &[("f.c", c)]));
-        if closer.is_empty() {
-            assert!(result.is_err(), "a false invariant must still be rejected");
-        } else {
-            result.expect("explicitly checked closure still verifies");
+    let source = r#"
+        verifying "f.c";
+        int32 f(int32 n) { requires n == 2; ensures result == 0; } by {
+            loop { invariant n == 2; preserve by { step(); } }
+            step_until(function.exit); solve();
         }
-        assert!(
-            events.iter().any(|event| matches!(event,
-                VerificationEvent::TacticStarted(tactic)
-                    if tactic.tactic_name == name && tactic.class == class
-            )),
-            "missing {class} {name}: {events:?}"
-        );
-        if closer.is_empty() {
-            assert!(
-                !events.iter().any(|event| matches!(event,
-                    VerificationEvent::TacticStarted(tactic)
-                        if tactic.tactic_name == "assumption" && tactic.class == "simple"
-                )),
-                "smart planning must not inherit a simple assumption budget"
-            );
-        }
-    }
+    "#;
+    let (result, events) = collect(|| verify_c0_sources(source, &[("f.c", c)]));
+    assert!(result.is_err(), "a false invariant must still be rejected");
+    assert!(
+        events.iter().any(|event| matches!(event,
+            VerificationEvent::TacticStarted(tactic)
+                if tactic.tactic_name == "solve" && tactic.class == "smart"
+        )),
+        "missing smart solve: {events:?}"
+    );
+    assert!(
+        !events.iter().any(|event| matches!(event,
+            VerificationEvent::TacticStarted(tactic)
+                if tactic.tactic_name == "assumption" && tactic.class == "simple"
+        )),
+        "smart planning must not inherit a simple assumption budget"
+    );
 }
 
 /// The implicit `auto` proving a bare `fold`'s open body fact is its own
@@ -2450,7 +2432,7 @@ void run(int32 total) {{ requires 0 <= total; requires total <= 1000; ensures 0 
   invariant 0 <= remaining;
   invariant remaining <= total;
   {invariants}
-  preserve by {{ step(); close_invariants() by {{ solve(); }} }}
+  preserve by {{ step();  }}
  }}
  step_until(function.exit); solve();
 }}
@@ -3088,21 +3070,12 @@ uint64 drain(uint64 len) {
  loop {
   decreases to_integer(len);
   invariant len == 0u64 or len == 16u64;
+  invariant len == 16u64;
   initialize by { solve(); }
   preserve by {
-   have len == 16u64 by {
-    cases {
-     len == 0u64 => {
-      have not (len >= 16u64) by { rewrite(len == 0u64); normalize(); }
-      contradiction(len >= 16u64);
-     }
-     len == 16u64 => { assumption(); }
-    }
-   }
    step();
    have len == 0u64 by solve();
    have to_integer(len) == 0 by solve() using { len == 0u64; };
-   close_invariants() by assumption();
   }
  }
  step_until(function.exit); solve();
@@ -3113,8 +3086,12 @@ uint64 drain(uint64 len) {
 fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
     with_proof_trace("drain", || {
         let error = verify_c0_sources(CLOSURE_TRACE_CLICK, &[("loop.c", CLOSURE_TRACE_C)])
-            .expect_err("the incomplete ranking proof must remain refused");
-        assert!(error.message().contains("assumption"));
+            .expect_err("the false invariant must be refused at the back edge");
+        assert!(
+            error.message().contains("remained open"),
+            "{}",
+            error.message()
+        );
         let trace = error.trace_context_report().unwrap();
         assert!(trace.contains("steps through:"), "{trace}");
         assert!(trace.contains("have len == 0u64"), "{trace}");
@@ -3181,12 +3158,12 @@ fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
     for size in [16, 32, 64] {
         let repeated = "   have len == len by normalize();\n".repeat(size);
         let source = CLOSURE_TRACE_CLICK.replace(
-            "   close_invariants() by assumption();",
-            &format!("{repeated}   close_invariants() by assumption();"),
+            "   have len == 0u64 by solve();\n",
+            &format!("{repeated}   have len == 0u64 by solve();\n"),
         );
         with_proof_trace("drain", || {
             let error = verify_c0_sources(&source, &[("loop.c", CLOSURE_TRACE_C)])
-                .expect_err("a trace cannot make the ranking proof valid");
+                .expect_err("a trace cannot make the false invariant hold");
             let before = crate::surface::proof_trace::lineage_visits();
             assert!(
                 before <= 4 * size + 100,
@@ -3217,13 +3194,13 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
                 invariant len == 16u64;
                 initialize by assumption();
                 preserve by {
-                    branch {
+                    if flag == 0 {
+                        step();
                         step();
                         have len == 0u64 by solve();
-                        close_invariants() by assumption();
                     } else {
                         step();
-                        close_invariants() by assumption();
+                        step();
                     }
                 }
             }
@@ -3234,8 +3211,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
         let error = verify_c0_sources(source, &[("loop.c", c)])
             .expect_err("the deliberately invalid invariant must fail in the then arm");
         let trace = error.trace_context_report().unwrap();
-        assert!(trace.contains("then arm"), "{trace}");
-        assert!(trace.contains("flag"), "{trace}");
+        assert!(trace.contains("flag == 0"), "{trace}");
         assert!(trace.contains("have len == 0u64"), "{trace}");
         assert!(!trace.contains("else arm"), "{trace}");
     });
