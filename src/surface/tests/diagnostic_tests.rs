@@ -1890,7 +1890,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
     with_proof_trace("split", || {
         verify_project_theorem(&project, &ProgramInputs::Bundle(c.to_vec()), "split").unwrap();
         let whole = accepted_proof_trace(&locate, &arm, &|_, _, _| false, None).unwrap();
-        assert!(whole.ends_with("\ntactic@12: cases"), "{whole}");
+        assert!(whole.ends_with("\ntactic@12: cases (joined)"), "{whole}");
         let right = accepted_proof_trace(
             &locate,
             &arm,
@@ -4134,4 +4134,78 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
             format!("pp[{start}..{end}]"),
         );
     }
+}
+
+#[test]
+fn failed_invariant_after_branch_join_reports_the_join() {
+    for (then_arm, else_arm) in [("len -= 16;", "len = 16;"), ("len = 16;", "len -= 16;")] {
+        let c = format!(
+            "unsigned long branch_drain(unsigned long len, int flag) {{ while (len >= 16) {{ if (flag == 0) {{ {then_arm} }} else {{ {else_arm} }} }} return len; }}"
+        );
+        let source = r#"target "x86_64-unknown-linux-gnu";
+            verifying "loop.c";
+            uint64 branch_drain(uint64 len, int32 flag) {
+                requires len == 16u64;
+                ensures result <= 16u64;
+            } by {
+                loop {
+                    invariant len == 16u64;
+                    initialize by assumption();
+                    preserve by { branch { step(); } else { step(); } }
+                }
+                step_until(function.exit); solve();
+            }
+        "#;
+        with_proof_trace("branch_drain", || {
+            let error = verify_c0_sources(source, &[("loop.c", c.as_str())])
+                .expect_err("one arm violates the invariant");
+            let trace = error.trace_context_report().unwrap();
+            assert_eq!(
+                error.proof_source_tactic_path(),
+                Some(&[2][..]),
+                "{}",
+                error.report()
+            );
+            assert!(trace.contains("branch (joined)"), "{trace}");
+            assert!(!trace.contains("else arm"), "{trace}");
+            assert!(
+                error.message().contains("after the `branch` join"),
+                "{}",
+                error.report()
+            );
+            assert!(
+                error.message().contains("branch ensuring"),
+                "{}",
+                error.report()
+            );
+        });
+    }
+}
+
+#[test]
+fn failed_postcondition_after_branch_join_keeps_the_join_trace() {
+    let c = "unsigned long choose(int flag) { unsigned long len; if (flag == 0) { len = 0; } else { len = 16; } return len; }";
+    let source = r#"target "x86_64-unknown-linux-gnu";
+        verifying "choose.c";
+        uint64 choose(int32 flag) {
+            ensures result == 16u64;
+        } by {
+            step();
+            branch { step(); } else { step(); }
+            step();
+        }
+    "#;
+    with_proof_trace("choose", || {
+        let error = verify_c0_sources(source, &[("choose.c", c)])
+            .expect_err("the joined return does not establish the postcondition");
+        let trace = error.trace_context_report().unwrap();
+        assert!(trace.contains("branch (joined)"), "{trace}");
+        assert!(!trace.contains("else arm"), "{trace}");
+        assert_ne!(
+            error.proof_source_tactic_path(),
+            Some(&[3][..]),
+            "{}",
+            error.report()
+        );
+    });
 }

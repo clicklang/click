@@ -1048,7 +1048,7 @@ fn append_path(
                     );
                     *done = true;
                 } else {
-                    detail.push_str(&format!("\n{indent}{header}"));
+                    detail.push_str(&format!("\n{indent}{header} (joined)"));
                     append_added_facts(&mut detail, &join.facts, labels, &format!("{indent}  "));
                     if join.more_facts > 0 {
                         detail.push_str(&format!(
