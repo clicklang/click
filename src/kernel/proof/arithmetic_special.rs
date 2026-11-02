@@ -1291,100 +1291,125 @@ pub(crate) fn signed_width_constant(
 /// The range a term of `width` has from its root constructor alone. An
 /// `int32` term has no narrower root constructor (`char` and `short` values
 /// share the 32-bit term unchanged), so only a constant narrows it.
-fn signed_width_interval(width: SignedDefinedWidth, term: &Bitvector32Term) -> (i64, i64) {
-    match width {
-        SignedDefinedWidth::Int32 => {
-            signed_width_constant(width, term).map_or_else(|| width.range(), |value| (value, value))
-        }
-        SignedDefinedWidth::Int64 => term.int64_width_interval().unwrap_or(width.range()),
-    }
-}
-
-/// A signed order fact of `width` as `(lower, upper, strict)`.
-fn signed_width_order_fact(
+fn signed_width_interval(
     width: SignedDefinedWidth,
-    condition: &ConditionTerm,
-    value: bool,
-) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    match width {
-        SignedDefinedWidth::Int32 => {
-            crate::kernel::reasoning::order_reasoning::condition_as_order_fact(condition, value)
+    term: crate::kernel::MachineOperandView<'_>,
+) -> (i64, i64) {
+    use crate::kernel::MachineOperandView as V;
+    match (width, term) {
+        (SignedDefinedWidth::Int32, term) => signed_width_constant_view(width, term)
+            .map_or_else(|| width.range(), |value| (value, value)),
+        (SignedDefinedWidth::Int64, V::Legacy(term)) => {
+            term.int64_width_interval().unwrap_or(width.range())
         }
-        SignedDefinedWidth::Int64 => {
-            crate::kernel::reasoning::order_reasoning::condition_as_int64_order_fact(
-                condition, value,
-            )
+        (SignedDefinedWidth::Int64, term) => {
+            if let Some(Bitvector32Term::Int64Constant(value)) = term.literal() {
+                return (value, value);
+            }
+            if let Some((
+                MachineIntegerType::Int64,
+                crate::kernel::MachineBinaryOp::BitwiseAnd,
+                [left, right],
+            )) = term.binary()
+                && let Some(mask) = left.int64_constant().or_else(|| right.int64_constant())
+                && mask >= 0
+            {
+                return (0, mask);
+            }
+            width.range()
         }
     }
 }
 
-/// The two sides of an equality of `width`.
-fn signed_width_equality(
+fn signed_width_constant_view(
     width: SignedDefinedWidth,
-    condition: &ConditionTerm,
-) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
-    match (width, condition) {
-        (
-            SignedDefinedWidth::Int32,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-        )
-        | (
-            SignedDefinedWidth::Int64,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-        ) => Some((left, right)),
-        _ => None,
+    term: crate::kernel::MachineOperandView<'_>,
+) -> Option<i64> {
+    match width {
+        SignedDefinedWidth::Int32 => term.word32_constant().map(|bits| i64::from(bits as i32)),
+        SignedDefinedWidth::Int64 => term.int64_constant(),
     }
 }
 
-/// What one constant fact of `width` says about `term`: an inclusive lower
-/// and upper bound, either of which may be absent. `None` when the fact is
-/// not a constant order or equality fact of that width on `term`.
+/// What one explicitly supplied constant fact says about an operand.
+/// The source fact remains the witness; matching reads only its two endpoints.
 pub(crate) fn signed_constant_bound_on(
     width: SignedDefinedWidth,
     premise: &Proposition,
     term: &Bitvector32Term,
 ) -> Option<(Option<i64>, Option<i64>)> {
+    signed_constant_bound_on_view(
+        width,
+        premise,
+        crate::kernel::MachineOperandView::Legacy(term),
+    )
+}
+
+fn signed_constant_bound_on_view(
+    width: SignedDefinedWidth,
+    premise: &Proposition,
+    term: crate::kernel::MachineOperandView<'_>,
+) -> Option<(Option<i64>, Option<i64>)> {
+    let format = match width {
+        SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
+        SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
+    };
+    let key = crate::kernel::equality_graph::MachineAtom::from_operand(format, term);
+    signed_constant_bound_on_key(width, premise, &key)
+}
+
+fn signed_constant_bound_on_key(
+    width: SignedDefinedWidth,
+    premise: &Proposition,
+    key: &crate::kernel::equality_graph::MachineAtom,
+) -> Option<(Option<i64>, Option<i64>)> {
+    use crate::kernel::equality_graph::MachineAtom;
+    use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
     let Proposition::ConditionIs(condition, value) = premise else {
         return None;
     };
-    if let Some((left, right)) = signed_width_equality(width, condition) {
-        if !*value {
-            return None;
-        }
-        let constant = if left == term {
-            signed_width_constant(width, right)?
-        } else if right == term {
-            signed_width_constant(width, left)?
+    let view = comparison_view(condition, *value)?;
+    let format = match width {
+        SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
+        SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
+    };
+    if view.format != format
+        && !(format == MachineIntegerType::Int32
+            && view.format == MachineIntegerType::UInt32
+            && view.relation == Relation::Equal)
+    {
+        return None;
+    }
+    let [left, right] =
+        [&view.operands[0], &view.operands[1]].map(|operand| operand.operand_view());
+    let same = |operand| &MachineAtom::from_operand(format, operand) == key;
+    if view.relation == Relation::Equal {
+        let constant = if same(left) {
+            signed_width_constant_view(width, right)?
+        } else if same(right) {
+            signed_width_constant_view(width, left)?
         } else {
             return None;
         };
         return Some((Some(constant), Some(constant)));
     }
-    let (lower, upper, strict) = signed_width_order_fact(width, condition, *value)?;
+    let strict = match view.relation {
+        Relation::Less => true,
+        Relation::LessEqual => false,
+        _ => return None,
+    };
     let step = i64::from(strict);
     let (minimum, maximum) = width.range();
-    if &lower == term
-        && let Some(constant) = signed_width_constant(width, &upper)
+    if same(left)
+        && let Some(constant) = signed_width_constant_view(width, right)
     {
-        // `term < c` or `term <= c`. A strict bound below the width's
-        // minimum has no inhabitant; it bounds nothing this rule can use.
         let bound = constant
             .checked_sub(step)
             .filter(|bound| *bound >= minimum)?;
         return Some((None, Some(bound)));
     }
-    if &upper == term
-        && let Some(constant) = signed_width_constant(width, &lower)
+    if same(right)
+        && let Some(constant) = signed_width_constant_view(width, left)
     {
         let bound = constant
             .checked_add(step)
@@ -1401,72 +1426,193 @@ pub(crate) fn signed_constant_bound_on(
 /// operation is the one overflow conjunct no other conjunct takes as an
 /// operand, and every other conjunct must be a conjunct of a cited premise,
 /// which marks that premise used.
+type SignedDefinedOperation<'a> = (
+    SignedDefinedWidth,
+    [crate::kernel::machine_integer::comparison::ComparisonOperand<'a>; 2],
+    bool,
+);
+
+enum IntervalLeaf<'a> {
+    Written(&'a Proposition),
+    Arithmetic(crate::kernel::machine_integer::definedness::OverflowQueryView),
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum IntervalLeafKey<'a> {
+    Written(&'a Proposition),
+    Arithmetic(
+        MachineIntegerType,
+        OverflowOperation,
+        [crate::kernel::equality_graph::MachineAtom; 2],
+    ),
+}
+
+impl<'a> IntervalLeaf<'a> {
+    fn key(&self) -> IntervalLeafKey<'a> {
+        use crate::kernel::MachineOperandView as V;
+        use crate::kernel::equality_graph::MachineAtom;
+        match self {
+            Self::Arithmetic(query) => IntervalLeafKey::Arithmetic(
+                query.format,
+                match query.operation {
+                    crate::kernel::machine_integer::Operation::Add => OverflowOperation::Add,
+                    crate::kernel::machine_integer::Operation::Subtract => {
+                        OverflowOperation::Subtract
+                    }
+                    crate::kernel::machine_integer::Operation::Multiply => {
+                        OverflowOperation::Multiply
+                    }
+                },
+                [&query.operands[0], &query.operands[1]]
+                    .map(|operand| MachineAtom::from_operand(query.format, operand.operand_view())),
+            ),
+            Self::Written(Proposition::ConditionIs(
+                ConditionTerm::Overflows {
+                    format,
+                    op,
+                    left,
+                    right,
+                },
+                false,
+            )) => IntervalLeafKey::Arithmetic(
+                *format,
+                *op,
+                [
+                    MachineAtom::from_operand(*format, V::Legacy(left)),
+                    MachineAtom::from_operand(*format, V::Legacy(right)),
+                ],
+            ),
+            Self::Written(proposition) => IntervalLeafKey::Written(proposition),
+        }
+    }
+
+    fn operation(&self) -> Option<SignedDefinedOperation<'a>> {
+        use crate::kernel::machine_integer::{Operation, comparison::ComparisonOperand};
+        match self {
+            Self::Arithmetic(query) => {
+                let width = match query.format {
+                    MachineIntegerType::Int32 => SignedDefinedWidth::Int32,
+                    MachineIntegerType::Int64 => SignedDefinedWidth::Int64,
+                    _ => return None,
+                };
+                let subtract = match query.operation {
+                    Operation::Add => false,
+                    Operation::Subtract => true,
+                    Operation::Multiply => return None,
+                };
+                Some((width, query.operands.clone(), subtract))
+            }
+            Self::Written(proposition) => {
+                let (width, left, right, subtract) = signed_definedness_operands(proposition)?;
+                Some((
+                    width,
+                    [
+                        ComparisonOperand::Written(left),
+                        ComparisonOperand::Written(right),
+                    ],
+                    subtract,
+                ))
+            }
+        }
+    }
+}
+
+fn interval_leaves(proposition: &Proposition) -> Vec<IntervalLeaf<'_>> {
+    let mut result = Vec::new();
+    let mut pending = vec![proposition];
+    while let Some(next) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Some(query) =
+            crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(next)
+        {
+            result.push(IntervalLeaf::Arithmetic(query));
+        } else if let Proposition::And(left, right) = next {
+            pending.push(right);
+            pending.push(left);
+        } else {
+            result.push(IntervalLeaf::Written(next));
+        }
+    }
+    result
+}
+
 fn signed_defined_operation<'r>(
     result: &'r Proposition,
     bounds: &[(usize, &Proposition)],
     used: &mut [bool],
-) -> Option<(
-    SignedDefinedWidth,
-    &'r Bitvector32Term,
-    &'r Bitvector32Term,
-    bool,
-)> {
-    if !matches!(result, Proposition::And(_, _)) {
-        return signed_definedness_operands(result);
+) -> Option<SignedDefinedOperation<'r>> {
+    use crate::kernel::MachineBinaryOp;
+    use crate::kernel::equality_graph::MachineAtom;
+    let conjuncts = interval_leaves(result);
+    if conjuncts.len() == 1 {
+        return conjuncts[0].operation();
     }
-    let conjuncts = conjunct_list(result);
     let operations = conjuncts
         .iter()
-        .map(|conjunct| signed_definedness_operands(conjunct))
+        .map(IntervalLeaf::operation)
         .collect::<Vec<_>>();
-    let operation_term = |(_, left, right, subtract): (
-        SignedDefinedWidth,
-        &Bitvector32Term,
-        &Bitvector32Term,
-        bool,
-    )| {
-        let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
-        if subtract {
-            binary_node!(Int32, Subtract, left, right)
-        } else {
-            binary_node!(Int32, Add, left, right)
+    // The established conjunction rule matches an int32 operation root.
+    // Index only the two operands explicitly named by each operation; there
+    // is no pairwise scan or construction of a boxed candidate expression.
+    let mut operand_operations = std::collections::HashSet::new();
+    for (_, operands, _) in operations.iter().flatten() {
+        for operand in operands {
+            if let Some((MachineIntegerType::Int32, op, children)) = operand.operand_view().binary()
+            {
+                operand_operations.insert((
+                    op,
+                    children
+                        .map(|child| MachineAtom::from_operand(MachineIntegerType::Int32, child)),
+                ));
+            }
         }
-    };
+    }
     let mut outermost = operations
         .iter()
         .enumerate()
         .filter_map(|(position, operation)| {
-            let term = operation_term((*operation)?);
-            let operand_of_another = operations
-                .iter()
-                .flatten()
-                .any(|(_, left, right, _)| **left == term || **right == term);
-            (!operand_of_another).then_some(position)
+            let (_, operands, subtract) = operation.as_ref()?;
+            let key = (
+                if *subtract {
+                    MachineBinaryOp::Subtract
+                } else {
+                    MachineBinaryOp::Add
+                },
+                [&operands[0], &operands[1]].map(|operand| {
+                    MachineAtom::from_operand(MachineIntegerType::Int32, operand.operand_view())
+                }),
+            );
+            (!operand_operations.contains(&key)).then_some(position)
         });
     let chosen = outermost.next()?;
     if outermost.next().is_some() {
         return None;
     }
-    let premise_conjuncts = bounds
-        .iter()
-        .map(|(_, premise)| conjunct_list(premise))
-        .collect::<Vec<_>>();
+    let mut premise_conjuncts = std::collections::HashMap::<_, Vec<usize>>::new();
+    for (position, (_, premise)) in bounds.iter().enumerate() {
+        for conjunct in conjunct_list(premise) {
+            crate::instrumentation::record_deterministic_work(1);
+            premise_conjuncts
+                .entry(IntervalLeaf::Written(conjunct).key())
+                .or_default()
+                .push(position);
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
     for (position, conjunct) in conjuncts.iter().enumerate() {
         if position == chosen {
             continue;
         }
-        let mut justified = false;
-        for (premise, parts) in premise_conjuncts.iter().enumerate() {
-            if parts.contains(conjunct) {
-                used[premise] = true;
-                justified = true;
-            }
+        let key = conjunct.key();
+        if !seen.insert(key.clone()) {
+            continue;
         }
-        if !justified {
-            return None;
+        for premise in premise_conjuncts.get(&key)? {
+            crate::instrumentation::record_deterministic_work(1);
+            used[*premise] = true;
         }
     }
-    operations[chosen]
+    operations[chosen].clone()
 }
 
 fn conjunct_list(proposition: &Proposition) -> Vec<&Proposition> {
@@ -1486,13 +1632,19 @@ fn conjunct_list(proposition: &Proposition) -> Vec<&Proposition> {
 
 fn signed_operand_range(
     width: SignedDefinedWidth,
-    term: &Bitvector32Term,
+    term: crate::kernel::MachineOperandView<'_>,
     bounds: &[(usize, &Proposition)],
     used: &mut [bool],
 ) -> (i64, i64) {
     let (mut lower, mut upper) = signed_width_interval(width, term);
+    let format = match width {
+        SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
+        SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
+    };
+    let key = crate::kernel::equality_graph::MachineAtom::from_operand(format, term);
     for (position, (_, premise)) in bounds.iter().enumerate() {
-        if let Some((bound_lower, bound_upper)) = signed_constant_bound_on(width, premise, term) {
+        if let Some((bound_lower, bound_upper)) = signed_constant_bound_on_key(width, premise, &key)
+        {
             used[position] = true;
             if let Some(value) = bound_lower {
                 lower = lower.max(value);
@@ -1531,17 +1683,15 @@ fn signed_defined(
     bounds: &[(usize, &Proposition)],
     result: &Proposition,
 ) -> Result<(), SpecialArithmeticCheckError> {
-    let interval_query = crate::kernel::machine_integer::definedness::interval_query_form(result);
-    let result = interval_query.as_ref().unwrap_or(result);
     let mut used = vec![false; bounds.len()];
-    let (claimed, left, right, subtract) = signed_defined_operation(result, bounds, &mut used)
+    let (claimed, operands, subtract) = signed_defined_operation(result, bounds, &mut used)
         .ok_or(SpecialArithmeticCheckError::NodeResultMismatch(index))?;
     // The node's spelling names the width; it must be the claim's own.
     if claimed != width {
         return Err(SpecialArithmeticCheckError::NodeResultMismatch(index));
     }
-    let left_range = signed_operand_range(width, left, bounds, &mut used);
-    let right_range = signed_operand_range(width, right, bounds, &mut used);
+    let left_range = signed_operand_range(width, operands[0].operand_view(), bounds, &mut used);
+    let right_range = signed_operand_range(width, operands[1].operand_view(), bounds, &mut used);
     if let Some(position) = used.iter().position(|used| !used) {
         return Err(SpecialArithmeticCheckError::SignedDefinedBoundUnrelated {
             node: index,
@@ -3430,6 +3580,76 @@ mod tests {
     use super::*;
 
     #[test]
+    fn constant_bound_views_preserve_native_comparison_polarity() {
+        use crate::kernel::{MachineOperandView, Variable};
+        for (format, width) in [
+            (MachineIntegerType::Int32, SignedDefinedWidth::Int32),
+            (MachineIntegerType::Int64, SignedDefinedWidth::Int64),
+        ] {
+            let term = Bitvector32Term::Variable(Variable(982601));
+            for constant in [-5, 0, 7] {
+                let literal = if format == MachineIntegerType::Int32 {
+                    Bitvector32Term::Constant(constant as u32)
+                } else {
+                    Bitvector32Term::Int64Constant(constant)
+                };
+                for relation in [
+                    CompareRelation::Equal,
+                    CompareRelation::LessThan,
+                    CompareRelation::LessEqual,
+                    CompareRelation::GreaterThan,
+                    CompareRelation::GreaterEqual,
+                ] {
+                    for reverse in [false, true] {
+                        for truth in [false, true] {
+                            let (left, right) = if reverse {
+                                (literal.clone(), term.clone())
+                            } else {
+                                (term.clone(), literal.clone())
+                            };
+                            let premise = Proposition::ConditionIs(
+                                ConditionTerm::Compare {
+                                    format,
+                                    relation,
+                                    left: Box::new(left),
+                                    right: Box::new(right),
+                                },
+                                truth,
+                            );
+                            let expected = if relation == CompareRelation::Equal {
+                                truth.then_some((Some(constant), Some(constant)))
+                            } else {
+                                let greater = matches!(
+                                    relation,
+                                    CompareRelation::GreaterThan | CompareRelation::GreaterEqual
+                                ) ^ reverse
+                                    ^ !truth;
+                                let strict = matches!(
+                                    relation,
+                                    CompareRelation::LessThan | CompareRelation::GreaterThan
+                                ) ^ !truth;
+                                Some(if greater {
+                                    (Some(constant + i64::from(strict)), None)
+                                } else {
+                                    (None, Some(constant - i64::from(strict)))
+                                })
+                            };
+                            assert_eq!(
+                                signed_constant_bound_on_view(
+                                    width,
+                                    &premise,
+                                    MachineOperandView::Legacy(&term)
+                                ),
+                                expected
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn cast_term_identity_keeps_formats_and_operand_identity() {
         use crate::kernel::{IntegerTerm, MachineIntegerConstant, MachineIntegerType, Variable};
         let native_cast = |source, destination, variable| Bitvector32Term::MachineIntegerCast {
@@ -3795,6 +4015,26 @@ mod tests {
             inner.clone(),
         ];
         assert_eq!(check_int32_defined(&goal, &premises, vec![0, 1]), Ok(()));
+        let Proposition::And(outer, inner) = &goal else {
+            unreachable!()
+        };
+        let bounds =
+            crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(outer);
+        let ordinary = Proposition::And(
+            Box::new(Proposition::And(
+                Box::new(bounds[0].clone()),
+                Box::new(bounds[1].clone()),
+            )),
+            inner.clone(),
+        );
+        assert_eq!(
+            check_int32_defined(&ordinary, &premises, vec![0, 1]),
+            Ok(())
+        );
+        assert_eq!(
+            check_int32_defined(&ordinary, &premises, vec![0]),
+            Err(SpecialArithmeticCheckError::NodeResultMismatch(0))
+        );
         // The inner conjunct is not the operation's overflow; without the
         // premise that states it, nothing establishes it.
         assert_eq!(

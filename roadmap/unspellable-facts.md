@@ -171,6 +171,26 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared signed-definedness certificate checking (2026-11-02)
+
+The special signed-definedness checker now reads ordinary arithmetic domains
+and native overflow inputs through shared operand views. Signed 32/64-bit bound
+queries retain their original source facts and compare operand identities;
+the queried operand's key is built once for the cited premise list. Constant,
+mask and legacy widening ranges retain their previous interpretations.
+
+Conjunction checking indexes operation operands and cited conjuncts instead of
+constructing candidate expression trees and comparing every operation pair.
+Missing inner domains and unrelated bound premises remain refusals. The
+existing conjunction rule's operator-format convention is unchanged.
+
+The focused suite and all scaling tests pass (1,187 tests). New regressions
+exercise comparison polarity, ordinary nested domains, missing premises and
+complete signed 32/64-bit certificates over 8/32/96-node doubled-child DAGs,
+without exporting shared operands. The full gate is running. The higher-level
+comparison dispatcher, operation/modular mappings and other interval adapters
+remain in progress; nested signed preparation remains disabled.
+
 ## Shared interval-certificate source matching (2026-11-02)
 
 The signed certificate's source matcher reads ordinary definedness conjunctions
