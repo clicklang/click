@@ -154,3 +154,45 @@ fn admitting_modular_equalities_does_not_export_shared_operands() {
         assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
     }
 }
+
+#[test]
+fn inverse_operation_mapping_retains_shared_prefixes() {
+    use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm};
+    use crate::kernel::machine_integer::identity::machine_operation_of_integer_value;
+    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32,
+        MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+    for unrelated in [0, 128] {
+    let _unrelated = (0..unrelated).map(|i| KernelTerm::variable(KernelType::Integer, Variable(984000+i))).collect::<Vec<_>>();
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(982801));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add,
+                    [root.clone(), root.clone()]);
+                let machine = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+                let observation = IntegerTerm::Machine(machine.clone());
+                for exact in [
+                    IntegerTerm::Add(observation.clone().into(), IntegerTerm::constant(1.into()).into()),
+                    IntegerTerm::Subtract(observation.clone().into(), observation.clone().into()),
+                ] {
+                    let (result, _) = machine_operation_of_integer_value(&exact, format).unwrap();
+                    let IntegerTerm::Machine(result) = result else { panic!("operation observation") };
+                    assert!(!machine.has_boxed_operand());
+                    assert!(!result.has_boxed_operand());
+                }
+                let multiply = IntegerTerm::Multiply(observation.clone().into(), observation.into());
+                assert!(machine_operation_of_integer_value(&multiply, format).is_none());
+                assert!(!machine.has_boxed_operand());
+            }
+        });
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else { unreachable!() };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+    }
+    }
+}

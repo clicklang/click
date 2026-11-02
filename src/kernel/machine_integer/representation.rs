@@ -98,6 +98,52 @@ pub(crate) fn operation_word(
     })
 }
 
+/// Construct an observation while retaining arithmetic operands already stored
+/// in the shared arena. Opaque legacy operands keep their existing representation;
+/// this adapter changes neither conversion rules nor the operation's spelling.
+pub(crate) fn operation_observation(
+    ty: MachineIntegerType,
+    operation: Operation,
+    left: &crate::kernel::SharedMachineIntegerTerm,
+    right: &crate::kernel::SharedMachineIntegerTerm,
+) -> Option<crate::kernel::IntegerTerm> {
+    use crate::kernel::{IntegerTerm, KernelTerm, KernelTermImport, SharedMachineIntegerTerm};
+    let format = operator_format(ty)?;
+    if let (Some(left), Some(right)) = (left.shared_operand(), right.shared_operand()) {
+        let operand = |term: &KernelTerm| {
+            // operation_word uses the legacy word spelling for 32-bit literal
+            // operands. Only the root literal needs adapting; no child is read.
+            if word(ty) == Word::Bits32
+                && let crate::kernel::KernelTermNode::MachineLiteral(literal) = term.node()
+            {
+                let literal = Bitvector32Term::operand32(format, literal.legacy_term());
+                return KernelTermImport::default()
+                    .machine_arithmetic(format, &literal)
+                    .expect("literal arithmetic operand");
+            }
+            term.with_machine_observation_type(format)
+        };
+        let root = KernelTerm::machine_binary_shared(
+            format,
+            machine_binary_op_of(operation),
+            [operand(left), operand(right)],
+        )
+        .with_machine_observation_type(ty);
+        return Some(IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(
+            ty, root,
+        )?));
+    }
+    IntegerTerm::from_machine(
+        ty,
+        operation_word(
+            ty,
+            operation,
+            Box::new(left.value().clone()),
+            Box::new(right.value().clone()),
+        )?,
+    )
+}
+
 /// The machine operation `left op right` at `ty`, built by the folding
 /// constructors (`Bitvector32Term::machine_binary`), which simplify constant
 /// operands. `None` where `ty` has no such node.
