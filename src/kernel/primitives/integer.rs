@@ -5,8 +5,10 @@
 //! and overflow semantics.  Mathematical integers have no C representation.
 
 use super::*;
+mod machine_view;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
+pub(crate) use machine_view::MachineOperandView;
 use num_bigint::BigInt;
 #[cfg(test)]
 use num_traits::ToPrimitive;
@@ -503,6 +505,20 @@ enum MachineIntegerOperand {
 impl Clone for SharedMachineIntegerTerm {
     fn clone(&self) -> Self {
         Self(self.0.clone())
+    }
+}
+
+// Retained observations have exact, format-tagged identities. Hashing or
+// comparing a lookup key must not request the boxed operand.
+impl PartialEq for SharedMachineIntegerTerm {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+impl Eq for SharedMachineIntegerTerm {}
+impl std::hash::Hash for SharedMachineIntegerTerm {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id().hash(state);
     }
 }
 

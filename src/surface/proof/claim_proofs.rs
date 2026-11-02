@@ -477,13 +477,15 @@ fn prove_claims_by_checked_tactics(
         c_function_entry_state(&state, &function, &arguments).ok_or_else(|| {
             ClickError::new(format!("`{proof_label}` could not bind function arguments"))
         })?;
-    let (mut pure_facts, entry_fact_origins) = contract_entry_view(
+    let (mut pure_facts, mut entry_fact_origins) = contract_entry_view(
         pure_facts,
         entry_fact_origins,
         &state,
         &function,
         &arguments,
     );
+    pure_facts.push(function_environment.byte_order_fact());
+    entry_fact_origins.push(EntryFactOrigin::Derived);
     // Entry selection can rebuild the fact context. Publish the held input
     // in that final lineage, so pointer stores advance its address index
     // rather than leaving a later unrelated call to walk their history.

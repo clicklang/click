@@ -4080,3 +4080,11 @@ path = "reference/library/index.md#usizeabs_diff"
 [[item]]
 id = "library.function.option::unwrap_or"
 path = "reference/library/index.md#optionunwrap_or"
+
+[[item]]
+id = "library.theorem.integer::uint32_from_le_bytes"
+path = "reference/library/index.md#integeruint32_from_le_bytes"
+
+[[item]]
+id = "language.word.little_endian"
+path = "reference/language/index.md#target-byte-order"

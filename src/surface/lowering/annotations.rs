@@ -4652,6 +4652,16 @@ impl AnnotationLowerer<'_> {
                         )],
                     });
                 }
+                if name == "little_endian" {
+                    if !arguments.is_empty() {
+                        return Err("little_endian expects no arguments".into());
+                    }
+                    return Ok(SpecProposition::Predicate {
+                        resource_state_dependent: false,
+                        name: crate::kernel::LITTLE_ENDIAN_PREDICATE_NAME.into(),
+                        arguments: vec![],
+                    });
+                }
                 if name == "same_object" {
                     let [left, right] = arguments.as_slice() else {
                         return Err(format!(

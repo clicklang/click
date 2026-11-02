@@ -388,9 +388,14 @@ impl TermClasses {
                             let head = self.intern_node(Node::IntegerOperation(
                                 IntegerOperation::Observe(value.ty()),
                             ));
-                            pending.push(Work::Call(head, 1));
-                            pending
-                                .push(Work::Machine(value.value(), W::of_machine_type(value.ty())));
+                            let width = W::of_machine_type(value.ty());
+                            if let Some(term) = value.shared_operand() {
+                                let operand = self.intern_shared_machine(term, width);
+                                values.push(self.intern_node(Node::Apply(head, operand)));
+                            } else {
+                                pending.push(Work::Call(head, 1));
+                                pending.push(Work::Machine(value.value(), width));
+                            }
                             continue;
                         }
                         I::Negate(value) => {
@@ -1551,6 +1556,9 @@ impl TermClasses {
     }
 
     fn opaque_argument(&mut self, argument: &A) -> u64 {
+        if let A::Value(CValue::UInt64(term)) = argument {
+            return self.intern_node(Node::OpaqueMachineCount(MachineAtom::uint64(term.clone())));
+        }
         // Map comparisons use stable IDs, not full algebraic values/snapshots.
         self.intern_node(Node::OpaqueArgument(SharedPureApplication::intern(
             String::new(),

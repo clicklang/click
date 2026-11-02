@@ -20,6 +20,12 @@ use num_bigint::BigInt;
 /// format. `to_integer(observed) == value` is the in-range identity once
 /// `value` is bounded inside the format.
 pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType, IntegerTerm)> {
+    mathematical_operation(observed).map(|(_, ty, exact)| (ty, exact))
+}
+
+fn mathematical_operation(
+    observed: &IntegerTerm,
+) -> Option<(Operation, MachineIntegerType, IntegerTerm)> {
     // An observation of σ or a widening of the operation is read through
     // its value relation (rule W) to the operation's own observation.
     let IntegerTerm::Machine(machine) = observed.value_read() else {
@@ -30,15 +36,20 @@ pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType
     // an observation of a stored read needs the read-over-write adapter;
     // recursively expanding an explicit operation changes the identity the
     // source expression asks for.
-    let resolved = representation::word_operation(machine.ty(), machine.value())
-        .is_none()
-        .then(|| crate::kernel::eval::read_over_write_value(machine.value()))
-        .flatten();
-    let (operation, left, right) =
-        representation::word_operation(ty, resolved.as_ref().unwrap_or(machine.value()))?;
+    let view = machine.operand_view();
+    if let Some((operation, [left, right])) = representation::view_operation(ty, view) {
+        return Some((
+            operation,
+            ty,
+            operation.exact(left.observe(ty)?, right.observe(ty)?),
+        ));
+    }
+    let source = view.read_source()?;
+    let resolved = crate::kernel::eval::read_over_write_value(&source)?;
+    let (operation, left, right) = representation::word_operation(ty, &resolved)?;
     let left = IntegerTerm::from_machine(ty, left.clone())?;
     let right = IntegerTerm::from_machine(ty, right.clone())?;
-    Some((ty, operation.exact(left, right)))
+    Some((operation, ty, operation.exact(left, right)))
 }
 
 /// Whether `stated` is the exact value `value` of an operation
@@ -65,24 +76,8 @@ pub(crate) fn same_exact_value(value: &IntegerTerm, stated: &IntegerTerm) -> boo
 pub(crate) fn additive_mathematical(
     observed: &IntegerTerm,
 ) -> Option<(MachineIntegerType, IntegerTerm)> {
-    let IntegerTerm::Machine(machine) = observed.value_read() else {
-        return None;
-    };
-    // An explicit operation's identity refers to its actual operands. Only
-    // an observation of a stored read needs the read-over-write adapter;
-    // recursively expanding an explicit operation changes the identity the
-    // source expression asks for.
-    let resolved = representation::word_operation(machine.ty(), machine.value())
-        .is_none()
-        .then(|| crate::kernel::eval::read_over_write_value(machine.value()))
-        .flatten();
-    match representation::word_operation(
-        machine.ty(),
-        resolved.as_ref().unwrap_or(machine.value()),
-    )? {
-        (Operation::Add | Operation::Subtract, _, _) => mathematical(observed),
-        (Operation::Multiply, _, _) => None,
-    }
+    let (op, ty, exact) = mathematical_operation(observed)?;
+    matches!(op, Operation::Add | Operation::Subtract).then_some((ty, exact))
 }
 
 /// One endpoint of a format's range that the exact value of a machine

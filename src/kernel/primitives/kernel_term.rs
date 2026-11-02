@@ -134,6 +134,7 @@ struct NodeKeyData {
     ty: KernelType,
     node: KernelTermNode,
     shared_machine_operand: bool,
+    machine_constant: Option<KernelMachineLiteral>,
 }
 #[derive(Clone)]
 struct NodeKey(Arc<NodeKeyData>);
@@ -167,7 +168,9 @@ impl NodeKey {
             KernelTermNode::MachineUnary { operand, .. } => operand.is_shared_machine_operand(),
             _ => false,
         };
+        let machine_constant = machine::constant_reading(&node);
         Self(Arc::new(NodeKeyData {
+            machine_constant,
             fingerprint: hash.finish(),
             shared_machine_operand,
             ty,
@@ -251,6 +254,14 @@ pub(crate) fn clear_integer_bridge_memo() {
 }
 
 impl KernelTerm {
+    pub(crate) fn id(&self) -> u64 {
+        self.0.id
+    }
+
+    pub(crate) fn machine_constant_reading(&self) -> Option<&KernelMachineLiteral> {
+        self.0.key.0.machine_constant.as_ref()
+    }
+
     pub(crate) fn is_shared_machine_operand(&self) -> bool {
         self.0.key.0.shared_machine_operand
     }

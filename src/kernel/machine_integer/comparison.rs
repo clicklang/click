@@ -5,7 +5,8 @@
 
 use super::{Relation, identity, range, representation};
 use crate::kernel::{
-    Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition, SharedIntegerTerm,
+    Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition,
+    SharedIntegerTerm, SharedMachineIntegerTerm,
 };
 
 /// An Integer comparison as `left REL right` with its truth folded in:
@@ -45,6 +46,55 @@ pub(crate) fn native_comparison_of_integer_observation(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(ConditionTerm, bool)> {
+    native_comparison_view(condition, value)?.boxed_condition()
+}
+
+/// A comparison query retaining its original shared operand identities.
+/// Boxed conditions are an explicit compatibility output for unmigrated callers.
+#[derive(Clone)]
+pub(crate) struct NativeComparisonView {
+    pub(crate) format: MachineIntegerType,
+    pub(crate) relation: Relation,
+    pub(crate) operands: [ComparisonOperand; 2],
+}
+
+#[derive(Clone)]
+pub(crate) enum ComparisonOperand {
+    Observation(SharedMachineIntegerTerm),
+    Constant(Bitvector32Term),
+}
+
+impl ComparisonOperand {
+    pub(crate) fn operand_view(&self) -> crate::kernel::MachineOperandView<'_> {
+        match self {
+            Self::Observation(machine) => machine.operand_view(),
+            Self::Constant(value) => crate::kernel::MachineOperandView::Legacy(value),
+        }
+    }
+
+    pub(super) fn boxed_value(&self) -> &Bitvector32Term {
+        match self {
+            Self::Observation(machine) => machine.value(),
+            Self::Constant(value) => value,
+        }
+    }
+}
+
+impl NativeComparisonView {
+    fn boxed_condition(&self) -> Option<(ConditionTerm, bool)> {
+        representation::comparison(
+            self.format,
+            self.relation,
+            self.operands[0].boxed_value().clone(),
+            self.operands[1].boxed_value().clone(),
+        )
+    }
+}
+
+pub(crate) fn native_comparison_view(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<NativeComparisonView> {
     // Numeric evaluation belongs in the checking comparison form. Surface
     // lowering uses the structural reading below, retaining arithmetic.
     // An observation is read through its value relations (rule W):
@@ -81,13 +131,20 @@ pub(crate) fn native_comparison_of_integer_observation(
         }
         _ => return None,
     };
-    structural_native_comparison_of_integer_observation(&condition, value)
+    structural_native_comparison_view(&condition, value)
 }
 
 pub(crate) fn structural_native_comparison_of_integer_observation(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(ConditionTerm, bool)> {
+    structural_native_comparison_view(condition, value)?.boxed_condition()
+}
+
+pub(crate) fn structural_native_comparison_view(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<NativeComparisonView> {
     // A 128-bit comparison has a native node, but the kernel's order
     // reasoning (the difference graph, interval bounds) works on its
     // Integer form, so an Integer comparison of 128-bit observations keeps
@@ -106,7 +163,7 @@ pub(crate) fn structural_native_comparison_of_integer_observation(
     {
         return None;
     }
-    native_comparison_at_format(condition, value)
+    comparison_view_at_format(condition, value)
 }
 
 /// [`native_comparison_of_integer_observation`] at every format, whatever
@@ -115,6 +172,13 @@ fn native_comparison_at_format(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(ConditionTerm, bool)> {
+    comparison_view_at_format(condition, value)?.boxed_condition()
+}
+
+fn comparison_view_at_format(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<NativeComparisonView> {
     let (relation, left, right) = integer_relation(condition, value)?;
     let ty = match (&**left, &**right) {
         (IntegerTerm::Machine(left), IntegerTerm::Machine(right)) if left.ty() == right.ty() => {
@@ -129,24 +193,30 @@ fn native_comparison_at_format(
     // whose operand is a word of another width (the byte of a 32-bit sum)
     // has no native comparison: its root width, read in O(1), decides.
     let narrow = ty.format().bits() < 32;
-    let carrier = |side: &IntegerTerm| -> Option<Bitvector32Term> {
+    let carrier = |side: &IntegerTerm| -> Option<ComparisonOperand> {
         match side {
             IntegerTerm::Machine(machine)
                 if narrow
-                    && crate::kernel::root_width(machine.value()).is_some_and(|width| {
+                    && machine.operand_view().root_width().is_some_and(|width| {
                         width != crate::kernel::CarrierWidth::of_machine_type(ty)
                     }) =>
             {
                 None
             }
-            IntegerTerm::Machine(machine) => Some(machine.value().clone()),
-            IntegerTerm::Constant(constant) => range::constant_word(ty, constant),
+            IntegerTerm::Machine(machine) => Some(ComparisonOperand::Observation(machine.clone())),
+            IntegerTerm::Constant(constant) => Some(ComparisonOperand::Constant(
+                range::constant_word(ty, constant)?,
+            )),
             _ => None,
         }
     };
     let left = carrier(left)?;
     let right = carrier(right)?;
-    representation::comparison(ty, relation, left, right)
+    Some(NativeComparisonView {
+        format: ty,
+        relation,
+        operands: [left, right],
+    })
 }
 
 /// The native comparison an Integer comparison holds exactly when, read

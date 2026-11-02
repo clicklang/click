@@ -45,5 +45,5 @@ int32 pick(void (*callback)(int32*), int32 x) {
 ```
 
 ```expect
-fail: available pure facts: [SetsZero(callback), x < 0]
+fail: available pure facts: [SetsZero(callback), little_endian(), x < 0]
 ```

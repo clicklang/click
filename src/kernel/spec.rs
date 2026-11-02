@@ -1130,7 +1130,7 @@ fn lower_spec_universal_chain_in(
     for binder in binders.into_iter().rev() {
         paths = paths
             .into_iter()
-            .map(|path| wrap_spec_universal_path(path, &binder))
+            .map(|path| wrap_spec_universal_path(path, &binder, assumptions))
             .collect();
     }
     Ok(Some(paths))
@@ -1145,6 +1145,7 @@ fn machine_quantifier_range_facts(_sort: &Sort, _variable: Variable) -> Executio
 fn wrap_spec_universal_path(
     path: SpecPropositionPath,
     binder: &SpecUniversalBinder,
+    assumptions: &PureFactContext,
 ) -> SpecPropositionPath {
     let (body, guards) = wrap_path_context_with_introductions(path.proposition, &path.facts, &[]);
     let mut introductions = vec![LoweringIntroduction::WrittenUniversal {
@@ -1166,6 +1167,18 @@ fn wrap_spec_universal_path(
         obligations: path
             .obligations
             .into_iter()
+            // An old-state expression can retain an evaluation requirement
+            // already established in the current scope. Discharge it before
+            // wrapping it in a binder: the ordinary requirement checker does
+            // not introduce quantifiers. Consult only the incoming facts,
+            // never the body's path guards or its assumable obligations.
+            .filter(|obligation| {
+                obligation.is_assumable()
+                    || !ProofObligation::evaluation_requirement_is_established(
+                        assumptions,
+                        obligation.proposition(),
+                    )
+            })
             .map(|obligation| {
                 obligation.map_proposition(|proposition| Proposition::ForAll {
                     var: binder.variable,
@@ -1706,6 +1719,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                         pointer: false,
                         integer: false,
                     },
+                    assumptions,
                 )
             })
             .collect())
@@ -5389,6 +5403,21 @@ fn lower_spec_predicate_proposition_at_state_in(
 ) -> ExecutionResult<Vec<SpecPropositionPath>> {
     let state = scope.state;
     let loop_entry_state = scope.loop_entry_state;
+    // Byte order belongs to the target, not to a memory or resource state.
+    if name == LITTLE_ENDIAN_PREDICATE_NAME {
+        if !arguments.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Ok(vec![SpecPropositionPath {
+            introductions: Vec::new(),
+            proposition: Proposition::Predicate {
+                name: name.into(),
+                arguments: vec![],
+            },
+            facts: ExecutionFacts::new(),
+            obligations: Vec::new(),
+        }]);
+    }
     if name == MUTEX_HELD_PREDICATE_NAME {
         let [SpecPredicateArgument::Value(mutex)] = arguments else {
             return Ok(vec![invalid_mutex_held_path(

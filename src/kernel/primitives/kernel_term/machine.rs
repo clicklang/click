@@ -3,6 +3,31 @@
 use super::*;
 
 impl KernelTerm {
+    #[cfg(test)]
+    pub(crate) fn machine_binary_shared(
+        format: MachineIntegerType,
+        operator: MachineBinaryOp,
+        arguments: [Self; 2],
+    ) -> Self {
+        Self::intern(
+            KernelType::C(format.c_type()),
+            KernelTermNode::MachineBinary {
+                format,
+                operator,
+                arguments,
+            },
+        )
+    }
+
+    /// Change only the observation's numeric interpretation. The underlying
+    /// word node and its format-tagged operations remain exactly as written.
+    pub(crate) fn with_machine_observation_type(&self, format: MachineIntegerType) -> Self {
+        if self.ty() == &KernelType::C(format.c_type()) {
+            return self.clone();
+        }
+        Self::intern(KernelType::C(format.c_type()), self.node().clone())
+    }
+
     /// Construct one arithmetic operation structurally from shared children.
     /// Signed definedness belongs to the evaluator's separate obligations.
     pub(crate) fn arithmetic_binary(
@@ -45,6 +70,74 @@ pub enum KernelMachineLiteral {
     Int64(i64),
     UInt64(u64),
     Wide(MachineIntegerConstant),
+}
+
+impl KernelMachineLiteral {
+    pub(crate) fn legacy_term(&self) -> Bitvector32Term {
+        match self {
+            Self::Word32(bits) => Bitvector32Term::Constant(*bits),
+            Self::UInt32(bits) => Bitvector32Term::UInt32Constant(*bits),
+            Self::Int64(value) => Bitvector32Term::Int64Constant(*value),
+            Self::UInt64(value) => Bitvector32Term::UInt64Constant(*value),
+            Self::Wide(value) => Bitvector32Term::MachineIntegerConstant(*value),
+        }
+    }
+}
+
+/// Cached checking metadata, never a replacement for the structural node.
+/// Apply the existing constant readers to one operator over literal children;
+/// signed overflow and undefined division/shift readings remain absent.
+pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLiteral> {
+    let (format, root) = match node {
+        KernelTermNode::MachineLiteral(value) => return Some(value.clone()),
+        KernelTermNode::MachineBinary {
+            format,
+            operator,
+            arguments: [left, right],
+        } => {
+            // The legacy wide reader accepts only literal shift counts.
+            // Preserve that admission rule even if a count has a cached value.
+            if matches!(
+                format,
+                MachineIntegerType::Int64 | MachineIntegerType::UInt64
+            ) && matches!(
+                operator,
+                MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+            ) && !matches!(right.node(), KernelTermNode::MachineLiteral(_))
+            {
+                return None;
+            }
+            (
+                *format,
+                Bitvector32Term::Binary {
+                    format: *format,
+                    op: *operator,
+                    left: Box::new(left.machine_constant_reading()?.legacy_term()),
+                    right: Box::new(right.machine_constant_reading()?.legacy_term()),
+                },
+            )
+        }
+        KernelTermNode::MachineUnary {
+            format,
+            operator,
+            operand,
+        } => (
+            *format,
+            Bitvector32Term::Unary {
+                format: *format,
+                op: *operator,
+                operand: Box::new(operand.machine_constant_reading()?.legacy_term()),
+            },
+        ),
+        _ => return None,
+    };
+    match format {
+        MachineIntegerType::Int32 => root.as_const().map(KernelMachineLiteral::Word32),
+        MachineIntegerType::UInt32 => root.as_const().map(KernelMachineLiteral::UInt32),
+        MachineIntegerType::Int64 => root.int64_as_const().map(KernelMachineLiteral::Int64),
+        MachineIntegerType::UInt64 => root.uint64_as_const().map(KernelMachineLiteral::UInt64),
+        _ => None,
+    }
 }
 
 /// Transitional checker encoding, kept distinct from cast semantics so an
@@ -224,17 +317,10 @@ impl KernelTermImport {
 impl KernelTermExport {
     pub(crate) fn machine(term: &KernelTerm) -> Result<Bitvector32Term, &'static str> {
         use Bitvector32Term as Old;
-        use KernelMachineLiteral as Literal;
         use KernelTermNode as Node;
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
-            Node::MachineLiteral(value) => match value {
-                Literal::Word32(bits) => Old::Constant(*bits),
-                Literal::UInt32(bits) => Old::UInt32Constant(*bits),
-                Literal::Int64(value) => Old::Int64Constant(*value),
-                Literal::UInt64(value) => Old::UInt64Constant(*value),
-                Literal::Wide(value) => Old::MachineIntegerConstant(*value),
-            },
+            Node::MachineLiteral(value) => value.legacy_term(),
             Node::Variable(variable) => Old::Variable(*variable),
             Node::BoolCast {
                 destination,
@@ -470,5 +556,166 @@ mod tests {
         assert_eq!(term.ty(), &KernelType::C(CType::UInt64));
         assert!(matches!(term.node(), KernelTermNode::MachineCast { .. }));
         assert_eq!(KernelTermExport::default().argument(&term).unwrap(), source);
+    }
+}
+
+impl KernelTerm {
+    /// Checking-only reconstruction of a generic cast over the shared arithmetic
+    /// fragment. Children stay shared; literal folding matches the old checker.
+    pub(crate) fn checking_machine_cast(
+        &self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+    ) -> Self {
+        assert!(self.is_shared_machine_operand());
+        if source == destination {
+            return self.with_machine_observation_type(destination);
+        }
+        if let KernelTermNode::MachineLiteral(literal) = self.node()
+            && let Some(constant) = source.constant_from_term(&literal.legacy_term())
+        {
+            let value = destination
+                .constant_term(constant.convert_modulo(destination.format()))
+                .expect("matching format");
+            return KernelTermImport::default().machine(destination, &value);
+        }
+        Self::checking_cast_node(
+            self.clone(),
+            source,
+            destination,
+            KernelMachineCastEncoding::Generic,
+        )
+    }
+
+    fn checking_cast_node(
+        operand: Self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+        encoding: KernelMachineCastEncoding,
+    ) -> Self {
+        Self::intern(
+            KernelType::C(destination.c_type()),
+            KernelTermNode::MachineCast {
+                source,
+                destination,
+                encoding,
+                operand: operand.with_machine_observation_type(source),
+            },
+        )
+    }
+
+    /// The low-word constructor's root arithmetic policy, without exporting
+    /// either child. This is used by checking, never Surface lowering.
+    pub(crate) fn checking_low_word(&self) -> Self {
+        assert!(self.is_shared_machine_operand());
+        use KernelMachineLiteral as L;
+        use MachineIntegerType as Ty;
+        let literal =
+            |bits| KernelTermImport::default().machine(Ty::Int32, &Bitvector32Term::Constant(bits));
+        let root = |value: &Self| match value.node() {
+            KernelTermNode::MachineLiteral(L::Int64(bits)) => literal(*bits as u32),
+            KernelTermNode::MachineLiteral(L::UInt64(bits)) => literal(*bits as u32),
+            _ => Self::checking_cast_node(
+                value.clone(),
+                Ty::UInt64,
+                Ty::UInt32,
+                KernelMachineCastEncoding::UInt32From64,
+            )
+            .with_machine_observation_type(Ty::Int32),
+        };
+        let operation = match self.node() {
+            KernelTermNode::MachineBinary {
+                format: Ty::UInt64,
+                operator: op @ (MachineBinaryOp::Add | MachineBinaryOp::Subtract),
+                arguments: [a, b],
+            } => match (a.node(), b.node()) {
+                (_, KernelTermNode::MachineLiteral(L::UInt64(bits))) => {
+                    Some((*op, root(a), literal(*bits as u32)))
+                }
+                (KernelTermNode::MachineLiteral(L::UInt64(bits)), _)
+                    if *op == MachineBinaryOp::Add =>
+                {
+                    Some((*op, literal(*bits as u32), root(b)))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        let Some((operator, a, b)) = operation else {
+            return root(self);
+        };
+        let bits = |value: &Self| match value.node() {
+            KernelTermNode::MachineLiteral(L::Word32(bits) | L::UInt32(bits)) => Some(*bits),
+            _ => None,
+        };
+        if let (Some(a), Some(b)) = (bits(&a), bits(&b)) {
+            return literal(if operator == MachineBinaryOp::Add {
+                a.wrapping_add(b)
+            } else {
+                a.wrapping_sub(b)
+            });
+        }
+        if bits(&b) == Some(0) {
+            return a;
+        }
+        if operator == MachineBinaryOp::Add && bits(&a) == Some(0) {
+            return b;
+        }
+        Self::intern(
+            KernelType::C(Ty::Int32.c_type()),
+            KernelTermNode::MachineBinary {
+                format: Ty::Int32,
+                operator,
+                arguments: [a, b],
+            },
+        )
+    }
+
+    pub(crate) fn checking_legacy_machine_conversion(
+        &self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+    ) -> Self {
+        use crate::kernel::machine_integer::conversion::{
+            ConversionLowering as C, ConversionPolicy, convert_value, lower,
+        };
+        use KernelMachineCastEncoding as E;
+        assert!(self.is_shared_machine_operand());
+        if let KernelTermNode::MachineLiteral(literal) = self.node() {
+            let value = convert_value(source.value_from_term(literal.legacy_term()), destination)
+                .expect("integer conversion");
+            return KernelTermImport::default().argument(&PureFunctionArgument::Value(value));
+        }
+        let value = match lower(source, destination, ConversionPolicy::Modular).lowering {
+            C::Identity => self.clone(),
+            C::Cast | C::SignCast => self.checking_machine_cast(source, destination),
+            C::LowWord => self.checking_low_word(),
+            C::Reinterpret64 if destination.format().is_signed() => self.clone(),
+            C::Reinterpret64 => {
+                Self::checking_cast_node(self.clone(), source, destination, E::UInt64FromInt64)
+            }
+            C::Extend64 => {
+                let encoding = match (
+                    source.format().is_signed(),
+                    destination.format().is_signed(),
+                ) {
+                    (true, true) => E::Int64From32,
+                    (false, true) => E::Int64FromUInt32,
+                    (true, false) => E::UInt64FromInt32,
+                    (false, false) => E::UInt64From32,
+                };
+                Self::checking_cast_node(self.clone(), source, destination, encoding)
+            }
+        };
+        if let KernelTermNode::MachineLiteral(literal) = value.node() {
+            return KernelTermImport::default().machine(
+                destination,
+                &literal
+                    .legacy_term()
+                    .in_format32(destination)
+                    .in_narrow_format(destination),
+            );
+        }
+        value.with_machine_observation_type(destination)
     }
 }

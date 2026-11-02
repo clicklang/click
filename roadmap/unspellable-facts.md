@@ -171,6 +171,212 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared graph registration across observation widths (2026-11-02)
+
+An Integer observation can read a machine expression at a different carrier
+width. Graph registration previously exported that entire operand when its
+native-width metadata did not match. Registration now retains the original
+shared identity for the opaque cases and preserves the existing cancellation,
+shift-count and complement rules. Mixed-width children stay shared too. The
+now-unused native-width eligibility cache is removed.
+
+Opaque-node constant annotations and load-name registration also use operand
+views. Asking whether an operand is a variable or literal no longer exports its
+arithmetic descendants. Load identities still retain the original snapshot,
+width and kind checks.
+
+The cross-width registration matrix compares the shared and legacy classes,
+including mixed-width children, shifts, complements and cancellation. An
+8/32/96-node doubled-child DAG regression checks repeated cross-width Integer
+registration has near-linear work and never requests a boxed operand. The
+17 focused graph/format tests pass, as do all four graph/constant checks after
+expanding constant-reading coverage to every machine format. The full gate is
+in progress.
+
+## Shared overflow query extraction (2026-11-02)
+
+Ordinary exact-result bounds now have a private `OverflowQueryView` retaining
+operand handles. The adapter reads the actual arithmetic root and compares its
+two ordinary bounds; it does not export shared operands, file an overflow fact,
+or change lowering. The boxed adapter remains only for consumers that still
+require a legacy condition. Definedness classification in proof facts, function
+purity, structural rule planning and smart closure selection uses the view.
+
+A differential format/operation matrix preserves the old reverse adapter's
+answers. A deterministic 8/32/96-node doubled-child DAG test exercises the real
+definedness classifier, checks incomplete bounds are refused, and asserts that
+no operand was exported. The focused machine-integer suite passes all 28 tests.
+`scripts/check.sh --no-fail-fast` passes 7,119 tests, including 1,155 scaling
+tests, 58 examples and 4,991 proof fixtures in 12m05s (over the ten-minute
+target; no limits changed). The arithmetic fact-stability audit passes all 124
+fixtures with zero differences. No nightly suite ran.
+
+The signed arithmetic certificate's exact-definedness matcher also consumes
+the view directly. It matches against the explicit certificate term without
+exporting a guard operand, preserving the old signed atom fragment and literal
+tag equivalence. Differential matching and a large-guard/small-certificate
+refusal regression pass; all 70 focused machine-integer and signed-certificate
+tests pass on this integrated increment. The full-gate and fact-stability
+results above cover the complete increment merged in #2269.
+
+Remaining: overflow decision/certificate query outputs, comparison query and
+fact-identity outputs, operation reverse readings and modular equalities still
+have legacy adapters. Nested signed preparation remains disabled until those
+consumers preserve shared operands end to end.
+
+Concrete remaining call chains:
+- `Assumptions::assume_condition_uncharged`, `condition_known` and `decide`:
+  comparison/overflow query adapters still produce boxed conditions. Migrate
+  admission, lookup and decision together so existing proof routes remain.
+- `observation_comparison_form`, native premise lookup and arithmetic-special
+  condition identity: preserve comparison forms as shared keys, including
+  narrow comparison identities and mirrored orders.
+- `IntegerOperationRangeBound::stating_facts`,
+  `machine_operation_of_integer_value` and modular equality reduction: retain
+  original operand handles in constructed query results. Conversion roots and
+  opaque legacy inputs must keep their existing structural semantics.
+- Interval evaluation and certificate adapters: retain source witnesses and
+  class/index lookups; a context-keyed recursive prefix cache alone does not
+  establish near-linear stepping across changing contexts.
+
+
+## Shared operands in the general cast checker (2026-11-02)
+
+The general conversion identity rule now matches shared expected-cast terms
+instead of exporting a source arithmetic tree. Checking-only `KernelTerm`
+constructors preserve the generic cast, sign reinterpretation, low-word, and
+legacy extension rules. Literal folding is confined to checking and preserves
+literal tags; it does not change lowered terms. Existing boxed operands keep
+their old conversion policy, while comparisons against shared targets import
+only the explicit legacy candidate, never expand the target.
+
+The focused suite passes 33 tests. A constructor matrix checks exact agreement
+with the boxed conversion policy at every format, and a differential rule matrix
+checks previous accept/refuse answers for arithmetic, opaque words, and cast
+roots. Deterministic regressions grow shared prefixes at 8/32/96, covering both
+accepted and rejected conversions and a small legacy operand against a large
+shared target, with no boxed materialization. The full gate passes 7,115 tests
+(including 1,153 scaling tests), 58 examples, and 4,991 proof fixtures in 12m33s.
+The arithmetic audit passes 124 fixtures with zero differences. No limits changed
+and no nightly suite ran. General comparison, overflow and modular/operation
+reverse adapters remain ahead of nested signed preparation.
+
+## Shared conversion candidate lookup (2026-11-02)
+
+The follow-on conversion increment reads cast-candidate roots through borrowed
+operand views and retains narrow-widening lookup keys by machine observation
+identity. The planner no longer copies a word just to index a narrow-value
+candidate. Shared arithmetic roots cannot be cast nodes, so rejecting that root
+requires no export. Legacy cast roots retain their exact source matching.
+Retained machine observations now expose constant-cost equality and hashing by
+the same format-tagged identity already used by Integer terms.
+
+All 30 focused conversion/machine-format and operation-identity tests pass,
+including a shared-prefix regression at 8/32/96 levels with no boxed operand.
+The full gate passes 7,110 tests (including 1,152 scaling tests), 58 examples,
+and 4,987 proof fixtures in 12m12s. The arithmetic audit passes 124 fixtures
+with zero differences. No limits changed and no nightly suite ran.
+The general cast rule, comparison decisions, and overflow/modular adapters still
+need migration; this does not enable nested signed arithmetic.
+
+## Shared operands in checked bound indices (2026-11-02)
+
+Following merged #2264, the next increment moves direct signed/unsigned 32-bit
+bounds and signed 64-bit bounds onto retained machine-operand identities.
+Integer comparison admission reads `NativeComparisonView` directly. Queries
+retain shared operands, and legacy queries use the same keys. Canonical aliases
+remain supported for legacy load/cast payloads. Signed 64-bit interval queries
+now read maintained extrema rather than scanning their source-bound bucket.
+
+Constant-reading metadata is computed from immediate children and never changes
+a structural node. It preserves the old readers' format, overflow, and literal
+shift-count admission rules, including closed arithmetic bounds. The new edge
+matrix exposed an eager signed-64 right-shift evaluation on a rejected count;
+that reader now checks the count before shifting. Shared-prefix scaling tests
+cover signed32, unsigned32, and signed64 at 8/32/96 levels without materializing
+operands; a separate test grows the actual signed64 bound bucket at 4/16/64.
+Branch and withdrawal tests retain source witnesses and extrema.
+Validation: the full gate passes 7,108 tests (including 1,151 scaling tests),
+58 examples, and 4,987 proof fixtures. The run including recompilation took
+13m14s, over the ten-minute target; no limits changed. The arithmetic audit
+passes 124 fixtures with zero fact-stability differences. No nightly suite ran.
+
+This is still an intermediate consumer migration. General comparison decision,
+overflow query adapters, conversion/modular reverse adapters, and nested signed
+preparation remain to be migrated. The nested producer remains disabled.
+
+## Shared operand registration in the equality graph (2026-11-01)
+
+Following merged #2260, `codex/shared-checker-consumers` registers native shared
+machine observations directly into the existing equality classes. A cached
+width profile, derived only from immediate children, selects native
+8/16/32/64-bit literals, variables, binary operators, and complements. The
+registration worklist retains shared handles in a branch-persistent memo;
+repeated prefixes and doubled children do not export or revisit prior trees.
+The existing literal identities, signedness distinctions, late congruence
+merges, and read-name registration remain in the graph. Non-native word
+interpretations and the legacy conversion/opaque storage boundary retain their
+existing registration path.
+
+Wide and narrow shift counts use an opaque machine-operand identity, shared by
+the boxed and shared entry points. This preserves the existing independently
+promoted-count semantics without expanding the count. Pointer operand discovery
+also visits shared nodes once per branch and registers the same explicit read
+addresses. Its memo is cloned persistently with the graph.
+
+Native comparison extraction now returns a `NativeComparisonView`, containing
+shared observations or literal leaves. The existing boxed API exports only at
+its compatibility boundary. Root-width refusals inspect shared nodes directly.
+This does not yet migrate callers that require a boxed condition: condition
+truth queries, interval/order indices, overflow-query adapters, conversion and
+modular adapters still require follow-through. Nested signed preparation stays
+disabled until those consumers and end-to-end obligation scaling are migrated.
+
+The regression uses the public equality-graph query on every shared prefix,
+including division and shifts with large shared counts, and checks comparison
+view extraction, unrelated-input independence, and branch isolation. A matrix
+checks agreement with legacy classes across every native format and binary
+operator, including a late operand merge. The initial larger probe at
+16/64/256 levels measured 1,615/6,415/25,615 units, independent of 0/128/512
+unrelated facts. The gate regression uses 8/32/96 levels and 0/32/64 unrelated
+facts to keep its runtime within the fast-test budget.
+
+## Shared operand views for arithmetic checking (2026-11-02)
+
+Following merged #2258, `codex/nested-signed-arithmetic` introduces borrowed
+machine operand views. Ring identities and quotient/shift/remainder bounds now
+inspect shared roots and observe child handles without materializing boxed
+prefixes. The boxed adapters use the same operation maps. Literal observation,
+32-bit signed/unsigned interpretation, wide-format admission, and the existing
+read-over-write rule for named reads remain intact. The additive identity
+consumer also shares the root inspection instead of repeating it.
+
+The deterministic regression checks every prefix of a doubled-child DAG at
+16/64/256 levels, including successful quotient bounds, arithmetic identities,
+and affine range inspection. Measured work is 9,824/39,296/157,184 units,
+unchanged beside 0/128/512 unrelated terms. It asserts linear growth,
+unrelated-input independence, and that neither the original nor quotient
+observation materializes a boxed operand. A format/operator matrix covers the
+32/64-bit signed and unsigned readings and wide admission refusals.
+
+Nested signed preparation remains disabled. The remaining coordinated migration
+must preserve shared operands through native comparison and overflow query
+construction, conversion/modular adapters, and the equality graph's Integer
+observation registration. These still call `value()` and/or build boxed
+conditions; enabling nested production first would move repeated prefix copying
+into checking. The equality graph needs handle-keyed registration memoization
+with existing class identities, literal identities, and branch isolation
+preserved. Then nested preparation can accumulate ordinary definedness
+obligations in postorder and be tested through actual obligation checking,
+not just construction. No fact-aware fallback or changed work limit is part
+of this increment.
+
+Validation: `scripts/check.sh --no-fail-fast` passes 7,096 unit/API/import
+checks (including all 1,145 scaling tests), 58 example projects, and 4,981
+mdtests in 11m54s, above the ten-minute target. The before/after arithmetic
+fact-stability audit passes all 124 fixtures with zero differences. No nightly
+suite ran and no limits changed.
+
 ## Shared machine observation storage (2026-11-02)
 
 Following merged #2256, `codex/shared-observation-storage` migrates the arithmetic

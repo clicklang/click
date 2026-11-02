@@ -258,3 +258,91 @@ fn observing_every_shared_machine_prefix_does_not_materialize_operands() {
         }
     }
 }
+
+#[test]
+fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
+    let mut baseline = Vec::new();
+    for unrelated in [0, 128, 512] {
+        let mut costs = Vec::new();
+        let _ambient = (0..unrelated)
+            .map(|i| KernelTerm::variable(KernelType::Integer, Variable(955000 + i)))
+            .collect::<Vec<_>>();
+        for size in [16, 64, 256] {
+            let format = MachineIntegerType::Int64;
+            let mut term = KernelTerm::variable(KernelType::C(CType::Int64), Variable(956000));
+            let mut retained = Vec::new();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..size {
+                    term = KernelTerm::arithmetic_binary(
+                        format,
+                        MachineBinaryOp::Add,
+                        [term.clone(), term.clone()],
+                    )
+                    .unwrap();
+                    let observation =
+                        SharedMachineIntegerTerm::from_shared(format, term.clone()).unwrap();
+                    let source = IntegerTerm::Machine(observation.clone());
+                    let exact =
+                        crate::kernel::machine_integer::identity::mathematical(&source).unwrap();
+                    assert_eq!(exact.0, format);
+                    assert_eq!(
+                        crate::kernel::machine_integer::identity::additive_mathematical(&source),
+                        Some(exact)
+                    );
+                    assert!(
+                        crate::kernel::machine_integer::bounds::operation_bound(&observation, true)
+                            .is_none()
+                    );
+                    let range =
+                        crate::kernel::machine_integer::range::range_fact(&observation, true);
+                    assert!(
+                        crate::kernel::proof::integer_arithmetic::integer_affine_claim(&range)
+                            .is_some()
+                    );
+                    let quotient = KernelTerm::intern(
+                        KernelType::C(format.c_type()),
+                        KernelTermNode::MachineBinary {
+                            format,
+                            operator: MachineBinaryOp::Divide,
+                            arguments: [
+                                term.clone(),
+                                KernelTermImport::default()
+                                    .machine(format, &Bitvector32Term::Int64Constant(2)),
+                            ],
+                        },
+                    );
+                    let quotient = SharedMachineIntegerTerm::from_shared(format, quotient).unwrap();
+                    for upper in [false, true] {
+                        assert!(
+                            crate::kernel::machine_integer::bounds::operation_bound(
+                                &quotient, upper
+                            )
+                            .is_some()
+                        );
+                    }
+                    assert!(!quotient.has_boxed_operand());
+                    assert!(!observation.has_boxed_operand());
+                    retained.push(source);
+                }
+            });
+            costs.push((size, work));
+        }
+        for pair in costs.windows(2) {
+            let [(small, small_work), (large, large_work)] = pair else {
+                unreachable!()
+            };
+            assert!(
+                large_work * small * 4 <= small_work * large * 5,
+                "{costs:?}"
+            );
+        }
+        if unrelated == 0 {
+            baseline = costs;
+        } else {
+            assert_eq!(
+                costs, baseline,
+                "unrelated terms must not add checking work"
+            );
+        }
+    }
+}

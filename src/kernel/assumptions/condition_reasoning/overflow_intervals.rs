@@ -827,34 +827,11 @@ impl PureFactContext {
             vec![term, &canonical]
         };
         for key in keys {
-            let Some(bounds) = self.int64_signed_order_bounds.get(key) else {
-                continue;
-            };
-            for (_, other, strict, is_upper) in bounds.keys() {
-                let Some(value) = other.int64_as_const() else {
-                    continue;
-                };
-                if *is_upper {
-                    // `term < value` or `term <= value`.
-                    let Some(value) = (if *strict {
-                        value.checked_sub(1)
-                    } else {
-                        Some(value)
-                    }) else {
-                        continue;
-                    };
-                    upper = upper.min(value);
-                } else {
-                    // `value < term` or `value <= term`.
-                    let Some(value) = (if *strict {
-                        value.checked_add(1)
-                    } else {
-                        Some(value)
-                    }) else {
-                        continue;
-                    };
-                    lower = lower.max(value);
-                }
+            if let Some((direct_lower, direct_upper)) =
+                self.checked_order_bounds.signed_wide_interval(key)
+            {
+                lower = lower.max(direct_lower);
+                upper = upper.min(direct_upper);
             }
         }
         (lower <= upper && (lower != i64::MIN || upper != i64::MAX)).then_some((lower, upper))

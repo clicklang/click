@@ -235,7 +235,12 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
     let IntegerTerm::Machine(machine) = observed.value_read() else {
         return Vec::new();
     };
-    let candidates: Vec<(Ty, &Bitvector32Term)> = match machine.value() {
+    // The shared storage fragment has literals, variables and arithmetic
+    // operators only. Inspect its root without exporting the arithmetic DAG.
+    let crate::kernel::MachineOperandView::Legacy(word) = machine.operand_view() else {
+        return Vec::new();
+    };
+    let candidates: Vec<(Ty, &Bitvector32Term)> = match word {
         Bitvector32Term::MachineIntegerCast { value, source, .. } => vec![(*source, value)],
         Bitvector32Term::UInt32From64(value) => vec![(Ty::UInt64, value), (Ty::Int64, value)],
         // The legacy 32-to-64-bit conversions name their source's width,
@@ -261,26 +266,29 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
 /// may read a narrow value: its own word up to 32 bits, or the operand of
 /// a 32-to-64-bit conversion. A narrow observation of that word is the
 /// candidate operand of a widening identity ([`narrow_widening`]).
-pub(crate) fn widened_narrow_word(observed: &IntegerTerm) -> Option<&Bitvector32Term> {
+pub(crate) fn widened_narrow_word(
+    observed: &IntegerTerm,
+) -> Option<crate::kernel::MachineOperandView<'_>> {
+    use crate::kernel::MachineOperandView as View;
     let IntegerTerm::Machine(machine) = observed else {
         return None;
     };
-    match machine.ty().format().bits() {
-        // A 32-bit widening of a narrow value has its operand's word (rule
-        // K8, a relation).
-        16 | 32 => Some(
-            machine
-                .value()
-                .narrow_widening32_operand()
-                .map_or(machine.value().word32(), |(_, operand)| operand),
-        ),
-        64 => match machine.value() {
-            Bitvector32Term::Int64From32(word)
-            | Bitvector32Term::UInt64FromInt32(word)
-            | Bitvector32Term::Int64FromUInt32(word)
-            | Bitvector32Term::UInt64From32(word) => Some(word),
-            _ => None,
-        },
+    let view = machine.operand_view();
+    match (machine.ty().format().bits(), view) {
+        (16 | 32, View::Shared(_)) => Some(view),
+        (16 | 32, View::Legacy(word)) => Some(View::Legacy(
+            word.narrow_widening32_operand()
+                .map_or(word.word32(), |(_, operand)| operand),
+        )),
+        (
+            64,
+            View::Legacy(
+                Bitvector32Term::Int64From32(word)
+                | Bitvector32Term::UInt64FromInt32(word)
+                | Bitvector32Term::Int64FromUInt32(word)
+                | Bitvector32Term::UInt64From32(word),
+            ),
+        ) => Some(View::Legacy(word)),
         _ => None,
     }
 }
@@ -299,13 +307,21 @@ pub(crate) fn narrow_widening(observed: &IntegerTerm, original: &IntegerTerm) ->
     if source.bits() >= 32 || destination == source || !destination.contains(source) {
         return false;
     }
-    let word = operand.value();
-    match machine.value() {
+    let crate::kernel::MachineOperandView::Legacy(word) = machine.operand_view() else {
+        return false;
+    };
+    match word {
         Bitvector32Term::MachineIntegerCast {
             value,
             source: from,
             ..
-        } => *from == operand.ty() && value.as_ref() == word,
+        } => {
+            *from == operand.ty()
+                && crate::kernel::SharedMachineIntegerTerm::intern(
+                    operand.ty(),
+                    value.as_ref().clone(),
+                ) == *operand
+        }
         _ => false,
     }
 }
@@ -333,11 +349,11 @@ pub(crate) fn cast(
     // inner carrier is shown below to be the source's value inside the
     // destination range, the conversion leaves that word unchanged.
     // The same bounds are still required.
-    if let Bitvector32Term::MachineIntegerCast {
+    if let Some(Bitvector32Term::MachineIntegerCast {
         value: inner,
         source: through,
         destination,
-    } = machine.value()
+    }) = legacy_word(machine)
         && *destination == machine.ty()
         && through.format().bits() <= 32
         && through.format().contains(destination.format())
@@ -345,6 +361,9 @@ pub(crate) fn cast(
         && let Some(format) = cast(&peeled, original)
     {
         return Some(format);
+    }
+    if let crate::kernel::MachineOperandView::Shared(term) = operand.operand_view() {
+        return cast_shared_operand(machine, operand, term);
     }
     if !operand.ty().accepts_cast_operand(operand.value()) {
         return None;
@@ -361,13 +380,14 @@ pub(crate) fn cast(
     // widening's word (rule K8) is its operand only for a canonical
     // carrier, which `narrow_widening` above establishes; comparing by that
     // word here would accept any word merely tagged narrow.
-    if machine.value() == &converted
+    if matches_word(machine, &converted)
         || converted
             .sign_cast32_operand()
-            .is_some_and(|(_, word)| machine.value() == word)
+            .is_some_and(|(_, word)| matches_word(machine, word))
         || machine
-            .value()
-            .constant32()
+            .operand_view()
+            .literal()
+            .and_then(|value| value.constant32())
             .is_some_and(|bits| converted.constant32() == Some(bits))
     {
         return Some(machine.ty().format());
@@ -385,7 +405,11 @@ pub(crate) fn cast(
     // the narrow observation alone cannot justify interpreting an
     // arbitrary carrier as a word.
     let carrier = representation::low_word(operand.ty(), operand.value());
-    if carrier.as_ref() == Some(machine.value()) && machine.ty().format().bits() < 32 {
+    if carrier
+        .as_ref()
+        .is_some_and(|word| matches_word(machine, word))
+        && machine.ty().format().bits() < 32
+    {
         return Some(machine.ty().format());
     }
     // Sub-word byte stores retain an unsigned low-bit mask in their
@@ -408,7 +432,287 @@ pub(crate) fn cast(
             operand.ty().value_from_term(operand.value().clone()),
             machine.ty(),
         );
-        if legacy == Some(machine.ty().value_from_term(machine.value().clone()))
+        if legacy.as_ref().is_some_and(|value| matches_converted_value(machine, value))
+            || legacy.as_ref().is_some_and(|value| {
+                matches!(
+                    value.numeric_value(),
+                    crate::kernel::integer_c_value!(term) if matches_word(machine, term.word32())
+                        || machine.operand_view().literal().and_then(|value| value.constant32()).is_some_and(|bits| term.constant32() == Some(bits))
+                )
+            })
+        {
+            return Some(machine.ty().format());
+        }
+    }
+    // Typed byte stores/readback represent unsigned sub-word values by
+    // retaining their low bits. This is the same modulo conversion from a
+    // u32 word, with the source bounds still required below.
+    if masked_narrowing(machine, operand) {
+        return Some(machine.ty().format());
+    }
+    None
+}
+
+fn legacy_word(machine: &crate::kernel::SharedMachineIntegerTerm) -> Option<&Bitvector32Term> {
+    match machine.operand_view() {
+        crate::kernel::MachineOperandView::Legacy(word) => Some(word),
+        crate::kernel::MachineOperandView::Shared(_) => None,
+    }
+}
+
+fn matches_word(machine: &crate::kernel::SharedMachineIntegerTerm, word: &Bitvector32Term) -> bool {
+    match machine.operand_view() {
+        crate::kernel::MachineOperandView::Legacy(actual) => actual == word,
+        crate::kernel::MachineOperandView::Shared(actual) => {
+            crate::kernel::KernelTermImport::default()
+                .machine_arithmetic(machine.ty(), word)
+                .is_some_and(|expected| *actual == expected)
+        }
+    }
+}
+
+fn matches_kernel(
+    machine: &crate::kernel::SharedMachineIntegerTerm,
+    word: &crate::kernel::KernelTerm,
+) -> bool {
+    let expected = word.with_machine_observation_type(machine.ty());
+    match machine.operand_view() {
+        crate::kernel::MachineOperandView::Shared(actual) => *actual == expected,
+        crate::kernel::MachineOperandView::Legacy(actual) => {
+            crate::kernel::KernelTermImport::default().machine(machine.ty(), actual) == expected
+        }
+    }
+}
+
+fn matches_converted_value(
+    machine: &crate::kernel::SharedMachineIntegerTerm,
+    value: &CValue,
+) -> bool {
+    if let Some(literal) = machine.operand_view().literal() {
+        return *value == machine.ty().value_from_term(literal);
+    }
+    matches!(value, crate::kernel::integer_c_value!(word) if value.c_type() == machine.ty().c_type() && matches_word(machine, word))
+}
+
+fn masked_narrowing(
+    machine: &crate::kernel::SharedMachineIntegerTerm,
+    operand: &crate::kernel::SharedMachineIntegerTerm,
+) -> bool {
+    use crate::kernel::MachineBinaryOp;
+    if operand.ty() != MachineIntegerType::UInt32
+        || machine.ty().format().bits() >= 32
+        || machine.ty().format().is_signed()
+    {
+        return false;
+    }
+    let Some((format, MachineBinaryOp::BitwiseAnd, [left, right])) =
+        machine.operand_view().binary()
+    else {
+        return false;
+    };
+    if format.format().bits() != 32 {
+        return false;
+    }
+    let mask = (1u32 << machine.ty().format().bits()) - 1;
+    let is_mask = |bits: crate::kernel::MachineOperandView<'_>| {
+        bits.literal().and_then(|bits| bits.constant32()) == Some(mask)
+    };
+    let source = operand.operand_view().retain(MachineIntegerType::Int32);
+    (is_mask(right) && left.retain(MachineIntegerType::Int32) == source)
+        || (is_mask(left) && right.retain(MachineIntegerType::Int32) == source)
+}
+
+fn cast_shared_operand(
+    machine: &crate::kernel::SharedMachineIntegerTerm,
+    operand: &crate::kernel::SharedMachineIntegerTerm,
+    term: &crate::kernel::KernelTerm,
+) -> Option<crate::kernel::MachineIntegerFormat> {
+    use crate::kernel::{KernelMachineCastEncoding as E, KernelTermNode as N, MachineBinaryOp};
+    let (source, destination) = (operand.ty(), machine.ty());
+    // Exactly the root admission performed by accepts_cast_operand for this
+    // storage fragment: literals must match, and 128-bit operators are absent.
+    if let Some(literal) = operand.operand_view().literal() {
+        if source.constant_from_term(&literal).is_none() {
+            return None;
+        }
+    } else if source.format().bits() == 128 && !matches!(term.node(), N::Variable(_)) {
+        return None;
+    }
+    let converted = term.checking_machine_cast(source, destination);
+    let sign_word = |word: &crate::kernel::KernelTerm| match word.node() {
+        N::MachineCast {
+            encoding: E::Generic,
+            source,
+            destination,
+            operand,
+        } if lower(*source, *destination, ConversionPolicy::Modular).lowering
+            == ConversionLowering::SignCast =>
+        {
+            Some(operand.clone())
+        }
+        _ => None,
+    };
+    let same_literal = |word: &crate::kernel::KernelTerm| {
+        let N::MachineLiteral(literal) = word.node() else {
+            return false;
+        };
+        machine
+            .operand_view()
+            .literal()
+            .and_then(|value| value.constant32())
+            .is_some_and(|bits| literal.legacy_term().constant32() == Some(bits))
+    };
+    if matches_kernel(machine, &converted)
+        || sign_word(&converted).is_some_and(|word| matches_kernel(machine, &word))
+        || same_literal(&converted)
+    {
+        return Some(destination.format());
+    }
+    if destination.format().bits() < 32 {
+        let low_word = match source.format().bits() {
+            32 => Some(term.clone()),
+            64 => Some(term.checking_low_word()),
+            _ => None,
+        };
+        if low_word.is_some_and(|word| matches_kernel(machine, &word)) {
+            return Some(destination.format());
+        }
+    }
+    let promoted_unsigned = source.format().bits() < 32
+        && !source.format().is_signed()
+        && destination.format().bits() == 32
+        && operand
+            .operand_view()
+            .binary()
+            .is_some_and(|(format, op, children)| {
+                format.format().bits() == 32
+                    && op == MachineBinaryOp::BitwiseAnd
+                    && children.into_iter().any(|child| {
+                        child.literal().and_then(|bits| bits.constant32())
+                            == Some((1u32 << source.format().bits()) - 1)
+                    })
+            });
+    if (representation::has_legacy_conversions(source)
+        && representation::has_legacy_conversions(destination))
+        || promoted_unsigned
+    {
+        let converted = term.checking_legacy_machine_conversion(source, destination);
+        if matches_kernel(machine, &converted)
+            || sign_word(&converted).is_some_and(|word| matches_kernel(machine, &word))
+            || same_literal(&converted)
+        {
+            return Some(destination.format());
+        }
+    }
+    masked_narrowing(machine, operand).then_some(destination.format())
+}
+
+#[cfg(test)]
+mod shared_operand_tests {
+    use super::*;
+
+    fn legacy_cast_reference(
+        observed: &IntegerTerm,
+        original: &IntegerTerm,
+    ) -> Option<crate::kernel::primitives::MachineIntegerFormat> {
+        if narrow_widening(observed, original) {
+            let IntegerTerm::Machine(machine) = observed else {
+                unreachable!("a widening observes a machine value");
+            };
+            return Some(machine.ty().format());
+        }
+        // Each side is read through its value relations (rule W): an
+        // observation of σ is its operand read at the observation's format.
+        let (IntegerTerm::Machine(machine), IntegerTerm::Machine(operand)) =
+            (observed.value_read(), original.value_read())
+        else {
+            return None;
+        };
+        // A C conversion node over a 32-bit carrier whose type contains the
+        // destination (`(uint16)(int32)w`) is transparent here: every value
+        // of the destination has the same word in both types, so once the
+        // inner carrier is shown below to be the source's value inside the
+        // destination range, the conversion leaves that word unchanged.
+        // The same bounds are still required.
+        if let Bitvector32Term::MachineIntegerCast {
+            value: inner,
+            source: through,
+            destination,
+        } = machine.value()
+            && *destination == machine.ty()
+            && through.format().bits() <= 32
+            && through.format().contains(destination.format())
+            && let Some(peeled) = IntegerTerm::from_machine(machine.ty(), inner.as_ref().clone())
+            && let Some(format) = legacy_cast_reference(&peeled, original)
+        {
+            return Some(format);
+        }
+        if !operand.ty().accepts_cast_operand(operand.value()) {
+            return None;
+        }
+        // Compare with the canonical conversion of the *observed* source.
+        // A narrowing cast can discard an intermediate widening/reinterpretation
+        // node, so inspecting only the outer node loses the source named by the
+        // certificate. The canonical cast still has exactly its modulo semantics;
+        // the bounds below establish that this conversion preserves the value.
+        let converted = Bitvector32Term::machine_integer_cast(
+            operand.ty(),
+            machine.ty(),
+            operand.value().clone(),
+        );
+        // An `int32` or `uint32` observation reads σ(x) as `x` (rule K2), so
+        // the canonical conversion is compared by its word. Only σ: a narrow
+        // widening's word (rule K8) is its operand only for a canonical
+        // carrier, which `narrow_widening` above establishes; comparing by that
+        // word here would accept any word merely tagged narrow.
+        if machine.value() == &converted
+            || converted
+                .sign_cast32_operand()
+                .is_some_and(|(_, word)| machine.value() == word)
+            || machine
+                .value()
+                .constant32()
+                .is_some_and(|bits| converted.constant32() == Some(bits))
+        {
+            return Some(machine.ty().format());
+        }
+        // Ordinary C and the 32/64-bit modulo boundary retain legacy cast
+        // terms. Compare against that same typed conversion policy, rather
+        // than treating their numeric observation as a typed wide cast. The
+        // explicit source bounds below remain mandatory for either spelling.
+        let legacy_type = representation::has_legacy_conversions;
+        // A narrowed byte/short value can retain the same 32-bit carrier, or
+        // the low word of a 64-bit source, instead of an explicit narrowing
+        // node. This direction still owes bounds on the word observation,
+        // checked below against the narrow destination range; within it the
+        // carrier is the destination's value, signed or unsigned. Bounds on
+        // the narrow observation alone cannot justify interpreting an
+        // arbitrary carrier as a word.
+        let carrier = representation::low_word(operand.ty(), operand.value());
+        if carrier.as_ref() == Some(machine.value()) && machine.ty().format().bits() < 32 {
+            return Some(machine.ty().format());
+        }
+        // Sub-word byte stores retain an unsigned low-bit mask in their
+        // 32-bit carrier. Promoting that canonical carrier to a word keeps
+        // its mathematical value. An arbitrary sub-word-tagged variable is
+        // insufficient: its carrier has not established the narrow range.
+        let narrow_unsigned =
+            |ty: MachineIntegerType| ty.format().bits() < 32 && !ty.format().is_signed();
+        let masked_unsigned_source = match (operand.ty(), operand.value()) {
+            (ty, binary_term!(Bits32, BitwiseAnd, left, right)) if narrow_unsigned(ty) => {
+                let mask = (1u32 << operand.ty().format().bits()) - 1;
+                matches!(left.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
+                    || matches!(right.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
+            }
+            _ => false,
+        };
+        let promoted_unsigned_source = masked_unsigned_source && machine.ty().format().bits() == 32;
+        if (legacy_type(operand.ty()) && legacy_type(machine.ty())) || promoted_unsigned_source {
+            let legacy = convert_value(
+                operand.ty().value_from_term(operand.value().clone()),
+                machine.ty(),
+            );
+            if legacy == Some(machine.ty().value_from_term(machine.value().clone()))
             || legacy.as_ref().is_some_and(|value| {
                 matches!(
                     value.numeric_value(),
@@ -419,21 +723,201 @@ pub(crate) fn cast(
         {
             return Some(machine.ty().format());
         }
+        }
+        // Typed byte stores/readback represent unsigned sub-word values by
+        // retaining their low bits. This is the same modulo conversion from a
+        // u32 word, with the source bounds still required below.
+        if operand.ty() == MachineIntegerType::UInt32
+            && narrow_unsigned(machine.ty())
+            && let binary_term!(Bits32, BitwiseAnd, left, right) = machine.value()
+        {
+            let mask = (1u32 << machine.ty().format().bits()) - 1;
+            let matches = |value: &Bitvector32Term, bits: &Bitvector32Term| {
+                value == operand.value() && bits.constant32() == Some(mask)
+            };
+            if matches(left, right) || matches(right, left) {
+                return Some(machine.ty().format());
+            }
+        }
+        None
     }
-    // Typed byte stores/readback represent unsigned sub-word values by
-    // retaining their low bits. This is the same modulo conversion from a
-    // u32 word, with the source bounds still required below.
-    if operand.ty() == MachineIntegerType::UInt32
-        && narrow_unsigned(machine.ty())
-        && let binary_term!(Bits32, BitwiseAnd, left, right) = machine.value()
-    {
-        let mask = (1u32 << machine.ty().format().bits()) - 1;
-        let matches = |value: &Bitvector32Term, bits: &Bitvector32Term| {
-            value == operand.value() && bits.constant32() == Some(mask)
-        };
-        if matches(left, right) || matches(right, left) {
-            return Some(machine.ty().format());
+
+    #[test]
+    fn shared_cast_rule_matches_legacy_candidates() {
+        use crate::kernel::{MachineBinaryOp, MachineIntegerConstant, Variable};
+        let _session = crate::kernel::VerificationSession::enter();
+        for source in super::super::FORMATS {
+            let mut words = vec![Bitvector32Term::Variable(Variable(982105))];
+            if source.format().bits() < 128 {
+                for op in [
+                    MachineBinaryOp::Add,
+                    MachineBinaryOp::Subtract,
+                    MachineBinaryOp::BitwiseAnd,
+                ] {
+                    words.push(Bitvector32Term::Binary {
+                        format: source,
+                        op,
+                        left: Box::new(words[0].clone()),
+                        right: Box::new(
+                            source
+                                .constant_term(
+                                    MachineIntegerConstant::from_integer(
+                                        source.format(),
+                                        &7.into(),
+                                    )
+                                    .unwrap(),
+                                )
+                                .unwrap(),
+                        ),
+                    });
+                }
+            }
+            if matches!(source.format().bits(), 32 | 64) {
+                words.push(Bitvector32Term::PureFunctionApplication {
+                    name: "cast_opaque_word".to_string(),
+                    arguments: vec![Bitvector32Term::Variable(Variable(982105))],
+                });
+                words.push(Bitvector32Term::MachineIntegerCast {
+                    source,
+                    destination: source,
+                    value: Box::new(Bitvector32Term::Variable(Variable(982105))),
+                });
+            }
+            for destination in super::super::FORMATS {
+                for word in &words {
+                    let original = IntegerTerm::from_machine(source, word.clone()).unwrap();
+                    let mut candidates = vec![
+                        word.clone(),
+                        Bitvector32Term::Variable(Variable(982106)),
+                        Bitvector32Term::machine_integer_cast(source, destination, word.clone()),
+                        convert_term(source, destination, word.clone()),
+                    ];
+                    if let Some(low) = representation::low_word(source, word) {
+                        candidates.push(low);
+                    }
+                    for candidate in candidates {
+                        let Some(observed) =
+                            IntegerTerm::from_machine(destination, candidate.clone())
+                        else {
+                            continue;
+                        };
+                        assert_eq!(
+                            cast(&observed, &original),
+                            legacy_cast_reference(&observed, &original),
+                            "{source:?} -> {destination:?}: {word:?} => {candidate:?}"
+                        );
+                    }
+                }
+            }
         }
     }
-    None
+
+    #[test]
+    fn shared_cast_construction_matches_legacy_format_matrix() {
+        use crate::kernel::{
+            KernelTermExport, KernelTermImport, MachineBinaryOp, MachineIntegerConstant, Variable,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        for source in super::super::FORMATS {
+            let mut words = vec![Bitvector32Term::Variable(Variable(982104))];
+            let (min, max) = source.format().bounds();
+            for n in [0.into(), 1.into(), min, max] {
+                words.push(
+                    source
+                        .constant_term(
+                            MachineIntegerConstant::from_integer(source.format(), &n).unwrap(),
+                        )
+                        .unwrap(),
+                );
+            }
+            if source.format().bits() < 128 {
+                for op in [
+                    MachineBinaryOp::Add,
+                    MachineBinaryOp::Subtract,
+                    MachineBinaryOp::Multiply,
+                ] {
+                    for n in [0, 1, 7] {
+                        words.push(Bitvector32Term::Binary {
+                            format: source,
+                            op,
+                            left: Box::new(Bitvector32Term::Variable(Variable(982104))),
+                            right: Box::new(
+                                source
+                                    .constant_term(
+                                        MachineIntegerConstant::from_integer(
+                                            source.format(),
+                                            &n.into(),
+                                        )
+                                        .unwrap(),
+                                    )
+                                    .unwrap(),
+                            ),
+                        });
+                    }
+                }
+            }
+            if source == MachineIntegerType::UInt64 {
+                for op in [MachineBinaryOp::Add, MachineBinaryOp::Subtract] {
+                    words.push(Bitvector32Term::Binary {
+                        format: source,
+                        op,
+                        left: Box::new(Bitvector32Term::UInt64Constant(u64::MAX)),
+                        right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                    });
+                }
+                words.push(Bitvector32Term::Binary {
+                    format: source,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(Bitvector32Term::UInt64Constant(7)),
+                    right: Box::new(Bitvector32Term::Variable(Variable(982104))),
+                });
+            }
+            for destination in super::super::FORMATS {
+                for word in &words {
+                    let shared = KernelTermImport::default().machine(source, word);
+                    let cast = shared.checking_machine_cast(source, destination);
+                    assert_eq!(
+                        KernelTermExport::machine(&cast).unwrap(),
+                        Bitvector32Term::machine_integer_cast(source, destination, word.clone()),
+                        "generic {source:?} -> {destination:?}"
+                    );
+                    let cast = shared.checking_legacy_machine_conversion(source, destination);
+                    let expected =
+                        convert_value(source.value_from_term(word.clone()), destination).unwrap();
+                    let crate::kernel::integer_c_value!(expected) = expected.numeric_value() else {
+                        unreachable!()
+                    };
+                    assert_eq!(
+                        &KernelTermExport::machine(&cast).unwrap(),
+                        expected,
+                        "legacy {source:?} -> {destination:?}: {word:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn narrow_widening_matches_retained_source_without_changing_cast_identity() {
+        use crate::kernel::Variable;
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = MachineIntegerType::Int8;
+        let destination = MachineIntegerType::Int32;
+        let word = Bitvector32Term::Variable(Variable(982102));
+        let original = IntegerTerm::from_machine(source, word.clone()).unwrap();
+        let other =
+            IntegerTerm::from_machine(source, Bitvector32Term::Variable(Variable(982103))).unwrap();
+        let widened = Bitvector32Term::MachineIntegerCast {
+            source,
+            destination,
+            value: Box::new(word),
+        };
+        let observed = IntegerTerm::from_machine(destination, widened).unwrap();
+        assert!(narrow_widening(&observed, &original));
+        assert!(!narrow_widening(&observed, &other));
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/machine_integer/conversion/tests.rs");
+    }
 }

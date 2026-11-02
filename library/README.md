@@ -38,7 +38,8 @@ library module's own proofs are checked against the whole library.
 Each module is parsed with the declarations of the modules before it, and
 its diagnostics name its own file and line. Types, pure functions, and
 theorems use ordinary Click declarations. Most library theorems have checked
-proofs; selected numeric laws and `separation::restrict` are backed by trusted
+proofs; selected numeric laws, `integer::uint32_from_le_bytes`, and
+`separation::restrict` are backed by trusted
 kernel constructors. Their declarations must match the corresponding kernel
 axioms exactly. The `extern` contracts are assumptions, listed in
 [trust](../docs/concepts/trust.md).
