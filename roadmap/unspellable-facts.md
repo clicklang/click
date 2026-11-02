@@ -171,6 +171,24 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared operands in the general cast checker (2026-11-02)
+
+The general conversion identity rule now matches shared expected-cast terms
+instead of exporting a source arithmetic tree. Checking-only `KernelTerm`
+constructors preserve the generic cast, sign reinterpretation, low-word, and
+legacy extension rules. Literal folding is confined to checking and preserves
+literal tags; it does not change lowered terms. Existing boxed operands keep
+their old conversion policy, while comparisons against shared targets import
+only the explicit legacy candidate, never expand the target.
+
+The focused suite passes 33 tests. A constructor matrix checks exact agreement
+with the boxed conversion policy at every format, and a differential rule matrix
+checks previous accept/refuse answers for arithmetic, opaque words, and cast
+roots. Deterministic regressions grow shared prefixes at 8/32/96, covering both
+accepted and rejected conversions and a small legacy operand against a large
+shared target, with no boxed materialization. General comparison, overflow and
+modular/operation reverse adapters remain ahead of nested signed preparation.
+
 ## Shared conversion candidate lookup (2026-11-02)
 
 The follow-on conversion increment reads cast-candidate roots through borrowed
