@@ -6235,8 +6235,9 @@ mod evidence_tests {
 /// the way the contract's source states it.
 ///
 /// The kernel builds the entry from the contract. A proof keeps each fact
-/// of `surface_facts` the entry states, under the source spelling and origin
-/// the proof side recorded for it, and takes the entry's own spelling of
+/// of `surface_facts` the entry states, with its source origin. Complete
+/// pointer equations use the entry producer's exact form; other facts retain
+/// their existing source aliases. The proof takes the entry's own spelling of
 /// what the contract's clauses and parameters say beside them. What the
 /// entry's resources state at depth stays out of view until the proof
 /// observes or opens the resource.
@@ -6254,7 +6255,18 @@ fn contract_entry_view(
     let mut origins = Vec::new();
     let mut kept = BTreeSet::new();
     for (fact, origin) in surface_facts.iter().zip(surface_origins) {
-        if entry.states(fact) {
+        // Surface lowering can name a complete pointer read differently from
+        // the entry producer. Admitting both equations derives extra
+        // read-over-write facts which later look like new entry assumptions.
+        // Keep the producer's form instead. Other source aliases retain their
+        // existing selection, including source-spellable resource ranges.
+        let selected = match fact {
+            Proposition::ConditionIs(crate::kernel::ConditionTerm::PointerValueEqual(..), _) => {
+                entry.explicitly_states(fact)
+            }
+            _ => entry.states(fact),
+        };
+        if selected {
             facts.push(fact.clone());
             origins.push(origin);
             kept.insert(fact);

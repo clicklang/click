@@ -26,12 +26,14 @@ one working case, not general recovery of all earlier provenance facts.
 
 Remaining blockers in the experiment:
 
-- The ordinary proof corpus has twelve failing fixtures (eleven formerly
-  passing proofs and one changed expected-failure diagnostic). Copied aggregate
-  parameter setup fails to connect its entry pointer facts to the contract.
-  Removing redundant final rewrites only exposes the same certification failure;
-  those exploratory proof edits were reverted. Other failures concern packed
-  pointers, constructor evidence, and resource witnesses.
+- The ordinary corpus reports 4972 passing fixtures and six failures:
+  `a_cast_contract_a_saved_word_keeps_its_historical_relationship`,
+  `a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced`,
+  `c_decreases_resource_witness_child`,
+  `call_through_witness_footprint_includes_its_memory` (changed expected error),
+  `rewrite_of_a_full_pointer_alias_keeps_constructor_type_evidence`, and
+  `tagged_pointer_from_field_fact`. All six predate the entry repair below.
+  Do not restore historical-source discovery to recover them.
 - Four focused kernel tests still fail: complete owned-store framing, cached
   pointer identity, recent pointer origin after havoc, and packed-word transport
   scaling. Preserve their assertions while investigating explicit evidence.
@@ -42,35 +44,37 @@ Remaining blockers in the experiment:
   this traversal: one-write transport costs 288/336/528/1296 units with
   4/16/64/256 unrelated entries. Do not restore warming or raise the bound.
 
-**Copied-parameter investigation: correct the reduction before fixing setup.**
-The existing fixture
-`a_copied_aggregate_parameter_retains_its_pointee_requirement.md` fails even
-with an empty function body and one pointer field. The initial unit reduction
-mistakenly used `proves_exact` (exact premise membership) to test semantic
-complete-pointer equality. That failure did not establish a missing axiom or
-missing copy evidence. A control using `contains_known` can establish the
-complete equality even after the declaration without the proposed new copy
-index. The index experiment has therefore been discarded.
+**Entry setup: use the producer's complete-pointer equations.**
+The empty-function copied-aggregate reproduction passes unchanged. Entry setup
+was admitting alternate Surface pointer equations alongside the kernel entry
+facts. Read-over-write closure derived another equality, which the later
+artifact check then rejected as an additional input assumption. Both kernel
+entry constructions agree; the setup fallback is not involved.
 
-The outstanding issue is contract-entry certification. In the empty-function
-fixture, `checked_premise_is_authorized` in `src/kernel/api.rs` rejects a
-`PointerValueEqual` entry premise whose numeric read and designation use
-different coordinates from the reconstructed entry's pointer fact. A temporary
-probe confirms `reuse_assumptions.contains_known(rejected_premise)` returns
-true, while `proves_exact` / `states_required_goal` refuse it. The probe was
-removed; no broader authorization query has been installed.
+`contract_entry_view` now selects complete-pointer equations only by exact
+membership in the kernel entry producer's existing fact set, then appends the
+producer's other visible facts. Other source aliases retain their existing
+selection: restricting those too exposes unrelated resource-range spelling
+problems, which belong with the separate spellability work. This scoped repair
+adds no equality search, history lookup, copy index, or pointer representation.
+All eighteen aggregate-parameter fixtures pass after removing four redundant
+final rewrites; C and contracts are unchanged. The selected kernel, scaling,
+search-boundary, and aggregate expansion/replay checks report 1270/1273 passing,
+with only the three known scaling failures above. The separate owned-store
+framing unit still fails. The aggregate-parameter fact-stability audit reports
+zero differences. Full ordinary corpus results are listed above. The tiny
+`a_copied_aggregate_parameter_retains_its_pointee_requirement` fixture passes
+unchanged. The false-entry-fact rejection guard passes. No nightly suite was run.
 
-Next design review: establish which producer-recorded read equalities connect
-these endpoints, and let certification consume that evidence with bounded
-queries. `contains_known` may register read definitions and invoke existing
-memory-resolution machinery, so its successful result is not by itself a
-bounded-checking design. Do not simply substitute it into certification, add a
-history walk, or install a second copy ledger to compensate for an
-exact-membership mismatch. Keep the pointer representation unchanged. The
-packed-word transport traversal remains a separate design target.
+The corrected `logical_read_of_copied_pointer_retains_its_complete_value`
+regression uses `contains_known` to test entailment; `proves_exact` tests premise
+spelling. No additional copy-evidence index is needed for that case. The old
+internal diagnostic's exact source spelling remains unestablished; this repair
+does not change diagnostic rendering.
 
-Discuss any missing primitive before extending the kernel. Do not add a
-historical-source fallback or weaken partial-overwrite, lifetime, or width checks.
+Remaining work stays with the failing automatic framing/recovery cases and
+packed-word transport traversal above. Do not simply replace artifact premise
+checks with a broader reasoner, or restore a historical-source fallback.
 
 Read-side `CellsForgotten` projections and bulk-write preparation remain
 separate from scalar-store invalidation. Removing them requires preserving
