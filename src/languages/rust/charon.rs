@@ -1142,17 +1142,28 @@ impl Adapter<'_> {
                     && b.generics.types.first().is_some_and(|p| self.boxable(p))))
         .then_some(payload)
     }
+    /// How a library enum instance's name spells payload `ty`: as a generic
+    /// struct's argument is, or a crate enum by its name, so
+    /// `Result<u32, ParseError>` holds a crate error enum.
+    fn library_argument_spelling(&self, ty: &Type) -> Option<String> {
+        record_argument_spelling(ty).or_else(|| match ty {
+            Type::Enum { name } if self.enums.values().any(|declared| declared == name) => {
+                Some(name.clone())
+            }
+            _ => None,
+        })
+    }
     /// The library's `spec enum Option<T>` at `payload`, recorded so the
     /// import declares the instance.
     fn option_enum(&self, payload: Type) -> Result<Type, String> {
-        let name = super::names::option_type_name(&record_argument_spelling(&payload).ok_or_else(
-            || {
+        let name = super::names::option_type_name(
+            &self.library_argument_spelling(&payload).ok_or_else(|| {
                 unsupported(
-                    "Option of a type other than a type parameter, \
+                    "Option of a type other than a type parameter, a crate enum, \
                      i32, u8, u16, u32, usize or bool",
                 )
-            },
-        )?);
+            })?,
+        );
         self.enum_instances
             .borrow_mut()
             .insert(name.clone(), ("Option".into(), vec![payload]));
@@ -1162,9 +1173,9 @@ impl Adapter<'_> {
     /// the import declares the instance.
     fn result_enum(&self, ok: Type, err: Type) -> Result<Type, String> {
         let spell = |payload: &Type| {
-            record_argument_spelling(payload).ok_or_else(|| {
+            self.library_argument_spelling(payload).ok_or_else(|| {
                 unsupported(
-                    "Result of a type other than a type parameter, \
+                    "Result of a type other than a type parameter, a crate enum, \
                      i32, u8, u16, u32, usize or bool",
                 )
             })
