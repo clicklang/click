@@ -42,11 +42,30 @@ Remaining blockers in the experiment:
   this traversal: one-write transport costs 288/336/528/1296 units with
   4/16/64/256 unrelated entries. Do not restore warming or raise the bound.
 
-Next design review: determine how copied-parameter construction should record
-its complete-pointer equality directly, and how packed-word transport should
-use its supplied endpoints without finding an older designation. Discuss any
-missing primitive before extending the kernel. Do not add a historical-source
-fallback or weaken partial-overwrite, lifetime, or width checks.
+**Copied-parameter reduction.** The existing fixture
+`a_copied_aggregate_parameter_retains_its_pointee_requirement.md` fails even
+with an empty function body and one pointer field. The local unit regression
+`logical_read_of_copied_pointer_retains_its_complete_value` removes contracts
+entirely: store a complete symbolic pointer, optionally declare its private
+block, and perform a logical typed read. Address equality passes in both
+cases. Complete-pointer equality passes immediately after the store but fails
+after the declaration (`[true, false]`, expected `[true, true]`). This mirrors
+`bind_c_function_arguments`, which copies fields before declaring the block.
+The test deliberately remains red alongside the removal experiment.
+
+Next design review: let the aggregate-copy producer retain the complete values
+it copies and publish their equality to field reads at the finished copy's
+snapshot. The explicit input is the selected aggregate layout; work and emitted
+facts should scale with copied fields, with no scan of unrelated cells or
+history. Use the existing complete-pointer equality, not numeric equality as
+provenance authority. Keep source reads tied to the pre-copy snapshot; simply
+moving declarations earlier must not rename unknown incoming field values.
+Also handle multiple fields, where later field writes follow earlier ones.
+Do not add a generic search to repair this entry-construction case. The
+packed-word transport traversal remains a separate design target.
+
+Discuss any missing primitive before extending the kernel. Do not add a
+historical-source fallback or weaken partial-overwrite, lifetime, or width checks.
 
 Read-side `CellsForgotten` projections and bulk-write preparation remain
 separate from scalar-store invalidation. Removing them requires preserving

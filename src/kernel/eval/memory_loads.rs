@@ -5076,6 +5076,51 @@ mod tests {
     }
 
     #[test]
+    fn logical_read_of_copied_pointer_retains_its_complete_value() {
+        let complete_equalities = [false, true].map(|declare_after_store| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let field = CMemory::frame_local_pointer(0, "copied_pointer");
+            let stored =
+                CPointerValue::new(Pointer::symbolic(Variable(210_399)), CType::Int32Pointer);
+            let mut memory =
+                CMemory::new().store(field.clone(), CValue::Pointer(stored.clone()));
+            // Aggregate parameter binding writes its fields, then declares
+            // the private destination block. Compare the immediate store.
+            if declare_after_store {
+                memory = memory.with_block(field.block.clone(), 8);
+            }
+            let context = PureFactContext::new()
+                .allow_symbolic_contract_loads()
+                .force_symbolic_external_loads();
+            let paths = evaluate_logical_memory_load_paths(
+                &memory,
+                field,
+                CType::Int32Pointer,
+                ExecutionFacts::new(),
+                vec![],
+                &context,
+            );
+            let [path] = paths.as_slice() else {
+                panic!("one logical read expected");
+            };
+            let CExpressionOutcome::Value(CValue::Pointer(read)) = &path.outcome else {
+                panic!("pointer read expected");
+            };
+            let known = assumptions_with_path_context(&context, &path.facts, &path.obligations);
+            assert!(known.pointers_known_equal(read.pointer(), stored.pointer()));
+            known.proves_exact(&Proposition::ConditionIs(
+                ConditionTerm::pointer_value_equal(read.clone(), stored),
+                true,
+            ))
+        });
+        assert_eq!(
+            complete_equalities,
+            [true, true],
+            "complete pointer equality immediately after store / after declaration"
+        );
+    }
+
+    #[test]
     fn forced_logical_pointer_read_reuses_a_materialized_reads_definition() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer {
