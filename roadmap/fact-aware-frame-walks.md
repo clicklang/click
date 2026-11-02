@@ -4,17 +4,31 @@ Priority: P1.
 
 ## Remaining targets
 
-**Pointer read naming needs a separate design cycle.**
+**Pointer read naming: red regression ready for design review.**
 `CPointerValue::from_read` calls `resource_tracker::last_same_point`, which
-reaches `cell_last_same_version` and its history traversal. Naming program
-pointer reads at the actual input snapshot, rather than a reduced cache view,
-exposes this cost: the existing
-`unfold_beside_descriptors_of_its_type_ignores_unrelated_descriptors` regression
-measures 1266/1290/1386/1770 units at 4/16/64/256 descriptors in that experiment.
-Keep the current scalar-read spelling fix separate from pointer naming. First
-isolate this path with a cold repeated-query regression; discuss how an exact
-typed read should acquire its designation and extent without searching history.
-Do not simply drop provenance or width checks.
+reaches `cell_last_same_version` and its history traversal. The constructor
+already receives an exact read value, snapshot, and address; the walk selects
+an older complete-read identity for its designation and opaque extent.
+
+The local `codex/pointer-read-naming-regression` experiment adds
+`fresh_pointer_read_naming_across_store_history_has_near_linear_total_work`
+in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`. At N=16/32/64/128,
+N fresh cells after N disjoint stores in the same object cost
+273/1057/4161/16513 units: exactly N² + N + 1. Same-cell reads cost
+18/34/66/130; fresh reads without history cost 17/33/65/129. All use normal
+memoization, with a fresh verification session per size and no cache clearing
+between reads. Store construction and exact read-identity creation are outside
+the measurement. The intended near-linear assertion fails; both controls and
+the existing-origin assertions pass. The regression remains local and red;
+production code is unchanged.
+
+Design question before removal: name the complete pointer's designation and
+opaque extent directly from the supplied snapshot/address, then use explicit
+complete-pointer preservation to relate it to an earlier read. Establish how
+existing typed transport carries designation and bounds; numeric pointer equality
+alone must not confer provenance or access. Discuss any missing primitive before
+changing the constructor. Do not add a historical-source fallback or weaken
+partial-overwrite, lifetime, or width checks.
 
 Read-side `CellsForgotten` projections and bulk-write preparation remain
 separate from scalar-store invalidation. Removing them requires preserving
