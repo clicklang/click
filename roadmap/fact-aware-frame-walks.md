@@ -52,40 +52,52 @@ transport scaling cases. The separate complete owned-store framing unit also
 remains a known blocker. Keep their positive and negative assertions until
 explicit replacement evidence is established.
 
-The full ordinary corpus reports 4970 passing fixtures and nine failures.
-Six expected-pass proofs still fail:
+The last full ordinary corpus run reported 4970 passing fixtures and nine
+failures. Subsequent focused repairs use explicit complete-observation
+preservation, leaving these known ordinary failures:
 
-- `a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced`
-- `an_interface_resource_argument_reads_through_a_model_pointer`
-- `c_decreases_resource_witness_child`
 - `cpp_generic_class_state_in_a_resource`
-- `preserved_word_equality_rewrites_integer_address`
-- `tagged_pointer_from_field_fact`
-
-Three negative fixtures fail earlier than their intended refusal:
-
-- `call_through_witness_footprint_includes_its_memory`
 - `joined_pointer_field_read_rejects_different_field`
 - `mutex_protected_pointer_footprint_stale_read_rejected`
 
-Keep their expected errors until the prerequisite proof reaches the intended
-negative check. The constructor-equality fixture passes ordinary verification;
-its fresh expansion still needs an individual check. The grouped
-`explicit_pointer_alias_repairs_expand_and_cold_replay` regression is not yet
-green. The saved-word case has its own passing gate regression. No full nightly
-suite was run. Next, apply the explicit complete-observation argument to the
-remaining word/cast cases, starting with
-`preserved_word_equality_rewrites_integer_address`; discuss any missing primitive
-before extending the kernel.
+The latter two are negative fixtures that fail before their intended refusal.
+Keep their expected errors; repair the prerequisites. The mutex fixture stops
+at the first dereference after locking, before the local assignment, so
+preservation across that assignment cannot repair it.
 
-The two witness cases also remain unresolved. Naming the recursive witness
-and explicitly proving the current cast equal to it succeeded before this
-removal, but the recursive call still failed to match its owned `marked_list`
-resource. For the footprint fixture, naming the witness and asking for the local
-pointer's equality failed with a selected pointer premise lacking a checked
-source spelling. Coordinate necessary spelling changes with the separate
-spellability work. The negative footprint fixture must reach its intended
-transport refusal, not fail at an earlier unrelated obligation.
+`explicit_pointer_alias_repairs_expand_and_cold_replay` covers the saved-word,
+parent-cast, constructor-equality, tagged-field, call-preserved integer address,
+and interface-resource argument repairs. The interface case preserves both the
+parent pointer field and its child's pointer field across a local assignment.
+The negative call-through-witness fixture now reaches its intended transport
+refusal after complete-observation preservation. No C or contract changes are
+needed for these repairs.
+
+**Next design question: recursive-call footprints.**
+`c_decreases_resource_witness_child` passes ordinary verification with explicit
+preservation across the local declaration. Its expansion still fails replay at
+the final fold's pointer equality. The ignored red regression
+`recursive_witness_pointer_preservation_expands_and_cold_replays` retains that
+mismatch; do not count this proof as repaired until replay passes.
+
+The explicit missing link is preservation of `node->word` across the recursive
+call. Before the call, `separate(marked_list(child), memory(node->word))` is
+provable. Afterward, normalization with that separation and the explicit
+call-argument equality cannot prove
+`separate(statement(1).region(1).footprint, memory(node->word))`.
+`OwnedFootprintDerivation` in `src/kernel/functions.rs` deliberately represents recursive
+resources with `CMemoryRange::unnamed_footprint()`. The execution-produced region
+footprint copies this anonymous memory range from `CMemoryEffectSummary`; it
+cannot connect it to the selected resource separation. The call retains the
+caller frame, but the explicit footprint rule lacks the resource identity.
+Discuss preserving the call's resource-level effect evidence before extending
+the kernel. Do not unfold recursive resources into a memory search or restore
+history-cache jumps to bridge this gap.
+
+All six edited ordinary fixtures pass focused verification. The six-case
+repair expansion/replay group passes; the separate recursive replay regression
+is red. The lowering audit over the six edited fixtures reports zero
+differences. No full corpus or nightly suite was rerun for these proof repairs.
 
 `transport_framed_atomic_pointer_value` still calls `cell_version_point` for
 reconstructed complete words. Its one-write work is 288/336/528/1296 for

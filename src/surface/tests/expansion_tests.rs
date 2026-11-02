@@ -20033,13 +20033,26 @@ fn explicit_pointer_alias_repairs_expand_and_cold_replay() {
             "parent",
         ),
         ("tagged_pointer_from_field_fact", "parent_value"),
+        ("preserved_word_equality_rewrites_integer_address", "caller"),
+        (
+            "an_interface_resource_argument_reads_through_a_model_pointer",
+            "peek",
+        ),
     ] {
         let (source, inputs) = mdtest_sources(&format!("mdtests/{fixture}.md"));
         let inputs = inputs
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        let verified = verify_c0_sources(&source, &inputs).unwrap();
+        let verified = with_proof_trace(function, || {
+            verify_c0_sources(&source, &inputs).unwrap_or_else(|error| {
+                panic!(
+                    "{fixture}: {}\n{}",
+                    error.report(),
+                    error.trace_context_report().unwrap_or_default()
+                )
+            })
+        });
         let expanded = expand_checked_grouped_claim(&source, &verified, function)
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.message()));
         if let Err(error) = verify_c0_sources(&expanded, &inputs) {
@@ -20047,6 +20060,22 @@ fn explicit_pointer_alias_repairs_expand_and_cold_replay() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+// Red while recursive-call effects lose the resource identity needed for
+// explicit preservation. Ordinary verification succeeds; fresh replay must too.
+#[test]
+#[ignore = "recursive witness expansion still depends on implicit call framing"]
+fn recursive_witness_pointer_preservation_expands_and_cold_replays() {
+    let (source, inputs) = mdtest_sources("mdtests/c_decreases_resource_witness_child.md");
+    let inputs = inputs
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &inputs).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "count_nodes").unwrap();
+    verify_c0_sources(&expanded, &inputs)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
 }
 
 #[test]

@@ -43,7 +43,22 @@ uint32 count_nodes(struct node* node) {
         step_until(function.exit);
         solve();
     } else {
-        unfold(marked_list(node));
+        let { next: child } = unfold(marked_list(node));
+        step_until(statement(1));
+        mark before_local;
+        step();
+        have separate(statement(1).region(0).footprint, memory(node->word)) by {
+            normalize() using {};
+        }
+        have *((&node->word) as (int32 **)) == at(before_local, *((&node->word) as (int32 **))) by {
+            transport_certificate {
+                premise 0: separate(statement(1).region(0).footprint, memory(node->word))
+                    => separate(statement(1).region(0).footprint, memory(node->word));
+                preserve 0 => *((&node->word) as (int32 **)) == at(before_local, *((&node->word) as (int32 **)));
+                conclusion 1;
+            }
+        }
+        have ((node->word & ~1) as (struct node *)) == child by { assumption(); }
     }
 }
 ```

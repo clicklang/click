@@ -32,6 +32,14 @@ struct node *caller(struct node *p, struct node *q, struct node *parent) {
             conclusion 1;
         }
     }
+    have *((&p->word) as (int32 **)) == at(before, *((&p->word) as (int32 **))) by {
+        transport_certificate {
+            premise 0: separate(statement(0).footprint, memory(p->word))
+                => separate(statement(0).footprint, memory(p->word));
+            preserve 0 => *((&p->word) as (int32 **)) == at(before, *((&p->word) as (int32 **)));
+            conclusion 1;
+        }
+    }
     have ((p->word & ~3) as (struct node *)) == parent by {
         rewrite(p->word == at(before, p->word));
         assumption();

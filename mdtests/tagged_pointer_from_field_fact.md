@@ -29,9 +29,22 @@ int32 parent_value(struct node* node, struct node* next) {
     views next->value;
     ensures result == next->value;
 } by {
+    mark before;
     step();
+    have separate(statement(0).region(0).footprint, memory(node->word)) by {
+        normalize() using {};
+    }
+    have *((&node->word) as (int32 **)) == at(before, *((&node->word) as (int32 **))) by {
+        transport_certificate {
+            premise 0: separate(statement(0).region(0).footprint, memory(node->word))
+                => separate(statement(0).region(0).footprint, memory(node->word));
+            preserve 0 => *((&node->word) as (int32 **)) == at(before, *((&node->word) as (int32 **)));
+            conclusion 1;
+        }
+    }
+    have ((node->word & ~3) as (struct node *)) == next by { assumption(); }
     step();
-    have parent == next by { solve(); }
+    have parent == next by { assumption(); }
     step();
 }
 ```
