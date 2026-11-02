@@ -171,6 +171,32 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared operands in checked bound indices (2026-11-02)
+
+Following merged #2264, the next increment moves direct signed/unsigned 32-bit
+bounds and signed 64-bit bounds onto retained machine-operand identities.
+Integer comparison admission reads `NativeComparisonView` directly. Queries
+retain shared operands, and legacy queries use the same keys. Canonical aliases
+remain supported for legacy load/cast payloads. Signed 64-bit interval queries
+now read maintained extrema rather than scanning their source-bound bucket.
+
+Constant-reading metadata is computed from immediate children and never changes
+a structural node. It preserves the old readers' format, overflow, and literal
+shift-count admission rules, including closed arithmetic bounds. The new edge
+matrix exposed an eager signed-64 right-shift evaluation on a rejected count;
+that reader now checks the count before shifting. Shared-prefix scaling tests
+cover signed32, unsigned32, and signed64 at 8/32/96 levels without materializing
+operands; a separate test grows the actual signed64 bound bucket at 4/16/64.
+Branch and withdrawal tests retain source witnesses and extrema.
+Validation: the full gate passes 7,108 tests (including 1,151 scaling tests),
+58 examples, and 4,987 proof fixtures. The run including recompilation took
+13m14s, over the ten-minute target; no limits changed. The arithmetic audit
+passes 124 fixtures with zero fact-stability differences. No nightly suite ran.
+
+This is still an intermediate consumer migration. General comparison decision,
+overflow query adapters, conversion/modular reverse adapters, and nested signed
+preparation remain to be migrated. The nested producer remains disabled.
+
 ## Shared operand registration in the equality graph (2026-11-01)
 
 Following merged #2260, `codex/shared-checker-consumers` registers native shared

@@ -53,6 +53,23 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
+    pub(crate) fn word32_constant(self) -> Option<u32> {
+        match self {
+            Self::Legacy(value) => value.as_const(),
+            Self::Shared(term) => term.machine_constant_reading()?.legacy_term().as_const(),
+        }
+    }
+
+    pub(crate) fn int64_constant(self) -> Option<i64> {
+        match self {
+            Self::Legacy(value) => value.int64_as_const(),
+            Self::Shared(term) => term
+                .machine_constant_reading()?
+                .legacy_term()
+                .int64_as_const(),
+        }
+    }
+
     pub(crate) fn root_width(self) -> Option<CarrierWidth> {
         match self {
             Self::Legacy(value) => crate::kernel::root_width(value),
@@ -105,6 +122,89 @@ impl<'a> MachineOperandView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_machine_constants_match_legacy_readings() {
+        let _session = crate::kernel::VerificationSession::enter();
+        use MachineBinaryOp::*;
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let literal = |n: i64| match ty {
+                MachineIntegerType::Int32 => Bitvector32Term::Constant(n as u32),
+                MachineIntegerType::UInt32 => Bitvector32Term::UInt32Constant(n as u32),
+                MachineIntegerType::Int64 => Bitvector32Term::Int64Constant(n),
+                _ => Bitvector32Term::UInt64Constant(n as u64),
+            };
+            let check = |boxed: Bitvector32Term| {
+                let shared = KernelTermImport::default().machine(ty, &boxed);
+                let cached = shared.machine_constant_reading().map(|v| v.legacy_term());
+                assert_eq!(
+                    cached.as_ref().and_then(|v| v.as_const()),
+                    boxed.as_const(),
+                    "{boxed:?}"
+                );
+                assert_eq!(
+                    cached.as_ref().and_then(|v| v.int64_as_const()),
+                    boxed.int64_as_const(),
+                    "{boxed:?}"
+                );
+                assert_eq!(
+                    cached.as_ref().and_then(|v| v.uint64_as_const()),
+                    boxed.uint64_as_const(),
+                    "{boxed:?}"
+                );
+                assert!(matches!(
+                    shared.node(),
+                    KernelTermNode::MachineBinary { .. } | KernelTermNode::MachineUnary { .. }
+                ));
+            };
+            for a in [
+                0,
+                1,
+                -1,
+                i32::MIN as i64,
+                i32::MAX as i64,
+                i64::MIN,
+                i64::MAX,
+            ] {
+                check(Bitvector32Term::Unary {
+                    format: ty,
+                    op: MachineUnaryOp::BitwiseNot,
+                    operand: Box::new(literal(a)),
+                });
+                for b in [0, 1, -1, 31, 32, 63, 64] {
+                    for op in [
+                        Add, Subtract, Multiply, Divide, Remainder, ShiftLeft, ShiftRight,
+                        BitwiseAnd, BitwiseOr, BitwiseXor,
+                    ] {
+                        let inner = Bitvector32Term::Binary {
+                            format: ty,
+                            op,
+                            left: Box::new(literal(a)),
+                            right: Box::new(literal(b)),
+                        };
+                        check(inner.clone());
+                        check(Bitvector32Term::Binary {
+                            format: ty,
+                            op: ShiftRight,
+                            left: Box::new(literal(a)),
+                            right: Box::new(inner.clone()),
+                        });
+                        check(Bitvector32Term::Binary {
+                            format: ty,
+                            op: Add,
+                            left: Box::new(inner),
+                            right: Box::new(literal(1)),
+                        });
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn operand_views_preserve_legacy_operation_readings() {

@@ -65,6 +65,13 @@ pub(crate) enum ComparisonOperand {
 }
 
 impl ComparisonOperand {
+    pub(crate) fn operand_view(&self) -> crate::kernel::MachineOperandView<'_> {
+        match self {
+            Self::Observation(machine) => machine.operand_view(),
+            Self::Constant(value) => crate::kernel::MachineOperandView::Legacy(value),
+        }
+    }
+
     fn boxed_value(&self) -> &Bitvector32Term {
         match self {
             Self::Observation(machine) => machine.value(),
