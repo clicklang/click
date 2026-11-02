@@ -2136,11 +2136,16 @@ impl TermClasses {
 
     fn retain_signed_int32_interval(
         &mut self,
-        term: &crate::kernel::Bitvector32Term,
+        term: crate::kernel::MachineOperandView<'_>,
         lower: i64,
         upper: i64,
     ) {
-        let node = self.intern_int32(term);
+        let node = match term {
+            crate::kernel::MachineOperandView::Shared(term) => {
+                self.intern_shared_machine(term, crate::kernel::CarrierWidth::Bits32)
+            }
+            crate::kernel::MachineOperandView::Legacy(term) => self.intern_int32(term),
+        };
         self.register_pending_loads();
         let root = self.root(node);
         let previous = self

@@ -126,41 +126,6 @@ unsigned long spin(struct node* p, int n) {
                         solve() using { t.model == Tree::Node(id, color, left_model); };
                     }
                     step();
-                    close_invariants() by {
-                        both {
-                            solve() using {
-                                at(region(3).entry, i) >= at(region(3).entry, 0);
-                                at(region(3).entry, i) < at(region(3).entry, n);
-                            };
-                        } and {
-                            both {
-                                intro();
-                                solve() using {
-                                    at(region(3).entry, i) < at(region(3).entry, n);
-                                };
-                            } and {
-                                both {
-                                    intro();
-                                    intro();
-                                    solve();
-                                } and {
-                                    both {
-                                        solve() using {
-                                            n >= 0;
-                                            at(region(3).entry, i) >= 0;
-                                            at(region(3).entry, i) < n;
-                                        };
-                                    } and {
-                                        solve() using {
-                                            n >= 0;
-                                            at(region(3).entry, i) >= 0;
-                                            at(region(3).entry, i) < n;
-                                        };
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
             step();

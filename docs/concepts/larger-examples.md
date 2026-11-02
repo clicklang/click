@@ -357,7 +357,7 @@ One iteration is five steps, and each is an ordinary tactic:
    keeps the frame stack linear — a body that folds a second frame from the
    same children is refused by name.
 4. `step()` runs `root = root->left`.
-5. `close_invariants()` rebinds `ctx` and `t` by proved argument equality: the
+5. The back edge rebinds `ctx` and `t` by proved argument equality: the
    binder arguments are read in the state the body reached, so `tree_at(root)`
    is now the left child's instance, and the structural measure sees a direct
    contained child of what the head held.

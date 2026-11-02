@@ -164,7 +164,6 @@ int32 count_to(int32 n) {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();
@@ -1285,7 +1284,6 @@ int32 caller(int32 x) {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();
@@ -1341,7 +1339,6 @@ int32 wait_for_zero(int32 x) diverges {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();
@@ -1443,7 +1440,6 @@ int32 drain(int32 n) {
             }
             step();
             step();
-            close_invariants();
         }
     }
     step();

@@ -26,7 +26,7 @@ int32 f(const uint8* bytes) { views bytes[0..4]; ensures result == 0; } by {
  invariant chunk == bytes;
  preserve by { mark inner_head; step();
  have viewable(chunk[0..4]) by { transport(at(inner_head,viewable(chunk[0..4])),viewable(chunk[0..4])) using { at(inner_head,viewable(chunk[0..4])); 0 <= 4; }; }
- close_invariants() by { solve(); } }
+  }
  }
 }
 
@@ -44,7 +44,7 @@ int32 wide(const uint64* bytes) { views bytes[0..4]; ensures result == 0; } by {
  invariant chunk == bytes;
  preserve by { mark inner_head; step();
  have viewable(chunk[0..4]) by { transport(at(inner_head,viewable(chunk[0..4])),viewable(chunk[0..4])) using { at(inner_head,viewable(chunk[0..4])); 0 <= 4; }; }
- close_invariants() by { solve(); } }
+  }
  }
 }
 ```

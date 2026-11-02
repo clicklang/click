@@ -72,8 +72,9 @@ this section shows how they appear in scripts.
 
 Smart tactics plan or search. The written smart tactic is `solve()`, with
 `solve() using { ... }`. The implicit tail, which runs the C a
-script leaves and closes what is open, is smart work too, as are
-`close_invariants()` and the searches behind elided arguments. An elided form
+script leaves and closes what is open, is smart work too, including the
+`solve()` closure of each loop-bundle member at a back edge, as are the
+searches behind elided arguments. An elided form
 such as bare `apply(...)` or bare `transport(...)` is a smart site: a search
 looks up the argument its `using` form writes, and a fact it does not find is a
 search miss to write. `click expand` writes out all of them.
@@ -315,9 +316,9 @@ evaluated again at function exit.
 A post-execution `have` retains its established fact for later tactics. Smart
 proofs recheck snapshot-qualified premise spellings, so a statement snapshot
 recorded again by a loop cannot substitute a different fact for an earlier one.
-A trailing `close_invariants` shared by several preservation paths can likewise
-expand the preceding preservation script, placing each explicit closer in its
-own branch. The loop's initialization and the script after the loop stay written.
+A back-edge closure shared by several preservation paths can likewise
+expand the preceding preservation script, placing each path's closing `have`s
+in its own branch. The loop's initialization and the script after the loop stay written.
 `click profile` identifies slow tactics and distinguishes smart automation from
 simple leaves. `click audit` checks that smart tactics across a project expand
 into source that verifies normally. Use this workflow only after the

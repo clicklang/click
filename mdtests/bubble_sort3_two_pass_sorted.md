@@ -114,48 +114,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         };
                     }
                 }
-                close_invariants() by {
-                    both {
-                        both {
-                            arithmetic_certificate signed_int32 {
-                                premise 0: at(region(4).entry, j) >= at(region(4).entry, 0) => at(region(4).entry, j) >= at(region(4).entry, 0);
-                                premise 1: at(region(4).entry, j) < at(region(4).entry, 2) => at(region(4).entry, j) < at(region(4).entry, 2);
-                                interval_from_affine 0 (at(region(4).entry, j)) (0) (2147483647);
-                                interval_from_affine 1 (at(region(4).entry, j)) (-2147483648) (1);
-                                interval_intersect 2, 3 (0) (1);
-                                interval_atom (1) (1) (1);
-                                interval_add_bounded 4, 5 (1) (2);
-                                trivial => -1 <= 0;
-                                add 0, 7 => (at(region(4).entry, 0) + -1) <= (at(region(4).entry, j) + 0);
-                                affine_conclusion 8 6 => j >= 0;
-                                conclusion 9;
-                            }
-                        } and {
-                            arithmetic_certificate signed_int32 {
-                                premise 0: at(region(4).entry, j) >= at(region(4).entry, 0) => at(region(4).entry, j) >= at(region(4).entry, 0);
-                                premise 1: at(region(4).entry, j) < at(region(4).entry, 2) => at(region(4).entry, j) < at(region(4).entry, 2);
-                                interval_from_affine 0 (at(region(4).entry, j)) (0) (2147483647);
-                                interval_from_affine 1 (at(region(4).entry, j)) (-2147483648) (1);
-                                interval_intersect 2, 3 (0) (1);
-                                interval_atom (1) (1) (1);
-                                interval_add_bounded 4, 5 (1) (2);
-                                affine_conclusion 1 6 => j <= 2;
-                                conclusion 7;
-                            }
-                        }
-                    } and {
-                        both {
-                            intro();
-                            assumption();
-                        } and {
-                            both {
-                                solve() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
-                            } and {
-                                solve() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
-                            }
-                        }
-                    }
-                }
             } else {
                 unfold(all_le_range);
                 step();
@@ -186,48 +144,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                         solve() using {
                             at(region(9).entry, p[(j + 1)]) >= at(region(9).entry, p[j]);
                         };
-                    }
-                }
-                close_invariants() by {
-                    both {
-                        both {
-                            arithmetic_certificate signed_int32 {
-                                premise 0: at(region(4).entry, j) >= at(region(4).entry, 0) => at(region(4).entry, j) >= at(region(4).entry, 0);
-                                premise 1: at(region(4).entry, j) < at(region(4).entry, 2) => at(region(4).entry, j) < at(region(4).entry, 2);
-                                interval_from_affine 0 (at(region(4).entry, j)) (0) (2147483647);
-                                interval_from_affine 1 (at(region(4).entry, j)) (-2147483648) (1);
-                                interval_intersect 2, 3 (0) (1);
-                                interval_atom (1) (1) (1);
-                                interval_add_bounded 4, 5 (1) (2);
-                                trivial => -1 <= 0;
-                                add 0, 7 => (at(region(4).entry, 0) + -1) <= (at(region(4).entry, j) + 0);
-                                affine_conclusion 8 6 => j >= 0;
-                                conclusion 9;
-                            }
-                        } and {
-                            arithmetic_certificate signed_int32 {
-                                premise 0: at(region(4).entry, j) >= at(region(4).entry, 0) => at(region(4).entry, j) >= at(region(4).entry, 0);
-                                premise 1: at(region(4).entry, j) < at(region(4).entry, 2) => at(region(4).entry, j) < at(region(4).entry, 2);
-                                interval_from_affine 0 (at(region(4).entry, j)) (0) (2147483647);
-                                interval_from_affine 1 (at(region(4).entry, j)) (-2147483648) (1);
-                                interval_intersect 2, 3 (0) (1);
-                                interval_atom (1) (1) (1);
-                                interval_add_bounded 4, 5 (1) (2);
-                                affine_conclusion 1 6 => j <= 2;
-                                conclusion 7;
-                            }
-                        }
-                    } and {
-                        both {
-                            intro();
-                            assumption();
-                        } and {
-                            both {
-                                solve() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
-                            } and {
-                                solve() using { at(region(4).entry, j) >= at(region(4).entry, 0); at(region(4).entry, j) < at(region(4).entry, 2); };
-                            }
-                        }
                     }
                 }
             }
@@ -325,39 +241,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     rewrite(j == 1);
                     enumerate();
                 }
-                close_invariants() by {
-                    both {
-                        both {
-                            solve() using {
-                                at(region(12).entry, j) >= at(region(12).entry, 0);
-                                at(region(12).entry, j) < at(region(12).entry, 1);
-                            };
-                        } and {
-                            solve() using {
-                                at(region(12).entry, j) < at(region(12).entry, 1);
-                            };
-                        }
-                    } and {
-                        both {
-                            intro();
-                            assumption();
-                        } and {
-                            both {
-                                intro();
-                                intro();
-                                assumption();
-                            } and {
-                                both {
-                                    rewrite(at(region(17).entry, j) == at(region(17).entry, 0));
-                                    normalize();
-                                } and {
-                                    rewrite(at(region(17).entry, j) == at(region(17).entry, 0));
-                                    normalize();
-                                }
-                            }
-                        }
-                    }
-                }
             } else {
                 unfold(all_le_range);
                 have j == 0 by {
@@ -407,39 +290,6 @@ int32 bubble_sort3_two_pass(int32 p[3]) {
                     unfold(all_le_range);
                     rewrite(j == 1);
                     enumerate();
-                }
-                close_invariants() by {
-                    both {
-                        both {
-                            solve() using {
-                                at(region(12).entry, j) >= at(region(12).entry, 0);
-                                at(region(12).entry, j) < at(region(12).entry, 1);
-                            };
-                        } and {
-                            solve() using {
-                                at(region(12).entry, j) < at(region(12).entry, 1);
-                            };
-                        }
-                    } and {
-                        both {
-                            intro();
-                            assumption();
-                        } and {
-                            both {
-                                intro();
-                                intro();
-                                assumption();
-                            } and {
-                                both {
-                                    rewrite(at(region(17).entry, j) == at(region(17).entry, 0));
-                                    normalize();
-                                } and {
-                                    rewrite(at(region(17).entry, j) == at(region(17).entry, 0));
-                                    normalize();
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }

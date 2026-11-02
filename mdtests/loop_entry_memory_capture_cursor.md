@@ -44,7 +44,6 @@ int32 cursor(const uint8* p, int32 n) {
    have 0 <= n by solve() using { at(head, n) > 0; at(head, n) <= old(n); old(n) <= 15; };
    have n < at(head, n) by solve() using { at(head, n) > 0; at(head, n) <= old(n); old(n) <= 15; };
    have n <= old(n) by solve() using { at(head, n) > 0; at(head, n) <= old(n); old(n) <= 15; };
-   close_invariants() by solve();
   }
  }
 }

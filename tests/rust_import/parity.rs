@@ -30,8 +30,11 @@ fn inventory() -> Vec<Entry> {
 /// `as` casts and qualified library citations. Each respelled file is
 /// byte-identical to what the retired reading adapter produced from the
 /// original, so its contracts, specification functions and proofs, gaps
-/// included, are the original's. The live parity sweep still checks each
-/// archive's recorded outcome.
+/// included, are the original's. When `close_invariants` was retired
+/// (2026-11-02) the archives dropped their bare closers, which the back edge
+/// now performs, and the chunk proof's explicit closer kept only its
+/// `extract` steps. The live parity sweep still checks each archive's
+/// recorded outcome.
 #[test]
 fn charon_frozen_sidecars_are_pinned_and_parse() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

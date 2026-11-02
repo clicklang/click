@@ -171,6 +171,55 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared interval-certificate source matching (2026-11-02)
+
+The signed certificate's source matcher reads ordinary definedness conjunctions
+through operand views instead of constructing boxed overflow conditions. Shared
+operands use checking-only structural keys, retaining the signed fragment's
+literal-tag equivalence and supported operators. Legacy operands keep their
+existing matcher, and matching a shared operand against a written operand
+visits only that explicit input.
+
+Keys are computed once per shared node per verification session and retained
+across function epochs and proof-context restores: they read no facts or load
+registries. Normalized keys are metadata, never substituted into stored or
+lowered terms. Unsupported nodes retain a cached refusal.
+
+Differential tests compare source matching with the old interval adapter,
+including incomplete domains and different widths/operators. An 8/32/96-node
+doubled-child DAG test checks repeated matching remains near linear and never
+exports operands. A state-restore regression checks structural keys survive
+context changes and clear for a new verification session. This removes one
+interval adapter; the decision, normalization and special arithmetic query
+consumers still require migration. The focused arithmetic/certificate suite
+and every deterministic scaling test pass: 1,266 tests in total. CI and the
+merge queue run the full gate for this increment; no nightly suite ran.
+
+## Shared comparison admission and truth queries (2026-11-02)
+
+Written native comparisons and Integer observations now use one borrowed
+comparison view for checked bound admission. Written operands stay borrowed;
+observations retain their shared handles. Direction and negation are normalized
+without copying operands, and bound witnesses and canonical aliases are kept.
+
+Graph comparison-node construction, truth admission and truth queries accept
+operand views. Existing native callers use the same implementation. Narrow
+equality carriers, signed 32-bit interval annotations and the supported graph
+condition kinds are unchanged. This is the graph interface for the remaining
+higher-level comparison migration; `assume_condition_uncharged` and `decide`
+still have boxed comparison adapters.
+
+The focused suite passes 73 tests, including a format/relation/truth matrix,
+shared/native admission and query interoperability, equality merges, and an
+8/32/96-node doubled-child DAG regression exercising successful and missing
+truth queries without exporting operands. The full gate passed 7,128 unit/API
+tests (including 1,159 scaling tests), 58 examples and 4,992 proof fixtures in
+13m56s (over the ten-minute target; no limits changed). The arithmetic
+fact-stability audit passed 127 fixtures with zero differences. This increment
+merged in #2272. Operation/modular mappings, higher-level comparison decision
+and the remaining interval adapters are still pending; nested signed
+preparation remains disabled.
+
 ## Shared graph registration across observation widths (2026-11-02)
 
 An Integer observation can read a machine expression at a different carrier
@@ -190,8 +239,11 @@ including mixed-width children, shifts, complements and cancellation. An
 8/32/96-node doubled-child DAG regression checks repeated cross-width Integer
 registration has near-linear work and never requests a boxed operand. The
 17 focused graph/format tests pass, as do all four graph/constant checks after
-expanding constant-reading coverage to every machine format. The full gate is
-in progress.
+expanding constant-reading coverage to every machine format. The full gate
+passed 7,121 tests, including 1,156 scaling tests, 58 examples and 4,991 proof
+fixtures in 12m38s (over the ten-minute target; no limits changed). The arithmetic
+fact-stability audit passed 124 fixtures with zero differences. This increment
+merged in #2270; no nightly suite ran.
 
 ## Shared overflow query extraction (2026-11-02)
 

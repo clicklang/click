@@ -10,7 +10,7 @@ re-folds its resource into a new instance rather than walking into a child.
 At each continuing back edge the bundle owes the two ranking members an Integer
 measure always owes: the value at the next head is at least zero, and it is
 less than the value at this head. Both are ordinary goals, stated here with
-`have` before `close_invariants()`. The head value is nameable because the arm
+`have` before the back edge. The head value is nameable because the arm
 of `match c.model` the proof is in names the model's parts, and
 `chain_len_is_nonnegative` is proved once by structural induction and applied
 to the rebound model. A measure that also reads a C local, one that does not

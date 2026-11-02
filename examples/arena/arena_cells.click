@@ -1400,17 +1400,6 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 }
             }
             have to_integer(end) - to_integer(i) < to_integer(end) - to_integer(at(opened, i));
-            close_invariants() by {
-                both { solve(); } and {
-                    both { solve(); } and {
-                        both { solve(); } and {
-                            both { solve(); } and {
-                                both { solve(); } and { solve(); }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
     let { next: m } = unfold(w);
@@ -2142,19 +2131,6 @@ void arena_free(struct region* region) {
             have to_integer(i) == to_integer(at(opened, i)) + 1;
             have 0 <= to_integer(region->end) - to_integer(i);
             have to_integer(region->end) - to_integer(i) < to_integer(region->end) - to_integer(at(opened, i));
-            close_invariants() by {
-                both { solve(); } and {
-                    both { solve(); } and {
-                        both { solve(); } and {
-                            both { solve(); } and {
-                                both { solve(); } and {
-                                    both { solve(); } and { solve(); }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
     let { next: m } = unfold(w);

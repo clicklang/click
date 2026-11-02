@@ -8,7 +8,7 @@ that the next iteration would hold both the larger subtree and the frame above
 its own root, is refused by naming the child it no longer holds.
 
 Without this an ascent could climb while keeping every frame it passed, and
-`close_invariants()` would close over a context stack that no heap supports.
+the back edge would close over a context stack that no heap supports.
 This is the ascending counterpart of
 [`loop_context_frame_refold_rejected.md`](loop_context_frame_refold_rejected.md),
 which catches the same error on a descent.

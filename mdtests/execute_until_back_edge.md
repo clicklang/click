@@ -2,7 +2,7 @@
 
 `back_edge()` checks the remaining steps of the current preservation region.
 It rejects early exits and leaves invariant and decreasing-measure checks to
-`close_invariants()`. It does not split branches.
+the back edge, which closes each member with `solve()`. It does not split branches.
 
 ```c filename=count.c
 int32 count(int32 n) {

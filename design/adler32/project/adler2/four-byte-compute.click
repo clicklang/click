@@ -584,9 +584,6 @@ impl adler2::Adler32 {
        have __rust_mir_62_remaining < at(lane_head, __rust_mir_62_remaining) by solve() using { __rust_mir_62_remaining == at(lane_head, __rust_mir_62_remaining) - 4u64; 4u64 <= at(lane_head, __rust_mir_62_remaining); };
        have __rust_mir_62_size == 4u64;
        have __rust_mir_62_size == 4u64 and __rust_mir_62_remaining <= 4u64 by { both { assumption(); } and { assumption(); } }
-       close_invariants() by {
-        both { normalize(); } and { assumption(); }
-       }
       }
      }
      have __rust_mir_62_remaining < 4u64 by { cases { not (0u64 < __rust_mir_62_remaining) => { solve() using { not 0u64 < __rust_mir_62_remaining; }; } not (4u64 <= __rust_mir_62_remaining) => { assumption(); } } }

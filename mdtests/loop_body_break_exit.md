@@ -24,7 +24,7 @@ Every loop here is ranked by `decreases i;`. A `break` path owes no decrease,
 so `break_once` proves nothing about its measure; `stop_at` has one path that
 does reach the back edge, and its `0 < i` comes from the C `if` that path
 declined, which the closer names beside the invariants
-([`close_invariants_cites_a_branch_condition.md`](close_invariants_cites_a_branch_condition.md)).
+([`the_back_edge_cites_a_branch_condition.md`](the_back_edge_cites_a_branch_condition.md)).
 
 A `break` path whose state differs from the loop's other exits — one that
 assigns or stores before leaving — is described through the loop's binders and

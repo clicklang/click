@@ -791,7 +791,6 @@ int32 count_to_one() {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();

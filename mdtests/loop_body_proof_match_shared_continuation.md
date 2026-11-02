@@ -78,38 +78,7 @@ void spin(struct cell* node, int32 n) {
                     let c = fold(cell(node), { model: Sign::Pos(value) });
                 },
             }
-            close_invariants() by {
-                both {
-                    have at(region(3).entry, i) + 1 >= at(region(3).entry, 0);
-                    solve();
-                } and {
-                    both {
-                        intro();
-                        have at(region(3).entry, i) + 1 <= at(region(3).entry, n);
-                        solve();
-                    } and {
-                        both {
-                            intro();
-                            intro();
-                            solve();
-                        } and {
-                            both {
-                                solve() using {
-                                    n >= 0;
-                                    at(region(3).entry, i) >= at(region(3).entry, 0);
-                                    at(region(3).entry, i) < at(region(3).entry, n);
-                                };
-                            } and {
-                                solve() using {
-                                    n >= 0;
-                                    at(region(3).entry, i) >= at(region(3).entry, 0);
-                                    at(region(3).entry, i) < at(region(3).entry, n);
-                                };
-                            }
-                        }
-                    }
-                }
-            }
+            have i >= 0;
         }
     }
     step();

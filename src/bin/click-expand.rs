@@ -1194,31 +1194,17 @@ int32 bad(int32 x) {
         }
     }
 
-    /// Loop phases: the smart `initialize by solve()` and the smart
-    /// `close_invariants()` of a frontier-local loop are selected by line.
+    /// Loop phases: the smart `initialize by solve()` of a frontier-local
+    /// loop is selected by line.
     #[test]
     #[ignore = "nightly: 0.6s in the parallel gate"]
     fn lines_in_loop_phases_select_their_smart_tactics() {
         let path = mdtest_path("c_decreases_count_up.md");
-        for (line, text) in [(27, "initialize by solve();"), (30, "close_invariants();")] {
-            assert_eq!(markdown_line(&path, line).trim(), text);
-            let expanded = run_location(&path, &line.to_string())
-                .unwrap_or_else(|error| panic!("line {line}: {error}"));
-            assert!(!expanded.contains(text), "{expanded}");
-        }
-    }
-
-    /// A close bundle is one smart site: a column on the `solve` written in
-    /// one of its `both` arms selects the whole bundle.
-    #[test]
-    #[ignore = "nightly: 0.6s in the parallel gate"]
-    fn a_column_inside_a_close_bundle_selects_the_bundle() {
-        let path = mdtest_path("loop_invariant_body.md");
-        assert_eq!(markdown_line(&path, 35).trim(), "both { solve(); }");
-        let from_solve = run_location(&path, "35:24").unwrap();
-        let from_bundle = run_location(&path, "34:13").unwrap();
-        assert_eq!(from_solve, from_bundle);
-        assert!(!from_solve.contains("both { solve(); }"), "{from_solve}");
+        let (line, text) = (27, "initialize by solve();");
+        assert_eq!(markdown_line(&path, line).trim(), text);
+        let expanded = run_location(&path, &line.to_string())
+            .unwrap_or_else(|error| panic!("line {line}: {error}"));
+        assert!(!expanded.contains(text), "{expanded}");
     }
 
     /// Call outcomes: the `solve` closing the `returned` arm is selected by

@@ -321,6 +321,81 @@ mod tests {
     use crate::kernel::{IntegerTerm, KernelTermImport, SharedMachineIntegerTerm};
 
     #[test]
+    fn comparison_nodes_match_legacy_across_formats_and_merges() {
+        use crate::kernel::{CompareRelation as R, ConditionTerm, MachineOperandView as V};
+        for format in crate::kernel::machine_integer::FORMATS {
+            for relation in [
+                R::Equal,
+                R::LessThan,
+                R::LessEqual,
+                R::GreaterThan,
+                R::GreaterEqual,
+            ] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let variable = T::Variable(Variable(982410));
+                let other = T::Variable(Variable(982411));
+                let left = T::Binary {
+                    format,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(variable.clone()),
+                    right: Box::new(other.clone()),
+                };
+                let mut import = KernelTermImport::default();
+                let shared_left = import.machine(format, &left);
+                let shared_right = import.machine(format, &other);
+                let condition = ConditionTerm::Compare {
+                    format,
+                    relation,
+                    left: Box::new(left),
+                    right: Box::new(other.clone()),
+                };
+                let mut classes = TermClasses::default();
+                let a = classes.machine_comparison_node(
+                    format,
+                    relation,
+                    [V::Shared(&shared_left), V::Shared(&shared_right)],
+                );
+                let b = classes.condition_node(&condition);
+                assert_eq!(a, b, "{format:?} {relation:?}");
+                for truth in [false, true] {
+                    let operands = [V::Shared(&shared_left), V::Shared(&shared_right)];
+                    let mut admitted_shared = TermClasses::default();
+                    let mut admitted_legacy = TermClasses::default();
+                    assert_eq!(
+                        admitted_shared.admit_machine_comparison(format, relation, operands, truth),
+                        a.is_some()
+                    );
+                    assert_eq!(
+                        admitted_legacy.admit_condition(&condition, truth),
+                        a.is_some()
+                    );
+                    assert_eq!(
+                        admitted_shared.knows_condition(&condition, truth),
+                        a.is_some()
+                    );
+                    assert_eq!(
+                        admitted_legacy.knows_machine_comparison(format, relation, operands, truth),
+                        a.is_some()
+                    );
+                    assert!(!admitted_shared.knows_condition(&condition, !truth));
+                    assert!(
+                        !admitted_legacy
+                            .knows_machine_comparison(format, relation, operands, !truth)
+                    );
+                }
+
+                classes.add_typed_equality(W::of_machine_type(format), &variable, &other);
+                let again = classes.machine_comparison_node(
+                    format,
+                    relation,
+                    [V::Shared(&shared_left), V::Shared(&shared_right)],
+                );
+                assert_eq!(a.map(|n| classes.root(n)), again.map(|n| classes.root(n)));
+            }
+        }
+    }
+
+    #[test]
     fn shared_registration_preserves_cross_width_opaque_identities() {
         for format in crate::kernel::machine_integer::FORMATS {
             let variable = T::Variable(Variable(982401));

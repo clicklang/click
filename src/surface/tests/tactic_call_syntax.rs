@@ -79,30 +79,6 @@ fn whole_proof_auto_call_cannot_be_shadowed_by_a_user_tactic() {
 }
 
 #[test]
-fn invariant_closer_requires_a_call_head_with_optional_single_body_braces() {
-    for body in ["assumption();", "{ assumption(); }"] {
-        let source = format!(
-            r#"verifying "test.c"; int32 fact() {{ ensures true by {{ close_invariants() by {body} }} }}"#
-        );
-        let parsed = parser::parse(&source).unwrap();
-        let printed = super::super::printing::format_partial_tactic_sequence(
-            parsed.function_blocks()[0].ensures()[0]
-                .proof()
-                .tactics()
-                .unwrap(),
-        );
-        assert!(printed.starts_with("close_invariants() by {"), "{printed}");
-        assert!(!printed.ends_with(';'));
-        let error = parser::parse(&source.replace("close_invariants()", "close_invariants"))
-            .expect_err("the old bare head is refused");
-        assert!(
-            error.message().contains("requires parentheses"),
-            "{error:?}"
-        );
-    }
-}
-
-#[test]
 fn canonical_using_calls_wrap_long_premises_and_keep_their_terminator() {
     let left = "first_parameter_with_a_descriptive_mathematical_name";
     let right = "second_parameter_with_a_descriptive_mathematical_name";

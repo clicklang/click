@@ -362,6 +362,9 @@ impl VerificationSession {
             current == 0
         });
         if outermost {
+            // Structural operand identities read no registry or proof state;
+            // retain them across function epochs and state restores.
+            proof::signed_arithmetic::clear_shared_operand_keys();
             VERIFICATION_SESSION_GENERATION
                 .with(|generation| generation.set(generation.get().wrapping_add(1)));
 

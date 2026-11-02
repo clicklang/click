@@ -84,7 +84,7 @@ removed spellings `auto`, `arithmetic`, `execute`, and
 own grammar. For binary proof splits
 (`if` and `branch`), write `then` exactly when an `ensuring` interface precedes
 the arms. Call modifiers follow the
-parenthesized head, as in `close_invariants() by { ... }`.
+parenthesized head, as in `step() by { ... }`.
 
 End call statements with `;`, including calls with a `using { ... };` list.
 Do not add a trailing semicolon to proof-control blocks such as `by { ... }`,

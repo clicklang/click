@@ -34,26 +34,6 @@ void clear(int32* values) {
         preserve by {
             step();
             step();
-            close_invariants() by {
-                both {
-                    solve() using {
-                        0 <= at(region(3).entry, x);
-                        at(region(3).entry, x) < 4;
-                    };
-                } and {
-                    both {
-                        solve() using {
-                            0 <= at(region(3).entry, x);
-                            at(region(3).entry, x) < 4;
-                        };
-                    } and {
-                        solve() using {
-                            0 <= at(region(3).entry, x);
-                            at(region(3).entry, x) < 4;
-                        };
-                    }
-                }
-            }
         }
     }
 }

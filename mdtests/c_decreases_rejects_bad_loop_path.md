@@ -25,13 +25,6 @@ int32 sometimes_stuck(int32 n, int32 choose) {
             if choose == 0 {
                 have 0 <= to_integer(n - 1);
                 step(); step();
-                close_invariants() by {
-                    both { solve() using { 0 <= n; }; }
-                    and {
-                        both { solve() using { 0 <= n; }; }
-                        and { solve() using { 0 <= n; }; }
-                    }
-                }
             } else {
                 step(); step();
             }

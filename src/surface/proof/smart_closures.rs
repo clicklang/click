@@ -2880,6 +2880,17 @@ impl<'a> Proof<'a> {
     pub(in crate::surface::proof) fn wide_conjunction_surfaces(
         &self,
     ) -> Option<Vec<ClickProposition>> {
+        self.conjunction_leaf_surfaces(9)
+    }
+
+    /// The spelling of each leaf of the focused conjunction, when it has at
+    /// least `min_leaves` leaves and every leaf is spelled so that it lowers
+    /// back to that leaf. A loop's invariant bundle is closed member by
+    /// member through these at any width, as a function's `ensures` are.
+    pub(in crate::surface::proof) fn conjunction_leaf_surfaces(
+        &self,
+        min_leaves: usize,
+    ) -> Option<Vec<ClickProposition>> {
         let mut pending = vec![self.goal()?];
         let mut leaves = Vec::new();
         while let Some(goal) = pending.pop() {
@@ -2892,7 +2903,7 @@ impl<'a> Proof<'a> {
         }
         // Binary certificates below this width fit comfortably inside the
         // parser's existing structural limit, including enclosing scopes.
-        if leaves.len() <= 8 {
+        if leaves.len() < min_leaves {
             return None;
         }
         // Leaves are checked last first. A loop-invariant bundle guards each
@@ -2926,14 +2937,35 @@ impl<'a> Proof<'a> {
             }
             surfaces
         } else {
-            // A synthesized member is kept only when it lowers back to its
-            // leaf, so it needs no second check.
-            let mut surfaces = leaves
-                .iter()
-                .rev()
-                .map(|goal| self.synthesized_bundle_member_surface(goal))
-                .collect::<Option<Vec<_>>>()?;
-            surfaces.reverse();
+            // A member is spelled as its loop head writes it, the way an
+            // `ensures` is: each invariant guarded by the ones declared
+            // before it, then the `decreases` members. A written form is kept
+            // only when it lowers back to its leaf; a leaf it does not match,
+            // such as a guard lowering adds, is synthesized from the kernel
+            // goal instead, which is likewise kept only when it lowers back.
+            let written = self.written_bundle_member_surfaces().unwrap_or_default();
+            // Each written form is lowered at most once, on first use.
+            let mut lowered: Vec<Option<Option<Proposition>>> = vec![None; written.len()];
+            let mut surfaces = Vec::with_capacity(leaves.len());
+            for goal in &leaves {
+                let mut matched = None;
+                for (index, surface) in written.iter().enumerate() {
+                    let candidate = lowered[index].get_or_insert_with(|| {
+                        self.lower_surface_goal(surface, "loop invariant bundle member")
+                            .ok()
+                    });
+                    if candidate.as_ref().is_some_and(|candidate| {
+                        crate::kernel::proof::propositions_are_alpha_equal(candidate, goal)
+                    }) {
+                        matched = Some(surface.clone());
+                        break;
+                    }
+                }
+                match matched {
+                    Some(surface) => surfaces.push(surface),
+                    None => surfaces.push(self.synthesized_bundle_member_surface(goal)?),
+                }
+            }
             surfaces
         };
         Some(surfaces)

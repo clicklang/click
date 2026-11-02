@@ -5,8 +5,8 @@ language. A tactic is either **smart**, **simple**, or **control**:
 
 - Smart tactics search. The written one is `solve()`, with its `using` form
   and `step_until`, which steps to a target and proves what each step needs;
-  the rest are the implicit closer that ends every proof and finishes a
-  `step()` or `fold`, `close_invariants()`, and
+  the rest are the implicit closer that ends every proof, including each loop
+  `preserve` script at its back edge, and finishes a `step()` or `fold`, and
   the elided forms whose search fills one argument a simple form writes:
   `apply(theorem(args))`, `apply(ih(m))`, and a bare `transport(P, Q)`. They
   are the tactics that `click profile` may recommend expanding. The parser
@@ -51,8 +51,8 @@ remains supported.
   without splitting. See [Execution](#execution).
 - `branch { ... } else { ... }`: prove each arm of the C `if` at the
   frontier. See [Execution](#execution).
-- `loop { ... }` with `close_invariants()`: prove a C loop from its
-  invariants, closing them at the back edge. See [Execution](#execution) and
+- `loop { ... }`: prove a C loop from its invariants, which the back edge
+  closes member by member with `solve()`. See [Execution](#execution) and
   [Resources and snapshots](#resources-and-snapshots).
 - `solve()`: close the first open goal, and `solve() using { ... }` from only
   the listed premises. See [Automation and search](#automation-and-search)
@@ -721,6 +721,25 @@ function `return`: a `continue` is the back edge; a `break` closes no invariant
 and joins the loop's ordinary exits; and a `return` is terminal for the function
 and owes neither the invariant nor ranking bundle.
 
+A `preserve by { ... }` script works like a function proof. When it ends, or
+when its tactics stop inside the body and the rest of the body runs implicitly
+to the back edge (splitting at C `if`s like a function's implicit tail,
+[`preserve_runs_the_rest_of_the_body.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_runs_the_rest_of_the_body.md)),
+the back edge owes the loop's bundle: each declared `invariant`, guarded by
+the invariants declared before it, and for a `decreases` loop one `0 <= m`
+member per component and one descent member `m < at(<iteration entry>, m)`
+(for a tuple measure, the right-nested disjunction over pivots with the
+earlier components tied). Each member is closed by `solve()`, exactly as a
+function's exit closes each `ensures`; this closes, for example, an unsigned or
+64-bit bound and its descent from the guard
+([`back_edge_closes_an_unsigned_bound_from_the_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md)).
+To help a member `solve()` misses, prove it, or a fact it needs, with
+`have <invariant> by { ... }` before the back edge. `click expand` prints the
+closure as one `have <member> by { ... }` per member at the end of the
+`preserve` script, omitting members already available as facts. The retired
+`close_invariants` tactic is rejected by the parser
+([`close_invariants_is_retired.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_is_retired.md)).
+
 The frontier may be one a `branch` arm or a proof-level `if` arm reached, which
 is how a loop guarded by a C `if` is proved; the invariants are then established
 from the arm's state, with its path condition available.
@@ -736,12 +755,13 @@ A non-loop frontier or failed invariant, frame, or decrease obligation fails; so
 does a path that stops short of all four endings, and exits that reach different
 states, which are named rather than dropped. A continuing arm owes the same
 bundle as a top-level loop, including the `decreases` the enclosing termination
-judgment requires.
+judgment requires. A member `solve()` misses fails locally, naming that member,
+and a ranked loop's diagnostic names the ranking obligations.
 
 Click checks the structural rule; expansion materializes omitted phase proofs,
 and profiling reports smart descendants and simple leaves.
 
-**Checked examples:** [`count_to_n_loop_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/count_to_n_loop_invariant.md), [`a_summarized_loop_body_return_is_certified_with_its_value.md`](https://github.com/clicklang/click/blob/master/mdtests/a_summarized_loop_body_return_is_certified_with_its_value.md), [`loop_inside_a_branch_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_inside_a_branch_arm.md), [`loop_inside_a_proof_if_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_inside_a_proof_if_arm.md)
+**Checked examples:** [`count_to_n_loop_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/count_to_n_loop_invariant.md), [`the_back_edge_ranks_a_reassigned_parameter.md`](https://github.com/clicklang/click/blob/master/mdtests/the_back_edge_ranks_a_reassigned_parameter.md), [`a_summarized_loop_body_return_is_certified_with_its_value.md`](https://github.com/clicklang/click/blob/master/mdtests/a_summarized_loop_body_return_is_certified_with_its_value.md), [`loop_inside_a_branch_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_inside_a_branch_arm.md), [`loop_inside_a_proof_if_arm.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_inside_a_proof_if_arm.md)
 
 ### Calls through named contracts
 
@@ -3226,8 +3246,6 @@ mathematical product.
 | `scatter(resource(args))` | simple | Specialized | Dissolve iterated ownership into its covering range. | [Reference](#scattering-resources) |
 | `name(args, { binder: instance })` | simple | Specialized | Apply a verified tactic with resource bindings. | [Reference](#user-defined-tactic-calls) |
 | `observe(resource)` | simple | Specialized | Read a resource's persistent observations. | [Reference](#observing-resources) |
-| `close_invariants()` | smart | Core | Prove the invariant obligations at a loop back edge. | [Reference](#closing-loop-invariants) |
-| `close_invariants() by` | control | Expansion output | Supply explicit proofs for invariant closure. | [Reference](#explicit-invariant-closure) |
 
 Predicate calls are opaque to framing until their definitions are unfolded.
 To carry such a fact across C execution, run `unfold(name)` before the relevant
@@ -3852,59 +3870,6 @@ facts never leak. Click performs one projection layer, expansion is unchanged,
 and profiling charges that layer.
 
 **Checked examples:** [`composite_resource_folded_nested_fact_projection.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_folded_nested_fact_projection.md), [`composite_resource_observe_nested_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_observe_nested_fact.md)
-
-### Closing loop invariants
-
-**Form:** `close_invariants()`
-
-**Core.** At a loop back edge, which is the body's end or a stepped `continue`,
-close the exact invariant value and safety obligations, and the ranking
-obligations a `decreases` clause adds after them, as
-`close_invariants() by { ... }` with `solve()` on each member: the bundle's
-conjunctions and guards are descended by `both` and `intro`, and every member
-is closed by `solve()` alone, spelled as its clause writes it: the descent
-member of `decreases m` is `m < at(<iteration entry>, m)`, and a tuple's the
-disjunction over pivots with the earlier components tied. This closes an
-unsigned or 64-bit bound and its descent from the guard
-([`back_edge_closes_an_unsigned_bound_from_the_guard.md`](https://github.com/clicklang/click/blob/master/mdtests/back_edge_closes_an_unsigned_bound_from_the_guard.md)).
-
-A `preserve` path whose tactics stop inside the body first runs the rest of it
-as an omitted `preserve` would
-([`preserve_runs_the_rest_of_the_body.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_runs_the_rest_of_the_body.md)).
-The bare `close_invariants()` is already a smart closer, so it needs no
-`by`
-([`close_invariants_by_auto_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_by_auto_is_refused.md)).
-
-**Failure, checking, and tools:**
-
-A member `solve()` misses fails locally, naming that member, and a ranked
-loop's diagnostic names the ranking obligations. Spell
-`close_invariants() by { ... }` with explicit steps when needed. Expansion emits the retained body and never repeats
-invariant discovery while checking it.
-
-**Checked examples:** [`close_invariants_ranks_a_reassigned_parameter.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_ranks_a_reassigned_parameter.md)
-
-### Explicit invariant closure
-
-**Form:** `close_invariants() by`
-
-**Expansion output.** `click expand` writes it; by hand, write it only when the
-bare form's `solve()` misses a member. At a loop
-back edge, check a nonempty `{ ... }` proof, or one tactic call written without
-braces, of the exact lowered value and safety obligations, followed by one `0 <=
-component` member per `decreases` component and one lexicographic decrease
-member.
-
-Use `both { ... } and { ... }` for conjuncts, and `left`/`right` to choose the
-decrease pivot.
-
-**Failure, checking, and tools:**
-
-Missing, incomplete, premature, or repeated bodies fail without automatic
-fallback. The body is retained by expansion; the container owns its source site.
-Kernel bundle validation remains an independent check.
-
-**Checked examples:** [`loop_invariant_body.md`](https://github.com/clicklang/click/blob/master/mdtests/loop_invariant_body.md)
 
 ## Expansion, profiling, and audit
 
