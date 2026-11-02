@@ -171,22 +171,21 @@ pub(crate) fn machine_operation_of_integer_value(
                     let (low, high) = range::range(ty);
                     return Some((machine.clone(), low, high));
                 }
-                let word = machine.value().clone();
-                let widened = Bitvector32Term::MachineIntegerCast {
-                    value: Box::new(word.clone()),
-                    source: machine.ty(),
-                    destination: ty,
-                };
-                // A value of another width is never `ty`'s word as written:
-                // its word in `ty` is its widening, a node of its own.
-                let as_written =
-                    (machine.ty().format().bits() == ty.format().bits()).then_some(word);
-                let word = as_written.into_iter().chain([widened]).find(|word| {
-                    IntegerTerm::from_machine(ty, word.clone())
-                        .is_some_and(|observed| observed.value_read() == side.value_read())
-                })?;
                 let (low, high) = range::range(machine.ty());
-                Some((SharedMachineIntegerTerm::intern(ty, word), low, high))
+                if machine.ty().format().bits() == ty.format().bits()
+                    && machine
+                        .operand_view()
+                        .observe(ty)
+                        .is_some_and(|observed| observed.value_read() == side.value_read())
+                {
+                    return Some((machine.operand_view().retain(ty), low, high));
+                }
+                let widened = machine.cast_operand(ty);
+                widened
+                    .operand_view()
+                    .observe(ty)
+                    .filter(|observed| observed.value_read() == side.value_read())?;
+                Some((widened, low, high))
             }
             IntegerTerm::Constant(value) => Some((
                 SharedMachineIntegerTerm::intern(ty, range::constant_word(ty, value)?),

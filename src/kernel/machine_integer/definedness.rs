@@ -120,40 +120,26 @@ pub(crate) fn overflow_query_of_integer_bound(
     if !matches!(left, IntegerTerm::Machine(_)) && !matches!(right, IntegerTerm::Machine(_)) {
         return None;
     }
-    let carrier = |ty: MachineIntegerType,
-                   side: &IntegerTerm|
-     -> Option<ComparisonOperand<'static>> {
-        match side {
-            IntegerTerm::Machine(machine) => {
-                let view = machine.operand_view();
-                if machine.ty().format().bits() == ty.format().bits()
-                    && view.observe(ty).as_ref() == Some(side)
-                {
-                    return Some(ComparisonOperand::Observation(view.retain(ty)));
+    let carrier =
+        |ty: MachineIntegerType, side: &IntegerTerm| -> Option<ComparisonOperand<'static>> {
+            match side {
+                IntegerTerm::Machine(machine) => {
+                    let view = machine.operand_view();
+                    if machine.ty().format().bits() == ty.format().bits()
+                        && view.observe(ty).as_ref() == Some(side)
+                    {
+                        return Some(ComparisonOperand::Observation(view.retain(ty)));
+                    }
+                    let widened = machine.cast_operand(ty);
+                    (widened.operand_view().observe(ty).as_ref() == Some(side))
+                        .then_some(ComparisonOperand::Observation(widened))
                 }
-                // A cast would add a root absent from a shared arithmetic
-                // operand, so its observation cannot be this exact side.
-                // Legacy cast/opaque inputs retain their prior widening test.
-                let crate::kernel::MachineOperandView::Legacy(word) = view else {
-                    return None;
-                };
-                let widened = Bitvector32Term::MachineIntegerCast {
-                    value: Box::new(word.clone()),
-                    source: machine.ty(),
-                    destination: ty,
-                };
-                (IntegerTerm::from_machine(ty, widened.clone()).as_ref() == Some(side)).then(|| {
-                    ComparisonOperand::Observation(crate::kernel::SharedMachineIntegerTerm::intern(
-                        ty, widened,
-                    ))
-                })
+                IntegerTerm::Constant(value) => {
+                    range::constant_word(ty, value).map(ComparisonOperand::Constant)
+                }
+                _ => None,
             }
-            IntegerTerm::Constant(value) => {
-                range::constant_word(ty, value).map(ComparisonOperand::Constant)
-            }
-            _ => None,
-        }
-    };
+        };
     formats
         .filter(|ty| representation::has_overflow_test(*ty))
         .find_map(|format| {

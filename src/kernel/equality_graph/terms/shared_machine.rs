@@ -296,6 +296,74 @@ impl TermClasses {
                         self.intern_node(Node::Apply(head, value))
                     }
                 }
+                N::MachineCast {
+                    encoding,
+                    source,
+                    destination,
+                    operand,
+                } => {
+                    use crate::kernel::KernelMachineCastEncoding::Generic;
+                    let generic = *encoding == Generic;
+                    let native = W::of_machine_type(*destination);
+                    let narrow = generic
+                        && width == native
+                        && destination.format().bits() < 32
+                        && source.format().bits() <= 64;
+                    let word = generic
+                        && width == W::Bits32
+                        && source.format().bits() <= 32
+                        && destination.format().bits() <= 32;
+                    if narrow || word || width == native {
+                        let value =
+                            self.intern_shared_machine(operand, W::of_machine_type(*source));
+                        let inverse = generic
+                            && *source == MachineIntegerType::UInt8
+                            && *destination == MachineIntegerType::Int8
+                            && crate::kernel::MachineOperandView::Shared(operand)
+                                .read_source()
+                                .is_some_and(|operand| {
+                                    matches!(
+                                        crate::kernel::eval::viewed_as_memory_load(&operand),
+                                        Some(T::MemoryLoad(_, _, crate::kernel::LoadKind::UInt8))
+                                    )
+                                });
+                        if narrow {
+                            self.narrow_cast_node(*source, *destination, value, inverse)
+                        } else if word {
+                            let op = Int32Unary::Cast(*source, *destination);
+                            let node = self.intern_node(Node::Int32Unary(op, value));
+                            if inverse {
+                                self.register_byte_inverse(node, value);
+                            }
+                            self.join_widening_sibling(op, node, value);
+                            node
+                        } else {
+                            let head = self.intern_node(Node::MachineUnary(
+                                encoding.unary(*source, *destination),
+                                width,
+                            ));
+                            self.intern_node(Node::Apply(head, value))
+                        }
+                    } else {
+                        let format = match width {
+                            W::Bits8 => MachineIntegerType::UInt8,
+                            W::Bits16 => MachineIntegerType::UInt16,
+                            W::Bits32 => MachineIntegerType::Int32,
+                            W::Bits64 => MachineIntegerType::UInt64,
+                            W::Bits128 => MachineIntegerType::UInt128,
+                        };
+                        let atom = MachineAtom::from_operand(
+                            format,
+                            crate::kernel::MachineOperandView::Shared(term),
+                        );
+                        self.intern_node(match width {
+                            W::Bits8 | W::Bits16 => Node::MachineNarrow(atom),
+                            W::Bits32 => Node::Int32(atom),
+                            W::Bits64 => Node::UInt64(atom),
+                            W::Bits128 => Node::Machine128(atom),
+                        })
+                    }
+                }
                 // Leaves retain load-name registration and literal normalization.
                 N::Variable(variable) => self.intern_typed_machine(&T::Variable(*variable), width),
                 N::MachineLiteral(_) => {
@@ -539,6 +607,48 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn shared_cast_registration_matches_legacy_across_widths() {
+        use crate::kernel::machine_integer::FORMATS;
+        let _session = crate::kernel::VerificationSession::enter();
+        for source in FORMATS {
+            for destination in FORMATS {
+                let boxed = T::MachineIntegerCast {
+                    source,
+                    destination,
+                    value: Box::new(T::Variable(Variable(985101))),
+                };
+                let root = KernelTermImport::default()
+                    .machine_arithmetic(destination, &boxed)
+                    .unwrap();
+                for observed in [
+                    MachineIntegerType::UInt8,
+                    MachineIntegerType::UInt16,
+                    MachineIntegerType::Int32,
+                    MachineIntegerType::UInt64,
+                    MachineIntegerType::UInt128,
+                ] {
+                    let width = W::of_machine_type(observed);
+                    let observation = SharedMachineIntegerTerm::from_shared(
+                        observed,
+                        root.with_machine_observation_type(observed),
+                    )
+                    .unwrap();
+                    let mut classes = TermClasses::default();
+                    let shared =
+                        classes.intern_shared_machine(observation.shared_operand().unwrap(), width);
+                    assert!(!observation.has_boxed_operand());
+                    let legacy = classes.intern_typed_machine(&boxed, width);
+                    assert_eq!(
+                        classes.root(shared),
+                        classes.root(legacy),
+                        "{source:?} -> {destination:?} at {observed:?}"
+                    );
+                }
+            }
+        }
+    }
+
     mod scaling_tests {
         include!("../../../scaling_tests/kernel/equality_graph/terms/shared_machine/tests.rs");
     }

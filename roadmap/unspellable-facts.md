@@ -257,6 +257,30 @@ The explicit equality-rewrite mapper still has boxed outputs; higher-level
 comparison decisions, inverse operation mappings and remaining interval adapters
 need migration before nested signed preparation is enabled.
 
+## Shared cast operands and conversion consumers (2026-11-02)
+
+Generic integral casts and the six legacy conversion encodings now belong to
+shared machine operand storage. Their source/destination formats, encodings and
+written children stay structural. Root views, written-variable collection,
+conversion value readings and equality registration retain the shared children;
+casts meet the same congruence classes as boxed registration, including narrow
+word identities, widening siblings and signed-byte inversion.
+
+Value-reading and checking-cast caches use syntax-only node/type keys and survive
+proof-state restoration. They clear at the outer verification boundary. The
+checking cast constructor preserves the previous 32-bit cast-chain conventions;
+this never rewrites a stored or lowered term. Conversion source discovery,
+narrow-widening checks, inverse addition/subtraction mappings and overflow-bound
+carrier selection use shared cast views. Unsupported widths/readings still
+refuse the same mappings.
+
+Differential tests compare shared and boxed readings (including refusal),
+observations, conversion candidates and graph classes across integer formats.
+A deterministic regression grows arithmetic/cast prefixes through 8/32/96
+levels without exporting their operands. This completes the cast representation
+prerequisite; higher-level comparison dispatch and interval-query outputs still
+have boxed boundaries. Nested signed preparation remains disabled.
+
 ## Shared inverse-operation operands (2026-11-02)
 
 The inverse map from an exact Integer sum/difference to its machine operation

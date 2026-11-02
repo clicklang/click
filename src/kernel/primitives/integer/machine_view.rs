@@ -9,6 +9,8 @@ thread_local! {
 }
 
 pub(crate) fn clear_shared_machine_variable_cache() {
+    clear_shared_value_readings();
+    KernelTerm::clear_cast_checks();
     SHARED_MACHINE_CARRIERS.with(|cache| cache.borrow_mut().clear());
 }
 
@@ -35,7 +37,8 @@ pub(crate) fn shared_machine_syntax_variables(
                     crate::persistent::PersistentSet::default().with_value(*variable)
                 }
                 KernelTermNode::MachineLiteral(_) => Default::default(),
-                KernelTermNode::MachineUnary { operand, .. } => {
+                KernelTermNode::MachineUnary { operand, .. }
+                | KernelTermNode::MachineCast { operand, .. } => {
                     if !finish {
                         pending.push((term, true));
                         pending.push((operand, false));
@@ -78,6 +81,86 @@ pub(crate) fn shared_machine_syntax_variables(
     })
 }
 
+// Value relations depend only on syntax. Cache each conversion edge once per
+// verification, including refused readings; no fact-context identity is used.
+thread_local! {
+    static SHARED_VALUE_READINGS: std::cell::RefCell<HashMap<(MachineIntegerType, u64), Option<(MachineIntegerType, KernelTerm)>>> = Default::default();
+}
+
+pub(super) fn clear_shared_value_readings() {
+    SHARED_VALUE_READINGS.with(|cache| cache.borrow_mut().clear());
+}
+
+pub(super) fn shared_value_reading(
+    mut ty: MachineIntegerType,
+    root: &KernelTerm,
+) -> Option<(MachineIntegerType, KernelTerm)> {
+    use crate::kernel::KernelMachineCastEncoding::Generic;
+    SHARED_VALUE_READINGS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let mut term = root.clone();
+        let mut path = Vec::new();
+        let result = loop {
+            crate::instrumentation::record_deterministic_work(1);
+            let key = (ty, term.id());
+            if let Some(result) = cache.get(&key) {
+                break result.clone();
+            }
+            path.push(key);
+            // Rule W peels one 32-bit sign conversion before checking the
+            // resulting root, exactly as machine_value_reading does.
+            if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32)
+                && let KernelTermNode::MachineCast {
+                    encoding: Generic,
+                    source,
+                    destination,
+                    operand,
+                } = term.node()
+                && source.format().bits() == 32
+                && destination.format().bits() == 32
+                && source != destination
+            {
+                term = operand.clone();
+            }
+            if let KernelTermNode::MachineCast {
+                encoding: Generic,
+                source,
+                destination,
+                operand,
+            } = term.node()
+            {
+                if *destination != ty
+                    && ty.format().bits() <= 32
+                    && ty.format().contains(destination.format())
+                {
+                    ty = *destination;
+                    continue;
+                }
+                if *destination != ty {
+                    break None;
+                }
+                if ty.format().bits() > source.format().bits()
+                    && ty.format().contains(source.format())
+                {
+                    ty = *source;
+                    term = operand.clone();
+                    continue;
+                }
+            }
+            if let KernelTermNode::MachineLiteral(value) = term.node()
+                && ty.constant_from_term(&value.legacy_term()).is_none()
+            {
+                break None;
+            }
+            break Some((ty, term));
+        };
+        for key in path {
+            cache.insert(key, result.clone());
+        }
+        result
+    })
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum MachineOperandView<'a> {
     Shared(&'a KernelTerm),
@@ -85,6 +168,31 @@ pub(crate) enum MachineOperandView<'a> {
 }
 
 impl SharedMachineIntegerTerm {
+    /// Add the written generic cast root without invoking a folding constructor.
+    pub(crate) fn cast_operand(&self, destination: MachineIntegerType) -> Self {
+        if let Some(root) = self.shared_operand() {
+            Self::from_shared(
+                destination,
+                KernelTerm::machine_cast_shared(
+                    crate::kernel::KernelMachineCastEncoding::Generic,
+                    self.ty(),
+                    destination,
+                    root.clone(),
+                ),
+            )
+            .expect("cast over shared operand")
+        } else {
+            Self::intern(
+                destination,
+                Bitvector32Term::MachineIntegerCast {
+                    value: Box::new(self.value().clone()),
+                    source: self.ty(),
+                    destination,
+                },
+            )
+        }
+    }
+
     pub(crate) fn operand_view(&self) -> MachineOperandView<'_> {
         match &self.0.operand {
             MachineIntegerOperand::Shared { term, .. } => MachineOperandView::Shared(term),
@@ -102,6 +210,67 @@ impl<'a> MachineOperandView<'a> {
             Self::Shared(term) => {
                 SharedMachineIntegerTerm::from_shared(ty, term.with_machine_observation_type(ty))
                     .expect("shared operand fragment")
+            }
+        }
+    }
+
+    pub(crate) fn accepts_cast_operand(mut self, mut ty: MachineIntegerType) -> bool {
+        loop {
+            if let Some(value) = self.literal() {
+                return ty.constant_from_term(&value).is_some();
+            }
+            if self.variable().is_some() {
+                return true;
+            }
+            if let Self::Legacy(value) = self {
+                return ty.accepts_cast_operand(value);
+            }
+            if let Some((
+                crate::kernel::KernelMachineCastEncoding::Generic,
+                source,
+                destination,
+                operand,
+            )) = self.cast()
+            {
+                if destination != ty {
+                    return false;
+                }
+                if ty.format().bits() > source.format().bits()
+                    && ty.format().contains(source.format())
+                {
+                    ty = source;
+                    self = operand;
+                    continue;
+                }
+                return true;
+            }
+            return ty.format().bits() != 128;
+        }
+    }
+
+    pub(crate) fn cast(
+        self,
+    ) -> Option<(
+        crate::kernel::KernelMachineCastEncoding,
+        MachineIntegerType,
+        MachineIntegerType,
+        Self,
+    )> {
+        match self {
+            Self::Shared(term) => match term.node() {
+                KernelTermNode::MachineCast {
+                    encoding,
+                    source,
+                    destination,
+                    operand,
+                } => Some((*encoding, *source, *destination, Self::Shared(operand))),
+                _ => None,
+            },
+            Self::Legacy(term) => {
+                let (op, operand) = term.as_unary()?;
+                let (encoding, source, destination) =
+                    crate::kernel::KernelMachineCastEncoding::of_unary(op)?;
+                Some((encoding, source, destination, Self::Legacy(operand)))
             }
         }
     }
@@ -177,6 +346,9 @@ impl<'a> MachineOperandView<'a> {
                 | KernelTermNode::MachineUnary { format, .. } => {
                     Some(CarrierWidth::of_machine_type(*format))
                 }
+                KernelTermNode::MachineCast { destination, .. } => {
+                    Some(CarrierWidth::of_machine_type(*destination))
+                }
                 KernelTermNode::MachineLiteral(_) => crate::kernel::root_width(&self.literal()?),
                 KernelTermNode::Variable(_) => None,
                 _ => unreachable!("shared machine operand fragment"),
@@ -191,13 +363,43 @@ impl<'a> MachineOperandView<'a> {
         match self {
             Self::Shared(term)
                 if ty.format().bits() == 128
-                    && !matches!(term.node(), KernelTermNode::Variable(_)) =>
+                    && !matches!(term.node(), KernelTermNode::Variable(_))
+                    && !matches!(self.cast(), Some((crate::kernel::KernelMachineCastEncoding::Generic, source, destination, operand))
+                        if destination == ty && operand.accepts_cast_operand(source)) =>
             {
                 None
             }
-            Self::Shared(term) => Some(IntegerTerm::Machine(
-                SharedMachineIntegerTerm::from_shared(ty, term.with_machine_observation_type(ty))?,
-            )),
+            Self::Shared(term) => {
+                let (read_ty, read) = if matches!(term.node(), KernelTermNode::MachineCast { .. }) {
+                    shared_value_reading(ty, term)?
+                } else {
+                    (ty, term.clone())
+                };
+                if let KernelTermNode::MachineLiteral(value) = read.node() {
+                    return Some(IntegerTerm::constant(
+                        read_ty
+                            .constant_from_term(&value.legacy_term())?
+                            .to_integer(),
+                    ));
+                }
+                let observed_ty = match term.node() {
+                    KernelTermNode::MachineCast {
+                        encoding: crate::kernel::KernelMachineCastEncoding::Generic,
+                        destination,
+                        ..
+                    } if *destination != ty
+                        && ty.format().bits() <= 32
+                        && ty.format().contains(destination.format()) =>
+                    {
+                        *destination
+                    }
+                    _ => ty,
+                };
+                Some(IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(
+                    observed_ty,
+                    term.with_machine_observation_type(observed_ty),
+                )?))
+            }
             Self::Legacy(value) => IntegerTerm::from_machine(ty, value.clone()),
         }
     }
@@ -403,6 +605,110 @@ mod tests {
                 actual,
                 IntegerTerm::from_machine(observed_ty, boxed.clone())
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod cast_tests {
+    use super::*;
+
+    #[test]
+    fn shared_cast_readings_match_boxed_readings_and_refusals() {
+        use crate::kernel::{KernelMachineCastEncoding as E, machine_integer::FORMATS};
+        let _session = crate::kernel::VerificationSession::enter();
+        for source in FORMATS {
+            for destination in FORMATS {
+                let base = Bitvector32Term::Variable(Variable(985001));
+                let inner = Bitvector32Term::MachineIntegerCast {
+                    source: destination,
+                    destination: source,
+                    value: Box::new(base.clone()),
+                };
+                for operand in [
+                    base,
+                    inner,
+                    source
+                        .constant_term(
+                            crate::kernel::MachineIntegerConstant::from_integer(
+                                source.format(),
+                                &1.into(),
+                            )
+                            .unwrap(),
+                        )
+                        .unwrap(),
+                ] {
+                    let boxed = Bitvector32Term::MachineIntegerCast {
+                        source,
+                        destination,
+                        value: Box::new(operand),
+                    };
+                    let root = KernelTermImport::default()
+                        .machine_arithmetic(destination, &boxed)
+                        .unwrap();
+                    assert_eq!(
+                        MachineOperandView::Shared(&root).word32_constant(),
+                        boxed.as_const()
+                    );
+                    assert_eq!(
+                        MachineOperandView::Shared(&root).int64_constant(),
+                        boxed.int64_as_const()
+                    );
+                    for observed in FORMATS {
+                        let actual = shared_value_reading(observed, &root);
+                        let expected = machine_value_reading(observed, &boxed);
+                        assert_eq!(
+                            actual.is_some(),
+                            expected.is_some(),
+                            "{observed:?}: {boxed:?}"
+                        );
+                        if let (Some((ty, term)), Some(expected)) = (actual, expected) {
+                            let word = KernelTermExport::machine(&term).unwrap();
+                            match expected {
+                                ValueReading::Observation(expected_ty, expected) => {
+                                    assert_eq!(ty, expected_ty);
+                                    assert_eq!(&word, expected);
+                                }
+                                ValueReading::Constant(value) => assert_eq!(
+                                    ty.constant_from_term(&word).unwrap().to_integer(),
+                                    value
+                                ),
+                            }
+                        }
+                        assert_eq!(
+                            MachineOperandView::Shared(&root).observe(observed),
+                            IntegerTerm::from_machine(observed, boxed.clone()),
+                            "observation {observed:?}: {boxed:?}"
+                        );
+                    }
+                }
+            }
+        }
+        let base = Bitvector32Term::Variable(Variable(985002));
+        for op in [
+            BitvectorUnaryOp::Int64From32,
+            BitvectorUnaryOp::UInt64From32,
+            BitvectorUnaryOp::UInt32From64,
+            BitvectorUnaryOp::Int64FromUInt32,
+            BitvectorUnaryOp::UInt64FromInt32,
+            BitvectorUnaryOp::UInt64FromInt64,
+        ] {
+            let (encoding, source, destination) = E::of_unary(op).unwrap();
+            let boxed = op.build_raw(base.clone());
+            let root = KernelTermImport::default()
+                .machine_arithmetic(destination, &boxed)
+                .unwrap();
+            assert_eq!(
+                MachineOperandView::Shared(&root).cast().unwrap().0,
+                encoding
+            );
+            assert_eq!(MachineOperandView::Shared(&root).cast().unwrap().1, source);
+            for observed in FORMATS {
+                assert_eq!(
+                    MachineOperandView::Shared(&root).observe(observed),
+                    IntegerTerm::from_machine(observed, boxed.clone())
+                );
+            }
         }
     }
 }

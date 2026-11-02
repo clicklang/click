@@ -1276,7 +1276,7 @@ impl TermClasses {
     /// or 16-bit value are one word, as a narrow cast's two widenings are
     /// (rule K7'). Interning either interns the other and joins them: one
     /// node and one union, once per widening.
-    fn join_widening_sibling(&mut self, op: Int32Unary, node: u64, value: u64) {
+    pub(super) fn join_widening_sibling(&mut self, op: Int32Unary, node: u64, value: u64) {
         let Int32Unary::Cast(source, destination) = op else {
             return;
         };
