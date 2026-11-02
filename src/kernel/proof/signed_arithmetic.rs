@@ -3451,6 +3451,42 @@ mod tests {
             op: crate::kernel::MachineUnaryOp::BitwiseNot,
             operand: Box::new(x()),
         });
+        for word in &words {
+            for (op, overflow_op) in [
+                (MachineBinaryOp::Add, OverflowOperation::Add),
+                (MachineBinaryOp::Subtract, OverflowOperation::Subtract),
+                (MachineBinaryOp::Multiply, OverflowOperation::Multiply),
+            ] {
+                let legacy = Proposition::ConditionIs(
+                    ConditionTerm::Overflows {
+                        format: MachineIntegerType::Int32,
+                        op: overflow_op,
+                        left: Box::new(word.clone()),
+                        right: Box::new(Bitvector32Term::Constant(1)),
+                    },
+                    false,
+                );
+                let bounds =
+                    crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
+                        &legacy,
+                    );
+                let guard =
+                    Proposition::And(Box::new(bounds[0].clone()), Box::new(bounds[1].clone()));
+                for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+                    let expression = Bitvector32Term::Binary {
+                        format,
+                        op,
+                        left: Box::new(word.clone()),
+                        right: Box::new(Bitvector32Term::UInt32Constant(1)),
+                    };
+                    assert_eq!(
+                        is_exact_definedness(&guard, &expression),
+                        is_exact_definedness(&legacy, &expression),
+                        "{expression:?}"
+                    );
+                }
+            }
+        }
         for left in &words {
             let shared = KernelTermImport::default().machine(MachineIntegerType::Int32, left);
             for right in &words {
