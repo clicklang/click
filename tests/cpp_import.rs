@@ -14758,14 +14758,14 @@ fn expression_observers_admit_composed_boolean_conditions() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let helper = if condition == "number()" {
-            "int32 number()"
+        let (helper, result) = if condition == "number()" {
+            ("int32 number()", "1")
         } else {
-            "bool predicate()"
+            ("bool predicate()", "true")
         };
         let sidecar = format!(
             r#"verifying "condition.cpp";
-{helper} {{ ensures result == 1; }}
+{helper} {{ ensures result == {result}; }}
 int32 choose() {{ ensures result == 1; }}
 "#
         );
@@ -14787,7 +14787,7 @@ fn condition_calls_propagate_scalar_exception_contracts() {
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let source = r#"verifying "condition.cpp";
-    bool predicate(bool fail) throws int32 { ensures result == 1; exceptional ensures exception == 7; }
+    bool predicate(bool fail) throws int32 { ensures result == true; exceptional ensures exception == 7; }
     int32 choose(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
     "#;
     check_selected_claim_certificate(&project, &import, source);
