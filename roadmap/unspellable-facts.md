@@ -171,6 +171,42 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared operand registration in the equality graph (2026-11-01)
+
+Following merged #2260, `codex/shared-checker-consumers` registers native shared
+machine observations directly into the existing equality classes. A cached
+width profile, derived only from immediate children, selects native
+8/16/32/64-bit literals, variables, binary operators, and complements. The
+registration worklist retains shared handles in a branch-persistent memo;
+repeated prefixes and doubled children do not export or revisit prior trees.
+The existing literal identities, signedness distinctions, late congruence
+merges, and read-name registration remain in the graph. Non-native word
+interpretations and the legacy conversion/opaque storage boundary retain their
+existing registration path.
+
+Wide and narrow shift counts use an opaque machine-operand identity, shared by
+the boxed and shared entry points. This preserves the existing independently
+promoted-count semantics without expanding the count. Pointer operand discovery
+also visits shared nodes once per branch and registers the same explicit read
+addresses. Its memo is cloned persistently with the graph.
+
+Native comparison extraction now returns a `NativeComparisonView`, containing
+shared observations or literal leaves. The existing boxed API exports only at
+its compatibility boundary. Root-width refusals inspect shared nodes directly.
+This does not yet migrate callers that require a boxed condition: condition
+truth queries, interval/order indices, overflow-query adapters, conversion and
+modular adapters still require follow-through. Nested signed preparation stays
+disabled until those consumers and end-to-end obligation scaling are migrated.
+
+The regression uses the public equality-graph query on every shared prefix,
+including division and shifts with large shared counts, and checks comparison
+view extraction, unrelated-input independence, and branch isolation. A matrix
+checks agreement with legacy classes across every native format and binary
+operator, including a late operand merge. The initial larger probe at
+16/64/256 levels measured 1,615/6,415/25,615 units, independent of 0/128/512
+unrelated facts. The gate regression uses 8/32/128 levels and 0/32/128 unrelated
+facts to keep its runtime within the fast-test budget.
+
 ## Shared operand views for arithmetic checking (2026-11-02)
 
 Following merged #2258, `codex/nested-signed-arithmetic` introduces borrowed

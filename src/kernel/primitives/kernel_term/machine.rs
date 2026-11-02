@@ -3,6 +3,22 @@
 use super::*;
 
 impl KernelTerm {
+    #[cfg(test)]
+    pub(crate) fn machine_binary_shared(
+        format: MachineIntegerType,
+        operator: MachineBinaryOp,
+        arguments: [Self; 2],
+    ) -> Self {
+        Self::intern(
+            KernelType::C(format.c_type()),
+            KernelTermNode::MachineBinary {
+                format,
+                operator,
+                arguments,
+            },
+        )
+    }
+
     /// Change only the observation's numeric interpretation. The underlying
     /// word node and its format-tagged operations remain exactly as written.
     pub(crate) fn with_machine_observation_type(&self, format: MachineIntegerType) -> Self {

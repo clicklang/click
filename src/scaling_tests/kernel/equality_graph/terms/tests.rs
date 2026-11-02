@@ -127,3 +127,98 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
         "unrelated wide offsets increased selected propagation: {measured:?}"
     );
 }
+
+#[test]
+fn shared_machine_prefix_registration_is_linear_and_branch_local() {
+    use crate::kernel::{CType, IntegerTerm, KernelTerm, KernelType, SharedMachineIntegerTerm};
+    let mut baseline = Vec::new();
+    for unrelated in [0, 32, 128] {
+        let mut samples = Vec::new();
+        for size in [8, 32, 128] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut graph = EqualityGraph::default();
+            for i in 0..unrelated {
+                graph.add_int32_equality(
+                    &Bitvector32Term::Variable(Variable(960000 + i)),
+                    &Bitvector32Term::Variable(Variable(970000 + i)),
+                );
+            }
+            let format = MachineIntegerType::Int64;
+            let mut term = KernelTerm::variable(KernelType::C(CType::Int64), Variable(980000));
+            let other =
+                IntegerTerm::from_machine(format, Bitvector32Term::Variable(Variable(980001)))
+                    .unwrap();
+            let mut retained = Vec::new();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for _ in 0..size {
+                    term = KernelTerm::arithmetic_binary(
+                        format,
+                        MachineBinaryOp::Add,
+                        [term.clone(), term.clone()],
+                    )
+                    .unwrap();
+                    let observation =
+                        SharedMachineIntegerTerm::from_shared(format, term.clone()).unwrap();
+                    let source = IntegerTerm::Machine(observation.clone());
+                    assert!(graph.are_integer_equal(&source, &source));
+                    assert!(!graph.are_integer_equal(&source, &other));
+                    let comparison =
+                        ConditionTerm::integer_less_equal(source.clone(), other.clone());
+                    let view = crate::kernel::machine_integer::comparison::native_comparison_view(
+                        &comparison,
+                        true,
+                    )
+                    .unwrap();
+                    let crate::kernel::machine_integer::comparison::ComparisonOperand::Observation(
+                        actual,
+                    ) = &view.operands[0]
+                    else {
+                        panic!("shared observation")
+                    };
+                    assert_eq!(actual.id(), observation.id());
+                    assert!(!observation.has_boxed_operand());
+                    retained.push(source);
+                    for operator in [MachineBinaryOp::Divide, MachineBinaryOp::ShiftRight] {
+                        // Build through the structural bridge with only a root
+                        // replacement, retaining the large shared children.
+                        let node = crate::kernel::KernelTerm::machine_binary_shared(
+                            format,
+                            operator,
+                            [term.clone(), term.clone()],
+                        );
+                        let observation =
+                            SharedMachineIntegerTerm::from_shared(format, node).unwrap();
+                        let source = IntegerTerm::Machine(observation.clone());
+                        assert!(graph.are_integer_equal(&source, &source));
+                        assert!(!observation.has_boxed_operand());
+                        retained.push(source);
+                    }
+                }
+            });
+            samples.push((size, work));
+            let last = retained.last().unwrap();
+            let mut branch = graph.clone();
+            branch.add_integer_equality(&last.clone().into(), &other.clone().into());
+            assert!(branch.are_integer_equal(last, &other));
+            assert!(!graph.are_integer_equal(last, &other));
+            for source in retained {
+                let IntegerTerm::Machine(observation) = source else {
+                    unreachable!()
+                };
+                assert!(!observation.has_boxed_operand());
+            }
+        }
+        eprintln!("shared registration, unrelated={unrelated}: {samples:?}");
+        for pair in samples.windows(2) {
+            let [(small, sw), (large, lw)] = pair else {
+                unreachable!()
+            };
+            assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+        }
+        if unrelated == 0 {
+            baseline = samples;
+        } else {
+            assert_eq!(samples, baseline);
+        }
+    }
+}

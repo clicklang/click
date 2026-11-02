@@ -21,6 +21,7 @@ use std::sync::Arc;
 mod congruence;
 pub(super) mod constants;
 mod machine_relations;
+mod shared_machine;
 pub(super) use congruence::has_machine_operands;
 
 /// The sort of a read that may meet a stored cell under an aliased address.
@@ -354,6 +355,7 @@ enum Node {
     ),
     ArgumentTag(congruence::ArgumentTag),
     OpaqueArgument(crate::kernel::SharedPureApplication),
+    OpaqueMachineCount(MachineAtom),
     Condition(congruence::ConditionKind, u64, u64),
     UInt64(MachineAtom),
     UInt64Binary(UInt64Binary, u64, u64),
@@ -528,6 +530,10 @@ pub(super) struct BoolCastLink {
 
 #[derive(Clone, Default)]
 pub(super) struct TermClasses {
+    // Exact shared operands retain their handles. Class IDs are stable even
+    // after union; callers use root(), and persistent clones isolate branches.
+    shared_machine_classes:
+        PersistentMap<(u64, crate::kernel::CarrierWidth), (crate::kernel::KernelTerm, u64)>,
     scalar_witnesses: constants::ScalarWitnesses,
     scalar_conflicts: PersistentSet<u64>,
     /// Source propositions follow address and condition classes. Only the moved class is
