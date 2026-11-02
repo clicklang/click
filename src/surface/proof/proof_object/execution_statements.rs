@@ -1202,14 +1202,16 @@ impl<'a> Proof<'a> {
         // C++ cleanup wrappers do not introduce an executable step. Select
         // the same first operation that ordinary `step()` will execute, while
         // leaving the wrapper intact for the kernel's exception continuation.
-        let mut operation = remaining
-            .and_then(|remaining| split_next_source_operation(remaining).ok())
-            .map(|(statement, _)| statement);
-        while let Some(CStatement::TryCatchInt32 { try_body, .. }) = operation.as_ref() {
+        // Borrow only the leading source path. Splitting/cloning each try
+        // wrapper here would also copy its unrelated cleanup handler.
+        let mut operation = remaining;
+        loop {
+            operation = match operation {
+                Some(CStatement::Seq(statements)) => Some(statements.first()),
+                Some(CStatement::TryCatchInt32 { try_body, .. }) => Some(try_body.as_ref()),
+                _ => break,
+            };
             crate::instrumentation::record_deterministic_work(1);
-            operation = split_next_source_operation(try_body)
-                .ok()
-                .map(|(statement, _)| statement);
         }
         let call = operation.and_then(|statement| match statement {
             CStatement::Call {
@@ -1221,8 +1223,8 @@ impl<'a> Proof<'a> {
                 arguments,
                 ..
             } => Some(FrontierCall {
-                callee: function_name,
-                arguments,
+                callee: function_name.clone(),
+                arguments: arguments.clone(),
             }),
             _ => None,
         });

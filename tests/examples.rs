@@ -3071,6 +3071,8 @@ fn pointer_history_repair_arena_replays() {
 fn separation_history_repairs_expand_and_replay() {
     for (example, sidecar, function) in [
         ("arena", "arena_cells.click", "arena_free"),
+        ("arena", "arena_cells.click", "arena_write"),
+        ("arena", "arena_cells.click", "arena_read"),
         ("owned-vector", "vector.click", "allocated_vector_push"),
         (
             "marked-linked-list",
@@ -3080,6 +3082,9 @@ fn separation_history_repairs_expand_and_replay() {
         ("cpp-stack", "stack.click", "pushed_size"),
     ] {
         if std::env::var("CLICK_FRAME_REPAIR_EXAMPLE").is_ok_and(|selected| selected != example) {
+            continue;
+        }
+        if std::env::var("CLICK_FRAME_REPAIR_FUNCTION").is_ok_and(|selected| selected != function) {
             continue;
         }
         click::surface::with_proof_trace(function, || {
