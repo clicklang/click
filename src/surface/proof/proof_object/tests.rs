@@ -7968,11 +7968,12 @@ fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_certificate() {
         operator: ComparisonOperator::LessEqual,
         right: expression(right.clone()),
     };
-    let not_equal = ClickProposition::Not(Box::new(ClickProposition::Comparison {
+    // Match the direct inequality spelling retained by signed certificates.
+    let not_equal = ClickProposition::Comparison {
         left: expression(left.clone()),
-        operator: ComparisonOperator::Equal,
+        operator: ComparisonOperator::NotEqual,
         right: expression(right.clone()),
-    }));
+    };
     let strict = ClickProposition::Comparison {
         left: expression(left),
         operator: ComparisonOperator::LessThan,
