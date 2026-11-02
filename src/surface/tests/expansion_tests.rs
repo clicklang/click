@@ -18039,16 +18039,21 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
             .expect_err("false or undefined subtraction must be refused");
     }
     let expanded = expand_function_proof_source(&source, &borrowed, "f").unwrap();
-    // The comparison now normalizes to a trivial certificate. A different
-    // true comparison still cannot stand in for its checked conclusion.
-    let forged = expanded.replacen(
-        "trivial => (8 - to_integer(x)) <= ((8 - to_integer(x)) + 4);",
-        "trivial => (8 - to_integer(x)) <= ((8 - to_integer(x)) + 5);",
-        1,
-    );
-    assert_ne!(forged, expanded, "expected the checked trivial comparison");
-    verify_c0_sources(&forged, &borrowed)
-        .expect_err("a different generated comparison must be refused");
+    verify_c0_sources(&expanded, &borrowed).expect("expanded subtraction must verify");
+    // Expansion normalizes the comparison using the stated bounds. Reject
+    // both a false conclusion and a stronger bound that was never established.
+    for (before, after) in [
+        (
+            "(8 - to_integer(x)) <= ((8 - to_integer(x)) + 4)",
+            "(8 - to_integer(x)) <= ((8 - to_integer(x)) - 4)",
+        ),
+        ("4 <= x;\n", "5 <= x;\n"),
+    ] {
+        let forged = expanded.replacen(before, after, 1);
+        assert_ne!(forged, expanded, "missing mutation target: {before}");
+        verify_c0_sources(&forged, &borrowed)
+            .expect_err("false expanded comparison or forged bound accepted");
+    }
 }
 
 #[test]
