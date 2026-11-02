@@ -215,6 +215,44 @@ fn qualified_names_in(proposition: &ClickProposition) -> BTreeSet<String> {
 /// the comparison is made in the registry-resolved form so that a spelling
 /// of either is checked against the same cells.
 #[test]
+fn spelling_validation_cannot_defer_its_debts_to_a_statement_probe() {
+    let state = CState::new().with_local(
+        "x",
+        CValue::Int32(Bitvector32Term::Variable(Variable(894321))),
+    );
+    let candidate = ClickProposition::Comparison {
+        left: ContractExpression::Call {
+            name: "to_integer".into(),
+            arguments: vec![ContractExpression::Add(
+                Box::new(ContractExpression::CFragment(CExpression::Variable(
+                    "x".into(),
+                ))),
+                Box::new(ContractExpression::IntegerLiteral("1".into())),
+            )],
+        },
+        operator: ComparisonOperator::Equal,
+        right: ContractExpression::IntegerLiteral("0".into()),
+    };
+    let proposition = relower_written_proposition(&candidate, &state).unwrap();
+    let (accepted, probe) = super::super::execution_planning::probe_open_obligations(|| {
+        synthesized_surface_matches_proposition(
+            &candidate,
+            &proposition,
+            ParameterBinding::default(),
+            &state,
+        )
+    });
+    assert!(
+        !accepted,
+        "a spelling check must refuse its own unproved arithmetic domain"
+    );
+    assert!(
+        probe.recorded.is_empty(),
+        "a presentation check must not add execution debts"
+    );
+}
+
+#[test]
 fn foreign_static_cell_requirements_round_trip_through_their_qualified_spelling() {
     let (state, sources, loads) = recorded_qualified_cells(
         "static:increment_twice:values#static0",
@@ -2165,15 +2203,22 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
                     )),
                 );
             for truth in [false, true] {
-                let requirement = Proposition::ConditionIs(
-                    ConditionTerm::Overflows {
-                        format,
-                        op,
-                        left: Box::new(left.clone()),
-                        right: Box::new(right.clone()),
+                let domain = Proposition::signed_arithmetic_domain(
+                    format,
+                    match op {
+                        OverflowOperation::Add => MachineBinaryOp::Add,
+                        OverflowOperation::Subtract => MachineBinaryOp::Subtract,
+                        OverflowOperation::Multiply => MachineBinaryOp::Multiply,
+                        _ => unreachable!(),
                     },
-                    truth,
+                    &left,
+                    &right,
                 );
+                let requirement = if truth {
+                    Proposition::Not(Box::new(domain))
+                } else {
+                    domain
+                };
                 let surface = synthesize_surface_proposition(
                     &requirement,
                     ParameterBinding::default(),
@@ -2219,14 +2264,11 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
         var: variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::And(
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: Box::new(Bitvector32Term::Variable(variable)),
-                    right: Box::new(Bitvector32Term::Constant(1)),
-                },
-                false,
+            Box::new(Proposition::signed_arithmetic_domain(
+                MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::Add,
+                &Bitvector32Term::Variable(variable),
+                &Bitvector32Term::Constant(1),
             )),
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -2265,14 +2307,11 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
         var: variable,
         sort: Sort::CInt32,
         body: Box::new(Proposition::And(
-            Box::new(Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: Box::new(Bitvector32Term::Variable(variable)),
-                    right: Box::new(Bitvector32Term::Constant(1)),
-                },
-                false,
+            Box::new(Proposition::signed_arithmetic_domain(
+                MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::Add,
+                &Bitvector32Term::Variable(variable),
+                &Bitvector32Term::Constant(1),
             )),
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -2293,7 +2332,7 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
         ClickProposition::Exists {
             body,
             ..
-        } if matches!(body.as_ref(), ClickProposition::And(left, _) if matches!(left.as_ref(), ClickProposition::Defined { .. }))
+        } if matches!(body.as_ref(), ClickProposition::And(left, _) if matches!(left.as_ref(), ClickProposition::And(..)))
     ));
     let lowered = relower_written_proposition(&spelled, &state)
         .expect("the retained guard and comparison should lower");
@@ -3182,14 +3221,11 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
     let post = entry
         .clone()
         .with_memory(entry.memory().clone().store(pointer, int32(7)));
-    let requirement = Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: Box::new(term),
-            right: Box::new(Bitvector32Term::Constant(1)),
-        },
-        false,
+    let requirement = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32,
+        crate::kernel::MachineBinaryOp::Add,
+        &term,
+        &Bitvector32Term::Constant(1),
     );
     let mut owners = SynthesisStructOwners::default();
     owners

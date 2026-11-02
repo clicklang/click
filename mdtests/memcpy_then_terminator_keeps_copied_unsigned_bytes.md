@@ -5,8 +5,11 @@ count: `memcpy(dst, src, 4); dst[4] = 0;` and then the copied bytes. The
 `src[k]` reads under the postcondition's guard `k < 4u64` are an unsigned
 64-bit index into the 32-bit-bounded range `src[0..4]` of the `separate`
 requirement, so typed range membership places them by the exact guard fact
-before the separation keeps them apart from the store at `dst[4]`. Both the
-explicit `transport` and the omitted proof of `copy_u_smart` close it.
+before the separation keeps them apart from the store at `dst[4]`. The
+written proof states the destination frame with a single-statement footprint
+certificate, then transports the copied-byte equality. The omitted proof of
+`copy_u_smart` also verifies. The explicit frame avoids relying on the legacy
+quantified read-history route to bridge the store and cached-cell forgetting.
 
 ```c filename=copy.c
 #include <string.h>
@@ -27,6 +30,21 @@ void copy_u(uint8* dst, const uint8* src) {
     step();
     mark copied;
     step();
+    have forall (k: uint64) { k < 4u64 implies dst[0u64 + k] == at(copied, dst[0u64 + k]) } by {
+        intro();
+        intro();
+        have separate(memory(dst[4]), memory(dst[0u64 + k])) by {
+            assumption();
+        }
+        have separate(statement(1).footprint, memory(dst[0u64 + k])) by {
+            normalize() using { separate(memory(dst[4]), memory(dst[0u64 + k])); };
+        }
+        transport_certificate {
+            premise 0: separate(statement(1).footprint, memory(dst[0u64 + k])) => separate(statement(1).footprint, memory(dst[0u64 + k]));
+            preserve 0 => dst[0u64 + k] == at(copied, dst[0u64 + k]);
+            conclusion 1;
+        }
+    }
     have bytes::equal(dst, 0u64, src, 0u64, 4u64) by {
         transport(
             at(copied, (0u64..4u64).all(|k| { dst[0u64 + k] == old(src[0u64 + k]) })),

@@ -185,7 +185,12 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
                 assert_eq!(paths[0].obligations.len(), 1);
                 assert_eq!(
                     paths[0].obligations[0].proposition(),
-                    &Proposition::ConditionIs(overflow.clone(), false)
+                    &Proposition::signed_arithmetic_domain(
+                        crate::kernel::MachineIntegerType::Int32,
+                        crate::kernel::MachineBinaryOp::Add,
+                        &variable,
+                        &Bitvector32Term::Constant(1),
+                    )
                 );
             }
         });
@@ -270,7 +275,7 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
     };
     let expected = lower(&PureFactContext::new());
     assert_eq!(expected.len(), 1);
-    assert_eq!(expected[0].obligations.len(), 2);
+    assert_eq!(expected[0].obligations.len(), 1);
     let mut samples = Vec::new();
     for size in [32, 128, 512] {
         let mut context = PureFactContext::new();
@@ -290,7 +295,7 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
         let (actual, work) = crate::instrumentation::measure_deterministic_work(|| lower(&context));
         assert_eq!(actual.len(), 1);
         assert_eq!(actual[0].outcome, expected[0].outcome);
-        assert_eq!(actual[0].obligations.len(), 2);
+        assert_eq!(actual[0].obligations.len(), 1);
         assert!(actual[0].facts.is_empty());
         samples.push(work);
     }
@@ -298,4 +303,49 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
         samples.iter().all(|work| *work <= samples[0] + 16),
         "{samples:?}"
     );
+}
+
+#[test]
+fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
+    for established in [false, true] {
+        let mut costs = Vec::new();
+        for size in [0, 128, 512] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let value = Bitvector32Term::Variable(Variable(780_000 + size * 4));
+            let mut context = PureFactContext::new();
+            for i in 0..size {
+                context = context.assume_condition(
+                    ConditionTerm::equal(
+                        value.clone(),
+                        Bitvector32Term::Variable(Variable(790_000 + i)),
+                    ),
+                    true,
+                );
+            }
+            if established {
+                context = context.assume_condition(
+                    ConditionTerm::signed_less_than(
+                        value.clone(),
+                        Bitvector32Term::Constant(i32::MAX as u32),
+                    ),
+                    true,
+                );
+            }
+            let domain = Proposition::signed_arithmetic_domain(
+                crate::kernel::MachineIntegerType::Int32,
+                crate::kernel::MachineBinaryOp::Add,
+                &value,
+                &Bitvector32Term::Constant(1),
+            );
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                context.settles_exactly(&domain)
+            });
+            assert_eq!(proved, established);
+            costs.push(work);
+        }
+        assert!(
+            costs.iter().all(|work| *work == costs[0]),
+            "established={established}: {costs:?}"
+        );
+    }
 }

@@ -176,7 +176,6 @@ void claim_run(int32* data, int32* occupied, int32 capacity, int32 start, int32 
                     end <= capacity;
                 };
             }
-            close_invariants();
         }
     }
     let { next: n } = unfold(w);

@@ -108,7 +108,6 @@ int32 bubble_pass3(int32 p[3]) {
             }
             step();
             unfold(all_le_range);
-            close_invariants();
         }
         owns p[0..3];
     }

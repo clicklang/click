@@ -727,7 +727,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         let side_available = |side: &Proposition| {
             available(side)
                 || facts.contains(side)
-                || super::fact_reasoning::condition_polarity_forms(side)
+                || super::fact_reasoning::order_claim_forms(side)
                     .iter()
                     .any(|form| facts.contains(form))
         };

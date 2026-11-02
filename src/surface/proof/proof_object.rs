@@ -2882,39 +2882,52 @@ impl<'a> Proof<'a> {
             .or_else(|| self.available_surface_fact(self.local_surface_facts(), None, goal))
     }
 
-    fn structural_goal_spelling(&self, goal: &Proposition) -> Option<ClickProposition> {
+    /// Structural presentation from indexed names. Planning may use this for
+    /// private query shapes; actual goals still pass the exact lowering check.
+    pub(in crate::surface::proof) fn structural_proposition_candidate(
+        &self,
+        goal: &Proposition,
+    ) -> Option<ClickProposition> {
         use super::surface_synthesis as synthesis;
-        let candidate =
-            synthesis::with_structural_goal_synthesis(|| match self.context.as_ref() {
-                ProofContext::Pure(context) => {
-                    synthesis::synthesize_surface_proposition_with_names(
-                        goal,
-                        ParameterBinding::new(&[], &[]),
-                        &context.source_state,
-                        &context.source_names,
-                    )
-                }
-                ProofContext::FixedState(context) => {
-                    synthesis::synthesize_surface_proposition_at_entry_and_post(
-                        goal,
-                        context.parameter_binding,
-                        context.fixed_state.pre_state,
-                        context.fixed_state.state,
-                    )
-                }
-                ProofContext::Execution(_) => {
-                    let view = self.premise_fixed_state_view()?;
-                    let _points = synthesis::SynthesisRecordedPointsScope::enter(
-                        view.fixed_state.recorded_snapshots,
-                    );
-                    synthesis::synthesize_surface_proposition_at_entry_and_post(
-                        goal,
-                        view.parameter_binding,
-                        view.fixed_state.pre_state,
-                        view.fixed_state.state,
-                    )
-                }
-            })?;
+        let _qualified = self
+            .premise_surface_facts()
+            .map(synthesis::QualifiedSynthesisScope::enter);
+        let candidate = synthesis::with_structural_goal_synthesis(|| match self.context.as_ref() {
+            ProofContext::Pure(context) => synthesis::synthesize_surface_proposition_with_names(
+                goal,
+                ParameterBinding::new(&[], &[]),
+                &context.source_state,
+                &context.source_names,
+            ),
+            ProofContext::FixedState(context) => {
+                let _points = synthesis::SynthesisRecordedPointsScope::enter(
+                    context.fixed_state.recorded_snapshots,
+                );
+                synthesis::synthesize_surface_proposition_at_entry_and_post(
+                    goal,
+                    context.parameter_binding,
+                    context.fixed_state.pre_state,
+                    context.fixed_state.state,
+                )
+            }
+            ProofContext::Execution(_) => {
+                let view = self.premise_fixed_state_view()?;
+                let _points = synthesis::SynthesisRecordedPointsScope::enter(
+                    view.fixed_state.recorded_snapshots,
+                );
+                synthesis::synthesize_surface_proposition_at_entry_and_post(
+                    goal,
+                    view.parameter_binding,
+                    view.fixed_state.pre_state,
+                    view.fixed_state.state,
+                )
+            }
+        });
+        candidate
+    }
+
+    fn structural_goal_spelling(&self, goal: &Proposition) -> Option<ClickProposition> {
+        let candidate = self.structural_proposition_candidate(goal)?;
         // This compares presentation, not proof authority: rewriting already
         // produced the successor. A spelling must retain its exact term.
         self.lower_surface_proposition_direct(&candidate, "structural goal spelling")

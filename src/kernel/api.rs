@@ -6246,6 +6246,8 @@ fn checked_int32_reassociated_add_domain_as_written(
     assumptions: &PureFactContext,
     goal: &Proposition,
 ) -> bool {
+    let query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
+    let goal = query.as_ref().unwrap_or(goal);
     let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -8094,14 +8096,11 @@ pub fn prove_int32_increment_below_max_is_defined(value: Bitvector32Term) -> The
         ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::Constant(i32::MAX as u32)),
         true,
     );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Overflows {
-            format: MachineIntegerType::Int32,
-            op: OverflowOperation::Add,
-            left: Box::new(value),
-            right: Box::new(Bitvector32Term::Constant(1)),
-        },
-        false,
+    let conclusion = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        &value,
+        &Bitvector32Term::Constant(1),
     );
     implication([premise], conclusion)
 }
@@ -8879,8 +8878,12 @@ pub fn prove_int32_nonnegative_add_within_max_is_defined(
         ),
         true,
     );
-    let conclusion =
-        Proposition::ConditionIs(ConditionTerm::signed_add_overflows(value, amount), false);
+    let conclusion = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        &value,
+        &amount,
+    );
     implication([amount_is_nonnegative, within_headroom], conclusion)
 }
 
@@ -8898,9 +8901,11 @@ pub fn prove_int32_nonnegative_subtract_within_value_is_defined(
         ConditionTerm::signed_less_equal(amount.clone(), value.clone()),
         true,
     );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_subtract_overflows(value, amount),
-        false,
+    let conclusion = Proposition::signed_arithmetic_domain(
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Subtract,
+        &value,
+        &amount,
     );
     implication([amount_is_nonnegative, amount_within_value], conclusion)
 }
@@ -8950,28 +8955,20 @@ fn prove_signed_operation_defined_by_integer_bounds(
     } else {
         IntegerTerm::Add(observed_left, observed_right).into()
     };
-    let (overflows, minimum, maximum) = match (ty, subtract) {
-        (MachineIntegerType::Int32, false) => (
-            ConditionTerm::signed_add_overflows(left, right),
-            i64::from(i32::MIN),
-            i64::from(i32::MAX),
-        ),
-        (MachineIntegerType::Int32, true) => (
-            ConditionTerm::signed_subtract_overflows(left, right),
-            i64::from(i32::MIN),
-            i64::from(i32::MAX),
-        ),
-        (MachineIntegerType::Int64, false) => (
-            ConditionTerm::int64_signed_add_overflows(left, right),
-            i64::MIN,
-            i64::MAX,
-        ),
-        (MachineIntegerType::Int64, true) => (
-            ConditionTerm::int64_signed_subtract_overflows(left, right),
-            i64::MIN,
-            i64::MAX,
-        ),
-        _ => unreachable!("definedness by Integer bounds admits only int32 and int64"),
+    let domain = Proposition::signed_arithmetic_domain(
+        ty,
+        if subtract {
+            MachineBinaryOp::Subtract
+        } else {
+            MachineBinaryOp::Add
+        },
+        &left,
+        &right,
+    );
+    let (minimum, maximum) = match ty {
+        MachineIntegerType::Int32 => (i64::from(i32::MIN), i64::from(i32::MAX)),
+        MachineIntegerType::Int64 => (i64::MIN, i64::MAX),
+        _ => unreachable!("signed definedness width"),
     };
     implication(
         [
@@ -8987,7 +8984,7 @@ fn prove_signed_operation_defined_by_integer_bounds(
                 true,
             ),
         ],
-        Proposition::ConditionIs(overflows, false),
+        domain,
     )
 }
 
@@ -9826,39 +9823,17 @@ fn prove_signed_operation_to_integer(
         IntegerTerm::from_machine(ty, value)
             .expect("typed operands have exact Integer interpretations")
     };
-    let (overflow, machine) = match (ty, subtract) {
-        (MachineIntegerType::Int32, false) => (
-            ConditionTerm::signed_add_overflows(left.clone(), right.clone()),
-            binary_node!(Int32, Add, Box::new(left.clone()), Box::new(right.clone())),
-        ),
-        (MachineIntegerType::Int32, true) => (
-            ConditionTerm::signed_subtract_overflows(left.clone(), right.clone()),
-            binary_node!(
-                Int32,
-                Subtract,
-                Box::new(left.clone()),
-                Box::new(right.clone())
-            ),
-        ),
-        (MachineIntegerType::Int64, false) => (
-            ConditionTerm::int64_signed_add_overflows(left.clone(), right.clone()),
-            Bitvector32Term::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::Add,
-                left: Box::new(left.clone()),
-                right: Box::new(right.clone()),
-            },
-        ),
-        (MachineIntegerType::Int64, true) => (
-            ConditionTerm::int64_signed_subtract_overflows(left.clone(), right.clone()),
-            Bitvector32Term::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::Subtract,
-                left: Box::new(left.clone()),
-                right: Box::new(right.clone()),
-            },
-        ),
-        _ => unreachable!("signed operation bridges admit only int32/int64"),
+    let op = if subtract {
+        MachineBinaryOp::Subtract
+    } else {
+        MachineBinaryOp::Add
+    };
+    let domain = Proposition::signed_arithmetic_domain(ty, op, &left, &right);
+    let machine = Bitvector32Term::Binary {
+        format: ty,
+        op,
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
     };
     let mathematical = if subtract {
         IntegerTerm::Subtract(observe(left).into(), observe(right).into())
@@ -9866,7 +9841,7 @@ fn prove_signed_operation_to_integer(
         IntegerTerm::Add(observe(left).into(), observe(right).into())
     };
     implication(
-        [Proposition::ConditionIs(overflow, false)],
+        [domain],
         Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(observe(machine).into(), mathematical.into()),
             true,

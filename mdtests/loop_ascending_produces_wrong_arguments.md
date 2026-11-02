@@ -154,7 +154,6 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
                     let lifted = fold(ptree_at(node, parent), {
                         model: HeapTree::Node(identity, value, t.model, sibling_model)
                     }, { left: t, right: s });
-                    close_invariants();
                 },
                 Context::Right(identity, grandparent, value, sibling_model, up_model) => {
                     have plug(up_model,
@@ -176,7 +175,6 @@ struct tree_node* tree_root_of(struct tree_node* node, struct tree_node* parent)
                     let lifted = fold(ptree_at(node, parent), {
                         model: HeapTree::Node(identity, value, sibling_model, t.model)
                     }, { left: s, right: t });
-                    close_invariants();
                 },
             }
         }

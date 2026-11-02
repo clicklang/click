@@ -29,6 +29,7 @@ fn with_integer_comparisons_preserved<T>(preserve: bool, operation: impl FnOnce(
 mod existential;
 pub(in crate::kernel) mod predicate_dependencies;
 mod quantifier_polarity;
+mod shared_machine;
 pub(in crate::kernel) mod walk;
 
 type EvaluatedSpecResource = (CResource, ExecutionFacts, Vec<ProofObligation>);
@@ -118,6 +119,7 @@ struct SpecEvaluation<'a> {
     /// well-formed logical calls' nominal argument requirements.
     recover_resource_call_types: bool,
     pointer_cast_operand: bool,
+    machine_preparation_disabled: bool,
     integer_bindings: BTreeMap<Variable, IntegerTerm>,
 }
 
@@ -128,6 +130,7 @@ impl<'a> SpecEvaluation<'a> {
             checked_reads: false,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
+            machine_preparation_disabled: false,
             integer_bindings: BTreeMap::new(),
         }
     }
@@ -137,6 +140,7 @@ impl<'a> SpecEvaluation<'a> {
             checked_reads: true,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
+            machine_preparation_disabled: false,
             integer_bindings: BTreeMap::new(),
         }
     }
@@ -5628,6 +5632,43 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
+    // Attempt one complete arithmetic tree. If it contains a deferred operand,
+    // do not repeatedly prepare its growing prefixes during legacy evaluation.
+    let candidate = !budget.machine_preparation_disabled
+        && matches!(
+            expression,
+            SpecExpression::Add(..) | SpecExpression::Subtract(..) | SpecExpression::Multiply(..)
+        );
+    if candidate {
+        if let Some(mut prepared) = shared_machine::prepare(expression, budget)? {
+            let PureFunctionArgument::Value(value) = KernelTermExport::default()
+                .argument(&prepared.value)
+                .map_err(|_| ExecutionLimit::Paths)?
+            else {
+                unreachable!()
+            };
+            apply_held_resource_domain_policy(&mut prepared.obligations, assumptions);
+            return Ok(vec![SpecExpressionPath {
+                value,
+                facts: Vec::new().into(),
+                obligations: prepared.obligations,
+            }]);
+        }
+        budget.machine_preparation_disabled = true;
+    }
+    let paths = evaluate_spec_expression_dispatch(scope, expression, assumptions, budget);
+    if candidate {
+        budget.machine_preparation_disabled = false;
+    }
+    paths
+}
+
+fn evaluate_spec_expression_dispatch(
+    scope: SpecScope<'_>,
+    expression: &SpecExpression,
+    assumptions: &PureFactContext,
+    budget: &mut SpecEvaluation<'_>,
+) -> ExecutionResult<Vec<SpecExpressionPath>> {
     let mut right_operands = Vec::new();
     let mut current = expression;
     while let SpecExpression::Add(left, right) = current {
@@ -5994,7 +6035,12 @@ fn evaluate_resource_count_paths(
                             quantity.clone(),
                             Bitvector32Term::Constant(symbolic.delta as u32),
                         );
-                        let no_overflow = Proposition::ConditionIs(overflow.clone(), false);
+                        let no_overflow = Proposition::signed_arithmetic_domain(
+                            MachineIntegerType::Int32,
+                            MachineBinaryOp::Add,
+                            &quantity,
+                            &Bitvector32Term::Constant(symbolic.delta as u32),
+                        );
                         if !path_assumptions.proves_exact(&no_overflow)
                             && PureFactContext::decide_intrinsically(&overflow) != Some(false)
                             && path_assumptions.decide(&overflow) != Some(false)
@@ -6013,7 +6059,12 @@ fn evaluate_resource_count_paths(
                                 entry.clone(),
                                 quantity.clone(),
                             );
-                            let no_overflow = Proposition::ConditionIs(overflow.clone(), false);
+                            let no_overflow = Proposition::signed_arithmetic_domain(
+                                MachineIntegerType::Int32,
+                                MachineBinaryOp::Add,
+                                &entry,
+                                &quantity,
+                            );
                             let bounded = path_assumptions.assume_proposition(minimum);
                             if !bounded.proves_exact(&no_overflow)
                                 && PureFactContext::decide_intrinsically(&overflow) != Some(false)
@@ -6071,13 +6122,14 @@ fn evaluate_resource_count_paths(
                 if let Some((base, quantity)) =
                     creation.observed_symbolic_batch(&anchor.block, name)
                 {
-                    facts.push(ExecutionPureFact::certified(Proposition::ConditionIs(
-                        ConditionTerm::signed_add_overflows(
-                            Bitvector32Term::Constant(base),
-                            quantity,
+                    facts.push(ExecutionPureFact::certified(
+                        Proposition::signed_arithmetic_domain(
+                            MachineIntegerType::Int32,
+                            MachineBinaryOp::Add,
+                            &Bitvector32Term::Constant(base),
+                            &quantity,
                         ),
-                        false,
-                    )));
+                    ));
                 }
                 Ok(SpecExpressionPath {
                     value: CValue::Int32(count),
@@ -7628,19 +7680,26 @@ fn apply_spec_arithmetic(
     if let Some(mut path) =
         crate::kernel::eval::apply_spec_machine_arithmetic(op, &left, &right, &facts, &obligations)
     {
-        // A held body's projection assumes the domain its fold established.
-        // Keep the debt while distinguishing it from a new proof obligation.
-        // Ordinary entry requirements, calls and folds retain mandatory domains.
-        if assumptions.should_assume_held_resource_domains() {
-            for obligation in path.obligations.iter_mut().skip(obligations.len()) {
-                if obligation.evaluation_domain {
-                    obligation.assumable = true;
-                }
-            }
-        }
+        apply_held_resource_domain_policy(&mut path.obligations[obligations.len()..], assumptions);
         return vec![path];
     }
     apply(left, right, facts, obligations, assumptions)
+}
+
+fn apply_held_resource_domain_policy(
+    obligations: &mut [ProofObligation],
+    assumptions: &PureFactContext,
+) {
+    // A held body's projection assumes the domain its fold established.
+    // Keep the debt while distinguishing it from a new proof obligation.
+    // Ordinary entry requirements, calls and folds retain mandatory domains.
+    if assumptions.should_assume_held_resource_domains() {
+        for obligation in obligations {
+            if obligation.evaluation_domain {
+                obligation.assumable = true;
+            }
+        }
+    }
 }
 
 fn evaluate_spec_scalar_binary_paths_in(

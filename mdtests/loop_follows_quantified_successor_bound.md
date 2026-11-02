@@ -56,7 +56,6 @@ int32 chase(int32 *next, int32 n) {
             }
             step();
             step();
-            close_invariants();
         }
     }
 }

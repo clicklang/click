@@ -171,7 +171,6 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         0 <= capacity;
                     };
                 }
-                close_invariants();
             } else {
                 branch {
                     contradiction(occupied[i] == 0);
@@ -202,7 +201,6 @@ int32 scan_run(int32* data, int32* occupied, int32 capacity) {
                         0 <= capacity;
                     };
                 }
-                close_invariants();
             }
         }
     }

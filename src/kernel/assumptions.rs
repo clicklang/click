@@ -36,6 +36,7 @@ use super::equality_graph::EqualityGraph;
 use super::machine_integer::comparison::{
     native_comparison_of_integer_observation, native_comparison_through_integer_operations,
 };
+#[cfg(test)]
 use super::machine_integer::definedness::{
     definedness_of_integer_bound, integer_bounds_of_definedness,
 };
@@ -7455,31 +7456,8 @@ impl PureFactContext {
         {
             self = self.assume_condition_uncharged(native, truth);
         }
-        // A signed definedness fact holds exactly when both Integer bounds
-        // of its exact result do (`integer_bounds_of_definedness`). When
-        // this fact is one bound and the other is already known, the
-        // definedness fact is filed beside it, so the built-in overflow
-        // check reads what the two Integer premises established. One
-        // lookup of two spellings.
-        if value
-            && let Some(Proposition::ConditionIs(overflow, false)) = definedness_of_integer_bound(
-                &Proposition::ConditionIs(canonical_integer_bound_spelling(&condition), true),
-            )
-            && self.condition_facts.get(&overflow) != Some(&false)
-            && integer_bounds_of_definedness(&Proposition::ConditionIs(overflow.clone(), false))
-                .iter()
-                .all(|bound| match bound {
-                    Proposition::ConditionIs(bound, true) => {
-                        *bound == canonical_integer_bound_spelling(&condition)
-                            || integer_order_spellings(bound).into_iter().any(|spelling| {
-                                self.contains_known(&Proposition::ConditionIs(spelling, true))
-                            })
-                    }
-                    _ => false,
-                })
-        {
-            self = self.assume_condition_uncharged(overflow, false);
-        }
+        // Arithmetic domains stay as ordinary bounds. Overflow queries read
+        // those bounds directly; do not publish a second opaque fact here.
         // Filing derived facts above can itself establish this condition.
         // Apply the same monotone rule before committing the original entry.
         if self.restates_condition(&condition, value) {
@@ -10955,6 +10933,14 @@ pub(crate) fn canonical_observation_form(proposition: &Proposition) -> Propositi
     observation_comparison_form(proposition, false)
 }
 
+/// [`canonical_observation_form`] with each observation also read through
+/// its value relations (rule W) and literal arithmetic evaluated, as
+/// checking reads a comparison: `to_integer(d as int128) == -1` is `d == -1`.
+/// A lookup form only; nothing is built or printed from it.
+pub(crate) fn read_observation_form(proposition: &Proposition) -> Proposition {
+    observation_comparison_form(proposition, true)
+}
+
 fn observation_comparison_form(proposition: &Proposition, evaluate: bool) -> Proposition {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
@@ -10998,21 +10984,6 @@ pub(crate) fn native_reading_of_integer_observation_fact(
     };
     let (native, truth) = native_comparison_of_integer_observation(condition, *value)?;
     Some(Proposition::ConditionIs(native, truth))
-}
-
-/// `condition`, an Integer order with a constant on one side, spelled with
-/// the constant on the right (`c <= x` as `x >= c`); any other condition
-/// as it is.
-pub(crate) fn canonical_integer_bound_spelling(condition: &ConditionTerm) -> ConditionTerm {
-    match condition {
-        ConditionTerm::IntegerLessEqual(constant, exact) if constant.as_const().is_some() => {
-            ConditionTerm::IntegerGreaterEqual(exact.clone(), constant.clone())
-        }
-        ConditionTerm::IntegerGreaterEqual(constant, exact) if constant.as_const().is_some() => {
-            ConditionTerm::IntegerLessEqual(exact.clone(), constant.clone())
-        }
-        other => other.clone(),
-    }
 }
 
 /// The two spellings of one non-strict Integer order, `a <= b` and

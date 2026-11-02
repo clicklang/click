@@ -67,6 +67,7 @@ void recycle(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) {
     consumes region(data, b, b + 1);
     requires to_integer(gap.next) == to_integer(a + 1);
     requires 0 <= a;
+    requires defined(a + 1);
     requires to_integer(a + 1) < to_integer(b);
     requires b < capacity;
     produces arena_cells(data, occupied, capacity);
@@ -77,6 +78,8 @@ void recycle(int32* data, int32* occupied, int32 capacity, int32 a, int32 b) {
     unfold(region(data, b, b + 1));
     step();
     step();
+    have occupied[b] == 0;
+    have occupied[a] == 0;
     give(data[b..b + 1]);
     give(data[a..a + 1]);
     let w = fold(arena_window(data, occupied, capacity, a, b + 1), { next: a });

@@ -89,14 +89,12 @@ void countdown(int32 n) {
                             step();
                             step();
                             let c = fold(chain(n), { model: Chain::Nil });
-                            close_invariants();
                         },
                         Chain::Link(rest2_model) => {
                             let { rest: r2 } = unfold(r);
                             step();
                             step();
                             step();
-                            close_invariants();
                         },
                     }
                 },

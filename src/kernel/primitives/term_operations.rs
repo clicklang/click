@@ -213,6 +213,15 @@ impl Bitvector32Term {
             Self::Int64Constant(value) => Some((*value, *value)),
             Self::Int64From32(_) => Some((i64::from(i32::MIN), i64::from(i32::MAX))),
             Self::Int64FromUInt32(_) => Some((0, i64::from(u32::MAX))),
+            Self::Binary {
+                format: MachineIntegerType::Int64,
+                op: MachineBinaryOp::BitwiseAnd,
+                left,
+                right,
+            } => {
+                let mask = left.int64_as_const().or_else(|| right.int64_as_const())?;
+                (mask >= 0).then_some((0, mask))
+            }
             _ => None,
         }
     }
@@ -1840,6 +1849,43 @@ impl Bitvector32Term {
                     )
                 }),
             _ => constructor(Box::new(left), Box::new(right)),
+        }
+    }
+
+    /// Logical arithmetic preserves symbolic operations so a stored raw
+    /// operation has an exact Surface spelling. Only two literal operands
+    /// use the constant evaluator; algebraic identities belong to checking.
+    pub(crate) fn logical_machine_binary(
+        format: MachineIntegerType,
+        op: MachineBinaryOp,
+        left: Self,
+        right: Self,
+    ) -> Self {
+        let literal = |value: &Self| {
+            matches!(
+                value,
+                Self::Constant(_)
+                    | Self::UInt32Constant(_)
+                    | Self::Int64Constant(_)
+                    | Self::UInt64Constant(_)
+            )
+        };
+        if literal(&left) && literal(&right) {
+            return Self::machine_binary(format, op, left, right);
+        }
+        if format.format().bits() == 32 {
+            return Self::node32(
+                format,
+                op,
+                Self::operand32(format, left),
+                Self::operand32(format, right),
+            );
+        }
+        Self::Binary {
+            format,
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
         }
     }
 
@@ -6078,7 +6124,11 @@ pub(crate) fn listed_premise_holds(
     premise: &Proposition,
     available: impl Fn(&Proposition) -> bool,
 ) -> bool {
-    listed_premise_holds_with(premise, &available)
+    if listed_premise_holds_with(premise, &available) {
+        return true;
+    }
+    crate::kernel::arithmetic_comparison_form(premise)
+        .is_some_and(|comparison| listed_premise_holds_with(&comparison, &available))
 }
 
 fn listed_premise_holds_with(

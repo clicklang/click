@@ -764,7 +764,6 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         k < arena->capacity;
                     };
                 }
-                close_invariants();
             } else {
                 branch {
                     contradiction(arena->occupied[i] == 0);
@@ -1393,7 +1392,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                 next: i
             });
             have to_integer(i) == to_integer(at(opened, i)) + 1;
-            have 0 <= to_integer(end) - to_integer(i);
+            have 0 <= to_integer(end) - to_integer(i) by {
+                arithmetic_certificate {
+                    premise 0: to_integer(i) <= to_integer(end) =>
+                        0 <= to_integer(end) - to_integer(i);
+                    conclusion 0;
+                }
+            }
             have to_integer(end) - to_integer(i) < to_integer(end) - to_integer(at(opened, i));
             close_invariants() by {
                 both { solve(); } and {
@@ -3139,6 +3144,14 @@ int32 arena_pipeline(
     mark m3;
     let { live: kept_live, capacity: kept_capacity } = unfold(s0);
     let { start: kept_start, end: kept_end } = unfold(r2);
+    have ((second->start + 0) as int32) == (kept_start as int32) by {
+        rewrite(second->start == kept_start);
+        normalize();
+    }
+    have second->arena->data[kept_start] == 22 by {
+        rewrite((kept_start as int32) == ((second->start + 0) as int32));
+        assumption();
+    }
     // Keep the value in a framed resource, using the owned range's index.
     let kept = fold(preserved_cell(second->arena->data + kept_start), { value: 22 });
     let s0 = fold(arena_state(arena), { live: kept_live, capacity: kept_capacity });

@@ -75,7 +75,6 @@ int32 service_run(struct service* owner) diverges {
         initialize by solve();
         preserve by {
             step();
-            close_invariants();
         }
     }
     solve();

@@ -77,7 +77,6 @@ void countdown(int32 n) {
                     }
                     let { rest: r } = unfold(c);
                     step();
-                    close_invariants();
                 },
             }
         }

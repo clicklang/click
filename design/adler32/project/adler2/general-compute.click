@@ -879,7 +879,6 @@ impl adler2::Adler32 {
         rewrite(to_integer(b_vec.0[3]) == to_integer(at(vector_a, b_vec.0[3]) + (at(vector_a, a_vec.0[3]) + at(vector_a, __rust_mir_42.0[3]))));
         solve();
        }
-       close_invariants();
       }
      }
      have __rust_mir_36_remaining < 4u64 by { cases {

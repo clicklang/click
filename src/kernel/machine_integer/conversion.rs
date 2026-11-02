@@ -230,7 +230,9 @@ pub(crate) fn convert_value(value: CValue, destination: MachineIntegerType) -> O
 /// operand's signedness, so it has both readings.
 pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
     use MachineIntegerType as Ty;
-    let IntegerTerm::Machine(machine) = observed else {
+    // An observation of σ names the conversion its value reading does
+    // (rule W): `count as uint32 as int32` converts `count`.
+    let IntegerTerm::Machine(machine) = observed.value_read() else {
         return Vec::new();
     };
     let candidates: Vec<(Ty, &Bitvector32Term)> = match machine.value() {
@@ -249,7 +251,9 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
     candidates
         .into_iter()
         .filter_map(|(ty, value)| IntegerTerm::from_machine(ty, value.clone()))
-        .filter(|original| original != observed && cast(observed, original).is_some())
+        .filter(|original| {
+            original.value_read() != observed.value_read() && cast(observed, original).is_some()
+        })
         .collect()
 }
 
@@ -316,7 +320,10 @@ pub(crate) fn cast(
         };
         return Some(machine.ty().format());
     }
-    let (IntegerTerm::Machine(machine), IntegerTerm::Machine(operand)) = (observed, original)
+    // Each side is read through its value relations (rule W): an
+    // observation of σ is its operand read at the observation's format.
+    let (IntegerTerm::Machine(machine), IntegerTerm::Machine(operand)) =
+        (observed.value_read(), original.value_read())
     else {
         return None;
     };

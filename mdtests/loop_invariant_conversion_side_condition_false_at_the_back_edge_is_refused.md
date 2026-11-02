@@ -33,7 +33,6 @@ int32 walk(int32 n) {
         invariant to_integer(i + 1) == to_integer(i + 1);
         preserve by {
             step();
-            close_invariants();
         }
     }
     step();
@@ -42,5 +41,5 @@ int32 walk(int32 n) {
 ```
 
 ```expect
-fail: `defined((i + 1))` remained open
+fail: `(let integer_value: Integer = to_integer((i as int32)) + 1; integer_value) <= 2147483647` remained open
 ```

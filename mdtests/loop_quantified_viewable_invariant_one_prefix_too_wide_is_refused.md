@@ -52,7 +52,6 @@ int32 count_up(int32 *a, int32 n) {
         preserve by {
             step();
             step();
-            close_invariants();
         }
     }
 }

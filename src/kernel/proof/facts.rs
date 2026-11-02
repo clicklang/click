@@ -456,7 +456,7 @@ impl PropositionSource for ProofFacts {
         self.assumptions().clone()
     }
     fn exact_available(&self, required: &Proposition) -> bool {
-        self.contains(required)
+        self.contains(required) || self.matching_quantified_fact(required).is_some()
     }
 }
 
@@ -2649,6 +2649,10 @@ fn index_bitvector_equality_fact(
 /// Whether a proposition is only a C definedness guard: a conjunction of
 /// the no-overflow conditions lowering attaches to partial arithmetic.
 pub(crate) fn is_definedness_guard(proposition: &Proposition) -> bool {
+    if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition).is_some()
+    {
+        return true;
+    }
     match proposition {
         Proposition::And(left, right) => is_definedness_guard(left) && is_definedness_guard(right),
         Proposition::ConditionIs(condition, false) => matches!(

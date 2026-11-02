@@ -71,7 +71,7 @@ pub use kernel_term::{
     KernelIntegerOperator, KernelLegacyTerm, KernelMachineCastEncoding, KernelMachineLiteral,
     KernelTerm, KernelTermNode, KernelType,
 };
-pub(crate) use kernel_term::{KernelTermExport, KernelTermImport};
+pub(crate) use kernel_term::{KernelTermExport, KernelTermImport, clear_integer_bridge_memo};
 mod machine_integer;
 pub(crate) use machine_integer::is_narrow_widening32;
 pub use machine_integer::{
@@ -1269,12 +1269,29 @@ impl ConditionTerm {
             Self::PointerOffsetEqual(left, right) => I::PointerOffsetEqual(left, right),
             Self::PointerEqual(left, right) => I::PointerEqual(left, right),
             Self::PointerValueEqual(left, right) => I::PointerValueEqual(left, right),
-            Self::IntegerLessThan(left, right) => I::IntegerLessThan(left, right),
-            Self::IntegerLessEqual(left, right) => I::IntegerLessEqual(left, right),
-            Self::IntegerGreaterThan(left, right) => I::IntegerGreaterThan(left, right),
-            Self::IntegerGreaterEqual(left, right) => I::IntegerGreaterEqual(left, right),
-            Self::IntegerEqual(left, right) => I::IntegerEqual(left, right),
-            Self::IntegerNotEqual(left, right) => I::IntegerNotEqual(left, right),
+            // An Integer comparison is one fact with the comparison of its
+            // sides read through their observations' value relations
+            // (rule W): `to_integer(x as int32) <= 7` and
+            // `to_integer(x) <= 7` share identity, hashing and order. The
+            // reading is cached on each side, O(1) after its first use.
+            Self::IntegerLessThan(left, right) => {
+                I::IntegerLessThan(left.read_through_ref(), right.read_through_ref())
+            }
+            Self::IntegerLessEqual(left, right) => {
+                I::IntegerLessEqual(left.read_through_ref(), right.read_through_ref())
+            }
+            Self::IntegerGreaterThan(left, right) => {
+                I::IntegerGreaterThan(left.read_through_ref(), right.read_through_ref())
+            }
+            Self::IntegerGreaterEqual(left, right) => {
+                I::IntegerGreaterEqual(left.read_through_ref(), right.read_through_ref())
+            }
+            Self::IntegerEqual(left, right) => {
+                I::IntegerEqual(left.read_through_ref(), right.read_through_ref())
+            }
+            Self::IntegerNotEqual(left, right) => {
+                I::IntegerNotEqual(left.read_through_ref(), right.read_through_ref())
+            }
             Self::BoolApplication(application) => I::BoolApplication(application),
             Self::BoolIf {
                 condition,

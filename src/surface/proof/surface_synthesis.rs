@@ -100,6 +100,7 @@ pub(in crate::surface) struct SynthesisStructOwners {
     /// The function's global and static arrays by kernel and source name: the source name and
     /// declared shape an element read is spelled with.
     storage_arrays: BTreeMap<String, (String, Vec<u32>)>,
+    storage_scalars: BTreeMap<Pointer, (String, CType)>,
 }
 
 /// Installs the function's struct owners for synthesis while the guard
@@ -149,7 +150,24 @@ impl LocalStructLayoutScope {
                 ]
             }))
             .collect();
+        let storage_scalars = function
+            .globals()
+            .values()
+            .map(|global| {
+                (
+                    CMemory::global_pointer(global.kernel_name()),
+                    (global.name().to_string(), global.c_type().to_kernel_type()),
+                )
+            })
+            .chain(function.static_locals().values().map(|local| {
+                (
+                    CMemory::static_pointer(function.name(), local.kernel_name()),
+                    (local.name().to_string(), local.c_type().to_kernel_type()),
+                )
+            }))
+            .collect();
         let owners = SynthesisStructOwners {
+            storage_scalars,
             locals,
             cast_parameters,
             callback_sources: function.callback_statement_sources().clone(),
@@ -1208,6 +1226,8 @@ fn synthesize_surface_proposition_with_bound_variables(
 /// proposition shape, rather than a surface spelling heuristic, identifies
 /// the only guard this synthesis fallback may omit.
 fn is_leading_add_definedness_guard(proposition: &Proposition) -> bool {
+    let query = crate::kernel::machine_integer::definedness::interval_query_form(proposition);
+    let proposition = query.as_ref().unwrap_or(proposition);
     matches!(
         proposition,
         Proposition::ConditionIs(
@@ -1279,8 +1299,7 @@ fn omit_leading_definedness_spellings(
             let mut omitted = false;
             while let Proposition::And(left, right) = proposition {
                 if !is_leading_add_definedness_guard(left)
-                    || !matches!(surface, ClickProposition::And(surface_left, _)
-                        if matches!(surface_left.as_ref(), ClickProposition::Defined { .. }))
+                    || !matches!(surface, ClickProposition::And(..))
                 {
                     break;
                 }
@@ -1340,17 +1359,22 @@ fn synthesized_surface_matches_proposition(
     let (values, array_refs) = contract_environment_at_state(&parameter_values, &array_refs, state);
     let pointer_element_widths =
         crate::surface::lowering::parameter_pointer_element_widths(parameter_binding.parameters);
-    let lowered = crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_through_kernel_with(
-        candidate,
-        &PureFactContext::new(),
-        ContractEnvironment::new(&values, &array_refs),
-        FixedStateFrame::new(state, state, None, &RecordedSnapshots::default()),
-        SpecDefinitions::new(&PredicateEnvironment::new(&[]), &ClickFunctionEnvironment::new(&[])),
-        FixedStateLoweringOptions {
-            pointer_element_widths,
-            ..Default::default()
-        },
-    );
+    let lowered = super::execution_planning::without_open_obligation_probe(|| {
+        crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_through_kernel_with(
+            candidate,
+            &PureFactContext::new(),
+            ContractEnvironment::new(&values, &array_refs),
+            FixedStateFrame::new(state, state, None, &RecordedSnapshots::default()),
+            SpecDefinitions::new(
+                &PredicateEnvironment::new(&[]),
+                &ClickFunctionEnvironment::new(&[]),
+            ),
+            FixedStateLoweringOptions {
+                pointer_element_widths,
+                ..Default::default()
+            },
+        )
+    });
     lowered.is_ok_and(|lowered| {
         crate::kernel::proof::propositions_are_alpha_equal(&lowered, proposition)
     })
@@ -3904,6 +3928,16 @@ fn synthesize_surface_bitvector(
                     access_class: None,
                     source: Default::default(),
                 }));
+            }
+            // Globals and function-static scalars have internal slot names
+            // that need not be legal source tokens. Use the declaration's
+            // spelling, just as the array-element route below does.
+            if let Some(name) = SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+                let owners = slot.borrow();
+                let (name, ty) = owners.as_ref()?.storage_scalars.get(kernel_pointer)?;
+                (crate::kernel::LoadKind::of_type(*ty) == Some(*kind)).then(|| name.clone())
+            }) {
+                return Some(ContractExpression::CFragment(CExpression::Variable(name)));
             }
             if let PointerBlock::Concrete(block) = &kernel_pointer.block
                 && let Some(name) = block.strip_prefix("local:")

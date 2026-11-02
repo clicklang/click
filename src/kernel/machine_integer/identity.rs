@@ -20,11 +20,20 @@ use num_bigint::BigInt;
 /// format. `to_integer(observed) == value` is the in-range identity once
 /// `value` is bounded inside the format.
 pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType, IntegerTerm)> {
-    let IntegerTerm::Machine(machine) = observed else {
+    // An observation of σ or a widening of the operation is read through
+    // its value relation (rule W) to the operation's own observation.
+    let IntegerTerm::Machine(machine) = observed.value_read() else {
         return None;
     };
     let ty = machine.ty();
-    let resolved = crate::kernel::eval::read_over_write_value(machine.value());
+    // An explicit operation's identity refers to its actual operands. Only
+    // an observation of a stored read needs the read-over-write adapter;
+    // recursively expanding an explicit operation changes the identity the
+    // source expression asks for.
+    let resolved = representation::word_operation(machine.ty(), machine.value())
+        .is_none()
+        .then(|| crate::kernel::eval::read_over_write_value(machine.value()))
+        .flatten();
     let (operation, left, right) =
         representation::word_operation(ty, resolved.as_ref().unwrap_or(machine.value()))?;
     let left = IntegerTerm::from_machine(ty, left.clone())?;
@@ -32,15 +41,41 @@ pub(crate) fn mathematical(observed: &IntegerTerm) -> Option<(MachineIntegerType
     Some((ty, operation.exact(left, right)))
 }
 
+/// Whether `stated` is the exact value `value` of an operation
+/// ([`mathematical`]) up to the value relations of its operands' observations
+/// (rule W): the same operation over operands with one value reading each,
+/// `to_integer(tag) + to_integer(p0 as uint32)` for the observation of
+/// `tag + p0` at `uint32`. O(1): one root match and two readings per side.
+pub(crate) fn same_exact_value(value: &IntegerTerm, stated: &IntegerTerm) -> bool {
+    if value == stated {
+        return true;
+    }
+    match (Operation::of_exact(value), Operation::of_exact(stated)) {
+        (Some((operation, left, right)), Some((stated_operation, stated_left, stated_right))) => {
+            operation == stated_operation
+                && left.value_read() == stated_left.value_read()
+                && right.value_read() == stated_right.value_read()
+        }
+        _ => false,
+    }
+}
+
 /// [`mathematical`] for `+` and `-` only: the operations whose identity
 /// the comparison readings and the surface's identity planner spell.
 pub(crate) fn additive_mathematical(
     observed: &IntegerTerm,
 ) -> Option<(MachineIntegerType, IntegerTerm)> {
-    let IntegerTerm::Machine(machine) = observed else {
+    let IntegerTerm::Machine(machine) = observed.value_read() else {
         return None;
     };
-    let resolved = crate::kernel::eval::read_over_write_value(machine.value());
+    // An explicit operation's identity refers to its actual operands. Only
+    // an observation of a stored read needs the read-over-write adapter;
+    // recursively expanding an explicit operation changes the identity the
+    // source expression asks for.
+    let resolved = representation::word_operation(machine.ty(), machine.value())
+        .is_none()
+        .then(|| crate::kernel::eval::read_over_write_value(machine.value()))
+        .flatten();
     match representation::word_operation(
         machine.ty(),
         resolved.as_ref().unwrap_or(machine.value()),
@@ -130,7 +165,9 @@ pub(crate) fn machine_operation_of_integer_value(
     // observation in `ty` gives the operand back; its range is its own
     // format's, or the constant itself.
     let operand = |side: &IntegerTerm| -> Option<(Bitvector32Term, BigInt, BigInt)> {
-        match side {
+        // An observation is read through its value relations (rule W): the
+        // range of `to_integer(x as uint32)` is `x`'s own format's.
+        match side.value_read() {
             IntegerTerm::Machine(machine) => {
                 let word = machine.value().clone();
                 let widened = Bitvector32Term::MachineIntegerCast {
@@ -143,7 +180,8 @@ pub(crate) fn machine_operation_of_integer_value(
                 let as_written =
                     (machine.ty().format().bits() == ty.format().bits()).then_some(word);
                 let word = as_written.into_iter().chain([widened]).find(|word| {
-                    IntegerTerm::from_machine(ty, word.clone()).as_ref() == Some(side)
+                    IntegerTerm::from_machine(ty, word.clone())
+                        .is_some_and(|observed| observed.value_read() == side.value_read())
                 })?;
                 let (low, high) = range::range(machine.ty());
                 Some((word, low, high))
@@ -162,7 +200,7 @@ pub(crate) fn machine_operation_of_integer_value(
         representation::operation_word(ty, operation, Box::new(left_word), Box::new(right_word))?;
     let observed = IntegerTerm::from_machine(ty, word)?;
     let (read_ty, value) = mathematical(&observed)?;
-    if read_ty != ty || &value != exact {
+    if read_ty != ty || !same_exact_value(&value, exact) {
         return None;
     }
     let (low, high) = if operation == Operation::Subtract {
@@ -187,4 +225,44 @@ pub(crate) fn machine_operation_of_integer_value(
         });
     }
     Some((observed, bounds))
+}
+
+#[test]
+fn explicit_operation_identity_keeps_its_read_operands() {
+    use crate::kernel::{CMemory, CValue, LoadKind, Pointer, Variable};
+    let _session = crate::kernel::VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let x = Bitvector32Term::Variable(Variable(989_773));
+    let y = Bitvector32Term::Variable(Variable(989_774));
+    let address = Pointer::symbolic(Variable(989_775));
+    let stored = Bitvector32Term::logical_machine_binary(
+        format,
+        crate::kernel::MachineBinaryOp::Add,
+        x.clone(),
+        Bitvector32Term::Constant(1),
+    );
+    let memory = CMemory::new().store(address.clone(), CValue::Int32(stored));
+    let read = crate::kernel::canonical_form_of_load(
+        crate::kernel::intern_c_memory_ref(&memory),
+        address,
+        LoadKind::Int32,
+    );
+    let observe = |value| IntegerTerm::from_machine(format, value).unwrap();
+    let sum = observe(Bitvector32Term::logical_machine_binary(
+        format,
+        crate::kernel::MachineBinaryOp::Add,
+        read.clone(),
+        y.clone(),
+    ));
+    assert_eq!(
+        mathematical(&sum),
+        Some((format, IntegerTerm::add(observe(read.clone()), observe(y))))
+    );
+    assert_eq!(
+        mathematical(&observe(read)),
+        Some((
+            format,
+            IntegerTerm::add(observe(x), IntegerTerm::constant(1.into()))
+        ))
+    );
 }

@@ -54,7 +54,6 @@ int32 flip(int32 n) {
                 step();
             }
             step();
-            close_invariants();
         }
     }
     step();

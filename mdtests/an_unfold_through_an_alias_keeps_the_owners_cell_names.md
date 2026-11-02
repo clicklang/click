@@ -88,7 +88,6 @@ struct node* h(struct node* p) {
             have s->left == p->right->left by assumption();
             step();
             step(); step();
-            close_invariants();
         }
     }
 }

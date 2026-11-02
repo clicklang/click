@@ -411,6 +411,17 @@ impl PureFactContext {
         if condition.is_bool_value_form() {
             return self.decide_bool_value(condition);
         }
+        // Ordinary arithmetic range bounds can use the same bounded interval
+        // calculation as execution. A nonoverflow result proves each bound;
+        // an overflow result alone does not select which bound failed.
+        if let Some(Proposition::ConditionIs(overflow, false)) =
+            crate::kernel::machine_integer::definedness::definedness_of_integer_bound(
+                &Proposition::ConditionIs(condition.clone(), true),
+            )
+            && self.decide_unrecorded(&overflow) == Some(false)
+        {
+            return Some(true);
+        }
         // An Integer comparison of exact observations of one machine type
         // has the truth of its native comparison, which the machine
         // reasoning below decides (`native_comparison_of_integer_observation`).
@@ -1422,6 +1433,17 @@ impl PureFactContext {
         condition: &ConditionTerm,
     ) -> Option<bool> {
         let value = self.exact_condition_value_unrecorded(condition);
+        if value == Some(false) && self.condition_facts.get(condition).is_none() {
+            let bounds = crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
+                &Proposition::ConditionIs(condition.clone(), false),
+            );
+            if !bounds.is_empty() {
+                for bound in bounds {
+                    record_implicit_reasoning_provenance(self, &bound);
+                }
+                return value;
+            }
+        }
         if let Some(value) = value {
             record_implicit_reasoning_provenance(
                 self,
@@ -1432,6 +1454,26 @@ impl PureFactContext {
     }
 
     fn exact_condition_value_unrecorded(&self, condition: &ConditionTerm) -> Option<bool> {
+        if matches!(condition, ConditionTerm::Overflows { .. }) {
+            let bounds = crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
+                &Proposition::ConditionIs(condition.clone(), false),
+            );
+            if !bounds.is_empty()
+                && bounds.iter().all(|bound| {
+                    let Proposition::ConditionIs(condition, true) = bound else {
+                        return false;
+                    };
+                    Self::decide_intrinsically(condition) == Some(true)
+                        || integer_order_spellings(condition)
+                            .into_iter()
+                            .any(|condition| {
+                                self.contains_known(&Proposition::ConditionIs(condition, true))
+                            })
+                })
+            {
+                return Some(false);
+            }
+        }
         self.condition_facts
             .get(condition)
             .copied()

@@ -107,8 +107,27 @@ binary, complement and explicit-cast nodes. The result type and operator
 format are distinct: a `uint32` result may contain a sign-free `int32` word
 operation. Literal payload tags survive exactly. Export builds the explicit
 boxed checker output once, without cloning every intermediate subtree.
-This is a bridge migration for argument spelling; machine execution and
-lowering producers still construct the old representation. Shifts use the
+Ordinary specification evaluation now constructs shared nodes directly for
+same-format `uint32`/`uint64` addition, subtraction and multiplication over
+already available values. Children stay shared until one final checker export.
+These total wrapping operations owe no domain obligation. The evaluator retains
+its existing literal-only evaluation; the shared constructor itself does not
+fold. A mixed-format or deferred operand retains the legacy evaluator, and one
+rejected preparation disables further attempts inside that selected tree.
+One same-format `int32`/`int64` addition, subtraction or multiplication over
+two available values also constructs a shared node, accompanied by the existing
+ordinary-proposition range obligation. Literal evaluation and held-resource
+domain metadata remain evaluator responsibilities. When the exact arithmetic
+result is one machine observation (for example, the domain calculation for
+`x + 0`), its source type alone can establish representability in a containing
+type. This root-type rule never walks the operand or folds the machine value.
+Conjoining domain conditions then drops literal truths only; symbolic conditions go to ordinary obligation discharge,
+without invoking the proof checker while building the domain. Nested signed expressions
+retain the legacy evaluator: their `IntegerTerm::Machine` obligation operands
+still own boxed machine trees, so exporting every shared prefix would copy a
+growing expression repeatedly. Shared observation storage/checker views are a
+prerequisite to migrating that case. Other partial operators also remain on
+legacy producers with separate obligations. C execution has not migrated. Shifts use the
 same shared binary nodes: lowering has already converted a count to the
 left operand's carrier width, and the bridge preserves that explicit conversion
 without reinterpreting it from the result's signedness. Widening spellings explicitly retain the source `int32`/`uint32`
@@ -121,6 +140,11 @@ legacy constructors from a generic cast with the same formats; import/export
 never silently normalizes one into another. Low-word extraction interprets
 its operand as unsigned bits, independent of the source C signedness.
 Machine raising currently uses one exact export to the existing speller.
+Integer bridge shortcuts are memoized per verification session (and reset when
+restoring a reusable session), while the shared term identities remain stable.
+Retaining a converted term across runs must not change a later run's deterministic
+work count. Within a session, repeated conversions still reuse the cached bridge.
+
 Mathematical observations of machine values (`to_integer`) now have a shared
 `MachineObservation` node with the interpretation format and machine operand.
 Signed and unsigned interpretations remain distinct. Raising retains the observation's interpretation inside any snapshot selector;
@@ -154,11 +178,24 @@ operators and both typed Integer operands. A greater-than comparison is not
 rewritten as a swapped less-than comparison, and disequality remains explicit.
 Native signed division and remainder now generate ordinary domain propositions:
 `b != 0` and `(a != MIN or b != -1)`. The conjunction is also the premise of the
-int32 remainder-to-Integer theorem. Specification obligations retain these
-propositions separately, and C execution records the ordinary exclusion on its
+int32 remainder-to-Integer theorem. Specification evaluation retains the complete conjunction as one operation
+domain, and C execution records the ordinary exclusion on its
 normal branch and the two exceptional equalities on its undefined branch.
-No new overflow spelling or term is needed for this domain. Other arithmetic
-operations and legacy internal overflow reasoning remain separate migrations.
+Signed addition, subtraction, and multiplication use the exact mathematical
+result bounded by the format minimum and maximum. Unary negation uses
+subtraction from zero. C shifts conjoin the count bounds and, for signed left
+shift, a nonnegative operand and representable result; Rust shifts require
+only the count bounds. Unsigned wrapping operations have no overflow debt.
+The supported 128-bit operators also retain one complete ordinary domain.
+Only literal truths disappear during domain construction; symbolic conditions
+remain for ordinary obligation discharge. Assumed facts never change the term.
+Existing interval rules may interpret these propositions through private
+overflow queries, but generated domain facts, theorem statements, and
+certificate conclusions use ordinary propositions. Symbolic machine operations
+keep their nodes even for algebraic identities such as `(x + 1) - 1`; the
+comparison graph can identify equal words without changing those terms.
+Operation-identity certificates preserve explicit operands and establish
+operand identities before the outer operation, independent of discovery order.
 Other conditions retain an exact `LegacyBool` payload. Import/export does
 not use condition fact equality: signed and unsigned equality comparisons keep
 their original format even where the fact store identifies them. Raising a
@@ -292,11 +329,12 @@ A rewrite that introduces an outer Boolean negation retains lowering's truth
 polarity: a false claim of `not p` is stored as a true claim of `p`. This does
 not consult facts or change the Boolean term inside a larger expression.
 
-Signed add/subtract/multiply overflow facts retain their polarity when spelled:
-no overflow is `defined(expression)`, and overflow is `not defined(expression)`.
-The spelling names the operation rather than a local holding its result.
-Division and left-shift atomic overflow conditions are not interchangeable with
-the complete `defined(expression)` domain, which also contains other conditions.
+Arithmetic domains spell as ordinary comparisons and conjunctions, including
+the negation of a range conjunction on an overflowing execution branch.
+`defined(expression)` denotes the full evaluation domain, including operand
+domains. It does not stand for a single overflow component of division or shift.
+`mdtests/arithmetic_definedness_is_one_ordinary_domain.md` checks the ordinary
+bounds in both directions for signed 32/64-bit arithmetic.
 
 Masked uint64 tag expressions retain their full numeric term. Exact tag-bound
 lookups may produce a separate equality removing the masked tag; addition also
@@ -365,6 +403,14 @@ snapshot records a value at exactly its address, that value. It reads the
 memory, never facts, so it holds at every program point. It enters checking
 only through the comparison form (`kernel::comparison_form`): the proposition
 with each read of a stored cell replaced by the value stored there.
+
+That shared comparison form also normalizes assumption-free arithmetic
+identities, including fold endpoints and the selected address of a registered
+scalar read. It leaves the retained proposition and lowered operation nodes
+unchanged. Read-address normalization keeps snapshots and loaded-pointer
+identities opaque and memoizes the selected registry DAG within the traversal.
+Exact premise lists, signed arithmetic claims, and fold alpha keys use this
+same form; they do not add tactic-specific fact searches.
 
 - The fact stores file each fact under its comparison form too
   (`ProofFacts::with_fact`, `PureFactContext::assume_condition_once`), and an

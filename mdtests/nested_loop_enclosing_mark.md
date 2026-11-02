@@ -34,11 +34,9 @@ int32 count() {
                 preserve by {
                     have at(outer_head, i) < 3 by { assumption(); }
                     step_until(back_edge());
-                    close_invariants();
                 }
             }
             step_until(back_edge());
-            close_invariants();
         }
     }
 }

@@ -284,20 +284,15 @@ impl Carried {
                         .ok()
                 };
                 if format.is_signed() {
-                    // A defined signed operation: its exact value's bounds
-                    // are the definedness fact's Integer reading.
-                    let defined = ClickProposition::Defined {
-                        expression: operation.clone(),
-                    };
+                    // Definedness already is the pair of ordinary bounds.
+                    // Cite each bound with the ordinary conjunction/assumption
+                    // rule before checking the mathematical observation.
                     let bounded =
                         [&lower, &upper]
                             .into_iter()
                             .try_fold(proof.clone(), |proof, bound| {
                                 proof
-                                    .apply_step(have(
-                                        bound.clone(),
-                                        vec![ProofStep::ArithmeticUsing(vec![defined.clone()])],
-                                    ))
+                                    .apply_step(have(bound.clone(), vec![ProofStep::Assumption]))
                                     .ok()
                             });
                     if let Some(observed) = bounded.as_ref().and_then(observe) {
@@ -2148,45 +2143,70 @@ impl<'a> Proof<'a> {
         base.selected_arithmetic(true, &[])
     }
 
-    /// The sums and differences named by connected `defined(...)` facts.
+    /// The sums and differences named by connected complete arithmetic domains.
     fn defined_operations(&self, candidates: &[Proposition]) -> Vec<ContractExpression> {
+        fn operation(surface: ClickProposition) -> Option<ContractExpression> {
+            match surface {
+                ClickProposition::Defined { expression } => match expression {
+                    ContractExpression::Add(..) | ContractExpression::Subtract(..) => {
+                        Some(expression)
+                    }
+                    _ => None,
+                },
+                ClickProposition::At {
+                    selector,
+                    proposition,
+                } => {
+                    let anchor = |expression| {
+                        Box::new(ContractExpression::At {
+                            selector: selector.clone(),
+                            expression,
+                        })
+                    };
+                    match operation(*proposition)? {
+                        ContractExpression::Add(a, b) => {
+                            Some(ContractExpression::Add(anchor(a), anchor(b)))
+                        }
+                        ContractExpression::Subtract(a, b) => {
+                            Some(ContractExpression::Subtract(anchor(a), anchor(b)))
+                        }
+                        _ => None,
+                    }
+                }
+                _ => None,
+            }
+        }
         let mut operations = Vec::new();
+        let mut seen = std::collections::HashSet::new();
         for candidate in candidates {
-            if !matches!(
+            // Select the operation structurally from either ordinary bound.
+            // The private query supplies its format and operands, not evidence.
+            // Naming uses the same indexed states as structural goal spelling;
+            // it does not require a recorded `defined(...)` source. The actual
+            // observation theorem still proves the complete ordinary domain.
+            let query = crate::kernel::machine_integer::definedness::definedness_of_integer_bound(
                 candidate,
+            )
+            .unwrap_or_else(|| candidate.clone());
+            if !matches!(
+                &query,
                 Proposition::ConditionIs(
                     ConditionTerm::Overflows {
-                        format: MachineIntegerType::Int32,
-                        op: OverflowOperation::Add,
-                        ..
-                    } | ConditionTerm::Overflows {
-                        format: MachineIntegerType::Int32,
-                        op: OverflowOperation::Subtract,
-                        ..
-                    } | ConditionTerm::Overflows {
-                        format: MachineIntegerType::Int64,
-                        op: OverflowOperation::Add,
-                        ..
-                    } | ConditionTerm::Overflows {
-                        format: MachineIntegerType::Int64,
-                        op: OverflowOperation::Subtract,
+                        format: MachineIntegerType::Int32 | MachineIntegerType::Int64,
+                        op: OverflowOperation::Add | OverflowOperation::Subtract,
                         ..
                     },
                     false
                 )
-            ) {
+            ) || !seen.insert(query.clone())
+            {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
-            if let Some((_, ClickProposition::Defined { expression })) = self
-                .resolve_solve_premises(std::slice::from_ref(candidate), &[])
-                .and_then(|mut spelled| spelled.pop())
-                && matches!(
-                    expression,
-                    ContractExpression::Add(..) | ContractExpression::Subtract(..)
-                )
+            if let Some(surface) = self.structural_proposition_candidate(&query)
+                && let Some(operation) = operation(surface)
             {
-                operations.push(expression);
+                operations.push(operation);
             }
         }
         operations

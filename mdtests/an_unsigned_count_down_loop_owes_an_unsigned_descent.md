@@ -30,7 +30,6 @@ int32 drain(uint32 x) {
         initialize by { solve(); }
         preserve by {
             step();
-            close_invariants();
         }
     }
 }

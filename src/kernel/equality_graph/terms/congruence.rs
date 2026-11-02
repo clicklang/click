@@ -88,6 +88,44 @@ pub(in crate::kernel::equality_graph) fn has_machine_operands(term: &T) -> bool 
         || matches!(term, T::Variable(variable) if crate::kernel::is_load_variable(variable))
 }
 
+/// A local wrapping identity used only by the comparison graph. Literal
+/// matching examines two operation roots and leaves their source terms intact.
+fn add_sub_cancel_operand(term: &T) -> Option<&T> {
+    let T::Binary {
+        format,
+        op,
+        left,
+        right,
+    } = term
+    else {
+        return None;
+    };
+    if !matches!(format.format().bits(), 32 | 64) {
+        return None;
+    }
+    let T::Binary {
+        format: inner_format,
+        op: inner_op,
+        left: base,
+        right: added,
+    } = left.as_ref()
+    else {
+        return None;
+    };
+    (format == inner_format
+        && matches!(
+            (op, inner_op),
+            (MachineBinaryOp::Add, MachineBinaryOp::Subtract)
+                | (MachineBinaryOp::Subtract, MachineBinaryOp::Add)
+        )
+        && matches!(
+            added.as_ref(),
+            T::Constant(_) | T::UInt32Constant(_) | T::Int64Constant(_) | T::UInt64Constant(_)
+        )
+        && added == right)
+        .then_some(base.as_ref())
+}
+
 impl TermClasses {
     /// Walk mixed-width machine applications once. In particular, a nested
     /// pure call does not recursively canonicalize every enclosing subtree.
@@ -376,7 +414,41 @@ impl TermClasses {
                                 .extend(application.arguments().iter().rev().map(Work::Argument));
                             continue;
                         }
-                        // Binder-bearing match/fold terms retain their complete,
+                        I::RangeFold {
+                            index,
+                            initial,
+                            accumulator,
+                            item,
+                            body,
+                        } => {
+                            // Keep the bound body opaque and exact. Endpoints
+                            // and initial value are outside its binding scope,
+                            // so ordinary congruence applies to those children.
+                            let head = self.intern_node(Node::IntegerFold(
+                                index.machine_item_type(),
+                                *accumulator,
+                                *item,
+                                body.clone(),
+                            ));
+                            pending.push(Work::Call(head, 3));
+                            pending.push(Work::Integer(initial));
+                            match index {
+                                crate::kernel::IntegerRangeFoldIndex::Int32 { start, end } => {
+                                    pending.push(Work::Machine(end.value(), W::Bits32));
+                                    pending.push(Work::Machine(start.value(), W::Bits32));
+                                }
+                                crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
+                                    pending.push(Work::Machine(end.value(), W::Bits64));
+                                    pending.push(Work::Machine(start.value(), W::Bits64));
+                                }
+                                crate::kernel::IntegerRangeFoldIndex::Integer { start, end } => {
+                                    pending.push(Work::Integer(end));
+                                    pending.push(Work::Integer(start));
+                                }
+                            }
+                            continue;
+                        }
+                        // Other binder-bearing terms retain their complete,
                         // shallow interned identity.
                         _ => Node::IntegerAtom(shared),
                     }
@@ -479,6 +551,53 @@ impl TermClasses {
                         term
                     };
                     let wide = width == W::Bits64;
+                    // Structural arithmetic stays intact in logical terms.
+                    // Register its total word identities only for comparison.
+                    if wide
+                        && let T::Binary {
+                            format,
+                            op,
+                            left,
+                            right,
+                        } = term
+                        && matches!(
+                            format,
+                            MachineIntegerType::Int64 | MachineIntegerType::UInt64
+                        )
+                    {
+                        let zero = |t: &T| matches!(t, T::Int64Constant(0) | T::UInt64Constant(0));
+                        let one = |t: &T| matches!(t, T::Int64Constant(1) | T::UInt64Constant(1));
+                        let identity = match op {
+                            MachineBinaryOp::Add if zero(left) => Some(right.as_ref()),
+                            MachineBinaryOp::Add | MachineBinaryOp::Subtract if zero(right) => {
+                                Some(left.as_ref())
+                            }
+                            MachineBinaryOp::Multiply if zero(left) || one(right) => {
+                                Some(left.as_ref())
+                            }
+                            MachineBinaryOp::Multiply if zero(right) || one(left) => {
+                                Some(right.as_ref())
+                            }
+                            _ => None,
+                        };
+                        if let Some(base) = identity {
+                            pending.push(Work::Machine(base, width));
+                            continue;
+                        }
+                        if *op == MachineBinaryOp::Subtract && left == right {
+                            let zero = if *format == MachineIntegerType::Int64 {
+                                T::Int64Constant(0)
+                            } else {
+                                T::UInt64Constant(0)
+                            };
+                            values.push(self.intern_typed_machine(&zero, width));
+                            continue;
+                        }
+                    }
+                    if let Some(base) = add_sub_cancel_operand(term) {
+                        pending.push(Work::Machine(base, width));
+                        continue;
+                    }
 
                     let binary = if wide {
                         uint64_binary(term).map(|(op, a, b)| (Binary::UInt64(op), a, b))

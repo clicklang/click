@@ -810,9 +810,10 @@ fn conversion_preserves_every_value_its_destination_holds() {
             let Some(observed) = IntegerTerm::from_machine(destination, converted) else {
                 panic!("{source:?} -> {destination:?} is observable");
             };
-            // A widening of a narrow conversion normalizes to the value
-            // itself: the identity is syntactic.
-            if observed == original {
+            // A widening keeps its node, and its observation reads as the
+            // value itself (rule W): the identity holds by that relation.
+            if observed.value_read() == original.value_read() {
+                assert_ne!(observed, original, "{source:?} -> {destination:?}");
                 assert!(
                     destination.format().contains(source.format()),
                     "{source:?} -> {destination:?}"

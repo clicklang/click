@@ -124,7 +124,6 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
                                 have sized_walk_rank(walk.model) < sized_walk_rank(at(iteration, walk.model)) by {
                                     rewrite(sized_walk_rank(at(iteration, walk.model)) == sized_context_depth(sized_path_context(path_model)) + 1); assumption();
                                 }
-                                close_invariants() by { solve(); }
                             },
                         }
                     }

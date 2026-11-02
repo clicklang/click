@@ -419,7 +419,6 @@ there.
 preserve by {
     step();
     step();
-    close_invariants();
 }
 ```
 
@@ -781,7 +780,6 @@ void bump_n(struct cell* p, int32 n) {
             step();
             step();
             let c = fold(counter(p), { count: old(c.count) + i });
-            close_invariants();
         }
     }
     have i == n by solve();
@@ -943,7 +941,6 @@ preserve by {
             unfold(c);
             step();
             let c = fold(cell(node), { model: Maybe::Some(value) });
-            close_invariants();
         },
     }
 }
@@ -1154,7 +1151,6 @@ preserve by {
         fact t <= 100;
     } then { step(); } else { step(); }
     step();
-    close_invariants();
 }
 ```
 
@@ -1190,7 +1186,6 @@ once on a path.
 ```click
 preserve by {
     step();
-    close_invariants();
 }
 ```
 
@@ -1201,9 +1196,8 @@ always appears in an expanded proof.
 
 Stepping to the back edge is optional too. A path whose tactics run out
 inside the body runs the rest of it as an omitted `preserve` runs a whole
-body: straight-line statements are stepped, a C `if` with more of the body
-after it whose arms both fall through is run and joined, and any other `if`
-splits into separate paths. A statement whose successors are path cases,
+body: straight-line statements are stepped, and a C `if` the path does not
+decide splits into separate paths, as the implicit tail splits it. A statement whose successors are path cases,
 such as a comparison stored in a local, splits on their condition as
 the implicit tail does
 (`mdtests/an_omitted_preserve_splits_a_comparison_assigned_to_a_local.md`).

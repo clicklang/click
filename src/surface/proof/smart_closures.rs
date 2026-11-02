@@ -46,6 +46,78 @@ fn indexed_constant_arithmetic_premises(
     selected.into_iter().collect()
 }
 
+/// Equality of mathematical observations requires equality modulo the word
+/// width, even if an operation wraps. This is only a search refusal hint;
+/// it creates neither a kernel equality nor a definedness fact.
+fn incompatible_machine_offsets(
+    left: &crate::kernel::IntegerTerm,
+    right: &crate::kernel::IntegerTerm,
+) -> bool {
+    use crate::kernel::IntegerTerm;
+    fn offset(term: &IntegerTerm) -> Option<(MachineIntegerType, Bitvector32Term, BigInt)> {
+        match term {
+            IntegerTerm::Add(base, delta) | IntegerTerm::Subtract(base, delta)
+                if delta.as_const().is_some() =>
+            {
+                let (format, base, value) = offset(base)?;
+                let delta = delta.as_const()?;
+                Some((
+                    format,
+                    base,
+                    if matches!(term, IntegerTerm::Subtract(..)) {
+                        value - delta
+                    } else {
+                        value + delta
+                    },
+                ))
+            }
+            IntegerTerm::Add(delta, base) if delta.as_const().is_some() => {
+                let (format, base, value) = offset(base)?;
+                Some((format, base, value + delta.as_const()?))
+            }
+            IntegerTerm::Machine(machine) => {
+                let format = machine.ty();
+                let mut base = machine.value();
+                let mut delta = BigInt::zero();
+                while let Bitvector32Term::Binary {
+                    format: operation_format,
+                    op,
+                    left,
+                    right,
+                } = base
+                {
+                    if *operation_format != format
+                        || !matches!(op, MachineBinaryOp::Add | MachineBinaryOp::Subtract)
+                    {
+                        break;
+                    }
+                    let Some(value) = IntegerTerm::from_machine(format, right.as_ref().clone())
+                        .and_then(|term| term.as_const().cloned())
+                    else {
+                        break;
+                    };
+                    delta += if *op == MachineBinaryOp::Subtract {
+                        -value
+                    } else {
+                        value
+                    };
+                    base = left;
+                }
+                Some((format, base.clone(), delta))
+            }
+            _ => None,
+        }
+    }
+    let (Some((a_format, a_base, a_delta)), Some((b_format, b_base, b_delta))) =
+        (offset(left), offset(right))
+    else {
+        return false;
+    };
+    a_format == b_format
+        && a_base == b_base
+        && !((a_delta - b_delta) % (BigInt::one() << a_format.format().bits())).is_zero()
+}
+
 fn is_reflexive_pointer_equality(mut proposition: &Proposition) -> bool {
     let mut positive = true;
     while let Proposition::Not(inner) = proposition {
@@ -1427,6 +1499,11 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
                 let Some(operand) = operand else {
                     continue;
                 };
+                // A widening's value is its operand's (rule W), which the
+                // Integer engines read with no identity to prove.
+                if operand.value_read() == observed.value_read() {
+                    continue;
+                }
                 operand.clone()
             }
         };
@@ -1444,7 +1521,37 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
         );
         identities.push((observed, value, identity));
     }
-    identities
+    // Initial observations may include both an operation and its operands.
+    // Discovery order then need not be dependency order. Sort this selected
+    // DAG once, so reversing the result always proves operands first.
+    let indexes = identities
+        .iter()
+        .enumerate()
+        .map(|(index, (observed, _, _))| (observed.clone(), index))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut visited = vec![false; identities.len()];
+    let mut ordered = Vec::with_capacity(identities.len());
+    for root in 0..identities.len() {
+        let mut pending = vec![(root, false)];
+        while let Some((index, finished)) = pending.pop() {
+            if finished {
+                ordered.push(identities[index].clone());
+            } else if !visited[index] {
+                visited[index] = true;
+                pending.push((index, true));
+                for operand in identity_operands(&identities[index].1)
+                    .into_iter()
+                    .flatten()
+                {
+                    if let Some(dependency) = indexes.get(operand) {
+                        pending.push((*dependency, false));
+                    }
+                }
+            }
+        }
+    }
+    ordered.reverse();
+    ordered
 }
 
 /// The observations an identity's value is written over: the two operands
@@ -2293,10 +2400,10 @@ impl<'a> Proof<'a> {
                     term: machine_term,
                     ..
                 } => {
-                    let source = premise_pairs.get(*index)?.1.clone();
-                    let ClickProposition::Defined { .. } = source else {
-                        return None;
-                    };
+                    // The selected premise can be written as ordinary range
+                    // bounds. The generated `defined(term)` is independently
+                    // lowered and matched to that complete premise by the checker.
+                    premise_pairs.get(*index)?;
                     SignedArithmeticStep::DefinedPremise {
                         index: *source_indices.get(index)?,
                         term: term(machine_term)?,
@@ -3036,7 +3143,44 @@ impl<'a> Proof<'a> {
                             true,
                         ))
                 };
-            let refuted = offset_base(right).is_some_and(|base| same_value(left, base))
+            // Cancel ordinary Integer terms before asking about a single
+            // remaining machine observation. A contract parameter pinned to
+            // two cannot satisfy `to_integer(x) + 3 == to_integer(x) + to_integer(parameter)`.
+            let affine_refuted = integer_affine_claim(self.goal().expect("an equality goal"))
+                .is_some_and(|claim| {
+                    if claim.terms.is_empty() {
+                        return !claim.constant.is_zero();
+                    }
+                    let mut terms = claim.terms.iter();
+                    let Some((
+                        crate::kernel::proof::integer_arithmetic::IntegerAffineAtom::Machine(
+                            machine,
+                        ),
+                        coefficient,
+                    )) = terms.next()
+                    else {
+                        return false;
+                    };
+                    if terms.next().is_some() || coefficient.abs() != BigInt::one() {
+                        return false;
+                    }
+                    let required = -claim.constant / coefficient;
+                    let Some(constant) = crate::kernel::machine_integer::range::constant_word(
+                        machine.ty(),
+                        &required,
+                    ) else {
+                        return true;
+                    };
+                    assumptions.decide(&ConditionTerm::machine_compare(
+                        machine.ty(),
+                        CompareRelation::Equal,
+                        machine.value().clone(),
+                        constant,
+                    )) == Some(false)
+                });
+            let refuted = affine_refuted
+                || incompatible_machine_offsets(left, right)
+                || offset_base(right).is_some_and(|base| same_value(left, base))
                 || offset_base(left).is_some_and(|base| same_value(right, base));
             if !refuted {
                 return false;
@@ -3215,6 +3359,29 @@ impl<'a> Proof<'a> {
         Ok(None)
     }
 
+    /// An operation identity has a direct certificate from its ordinary
+    /// domain. Try it in the written read names before exploring a stored-
+    /// value comparison form, whose inner operations may have older names.
+    fn try_direct_operation_identity(&self) -> Result<Option<Self>, ClickError> {
+        let (
+            Some(goal @ Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), true)),
+            Some(surface),
+        ) = (self.goal(), self.surface_goal())
+        else {
+            return Ok(None);
+        };
+        let direct = operation_identities(machine_observations(goal, &[]));
+        if !direct.iter().any(|(_, _, identity)| identity == goal) {
+            return Ok(None);
+        }
+        let written = written_integer_observations(std::iter::once(surface));
+        let identities = direct.iter().collect::<Vec<_>>();
+        if let Ok((proof, _)) = self.prove_operation_identities(&identities, &written, None)? {
+            return attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption));
+        }
+        Ok(None)
+    }
+
     /// Refute the goal's negation from the connected facts, then from them
     /// and the type ranges of their machine observations, then, when
     /// `identities`, also from in-range machine `+` and `-` identities.
@@ -3233,6 +3400,9 @@ impl<'a> Proof<'a> {
         // spells it observed: `r <= 5` as `to_integer(r) <= 5`.
         let observed_goal = observed_native_surface_comparison(goal, surface_goal);
         let surface_goal = &observed_goal;
+        if identities && let Some(closed) = self.try_direct_operation_identity()? {
+            return Ok(Some(closed));
+        }
         if crate::kernel::proof::integer_arithmetic::integer_affine_claim(goal).is_none() {
             return Ok(None);
         }
@@ -3677,7 +3847,12 @@ impl<'a> Proof<'a> {
                 }
                 _ => return Ok(Err(failed.clone())),
             };
-            let (min, max) = machine.ty().format().bounds();
+            // The identity is checked at the format of the observation's
+            // value reading (rule W).
+            let (min, max) = match observed.value_read() {
+                IntegerTerm::Machine(read) => read.ty().format().bounds(),
+                _ => machine.ty().format().bounds(),
+            };
             let (lower, upper) = (
                 ClickProposition::Comparison {
                     left: surface_signed_integer_literal(&min),
@@ -3696,6 +3871,11 @@ impl<'a> Proof<'a> {
                     let mut premises = listed.to_vec();
                     premises.extend(established.iter().map(|(_, surface)| surface.clone()));
                     scope.apply_step(ProofStep::ArithmeticUsing(premises)).ok()
+                } else if let Some(closed) = scope.try_direct_logical_closure()? {
+                    // A complete arithmetic domain already contains these
+                    // ordinary bounds. Use the available fact before a
+                    // refutation search, which excludes the exact goal.
+                    Some(closed)
                 } else {
                     scope.try_selected_arithmetic_without_identities()?
                 };
@@ -3974,7 +4154,7 @@ impl<'a> Proof<'a> {
                     spelling
                 }
             };
-            let (min, max) = machine.ty().format().bounds();
+            let (min, max) = crate::kernel::machine_integer::range::observation_range(machine);
             let bound = if upper {
                 ClickProposition::Comparison {
                     left: spelling,
@@ -4112,6 +4292,16 @@ impl<'a> Proof<'a> {
                 surface_at_snapshot(surface_goal, &SnapshotSelector::ProgramPoint(anchor))
             && let Ok(proof) = self.apply_step(ProofStep::Extract(source))
             && proof.is_complete()
+        {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
+        if let Some(proof) = self.try_direct_operation_identity()? {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
+        if let Some(surface) = self.surface_goal()
+            && let Some(proof) = self.try_cell_frame_transport_closure(surface)?
         {
             scope.succeed();
             return Ok(Some(proof));
@@ -9702,6 +9892,30 @@ impl<'a> Proof<'a> {
                 }
             }
         }
+        if matches!(self.goal(), Some(Proposition::And(..)))
+            && !matches!(self.surface_goal(), Some(ClickProposition::And(..)))
+            && !self.goal().is_some_and(|goal| {
+                crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(goal)
+                    .is_some()
+            })
+        {
+            let split = (|| {
+                let (proof, split, ids) = self.split_focused_both().ok()?;
+                let marker = proof.checkpoint();
+                let left = proof
+                    .focus_branch(ids[0])
+                    .ok()?
+                    .try_restricted_solve_closure(surfaces)?;
+                let right = left
+                    .focus_branch(ids[1])
+                    .ok()?
+                    .try_restricted_solve_closure(surfaces)?;
+                right.join_focused_both(&marker, split, ids).ok()
+            })();
+            if split.is_some() {
+                return split;
+            }
+        }
         // A conjunction is proved one conjunct at a time, each as a checked
         // `have` from the same listed premises, and then closed from the
         // conjuncts it added.
@@ -9805,7 +10019,10 @@ impl<'a> Proof<'a> {
             };
             proof.check_typed_atomic_solve_candidate(goal, &derivation, &premise_pairs)
         };
-        let typed_first = signed_order || signed_definedness_operands(goal).is_some();
+        let arithmetic_domain = signed_definedness_operands(goal).is_some()
+            || crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(goal)
+                .is_some();
+        let typed_first = signed_order || arithmetic_domain;
         if typed_first && let Some(closed) = try_typed_derivation() {
             return Some(closed);
         }
@@ -9843,7 +10060,7 @@ impl<'a> Proof<'a> {
         // `int32_defined` / `int64_defined` closer below, so an
         // operand-specific theorem application keeps its priority.
         if let Some(surface_goal) = proof.surface_goal()
-            && signed_definedness_operands(goal).is_none()
+            && !arithmetic_domain
             && let Some(plan) = plan_arithmetic(ArithmeticEngine::Special, goal, &restricted)
                 .and_then(ArithmeticPlan::special)
         {
@@ -13153,4 +13370,67 @@ fn is_rewrite_literal(term: &Bitvector32Term) -> bool {
             | Bitvector32Term::UInt64Constant(_)
             | Bitvector32Term::MachineIntegerConstant(_)
     )
+}
+
+#[test]
+fn machine_offset_refusal_respects_wraparound_and_word_width() {
+    use crate::kernel::IntegerTerm;
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let base = Bitvector32Term::Variable(Variable(981_772));
+        let observe = |value| IntegerTerm::from_machine(format, value).unwrap();
+        let three =
+            crate::kernel::machine_integer::range::constant_word(format, &3.into()).unwrap();
+        let plus_three = observe(Bitvector32Term::logical_machine_binary(
+            format,
+            MachineBinaryOp::Add,
+            base.clone(),
+            three,
+        ));
+        let exact_three = IntegerTerm::add(observe(base.clone()), IntegerTerm::constant(3.into()));
+        let exact_four = IntegerTerm::add(observe(base.clone()), IntegerTerm::constant(4.into()));
+        assert!(!incompatible_machine_offsets(&plus_three, &exact_three));
+        assert!(incompatible_machine_offsets(&plus_three, &exact_four));
+        let modulo_three = IntegerTerm::add(
+            observe(base),
+            IntegerTerm::constant(BigInt::from(3) + (BigInt::one() << format.format().bits())),
+        );
+        assert!(
+            !incompatible_machine_offsets(&plus_three, &modulo_three),
+            "congruence alone must not reject equal residues"
+        );
+    }
+}
+
+#[test]
+fn operation_identities_order_dependencies_with_multiple_roots() {
+    use crate::kernel::IntegerTerm;
+    let format = MachineIntegerType::Int32;
+    let inner = Bitvector32Term::logical_machine_binary(
+        format,
+        MachineBinaryOp::Add,
+        Bitvector32Term::Variable(Variable(989_776)),
+        Bitvector32Term::Constant(1),
+    );
+    let outer = Bitvector32Term::logical_machine_binary(
+        format,
+        MachineBinaryOp::Add,
+        inner.clone(),
+        Bitvector32Term::Constant(2),
+    );
+    let inner = IntegerTerm::from_machine(format, inner).unwrap();
+    let outer = IntegerTerm::from_machine(format, outer).unwrap();
+    for roots in [
+        vec![inner.clone(), outer.clone()],
+        vec![outer.clone(), inner.clone()],
+    ] {
+        let identities = operation_identities(roots);
+        assert_eq!(identities.len(), 2);
+        assert_eq!(identities[0].0, outer);
+        assert_eq!(identities[1].0, inner);
+    }
 }

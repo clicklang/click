@@ -56,7 +56,6 @@ void drain(int32 n) {
                     have 0 <= to_integer(n - 1);
                     have to_integer(n - 1) >= 0;
                     step();
-                    close_invariants();
                 }
             }
             let out = fold(root(), {

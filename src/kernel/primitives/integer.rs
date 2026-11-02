@@ -487,6 +487,9 @@ struct SharedMachineIntegerNode {
     id: u64,
     ty: MachineIntegerType,
     value: Bitvector32Term,
+    /// The observation's value reading ([`SharedMachineIntegerTerm::value_reading`]),
+    /// computed once on first use.
+    reading: OnceLock<Option<IntegerTerm>>,
 }
 
 impl Clone for SharedMachineIntegerTerm {
@@ -511,6 +514,40 @@ impl SharedMachineIntegerTerm {
     }
     pub fn value(&self) -> &Bitvector32Term {
         &self.0.value
+    }
+
+    /// The Integer term this observation equals by the value relations of
+    /// conversions (rule W): `to_integer(widen(v))` is `to_integer(v)`, an
+    /// observation of σ(x) at either 32-bit format is `x` read at that
+    /// format, and a conversion into a type the observation's type contains
+    /// is read at that type. `None` when no relation applies: the
+    /// observation is its own reading. [`IntegerTerm::from_machine`] builds
+    /// the observation as written; reasoning that identifies values (the
+    /// Integer engines' atoms, certificate premise matching) reads it
+    /// through this. Computed once per interned observation: a bounded walk
+    /// through at most three conversions, one interning of the operand.
+    pub fn value_reading(&self) -> Option<&IntegerTerm> {
+        self.0
+            .reading
+            .get_or_init(|| {
+                let reading = machine_value_reading(self.ty(), self.value())?;
+                match &reading {
+                    ValueReading::Observation(ty, value)
+                        if *ty == self.ty() && std::ptr::eq(*value, self.value()) =>
+                    {
+                        None
+                    }
+                    ValueReading::Observation(ty, value) => {
+                        let read = SharedMachineIntegerTerm::intern(*ty, (*value).clone());
+                        // The walk reads through every relation, so the
+                        // reading is its own.
+                        let _ = read.0.reading.set(None);
+                        Some(IntegerTerm::Machine(read))
+                    }
+                    ValueReading::Constant(value) => Some(IntegerTerm::constant(value.clone())),
+                }
+            })
+            .as_ref()
     }
 }
 
@@ -575,7 +612,12 @@ impl MachineIntegerInterner {
             .next_id
             .checked_add(1)
             .expect("machine Integer identity exhausted");
-        let node = Arc::new(SharedMachineIntegerNode { id, ty, value });
+        let node = Arc::new(SharedMachineIntegerNode {
+            id,
+            ty,
+            value,
+            reading: OnceLock::new(),
+        });
         self.values
             .entry(fingerprint)
             .or_default()
@@ -595,6 +637,9 @@ struct SharedIntegerNode {
     term: IntegerTerm,
     literal_arithmetic: bool,
     kernel_term: OnceLock<KernelTerm>,
+    /// [`SharedIntegerTerm::read_through`], computed once on first use;
+    /// `None` when the node is its own reading.
+    read_through: OnceLock<Option<SharedIntegerTerm>>,
 }
 
 /// Weak reverse migration link: the common tree must not keep its source
@@ -632,11 +677,120 @@ impl SharedIntegerTerm {
         &self.0.term
     }
 
+    /// This term with every machine observation among its arithmetic
+    /// (negation, `+`, `-`, `*`, truncating quotient and remainder) read through its value
+    /// relations (rule W, [`SharedMachineIntegerTerm::value_reading`]):
+    /// `to_integer(a as int128) * to_integer(b as int128)` reads as
+    /// `to_integer(a) * to_integer(b)`. Reasoning keys an opaque product by
+    /// this reading, so the two spellings are one atom; the term itself is
+    /// unchanged. Each node's reading is computed once, when the node is
+    /// interned, from its children's readings, and cached on the node, which
+    /// keeps the rebuilt node alive and its identity stable: O(1) per node,
+    /// and reading it is a lookup. Other nodes (applications, conditionals,
+    /// folds) are their own reading.
+    pub(crate) fn read_through(&self) -> SharedIntegerTerm {
+        self.read_through_ref().clone()
+    }
+
+    /// [`Self::read_through`] by reference to the cached reading.
+    pub(crate) fn read_through_ref(&self) -> &SharedIntegerTerm {
+        if self.0.read_through.get().is_none() {
+            self.compute_read_through();
+        }
+        self.0
+            .read_through
+            .get()
+            .and_then(Option::as_ref)
+            .unwrap_or(self)
+    }
+
+    fn compute_read_through(&self) {
+        let children = |node: &SharedIntegerTerm| -> Vec<SharedIntegerTerm> {
+            match node.as_ref() {
+                IntegerTerm::Negate(child) => vec![child.clone()],
+                crate::kernel::binary_integer_term!(left, right) => {
+                    vec![left.clone(), right.clone()]
+                }
+                _ => Vec::new(),
+            }
+        };
+        let mut stack = vec![(self.clone(), false)];
+        while let Some((node, expanded)) = stack.pop() {
+            if node.0.read_through.get().is_some() {
+                continue;
+            }
+            if !expanded {
+                stack.push((node.clone(), true));
+                stack.extend(
+                    children(&node)
+                        .into_iter()
+                        .filter(|child| child.0.read_through.get().is_none())
+                        .map(|child| (child, false)),
+                );
+                continue;
+            }
+            let read = |child: &SharedIntegerTerm| -> SharedIntegerTerm {
+                child
+                    .0
+                    .read_through
+                    .get()
+                    .and_then(Option::clone)
+                    .unwrap_or_else(|| child.clone())
+            };
+            let rebuilt = match node.as_ref() {
+                IntegerTerm::Machine(machine) => machine
+                    .value_reading()
+                    .map(|reading| SharedIntegerTerm::intern(reading.clone())),
+                IntegerTerm::Negate(child) => {
+                    let child_read = read(child);
+                    (child_read.id() != child.id())
+                        .then(|| SharedIntegerTerm::intern(IntegerTerm::Negate(child_read)))
+                }
+                IntegerTerm::Add(left, right)
+                | IntegerTerm::Subtract(left, right)
+                | IntegerTerm::Multiply(left, right)
+                | IntegerTerm::TruncatingQuotient(left, right)
+                | IntegerTerm::TruncatingRemainder(left, right) => {
+                    let (left_read, right_read) = (read(left), read(right));
+                    (left_read.id() != left.id() || right_read.id() != right.id()).then(|| {
+                        SharedIntegerTerm::intern(match node.as_ref() {
+                            IntegerTerm::Add(..) => IntegerTerm::Add(left_read, right_read),
+                            IntegerTerm::Subtract(..) => {
+                                IntegerTerm::Subtract(left_read, right_read)
+                            }
+                            IntegerTerm::Multiply(..) => {
+                                IntegerTerm::Multiply(left_read, right_read)
+                            }
+                            IntegerTerm::TruncatingQuotient(..) => {
+                                IntegerTerm::TruncatingQuotient(left_read, right_read)
+                            }
+                            _ => IntegerTerm::TruncatingRemainder(left_read, right_read),
+                        })
+                    })
+                }
+                _ => None,
+            };
+            // A reading is its own reading: its children are readings and a
+            // read observation has no further relation to read through.
+            if let Some(rebuilt) = &rebuilt {
+                let _ = rebuilt.0.read_through.set(None);
+            }
+            let _ = node.0.read_through.set(rebuilt);
+        }
+    }
+
+    /// Interns `term` and computes its reading ([`Self::read_through`])
+    /// from its children's, which interning computed before: O(1) per new
+    /// node, so no later reader walks a term's DAG.
     pub(crate) fn intern(term: IntegerTerm) -> Self {
-        integer_interner()
+        let node = integer_interner()
             .lock()
             .expect("Integer interner lock poisoned")
-            .intern(term)
+            .intern(term);
+        if node.0.read_through.get().is_none() {
+            node.compute_read_through();
+        }
+        node
     }
 }
 
@@ -883,14 +1037,22 @@ impl IntegerTerm {
         visit(self, &mut variables, &mut BTreeSet::new());
         variables.into_iter().next_back()
     }
+    /// This term read through its root observation's value relations
+    /// (rule W, [`SharedMachineIntegerTerm::value_reading`]): the reading of
+    /// a machine observation that has one, and the term itself otherwise.
+    /// O(1) after the observation's first reading.
+    pub fn value_read(&self) -> &IntegerTerm {
+        match self {
+            Self::Machine(machine) => machine.value_reading().unwrap_or(self),
+            _ => self,
+        }
+    }
+
     #[track_caller]
     pub fn from_machine(ty: MachineIntegerType, value: Bitvector32Term) -> Option<Self> {
         if ty.format().bits() == 128 && !ty.accepts_wide_term(&value) {
             return None;
         }
-        // An `int32` or `uint32` observation reads its operand's 32 bits,
-        // which σ keeps (rule K2): `to_integer` of σ(x) at either format is
-        // `to_integer` of `x` there.
         {
             use crate::kernel::machine_integer::format_audit as audit;
             if audit::is_sign_free_word_operator(&value) {
@@ -907,50 +1069,38 @@ impl IntegerTerm {
                 }
             }
         }
-        let value = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
-            value.into_word32()
-        } else {
-            value
-        };
-        let value = match value {
-            // A conversion's result is a carrier of its destination type,
-            // and a wider type that contains that type observes the same
-            // value in it: a promoted converted byte is still the byte.
+        // A constant's observation is its value (kept: a literal has no
+        // structure an Integer constant loses).
+        if let Some(constant) = ty.constant_from_term(&value) {
+            return Some(Self::constant(constant.to_integer()));
+        }
+        if is_machine_constant(&value) {
+            return None;
+        }
+        // The observation is built as written (lowering is structural):
+        // `to_integer(x as int32)` keeps its widening and an observation of
+        // σ keeps σ. The value relations between such an observation and
+        // its operand's (rule W) are read by reasoning through
+        // `SharedMachineIntegerTerm::value_reading`, not folded here. The
+        // reading also decides which observations are well-formed, so an
+        // observation is built exactly when its reading exists.
+        if let ValueReading::Constant(constant) = machine_value_reading(ty, &value)? {
+            return Some(Self::constant(constant));
+        }
+        // A conversion into a type `ty` contains, observed at `ty`, is
+        // observed at its own type: the value is that type's, and the
+        // observation names it at its own format (kept: an observation type
+        // wider than the value's format is the caller's, not structure the
+        // source wrote, and the conversion itself is retained).
+        match &value {
             Bitvector32Term::MachineIntegerCast { destination, .. }
-                if destination != ty
+                if *destination != ty
                     && ty.format().bits() <= 32
                     && ty.format().contains(destination.format()) =>
             {
-                return Self::from_machine(destination, value);
+                Self::from_machine(*destination, value)
             }
-            Bitvector32Term::MachineIntegerCast { destination, .. } if destination != ty => {
-                return None;
-            }
-            // Strictly increasing widths bound this normalization by the
-            // closed set of machine widths, even for caller-built terms.
-            Bitvector32Term::MachineIntegerCast {
-                source,
-                value: operand,
-                ..
-            } if ty.format().bits() > source.format().bits()
-                && ty.format().contains(source.format()) =>
-            {
-                return Self::from_machine(source, *operand);
-            }
-            value => value,
-        };
-        if matches!(
-            value,
-            Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_)
-                | Bitvector32Term::Int64Constant(_)
-                | Bitvector32Term::UInt64Constant(_)
-                | Bitvector32Term::MachineIntegerConstant(_)
-        ) {
-            ty.constant_from_term(&value)
-                .map(|value| Self::constant(value.to_integer()))
-        } else {
-            Some(Self::Machine(SharedMachineIntegerTerm::intern(ty, value)))
+            _ => Some(Self::Machine(SharedMachineIntegerTerm::intern(ty, value))),
         }
     }
 
@@ -995,6 +1145,76 @@ impl IntegerTerm {
                 body.id(),
             ),
         }
+    }
+}
+
+/// A value reading of a machine observation: an Integer constant, or the
+/// observation at `.0` of the operand `.1`, borrowed from the observed term.
+pub(crate) enum ValueReading<'a> {
+    Constant(BigInt),
+    Observation(MachineIntegerType, &'a Bitvector32Term),
+}
+
+fn is_machine_constant(value: &Bitvector32Term) -> bool {
+    matches!(
+        value,
+        Bitvector32Term::Constant(_)
+            | Bitvector32Term::UInt32Constant(_)
+            | Bitvector32Term::Int64Constant(_)
+            | Bitvector32Term::UInt64Constant(_)
+            | Bitvector32Term::MachineIntegerConstant(_)
+    )
+}
+
+/// The value relations of an Integer observation of a conversion (rule W),
+/// read through at most a σ, a retyping and a widening chain, each strictly
+/// narrowing or removing one conversion, so the walk is bounded by the
+/// closed set of machine widths:
+/// - an `int32` or `uint32` observation reads its operand's 32 bits, which
+///   σ keeps: `to_integer` of σ(x) at either format is `x` read there;
+/// - a conversion's result is a value of its destination type, and a wider
+///   type that contains that type observes the same value in it;
+/// - a widening preserves its operand's value: `to_integer(widen(v))` is
+///   `to_integer(v)`.
+///
+/// `None` for an observation no reading supports (a conversion's result
+/// observed at a type that does not contain its destination).
+pub(crate) fn machine_value_reading(
+    ty: MachineIntegerType,
+    value: &Bitvector32Term,
+) -> Option<ValueReading<'_>> {
+    let value = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
+        value.word32()
+    } else {
+        value
+    };
+    match value {
+        Bitvector32Term::MachineIntegerCast { destination, .. }
+            if *destination != ty
+                && ty.format().bits() <= 32
+                && ty.format().contains(destination.format()) =>
+        {
+            return machine_value_reading(*destination, value);
+        }
+        Bitvector32Term::MachineIntegerCast { destination, .. } if *destination != ty => {
+            return None;
+        }
+        Bitvector32Term::MachineIntegerCast {
+            source,
+            value: operand,
+            ..
+        } if ty.format().bits() > source.format().bits()
+            && ty.format().contains(source.format()) =>
+        {
+            return machine_value_reading(*source, operand);
+        }
+        _ => {}
+    }
+    if is_machine_constant(value) {
+        ty.constant_from_term(value)
+            .map(|constant| ValueReading::Constant(constant.to_integer()))
+    } else {
+        Some(ValueReading::Observation(ty, value))
     }
 }
 
@@ -1070,6 +1290,7 @@ impl IntegerInterner {
             term,
             literal_arithmetic,
             kernel_term: OnceLock::new(),
+            read_through: OnceLock::new(),
         });
         self.nodes
             .entry(fingerprint)

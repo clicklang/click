@@ -210,7 +210,10 @@ fn spell_condition(
             },
         };
     }
-    if let Proposition::ConditionIs(condition, false) = condition
+    let ordinary_query =
+        crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(condition)
+            .map(|query| Proposition::ConditionIs(query, false));
+    if let Proposition::ConditionIs(condition, false) = ordinary_query.as_ref().unwrap_or(condition)
         && let Some(operation) = overflowing_operation(condition)
         && let Some(operation) = site.spell_term(&operation)
     {
@@ -561,7 +564,12 @@ fn describe_refusal(
     let mut pending = vec![obligation];
     while let Some(proposition) = pending.pop() {
         match proposition {
-            Proposition::And(left, right) => {
+            Proposition::And(left, right)
+                if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(
+                    proposition,
+                )
+                .is_none() =>
+            {
                 pending.push(right);
                 pending.push(left);
             }

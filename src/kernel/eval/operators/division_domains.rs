@@ -153,11 +153,8 @@ mod tests {
                     &[],
                 )
                 .unwrap();
-                assert_eq!(path.obligations.len(), 2);
-                let conjunction = Proposition::And(
-                    Box::new(path.obligations[0].proposition().clone()),
-                    Box::new(path.obligations[1].proposition().clone()),
-                );
+                assert_eq!(path.obligations.len(), 1);
+                let conjunction = path.obligations[0].proposition().clone();
                 assert_eq!(
                     conjunction,
                     Proposition::signed_division_defined(format, &left, &right)
