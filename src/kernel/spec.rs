@@ -6881,8 +6881,9 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                             obligations,
                         }];
                     }
-                    // Operands of another type keep the operator's
-                    // promoted reading, as the bare operator has it.
+                    // Operands of another type, which the parser and type
+                    // checker refuse at a written narrow position, keep the
+                    // operator's promoted reading, as the bare operator has it.
                     let bitwise = |operation| {
                         apply_c_bitwise_binary(
                             left.clone(),

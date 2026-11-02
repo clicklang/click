@@ -742,7 +742,8 @@ Progress:
      function's body at its result type) `+ - * & | ^ ~` over operands of
      that type is the type's native node (`SpecExpression::NarrowArithmetic`,
      marked by `SpecExpression::at_machine_type`), with no domain
-     obligation; operands of another type and a cast's operand keep the
+     obligation; an operand of another machine type is refused (the
+     conversion is written), and a cast's operand keeps the
      promoted reading. Rule N relates a native operator to C's promoted
      spelling in the e-graph. See [Decisions](#decisions), 2026-11-02.
   8. Rust native narrow `+ - * & | ^ ! <<` (G4). Done with step 7's fifth
@@ -1372,7 +1373,10 @@ Decision, 2026-11-02 (native narrow arithmetic, PR 5; step 8):
   over `int32` literals it holds, is the native node, which wraps and owes
   no domain obligation, as C's promote-and-convert at that type owes none.
   A cast's operand has no expected type, so `(a + b) as uint8` stays
-  promoted as written; operands of another type keep the promoted reading.
+  promoted as written. An operand of another machine type at a narrow
+  position is refused, naming the conversion to write (maintainer direction,
+  2026-11-02): `let s: uint8 = x + 1;` with an `int32` `x` was the
+  unconverted `int32` sum before.
   A contract `let` of narrow arithmetic stays a typed binding rather than
   being substituted, since substituting would drop its type; the validator
   gives such arithmetic its position's type. Specification `<<` at a narrow
@@ -1385,7 +1389,11 @@ Decision, 2026-11-02 (native narrow arithmetic, PR 5; step 8):
 - **Rule N.** A native narrow operator is in the class of C's promoted
   spelling, `Cast(int32 -> F, widen(a) op widen(b))`, so C, C++ and Rust
   meet: R-dist and R-comp take C's spelling to the native node, and K7'
-  takes the native node's widening to the masked word operator. It is an
+  takes the native node's widening to the masked word operator. The rule
+  fires on demand, where the operator is widened and for a shift: fired
+  eagerly it cost about 30 times a bare chain's interning work, which CI's
+  timeout on `narrow_operator_chains_intern_with_constant_work_per_node`
+  caught. It is an
   e-graph relation; no term is rewritten, and terms print as written
   (`a + b` for the native `uint8` sum).
 

@@ -991,8 +991,11 @@ are that type's own operators, which wrap modulo 2^8 or 2^16 at either
 signedness and owe nothing
 (`mdtests/narrow_specification_arithmetic_is_the_operator_at_its_type.md`,
 `mdtests/narrow_arithmetic_at_a_narrow_result_or_parameter_is_native.md`);
-operands of another type, and the operand of a cast such as
-`(a + b) as uint8`, keep C's promoted `int` operation. Unsuffixed literals are Integer unless their context gives
+arithmetic there over an operand of another machine type is refused, naming
+the conversion to write, such as `x as uint8`
+(`mdtests/a_narrow_typed_let_of_mixed_operands_is_refused.md`); the operand
+of a cast such as `(a + b) as uint8` has no expected type and keeps C's
+promoted `int` operation. Unsuffixed literals are Integer unless their context gives
 them a machine type
 ([standard library roadmap item](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md)).
 

@@ -963,6 +963,7 @@ fn spec_value_matches_click_type(actual: &SpecValueType, expected: &ClickType) -
 pub(super) fn narrow_arithmetic_value_type(
     value: &ContractExpression,
     expected: &ClickType,
+    position: &str,
     infer: &mut dyn FnMut(&ContractExpression) -> Result<SpecValueType, ClickError>,
 ) -> Result<Option<SpecValueType>, ClickError> {
     let ClickType::C(c_type @ (C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16)) =
@@ -973,6 +974,7 @@ pub(super) fn narrow_arithmetic_value_type(
     fn spine(
         value: &ContractExpression,
         c_type: C0Type,
+        position: &str,
         infer: &mut dyn FnMut(&ContractExpression) -> Result<SpecValueType, ClickError>,
         root: bool,
     ) -> Result<bool, ClickError> {
@@ -983,17 +985,37 @@ pub(super) fn narrow_arithmetic_value_type(
             | ContractExpression::BitwiseAnd(left, right)
             | ContractExpression::BitwiseOr(left, right)
             | ContractExpression::BitwiseXor(left, right) => {
-                Ok(spine(left, c_type, infer, false)? && spine(right, c_type, infer, false)?)
+                Ok(spine(left, c_type, position, infer, false)?
+                    && spine(right, c_type, position, infer, false)?)
             }
-            ContractExpression::BitwiseNot(operand) => spine(operand, c_type, infer, false),
+            ContractExpression::BitwiseNot(operand) => {
+                spine(operand, c_type, position, infer, false)
+            }
             _ if root => Ok(false),
             ContractExpression::IntegerLiteral(_) => Ok(true),
-            leaf => {
-                Ok(matches!(infer(leaf)?, SpecValueType::Scalar(Some(actual)) if actual == c_type))
-            }
+            leaf => match infer(leaf)? {
+                SpecValueType::Scalar(Some(actual)) if actual == c_type => Ok(true),
+                // An operand of another machine type: a conversion that can
+                // change its value is written.
+                SpecValueType::Scalar(Some(actual))
+                    if !actual.is_pointer()
+                        && !matches!(actual, C0Type::Float32 | C0Type::Float64 | C0Type::Bool) =>
+                {
+                    Err(ClickError::new(
+                        crate::surface::parser::mixed_narrow_arithmetic_message(
+                            position,
+                            &describe_c0_type(c_type),
+                            &crate::surface::diagnostics::describe_contract_expression(leaf),
+                            &describe_c0_type(actual),
+                        ),
+                    ))
+                }
+                _ => Ok(false),
+            },
         }
     }
-    Ok(spine(value, *c_type, infer, true)?.then_some(SpecValueType::Scalar(Some(*c_type))))
+    Ok(spine(value, *c_type, position, infer, true)?
+        .then_some(SpecValueType::Scalar(Some(*c_type))))
 }
 
 pub(super) fn describe_spec_value_type(value_type: &SpecValueType) -> String {
@@ -1255,16 +1277,21 @@ pub(super) fn infer_scoped_spec_value_type(
             )?;
             if let Some(expected) = click_type
                 && !spec_value_matches_click_type(&value_type, expected)
-                && let Some(narrow) = narrow_arithmetic_value_type(value, expected, &mut |leaf| {
-                    infer_scoped_spec_value_type(
-                        leaf,
-                        variables,
-                        integer_bindings,
-                        click_functions,
-                        context,
-                        false,
-                    )
-                })?
+                && let Some(narrow) = narrow_arithmetic_value_type(
+                    value,
+                    expected,
+                    &format!("`let {name}`"),
+                    &mut |leaf| {
+                        infer_scoped_spec_value_type(
+                            leaf,
+                            variables,
+                            integer_bindings,
+                            click_functions,
+                            context,
+                            false,
+                        )
+                    },
+                )?
             {
                 value_type = narrow;
             }
@@ -2214,9 +2241,12 @@ fn infer_spec_value_type(
             };
             if let Some(expected) = click_type
                 && !spec_value_matches_click_type(&value_type, expected)
-                && let Some(narrow) = narrow_arithmetic_value_type(value, expected, &mut |leaf| {
-                    infer_spec_value_type(leaf, variables, click_functions, context)
-                })?
+                && let Some(narrow) = narrow_arithmetic_value_type(
+                    value,
+                    expected,
+                    &format!("`let {name}`"),
+                    &mut |leaf| infer_spec_value_type(leaf, variables, click_functions, context),
+                )?
             {
                 value_type = narrow;
             }
@@ -3249,9 +3279,12 @@ pub(super) fn infer_contract_expression_type(
             let mut value_type = infer_spec_value_type(value, variables, click_functions, context)?;
             if let Some(expected) = click_type
                 && !spec_value_matches_click_type(&value_type, expected)
-                && let Some(narrow) = narrow_arithmetic_value_type(value, expected, &mut |leaf| {
-                    infer_spec_value_type(leaf, variables, click_functions, context)
-                })?
+                && let Some(narrow) = narrow_arithmetic_value_type(
+                    value,
+                    expected,
+                    &format!("`let {name}`"),
+                    &mut |leaf| infer_spec_value_type(leaf, variables, click_functions, context),
+                )?
             {
                 value_type = narrow;
             }
