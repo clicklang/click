@@ -3194,7 +3194,16 @@ pub(in crate::surface) fn pure_function_result_value(
             contract_expression_as_c_fragment(&value).unwrap_or(CExpression::Value(int32(0))),
         ),
         target_type,
-        integer_mode: crate::kernel::CIntegerCastMode::ResultConversion,
+        // At an 8- or 16-bit result the body's arithmetic is at that type
+        // (G2); any other result keeps C's conversion as before.
+        integer_mode: if matches!(
+            target_type,
+            CType::Int8 | CType::UInt8 | CType::Int16 | CType::UInt16
+        ) {
+            crate::kernel::CIntegerCastMode::ResultConversion
+        } else {
+            crate::kernel::CIntegerCastMode::CConversion
+        },
         pointee_struct: None,
         pointee_volatile: false,
         pointee_constant: false,
