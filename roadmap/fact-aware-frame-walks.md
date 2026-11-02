@@ -42,26 +42,31 @@ Remaining blockers in the experiment:
   this traversal: one-write transport costs 288/336/528/1296 units with
   4/16/64/256 unrelated entries. Do not restore warming or raise the bound.
 
-**Copied-parameter reduction.** The existing fixture
+**Copied-parameter investigation: correct the reduction before fixing setup.**
+The existing fixture
 `a_copied_aggregate_parameter_retains_its_pointee_requirement.md` fails even
-with an empty function body and one pointer field. The local unit regression
-`logical_read_of_copied_pointer_retains_its_complete_value` removes contracts
-entirely: store a complete symbolic pointer, optionally declare its private
-block, and perform a logical typed read. Address equality passes in both
-cases. Complete-pointer equality passes immediately after the store but fails
-after the declaration (`[true, false]`, expected `[true, true]`). This mirrors
-`bind_c_function_arguments`, which copies fields before declaring the block.
-The test deliberately remains red alongside the removal experiment.
+with an empty function body and one pointer field. The initial unit reduction
+mistakenly used `proves_exact` (exact premise membership) to test semantic
+complete-pointer equality. That failure did not establish a missing axiom or
+missing copy evidence. A control using `contains_known` can establish the
+complete equality even after the declaration without the proposed new copy
+index. The index experiment has therefore been discarded.
 
-Next design review: let the aggregate-copy producer retain the complete values
-it copies and publish their equality to field reads at the finished copy's
-snapshot. The explicit input is the selected aggregate layout; work and emitted
-facts should scale with copied fields, with no scan of unrelated cells or
-history. Use the existing complete-pointer equality, not numeric equality as
-provenance authority. Keep source reads tied to the pre-copy snapshot; simply
-moving declarations earlier must not rename unknown incoming field values.
-Also handle multiple fields, where later field writes follow earlier ones.
-Do not add a generic search to repair this entry-construction case. The
+The outstanding issue is contract-entry certification. In the empty-function
+fixture, `checked_premise_is_authorized` in `src/kernel/api.rs` rejects a
+`PointerValueEqual` entry premise whose numeric read and designation use
+different coordinates from the reconstructed entry's pointer fact. A temporary
+probe confirms `reuse_assumptions.contains_known(rejected_premise)` returns
+true, while `proves_exact` / `states_required_goal` refuse it. The probe was
+removed; no broader authorization query has been installed.
+
+Next design review: establish which producer-recorded read equalities connect
+these endpoints, and let certification consume that evidence with bounded
+queries. `contains_known` may register read definitions and invoke existing
+memory-resolution machinery, so its successful result is not by itself a
+bounded-checking design. Do not simply substitute it into certification, add a
+history walk, or install a second copy ledger to compensate for an
+exact-membership mismatch. Keep the pointer representation unchanged. The
 packed-word transport traversal remains a separate design target.
 
 Discuss any missing primitive before extending the kernel. Do not add a

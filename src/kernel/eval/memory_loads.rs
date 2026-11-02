@@ -5108,7 +5108,9 @@ mod tests {
             };
             let known = assumptions_with_path_context(&context, &path.facts, &path.obligations);
             assert!(known.pointers_known_equal(read.pointer(), stored.pointer()));
-            known.proves_exact(&Proposition::ConditionIs(
+            // Check entailment, not exact premise spelling: the producer's
+            // equation may name the endpoints in the opposite order.
+            known.contains_known(&Proposition::ConditionIs(
                 ConditionTerm::pointer_value_equal(read.clone(), stored),
                 true,
             ))
