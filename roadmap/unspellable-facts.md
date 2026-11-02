@@ -171,6 +171,45 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared overflow query extraction (2026-11-02)
+
+Ordinary exact-result bounds now have a private `OverflowQueryView` retaining
+operand handles. The adapter reads the actual arithmetic root and compares its
+two ordinary bounds; it does not export shared operands, file an overflow fact,
+or change lowering. The boxed adapter remains only for consumers that still
+require a legacy condition. Definedness classification in proof facts, function
+purity, structural rule planning and smart closure selection uses the view.
+
+A differential format/operation matrix preserves the old reverse adapter's
+answers. A deterministic 8/32/96-node doubled-child DAG test exercises the real
+definedness classifier, checks incomplete bounds are refused, and asserts that
+no operand was exported. The focused machine-integer suite passes all 28 tests.
+`scripts/check.sh --no-fail-fast` passes 7,117 tests, including 1,154 scaling
+tests, 58 examples and 4,991 proof fixtures in 12m04s (over the ten-minute
+target; no limits changed). The arithmetic fact-stability audit passes all 124
+fixtures with zero differences. No nightly suite ran.
+
+Remaining: overflow decision/certificate query outputs, comparison query and
+fact-identity outputs, operation reverse readings and modular equalities still
+have legacy adapters. Nested signed preparation remains disabled until those
+consumers preserve shared operands end to end.
+
+Concrete remaining call chains:
+- `Assumptions::assume_condition_uncharged`, `condition_known` and `decide`:
+  comparison/overflow query adapters still produce boxed conditions. Migrate
+  admission, lookup and decision together so existing proof routes remain.
+- `observation_comparison_form`, native premise lookup and arithmetic-special
+  condition identity: preserve comparison forms as shared keys, including
+  narrow comparison identities and mirrored orders.
+- `IntegerOperationRangeBound::stating_facts`,
+  `machine_operation_of_integer_value` and modular equality reduction: retain
+  original operand handles in constructed query results. Conversion roots and
+  opaque legacy inputs must keep their existing structural semantics.
+- Interval evaluation and certificate adapters: retain source witnesses and
+  class/index lookups; a context-keyed recursive prefix cache alone does not
+  establish near-linear stepping across changing contexts.
+
+
 ## Shared operands in the general cast checker (2026-11-02)
 
 The general conversion identity rule now matches shared expected-cast terms
