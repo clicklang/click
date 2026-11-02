@@ -171,6 +171,47 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared capture-avoidance variable collection (2026-11-02)
+
+`IntegerSubstitutionVariableCollector` now reads shared machine observations
+without exporting boxed trees. Each immutable machine-node ID indexes a
+persistent set of written C variables. Repeated shared children reuse that set;
+unions add the smaller set to the larger one. The syntax cache survives load
+registry resets and clears on entry to an outermost verification session.
+
+Registered-load dependencies are deliberately excluded from cached sets. Every
+collection resolves the written variables through the current registry using
+the existing pointer/carrier collector, preserving lexical capture avoidance
+without retaining stale memory dependencies. The change affects checking
+metadata only, not lowered terms or stored facts.
+
+Regressions cover repeated collection and comparison-form preparation over
+8/32/96-level doubled-child DAGs without exporting, and a warm syntax cache
+across a load-registry reset. This fixes the collector defect exposed by the
+modular graph prototype; other boxed comparison and operation adapters still
+require migration.
+
+## Shared signed-definedness certificate checking (2026-11-02)
+
+The special signed-definedness checker now reads ordinary arithmetic domains
+and native overflow inputs through shared operand views. Signed 32/64-bit bound
+queries retain their original source facts and compare operand identities;
+the queried operand's key is built once for the cited premise list. Constant,
+mask and legacy widening ranges retain their previous interpretations.
+
+Conjunction checking indexes operation operands and cited conjuncts instead of
+constructing candidate expression trees and comparing every operation pair.
+Missing inner domains and unrelated bound premises remain refusals. The
+existing conjunction rule's operator-format convention is unchanged.
+
+The focused suite and all scaling tests pass (1,187 tests). New regressions
+exercise comparison polarity, ordinary nested domains, missing premises and
+complete signed 32/64-bit certificates over 8/32/96-node doubled-child DAGs,
+without exporting shared operands. The full gate and arithmetic fact-stability
+audit passed; this increment merged in #2277. The higher-level
+comparison dispatcher, operation/modular mappings and other interval adapters
+remain in progress; nested signed preparation remains disabled.
+
 ## Shared interval-certificate source matching (2026-11-02)
 
 The signed certificate's source matcher reads ordinary definedness conjunctions

@@ -2298,11 +2298,16 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
     ensures result <= 12 by {{
         mark before;
         step_until(function.exit);
-        have result <= 12 by {{
+        have to_integer(result) == to_integer(at(before, n)) - 4 by {{
             solve() using {{
                 at(before, 4 <= n);
                 at(before, n <= 16);
-                result == at(before, n) - 4;
+            }}
+        }}
+        have result <= 12 by {{
+            solve() using {{
+                to_integer(at(before, n)) <= 16;
+                to_integer(result) == to_integer(at(before, n)) - 4;
             }}
         }}
         solve();
@@ -2315,7 +2320,7 @@ fn wide_arithmetic_reads_listed_bounds_at_their_named_snapshot() {
             .expect("snapshot bridges must expand");
         assert!(!expanded.contains("solve() using"), "{expanded}");
         verify_c0_sources(&expanded, &sources).expect("snapshot bridges must independently verify");
-        let missing_bound = source.replace("at(before, n <= 16);", "");
+        let missing_bound = source.replace("to_integer(at(before, n)) <= 16;", "");
         verify_c0_sources(&missing_bound, &sources)
             .expect_err("a historical upper bound cannot be inferred from type bounds");
         let false_result = source.replace("result <= 12", "result <= 11");
