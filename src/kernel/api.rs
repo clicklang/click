@@ -6829,6 +6829,7 @@ pub fn prove_c_function_contract_execution_paths_with_checked_artifacts_and_pure
             return CFunctionContractExecution::failed(reason);
         }
     };
+    let base_assumptions = base_assumptions.assume_proposition(environment.byte_order_fact());
     let Some(resource_condition_cases) = crate::instrumentation::measure_operation(
         function.name(),
         "contract certification",

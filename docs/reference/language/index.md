@@ -4132,3 +4132,12 @@ owns, which is the default footprint an omitted clause already means.
 
 Loop frames are described in [proof-workflow.md](../../concepts/proof-workflow.md)
 and [memory-model.md](../../concepts/memory-model.md).
+
+### Target byte order
+
+`little_endian()` states that the selected execution target stores the least
+significant byte first. It takes no arguments and is reserved as a built-in
+proposition. C proofs receive this fact from a little-endian execution
+environment; a big-endian environment supplies its negation. Pure theorems
+have no target assumption and must require the fact explicitly. It is the
+target premise of `integer::uint32_from_le_bytes`.

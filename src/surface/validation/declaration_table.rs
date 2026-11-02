@@ -94,6 +94,14 @@ fn refuse_reserved_name(kind: DeclarationKind, name: &str) -> Result<(), ClickEr
         DeclarationKind::Predicate | DeclarationKind::Contract => {
             if matches!(
                 name,
+                "little_endian" | crate::kernel::LITTLE_ENDIAN_PREDICATE_NAME
+            ) {
+                return Err(ClickError::new(
+                    "`little_endian` is a built-in proposition and cannot be redefined",
+                ));
+            }
+            if matches!(
+                name,
                 "same_object" | crate::kernel::SAME_OBJECT_PREDICATE_NAME
             ) {
                 return Err(ClickError::new(

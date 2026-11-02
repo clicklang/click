@@ -233,6 +233,13 @@ fn validate_proposition_expression_types_one(
                 }
                 return Ok(());
             }
+            if name == "little_endian" {
+                return if arguments.is_empty() {
+                    Ok(())
+                } else {
+                    Err(ClickError::new("little_endian expects no arguments"))
+                };
+            }
             if name == "same_object" {
                 let [left, right] = arguments.as_slice() else {
                     return Err(ClickError::new(format!(
@@ -4115,6 +4122,13 @@ fn validate_predicate_calls_in_proposition_one(
                     )));
                 }
                 return validate_contract_expression_calls(&arguments[0], click_functions, context);
+            }
+            if name == "little_endian" {
+                return if arguments.is_empty() {
+                    Ok(())
+                } else {
+                    Err(ClickError::new("little_endian expects no arguments"))
+                };
             }
             if name == "same_object" {
                 if arguments.len() != 2 {

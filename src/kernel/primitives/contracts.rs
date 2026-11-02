@@ -3643,6 +3643,17 @@ impl CExecutionEnvironment {
         self
     }
 
+    pub(crate) fn byte_order_fact(&self) -> Proposition {
+        let fact = Proposition::Predicate {
+            name: LITTLE_ENDIAN_PREDICATE_NAME.into(),
+            arguments: vec![],
+        };
+        match self.byte_order {
+            ByteOrder::Little => fact,
+            ByteOrder::Big => Proposition::Not(Box::new(fact)),
+        }
+    }
+
     pub fn byte_order(&self) -> ByteOrder {
         self.byte_order
     }

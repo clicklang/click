@@ -25,7 +25,7 @@ pub(crate) use source_loans::{
 /// artifacts.  This is deliberately separate from source and compiler
 /// identities: changing the authority interpretation must invalidate an old
 /// certificate even when its inputs are byte-identical.
-pub const RESOURCE_SEMANTICS_VERSION: u32 = 73;
+pub const RESOURCE_SEMANTICS_VERSION: u32 = 74;
 
 pub(crate) mod assumptions;
 mod difference_graph;
@@ -83,7 +83,9 @@ pub use loans::{
     LoanOriginKind, LoanOverlapStatus, LoanRefusalCategory, LoanRefusalDiagnostic,
     LoanRefusalOperation, LoanRefusalSubject,
 };
+mod byte_representation_laws;
 mod integer_truncation_laws;
+pub(crate) use byte_representation_laws::prove_uint32_from_le_bytes;
 mod separation_laws;
 pub(crate) use separation_laws::{
     prove_separation_elements, prove_separation_restrict, prove_separation_subrange,

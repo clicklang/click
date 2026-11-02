@@ -325,6 +325,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "reverse",
     "scale",
     "same_object",
+    "little_endian",
     "scatter",
     "separate",
     "sizeof",

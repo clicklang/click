@@ -126,6 +126,7 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let theorems = declarations.arities(DeclarationKind::Theorem);
     let mut proposition_calls = predicates.clone();
     proposition_calls.insert("same_object".to_string(), 2);
+    proposition_calls.insert("little_endian".to_string(), 0);
     proposition_calls.insert("held".to_string(), 1);
     proposition_calls.extend(
         declarations
@@ -761,6 +762,13 @@ fn validate_contract_applications_in_proposition_one(
                     )));
                 }
                 return Ok(());
+            }
+            if name == "little_endian" {
+                return if arguments.is_empty() {
+                    Ok(())
+                } else {
+                    Err(ClickError::new("little_endian expects no arguments"))
+                };
             }
             if name == "same_object" {
                 let [left, right] = arguments.as_slice() else {

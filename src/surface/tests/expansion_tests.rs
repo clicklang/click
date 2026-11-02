@@ -20014,3 +20014,31 @@ fn atomic_store_scalar_framing_expands_and_replays() {
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
     }
 }
+
+// The reconstruction rule must survive checked tactic expansion and retained
+// verification, rather than working only during ordinary execution search.
+#[test]
+fn uint32_from_le_bytes_expands_and_retains() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/integer_uint32_from_le_bytes_initialization.md");
+    let markdown = std::fs::read_to_string(&path).unwrap();
+    let fixture = crate::cli::parse_mdtest(&path, &markdown).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let sources = fixture
+        .c_sources
+        .iter()
+        .map(|(name, source)| (name.as_str(), source.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(source, &sources).unwrap();
+    let position = expansion::position_at_offset(source, source.find("step_until").unwrap());
+    let expanded =
+        expand_c0_tactic_source_at(source, &sources, position.line, position.column).unwrap();
+    verify_c0_sources(&expanded, &sources).unwrap();
+    let claim = expansion::position_at_offset(&expanded, expanded.find("ensures result").unwrap());
+    let (session, _) = C0VerificationSession::new(source, &sources).unwrap();
+    session
+        .verify_at(&expanded, claim.line, claim.column)
+        .unwrap();
+    verify_c0_sources(&expanded.replace("4293820433u32", "17u32"), &sources)
+        .expect_err("a single stored byte is not the reconstructed word");
+}

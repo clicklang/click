@@ -3,6 +3,10 @@
 The same C and batch custody are retained. The false claim that the resulting
 population equals only the first positive quantity must be rejected.
 
+After the second creation, the earlier fact that the count was `n` is stale.
+Check that exact fact explicitly so this negative test does not spend the
+smart-search budget trying to prove a false total.
+
 ```c filename=symbolic_birth_composition.c
 void mint_pair(int32* o, int32 n, int32 m) {}
 void run(int32* o, int32 n, int32 m) { mint_pair(o, n, m); }
@@ -28,6 +32,7 @@ void mint_pair(int32* o, int32 n, int32 m) {
         solve();
     }
     fold(m of tok(o));
+    have count(tok(o)) == n by assumption();
 }
 void run(int32* o, int32 n, int32 m) {
     owns authority(tok(o));
@@ -42,5 +47,5 @@ void run(int32* o, int32 n, int32 m) {
 ```
 
 ```expect
-fail: unclosed goal
+fail: `assumption` requires the current goal
 ```
