@@ -18,6 +18,18 @@ impl SharedMachineIntegerTerm {
 }
 
 impl<'a> MachineOperandView<'a> {
+    /// Retain the written carrier at one fixed interpretation for indexed
+    /// matching. This changes no node and reads no proof facts.
+    pub(crate) fn retain(self, ty: MachineIntegerType) -> SharedMachineIntegerTerm {
+        match self {
+            Self::Legacy(value) => SharedMachineIntegerTerm::intern(ty, value.clone()),
+            Self::Shared(term) => {
+                SharedMachineIntegerTerm::from_shared(ty, term.with_machine_observation_type(ty))
+                    .expect("shared operand fragment")
+            }
+        }
+    }
+
     pub(crate) fn binary(self) -> Option<(MachineIntegerType, MachineBinaryOp, [Self; 2])> {
         match self {
             Self::Shared(term) => match term.node() {

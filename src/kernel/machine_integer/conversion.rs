@@ -235,7 +235,12 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
     let IntegerTerm::Machine(machine) = observed.value_read() else {
         return Vec::new();
     };
-    let candidates: Vec<(Ty, &Bitvector32Term)> = match machine.value() {
+    // The shared storage fragment has literals, variables and arithmetic
+    // operators only. Inspect its root without exporting the arithmetic DAG.
+    let crate::kernel::MachineOperandView::Legacy(word) = machine.operand_view() else {
+        return Vec::new();
+    };
+    let candidates: Vec<(Ty, &Bitvector32Term)> = match word {
         Bitvector32Term::MachineIntegerCast { value, source, .. } => vec![(*source, value)],
         Bitvector32Term::UInt32From64(value) => vec![(Ty::UInt64, value), (Ty::Int64, value)],
         // The legacy 32-to-64-bit conversions name their source's width,
@@ -261,26 +266,29 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
 /// may read a narrow value: its own word up to 32 bits, or the operand of
 /// a 32-to-64-bit conversion. A narrow observation of that word is the
 /// candidate operand of a widening identity ([`narrow_widening`]).
-pub(crate) fn widened_narrow_word(observed: &IntegerTerm) -> Option<&Bitvector32Term> {
+pub(crate) fn widened_narrow_word(
+    observed: &IntegerTerm,
+) -> Option<crate::kernel::MachineOperandView<'_>> {
+    use crate::kernel::MachineOperandView as View;
     let IntegerTerm::Machine(machine) = observed else {
         return None;
     };
-    match machine.ty().format().bits() {
-        // A 32-bit widening of a narrow value has its operand's word (rule
-        // K8, a relation).
-        16 | 32 => Some(
-            machine
-                .value()
-                .narrow_widening32_operand()
-                .map_or(machine.value().word32(), |(_, operand)| operand),
-        ),
-        64 => match machine.value() {
-            Bitvector32Term::Int64From32(word)
-            | Bitvector32Term::UInt64FromInt32(word)
-            | Bitvector32Term::Int64FromUInt32(word)
-            | Bitvector32Term::UInt64From32(word) => Some(word),
-            _ => None,
-        },
+    let view = machine.operand_view();
+    match (machine.ty().format().bits(), view) {
+        (16 | 32, View::Shared(_)) => Some(view),
+        (16 | 32, View::Legacy(word)) => Some(View::Legacy(
+            word.narrow_widening32_operand()
+                .map_or(word.word32(), |(_, operand)| operand),
+        )),
+        (
+            64,
+            View::Legacy(
+                Bitvector32Term::Int64From32(word)
+                | Bitvector32Term::UInt64FromInt32(word)
+                | Bitvector32Term::Int64FromUInt32(word)
+                | Bitvector32Term::UInt64From32(word),
+            ),
+        ) => Some(View::Legacy(word)),
         _ => None,
     }
 }
@@ -299,13 +307,21 @@ pub(crate) fn narrow_widening(observed: &IntegerTerm, original: &IntegerTerm) ->
     if source.bits() >= 32 || destination == source || !destination.contains(source) {
         return false;
     }
-    let word = operand.value();
-    match machine.value() {
+    let crate::kernel::MachineOperandView::Legacy(word) = machine.operand_view() else {
+        return false;
+    };
+    match word {
         Bitvector32Term::MachineIntegerCast {
             value,
             source: from,
             ..
-        } => *from == operand.ty() && value.as_ref() == word,
+        } => {
+            *from == operand.ty()
+                && crate::kernel::SharedMachineIntegerTerm::intern(
+                    operand.ty(),
+                    value.as_ref().clone(),
+                ) == *operand
+        }
         _ => false,
     }
 }
@@ -436,4 +452,33 @@ pub(crate) fn cast(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod shared_operand_tests {
+    use super::*;
+
+    #[test]
+    fn narrow_widening_matches_retained_source_without_changing_cast_identity() {
+        use crate::kernel::Variable;
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = MachineIntegerType::Int8;
+        let destination = MachineIntegerType::Int32;
+        let word = Bitvector32Term::Variable(Variable(982102));
+        let original = IntegerTerm::from_machine(source, word.clone()).unwrap();
+        let other =
+            IntegerTerm::from_machine(source, Bitvector32Term::Variable(Variable(982103))).unwrap();
+        let widened = Bitvector32Term::MachineIntegerCast {
+            source,
+            destination,
+            value: Box::new(word),
+        };
+        let observed = IntegerTerm::from_machine(destination, widened).unwrap();
+        assert!(narrow_widening(&observed, &original));
+        assert!(!narrow_widening(&observed, &other));
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/machine_integer/conversion/tests.rs");
+    }
 }

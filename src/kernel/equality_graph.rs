@@ -114,16 +114,7 @@ impl MachineAtom {
         ty: crate::kernel::MachineIntegerType,
         value: crate::kernel::MachineOperandView<'_>,
     ) -> Self {
-        match value {
-            crate::kernel::MachineOperandView::Legacy(value) => Self::new(ty, value.clone()),
-            crate::kernel::MachineOperandView::Shared(term) => Self(
-                crate::kernel::SharedMachineIntegerTerm::from_shared(
-                    ty,
-                    term.with_machine_observation_type(ty),
-                )
-                .expect("shared machine operand"),
-            ),
-        }
+        Self(value.retain(ty))
     }
     pub(in crate::kernel) fn uint64(value: Bitvector32Term) -> Self {
         Self::new(crate::kernel::MachineIntegerType::UInt64, value)

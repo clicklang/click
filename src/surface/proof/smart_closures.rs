@@ -1454,13 +1454,17 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
     // The narrow observations by word, so a wider observation of the same
     // word finds the value it widens by one lookup.
     let mut narrow_by_word =
-        std::collections::HashMap::<crate::kernel::Bitvector32Term, Vec<_>>::new();
+        std::collections::HashMap::<crate::kernel::SharedMachineIntegerTerm, Vec<_>>::new();
     for observation in &observations {
         if let crate::kernel::IntegerTerm::Machine(machine) = observation
             && machine.ty().format().bits() < 32
         {
             narrow_by_word
-                .entry(machine.value().clone())
+                .entry(
+                    machine
+                        .operand_view()
+                        .retain(crate::kernel::MachineIntegerType::Int32),
+                )
                 .or_default()
                 .push(observation.clone());
         }
@@ -1488,7 +1492,10 @@ fn operation_identities(observations: Vec<crate::kernel::IntegerTerm>) -> Vec<Op
                     // legacy 32-to-64-bit conversion also offers.
                     .or_else(|| {
                         widened_narrow_word(&observed)
-                            .and_then(|word| narrow_by_word.get(word))
+                            .and_then(|word| {
+                                narrow_by_word
+                                    .get(&word.retain(crate::kernel::MachineIntegerType::Int32))
+                            })
                             .and_then(|narrow| {
                                 narrow
                                     .iter()
