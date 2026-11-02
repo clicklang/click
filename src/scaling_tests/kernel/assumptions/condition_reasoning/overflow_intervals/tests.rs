@@ -725,3 +725,51 @@ fn widened_source_selection_is_bounded_in_related_bounds() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn indexed_lower_bound_decision_retains_shared_operands() {
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm,
+    };
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(
+            KernelType::C(MachineIntegerType::Int32.c_type()),
+            Variable(986302),
+        );
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root.clone()],
+            );
+        }
+        let operand =
+            SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap();
+        let observed = IntegerTerm::Machine(operand.clone());
+        let lower = ConditionTerm::IntegerLessEqual(
+            IntegerTerm::constant(3.into()).into(),
+            observed.clone().into(),
+        );
+        let upper = ConditionTerm::IntegerLessEqual(
+            observed.clone().into(),
+            IntegerTerm::constant(7.into()).into(),
+        );
+        // Exercise the migrated index and dispatcher independently of the
+        // full admission bridge, which still files a boxed compatibility fact.
+        let mut facts = PureFactContext::new();
+        facts.checked_order_bounds.adjust(&lower, true, true);
+        facts.checked_order_bounds.adjust(&upper, true, true);
+        for (value, expected) in [(2, Some(true)), (5, None), (8, Some(false))] {
+            let query = ConditionTerm::IntegerGreaterEqual(
+                observed.clone().into(),
+                IntegerTerm::constant(value.into()).into(),
+            );
+            assert_eq!(facts.decide_indexed_greater_equal(&query), expected);
+            if expected.is_some() {
+                assert_eq!(facts.decide(&query), expected);
+            }
+            assert!(!operand.has_boxed_operand());
+        }
+    }
+}

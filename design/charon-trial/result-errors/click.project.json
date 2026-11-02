@@ -1,0 +1,10 @@
+{
+  "units": {
+    "result_errors": {
+      "language": "rust",
+      "sources": {
+        "errors.rs": {}
+      }
+    }
+  }
+}

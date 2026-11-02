@@ -3167,6 +3167,45 @@ fn charon_result_values_read_as_click_results() {
     }
 }
 
+const RESULT_ERROR_SIDECAR: &str =
+    include_str!("../design/charon-trial/result-errors/errors.click");
+
+// A crate enum is a `Result`'s error type: `check` returns
+// `Result<u32, ParseError>` built from either `ParseError` variant, `?`
+// forwards whichever it met, and a nested `match` reads the error's variant
+// and field. A caller's facts decide a callee's implication whose consequent
+// equates two constructors: a clash refutes its antecedent, one variant
+// equates the fields.
+#[test]
+fn charon_result_errors_carry_a_crate_enum() {
+    let p = Project::from_fixture("design/charon-trial/result-errors");
+    fs::write(p.root.join("borrow.click"), RESULT_ERROR_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(RESULT_ERROR_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures x == 0u32 implies result == Result<u32, ParseError>::Err(ParseError::Empty);\n    ensures x > 100u32 implies result == Result<u32, ParseError>::Err(ParseError::TooBig(x));\n    ensures x != 0u32 implies x <= 100u32 implies result == Result<u32, ParseError>::Ok(x);\n}\n\n// `?`",
+            "    ensures x == 0u32 implies result == Result<u32, ParseError>::Err(ParseError::TooBig(x));\n    ensures x > 100u32 implies result == Result<u32, ParseError>::Err(ParseError::TooBig(x));\n    ensures x != 0u32 implies x <= 100u32 implies result == Result<u32, ParseError>::Ok(x);\n}\n\n// `?`",
+            "check.ensures_0",
+        ),
+        (
+            "fn describe(x: u32) -> u32 {\n    ensures x == 0u32 implies result == 0u32;",
+            "fn describe(x: u32) -> u32 {\n    ensures x == 0u32 implies result == 1u32;",
+            "describe.ensures_0",
+        ),
+    ] {
+        assert!(RESULT_ERROR_SIDECAR.contains(before), "{before}");
+        let invalid = RESULT_ERROR_SIDECAR.replacen(before, after, 1);
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("a claim the result program does not meet must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
 // `?` on a `Result` is read only when it keeps the error type, where
 // `From::from` is the identity; a `Result` of another type is refused by
 // name.

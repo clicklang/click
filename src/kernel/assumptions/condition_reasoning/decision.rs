@@ -9,31 +9,31 @@ impl PureFactContext {
         &self,
         proposition: &Proposition,
     ) -> Option<Vec<Proposition>> {
-        let Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-            true,
-        ) = proposition
-        else {
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let Proposition::ConditionIs(condition, value) = proposition else {
             return None;
         };
-        let pinned = |term: &Bitvector32Term| {
+        let view = comparison_view(condition, *value)?;
+        if !matches!(
+            view.format,
+            MachineIntegerType::Int32 | MachineIntegerType::UInt32
+        ) || view.relation != Relation::Equal
+        {
+            return None;
+        }
+        let pinned = |term: crate::kernel::MachineOperandView<'_>| {
             if solve_reasoning_interrupted() {
                 return None;
             }
-            if let Some(value) = signed_bitvector_constant(term) {
-                Some((value, None))
+            if let Some(bits) = term.word32_constant() {
+                Some((i64::from(bits as i32), None))
             } else {
-                self.indexed_exact_int32_constant(term)
+                self.indexed_exact_int32_constant_view(term)
                     .map(|(value, source)| (value, Some(*source)))
             }
         };
-        let (left_value, left_source) = pinned(left)?;
-        let (right_value, right_source) = pinned(right)?;
+        let (left_value, left_source) = pinned(view.operands[0].operand_view())?;
+        let (right_value, right_source) = pinned(view.operands[1].operand_view())?;
         (left_value == right_value).then(|| left_source.into_iter().chain(right_source).collect())
     }
 
@@ -148,9 +148,16 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, Box<Proposition>)> {
-        let condition = self.checked_scalar_facts.literal_equality(term)?;
-        let source = Proposition::ConditionIs(condition.clone(), true);
-        let value = SignedConstantEvidence::exact_equality_value(term, &source)?;
+        self.indexed_exact_int32_constant_view(crate::kernel::MachineOperandView::Legacy(term))
+    }
+
+    fn indexed_exact_int32_constant_view(
+        &self,
+        term: crate::kernel::MachineOperandView<'_>,
+    ) -> Option<(i64, Box<Proposition>)> {
+        let (condition, truth) = self.checked_scalar_facts.literal_equality(term)?;
+        let source = Proposition::ConditionIs(condition.clone(), *truth);
+        let value = SignedConstantEvidence::exact_equality_value_view(term, &source)?;
         Some((value, Box::new(source)))
     }
 
@@ -431,6 +438,9 @@ impl PureFactContext {
         if let Some(value) = self.decide_widened_sum_bound(condition) {
             return Some(value);
         }
+        if let Some(value) = self.decide_indexed_greater_equal(condition) {
+            return Some(value);
+        }
         // An Integer comparison of exact observations of one machine type
         // has the truth of its native comparison, which the machine
         // reasoning below decides (`native_comparison_of_integer_observation`).
@@ -459,9 +469,6 @@ impl PureFactContext {
             return Some(value);
         }
         if let Some(value) = self.decide_wide_order_chain(condition) {
-            return Some(value);
-        }
-        if let Some(value) = self.decide_indexed_greater_equal(condition) {
             return Some(value);
         }
         if let Some(value) = self.decide_unsigned_order_of_nonnegative_signed(condition) {
@@ -2156,9 +2163,11 @@ impl PureFactContext {
         let Some((lower, upper)) = self.indexed_constant_interval(&term) else {
             return false;
         };
-        let (lower, upper) = self
-            .checked_scalar_facts
-            .past_exclusions(&term, lower, upper);
+        let (lower, upper) = self.checked_scalar_facts.past_exclusions(
+            crate::kernel::MachineOperandView::Legacy(&term),
+            lower,
+            upper,
+        );
         lower == upper && lower == constant
     }
 

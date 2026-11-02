@@ -460,6 +460,53 @@ impl PropositionSource for ProofFacts {
     }
 }
 
+/// Whether `proposition` equates two constructors of different variants of
+/// one algebraic type, which no value satisfies.
+fn is_constructor_clash(proposition: &Proposition) -> bool {
+    matches!(proposition,
+        Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right))
+            if left.algebraic_type == right.algebraic_type
+                && matches!((&left.node, &right.node), (
+                    AlgebraicTermNode::Constructor { variant: left, .. },
+                    AlgebraicTermNode::Constructor { variant: right, .. },
+                ) if left != right))
+}
+
+/// What an implication chain `a implies .. z implies c` whose consequent `c`
+/// equates two constructors says once those are decided: for different
+/// variants, `c` is false, so `a implies .. not z`; for one variant, `c` is
+/// its fields' equalities, each `a implies .. z implies f`. Empty for any
+/// other proposition.
+pub(crate) fn constructor_consequent_instances(proposition: &Proposition) -> Vec<Proposition> {
+    let Proposition::Implies(antecedent, consequent) = proposition else {
+        return Vec::new();
+    };
+    if is_constructor_clash(consequent) {
+        return vec![match antecedent.as_ref() {
+            // The refuted condition in a positive form where one exists,
+            // `x > 100` rather than `x <= 100` false, as a branch states it.
+            Proposition::ConditionIs(condition, value) => {
+                let refuted = Proposition::ConditionIs(condition.clone(), !value);
+                condition_polarity_forms(&refuted)
+                    .into_iter()
+                    .rev()
+                    .find(|form| matches!(form, Proposition::ConditionIs(_, true)))
+                    .unwrap_or(refuted)
+            }
+            other => Proposition::Not(Box::new(other.clone())),
+        }];
+    }
+    let inner = match crate::kernel::assumptions::algebraic_constructor_field_equalities(consequent)
+    {
+        Some(fields) => fields,
+        None => constructor_consequent_instances(consequent),
+    };
+    inner
+        .into_iter()
+        .map(|instance| Proposition::Implies(antecedent.clone(), Box::new(instance)))
+        .collect()
+}
+
 impl ProofFacts {
     /// Bounded newest-first view for diagnostics. This deliberately exposes
     /// references into the persistent sequence and never materializes the
@@ -1639,6 +1686,14 @@ impl ProofFacts {
                 }
             }
             if instance != *fact && !instances.contains(&instance) {
+                // An implication whose consequent the substitution made a
+                // clash of two constructors refutes its antecedent:
+                // `x == 0 implies Ok(y) == Err(e)` is `x != 0`.
+                for decided in constructor_consequent_instances(&instance) {
+                    if !instances.contains(&decided) {
+                        instances.push(decided);
+                    }
+                }
                 instances.push(instance);
             }
         }

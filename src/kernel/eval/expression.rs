@@ -2510,16 +2510,17 @@ fn evaluate_c_enum_construct_paths(
                 Some(declared)
                     if !algebraic_type.rigid
                         && declared.len() == path.values.len()
-                        && declared
+                        && let Some(fields) = declared
                             .iter()
-                            .zip(&path.values)
-                            .all(|(declared, value)| declared.accepts_c_value(value)) =>
+                            .zip(path.values)
+                            .map(|(declared, value)| enum_field_value(declared, value))
+                            .collect::<Option<Vec<_>>>() =>
                 {
                     CExpressionOutcome::Value(CValue::Parameter(Box::new(AlgebraicTerm {
                         algebraic_type: algebraic_type.clone(),
                         node: AlgebraicTermNode::Constructor {
                             variant: variant.to_string(),
-                            fields: path.values.into_iter().map(AlgebraicValue::C).collect(),
+                            fields,
                         },
                     })))
                 }
@@ -2537,6 +2538,23 @@ fn evaluate_c_enum_construct_paths(
     }
     budget.check_path_width(paths.len())?;
     Ok(paths)
+}
+
+/// The field a constructor stores for C value `value` of a field declared
+/// `declared`: the value itself, or, for a field of a nested enum type such
+/// as `Result<u32, ParseError>`'s error, the enum value a C local of that
+/// enum holds.
+fn enum_field_value(declared: &AlgebraicValueType, value: CValue) -> Option<AlgebraicValue> {
+    match (declared, value) {
+        (AlgebraicValueType::Algebraic { .. }, CValue::Parameter(term))
+            if term.algebraic_type.value_type() == *declared =>
+        {
+            Some(AlgebraicValue::Algebraic(*term))
+        }
+        (declared, value) => declared
+            .accepts_c_value(&value)
+            .then_some(AlgebraicValue::C(value)),
+    }
 }
 
 /// Field `index` of an enum value. The value must be a constructor of
@@ -2569,6 +2587,11 @@ fn evaluate_c_enum_field_paths(
                         fields,
                     } if actual == variant => match fields.get(index) {
                         Some(AlgebraicValue::C(field)) => CExpressionOutcome::Value(field.clone()),
+                        // A nested enum field is the value a C local of that
+                        // enum holds.
+                        Some(AlgebraicValue::Algebraic(field)) => {
+                            CExpressionOutcome::Value(CValue::Parameter(Box::new(field.clone())))
+                        }
                         _ => CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch),
                     },
                     _ => CExpressionOutcome::RuntimeError(CRuntimeError::EnumVariant(format!(
@@ -2634,6 +2657,16 @@ pub(in crate::kernel) fn enum_variant_paths(
         let mut fields = Vec::with_capacity(variant.fields.len());
         for field in &variant.fields {
             let variable = budget.allocate_kernel_variable()?;
+            // A nested enum field is a fresh value of that enum.
+            if let AlgebraicValueType::Algebraic { .. } = field
+                && let Some(nested) = term.algebraic_type.resolve_nested_type(field)
+            {
+                fields.push(AlgebraicValue::Algebraic(AlgebraicTerm {
+                    algebraic_type: nested,
+                    node: AlgebraicTermNode::Variable(variable),
+                }));
+                continue;
+            }
             let Some(value) = field.symbolic_c_value(variable) else {
                 return Ok(Err(CRuntimeError::EnumVariant(format!(
                     "`{}::{}` has a field that is not a C value",

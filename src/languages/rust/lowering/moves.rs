@@ -1294,6 +1294,35 @@ fn switch(
             exits,
         )?);
     }
+    // A match on an enum field of an enum, `Err(ParseError::Empty)`, tests a
+    // local bound to that field, so the test splits as one on any enum local.
+    let mut bound_field = None;
+    let bound_local;
+    let scrutinee = if let E::EnumField {
+        name,
+        variant,
+        index,
+        ..
+    } = scrutinee
+        && let Some(field_enum) = super::nested_enum_field_type(name, variant, *index)?
+    {
+        let local = cx.fresh_temporary()?;
+        bound_field = Some(c_seq(
+            c_declare_with_all_qualifiers(
+                &local,
+                field_enum.to_kernel_type(),
+                false,
+                false,
+                false,
+                false,
+            ),
+            c_assign(&local, cx.expr(scrutinee)?),
+        ));
+        bound_local = E::Local { name: local };
+        &bound_local
+    } else {
+        scrutinee
+    };
     let mut chain = None;
     for ((target, labels), body) in groups.iter().zip(bodies).rev() {
         let Some(rest) = chain else {
@@ -1325,7 +1354,11 @@ fn switch(
             rest,
         ));
     }
-    chain.ok_or_else(|| "Rust match without arms".to_string())
+    let chain = chain.ok_or_else(|| "Rust match without arms".to_string())?;
+    Ok(match bound_field {
+        Some(bound) => c_seq(bound, chain),
+        None => chain,
+    })
 }
 
 fn accesses(expressions: &[&E], live: &BTreeMap<&str, String>) -> CStatement {

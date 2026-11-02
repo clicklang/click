@@ -33,11 +33,27 @@ fn charon_loop_control_verifies_break_and_continue() {
             "first_stop",
         ),
     ] {
-        assert!(SIDECAR.contains(before), "{before}");
-        let invalid = SIDECAR.replacen(before, after, 1);
+        // The successful run above checks the entire fixture. Each mutation
+        // only needs to recheck the function whose proof it invalidates.
+        let function = SIDECAR
+            .split("\nfn ")
+            .skip(1)
+            .find(|function| function.starts_with(&format!("{expected}(")))
+            .map(|function| format!("fn {function}"))
+            .unwrap_or_else(|| panic!("missing function `{expected}`"));
+        assert!(function.contains(before), "{before}");
+        let invalid = format!(
+            "verifying \"control.rs\";\n{}",
+            function.replacen(before, after, 1)
+        );
         let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
+        assert_eq!(
+            error.kind(),
+            click::surface::ClickErrorKind::Proof,
+            "{expected}: {error}"
+        );
         let rendered = format!("{error:?} {error}");
         assert!(rendered.contains(expected), "{expected}: {rendered}");
     }
