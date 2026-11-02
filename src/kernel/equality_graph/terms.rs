@@ -1563,23 +1563,25 @@ impl TermClasses {
                 Some(Application::Int64Scaled(*value, *width, *unsigned))
             }
             Node::Int32(value) => {
-                if let Some(value) = value.value().as_const() {
+                if let Some(value) = value.operand_view().word32_constant() {
                     self.int32_constants.insert(id, value as i32);
                 }
                 None
             }
             Node::MachineNarrow(atom) => {
-                if let crate::kernel::Bitvector32Term::MachineIntegerConstant(constant) =
-                    atom.value()
+                if let Some(crate::kernel::Bitvector32Term::MachineIntegerConstant(constant)) =
+                    atom.operand_view().literal()
                 {
                     self.narrow_constants.insert(id, constant.bits() as u32);
                 }
                 None
             }
             Node::UInt64(value) => {
-                let literal = match value.value() {
-                    crate::kernel::Bitvector32Term::UInt64Constant(value) => Some(*value),
-                    crate::kernel::Bitvector32Term::Int64Constant(value) => Some(*value as u64),
+                let literal = match value.operand_view().literal() {
+                    Some(crate::kernel::Bitvector32Term::UInt64Constant(value)) => Some(value),
+                    Some(crate::kernel::Bitvector32Term::Int64Constant(value)) => {
+                        Some(value as u64)
+                    }
                     _ => None,
                 };
                 if let Some(value) = literal {
@@ -1603,7 +1605,7 @@ impl TermClasses {
 
     fn enqueue_int32_load(&mut self, id: u64, node: &Node) {
         let Node::Int32(atom) = node else { return };
-        let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
+        let Some(variable) = atom.operand_view().variable() else {
             return;
         };
         // Only a four-byte integer read is a word load application: a
@@ -1639,7 +1641,7 @@ impl TermClasses {
         let Node::MachineNarrow(atom) = node else {
             return;
         };
-        let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
+        let Some(variable) = atom.operand_view().variable() else {
             return;
         };
         if !crate::kernel::is_load_variable(variable) || self.registered_int32_loads.contains(&id) {
@@ -1675,7 +1677,7 @@ impl TermClasses {
         let Node::MachineNarrow(atom) = node else {
             return;
         };
-        let crate::kernel::Bitvector32Term::Variable(variable) = atom.value() else {
+        let Some(variable) = atom.operand_view().variable() else {
             return;
         };
         if !crate::kernel::is_load_variable(variable)
@@ -2198,8 +2200,8 @@ impl TermClasses {
             for atom in [&left_atom, &right_atom].into_iter().flatten() {
                 if let Node::Int32(value) = atom
                     && !matches!(
-                        value.value(),
-                        Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
+                        value.operand_view().literal(),
+                        Some(Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_))
                     )
                     && !self.nodes.contains_key(atom)
                 {

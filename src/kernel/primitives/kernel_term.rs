@@ -134,7 +134,6 @@ struct NodeKeyData {
     ty: KernelType,
     node: KernelTermNode,
     shared_machine_operand: bool,
-    shared_native_width: Option<CarrierWidth>,
     machine_constant: Option<KernelMachineLiteral>,
 }
 #[derive(Clone)]
@@ -169,56 +168,11 @@ impl NodeKey {
             KernelTermNode::MachineUnary { operand, .. } => operand.is_shared_machine_operand(),
             _ => false,
         };
-        let shared_native_width = match (&ty, &node) {
-            (KernelType::C(c), node) => MachineIntegerType::from_c_type(*c)
-                .filter(|format| matches!(format.format().bits(), 8 | 16 | 32 | 64))
-                .map(CarrierWidth::of_machine_type)
-                .filter(|width| match node {
-                    KernelTermNode::Variable(_) => true,
-                    KernelTermNode::MachineLiteral(
-                        KernelMachineLiteral::Word32(_) | KernelMachineLiteral::UInt32(_),
-                    ) => *width == CarrierWidth::Bits32,
-                    KernelTermNode::MachineLiteral(
-                        KernelMachineLiteral::Int64(_) | KernelMachineLiteral::UInt64(_),
-                    ) => *width == CarrierWidth::Bits64,
-                    KernelTermNode::MachineLiteral(KernelMachineLiteral::Wide(value)) => {
-                        MachineIntegerType::from_c_type(*c).unwrap().format().bits()
-                            == value.format().bits()
-                    }
-                    KernelTermNode::MachineUnary {
-                        format, operand, ..
-                    } => {
-                        CarrierWidth::of_machine_type(*format) == *width
-                            && operand.shared_native_width() == Some(*width)
-                    }
-                    KernelTermNode::MachineBinary {
-                        format,
-                        operator,
-                        arguments: [left, right],
-                    } => {
-                        CarrierWidth::of_machine_type(*format) == *width
-                            && left.shared_native_width() == Some(*width)
-                            && if *width != CarrierWidth::Bits32
-                                && matches!(
-                                    operator,
-                                    MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
-                                )
-                            {
-                                right.is_shared_machine_operand()
-                            } else {
-                                right.shared_native_width() == Some(*width)
-                            }
-                    }
-                    _ => false,
-                }),
-            _ => None,
-        };
         let machine_constant = machine::constant_reading(&node);
         Self(Arc::new(NodeKeyData {
             machine_constant,
             fingerprint: hash.finish(),
             shared_machine_operand,
-            shared_native_width,
             ty,
             node,
         }))
@@ -306,10 +260,6 @@ impl KernelTerm {
 
     pub(crate) fn machine_constant_reading(&self) -> Option<&KernelMachineLiteral> {
         self.0.key.0.machine_constant.as_ref()
-    }
-
-    pub(crate) fn shared_native_width(&self) -> Option<CarrierWidth> {
-        self.0.key.0.shared_native_width
     }
 
     pub(crate) fn is_shared_machine_operand(&self) -> bool {

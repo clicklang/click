@@ -171,6 +171,28 @@ target; no limits changed and no nightly run). The focused division
 fact-stability audit passed all 17 fixtures with zero differences, matching
 the zero-difference baseline on its 16 existing fixtures.
 
+## Shared graph registration across observation widths (2026-11-02)
+
+An Integer observation can read a machine expression at a different carrier
+width. Graph registration previously exported that entire operand when its
+native-width metadata did not match. Registration now retains the original
+shared identity for the opaque cases and preserves the existing cancellation,
+shift-count and complement rules. Mixed-width children stay shared too. The
+now-unused native-width eligibility cache is removed.
+
+Opaque-node constant annotations and load-name registration also use operand
+views. Asking whether an operand is a variable or literal no longer exports its
+arithmetic descendants. Load identities still retain the original snapshot,
+width and kind checks.
+
+The cross-width registration matrix compares the shared and legacy classes,
+including mixed-width children, shifts, complements and cancellation. An
+8/32/96-node doubled-child DAG regression checks repeated cross-width Integer
+registration has near-linear work and never requests a boxed operand. The
+17 focused graph/format tests pass, as do all four graph/constant checks after
+expanding constant-reading coverage to every machine format. The full gate is
+in progress.
+
 ## Shared overflow query extraction (2026-11-02)
 
 Ordinary exact-result bounds now have a private `OverflowQueryView` retaining
@@ -184,8 +206,8 @@ A differential format/operation matrix preserves the old reverse adapter's
 answers. A deterministic 8/32/96-node doubled-child DAG test exercises the real
 definedness classifier, checks incomplete bounds are refused, and asserts that
 no operand was exported. The focused machine-integer suite passes all 28 tests.
-`scripts/check.sh --no-fail-fast` passes 7,117 tests, including 1,154 scaling
-tests, 58 examples and 4,991 proof fixtures in 12m04s (over the ten-minute
+`scripts/check.sh --no-fail-fast` passes 7,119 tests, including 1,155 scaling
+tests, 58 examples and 4,991 proof fixtures in 12m05s (over the ten-minute
 target; no limits changed). The arithmetic fact-stability audit passes all 124
 fixtures with zero differences. No nightly suite ran.
 
@@ -194,8 +216,8 @@ the view directly. It matches against the explicit certificate term without
 exporting a guard operand, preserving the old signed atom fragment and literal
 tag equivalence. Differential matching and a large-guard/small-certificate
 refusal regression pass; all 70 focused machine-integer and signed-certificate
-tests pass on this integrated increment. The earlier full-gate numbers above
-cover extraction/classification before this certificate consumer was added.
+tests pass on this integrated increment. The full-gate and fact-stability
+results above cover the complete increment merged in #2269.
 
 Remaining: overflow decision/certificate query outputs, comparison query and
 fact-identity outputs, operation reverse readings and modular equalities still

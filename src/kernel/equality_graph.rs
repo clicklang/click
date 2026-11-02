@@ -127,6 +127,9 @@ impl MachineAtom {
             value.constant_word32(),
         )
     }
+    pub(in crate::kernel) fn operand_view(&self) -> crate::kernel::MachineOperandView<'_> {
+        self.0.operand_view()
+    }
     pub(in crate::kernel) fn value(&self) -> &Bitvector32Term {
         self.0.value()
     }
