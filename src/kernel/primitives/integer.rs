@@ -1405,6 +1405,17 @@ pub(crate) fn machine_value_reading(
         {
             return machine_value_reading(*source, operand);
         }
+        // A value-preserving 32-to-64-bit extension node, the spelling C
+        // lowering builds, is read as its operand like the generic widening.
+        Bitvector32Term::Int64From32(operand) if ty == MachineIntegerType::Int64 => {
+            return machine_value_reading(MachineIntegerType::Int32, operand);
+        }
+        Bitvector32Term::Int64FromUInt32(operand) if ty == MachineIntegerType::Int64 => {
+            return machine_value_reading(MachineIntegerType::UInt32, operand);
+        }
+        Bitvector32Term::UInt64From32(operand) if ty == MachineIntegerType::UInt64 => {
+            return machine_value_reading(MachineIntegerType::UInt32, operand);
+        }
         _ => {}
     }
     if is_machine_constant(value) {

@@ -48,12 +48,32 @@ fn check_as_written(
     };
     // Two observations with one value reading (rule W: a widening's value
     // is its operand's) are the identity itself; its bounds are still
-    // checked, at the format of that reading.
+    // checked, at the format of that reading. A typed 32-to-64-bit
+    // extension node, the conversion C lowering writes, keeps the range of
+    // its destination, as for any other conversion as written. One match on
+    // each root.
     let (original, destination) = if a.value_read() == b.value_read() {
-        match a.value_read() {
-            crate::kernel::IntegerTerm::Machine(machine) => (a, machine.ty().format()),
-            _ => return Err(invalid()),
-        }
+        let crate::kernel::IntegerTerm::Machine(machine) = a.value_read() else {
+            return Err(invalid());
+        };
+        let extension = |term: &SharedIntegerTerm| match term.as_ref() {
+            crate::kernel::IntegerTerm::Machine(written) => written
+                .operand_view()
+                .cast()
+                .filter(|(encoding, source, destination, _)| {
+                    crate::kernel::machine_integer::conversion::reads_as_operand(
+                        *encoding,
+                        *source,
+                        *destination,
+                    )
+                })
+                .map(|(_, _, destination, _)| destination.format()),
+            _ => None,
+        };
+        let destination = extension(a)
+            .or_else(|| extension(b))
+            .unwrap_or(machine.ty().format());
+        (a, destination)
     } else if let Some(destination) = cast(a, b) {
         (b, destination)
     } else if let Some(destination) = cast(b, a) {

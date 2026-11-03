@@ -153,6 +153,25 @@ pub(super) fn shared_value_reading(
                     continue;
                 }
             }
+            // A value-preserving 32-to-64-bit extension node is read as its
+            // operand, exactly as the generic widening above.
+            if let KernelTermNode::MachineCast {
+                encoding,
+                source,
+                destination,
+                operand,
+            } = term.node()
+                && *destination == ty
+                && crate::kernel::machine_integer::conversion::reads_as_operand(
+                    *encoding,
+                    *source,
+                    *destination,
+                )
+            {
+                ty = *source;
+                term = operand.clone();
+                continue;
+            }
             if let KernelTermNode::MachineLiteral(value) = term.node()
                 && ty.constant_from_term(&value.legacy_term()).is_none()
             {
@@ -190,19 +209,32 @@ impl SharedMachineIntegerTerm {
         .expect("checked cast over shared arithmetic")
     }
 
-    /// Add the written generic cast root without invoking a folding constructor.
+    /// Add the written cast root without invoking a folding constructor. A
+    /// 32-to-64-bit extension is the typed extension node lowering builds,
+    /// its one spelling; every other conversion is a generic cast root.
     pub(crate) fn cast_operand(&self, destination: MachineIntegerType) -> Self {
+        let extension =
+            crate::kernel::machine_integer::conversion::extension_encoding(self.ty(), destination);
         if let Some(root) = self.shared_operand() {
             Self::from_shared(
                 destination,
                 KernelTerm::machine_cast_shared(
-                    crate::kernel::KernelMachineCastEncoding::Generic,
+                    extension.unwrap_or(crate::kernel::KernelMachineCastEncoding::Generic),
                     self.ty(),
                     destination,
                     root.clone(),
                 ),
             )
             .expect("cast over shared operand")
+        } else if extension.is_some() {
+            Self::intern(
+                destination,
+                crate::kernel::machine_integer::conversion::convert_term(
+                    self.ty(),
+                    destination,
+                    self.value().clone(),
+                ),
+            )
         } else {
             Self::intern(
                 destination,

@@ -735,6 +735,12 @@ impl KernelTerm {
         preserve_sign_pairs: bool,
     ) -> Self {
         assert!(self.is_shared_machine_operand());
+        // A 32-to-64-bit extension has the one typed spelling lowering builds.
+        if crate::kernel::machine_integer::conversion::extension_encoding(source, destination)
+            .is_some()
+        {
+            return self.checking_legacy_machine_conversion(source, destination);
+        }
         CHECKED_CASTS.with(|cache| {
             let mut cache = cache.borrow_mut();
             let mut term = self.clone();

@@ -619,8 +619,10 @@ mod tests {
             BitvectorUnaryOp::UInt64FromInt64,
             BitvectorUnaryOp::Float32Negate,
             BitvectorUnaryOp::Float64Negate,
+            // Not a 32-to-64-bit extension: those build the typed extension
+            // node, their one spelling.
             BitvectorUnaryOp::MachineIntegerCast {
-                source: MachineIntegerType::Int32,
+                source: MachineIntegerType::Int64,
                 destination: MachineIntegerType::UInt64,
             },
         ]

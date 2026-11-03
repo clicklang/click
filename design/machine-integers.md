@@ -1402,7 +1402,11 @@ Maintainer direction, 2026-11-01 (`from_machine` stops folding, PR 4):
   to_integer(v)` for a value-preserving widening at every width (narrow to
   32 bits, 32 to 64, any to 128); `to_integer` of σ(x) at `int32` or
   `uint32` is `x` read at that format; a conversion observed at a type that
-  contains its destination is observed at the destination. The relation is
+  contains its destination is observed at the destination. A 32-to-64-bit
+  extension has one spelling, the typed node C lowering builds
+  (`Int64From32`, `Int64FromUInt32`, `UInt64From32`, `UInt64FromInt32`;
+  `conversion::extension_encoding`), and both readings read the three
+  value-preserving ones as their operand. The relation is
   a reading (`SharedMachineIntegerTerm::value_reading`): a bounded walk
   through at most three conversions, computed once per interned
   observation and cached on it, so a reader's step is O(1).
