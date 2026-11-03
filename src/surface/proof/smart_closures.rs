@@ -2696,14 +2696,14 @@ impl<'a> Proof<'a> {
                     ComparisonOperator::GreaterEqual => Some(ComparisonOperator::LessEqual),
                     _ => None,
                 };
-                if let Some(operator) = mirrored_operator {
+                if let Some(operator) = mirrored_operator
+                    && let Some(kernel) = mirrored_order_goal(goal)
+                {
                     let mirrored = ClickProposition::Comparison {
                         left: right.clone(),
                         operator,
                         right: left.clone(),
                     };
-                    let kernel = self
-                        .lower_surface_proposition(&mirrored, "mirrored implication consequent")?;
                     if self
                         .facts()
                         .contains_discharged_implication_consequent(&kernel)
@@ -13278,6 +13278,51 @@ fn checked_fact_spells_the_goal(proof: &Proof<'_>) -> bool {
             fact != goal && crate::kernel::proof::fact_reasoning::order_claim_equivalent(fact, goal)
         })
     })
+}
+
+// Probe with the already-lowered goal: its bound variables retain their
+// identities even when the surface goal uses an internal alpha-renamed binder.
+// Re-lowering that surface spelling outside its binder scope is not valid.
+fn mirrored_order_goal(goal: &Proposition) -> Option<Proposition> {
+    let Proposition::ConditionIs(condition, value) = goal else {
+        return None;
+    };
+    let mirrored = match condition {
+        ConditionTerm::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } => {
+            let relation = match relation {
+                CompareRelation::LessThan => CompareRelation::GreaterThan,
+                CompareRelation::LessEqual => CompareRelation::GreaterEqual,
+                CompareRelation::GreaterThan => CompareRelation::LessThan,
+                CompareRelation::GreaterEqual => CompareRelation::LessEqual,
+                CompareRelation::Equal => return None,
+            };
+            ConditionTerm::Compare {
+                format: *format,
+                relation,
+                left: right.clone(),
+                right: left.clone(),
+            }
+        }
+        ConditionTerm::IntegerLessThan(left, right) => {
+            ConditionTerm::IntegerGreaterThan(right.clone(), left.clone())
+        }
+        ConditionTerm::IntegerLessEqual(left, right) => {
+            ConditionTerm::IntegerGreaterEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::IntegerGreaterThan(left, right) => {
+            ConditionTerm::IntegerLessThan(right.clone(), left.clone())
+        }
+        ConditionTerm::IntegerGreaterEqual(left, right) => {
+            ConditionTerm::IntegerLessEqual(right.clone(), left.clone())
+        }
+        _ => return None,
+    };
+    Some(Proposition::ConditionIs(mirrored, *value))
 }
 
 /// `b == a` for the fact `a == b`.
