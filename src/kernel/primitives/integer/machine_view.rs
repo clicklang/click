@@ -10,7 +10,6 @@ thread_local! {
 
 pub(crate) fn clear_shared_machine_variable_cache() {
     clear_shared_value_readings();
-    CHECKING_CASTS.with(|cache| cache.borrow_mut().clear());
     KernelTerm::clear_cast_checks();
     SHARED_MACHINE_CARRIERS.with(|cache| cache.borrow_mut().clear());
 }
@@ -171,12 +170,6 @@ pub(crate) enum MachineOperandView<'a> {
     Legacy(&'a Bitvector32Term),
 }
 
-// The legacy checking constructor composes selected narrow casts. Retain that
-// convention without rewalking shared cast prefixes or exporting their payload.
-thread_local! {
-    static CHECKING_CASTS: std::cell::RefCell<HashMap<(MachineIntegerType, MachineIntegerType, u64), SharedMachineIntegerTerm>> = Default::default();
-}
-
 impl SharedMachineIntegerTerm {
     /// The existing machine-cast constructor used for a generated checking
     /// premise. Stored terms use the structural `cast_operand` constructor.
@@ -187,56 +180,11 @@ impl SharedMachineIntegerTerm {
                 Bitvector32Term::machine_integer_cast(self.ty(), destination, self.value().clone()),
             );
         };
-        CHECKING_CASTS.with(|cache| {
-            let mut cache = cache.borrow_mut();
-            let mut source = self.ty();
-            let mut root = root.clone();
-            let mut path = Vec::new();
-            let result = loop {
-                crate::instrumentation::record_deterministic_work(1);
-                let key = (source, destination, root.id());
-                if let Some(result) = cache.get(&key) {
-                    break result.clone();
-                }
-                path.push(key);
-                let operand = MachineOperandView::Shared(&root);
-                if source == destination {
-                    break operand.retain(destination);
-                }
-                if let Some(literal) = operand.literal() {
-                    break Self::intern(
-                        destination,
-                        Bitvector32Term::machine_integer_cast(source, destination, literal),
-                    );
-                }
-                if let Some((
-                    crate::kernel::KernelMachineCastEncoding::Generic,
-                    original,
-                    intermediate,
-                    child,
-                )) = operand.cast()
-                    && original.carrier_bytes() == 4
-                    && source.carrier_bytes() == 4
-                    && destination.carrier_bytes() == 4
-                    && intermediate == source
-                    && destination.format().bits() <= intermediate.format().bits()
-                    && !(original == destination
-                        && crate::kernel::is_sign_cast32(original, intermediate))
-                {
-                    source = original;
-                    let MachineOperandView::Shared(child) = child else {
-                        unreachable!()
-                    };
-                    root = child.clone();
-                    continue;
-                }
-                break operand.retain(source).cast_operand(destination);
-            };
-            for key in path {
-                cache.insert(key, result.clone());
-            }
-            result
-        })
+        Self::from_shared(
+            destination,
+            root.checking_machine_cast_preserving_sign_pairs(self.ty(), destination),
+        )
+        .expect("checked cast over shared arithmetic")
     }
 
     /// Add the written generic cast root without invoking a folding constructor.

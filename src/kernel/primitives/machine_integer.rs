@@ -553,32 +553,6 @@ impl Bitvector32Term {
                 .is_some_and(|(_, operand)| operand == self)
     }
 
-    /// When this term is σ of a 32-bit quotient or remainder at σ's source
-    /// signedness: that signedness, the operator and its operands, which
-    /// rule C reads at the other signedness on nonnegative operands
-    /// (`condition_reasoning/sign_cast_division.rs`). One match on the root
-    /// and its operand.
-    pub(crate) fn sign_cast_division_operands(
-        &self,
-    ) -> Option<(
-        MachineIntegerType,
-        crate::kernel::MachineBinaryOp,
-        &Self,
-        &Self,
-    )> {
-        use crate::kernel::MachineBinaryOp as Op;
-        let (source, operand) = self.sign_cast32_operand()?;
-        match operand {
-            Self::Binary {
-                format,
-                op: op @ (Op::Divide | Op::Remainder),
-                left,
-                right,
-            } if *format == source => Some((source, *op, left, right)),
-            _ => None,
-        }
-    }
-
     /// The source format and operand of a σ, if this term is one. One
     /// match on the root.
     pub(crate) fn sign_cast32_operand(&self) -> Option<(MachineIntegerType, &Self)> {

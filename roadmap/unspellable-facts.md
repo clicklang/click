@@ -86,7 +86,13 @@ offsets through the unsigned or signed range checks, preserving refusals when
 the ranges are absent. Nonnegative quotient/remainder bounds read retained
 operands, including the signed reading of unsigned results. Their generated casts
 reuse shared composition prefixes and preserve the native checking constructor;
-they do not change stored terms. The signed equality dispatcher remains open.
+they do not change stored terms. Signedness conversion of quotients and remainders
+also reads shared operands, preserving its two sign premises, written comparison
+directions and disequality polarity. Exact observation-bound provenance selects
+retained sources from the existing bound index, including branch withdrawal;
+it adds no index to ordinary fact admission. The common KernelTerm cast engine
+keeps the distinct comparison-reading and generated-premise composition policies.
+The signed equality dispatcher remains open.
 
 Bounded arithmetic-certificate conclusion identity reads shared operands directly,
 preserving its accepted operators, cast encodings, narrow comparison identity,
@@ -124,16 +130,22 @@ Remaining groups to audit and migrate:
   unconditional `native_comparison_of_integer_observation` conversion in
   `condition_reasoning/decision.rs` and lookup callers only after all of their
   supported proof routes consume operand views.
-- [ ] Remaining signed/unsigned order rules: equality from bounds, cancellation,
-  successor transport, indexed order chains, and their negative answers.
-- [ ] Ordinary definedness query decisions and certificate adapters. Consume
-  `OverflowQueryView` and original ordinary propositions without converting
-  them to boxed `Overflows` terms merely to dispatch a rule.
-- [ ] Wide constant evaluation, wide order walks and interval adapters. Query
-  the original operand's indexed classes/ranges, preserving sources and width.
-- [ ] Remaining conversion, inverse-operation, modular and condition-identity
-  adapters. Distinguish live checker consumers from test-only reference exports
-  and explicit legacy producer/output boundaries.
+- [ ] Signed equality dispatch: additive matching/cancellation, equality from
+  opposite bounds, memory/equality sources, and negative answers. Ordinary
+  signed/unsigned order rules, successor transport and wide order walks already
+  read views; their completion does not remove the equality dispatcher.
+- [ ] Atomic domain evidence and certificate premise adapters. Migrate the
+  remaining `interval_query_form` callers in atomic derivation, reassociated-add
+  checking and conditional normalization. Certificate availability must retain
+  its checked across-effect memory bridge. Ring-overflow decisions and bounded
+  certificate conclusion identity already read views.
+- [ ] Remaining difference-graph comparison/admission and interval-query
+  adapters. Wide constant evaluation and the wide interval entry points already
+  read views; preserve width and source evidence in the remaining consumers.
+- [ ] Remaining sign-bit/conversion, inverse-operation, modular and
+  condition-identity adapters, including memory-order checking and observation
+  lookup forms. Distinguish live checker consumers from test-only reference
+  exports and explicit legacy producer/output boundaries.
 - [ ] Remove redundant checker exports and enforce the boundary with tests.
 
 **Completion criteria:**
