@@ -423,6 +423,17 @@ misses, crowded quantity buckets, duplicate unbound views, and parent/child
 isolation after owner removal. The build boundary forbids candidate search in
 `direct_nonmemory_support_entry`.
 
+Memory owned-support lookup nominates one whole-range supplier through exact
+footprint, exact-start singleton, covering-interval, or singleton-base indexes.
+It checks that occurrence's
+quantity, alignment, and containment once; a failed check does not request a
+second candidate. A selected projection must still name a live owned support
+occurrence. This route never enumerates fragment starts, follows a fragment
+chain, or scans incident order premises. Explicit fragment composition retains
+its separate iterator. Build boundaries pin both the support caller and
+`MemoryFactEntries::single_supplier`; scaling tests cover exact hits, symbolic
+misses, and a fixed-span refusal beside increasing short owned fragments.
+
 Declared-resource lowering selects parameter values from the names in its
 explicit arguments, including quantities and nested resource-type arguments.
 Outcome-proposition lowering against an indexed assumption context likewise

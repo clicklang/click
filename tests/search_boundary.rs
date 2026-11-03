@@ -606,3 +606,37 @@ fn direct_nonmemory_support_rejects_candidate_search() {
         .is_ok()
     );
 }
+
+#[test]
+fn single_memory_owner_selection_rejects_fragment_enumeration() {
+    for (path, function, names) in [
+        (
+            "src/kernel/primitives/resource_algebra.rs",
+            "directly_supporting_owned_entry_with_separation",
+            &["iter", "find", "filter_map", "collect"][..],
+        ),
+        (
+            "src/kernel/primitives/memory_equality_index.rs",
+            "single_supplier",
+            &[
+                "signed_order_bound_entries",
+                "get_greater_than",
+                "find",
+                "filter_map",
+                "collect",
+            ][..],
+        ),
+    ] {
+        for name in names {
+            let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
+            assert!(boundary::check_source(path, &source).is_err());
+        }
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/primitives/resource_algebra.rs",
+            "fn directly_supporting_owned_entry_with_separation(c: C) { c.single_supplier(); }"
+        )
+        .is_ok()
+    );
+}

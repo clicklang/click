@@ -31,26 +31,15 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Direct resource support selection.**
-   `directly_supporting_owned_entry_with_separation` and
+1. **Alternative resource support selection.**
    `has_other_directly_supporting_owned_entry` in
-   `src/kernel/primitives/resource_algebra.rs` still examine memory candidates.
-   Execution, call-resource checking and loan handling reach these helpers.
-   Audit the memory paths and remaining alternative-support queries; distinguish
-   an explicitly selected resource or footprint from an implicit candidate bucket.
-   Measure ambiguous buckets and refusals as well as exact hits.
-   The red regression `memory_owned_support_miss_ignores_fragment_frontier`
-   prepares the index, holds 4/16/64 adjacent one-element owners, and asks for
-   the same `[0..128]` view. No single owner covers it. First-query refusal
-   costs 77/161/497 units; repeated refusal costs 62/146/482. Exact early/late
-   hits stay flat, as do the separate symbolic-range controls. The shared
-   `MemoryFactEntries::iter` enumerates fragment starts/chains even for the
-   single-owner query. Call checking reaches it through
-   `plan_stable_view_transfer_with_protocol_effect` before lending a view.
-   Proposed next design: separate single-owner selection from fragment
-   enumeration, using exact/covering indexed selection or a bounded refusal.
-   Preserve actual fragment composition as a separate operation; this test
-   does not establish that the entire call/coalescing path is bounded.
+   `src/kernel/primitives/resource_algebra.rs` still examines candidate resources.
+   Loan handling reaches this helper when deciding whether another owner can
+   support a view. Measure growing candidate buckets, including ambiguous
+   matches and refusals, before selecting its replacement. Single-owner
+   selection and explicit fragment composition are distinct operations; a
+   bounded single-owner query does not establish bounded total call/coalescing
+   cost.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).

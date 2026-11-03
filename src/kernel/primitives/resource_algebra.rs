@@ -3332,40 +3332,40 @@ impl ResourceContext {
     ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
         if let Some(range) = required.memory_range() {
             let candidates = self.memory_fact_candidates(range, true, assumptions);
-            for entry in candidates.entries.iter() {
-                let Some(aligned) = candidates.requirement(entry, required) else {
-                    continue;
-                };
+            if let Some(entry) = candidates.entries.single_supplier() {
                 let candidate = self.fact(entry);
-                if Self::memory_support_entails(candidate, &aligned, assumptions, use_separation) {
-                    return Some((self.occurrence(entry), candidate));
-                }
-            }
-            if required.is_view() && !self.storage.supported_by.is_empty() {
-                let projections = self.memory_fact_candidates(range, false, assumptions);
-                for entry in projections.entries.iter() {
-                    let Some(support_occurrence) =
-                        self.storage.support_occurrence_by_projection.get(&entry)
-                    else {
-                        continue;
-                    };
-                    let Some(support) = self.owned_fact_for_occurrence(*support_occurrence) else {
-                        continue;
-                    };
-                    if self.storage.supported_by.get(&entry) != Some(support) {
-                        continue;
-                    }
-                    let Some(aligned) = projections.requirement(entry, required) else {
-                        continue;
-                    };
-                    if Self::memory_support_entails(
-                        self.fact(entry),
+                if candidate.is_own()
+                    && let Some(aligned) = candidates.requirement(entry, required)
+                    && Self::memory_support_entails(
+                        candidate,
                         &aligned,
                         assumptions,
                         use_separation,
-                    ) {
-                        return Some((*support_occurrence, support));
-                    }
+                    )
+                {
+                    return Some((self.occurrence(entry), candidate));
+                }
+                // A nominated owner's failed check is final, not a reason
+                // to try another owner or a projection of one.
+                return None;
+            }
+            if required.is_view() && !self.storage.supported_by.is_empty() {
+                let projections = self.memory_fact_candidates(range, false, assumptions);
+                let entry = projections.entries.single_supplier()?;
+                let support_occurrence =
+                    *self.storage.support_occurrence_by_projection.get(&entry)?;
+                let support = self.owned_fact_for_occurrence(support_occurrence)?;
+                if self.storage.supported_by.get(&entry) != Some(support) {
+                    return None;
+                }
+                let aligned = projections.requirement(entry, required)?;
+                if Self::memory_support_entails(
+                    self.fact(entry),
+                    &aligned,
+                    assumptions,
+                    use_separation,
+                ) {
+                    return Some((support_occurrence, support));
                 }
             }
             return None;

@@ -59,6 +59,31 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: {}: owned support must select an indexed witness, not search a candidate bucket ({name})", self.path, self.function));
         }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "directly_supporting_owned_entry_with_separation"
+            && matches!(
+                name,
+                "iter" | "find" | "find_map" | "filter" | "filter_map" | "flat_map" | "collect"
+            )
+        {
+            self.errors.push(format!("{}: {}: single-owner support must select one supplier, not enumerate fragments ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/primitives/memory_equality_index.rs"
+            && self.function == "single_supplier"
+            && matches!(
+                name,
+                "signed_order_bound_entries"
+                    | "get_greater_than"
+                    | "find"
+                    | "find_map"
+                    | "filter"
+                    | "filter_map"
+                    | "flat_map"
+                    | "collect"
+            )
+        {
+            self.errors.push(format!("{}: {}: whole-range supplier selection must not search a fragment or premise frontier ({name})", self.path, self.function));
+        }
         if self.path.starts_with("src/kernel/") && name == "PropositionSearch" {
             self.errors.push(format!(
                 "{}: {}: checking must not depend on Surface planning ({name})",

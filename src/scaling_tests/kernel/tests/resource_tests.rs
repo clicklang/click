@@ -3117,7 +3117,6 @@ fn nonexact_owner_selection_declines_crowded_quantity_buckets() {
 /// the selected base. Prepare the index outside the measured query, then
 /// measure exact early/late hits and a miss, both first and repeated.
 #[test]
-#[ignore = "nightly: symbolic memory owner selection control"]
 fn memory_owned_support_ignores_symbolic_range_bucket() {
     let mut curves = Vec::new();
     for count in [4usize, 16, 64] {
@@ -3169,7 +3168,6 @@ fn memory_owned_support_ignores_symbolic_range_bucket() {
 /// Reject it without enumerating the fragment frontier; exact early and late
 /// hits are controls. Index preparation is outside all measured queries.
 #[test]
-#[ignore = "red: memory owner selection scans fragment candidates"]
 fn memory_owned_support_miss_ignores_fragment_frontier() {
     let mut curves = Vec::new();
     for count in [4usize, 16, 64] {
