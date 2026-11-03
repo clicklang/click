@@ -23,7 +23,7 @@ fn low_byte(value: u32) -> u8 {
 }
 
 fn high_bit(value: u32) -> bool {
-    ensures result == (if value > 2147483647u32 { 1 } else { 0 });
+    ensures result == (if value > 2147483647u32 { true } else { false });
 } by {
     if value > 2147483647u32 { step_until(function.exit); solve(); }
     else { step_until(function.exit); solve(); }
@@ -52,7 +52,7 @@ fn quotient(value: u32, divisor: u32) -> u32 {
 }
 fn remainder_word(value: u16, divisor: u16) -> u16 {
     requires divisor != 0;
-    ensures (result as uint32) == value as uint32 % divisor as uint32;
+    ensures result == value % divisor;
 }
 fn wide_quotient(value: usize, divisor: usize) -> usize {
     requires divisor != 0u64;
@@ -84,7 +84,7 @@ fn invert(value: u32) -> u32 { ensures result == ~value; }
 fn wide_invert(value: usize) -> usize { ensures result == ~value; }
 fn masked(value: u32, mask: u32) -> u32 { ensures result == ((value & mask) ^ ~value); }
 fn conditional_divide(value: u32, divisor: u32, skip: bool) -> u32 {
-    requires skip != 0 or divisor != 0u32;
-    ensures skip != 0 implies result == 0u32;
-    ensures skip == 0 implies result == value / divisor;
-} by { if skip != 0 { step_until(function.exit); solve(); } else { have divisor != 0u32 by { cases { skip != 0 => { contradiction(skip != 0); } divisor != 0u32 => { assumption(); } } } step_until(function.exit); solve(); } }
+    requires skip == true or divisor != 0u32;
+    ensures skip == true implies result == 0u32;
+    ensures skip == false implies result == value / divisor;
+} by { if skip == true { step_until(function.exit); solve(); } else { have divisor != 0u32 by { cases { skip == true => { contradiction(skip == true); } divisor != 0u32 => { assumption(); } } } step_until(function.exit); solve(); } }
