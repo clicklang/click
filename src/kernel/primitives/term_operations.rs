@@ -431,16 +431,6 @@ impl Bitvector32Term {
         }
     }
 
-    pub(in crate::kernel) fn subtract_const_parts(&self) -> Option<(Self, u32)> {
-        match self {
-            binary_term!(Int32, Subtract, left, right) => match right.as_ref() {
-                Self::Constant(value) => Some((left.as_ref().clone(), *value)),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
     /// `left + right` at `int32`, folded (`Self::add_at`).
     pub(crate) fn add(left: Self, right: Self) -> Self {
         Self::add_at(MachineIntegerType::Int32, left, right)

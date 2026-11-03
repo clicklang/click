@@ -607,8 +607,19 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> Option<bool> {
-        let (left_lower, left_upper) = self.signed_interval(left)?;
-        let (right_lower, right_upper) = self.signed_interval(right)?;
+        self.exact_signed_intervals_equal_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        )
+    }
+
+    pub(super) fn exact_signed_intervals_equal_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Option<bool> {
+        let (left_lower, left_upper) = self.signed_interval_view(left)?;
+        let (right_lower, right_upper) = self.signed_interval_view(right)?;
         (left_lower == left_upper && right_lower == right_upper)
             .then_some(left_lower == right_lower)
     }
@@ -948,19 +959,22 @@ impl PureFactContext {
     /// written terms whose hull is immediate. An ordinary comparison returns
     /// here before any interval is reconstructed, so this adds no work to the
     /// comparisons that already had an answer.
-    pub(super) fn decide_signed_order_from_conditional_interval(
+    pub(super) fn decide_signed_order_from_conditional_interval_views(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
         strict: bool,
     ) -> Option<bool> {
-        if !matches!(left, Bitvector32Term::If { .. })
-            && !matches!(right, Bitvector32Term::If { .. })
+        if !matches!(left, MachineOperandView::Legacy(Bitvector32Term::If { .. }))
+            && !matches!(
+                right,
+                MachineOperandView::Legacy(Bitvector32Term::If { .. })
+            )
         {
             return None;
         }
-        let (left_lower, left_upper) = self.signed_interval(left)?;
-        let (right_lower, right_upper) = self.signed_interval(right)?;
+        let (left_lower, left_upper) = self.signed_interval_view(left)?;
+        let (right_lower, right_upper) = self.signed_interval_view(right)?;
         if strict {
             if left_upper < right_lower {
                 return Some(true);
