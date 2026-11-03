@@ -1335,8 +1335,8 @@ fn native_fragment_consumption_preserves_large_bounds_and_residuals() {
     let own = |start, end| {
         CResourceFact::own_memory(CMemoryRange::new_wide(
             p.clone(),
-            Bitvector32Term::UInt64Constant(start),
-            Bitvector32Term::UInt64Constant(end),
+            Bitvector32Term::uint64_constant(start),
+            Bitvector32Term::uint64_constant(end),
             4,
         ))
     };
@@ -1369,8 +1369,8 @@ fn native_fragment_consumption_refuses_gaps_views_and_nonpositive_ownership() {
     let range = |start, end| {
         CMemoryRange::new_wide(
             p.clone(),
-            Bitvector32Term::UInt64Constant(start),
-            Bitvector32Term::UInt64Constant(end),
+            Bitvector32Term::uint64_constant(start),
+            Bitvector32Term::uint64_constant(end),
             4,
         )
     };
@@ -1412,8 +1412,8 @@ fn native_fragment_consumption_checks_each_typed_designation() {
     let range = |start, end| {
         CMemoryRange::new_wide(
             p.clone(),
-            Bitvector32Term::UInt64Constant(start),
-            Bitvector32Term::UInt64Constant(end),
+            Bitvector32Term::uint64_constant(start),
+            Bitvector32Term::uint64_constant(end),
             4,
         )
     };

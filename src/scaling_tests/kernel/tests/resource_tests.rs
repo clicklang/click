@@ -3397,7 +3397,7 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
         for count in [4u32, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
             let (instance, mut definition, _) = instance_memory_fixture();
-            let bound = |n| CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(n)));
+            let bound = |n| CExpression::Value(CValue::UInt64(Bitvector32Term::uint64_constant(n)));
             definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
                 base: c_variable("p"),
                 start: bound(0),
@@ -3413,8 +3413,8 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
             let piece = |start, end| {
                 CResourceFact::own_memory(CMemoryRange::new_wide(
                     value.pointer().clone(),
-                    Bitvector32Term::UInt64Constant(start),
-                    Bitvector32Term::UInt64Constant(end),
+                    Bitvector32Term::uint64_constant(start),
+                    Bitvector32Term::uint64_constant(end),
                     4,
                 ))
             };
@@ -3483,8 +3483,8 @@ fn native_ownership_query_stops_at_a_fixed_gap() {
             let range = |start, end| {
                 CMemoryRange::new_wide(
                     p.clone(),
-                    Bitvector32Term::UInt64Constant(start),
-                    Bitvector32Term::UInt64Constant(end),
+                    Bitvector32Term::uint64_constant(start),
+                    Bitvector32Term::uint64_constant(end),
                     4,
                 )
             };
@@ -3558,8 +3558,8 @@ fn native_ownership_query_scales_with_selected_pieces() {
         let own = |start, end| {
             CResourceFact::own_memory(CMemoryRange::new_wide(
                 p.clone(),
-                Bitvector32Term::UInt64Constant(start),
-                Bitvector32Term::UInt64Constant(end),
+                Bitvector32Term::uint64_constant(start),
+                Bitvector32Term::uint64_constant(end),
                 4,
             ))
         };
