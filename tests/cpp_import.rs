@@ -1234,14 +1234,15 @@ fn expression_observers_preserve_symbolic_field_reads_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = r#"verifying "observe.cpp";
+    let source = r#"import click::integer;
+verifying "observe.cpp";
 uint64 Count::size() const {
  views this->value;
  ensures result == this->value;
 }
 uint64 probe(const struct Count& count) {
  views count.value;
- ensures result == count.value + count.value;
+ ensures result == integer::uint64_wrapping_add(count.value, count.value);
 }
 "#;
     check_selected_claim_certificate(&project, &import, source);
@@ -1262,8 +1263,8 @@ uint64 probe(const struct Count& count) {
         source.replace("views this->value;", "owns this->value;"),
         source.replace("views count.value;", ""),
         source.replace(
-            "result == count.value + count.value;",
-            "result != count.value + count.value;",
+            "result == integer::uint64_wrapping_add(count.value, count.value);",
+            "result != integer::uint64_wrapping_add(count.value, count.value);",
         ),
     ] {
         assert!(
@@ -1318,10 +1319,11 @@ fn expression_observers_normalize_nested_arguments_and_widened_results() {
     check_selected_claim_certificate(
         &project,
         &import,
-        r#"verifying "observe.cpp";
+        r#"import click::integer;
+verifying "observe.cpp";
 uint64 Count::size() const { views this->value; ensures result == this->value; }
 uint64 echo(uint64 value) { ensures result == value; }
-uint64 probe(const struct Count& count) { views count.value; ensures result == count.value + count.value; }
+uint64 probe(const struct Count& count) { views count.value; ensures result == integer::uint64_wrapping_add(count.value, count.value); }
 "#,
     );
     let project = Project::with_fixture(
@@ -7320,7 +7322,7 @@ fn signed_division_correction_covers_rounding_directions_and_boundary_cases() {
     ] {
         let source = format!(
             "verifying \"arithmetic.cpp\";\nint64 rounded_divide(int64 n, int32 d, bool round_down) {{\nrequires n == {n}i64;\nrequires d == {d};\nrequires round_down == {};\nensures result == {result}i64;\n}}\n",
-            i32::from(down)
+            down
         );
         check_selected_claim_certificate(&project, &import, &source);
     }
@@ -7340,7 +7342,7 @@ fn signed_scalar_arithmetic_rejects_undefined_operations_and_false_claims() {
         (
             "rounded_divide",
             "int64 n, int32 d, bool round_down",
-            "requires n == -7i64; requires d == 3; requires round_down == 1;",
+            "requires n == -7i64; requires d == 3; requires round_down == true;",
             "result == -2i64",
             "unclosed goal",
         ),
@@ -7666,7 +7668,7 @@ fn unsigned_scalar_operations_wrap_and_preserve_conversion_semantics() {
             "uint64 a",
             "requires a == 4294967296u64;",
             "bool",
-            "1",
+            "true",
         ),
     ] {
         let project = Project::with_fixture("unsigned.cpp", name, UNSIGNED_ARITHMETIC_SOURCE);
@@ -7685,11 +7687,12 @@ fn unsigned_modular_calls_frame_unrelated_memory_and_reject_false_wrap_claims() 
     let project = Project::with_fixture("unsigned.cpp", "relay", UNSIGNED_ARITHMETIC_SOURCE);
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let source = r#"verifying "unsigned.cpp";
-uint64 add64(uint64 a, uint64 b) { ensures result == a + b; }
+    let source = r#"import click::integer;
+verifying "unsigned.cpp";
+uint64 add64(uint64 a, uint64 b) { ensures result == integer::uint64_wrapping_add(a, b); }
 uint64 relay(uint64 a, uint64 b, int32& untouched) {
  owns untouched;
- ensures result == a + b;
+ ensures result == integer::uint64_wrapping_add(a, b);
  ensures untouched == old(untouched);
 }
 "#;
@@ -9587,7 +9590,7 @@ fn nested_calls_with_stable_siblings_preserve_fee_rounding_pattern() {
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
         let product = fee * 3;
-        let down = i32::from(round_down);
+        let down = round_down;
         let source = format!(
             r#"verifying "arguments.cpp";
 int64 Mul(int64 fee, int32 at_size) {{ requires fee == {fee}i64; requires at_size == 3; ensures result == {product}i64; }}
@@ -9768,10 +9771,10 @@ int32 local_sibling(int32* slot, int32 value) { owns slot[0..1]; ensures slot[0]
 #[ignore = "nightly: 3s in the parallel gate"]
 fn nested_stable_siblings_preserve_concrete_boolean_template_rounding_wrappers() {
     for (selected, down, fee, expected) in [
-        ("fee_down", 1, 7, 4),
-        ("fee_up", 0, 7, 5),
-        ("fee_down", 1, -7, -5),
-        ("fee_up", 0, -7, -4),
+        ("fee_down", true, 7, 4),
+        ("fee_up", false, 7, 5),
+        ("fee_down", true, -7, -5),
+        ("fee_up", false, -7, -4),
     ] {
         let project = Project::with_fixture("arguments.cpp", selected, MULTIPLE_ARGUMENTS_SOURCE);
         refresh_import(&project.config()).unwrap();
@@ -9862,10 +9865,10 @@ int32 {selected}(int32 value) {{ ensures result == value; }}
 #[ignore = "nightly: 2s in the parallel gate"]
 fn static_helpers_preserve_nested_fee_rounding_template_shape() {
     for (selected, down, fee, expected) in [
-        ("static_fee_down", 1, 7, 4),
-        ("static_fee_up", 0, 7, 5),
-        ("static_fee_down", 1, -7, -5),
-        ("static_fee_up", 0, -7, -4),
+        ("static_fee_down", true, 7, 4),
+        ("static_fee_up", false, 7, 5),
+        ("static_fee_down", true, -7, -5),
+        ("static_fee_up", false, -7, -4),
     ] {
         let project = Project::with_fixture("static.cpp", selected, STATIC_HELPERS_SOURCE);
         refresh_import(&project.config()).unwrap();
@@ -10977,12 +10980,12 @@ fn field_siblings_preserve_upward_fee_template_rounding_and_static_helper_shape(
 fn check_field_sibling_rounding(direction: &str) {
     let cpp = include_str!("fixtures/cpp-verification/return-call/field-fee-rounding.cpp");
     for (selected, down, fee, divisor, expected) in [
-        ("Down", 1, 7, 5, 4),
-        ("Up", 0, 7, 5, 5),
-        ("Down", 1, -7, 5, -5),
-        ("Up", 0, -7, 5, -4),
-        ("Down", 1, 7, 3, 7),
-        ("Up", 0, -7, 3, -7),
+        ("Down", true, 7, 5, 4),
+        ("Up", false, 7, 5, 5),
+        ("Down", true, -7, 5, -5),
+        ("Up", false, -7, 5, -4),
+        ("Down", true, 7, 3, 7),
+        ("Up", false, -7, 3, -7),
     ] {
         if selected != direction {
             continue;
@@ -11112,7 +11115,7 @@ fn wide_intermediates_preserve_high_bits_casts_and_signed_products() {
             "product_truth",
             "bool",
             "int64 a, int64 b",
-            "requires a == 4294967296i64; requires b == 4294967296i64; ensures result == 1;",
+            "requires a == 4294967296i64; requires b == 4294967296i64; ensures result == true;",
         ),
         (
             "product_low",
@@ -11224,7 +11227,7 @@ fn wide_intermediates_compiler_constants_keep_full_payloads() {
         (
             "constant_high_truth",
             "bool",
-            "1",
+            "true",
             "170141183460469231731687303715884105727",
         ),
     ] {
@@ -11741,12 +11744,12 @@ fn wide_comparisons_symbolic_results_verify_expand_and_audit_offline() {
             assert_eq!(import.export().schema, 60);
             let relation = format!("to_integer(a) {op} to_integer(b)");
             let proof = format!(
-                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == 1 implies ({relation}); ensures result == 0 implies not ({relation}); }}"
+                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ ensures result == true implies ({relation}); ensures result == false implies not ({relation}); }}"
             );
             check_selected_claim_certificate(&project, &import, &proof);
             let false_proof = proof.replace(
-                "ensures result == 0 implies not",
-                "ensures result == 0 implies",
+                "ensures result == false implies not",
+                "ensures result == false implies",
             );
             let path = project.directory.join("false.click");
             fs::write(&path, &false_proof).unwrap();
@@ -11768,11 +11771,10 @@ fn wide_comparisons_constants_preserve_high_bits_signedness_and_promotions() {
         let project = Project::with_fixture("wide.cpp", name, WIDE_COMPARISONS_SOURCE);
         refresh_import(&project.config()).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let expected = u32::from(expected);
         let proof =
             format!("verifying \"wide.cpp\"; bool {name}() {{ ensures result == {expected}; }}");
         check_arithmetic_sidecar(&project, &import, &proof);
-        let false_proof = proof.replace(&format!("== {expected}"), &format!("== {}", 1 - expected));
+        let false_proof = proof.replace(&format!("== {expected}"), &format!("== {}", !expected));
         let path = project.directory.join("false.click");
         fs::write(&path, &false_proof).unwrap();
         let parsed = read_click_project(&path, &false_proof).unwrap();
@@ -11784,7 +11786,7 @@ fn wide_comparisons_constants_preserve_high_bits_signedness_and_promotions() {
     check_arithmetic_sidecar(
         &project,
         &import,
-        "verifying \"wide.cpp\"; bool narrow_compare(int128 a, int64 b) { ensures result == 1 implies to_integer(a) < to_integer(b); ensures result == 0 implies not (to_integer(a) < to_integer(b)); }",
+        "verifying \"wide.cpp\"; bool narrow_compare(int128 a, int64 b) { ensures result == true implies to_integer(a) < to_integer(b); ensures result == false implies not (to_integer(a) < to_integer(b)); }",
     );
 }
 
@@ -18375,7 +18377,7 @@ int twice(int x) {
     ensures result == x + x;
 }
 theorem twice_doubles() executes twice(int x) {
-    ensures Doubling(&twice);
+    ensures Doubling(&twice) by { step_until(function.exit); solve(); }
 }
 int apply(int (*f)(int), int x) {
     requires Doubling(f);
@@ -18407,7 +18409,7 @@ fn calls_through_a_cpp_function_pointer_meet_its_named_contract() {
         if body == returned {
             // The expanded proofs of the pointer call and of the caller
             // passing `&twice` reverify.
-            for label in ["apply.contract", "caller.contract"] {
+            for label in ["apply.ensures_0", "caller.contract"] {
                 let expanded = expand_project_claim_source_by_label(
                     &parsed,
                     &ProgramInputs::program(&import),
@@ -18432,8 +18434,7 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     let sidecar = project.directory.join("callback.click");
-    let theorem =
-        "theorem twice_doubles() executes twice(int x) {\n    ensures Doubling(&twice);\n}\n";
+    let theorem = "theorem twice_doubles() executes twice(int x) {\n    ensures Doubling(&twice) by { step_until(function.exit); solve(); }\n}\n";
     let without_theorem = FUNCTION_POINTER_SIDECAR
         .replace(theorem, "")
         .replace("apply(twice_doubles()); ", "");
@@ -18451,7 +18452,10 @@ fn a_cpp_function_pointer_call_needs_its_contract_and_its_refinement() {
             "    ensures result == x + x + 1;\n}\nint twice",
             1,
         ),
-        without_theorem.replacen("    ensures result == x + x;\n}", weak_twice, 1),
+        without_theorem.replace(
+            "int twice(int x) {\n    requires 0 <= x and x <= 1000;\n    ensures result == x + x;\n}",
+            &format!("int twice(int x) {{\n    requires 0 <= x and x <= 1000;\n{weak_twice}"),
+        ),
     ] {
         assert_ne!(hostile, FUNCTION_POINTER_SIDECAR);
         let Err(error) = verify(&hostile) else {
