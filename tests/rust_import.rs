@@ -1979,7 +1979,6 @@ fn charon_trial_live_refresh_and_compiler_rejections() {
             include_str!("../design/borrow-probes/charon-move-rejected.rs"),
             "E0382",
         ),
-        ("pub fn unsupported(x: u64) -> u64 { x }", "integer width"),
     ] {
         fs::remove_file(p.artifact("trial.rs")).unwrap();
         fs::write(p.root.join("trial.rs"), source).unwrap();
@@ -1989,6 +1988,14 @@ fn charon_trial_live_refresh_and_compiler_rejections() {
         fs::write(p.root.join("trial.rs"), CHARON_SOURCE).unwrap();
         p.refresh().unwrap();
     }
+    fs::write(p.root.join("trial.rs"), "pub fn wide(x: u64) -> u64 { x }").unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(
+        "verifying \"trial.rs\"; fn wide(x: u64) -> u64 { ensures result == x; }",
+        &prepared,
+    )
+    .unwrap();
 }
 #[test]
 #[ignore = "nightly: 1.3s in the parallel gate; other gate tests reach the same code"]
@@ -2162,7 +2169,7 @@ fn rust_boolean_return_and_local_initialization_verify() {
     let p = Project::new("pub fn invert(x:bool)->bool { let answer = !x; answer }");
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let claim = "verifying \"borrow.rs\"; fn invert(x: bool) -> bool { ensures result == (if x != 0 { 0 } else { 1 }); } by { if x == 0 { step_until(function.exit); solve(); } else { step_until(function.exit); solve(); } }";
+    let claim = "verifying \"borrow.rs\"; fn invert(x: bool) -> bool { ensures result == (if x == true { false } else { true }); } by { if x == false { step_until(function.exit); solve(); } else { step_until(function.exit); solve(); } }";
     C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
 }
 
@@ -2828,7 +2835,7 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     let (_, verified) = C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
-    assert_eq!(verified.len(), 9);
+    assert_eq!(verified.len(), 8);
     let admits_overflow = sidecar.replace("4294967040u32", "4294967041u32");
     assert_ne!(admits_overflow, sidecar);
     let refusal = C0VerificationSession::new_program_prepared(&admits_overflow, &prepared)
@@ -2882,31 +2889,41 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(BOX_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
+    for (function, before, after, expected) in [
         (
+            "boxed::boxed",
             "    ensures result == x + 1;",
             "    ensures result == x;",
             "boxed::boxed.ensures_0",
         ),
-        ("    requires x < 100;\n", "", "Rust add panic check"),
+        (
+            "boxed::boxed",
+            "    requires x < 100;\n",
+            "",
+            "Rust add panic check",
+        ),
         // `read` frees the box it is passed, so it cannot hand it back.
         (
+            "boxed::read",
             "    consumes allocation(b, sizeof(boxed::Cell));\n    consumes *b;",
             "    owns allocation(b, sizeof(boxed::Cell));\n    owns *b;",
             "boxed::read.owns_0",
         ),
         // `make` returns the allocation it made.
         (
+            "boxed::make",
             "    produces allocation(result, sizeof(boxed::Cell));\n",
             "",
             "live allocation obligation was neither returned nor freed",
         ),
         (
+            "boxed::value_or",
             "    consumes cell: cell_box(o);",
             "    owns cell: cell_box(o);",
             "boxed::value_or.owns_0",
         ),
         (
+            "boxed::maybe_through",
             "    ensures make == false implies result == 0;",
             "    ensures make == false implies result == x;",
             "boxed::maybe_through.ensures_1",
@@ -2914,9 +2931,12 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
     ] {
         assert!(BOX_SIDECAR.contains(before), "{before}");
         let invalid = BOX_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the complete mutated function and its dependencies, while
+        // the initial successful run covers every body in the fixture.
+        let error = verify_rust_function(&invalid, &prepared, function)
             .err()
             .expect("a claim the box program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
@@ -3055,9 +3075,13 @@ fn charon_option_values_read_as_click_options() {
     ] {
         assert!(OPTION_VALUE_SIDECAR.contains(before), "{before}");
         let invalid = OPTION_VALUE_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the mutated function and its dependencies, without proving
+        // the fixture's unrelated functions again for every negative case.
+        let function = expected.split('.').next().unwrap();
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
             .err()
             .expect("a claim the option program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
@@ -3122,9 +3146,13 @@ fn charon_result_values_read_as_click_results() {
     ] {
         assert!(RESULT_VALUE_SIDECAR.contains(before), "{before}");
         let invalid = RESULT_VALUE_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the mutated function and its dependencies, without proving
+        // the fixture's unrelated functions again for every negative case.
+        let function = expected.split('.').next().unwrap();
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
             .err()
             .expect("a claim the result program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
@@ -3250,9 +3278,13 @@ fn charon_option_references_read_and_write_through_borrows() {
     ] {
         assert!(OPTION_REF_SIDECAR.contains(before), "{before}");
         let invalid = OPTION_REF_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the mutated function and its dependencies, without proving
+        // the fixture's unrelated functions again for every negative case.
+        let function = expected.split('.').next().unwrap();
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
             .err()
             .expect("a claim the reference program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
@@ -3437,24 +3469,35 @@ fn charon_recursive_drop_glue_needs_ownership_and_a_measure() {
 #[test]
 fn charon_stack_refuses_false_push_pop_and_round_trip_claims() {
     let prepared = recursive_drop_prepared();
-    for (before, after, expected) in [
+    for (head, before, after, expected) in [
         (
+            "fn push(",
             "ensures after.values == List::Cons(value, old(before.values));",
             "ensures after.values == old(before.values);",
             "recursive_drop::Stack::push",
         ),
         (
+            "fn pop(",
             "ensures result == first(old(before.values));",
             "ensures result == Option<u32>::None;",
             "recursive_drop::Stack::pop",
         ),
         (
+            "fn recursive_drop::round_trip(",
             "ensures result == Option<u32>::Some(x);",
             "ensures result == Option<u32>::None;",
             "recursive_drop::round_trip",
         ),
     ] {
-        assert_recursive_drop_refused(&prepared, before, after, expected);
+        assert!(RECURSIVE_DROP_SIDECAR.contains(before), "{before}");
+        let invalid = RECURSIVE_DROP_SIDECAR.replacen(before, after, 1);
+        // The separate positive test covers the complete recursive-drop fixture.
+        let error = verify_rust_proof_after(&invalid, &prepared, head)
+            .expect_err("the mutated stack claim must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
     }
 }
 
@@ -4720,21 +4763,21 @@ fn rust_usize_boundaries_and_nested_checks() {
             "false && x + 1 > 0",
             "bool",
             "x == 18446744073709551615u64",
-            "0",
+            "false",
             true,
         ),
         (
             "true || x + 1 > 0",
             "bool",
             "x == 18446744073709551615u64",
-            "1",
+            "true",
             true,
         ),
         (
             "true && x + 1 > 0",
             "bool",
             "x == 18446744073709551615u64",
-            "1",
+            "true",
             false,
         ),
     ] {

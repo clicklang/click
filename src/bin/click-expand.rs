@@ -1065,13 +1065,9 @@ int32 bad(int32 x) {
         let from_have = run_at(have_line, 9).expect("the have keyword should select it");
 
         assert_eq!(from_solve, from_have);
+        assert!(from_solve.contains("normalize() using {"), "{from_solve}");
         assert!(
-            from_solve
-                .contains("extract(to_integer(st.live) == to_integer((at(m, st.live) + got)));"),
-            "{from_solve}"
-        );
-        assert!(
-            !from_solve.contains("solve() using {\n                    defined(1 + got)"),
+            !from_solve.contains("solve() using {\n                    to_integer(st.live) == to_integer(at(m, st.live) + got)"),
             "{from_solve}"
         );
     }
@@ -1136,7 +1132,10 @@ int32 bad(int32 x) {
             from_have
         );
         let premise_line = have_line + 2;
-        assert!(markdown_line(&path, premise_line).contains("defined(1 + got)"));
+        assert!(
+            markdown_line(&path, premise_line)
+                .contains("to_integer(st.live) == to_integer(at(m, st.live) + got)")
+        );
         assert_eq!(
             run_location(&path, &format!("{premise_line}:20")).unwrap(),
             from_have
