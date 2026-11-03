@@ -49,6 +49,46 @@ pub(crate) fn native_comparison_of_integer_observation(
     native_comparison_view(condition, value)?.boxed_condition()
 }
 
+/// Construct a checking comparison from two borrowed operands. Native inputs
+/// and fixed-size atoms keep their written comparison; shared arithmetic stays
+/// in exact observations. This never exports a shared arithmetic tree.
+pub(crate) fn condition_for_operand_views(
+    format: MachineIntegerType,
+    relation: crate::kernel::CompareRelation,
+    operands: [crate::kernel::MachineOperandView<'_>; 2],
+) -> ConditionTerm {
+    use crate::kernel::{CompareRelation as R, MachineOperandView as V};
+    let atoms = operands.map(|operand| match operand {
+        V::Shared(_) => operand
+            .literal()
+            .or_else(|| operand.variable().copied().map(Bitvector32Term::Variable)),
+        V::Legacy(_) => None,
+    });
+    let operands: [V<'_>; 2] = std::array::from_fn(|index| {
+        atoms[index]
+            .as_ref()
+            .map(V::Legacy)
+            .unwrap_or(operands[index])
+    });
+    if let [V::Legacy(left), V::Legacy(right)] = operands {
+        return ConditionTerm::machine_compare(format, relation, left.clone(), right.clone());
+    }
+    let [left, right] = operands.map(|operand| {
+        if let Some(literal) = operand.literal() {
+            IntegerTerm::from_machine(format, literal).expect("typed comparison literal")
+        } else {
+            IntegerTerm::Machine(operand.retain(format))
+        }
+    });
+    match relation {
+        R::Equal => ConditionTerm::integer_equal(left, right),
+        R::LessThan => ConditionTerm::integer_less_than(left, right),
+        R::LessEqual => ConditionTerm::integer_less_equal(left, right),
+        R::GreaterThan => ConditionTerm::integer_greater_than(left, right),
+        R::GreaterEqual => ConditionTerm::integer_greater_equal(left, right),
+    }
+}
+
 /// A comparison query retaining its original shared operand identities.
 /// Boxed conditions are an explicit compatibility output for unmigrated callers.
 #[derive(Clone)]

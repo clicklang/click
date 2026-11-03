@@ -342,3 +342,199 @@ fn shared_wide_order_walks_scale_with_selected_chain() {
         assert!(lw * small <= sw * large * 2, "{samples:?}");
     }
 }
+
+#[test]
+fn signed_order_views_preserve_native_answers_without_exporting() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, SharedMachineIntegerTerm};
+    let _session = crate::kernel::VerificationSession::enter();
+    let x = Bitvector32Term::Variable(Variable(996701));
+    let y = Bitvector32Term::Variable(Variable(996702));
+    let contexts = [
+        PureFactContext::new(),
+        PureFactContext::new()
+            .assume_condition(ConditionTerm::signed_less_equal(0.into(), x.clone()), true)
+            .assume_condition(ConditionTerm::signed_less_equal(x.clone(), 10.into()), true)
+            .assume_condition(ConditionTerm::signed_less_than(x.clone(), y.clone()), true),
+    ];
+    let values = [
+        x.clone(),
+        y,
+        Bitvector32Term::add(x.clone(), 1.into()),
+        Bitvector32Term::subtract(x, 1.into()),
+        0.into(),
+        12.into(),
+    ];
+    let shared: Vec<_> = values
+        .iter()
+        .map(|term| {
+            SharedMachineIntegerTerm::from_shared(
+                MachineIntegerType::Int32,
+                KernelTermImport::default()
+                    .machine_arithmetic(MachineIntegerType::Int32, term)
+                    .unwrap(),
+            )
+            .unwrap()
+        })
+        .collect();
+    for facts in contexts {
+        for (i, left) in values.iter().enumerate() {
+            for (j, right) in values.iter().enumerate() {
+                for relation in [
+                    CompareRelation::LessThan,
+                    CompareRelation::LessEqual,
+                    CompareRelation::GreaterThan,
+                    CompareRelation::GreaterEqual,
+                ] {
+                    let native = facts.decide_signed_order_views(
+                        relation,
+                        MachineOperandView::Legacy(left),
+                        MachineOperandView::Legacy(right),
+                    );
+                    let exports = KernelTermExport::machine_export_count();
+                    let retained = facts.decide_signed_order_views(
+                        relation,
+                        shared[i].operand_view(),
+                        shared[j].operand_view(),
+                    );
+                    assert_eq!(native, retained, "{relation:?}: {left:?}, {right:?}");
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn signed_order_rules_keep_growing_shared_prefixes() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, SharedMachineIntegerTerm};
+    let mut samples = Vec::new();
+    for size in [4, 12, 36] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(996711));
+        let mut facts = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    crate::kernel::MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                let operand = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+                facts = facts.assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(996720 + index)),
+                        7.into(),
+                    ),
+                    true,
+                );
+                // Each step changes the context. Reflexive and extreme rules
+                // must inspect roots without visiting the growing prefix.
+                assert_eq!(
+                    facts.decide_signed_order_views(
+                        CompareRelation::LessThan,
+                        operand.operand_view(),
+                        operand.operand_view()
+                    ),
+                    Some(false)
+                );
+                assert_eq!(
+                    facts.decide_signed_order_views(
+                        CompareRelation::LessEqual,
+                        MachineOperandView::Legacy(&Bitvector32Term::Constant(i32::MIN as u32)),
+                        operand.operand_view()
+                    ),
+                    Some(true)
+                );
+                assert!(!operand.has_boxed_operand());
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push((size as usize, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
+    }
+}
+
+#[test]
+fn unsigned_order_views_preserve_native_answers_and_polarity() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, SharedMachineIntegerTerm};
+    let _session = crate::kernel::VerificationSession::enter();
+    let x = Bitvector32Term::Variable(Variable(996761));
+    let y = Bitvector32Term::Variable(Variable(996762));
+    let sum = Bitvector32Term::add_at(MachineIntegerType::UInt32, x.clone(), 1.into());
+    let facts = PureFactContext::new()
+        .assume_condition(
+            ConditionTerm::unsigned_greater_than(y.clone(), sum.clone()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::unsigned_greater_than(x.clone(), y.clone()),
+            false,
+        );
+    let values = [x, sum, y, 0.into(), Bitvector32Term::Constant(u32::MAX)];
+    let shared: Vec<_> = values
+        .iter()
+        .map(|term| {
+            SharedMachineIntegerTerm::from_shared(
+                MachineIntegerType::UInt32,
+                KernelTermImport::default()
+                    .machine_arithmetic(MachineIntegerType::UInt32, term)
+                    .unwrap(),
+            )
+            .unwrap()
+        })
+        .collect();
+    for (i, left) in values.iter().enumerate() {
+        for (j, right) in values.iter().enumerate() {
+            for strict in [true, false] {
+                let native = facts.decide_unsigned32_order_views(
+                    MachineOperandView::Legacy(left),
+                    MachineOperandView::Legacy(right),
+                    strict,
+                );
+                let exports = KernelTermExport::machine_export_count();
+                let retained = facts.decide_unsigned32_order_views(
+                    shared[i].operand_view(),
+                    shared[j].operand_view(),
+                    strict,
+                );
+                assert_eq!(native, retained, "{left:?}, {right:?}, strict={strict}");
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
+}
+
+#[test]
+fn shared_successor_transport_uses_ordinary_dispatch_without_export() {
+    use crate::kernel::{
+        IntegerTerm, KernelTermExport, KernelTermImport, SharedMachineIntegerTerm,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let x = Bitvector32Term::Variable(Variable(996781));
+    let y = Bitvector32Term::Variable(Variable(996782));
+    let facts = PureFactContext::new()
+        .assume_condition(ConditionTerm::signed_less_than(x.clone(), y.clone()), true);
+    let successor = Bitvector32Term::add(x, 1.into());
+    let shared = SharedMachineIntegerTerm::from_shared(
+        MachineIntegerType::Int32,
+        KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int32, &successor)
+            .unwrap(),
+    )
+    .unwrap();
+    let query = ConditionTerm::integer_less_equal(
+        IntegerTerm::Machine(shared.clone()),
+        IntegerTerm::from_machine(MachineIntegerType::Int32, y).unwrap(),
+    );
+    let exports = KernelTermExport::machine_export_count();
+    assert_eq!(facts.decide(&query), Some(true));
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+    assert!(!shared.has_boxed_operand());
+}

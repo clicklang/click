@@ -461,8 +461,35 @@ impl PureFactContext {
         if let Some(value) = self.decide_shared_signed_constant_order(condition) {
             return Some(value);
         }
-        // Still required for arithmetic rules not yet migrated to operand
-        // views (for example, a positive offset with a no-overflow premise).
+        // The compatibility decision consulted an already-built graph here,
+        // after the cheap observation rules and before the native order rules.
+        if !matches!(condition, ConditionTerm::Compare { .. })
+            && let Some(view) =
+                crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+            && let Some(value) = self
+                .difference_graph
+                .built()
+                .and_then(|graph| graph.decide_shared_order(&view))
+        {
+            return Some(value);
+        }
+        if !matches!(condition, ConditionTerm::Compare { .. })
+            && crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+                .is_some_and(|view| {
+                    matches!(
+                        view.format,
+                        MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                    ) && matches!(
+                        view.relation,
+                        crate::kernel::machine_integer::Relation::Less
+                            | crate::kernel::machine_integer::Relation::LessEqual
+                    )
+                })
+            && let Some(value) = self.decide_from_order_facts(condition)
+        {
+            return Some(value);
+        }
+        // Still required for equality and remaining compatibility rules.
         if let Some((native, truth)) = native_comparison_of_integer_observation(condition, true)
             && &native != condition
             && let Some(value) = self.decide(&native)
@@ -1695,6 +1722,40 @@ impl PureFactContext {
         }
     }
 
+    pub(super) fn has_written_operand_comparison(
+        &self,
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        truth: bool,
+    ) -> bool {
+        self.has_condition_fact(
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                relation,
+                [left, right],
+            ),
+            truth,
+        )
+    }
+
+    pub(super) fn decide_written_operand_comparison(
+        &self,
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Option<bool> {
+        self.decide(
+            &crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                relation,
+                [left, right],
+            ),
+        )
+    }
+
     pub(super) fn has_operand_comparison(
         &self,
         format: MachineIntegerType,
@@ -2173,29 +2234,64 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.has_condition_fact(
-            ConditionTerm::signed_less_equal(left.clone(), right.clone()),
+        self.order_facts_force_equal_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        )
+    }
+
+    pub(super) fn order_facts_force_equal_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> bool {
+        self.has_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            left,
+            right,
             true,
-        ) && self.has_condition_fact(
-            ConditionTerm::signed_less_than(left.clone(), right.clone()),
+        ) && self.has_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::LessThan,
+            left,
+            right,
             false,
-        ) || self.has_condition_fact(
-            ConditionTerm::signed_less_equal(right.clone(), left.clone()),
+        ) || self.has_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            right,
+            left,
             true,
-        ) && self.has_condition_fact(
-            ConditionTerm::signed_less_than(right.clone(), left.clone()),
+        ) && self.has_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::LessThan,
+            right,
+            left,
             false,
-        ) || self.has_condition_fact(
-            ConditionTerm::signed_greater_equal(left.clone(), right.clone()),
+        ) || self.has_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::GreaterEqual,
+            left,
+            right,
             true,
-        ) && self.has_condition_fact(
-            ConditionTerm::signed_greater_than(left.clone(), right.clone()),
+        ) && self.has_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::GreaterThan,
+            left,
+            right,
             false,
-        ) || self.has_condition_fact(
-            ConditionTerm::signed_greater_equal(right.clone(), left.clone()),
+        ) || self.has_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::GreaterEqual,
+            right,
+            left,
             true,
-        ) && self.has_condition_fact(
-            ConditionTerm::signed_greater_than(right.clone(), left.clone()),
+        ) && self.has_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::GreaterThan,
+            right,
+            left,
             false,
         )
     }
@@ -2377,15 +2473,16 @@ impl PureFactContext {
         })
     }
 
-    pub(in crate::kernel) fn decide_signed_comparison_from_equal_constants(
+    pub(super) fn decide_signed_comparison_from_equal_constants_views(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
         compare: impl FnOnce(i64, i64) -> bool,
     ) -> Option<bool> {
-        let left = self.signed_constant_known_equal(left)?;
-        let right = self.signed_constant_known_equal(right)?;
-        Some(compare(left, right))
+        Some(compare(
+            self.signed_constant_known_equal_view(left)?,
+            self.signed_constant_known_equal_view(right)?,
+        ))
     }
 }
 

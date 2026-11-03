@@ -332,6 +332,49 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
+    /// The legacy signed-32 constant-offset shapes, inspected at the root.
+    pub(crate) fn int32_add_const_base(self, value: u32) -> Option<Self> {
+        let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [left, right]) =
+            self.binary()?
+        else {
+            return None;
+        };
+        if right.literal() == Some(Bitvector32Term::Constant(value)) {
+            Some(left)
+        } else if left.literal() == Some(Bitvector32Term::Constant(value)) {
+            Some(right)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn int32_add_const_parts(self) -> Option<(Self, u32)> {
+        let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [left, right]) =
+            self.binary()?
+        else {
+            return None;
+        };
+        if let Some(Bitvector32Term::Constant(value)) = right.literal() {
+            Some((left, value))
+        } else if let Some(Bitvector32Term::Constant(value)) = left.literal() {
+            Some((right, value))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn int32_subtract_const_parts(self) -> Option<(Self, u32)> {
+        let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Subtract, [left, right]) =
+            self.binary()?
+        else {
+            return None;
+        };
+        let Some(Bitvector32Term::Constant(value)) = right.literal() else {
+            return None;
+        };
+        Some((left, value))
+    }
+
     /// Literal payload only, without descending through an operation.
     pub(crate) fn literal(self) -> Option<Bitvector32Term> {
         match self {
