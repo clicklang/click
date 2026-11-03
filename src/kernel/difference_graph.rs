@@ -461,8 +461,10 @@ impl DifferenceGraph {
             self.contradictory = true;
             return;
         }
-        self.shared_queries.invalidate(operand_views::cache::Read::Node(from));
-        self.shared_queries.invalidate(operand_views::cache::Read::Node(to));
+        self.shared_queries
+            .invalidate(operand_views::cache::Read::Node(from));
+        self.shared_queries
+            .invalidate(operand_views::cache::Read::Node(to));
         let out = self.out_edges.get(&from).cloned().unwrap_or_default();
         self.out_edges.insert(from, out.with_inserted(to, weight));
         let incoming = self.in_edges.get(&to).cloned().unwrap_or_default();
@@ -508,13 +510,15 @@ impl DifferenceGraph {
                 return;
             }
             self.bounds.insert(node, (new_low, new_high));
-            self.shared_queries.invalidate(operand_views::cache::Read::Node(node));
+            self.shared_queries
+                .invalidate(operand_views::cache::Read::Node(node));
             if new_high < old_high
                 && let Some(edges) = self.out_edges.get(&node)
             {
                 if edges.len() > budget {
                     if self.truncated.is_empty() {
-                        self.shared_queries.invalidate(operand_views::cache::Read::Truncation);
+                        self.shared_queries
+                            .invalidate(operand_views::cache::Read::Truncation);
                     }
                     self.truncated = self.truncated.with_value(node);
                 }
@@ -528,7 +532,8 @@ impl DifferenceGraph {
             {
                 if edges.len() > budget {
                     if self.truncated.is_empty() {
-                        self.shared_queries.invalidate(operand_views::cache::Read::Truncation);
+                        self.shared_queries
+                            .invalidate(operand_views::cache::Read::Truncation);
                     }
                     self.truncated = self.truncated.with_value(node);
                 }
