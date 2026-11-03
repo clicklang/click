@@ -489,6 +489,19 @@ impl PureFactContext {
         {
             return Some(value);
         }
+        // These wide/index routes now retain their operands too. Keep them
+        // at the compatibility dispatch position, after the cheap rules.
+        if !matches!(condition, ConditionTerm::Compare { .. }) {
+            if let Some(value) = self.decide_uint64_constant_order_bounds(condition) {
+                return Some(value);
+            }
+            if let Some(value) = self.decide_small_uint64_index_order(condition) {
+                return Some(value);
+            }
+            if let Some(value) = self.decide_wide_order_chain(condition) {
+                return Some(value);
+            }
+        }
         // Still required for equality and remaining compatibility rules.
         if let Some((native, truth)) = native_comparison_of_integer_observation(condition, true)
             && &native != condition

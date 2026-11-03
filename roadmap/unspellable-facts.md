@@ -80,7 +80,11 @@ Signed and unsigned 32-bit order rules inspect operand views, including mirrored
 and negative answers, shifted-bound domains, and successor transport. Their
 native entry points use the same rule bodies. Fixed-size literal/variable
 comparisons preserve native spelling; shared arithmetic stays in observations.
-The signed equality dispatcher and remaining wide/index guards are still open.
+Unsigned successor, subtraction, remainder and partial-restoration guards also
+read views. Low-word index comparisons retain their wide operands and literal
+offsets through the unsigned or signed range checks, preserving refusals when
+the ranges are absent. The signed equality dispatcher and nonnegative division
+bound adapter remain open.
 
 Bounded arithmetic-certificate conclusion identity reads shared operands directly,
 preserving its accepted operators, cast encodings, narrow comparison identity,

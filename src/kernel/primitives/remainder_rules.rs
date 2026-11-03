@@ -66,41 +66,6 @@ impl C {
         }
         Some(guards)
     }
-
-    pub(crate) fn uint64_remainder_bound_guard(&self) -> Option<Self> {
-        let (left, right, strict) = match self {
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            } => (a.as_ref(), b.as_ref(), false),
-            C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            } => (a.as_ref(), b.as_ref(), true),
-            _ => return None,
-        };
-        let B::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::Remainder,
-            left: n,
-            right: d,
-        } = left
-        else {
-            return None;
-        };
-        if (!strict && n.as_ref() == right) || (strict && d.as_ref() == right) {
-            Some(C::uint64_less_than(
-                B::UInt64Constant(0),
-                d.as_ref().clone(),
-            ))
-        } else {
-            None
-        }
-    }
 }
 
 impl B {
