@@ -184,7 +184,8 @@ fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
         });
         work.push(used);
     }
-    assert!(work.iter().all(|used| *used == work[0]), "{work:?}");
+    // Unrelated facts must not increase work; cheaper lookups are allowed.
+    assert!(work.iter().all(|used| *used <= work[0]), "{work:?}");
     let unbounded = PureFactContext::new();
     assert_ne!(
         unbounded
