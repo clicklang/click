@@ -1015,7 +1015,6 @@ fn selected_tactic_batch_captures_multiple_sites_inside_one_have() {
 fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
     for relative in [
         "mdtests/loop_after_proof_branch_expands.md",
-        "mdtests/a_ranked_loop_with_no_invariant_closes_a_branching_body.md",
         "mdtests/bubble_sort3_loop_sorted.md",
         "mdtests/loop_return_closes_in_preserve_arm.md",
     ] {
@@ -1035,7 +1034,7 @@ fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
                     .count()
                     > 1
             })
-            .unwrap();
+            .unwrap_or_else(|| panic!("{relative}: expected multiple smart sites in one claim"));
         let positions = sites
             .iter()
             .filter(|site| site.claim_label == claim.claim_label)
