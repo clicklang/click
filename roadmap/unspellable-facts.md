@@ -55,6 +55,11 @@ Merged checkpoints relevant to the active work:
 - #2330 migrated signed 32-bit ranges, constant-offset definedness decisions,
   and comparisons whose operands are pinned by equalities.
 
+Endpoint-bound helpers and the exact signed-order walk now consume operand
+views. The general comparison dispatcher still needs its compatibility bridge;
+its migration must preserve the existing rule order as well as proof results.
+Moving endpoint queries ahead of cheaper rules can multiply nested bound visits.
+
 Nested signed production remains disabled until checker consumers are shared
 end to end. A green PR migrating a subset does **not** complete part 1.
 The original pointer-read WIP branch and its historical failure list are not
