@@ -31,39 +31,53 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Call-side fragment composition: red test and design checkpoint.**
-   The loan planner's coalescing prepass calls
-   `ResourceContext::with_coalesced_owned_memory` when no nominated owner or
-   bound view supplies a memory requirement. It materializes the candidate
-   frontier and normalizes it before discovering missing coverage.
+1. **Call-side fragment composition: removal experiment needs proof repairs.**
+   The local experiment removes the automatic coalescing prepass from
+   `plan_stable_view_transfer_with_protocol_effect`. The fixed-gap regression
+   `call_fragment_composition_stops_at_a_fixed_gap` now passes: repeated
+   complete-call work is 28 at 4/16/64/256 rejected fragments, versus
+   315/711/2295/8631 before removal. Persistent-map visits are 229/319/443/567,
+   versus 5722/22006/105598/524218. Its range indices denote four-byte cells:
+   `[0..1]` is held, cell 1 is missing, and extras start at cell 100. Complete
+   ownership still supplies the view; disconnected observations do not.
 
-   `call_fragment_composition_stops_at_a_fixed_gap` in
-   `src/scaling_tests/kernel/loans/tests.rs` holds a view request for
-   `buffer[0..1024]` fixed, with ownership of `[0..1]` and a gap at byte 1.
-   Add 4/16/64/256 disjoint one-byte owned fragments starting at byte 100;
-   none can fill that gap. Index preparation is outside measurement. Repeated
-   coalescing work is 259/655/2239/8575; complete-call work is
-   315/711/2295/8631, with 5722/22006/105598/524218 persistent-map visits.
-   Each query correctly refuses without changing the source branch. The same
-   test checks successful two-piece composition beside out-of-range owners,
-   and refusal beside observation-only additions: their ordinary work stays
-   flat, with only indexing growth in map work. All semantic controls run
-   before the intended scaling assertion fails. The red test is ignored;
-   run its exact name with `--run-ignored all --no-capture`.
+   Validation of the un-repaired experiment: all ordinary example projects
+   pass; 1360 of 1361 scaling/loan tests pass, with
+   `mixed_width_view_backing_joins_only_its_own_pieces` failing as expected.
+   5020 of 5027 Markdown fixtures pass. Failures are:
+   - `a_kept_view_of_mixed_width_owned_fields_is_lent_until_released`
+   - `writing_a_field_while_its_kept_view_is_lent_is_refused`
+   - `cpp_class_const_method_keeps_fields`
+   - `cpp_class_const_method_keeps_fields_rejects_overclaim`
+   - `cpp_class_const_reference_keeps_fields`
+   - `cpp_class_subclass_local_object_packs_itself`
+   - `cpp_polymorphic_base_construction`
 
-   Proposed next experiment, for design review: remove the implicit coalescing
-   prepass and identify actual proof dependencies. Try explicit composition
-   for affected proofs, preserving C, contracts, ownership and loan refusals.
-   Check that a repair selects its pieces rather than merely moving this scan
-   to another tactic. Do not add a replacement search or a new primitive before
-   reducing a concrete missing explicit step. The existing indexed fragment
-   reservation route is a separate possible implementation to assess, not
-   evidence that the automatic coalescing prepass is necessary.
+   These fail to supply a whole-object stable view from separate owned pieces.
+   The two negative fixtures now refuse prematurely, not at their intended
+   safety checks. Keep those checks and the original C/contracts intact.
 
-   Owned requirement reservation also uses
-   `reserve_owned_memory_fragments_with_origins` and the unselected
-   `without_fact_incrementally_with_origins` route; this reproduction isolates
-   the viewed-requirement prepass, not every composition path.
+   Explicit proof experiment: declaring `resource Whole(p: struct S*) {
+   owns *p; }`, then `fold(Whole(p)); unfold(Whole(p));` before `lend(p)`
+   proves the mixed-width struct fixture. It is not yet a satisfactory repair:
+   fold's ownership consumption uses `without_fact_incrementally`, whose
+   fallback also collects and normalizes the candidate frontier. The temporary
+   proof edit was restored. This establishes expressibility, not fast checking.
+
+   Next design/build checkpoint: investigate reusing the existing indexed
+   `reserve_owned_memory_fragments_with_origins` construction for explicit
+   owned composition. It consumes successive selected pieces and stops at a
+   gap; verify mixed-width coverage, provenance, refusal behavior, and complete
+   fold cost before adopting it. Do not introduce a new tactic or separation
+   axiom merely because the implicit prepass was removed. Do not relocate
+   candidate search into proof repairs. C++ object packing needs concrete
+   repairs as well; successful struct folding alone does not establish them.
+
+   `functions.rs` also calls `with_coalesced_owned_memory` in
+   `unsupplied_local`, to classify implicit local-storage authority. That use
+   remains unchanged in this experiment. Its removal must preserve authority
+   classification; deleting a negative guard blindly could grant authority.
+   The removal is a local checkpoint, not ready for publication.
 
 2. **Loop retained-frame candidates: remaining measurement boundary.**
    With an explicit view interface, `with_loop_frame_resources` visits the
