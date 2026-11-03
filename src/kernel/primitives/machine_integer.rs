@@ -502,8 +502,9 @@ impl Bitvector32Term {
     }
 
     /// The 32-bit sign cast σ: `value`, an `int32` or `uint32` term, read at
-    /// the other one of the two. It folds a constant and undoes a σ
-    /// (`machine_integer_cast`), so σ(σ(x)) is `x`. Every C conversion
+    /// the other one of the two. It folds a constant (`machine_integer_cast`)
+    /// and keeps σ of σ as written; R0 relates σ(σ(x)) to `x` in the
+    /// e-graph. Every C conversion
     /// between `int` and `unsigned int` builds it
     /// (`design/machine-integers.md`, "Decisions", 2026-10-25).
     pub(crate) fn sign_cast32(
@@ -715,9 +716,10 @@ impl Bitvector32Term {
                 .constant_term(constant.convert_modulo(destination.format()))
                 .expect("matching destination format");
         }
-        // The established 32-bit word rules identify chains of sign casts
-        // and narrow promotions. Keep that representation convention local
-        // to the word carrier; it must not erase a wide intermediate cast.
+        // The established 32-bit word rules identify chains of narrow
+        // conversions. Keep that representation convention local to the
+        // word carrier; it must not erase a wide intermediate cast. σ of σ
+        // is kept as written: R0 relates σ(σ(x)) to `x` in the e-graph.
         if let Self::MachineIntegerCast {
             source: original,
             destination: intermediate,
@@ -729,6 +731,7 @@ impl Bitvector32Term {
                 && destination.carrier_bytes() == 4
                 && intermediate == source
                 && destination.format().bits() <= intermediate.format().bits()
+                && !(original == destination && is_sign_cast32(original, intermediate))
             {
                 return Self::machine_integer_cast(original, destination, *operand);
             }

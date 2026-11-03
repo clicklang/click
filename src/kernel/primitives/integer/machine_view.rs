@@ -107,8 +107,10 @@ pub(super) fn shared_value_reading(
                 break result.clone();
             }
             path.push(key);
-            // Rule W peels one 32-bit sign conversion before checking the
-            // resulting root, exactly as machine_value_reading does.
+            // Rule W reads through a 32-bit sign conversion before checking
+            // the resulting root, exactly as machine_value_reading does. σ
+            // of σ is kept as written, so the operand is read again at the
+            // same format: one cached step per σ node.
             if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32)
                 && let KernelTermNode::MachineCast {
                     encoding: Generic,
@@ -121,6 +123,7 @@ pub(super) fn shared_value_reading(
                 && source != destination
             {
                 term = operand.clone();
+                continue;
             }
             if let KernelTermNode::MachineCast {
                 encoding: Generic,
@@ -645,6 +648,49 @@ mod tests {
 #[cfg(test)]
 mod cast_tests {
     use super::*;
+
+    /// σ of σ is kept as written, and rule W reads every σ of the chain: a
+    /// written `(a as uint32) as int32` is observed at `int32`, and that
+    /// observation, through both readers, reads as `a`'s. Reading only the
+    /// outer σ left the `uint32` σ(a) observed at `int32` with no reading,
+    /// so the observation did not exist: its `to_integer` lowered to "no
+    /// single evaluation path", and an `int32` operation over it panicked
+    /// building its domain.
+    #[test]
+    fn a_sign_cast_of_a_sign_cast_is_observed_through_both() {
+        use MachineIntegerType::{Int32, UInt32};
+        let _session = crate::kernel::VerificationSession::enter();
+        let a = Bitvector32Term::Variable(Variable(985006));
+        for (outer, inner) in [(Int32, UInt32), (UInt32, Int32)] {
+            let twice = Bitvector32Term::sign_cast32(
+                inner,
+                outer,
+                Bitvector32Term::sign_cast32(outer, inner, a.clone()),
+            );
+            assert!(twice.sign_cast32_operand().is_some(), "kept as written");
+            let observed = IntegerTerm::from_machine(outer, twice.clone())
+                .expect("σ(σ(a)) is observable at its format");
+            let operand = IntegerTerm::from_machine(outer, a.clone()).unwrap();
+            assert_ne!(observed, operand, "the observation keeps its σ nodes");
+            assert_eq!(observed.value_read(), operand.value_read());
+            let root = KernelTermImport::default()
+                .machine_arithmetic(outer, &twice)
+                .unwrap();
+            assert_eq!(
+                MachineOperandView::Shared(&root).observe(outer),
+                Some(observed)
+            );
+            if outer == Int32 {
+                // Builds its operands' observations; it panicked before.
+                crate::kernel::Proposition::signed_arithmetic_domain(
+                    Int32,
+                    MachineBinaryOp::Add,
+                    &twice,
+                    &Bitvector32Term::Constant(0),
+                );
+            }
+        }
+    }
 
     #[test]
     fn shared_widening_ranges_preserve_signedness_without_exporting() {
