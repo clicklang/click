@@ -41,6 +41,37 @@ facts do not establish flat cost as the queried class or bucket grows.
    bounded single-owner query does not establish bounded total call/coalescing
    cost.
 
+   Two local red regressions now isolate this work (explicitly ignored until
+   fixed; run these names with `--run-ignored all --no-capture`):
+
+   - `alternative_memory_owner_refusal_ignores_incident_bounds` in
+     `src/scaling_tests/kernel/tests/resource_tests.rs`: the excluded owner
+     covers `[i..i+2]`; all other cells end below `i`. At 4/16/64 incident
+     bounds, third-query work is 295/949/5005. This isolates the helper's
+     symbolic route, not the concrete loan-reconciliation caller: symbolic
+     view groups currently use a different covering-owner path.
+   - `split_owner_reconciliation_ignores_duplicate_observations` in
+     `src/scaling_tests/kernel/loans/tests.rs`: one fixed call consumes
+     `[0..4]` and borrows `[6..8]` from `[0..8]`, beside 4/16/64/256 duplicate
+     observations of `[6..8]`. The helper's repeated persistent-map work is
+     190/254/582/2254; complete-call map work is
+     7154/8053/11191/25657. All calls succeed, and different-owner and
+     parent/child-isolation controls pass before the scaling assertion fails.
+     Ordinary work counters miss the rejected-view traversal, so retain the
+     persistent-work measurement. The call also enumerates observations in
+     `view_occurrences_for_fact` to select a parent loan binding; removing the
+     alternative-owner helper alone will not make this complete call flat.
+
+   Design checkpoint: reservation/splitting creates fresh residual occurrence
+   IDs without returning their source to the planner. It then reconstructs
+   provenance by excluding other possible owners. Prefer having the split
+   operation return its residual identities and retaining a direct
+   residual-to-original mapping local to the call plan. Propagate the original
+   identity at each split; do not follow predecessor links or scan context
+   history. A bounded unsuccessful search is not proof of uniqueness. Keep
+   occurrence-replacement refusals, including equal-looking owners. Discuss
+   this design before changing the kernel; no new axiom appears necessary.
+
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 

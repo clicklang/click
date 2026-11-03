@@ -4,6 +4,108 @@
 
 use super::*;
 
+/// A fixed call consumes one half of an owner and borrows the other. Extra
+/// observations of the borrowed slice are not alternative owned authority.
+#[test]
+#[ignore = "red regression: split-owner reconciliation scans duplicate views"]
+fn split_owner_reconciliation_ignores_duplicate_observations() {
+    let mut curves = Vec::new();
+    for count in [4usize, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let owner = memory(0, 8, true);
+        let read = memory(6, 8, false);
+        let selected = memory(6, 8, true);
+        let resources = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_fact(owner.clone())
+            .unchecked_with_facts(std::iter::repeat_n(read.clone(), count));
+        resources.synchronize_memory_equalities(&assumptions);
+        let original = resources.occurrences_for_fact(&owner)[0];
+        let mut consume = checked(memory(0, 4, true));
+        consume.role = CResourceTransferRole::Consume;
+        let requirements = [consume, checked(read)];
+        let (ledger, caller, callee) = participants();
+        let mut helper_work = Vec::new();
+        let mut helper_map_work = Vec::new();
+        let mut call_map_work = Vec::new();
+        let mut call_work = Vec::new();
+        for _ in 0..3 {
+            let ((other, units), map_units) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    resources.has_other_directly_supporting_owned_entry(
+                        &selected,
+                        original,
+                        &assumptions,
+                    )
+                })
+            });
+            assert!(!other);
+            helper_work.push(units);
+            helper_map_work.push(map_units);
+            let ((plan, units), map_units) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    plan_stable_view_transfer(
+                        &resources,
+                        &requirements,
+                        &assumptions,
+                        &ledger,
+                        caller,
+                        callee,
+                    )
+                })
+            });
+            let plan = plan.expect("disjoint write and view retain their original owner");
+            assert_eq!(plan.stable_views().len(), 1);
+            call_work.push(units);
+            call_map_work.push(map_units);
+        }
+        // A different live owner must still count, even when its resource
+        // looks like a slice of the excluded owner. Adding it in a child
+        // context must not change the parent query.
+        let child = resources.clone().unchecked_with_fact(selected.clone());
+        assert!(
+            child.has_other_directly_supporting_owned_entry(&selected, original, &assumptions,)
+        );
+        assert!(!resources.has_other_directly_supporting_owned_entry(
+            &selected,
+            original,
+            &assumptions,
+        ));
+        curves.push((
+            count,
+            helper_work,
+            call_work,
+            helper_map_work,
+            call_map_work,
+        ));
+    }
+    eprintln!("split-owner reconciliation (count/helper/call/helper maps/call maps): {curves:?}");
+    assert!(
+        curves[3]
+            .3
+            .iter()
+            .zip(&curves[0].3)
+            .all(|(large, small)| *large <= *small * 3 + 128),
+        "alternative-owner query traverses observations: {curves:?}"
+    );
+    assert!(
+        curves.windows(2).all(|pair| pair[0]
+            .1
+            .iter()
+            .zip(&pair[1].1)
+            .all(|(small, large)| *large <= *small + 32)),
+        "alternative-owner query scans observations: {curves:?}"
+    );
+    assert!(
+        curves.windows(2).all(|pair| pair[0]
+            .2
+            .iter()
+            .zip(&pair[1].2)
+            .all(|(small, large)| *large <= *small + 128)),
+        "split-owner call scans observations: {curves:?}"
+    );
+}
+
 #[test]
 fn concrete_view_carrier_recovery_ignores_unrelated_owners() {
     let mut samples = Vec::new();

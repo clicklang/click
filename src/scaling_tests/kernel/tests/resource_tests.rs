@@ -3218,3 +3218,67 @@ fn memory_owned_support_miss_ignores_fragment_frontier() {
         "memory support selection scans fragment candidates: {curves:?}"
     );
 }
+
+/// The loan planner asks this negative query after a reservation splits its
+/// selected owner. Unrelated lower-bound premises must not turn a uniqueness
+/// check into an enumeration of other cells on the same base.
+#[test]
+#[ignore = "red regression: alternative-owner lookup scans incident bounds"]
+fn alternative_memory_owner_refusal_ignores_incident_bounds() {
+    let mut curves = Vec::new();
+    for count in [4u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(996_000));
+        let i = Bitvector32Term::Variable(Variable(996_001));
+        let range = |start: Bitvector32Term, end: Bitvector32Term| {
+            CMemoryRange::new(base.clone(), start, end)
+        };
+        let owner = CResourceFact::own_memory(range(
+            i.clone(),
+            Bitvector32Term::add(i.clone(), 2u32.into()),
+        ));
+        let required = CResourceFact::own_memory(range(
+            i.clone(),
+            Bitvector32Term::add(i.clone(), 1u32.into()),
+        ));
+        let mut facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_than(128u32.into(), i.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(i.clone(), 256u32.into()),
+                true,
+            );
+        for k in 0..count {
+            facts =
+                facts.assume_condition(ConditionTerm::signed_less_than(k.into(), i.clone()), true);
+        }
+        let context = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_fact(owner.clone())
+            .unchecked_with_facts(
+                (0..count)
+                    .map(|k| CResourceFact::own_memory(range((k + 1).into(), (k + 2).into()))),
+            );
+        context.synchronize_memory_equalities(&facts);
+        let excluded = context.occurrences_for_fact(&owner)[0];
+        let mut work = Vec::new();
+        for _ in 0..3 {
+            let (other, units) = crate::instrumentation::measure_deterministic_work(|| {
+                context.has_other_directly_supporting_owned_entry(&required, excluded, &facts)
+            });
+            assert!(!other, "all other cells end below i");
+            work.push(units);
+        }
+        curves.push((count, work));
+    }
+    eprintln!("alternative memory owner refusal (first/repeated work): {curves:?}");
+    assert!(
+        curves.windows(2).all(|pair| pair[0]
+            .1
+            .iter()
+            .zip(&pair[1].1)
+            .all(|(small, large)| *large <= *small + 32)),
+        "alternative-owner lookup scans incident bounds: {curves:?}"
+    );
+}
