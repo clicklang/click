@@ -13370,14 +13370,14 @@ owns untouched[0..1];
 ensures untouched[0] == old(untouched[0]);
 ensures -9223372036854775808i64 <= result;
 ensures result <= 9223372036854775807i64;
-ensures round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1;
-ensures round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
-ensures round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1;
-ensures round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
-ensures round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n);
-ensures round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d);
-ensures round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d);
-ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n);
+ensures round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1;
+ensures round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
+ensures round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1;
+ensures round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d));
+ensures round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n);
+ensures round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d);
+ensures round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d);
+ensures round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n);
 }
 "#,
         );
@@ -13430,20 +13430,20 @@ ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_i
     }
     for hostile in [
             proof.replace(
-                "round_down != 0 implies to_integer(result) * to_integer(d) <= to_integer(n)",
-                "round_down != 0 implies to_integer(result) * to_integer(d) < to_integer(n)",
+                "round_down == true implies to_integer(result) * to_integer(d) <= to_integer(n)",
+                "round_down == true implies to_integer(result) * to_integer(d) < to_integer(n)",
             ),
             proof.replace(
-                "round_down != 0 implies to_integer(n) < (to_integer(result) + 1) * to_integer(d)",
-                "round_down != 0 implies to_integer(n) < to_integer(result) * to_integer(d)",
+                "round_down == true implies to_integer(n) < (to_integer(result) + 1) * to_integer(d)",
+                "round_down == true implies to_integer(n) < to_integer(result) * to_integer(d)",
             ),
             proof.replace(
-                "round_down == 0 implies to_integer(n) <= to_integer(result) * to_integer(d)",
-                "round_down == 0 implies to_integer(n) < to_integer(result) * to_integer(d)",
+                "round_down == false implies to_integer(n) <= to_integer(result) * to_integer(d)",
+                "round_down == false implies to_integer(n) < to_integer(result) * to_integer(d)",
             ),
             proof.replace(
-                "round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_integer(n)",
-                "round_down == 0 implies to_integer(result) * to_integer(d) < to_integer(n)",
+                "round_down == false implies (to_integer(result) + -1) * to_integer(d) < to_integer(n)",
+                "round_down == false implies to_integer(result) * to_integer(d) < to_integer(n)",
             ),
 
         proof.replace("requires -9223372036854775808 * to_integer(d) <= to_integer(n);", ""),
@@ -13464,20 +13464,20 @@ ensures round_down == 0 implies (to_integer(result) + -1) * to_integer(d) < to_i
             "integer_cast_identity bounds [1, 0]",
         ),
         proof.replace(
-            "round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
-            "round_down != 0 and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+            "round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
+            "round_down == true and truncating_remainder(to_integer(n), to_integer(d)) < 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
         ),
         proof.replace(
-            "round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
-            "round_down == 0 and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
+            "round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+            "round_down == false and 0 < truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
         ),
         proof.replace(
-            "round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d))",
-            "round_down != 0 and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
+            "round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d))",
+            "round_down == true and 0 <= truncating_remainder(to_integer(n), to_integer(d)) implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + 1",
         ),
         proof.replace(
-            "round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d))",
-            "round_down == 0 and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
+            "round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d))",
+            "round_down == false and truncating_remainder(to_integer(n), to_integer(d)) <= 0 implies to_integer(result) == truncating_quotient(to_integer(n), to_integer(d)) + -1",
         ),
         proof.replace(
             "have to_integer(quot + 1i64) == truncating_quotient(to_integer(n), to_integer(d)) + 1",

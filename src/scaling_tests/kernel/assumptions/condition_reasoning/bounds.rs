@@ -43,7 +43,7 @@ fn shared_bound_consumers_preserve_dag_operands() {
                         .assume_condition(second, true);
                     assert!(facts.has_upper_bound_at_or_below(&x, &y));
                     assert!(shared_signed_const_add(operand.operand_view(), 1).is_none());
-                    assert!(!shared_successor_of(operand.operand_view(), &y));
+                    assert!(!shared_successor_of(operand.operand_view(), V::Legacy(&y)));
                     assert!(!operand.has_boxed_operand());
                 }
             });

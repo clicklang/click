@@ -5,9 +5,9 @@ bool FeeFrac::IsEmpty() const {
     views this->size;
     ensures this->fee == old(this->fee);
     ensures this->size == old(this->size);
-    ensures result == (if old(this->size) == 0 { 1 } else { 0 });
-    ensures result != 0 implies this->size == 0;
-    ensures result == 0 implies this->size != 0;
+    ensures result == (if old(this->size) == 0 { true } else { false });
+    ensures result == true implies this->size == 0;
+    ensures result == false implies this->size != 0;
 } by {
     if this->size == 0 {
         step_until(function.exit);

@@ -2,7 +2,7 @@ import click::integer;
 
 verifying "bitcoin-src/src/util/feefrac.h";
 static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
-    requires round_down == 0;
+    requires round_down == false;
     requires -9223372036854775809 * to_integer(d) < to_integer(n);
     requires to_integer(n) <= 9223372036854775807 * to_integer(d);
     requires d > 0;

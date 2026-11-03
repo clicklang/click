@@ -81,6 +81,7 @@ pub use machine_integer::{
 };
 pub(crate) use machine_integer::{is_narrow_widening32, is_sign_cast32};
 mod remainder_rules;
+mod wide_order_guards;
 pub use integer::{
     AlgebraicIntegerMatchArm, IntegerComparisonOperator, IntegerRangeFoldIndex, IntegerTerm,
     SharedIntegerApplication, SharedIntegerRangeEndpoint, SharedIntegerTerm, SharedPureApplication,

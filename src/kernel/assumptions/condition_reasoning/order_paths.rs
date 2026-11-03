@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_u32};
+use crate::kernel::{constant_u64, uint64_constant};
 
 impl PureFactContext {
     #[cfg(test)]
@@ -43,53 +44,82 @@ impl PureFactContext {
         if let Some(result) = self.decide_from_variable_chain(condition) {
             return Some(result);
         }
-        if let Some((term, bound, _)) = unsigned_upper_bound_below_sign_bit(condition, true)
-            && let Some(value) = self.decide_unsigned_upper_bound_by_signed_order(term, bound)
-        {
+        if let Some(value) = self.decide_unsigned_small_bound(condition) {
             return Some(value);
         }
         if let Some(value) = self.decide_from_order_rules(condition) {
             return Some(value);
         }
-        // Successor rules the memory-resolution prover reads the same way
-        // (`proves_order_condition_for_memory_resolution`), after the direct
-        // rules have missed. Each asks one smaller strict question.
-        // Select these root-specific rules before crossing their remaining
-        // written-endpoint boundary. An unrelated shared arithmetic operand
-        // must not be expanded merely to discover it is not a successor.
-        if let Some(view) =
-            crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let view = comparison_view(condition, true)?;
+        if view.format != MachineIntegerType::Int32 {
+            return None;
+        }
+        let strict = match view.relation {
+            Relation::Less => true,
+            Relation::LessEqual => false,
+            _ => return None,
+        };
+        let [lower, upper] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        self.decide_successor_order_views(lower, upper, strict)
+    }
+
+    fn decide_successor_order_views(
+        &self,
+        lower: MachineOperandView<'_>,
+        upper: MachineOperandView<'_>,
+        strict: bool,
+    ) -> Option<bool> {
+        let format = MachineIntegerType::Int32;
+        if !strict
+            && let Some(base) = lower.int32_add_const_base(1)
+            && self.decide_written_operand_comparison(
+                format,
+                CompareRelation::LessThan,
+                base,
+                upper,
+            ) == Some(true)
         {
-            let [lower, upper] = view
-                .operands
-                .each_ref()
-                .map(|operand| operand.operand_view());
-            let successor = |term: MachineOperandView<'_>| {
-                matches!(term.binary(), Some((MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [a, b]))
-                    if a.literal() == Some(Bitvector32Term::constant(1)) || b.literal() == Some(Bitvector32Term::constant(1)))
-            };
-            let variable_bound = (lower.word32_constant().is_some() && upper.variable().is_some())
-                || (upper.word32_constant().is_some() && lower.variable().is_some());
-            if !successor(lower) && !successor(upper) && !variable_bound {
-                return None;
+            return Some(true);
+        }
+        if let Some(constant) = lower.word32_constant()
+            && let Some(base) = upper.int32_add_const_base(1)
+            && let Some(reduced) = (if strict {
+                Some(constant as i32)
+            } else {
+                (constant as i32).checked_sub(1)
+            })
+        {
+            let reduced = Bitvector32Term::constant(reduced as u32);
+            let maximum = Bitvector32Term::constant(i32::MAX as u32);
+            if self.decide_written_operand_comparison(
+                format,
+                CompareRelation::LessEqual,
+                MachineOperandView::Legacy(&reduced),
+                base,
+            ) == Some(true)
+                && self.decide_written_operand_comparison(
+                    format,
+                    CompareRelation::LessThan,
+                    base,
+                    MachineOperandView::Legacy(&maximum),
+                ) == Some(true)
+            {
+                return Some(true);
             }
         }
-        let (lower, upper, strict) = condition_as_order_fact(condition, true)?;
-        if let Some((below, above)) = successor_bound_as_strict_order(&lower, &upper, strict)
-            && self.decide(&ConditionTerm::signed_less_than(below, above)) == Some(true)
-        {
-            return Some(true);
-        }
-        if let Some(((below, above, reduced_strict), base)) =
-            constant_below_successor_as_order(&lower, &upper, strict)
-            && self.decide(&order_condition(below, above, reduced_strict)) == Some(true)
-            && self.decide(&ConditionTerm::signed_less_than(
-                base,
-                Bitvector32Term::constant(i32::MAX as u32),
-            )) == Some(true)
-        {
-            return Some(true);
-        }
+        // The unsigned bridge accepts only a plain variable and a literal.
+        // Materialize these fixed-size atoms, never an arithmetic operand.
+        let atom = |view: MachineOperandView<'_>| {
+            view.literal()
+                .or_else(|| view.variable().copied().map(Bitvector32Term::Variable))
+        };
+        let (Some(lower), Some(upper)) = (atom(lower), atom(upper)) else {
+            return None;
+        };
         self.signed_bound_from_unsigned_order(&lower, &upper, strict)
             .then_some(true)
     }
@@ -365,277 +395,314 @@ impl PureFactContext {
                 relation: CompareRelation::LessThan,
                 left,
                 right,
-            } if left == right => Some(false),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            } if left == right => Some(false),
+            } => self.decide_signed_order_views(
+                CompareRelation::LessThan,
+                MachineOperandView::Legacy(left),
+                MachineOperandView::Legacy(right),
+            ),
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left,
                 right,
-            } if left == right => Some(true),
+            } => self.decide_signed_order_views(
+                CompareRelation::LessEqual,
+                MachineOperandView::Legacy(left),
+                MachineOperandView::Legacy(right),
+            ),
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::GreaterThan,
+                left,
+                right,
+            } => self.decide_signed_order_views(
+                CompareRelation::GreaterThan,
+                MachineOperandView::Legacy(left),
+                MachineOperandView::Legacy(right),
+            ),
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left,
                 right,
-            } if left == right => Some(true),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            } => {
-                let left = left.as_ref().clone();
-                let right = right.as_ref().clone();
-                if let Some(result) = self.decide_signed_comparison_from_equal_constants(
-                    &left,
-                    &right,
+            } => self.decide_signed_order_views(
+                CompareRelation::GreaterEqual,
+                MachineOperandView::Legacy(left),
+                MachineOperandView::Legacy(right),
+            ),
+            _ => {
+                use crate::kernel::machine_integer::{
+                    Relation, comparison::native_comparison_view,
+                };
+                let view = native_comparison_view(condition, true)?;
+                let relation = match view.relation {
+                    Relation::Less => CompareRelation::LessThan,
+                    Relation::LessEqual => CompareRelation::LessEqual,
+                    _ => return None,
+                };
+                let [left, right] = view
+                    .operands
+                    .each_ref()
+                    .map(|operand| operand.operand_view());
+                match view.format {
+                    MachineIntegerType::Int32 => {
+                        self.decide_signed_order_views(relation, left, right)
+                    }
+                    MachineIntegerType::UInt32 => self.decide_unsigned32_order_views(
+                        left,
+                        right,
+                        relation == CompareRelation::LessThan,
+                    ),
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    /// The signed order rules in their original order, over retained roots.
+    pub(super) fn decide_signed_order_views(
+        &self,
+        relation: CompareRelation,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Option<bool> {
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        let same = match (left, right) {
+            (MachineOperandView::Legacy(left), MachineOperandView::Legacy(right)) => left == right,
+            _ => {
+                Key::for_format(MachineIntegerType::Int32, left)
+                    == Key::for_format(MachineIntegerType::Int32, right)
+            }
+        };
+        if same {
+            return match relation {
+                CompareRelation::LessThan | CompareRelation::GreaterThan => Some(false),
+                CompareRelation::LessEqual | CompareRelation::GreaterEqual => Some(true),
+                CompareRelation::Equal => None,
+            };
+        }
+        match relation {
+            CompareRelation::LessThan => {
+                if let Some(result) = self.decide_signed_comparison_from_equal_constants_views(
+                    left,
+                    right,
                     |left, right| left < right,
                 ) {
                     return Some(result);
                 }
-                if right == signed_int_min_term() || left == signed_int_max_term() {
+                if right.literal() == Some(signed_int_min_term())
+                    || left.literal() == Some(signed_int_max_term())
+                {
                     return Some(false);
                 }
-                if self.subtract_same_const_order_fact(&left, &right, true)
-                    || self.difference_graph_proves_order(&left, &right, true)
-                    || (self.has_condition_fact(
-                        ConditionTerm::signed_less_equal(left.clone(), right.clone()),
-                        true,
-                    ) && self.has_condition_fact(
-                        ConditionTerm::equal(left.clone(), right.clone()),
-                        false,
-                    ))
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_greater_than(right.clone(), left.clone()),
-                        true,
-                    )
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_greater_equal(left.clone(), right.clone()),
-                        false,
-                    )
-                    || self.has_upper_bound_below(&left, &right)
-                    || self.has_successor_upper_bound_below(&left, &right)
-                    || self.has_add_const_upper_bound_below(&left, &right)
-                    || self.has_lower_bound_above(&right, &left)
-                    || self.has_add_const_lower_bound_above(&right, &left)
-                    || self.positive_offset_is_proven_above(&left, &right)
-                    || self.positive_subtraction_is_proven_below(&left, &right)
+                if self.subtract_same_const_order_fact_views(left, right, true)
+                    || self.difference_graph_proves_order_views(left, right, true)
+                    || (self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessEqual, left, right, true) && self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::Equal, left, right, false))
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::GreaterThan, right, left, true)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::GreaterEqual, left, right, false)
+                    || self.has_upper_bound_below_views(left, right)
+                    || self.has_successor_upper_bound_below_views(left, right)
+                    || self.has_add_const_upper_bound_below_views(left, right)
+                    || self.has_lower_bound_above_views(right, left)
+                    || self.has_add_const_lower_bound_above_views(right, left)
+                    || self.constant_offset_is_proven(left, right, false, true)
+                    || self.constant_offset_is_proven(right, left, true, true)
                     // Consulted last: every earlier rule keeps its cost.
-                    || self.has_subtract_const_upper_bound(&left, &right, true)
-                    || self.has_subtract_const_lower_bound(&right, &left, true)
+                    || self.has_subtract_const_upper_bound_views(left, right, true)
+                    || self.has_subtract_const_lower_bound_views(right, left, true)
                 {
                     Some(true)
-                } else if self.has_condition_fact(
-                    ConditionTerm::signed_greater_equal(left.clone(), right.clone()),
+                } else if self.has_written_operand_comparison(
+                    MachineIntegerType::Int32,
+                    CompareRelation::GreaterEqual,
+                    left,
+                    right,
                     true,
-                ) || self.has_condition_fact(
-                    ConditionTerm::signed_less_equal(right.clone(), left.clone()),
+                ) || self.has_written_operand_comparison(
+                    MachineIntegerType::Int32,
+                    CompareRelation::LessEqual,
+                    right,
+                    left,
                     true,
-                ) || self.difference_graph_proves_order(&right, &left, true)
-                    || self.order_facts_force_equal(&left, &right)
+                ) || self.difference_graph_proves_order_views(right, left, true)
+                    || self.order_facts_force_equal_views(left, right)
                 {
                     Some(false)
                 } else {
-                    self.decide_signed_order_from_conditional_interval(&left, &right, true)
+                    self.decide_signed_order_from_conditional_interval_views(left, right, true)
                 }
             }
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            } => {
-                let left = left.as_ref().clone();
-                let right = right.as_ref().clone();
-                if let Some(result) = self.decide_signed_comparison_from_equal_constants(
-                    &left,
-                    &right,
+            CompareRelation::LessEqual => {
+                if let Some(result) = self.decide_signed_comparison_from_equal_constants_views(
+                    left,
+                    right,
                     |left, right| left <= right,
                 ) {
                     return Some(result);
                 }
-                if order_holds_at_int32_extreme(&left, &right, false) {
+                if left.literal() == Some(signed_int_min_term())
+                    || right.literal() == Some(signed_int_max_term())
+                {
                     return Some(true);
                 }
-                if self.difference_graph_proves_order(&left, &right, false)
-                    || left.add_const_base(1).is_some_and(|base| {
-                        self.has_condition_fact(
-                            ConditionTerm::signed_less_than(base, right.clone()),
-                            true,
-                        )
+                if self.difference_graph_proves_order_views(left, right, false)
+                    || left.int32_add_const_base(1).is_some_and(|base| {
+                        self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessThan, base, right, true)
                     })
-                    || right.subtract_one_base().is_some_and(|base| {
-                        let zero = Bitvector32Term::constant(0);
-                        left == zero
-                            && (self.has_condition_fact(
-                                ConditionTerm::signed_greater_than(base.clone(), zero.clone()),
-                                true,
-                            ) || self.has_lower_bound_above(&base, &zero))
+                    || right.int32_subtract_const_parts().filter(|(_, n)| *n == 1).map(|(base, _)| base).is_some_and(|base| {
+                        let zero_literal = Bitvector32Term::constant(0);
+                        let zero = MachineOperandView::Legacy(&zero_literal);
+                        left.literal() == Some(Bitvector32Term::constant(0))
+                            && (self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::GreaterThan, base, zero, true) || self.has_lower_bound_above_views(base, zero))
                     })
-                    || self.has_add_const_upper_bound_at_or_below(&left, &right)
-                    || self.is_bounded_by_base_before_nonnegative_offset(&left, &right)
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_less_than(left.clone(), right.clone()),
-                        true,
-                    )
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_greater_equal(right.clone(), left.clone()),
-                        true,
-                    )
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_greater_than(right.clone(), left.clone()),
-                        true,
-                    )
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_greater_than(left.clone(), right.clone()),
-                        false,
-                    )
-                    || self.has_lower_bound_at_or_above(&right, &left)
-                    || self.has_add_const_lower_bound_at_or_above(&right, &left)
-                    || self.nonnegative_offset_is_proven_at_or_above(&left, &right)
-                    || self.order_facts_force_equal(&left, &right)
+                    || self.has_add_const_upper_bound_at_or_below_views(left, right)
+                    || self.is_bounded_by_base_before_nonnegative_offset_views(left, right)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessThan, left, right, true)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::GreaterEqual, right, left, true)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::GreaterThan, right, left, true)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::GreaterThan, left, right, false)
+                    || self.has_lower_bound_at_or_above_views(right, left)
+                    || self.has_add_const_lower_bound_at_or_above_views(right, left)
+                    || self.constant_offset_is_proven(left, right, false, false)
+                    || self.order_facts_force_equal_views(left, right)
                     // Consulted last: every earlier rule keeps its cost.
-                    || self.has_subtract_const_upper_bound(&left, &right, false)
-                    || self.has_subtract_const_lower_bound(&right, &left, false)
+                    || self.has_subtract_const_upper_bound_views(left, right, false)
+                    || self.has_subtract_const_lower_bound_views(right, left, false)
                 {
                     Some(true)
-                } else if self.has_condition_fact(
-                    ConditionTerm::signed_greater_than(left.clone(), right.clone()),
+                } else if self.has_written_operand_comparison(
+                    MachineIntegerType::Int32,
+                    CompareRelation::GreaterThan,
+                    left,
+                    right,
                     true,
                 ) {
                     Some(false)
                 } else {
-                    self.decide_signed_order_from_conditional_interval(&left, &right, false)
+                    self.decide_signed_order_from_conditional_interval_views(left, right, false)
                 }
             }
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            } => {
-                let left = left.as_ref().clone();
-                let right = right.as_ref().clone();
-                if let Some(result) = self.decide_signed_comparison_from_equal_constants(
-                    &left,
-                    &right,
+            CompareRelation::GreaterThan => {
+                if let Some(result) = self.decide_signed_comparison_from_equal_constants_views(
+                    left,
+                    right,
                     |left, right| left > right,
                 ) {
                     return Some(result);
                 }
-                if right == signed_int_max_term() || left == signed_int_min_term() {
+                if right.literal() == Some(signed_int_max_term())
+                    || left.literal() == Some(signed_int_min_term())
+                {
                     return Some(false);
                 }
-                if self.difference_graph_proves_order(&right, &left, true)
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_less_than(right.clone(), left.clone()),
-                        true,
-                    )
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_less_equal(left.clone(), right.clone()),
-                        false,
-                    )
-                    || self.has_lower_bound_above(&left, &right)
-                    || self.has_add_const_lower_bound_above(&left, &right)
+                if self.difference_graph_proves_order_views(right, left, true)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessThan, right, left, true)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessEqual, left, right, false)
+                    || self.has_lower_bound_above_views(left, right)
+                    || self.has_add_const_lower_bound_above_views(left, right)
                     // The mirrors of the `<` rules for a successor and for
                     // the int32 maximum, so `x + 1 > x` and `INT32_MAX > x`
                     // are decided as `x < x + 1` and `x < INT32_MAX` are.
-                    || self.positive_offset_is_proven_above(&right, &left)
-                    || left == signed_int_max_term()
-                        && self.decide(&ConditionTerm::signed_less_than(
-                            right.clone(),
-                            left.clone(),
-                        )) == Some(true)
+                    || self.constant_offset_is_proven(right, left, false, true)
+                    || left.literal() == Some(signed_int_max_term())
+                        && self.decide_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessThan, right, left) == Some(true)
                 {
                     Some(true)
-                } else if self.has_condition_fact(
-                    ConditionTerm::signed_less_equal(left.clone(), right.clone()),
+                } else if self.has_written_operand_comparison(
+                    MachineIntegerType::Int32,
+                    CompareRelation::LessEqual,
+                    left,
+                    right,
                     true,
-                ) || self.has_condition_fact(
-                    ConditionTerm::signed_greater_equal(right.clone(), left.clone()),
+                ) || self.has_written_operand_comparison(
+                    MachineIntegerType::Int32,
+                    CompareRelation::GreaterEqual,
+                    right,
+                    left,
                     true,
-                ) || self.order_facts_force_equal(&left, &right)
+                ) || self.order_facts_force_equal_views(left, right)
                 {
                     Some(false)
                 } else {
-                    self.decide_signed_order_from_conditional_interval(&right, &left, true)
+                    self.decide_signed_order_from_conditional_interval_views(right, left, true)
                 }
             }
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            } => {
-                let left = left.as_ref().clone();
-                let right = right.as_ref().clone();
-                if let Some(result) = self.decide_signed_comparison_from_equal_constants(
-                    &left,
-                    &right,
+            CompareRelation::GreaterEqual => {
+                if let Some(result) = self.decide_signed_comparison_from_equal_constants_views(
+                    left,
+                    right,
                     |left, right| left >= right,
                 ) {
                     return Some(result);
                 }
-                if order_holds_at_int32_extreme(&right, &left, false) {
+                if right.literal() == Some(signed_int_min_term())
+                    || left.literal() == Some(signed_int_max_term())
+                {
                     return Some(true);
                 }
-                if self.difference_graph_proves_order(&right, &left, false)
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_greater_than(left.clone(), right.clone()),
-                        true,
-                    )
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_less_equal(right.clone(), left.clone()),
-                        true,
-                    )
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_less_than(right.clone(), left.clone()),
-                        true,
-                    )
-                    || self.has_condition_fact(
-                        ConditionTerm::signed_less_than(left.clone(), right.clone()),
-                        false,
-                    )
-                    || self.has_lower_bound_at_or_above(&left, &right)
-                    || self.has_add_const_lower_bound_at_or_above(&left, &right)
+                if self.difference_graph_proves_order_views(right, left, false)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::GreaterThan, left, right, true)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessEqual, right, left, true)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessThan, right, left, true)
+                    || self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessThan, left, right, false)
+                    || self.has_lower_bound_at_or_above_views(left, right)
+                    || self.has_add_const_lower_bound_at_or_above_views(left, right)
                     // The mirror of the `<=` successor rule, so `x + 1 >= x`
                     // is decided as `x <= x + 1` is.
-                    || self.nonnegative_offset_is_proven_at_or_above(&right, &left)
-                    || self.order_facts_force_equal(&left, &right)
+                    || self.constant_offset_is_proven(right, left, false, false)
+                    || self.order_facts_force_equal_views(left, right)
                 {
                     Some(true)
-                } else if self.has_condition_fact(
-                    ConditionTerm::signed_less_than(left.clone(), right.clone()),
+                } else if self.has_written_operand_comparison(
+                    MachineIntegerType::Int32,
+                    CompareRelation::LessThan,
+                    left,
+                    right,
                     true,
                 ) {
                     Some(false)
                 } else {
-                    self.decide_signed_order_from_conditional_interval(&right, &left, false)
+                    self.decide_signed_order_from_conditional_interval_views(right, left, false)
                 }
             }
-            _ => None,
+            CompareRelation::Equal => None,
         }
     }
 
     /// The order rules of a `uint32` order: equal operands, constants an
     /// equality pins, the extremes `0` and `UINT32_MAX`, the difference
     /// graph's unsigned domain, the fact itself in any of its spellings, and
-    /// one recorded bound of either operand ([`Self::has_unsigned32_bound_between`]).
+    /// one recorded bound of either operand ([`Self::has_unsigned32_bound_between_views`]).
     /// Each is tried for the order and for its converse, which refutes it.
     fn decide_unsigned32_order(&self, condition: &ConditionTerm) -> Option<bool> {
         let (lower, upper, strict) = held_order_at(MachineIntegerType::UInt32, condition, true)?;
-        if lower == upper {
+        self.decide_unsigned32_order_views(
+            MachineOperandView::Legacy(lower),
+            MachineOperandView::Legacy(upper),
+            strict,
+        )
+    }
+
+    fn decide_unsigned32_order_views(
+        &self,
+        lower: MachineOperandView<'_>,
+        upper: MachineOperandView<'_>,
+        strict: bool,
+    ) -> Option<bool> {
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        let format = MachineIntegerType::UInt32;
+        let same = match (lower, upper) {
+            (MachineOperandView::Legacy(lower), MachineOperandView::Legacy(upper)) => {
+                lower == upper
+            }
+            _ => Key::for_format(format, lower) == Key::for_format(format, upper),
+        };
+        if same {
             return Some(!strict);
         }
         if let (Some(lower), Some(upper)) = (
-            self.signed_constant_known_equal(lower),
-            self.signed_constant_known_equal(upper),
+            self.signed_constant_known_equal_view(lower),
+            self.signed_constant_known_equal_view(upper),
         ) {
             let (lower, upper) = (lower as u32, upper as u32);
             return Some(if strict {
@@ -644,34 +711,41 @@ impl PureFactContext {
                 lower <= upper
             });
         }
-        let holds = |lower: &Bitvector32Term, upper: &Bitvector32Term, strict: bool| {
-            let (low, high) = (lower.as_const(), upper.as_const());
+        let holds = |lower: MachineOperandView<'_>, upper: MachineOperandView<'_>, strict: bool| {
+            let (low, high) = (lower.word32_constant(), upper.word32_constant());
             if !strict && (low == Some(0) || high == Some(u32::MAX)) {
                 return true;
             }
             if strict && (high == Some(0) || low == Some(u32::MAX)) {
                 return false;
             }
-            let order = OrderKind::Unsigned32.order(lower.clone(), upper.clone(), strict);
+            let order = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                if strict {
+                    CompareRelation::LessThan
+                } else {
+                    CompareRelation::LessEqual
+                },
+                [lower, upper],
+            );
             self.difference_graph_proves(&order)
-                || crate::kernel::proof::fact_reasoning::order_claim_forms(
-                    &Proposition::ConditionIs(order, true),
-                )
-                .iter()
-                .any(|form| {
-                    matches!(form, Proposition::ConditionIs(condition, value)
-                        if self.condition_facts.get(condition) == Some(value))
-                })
+                || self.stated_unsigned_order_view(&order)
                 || (strict
-                    && self.has_condition_fact(
-                        ConditionTerm::unsigned_less_equal(lower.clone(), upper.clone()),
+                    && self.has_written_operand_comparison(
+                        format,
+                        CompareRelation::LessEqual,
+                        lower,
+                        upper,
                         true,
                     )
-                    && self.has_condition_fact(
-                        ConditionTerm::equal(lower.clone(), upper.clone()),
+                    && self.has_written_operand_comparison(
+                        MachineIntegerType::Int32,
+                        CompareRelation::Equal,
+                        lower,
+                        upper,
                         false,
                     ))
-                || self.has_unsigned32_bound_between(lower, upper, strict)
+                || self.has_unsigned32_bound_between_views(lower, upper, strict)
         };
         if holds(lower, upper, strict) {
             Some(true)
@@ -679,6 +753,26 @@ impl PureFactContext {
             Some(false)
         } else {
             None
+        }
+    }
+
+    /// Exact stated orders only; retain the native route's four written forms.
+    fn stated_unsigned_order_view(&self, order: &ConditionTerm) -> bool {
+        if matches!(order, ConditionTerm::Compare { .. }) {
+            return crate::kernel::proof::fact_reasoning::order_claim_forms(
+                &Proposition::ConditionIs(order.clone(), true),
+            )
+            .iter()
+            .any(|form| {
+                matches!(form, Proposition::ConditionIs(condition, value)
+                if self.condition_facts.get(condition) == Some(value))
+            });
+        }
+        if let Some(source) = self.observation_comparisons.source(order, true) {
+            record_implicit_reasoning_provenance(self, source);
+            true
+        } else {
+            false
         }
     }
 
@@ -710,11 +804,30 @@ impl PureFactContext {
         right: &Bitvector32Term,
         require_strict: bool,
     ) -> bool {
-        self.difference_graph_proves(&order_condition(
-            left.clone(),
-            right.clone(),
+        self.difference_graph_proves_order_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
             require_strict,
-        ))
+        )
+    }
+
+    pub(super) fn difference_graph_proves_order_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        require_strict: bool,
+    ) -> bool {
+        self.difference_graph_proves(
+            &crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                if require_strict {
+                    CompareRelation::LessThan
+                } else {
+                    CompareRelation::LessEqual
+                },
+                [left, right],
+            ),
+        )
     }
 
     /// Whether the difference graph of these facts proves `condition`
@@ -726,6 +839,12 @@ impl PureFactContext {
                 .map(|(condition, value)| (condition, *value))
                 .collect()
         });
+        if !matches!(condition, ConditionTerm::Compare { .. })
+            && let Some(view) =
+                crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+        {
+            return graph.decide_shared_order(&view) == Some(true);
+        }
         graph.decide(condition) == Some(true)
     }
 
@@ -1650,22 +1769,56 @@ impl PureFactContext {
     /// `0 <= term` and `term <= bound`; see
     /// [`unsigned_upper_bound_below_sign_bit`]. True only when both are
     /// decided true, false as soon as either is decided false.
-    fn decide_unsigned_upper_bound_by_signed_order(
-        &self,
-        term: &Bitvector32Term,
-        bound: u32,
-    ) -> Option<bool> {
-        let nonnegative = self.decide(&ConditionTerm::signed_less_equal(
-            Bitvector32Term::constant(0),
-            term.clone(),
-        ));
+    fn decide_unsigned_small_bound(&self, condition: &ConditionTerm) -> Option<bool> {
+        if matches!(condition, ConditionTerm::Compare { format, .. } if *format != MachineIntegerType::UInt32)
+        {
+            return None;
+        }
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let view = comparison_view(condition, true)?;
+        if view.format != MachineIntegerType::UInt32 {
+            return None;
+        }
+        let strict = match view.relation {
+            Relation::Less => true,
+            Relation::LessEqual => false,
+            _ => return None,
+        };
+        let [mut term, bound] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        if term.word32_constant().is_some() {
+            return None;
+        }
+        let bound = bound.word32_constant()?;
+        let bound = if strict { bound.checked_sub(1)? } else { bound };
+        if bound > i32::MAX as u32 {
+            return None;
+        }
+        if let Some((crate::kernel::KernelMachineCastEncoding::Generic, source, destination, bits)) =
+            term.cast()
+            && crate::kernel::is_sign_cast32(source, destination)
+        {
+            term = bits;
+        }
+        let zero = Bitvector32Term::constant(0);
+        let maximum = Bitvector32Term::constant(bound);
+        let nonnegative = self.decide_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            MachineOperandView::Legacy(&zero),
+            term,
+        );
         if nonnegative == Some(false) {
             return Some(false);
         }
-        let below = self.decide(&ConditionTerm::signed_less_equal(
-            term.clone(),
-            Bitvector32Term::constant(bound),
-        ));
+        let below = self.decide_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            term,
+            MachineOperandView::Legacy(&maximum),
+        );
         match (nonnegative, below) {
             (_, Some(false)) => Some(false),
             (Some(true), Some(true)) => Some(true),
@@ -2081,10 +2234,6 @@ impl PureFactContext {
 
     /// Follow only upper edges in the operand's indexed uint64 order graph.
     /// Each node is visited once; unrelated facts are never read.
-    fn uint64_small_upper_bound(&self, term: &Bitvector32Term) -> Option<u64> {
-        self.uint64_small_upper_bound_view(MachineOperandView::Legacy(term))
-    }
-
     fn uint64_small_upper_bound_view(&self, term: MachineOperandView<'_>) -> Option<u64> {
         use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
         let format = MachineIntegerType::UInt64;
@@ -2137,19 +2286,6 @@ impl PureFactContext {
     /// by their canonical spelling; a visited term and the far end that
     /// both have a constant value join by comparing the values, as the kind
     /// compares them.
-    fn wide_order_chain(
-        &self,
-        lower: &Bitvector32Term,
-        upper: &Bitvector32Term,
-        unsigned: bool,
-    ) -> Option<bool> {
-        self.wide_order_chain_views(
-            MachineOperandView::Legacy(lower),
-            MachineOperandView::Legacy(upper),
-            unsigned,
-        )
-    }
-
     fn wide_order_chain_views(
         &self,
         lower: MachineOperandView<'_>,
@@ -2361,112 +2497,168 @@ impl PureFactContext {
         {
             return Some(true);
         }
-        // This route needs a low-word extraction at one root (possibly
-        // plus a small literal). Reject other shared roots before exporting.
-        if let Some(view) =
-            crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
-        {
-            let low_word = |operand: MachineOperandView<'_>| {
-                matches!(
-                    operand.cast(),
-                    Some((
-                        crate::kernel::KernelMachineCastEncoding::UInt32From64,
-                        _,
-                        _,
-                        _
-                    ))
-                )
-            };
-            let truncated = |operand: MachineOperandView<'_>| {
-                low_word(operand)
-                    || matches!(operand.binary(),
-                    Some((MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [a, b]))
-                    if (low_word(a) && b.word32_constant().is_some_and(|n| n <= i32::MAX as u32))
-                        || (low_word(b) && a.word32_constant().is_some_and(|n| n <= i32::MAX as u32)))
-            };
-            if !view
-                .operands
-                .iter()
-                .any(|operand| truncated(operand.operand_view()))
-            {
-                return None;
-            }
-        }
-        let (left, right, strict) = condition_as_order_fact(condition, true)?;
-        let small = |term: &Bitvector32Term| match term {
-            bits32_constant!(value) if constant_u32(*value) <= i32::MAX as u32 => {
-                Some(constant_u32(*value) as u64)
-            }
-            _ => None,
+        use crate::kernel::machine_integer::comparison::{
+            comparison_view, condition_for_operand_views,
         };
-        // Truncation commutes with addition modulo 2^32, so a truncated
-        // term plus a constant is the truncation of the 64-bit sum, signed
-        // or unsigned. The range check below is made on that sum.
-        let truncated = |term: &Bitvector32Term, unsigned: bool| match term {
-            Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
-            binary_term!(Int32, Add, left, right) => {
-                let (value, constant) = match (left.as_ref(), right.as_ref()) {
-                    (Bitvector32Term::UInt32From64(value), constant)
-                    | (constant, Bitvector32Term::UInt32From64(value)) => (value, small(constant)?),
-                    _ => return None,
-                };
-                Some(if unsigned {
-                    Bitvector32Term::uint64_add(
-                        value.as_ref().clone(),
-                        Bitvector32Term::uint64_constant(constant),
-                    )
-                } else {
-                    Bitvector32Term::int64_add(
-                        value.as_ref().clone(),
-                        Bitvector32Term::int64_constant(constant as i64),
-                    )
-                })
-            }
-            _ => None,
+        use crate::kernel::{
+            KernelMachineCastEncoding, KernelTerm, KernelTermImport, MachineBinaryOp,
+            SharedMachineIntegerTerm,
         };
-        if truncated(&left, true).is_none() && truncated(&right, true).is_none() {
+        let view = comparison_view(condition, true)?;
+        if view.format != MachineIntegerType::Int32 {
             return None;
         }
-        let wide = |term: &Bitvector32Term, unsigned: bool| {
-            truncated(term, unsigned).or_else(|| {
-                small(term).map(|value| {
-                    if unsigned {
-                        Bitvector32Term::uint64_constant(value)
+        let strict = match view.relation {
+            crate::kernel::machine_integer::Relation::Less => true,
+            crate::kernel::machine_integer::Relation::LessEqual => false,
+            _ => return None,
+        };
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        fn small(operand: MachineOperandView<'_>) -> Option<u64> {
+            match operand.literal()? {
+                bits32_constant!(value) if constant_u32(value) <= i32::MAX as u32 => {
+                    Some(u64::from(constant_u32(value)))
+                }
+                _ => None,
+            }
+        }
+        fn low_word(operand: MachineOperandView<'_>) -> Option<MachineOperandView<'_>> {
+            match operand.cast()? {
+                (KernelMachineCastEncoding::UInt32From64, _, _, value) => Some(value),
+                _ => None,
+            }
+        }
+        // Truncation commutes with addition modulo 2^32. Retain the wide
+        // root and append only the selected literal, preserving the native
+        // query constructor's literal and subtraction-cancellation rules.
+        fn truncated(
+            operand: MachineOperandView<'_>,
+            unsigned: bool,
+        ) -> Option<SharedMachineIntegerTerm> {
+            let format = if unsigned {
+                MachineIntegerType::UInt64
+            } else {
+                MachineIntegerType::Int64
+            };
+            if let Some(value) = low_word(operand) {
+                return Some(value.retain(format));
+            }
+            let (MachineIntegerType::Int32, MachineBinaryOp::Add, [a, b]) = operand.binary()?
+            else {
+                return None;
+            };
+            let (value, constant) = if let Some(value) = low_word(a) {
+                (value, small(b)?)
+            } else {
+                (low_word(b)?, small(a)?)
+            };
+            let literal = if unsigned {
+                Bitvector32Term::uint64_constant(constant)
+            } else {
+                Bitvector32Term::int64_constant(constant as i64)
+            };
+            let native = |value| {
+                if unsigned {
+                    Bitvector32Term::uint64_add(value, literal.clone())
+                } else {
+                    Bitvector32Term::int64_add(value, literal.clone())
+                }
+            };
+            if let MachineOperandView::Legacy(value) = value {
+                return Some(SharedMachineIntegerTerm::intern(
+                    format,
+                    native(value.clone()),
+                ));
+            }
+            if let Some(value) = value.literal() {
+                return Some(SharedMachineIntegerTerm::intern(format, native(value)));
+            }
+            if unsigned {
+                if constant == 0 {
+                    return Some(value.retain(format));
+                }
+                if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Subtract, [inner, taken])) =
+                    value.binary()
+                    && matches!(taken.literal(), Some(uint64_constant!(taken)) if constant_u64(taken) == constant)
+                {
+                    return Some(inner.retain(format));
+                }
+            }
+            let MachineOperandView::Shared(root) = value else {
+                unreachable!()
+            };
+            SharedMachineIntegerTerm::from_shared(
+                format,
+                KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [
+                        root.with_machine_observation_type(format),
+                        KernelTermImport::default().machine(format, &literal),
+                    ],
+                ),
+            )
+        }
+        if truncated(left, true).is_none() && truncated(right, true).is_none() {
+            return None;
+        }
+        let wide = |operand, unsigned| {
+            truncated(operand, unsigned).or_else(|| {
+                small(operand).map(|value| {
+                    let (format, value) = if unsigned {
+                        (
+                            MachineIntegerType::UInt64,
+                            Bitvector32Term::uint64_constant(value),
+                        )
                     } else {
-                        Bitvector32Term::int64_constant(value as i64)
-                    }
+                        (
+                            MachineIntegerType::Int64,
+                            Bitvector32Term::int64_constant(value as i64),
+                        )
+                    };
+                    SharedMachineIntegerTerm::intern(format, value)
                 })
             })
         };
-        // Read as unsigned values: both at most `INT_MAX`.
-        let a = wide(&left, true)?;
-        let b = wide(&right, true)?;
-        let unsigned_small = |term: &Bitvector32Term| {
-            self.uint64_small_upper_bound(term)
+        let relation = if strict {
+            CompareRelation::LessThan
+        } else {
+            CompareRelation::LessEqual
+        };
+        let a = wide(left, true)?;
+        let b = wide(right, true)?;
+        let unsigned_small = |term: &SharedMachineIntegerTerm| {
+            self.uint64_small_upper_bound_view(term.operand_view())
                 .is_some_and(|bound| bound <= i32::MAX as u64)
         };
         if unsigned_small(&a) && unsigned_small(&b) {
-            if a.uint64_as_const() == Some(0) && !strict {
+            if a.operand_view().uint64_constant() == Some(0) && !strict {
                 return Some(true);
             }
-            let comparison = if strict {
-                ConditionTerm::uint64_less_than(a, b)
-            } else {
-                ConditionTerm::uint64_less_equal(a, b)
-            };
-            return self.decide(&comparison);
+            return self.decide(&condition_for_operand_views(
+                MachineIntegerType::UInt64,
+                relation,
+                [a.operand_view(), b.operand_view()],
+            ));
         }
-        // Read as signed values: both in `0..=INT_MAX`, where the low word
-        // is the value and the two readings of the order agree.
-        let a = wide(&left, false)?;
-        let b = wide(&right, false)?;
-        let signed_small = |term: &Bitvector32Term| {
-            self.wide_order_chain(&Bitvector32Term::int64_constant(0), term, false)
-                .is_some()
+        let a = wide(left, false)?;
+        let b = wide(right, false)?;
+        let signed_small = |term: &SharedMachineIntegerTerm| {
+            self.wide_order_chain_views(
+                MachineOperandView::Legacy(&Bitvector32Term::int64_constant(0)),
+                term.operand_view(),
+                false,
+            )
+            .is_some()
                 && self
-                    .wide_order_chain(
-                        term,
-                        &Bitvector32Term::int64_constant(i32::MAX as i64),
+                    .wide_order_chain_views(
+                        term.operand_view(),
+                        MachineOperandView::Legacy(&Bitvector32Term::int64_constant(
+                            i32::MAX as i64,
+                        )),
                         false,
                     )
                     .is_some()
@@ -2474,18 +2666,148 @@ impl PureFactContext {
         if !signed_small(&a) || !signed_small(&b) {
             return None;
         }
-        let comparison = if strict {
-            ConditionTerm::int64_signed_less_than(a, b)
-        } else {
-            ConditionTerm::int64_signed_less_equal(a, b)
-        };
-        self.decide(&comparison)
+        self.decide(&condition_for_operand_views(
+            MachineIntegerType::Int64,
+            relation,
+            [a.operand_view(), b.operand_view()],
+        ))
     }
 }
 
 #[cfg(test)]
 mod slice_index_tests {
     use super::*;
+
+    #[test]
+    fn low_word_index_transport_keeps_the_literal_addend_restriction() {
+        use crate::kernel::{KernelTermExport, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        let n = Bitvector32Term::Variable(Variable(998191));
+        let wide = Bitvector32Term::uint64_add(n.clone(), Bitvector32Term::uint64_constant(2));
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::uint64_less_equal(wide, Bitvector32Term::uint64_constant(20)),
+            true,
+        );
+        let add = |a, b| Bitvector32Term::Binary {
+            format: MachineIntegerType::Int32,
+            op: crate::kernel::MachineBinaryOp::Add,
+            left: Box::new(a),
+            right: Box::new(b),
+        };
+        let low = add(
+            Bitvector32Term::UInt32From64(Box::new(n)),
+            add(Bitvector32Term::constant(1), Bitvector32Term::constant(1)),
+        );
+        let native = ConditionTerm::signed_less_than(low.clone(), Bitvector32Term::constant(22));
+        assert_eq!(context.decide_small_uint64_index_order(&native), None);
+        let operand = SharedMachineIntegerTerm::from_shared(
+            MachineIntegerType::Int32,
+            crate::kernel::KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, &low)
+                .unwrap(),
+        )
+        .unwrap();
+        let shared = ConditionTerm::integer_less_than(
+            IntegerTerm::Machine(operand),
+            IntegerTerm::constant(22.into()),
+        );
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(context.decide_small_uint64_index_order(&shared), None);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_low_word_index_order_keeps_range_guards_without_export() {
+        use crate::kernel::{KernelTermExport, SharedMachineIntegerTerm};
+        for format in [MachineIntegerType::UInt64, MachineIntegerType::Int64] {
+            for bounded in [false, true] {
+                for offset in [0, 1] {
+                    for limit in [19, 22] {
+                        let _session = crate::kernel::VerificationSession::enter();
+                        let constant = |value| {
+                            if format == MachineIntegerType::UInt64 {
+                                Bitvector32Term::uint64_constant(value as u64)
+                            } else {
+                                Bitvector32Term::int64_constant(value)
+                            }
+                        };
+                        let add = |a, b| {
+                            if format == MachineIntegerType::UInt64 {
+                                Bitvector32Term::uint64_add(a, b)
+                            } else {
+                                Bitvector32Term::int64_add(a, b)
+                            }
+                        };
+                        let n = add(
+                            Bitvector32Term::Variable(Variable(998181)),
+                            Bitvector32Term::Variable(Variable(998182)),
+                        );
+                        let wide = if offset == 0 {
+                            n.clone()
+                        } else {
+                            add(n.clone(), constant(offset as i64))
+                        };
+                        let context = if bounded {
+                            PureFactContext::new()
+                                .assume_condition(
+                                    ConditionTerm::machine_compare(
+                                        format,
+                                        CompareRelation::LessEqual,
+                                        wide.clone(),
+                                        constant(20),
+                                    ),
+                                    true,
+                                )
+                                .assume_condition(
+                                    ConditionTerm::machine_compare(
+                                        format,
+                                        CompareRelation::LessEqual,
+                                        constant(20),
+                                        wide,
+                                    ),
+                                    true,
+                                )
+                        } else {
+                            PureFactContext::new()
+                        };
+                        let low = Bitvector32Term::UInt32From64(Box::new(n));
+                        let low = if offset == 0 {
+                            low
+                        } else {
+                            Bitvector32Term::add(low, Bitvector32Term::constant(offset))
+                        };
+                        let native = ConditionTerm::signed_less_than(
+                            low.clone(),
+                            Bitvector32Term::constant(limit),
+                        );
+                        let expected = context.decide_small_uint64_index_order(&native);
+                        assert_eq!(
+                            expected,
+                            bounded.then_some(limit == 22),
+                            "{format:?}, offset={offset}, limit={limit}"
+                        );
+                        let operand = SharedMachineIntegerTerm::from_shared(
+                            MachineIntegerType::Int32,
+                            crate::kernel::KernelTermImport::default()
+                                .machine_arithmetic(MachineIntegerType::Int32, &low)
+                                .unwrap(),
+                        )
+                        .unwrap();
+                        let shared = ConditionTerm::integer_less_than(
+                            IntegerTerm::Machine(operand.clone()),
+                            IntegerTerm::constant(limit.into()),
+                        );
+                        let exports = KernelTermExport::machine_export_count();
+                        // Native source admission may already retain this exact written operand.
+                        let boxed_before = operand.has_boxed_operand();
+                        assert_eq!(context.decide_small_uint64_index_order(&shared), expected);
+                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                        assert_eq!(operand.has_boxed_operand(), boxed_before);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn shared_wide_order_consumers_keep_endpoints_and_negative_answers() {

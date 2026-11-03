@@ -56,7 +56,7 @@ impl OrderKind {
 
 impl NestedBoundSearch {
     fn enter() -> Option<Self> {
-        (!BOUND_SEARCH_DECIDING.with(|deciding| deciding.replace(true))).then_some(Self)
+        (!BOUND_SEARCH_DECIDING.with(|deciding| deciding.replace(true))).then(|| Self)
     }
 }
 
@@ -208,15 +208,6 @@ impl PureFactContext {
     /// lower bound of `upper` at or above `lower`, each judged as
     /// [`Self::bound_proves_order_views`] judges, so the search never recurses
     /// along a chain of bounds.
-    pub(in crate::kernel) fn has_unsigned32_bound_between(
-        &self,
-        lower: &Bitvector32Term,
-        upper: &Bitvector32Term,
-        strict: bool,
-    ) -> bool {
-        self.has_unsigned32_bound_between_views(V::Legacy(lower), V::Legacy(upper), strict)
-    }
-
     pub(in crate::kernel) fn has_unsigned32_bound_between_views(
         &self,
         lower: V<'_>,
@@ -299,33 +290,24 @@ impl PureFactContext {
 
     /// `left < right` from a recorded `left < right + 1` and a recorded
     /// `left != right`.
-    pub(in crate::kernel) fn has_successor_upper_bound_below(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        self.upper_bounds_for_search(left)
+    pub(super) fn has_successor_upper_bound_below_views(&self, left: V<'_>, right: V<'_>) -> bool {
+        self.bounds_for_search_view(OrderKind::Signed32, left, true)
             .into_iter()
             .any(|(upper, strict)| {
                 strict
                     && shared_successor_of(upper.operand_view(), right)
-                    && self.has_condition_fact(
-                        ConditionTerm::equal(left.clone(), right.clone()),
+                    && self.has_written_operand_comparison(
+                        MachineIntegerType::Int32,
+                        crate::kernel::CompareRelation::Equal,
+                        left,
+                        right,
                         false,
                     )
             })
     }
 
-    pub(in crate::kernel) fn has_add_const_upper_bound_below(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        self.has_add_const_upper_bound_below_views(V::Legacy(left), V::Legacy(right))
-    }
-
     pub(super) fn has_add_const_upper_bound_below_views(&self, left: V<'_>, right: V<'_>) -> bool {
-        let Some((base, addend)) = shared_add_const_parts(left) else {
+        let Some((base, addend)) = left.int32_add_const_parts() else {
             return false;
         };
         if self.decide_const_offset_overflow(base, addend, false) != Some(false) {
@@ -347,20 +329,12 @@ impl PureFactContext {
             })
     }
 
-    pub(in crate::kernel) fn has_add_const_upper_bound_at_or_below(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        self.has_add_const_upper_bound_at_or_below_views(V::Legacy(left), V::Legacy(right))
-    }
-
     pub(super) fn has_add_const_upper_bound_at_or_below_views(
         &self,
         left: V<'_>,
         right: V<'_>,
     ) -> bool {
-        let Some((base, addend)) = shared_add_const_parts(left) else {
+        let Some((base, addend)) = left.int32_add_const_parts() else {
             return false;
         };
         if self.decide_const_offset_overflow(base, addend, false) != Some(false) {
@@ -390,22 +364,13 @@ impl PureFactContext {
     /// The upper bounds of `base` are read from `signed_order_bounds` at
     /// `base` (and its canonical form), so the cost is the bounds recorded at
     /// that one term, not the ambient fact count.
-    pub(in crate::kernel) fn has_subtract_const_upper_bound(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-        strict_goal: bool,
-    ) -> bool {
-        self.has_subtract_const_upper_bound_views(V::Legacy(left), V::Legacy(right), strict_goal)
-    }
-
     pub(super) fn has_subtract_const_upper_bound_views(
         &self,
         left: V<'_>,
         right: V<'_>,
         strict_goal: bool,
     ) -> bool {
-        let Some((base, subtrahend)) = shared_subtract_const_parts(left) else {
+        let Some((base, subtrahend)) = left.int32_subtract_const_parts() else {
             return false;
         };
         let Ok(subtrahend_value) = i32::try_from(subtrahend) else {
@@ -445,22 +410,13 @@ impl PureFactContext {
     /// `bound <= lower - c` (resp. `<`). `lower - c` is computed without
     /// wrapping, and `base >= lower` then keeps `base - c` from wrapping, so
     /// no separate underflow decision is needed.
-    pub(in crate::kernel) fn has_subtract_const_lower_bound(
-        &self,
-        term: &Bitvector32Term,
-        bound: &Bitvector32Term,
-        strict_goal: bool,
-    ) -> bool {
-        self.has_subtract_const_lower_bound_views(V::Legacy(term), V::Legacy(bound), strict_goal)
-    }
-
     pub(super) fn has_subtract_const_lower_bound_views(
         &self,
         term: V<'_>,
         bound: V<'_>,
         strict_goal: bool,
     ) -> bool {
-        let Some((base, subtrahend)) = shared_subtract_const_parts(term) else {
+        let Some((base, subtrahend)) = term.int32_subtract_const_parts() else {
             return false;
         };
         let Ok(subtrahend_value) = i32::try_from(subtrahend) else {
@@ -488,16 +444,16 @@ impl PureFactContext {
         })
     }
 
-    pub(in crate::kernel) fn subtract_same_const_order_fact(
+    pub(super) fn subtract_same_const_order_fact_views(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: V<'_>,
+        right: V<'_>,
         strict: bool,
     ) -> bool {
-        let Some((left_base, left_const)) = left.subtract_const_parts() else {
+        let Some((left_base, left_const)) = left.int32_subtract_const_parts() else {
             return false;
         };
-        let Some((right_base, right_const)) = right.subtract_const_parts() else {
+        let Some((right_base, right_const)) = right.int32_subtract_const_parts() else {
             return false;
         };
         if left_const != right_const {
@@ -507,32 +463,38 @@ impl PureFactContext {
         // the subtracted terms when neither subtraction signed underflows
         // (otherwise `a < b` would prove `a - 1 < b - 1`, false at
         // a = INT_MIN, b = INT_MIN + 1).
-        if self.decide(&ConditionTerm::signed_subtract_overflows(
-            left_base.clone(),
-            Bitvector32Term::constant(left_const),
-        )) != Some(false)
-            || self.decide(&ConditionTerm::signed_subtract_overflows(
-                right_base.clone(),
-                Bitvector32Term::constant(right_const),
-            )) != Some(false)
+        if self.decide_const_offset_overflow(left_base, left_const, true) != Some(false)
+            || self.decide_const_offset_overflow(right_base, right_const, true) != Some(false)
         {
             return false;
         }
 
         if strict {
-            self.has_condition_fact(
-                ConditionTerm::signed_less_than(left_base.clone(), right_base.clone()),
+            self.has_written_operand_comparison(
+                MachineIntegerType::Int32,
+                crate::kernel::CompareRelation::LessThan,
+                left_base,
+                right_base,
                 true,
-            ) || self.has_condition_fact(
-                ConditionTerm::signed_greater_than(right_base, left_base),
+            ) || self.has_written_operand_comparison(
+                MachineIntegerType::Int32,
+                crate::kernel::CompareRelation::GreaterThan,
+                right_base,
+                left_base,
                 true,
             )
         } else {
-            self.has_condition_fact(
-                ConditionTerm::signed_less_equal(left_base.clone(), right_base.clone()),
+            self.has_written_operand_comparison(
+                MachineIntegerType::Int32,
+                crate::kernel::CompareRelation::LessEqual,
+                left_base,
+                right_base,
                 true,
-            ) || self.has_condition_fact(
-                ConditionTerm::signed_greater_equal(right_base, left_base),
+            ) || self.has_written_operand_comparison(
+                MachineIntegerType::Int32,
+                crate::kernel::CompareRelation::GreaterEqual,
+                right_base,
+                left_base,
                 true,
             )
         }
@@ -541,26 +503,10 @@ impl PureFactContext {
     /// The upper bounds of `term` as `(upper, strict)`, selected by its
     /// written and canonical endpoint keys. Equal-but-differently-spelled
     /// endpoints require an explicit equality or bound, never a fact scan.
-    pub(super) fn upper_bounds_for_search(
-        &self,
-        term: &Bitvector32Term,
-    ) -> Vec<(SharedMachineIntegerTerm, bool)> {
-        self.bounds_for_search(OrderKind::Signed32, term, true)
-    }
-
     /// The bounds of `term` in the order of `kind`, upper bounds when
     /// `upper` and lower bounds otherwise, from that order's endpoint index
     /// (`signed_order_bounds`, `uint32_order_bounds`) at `term` and its
     /// canonical form.
-    pub(super) fn bounds_for_search(
-        &self,
-        kind: OrderKind,
-        term: &Bitvector32Term,
-        upper: bool,
-    ) -> Vec<(SharedMachineIntegerTerm, bool)> {
-        self.bounds_for_search_view(kind, V::Legacy(term), upper)
-    }
-
     pub(super) fn bounds_for_search_view(
         &self,
         kind: OrderKind,
@@ -721,22 +667,14 @@ impl PureFactContext {
             })
     }
 
-    pub(in crate::kernel) fn has_add_const_lower_bound_above(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        self.has_add_const_lower_bound_above_views(V::Legacy(left), V::Legacy(right))
-    }
-
     pub(super) fn has_add_const_lower_bound_above_views(&self, left: V<'_>, right: V<'_>) -> bool {
-        let Some((base, addend)) = shared_add_const_parts(left) else {
+        let Some((base, addend)) = left.int32_add_const_parts() else {
             return false;
         };
         // `base + addend` wraps in two's complement, so a bound on `base`
         // only carries to `base + addend` when that sum does not signed
         // overflow. Without this guard `x >= 0` would wrongly prove
-        // `x + 1 > 0` (false at x = INT_MAX). See positive_offset_is_proven_above.
+        // `x + 1 > 0` (false at x = INT_MAX). See constant_offset_is_proven.
         if self.decide_const_offset_overflow(base, addend, false) != Some(false) {
             return false;
         }
@@ -756,20 +694,12 @@ impl PureFactContext {
             })
     }
 
-    pub(in crate::kernel) fn has_add_const_lower_bound_at_or_above(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> bool {
-        self.has_add_const_lower_bound_at_or_above_views(V::Legacy(left), V::Legacy(right))
-    }
-
     pub(super) fn has_add_const_lower_bound_at_or_above_views(
         &self,
         left: V<'_>,
         right: V<'_>,
     ) -> bool {
-        let Some((base, addend)) = shared_add_const_parts(left) else {
+        let Some((base, addend)) = left.int32_add_const_parts() else {
             return false;
         };
         // `base + addend` wraps; only carry the bound when it does not
@@ -851,7 +781,7 @@ impl PureFactContext {
 
     /// The existing constant-offset order rule, over either operand representation.
     /// Match only the operation root before reading the base's range or domain.
-    fn constant_offset_is_proven(
+    pub(super) fn constant_offset_is_proven(
         &self,
         base: V<'_>,
         term: V<'_>,
@@ -944,43 +874,22 @@ impl PureFactContext {
         .then_some(true)
     }
 
-    pub(in crate::kernel) fn positive_offset_is_proven_above(
+    pub(super) fn is_bounded_by_base_before_nonnegative_offset_views(
         &self,
-        base: &Bitvector32Term,
-        term: &Bitvector32Term,
+        lower: V<'_>,
+        offset_term: V<'_>,
     ) -> bool {
-        self.constant_offset_is_proven(V::Legacy(base), V::Legacy(term), false, true)
-    }
-
-    pub(in crate::kernel) fn positive_subtraction_is_proven_below(
-        &self,
-        term: &Bitvector32Term,
-        base: &Bitvector32Term,
-    ) -> bool {
-        self.constant_offset_is_proven(V::Legacy(base), V::Legacy(term), true, true)
-    }
-
-    pub(in crate::kernel) fn nonnegative_offset_is_proven_at_or_above(
-        &self,
-        base: &Bitvector32Term,
-        term: &Bitvector32Term,
-    ) -> bool {
-        self.constant_offset_is_proven(V::Legacy(base), V::Legacy(term), false, false)
-    }
-
-    pub(in crate::kernel) fn is_bounded_by_base_before_nonnegative_offset(
-        &self,
-        lower: &Bitvector32Term,
-        offset_term: &Bitvector32Term,
-    ) -> bool {
-        let Some((base, _)) = offset_term.add_const_parts() else {
+        let Some((base, _)) = offset_term.int32_add_const_parts() else {
             return false;
         };
-        self.exact_condition_value(&ConditionTerm::signed_less_equal(
-            lower.clone(),
-            base.clone(),
-        )) == Some(true)
-            && self.nonnegative_offset_is_proven_at_or_above(&base, offset_term)
+        self.exact_condition_value(
+            &crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                crate::kernel::CompareRelation::LessEqual,
+                [lower, base],
+            ),
+        ) == Some(true)
+            && self.constant_offset_is_proven(base, offset_term, false, false)
     }
 }
 
@@ -1044,40 +953,14 @@ impl SelectedFacts<'_> {
 
 // These consumers need only a literal or one additive root, never a boxed
 // expansion of a retained bound.
-fn shared_subtract_const_parts(term: V<'_>) -> Option<(V<'_>, u32)> {
-    let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Subtract, [left, right]) =
-        term.binary()?
-    else {
-        return None;
-    };
-    let Some(int32_constant!(value)) = right.literal() else {
-        return None;
-    };
-    Some((left, constant_u32(value)))
-}
-
-fn shared_add_const_parts(term: V<'_>) -> Option<(V<'_>, u32)> {
-    let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [left, right]) =
-        term.binary()?
-    else {
-        return None;
-    };
-    if let Some(int32_constant!(value)) = right.literal() {
-        Some((left, constant_u32(value)))
-    } else if let Some(int32_constant!(value)) = left.literal() {
-        Some((right, constant_u32(value)))
-    } else {
-        None
-    }
-}
 
 fn shared_signed_const_add(term: V<'_>, addend: u32) -> Option<Bitvector32Term> {
     let sum = (term.word32_constant()? as i32).checked_add(i32::try_from(addend).ok()?)?;
     Some(Bitvector32Term::constant(sum as u32))
 }
 
-fn shared_successor_of(term: V<'_>, right: &Bitvector32Term) -> bool {
-    if let V::Legacy(term) = term {
+fn shared_successor_of(term: V<'_>, right: V<'_>) -> bool {
+    if let (V::Legacy(term), V::Legacy(right)) = (term, right) {
         return term.add_const_base(1).is_some_and(|base| base == *right);
     }
     let Some((format, crate::kernel::MachineBinaryOp::Add, [left, right_operand])) = term.binary()
@@ -1090,7 +973,7 @@ fn shared_successor_of(term: V<'_>, right: &Bitvector32Term) -> bool {
     use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
     let same = |operand| {
         Key::for_format(MachineIntegerType::Int32, operand)
-            == Key::for_format(MachineIntegerType::Int32, V::Legacy(right))
+            == Key::for_format(MachineIntegerType::Int32, right)
     };
     (right_operand.literal() == Some(Bitvector32Term::constant(1)) && same(left))
         || (left.literal() == Some(Bitvector32Term::constant(1)) && same(right_operand))
@@ -1456,5 +1339,19 @@ mod shared_offset_bound_consumers {
         );
         assert!(!add.has_boxed_operand());
         assert!(!sub.has_boxed_operand());
+    }
+}
+
+#[cfg(test)]
+mod nested_search_tests {
+    use super::*;
+
+    #[test]
+    fn refused_nested_bound_search_keeps_the_outer_guard() {
+        let outer = NestedBoundSearch::enter().expect("outer search");
+        assert!(NestedBoundSearch::enter().is_none());
+        assert!(NestedBoundSearch::enter().is_none());
+        drop(outer);
+        assert!(NestedBoundSearch::enter().is_some());
     }
 }

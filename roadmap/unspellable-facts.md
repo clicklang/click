@@ -76,6 +76,22 @@ General difference-graph comparison/admission adapters remain to be migrated.
 Certificate premise adapters still need their across-effect availability routes
 migrated before their boxed compatibility forms can be removed.
 
+Signed and unsigned 32-bit order rules inspect operand views, including mirrored
+and negative answers, shifted-bound domains, and successor transport. Their
+native entry points use the same rule bodies. Fixed-size literal/variable
+comparisons preserve native spelling; shared arithmetic stays in observations.
+Unsigned successor, subtraction, remainder and partial-restoration guards also
+read views. Low-word index comparisons retain their wide operands and literal
+offsets through the unsigned or signed range checks, preserving refusals when
+the ranges are absent. The signed equality dispatcher and nonnegative division
+bound adapter remain open.
+
+Bounded arithmetic-certificate conclusion identity reads shared operands directly,
+preserving its accepted operators, cast encodings, narrow comparison identity,
+written directions, and payload bound. It retains the native 64-bit reflexive
+constructor rule. Growing shared prefixes are checked without boxed exports;
+ordinary and across-effect certificate premise adapters remain open.
+
 The general comparison dispatcher still needs its compatibility bridge. Its
 migration must preserve the existing rule order as well as proof results;
 moving endpoint queries ahead of cheaper rules can multiply nested bound visits.

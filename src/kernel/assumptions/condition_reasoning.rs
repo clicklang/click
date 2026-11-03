@@ -1,7 +1,6 @@
 use super::*;
 
 mod bounds;
-pub(in crate::kernel) use bounds::OrderKind;
 mod decision;
 mod memory_conditions;
 mod narrowed_casts;

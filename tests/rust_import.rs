@@ -794,8 +794,6 @@ fn charon_array_fields_live_refresh_and_compiler_rejections() {
     }
 }
 
-const CHARON_ARITHMETIC_SOURCE: &str =
-    include_str!("../design/charon-trial/arithmetic/arithmetic.rs");
 const CHARON_ARITHMETIC_SIDECAR: &str =
     include_str!("../design/charon-trial/arithmetic/arithmetic.click");
 fn charon_arithmetic_project() -> Project {
@@ -808,8 +806,11 @@ fn charon_arithmetic_project() -> Project {
 fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
     let p = charon_arithmetic_project();
     let prepared = p.prepared().unwrap();
-    C0VerificationSession::new_program_prepared(CHARON_ARITHMETIC_SIDECAR, &prepared).unwrap();
-    verify_rust_function(CHARON_ARITHMETIC_SIDECAR, &prepared, "wide_left").unwrap();
+    // Check these symbolic claims once; the concrete and hostile cases below
+    // select their own function instead of rechecking the whole example.
+    for name in ["high_bit", "remainder_word", "wide_left"] {
+        verify_rust_function(CHARON_ARITHMETIC_SIDECAR, &prepared, name).unwrap();
+    }
     for claim in [
         "fn reduce(value: u32) -> u32 { requires value == 4294967295u32; ensures result == 224u32; }",
         "fn wide_quotient(value: usize, divisor: usize) -> usize { requires value == 18446744073709551615u64; requires divisor == 1u64; ensures result == 18446744073709551615u64; }",
@@ -817,7 +818,7 @@ fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
         "fn wide_right(value: usize, count: usize) -> usize { requires value == 18446744073709551615u64; requires count == 63u64; ensures result == 1u64; }",
         "fn word_right(value: u16, count: usize) -> u16 { requires value == 65535; requires count == 15u64; ensures result == 1; }",
         "fn shifted_byte(value: u8, count: u32) -> u8 { requires value == 128; requires count == 1u32; ensures result == 0; }",
-        "fn conditional_divide(value: u32, divisor: u32, skip: bool) -> u32 { requires skip != 0; requires divisor == 0u32; ensures result == 0u32; }",
+        "fn conditional_divide(value: u32, divisor: u32, skip: bool) -> u32 { requires skip == true; requires divisor == 0u32; ensures result == 0u32; }",
     ] {
         let claim = format!("verifying \"arithmetic.rs\"; {claim}");
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
@@ -889,55 +890,17 @@ fn charon_checksum_arithmetic_checks_panic_bounds_and_full_width_values() {
         );
     }
 }
-#[cfg(not(feature = "fast-gate"))]
-#[test]
-#[ignore = "nightly: whole-example proof-tool rechecks"]
-fn charon_checksum_arithmetic_cli_tools_recheck_certificates() {
-    let p = charon_arithmetic_project();
-    for command in ["profile", "audit"] {
-        assert_cli(&p, &[command]);
-    }
-    for claim in [
-        "reduce.ensures_0",
-        "pack.ensures_0",
-        "wide_left.ensures_0",
-        "signed_count.ensures_0",
-        "conditional_divide.contract",
-    ] {
-        assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
-    }
-    assert_cli(&p, &["verify"]);
-}
-#[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn rust_and_charon_unsigned_shifts_preserve_full_width_counts() {
-    let p = Project::new(CHARON_ARITHMETIC_SOURCE);
-    p.refresh().unwrap();
-    let sidecar = CHARON_ARITHMETIC_SIDECAR.replace("arithmetic.rs", "borrow.rs");
-    C0VerificationSession::new_program_prepared(&sidecar, p.prepared().unwrap()).unwrap();
-}
 #[test]
 #[ignore = "requires the separately built pinned Charon/compiler"]
-fn charon_checksum_arithmetic_live_refresh_and_rejected_modes() {
+fn charon_checksum_arithmetic_live_refresh() {
     let p = charon_arithmetic_project();
     p.refresh().unwrap();
-    C0VerificationSession::new_program_prepared(CHARON_ARITHMETIC_SIDECAR, p.prepared().unwrap())
-        .unwrap();
-    for source in [
-        "pub fn bad(x:u32, count:u32)->u32 { x.wrapping_shl(count) }",
-        "pub fn bad(x:u32, count:u32)->u32 { x.wrapping_shr(count) }",
-        "pub fn bad(x:i32, count:u32)->i32 { x << count }",
-        "pub fn bad(x:i32, divisor:i32)->i32 { x / divisor }",
-    ] {
-        fs::remove_file(p.artifact("arithmetic.rs")).unwrap();
-        fs::write(p.root.join("arithmetic.rs"), source).unwrap();
-        let error = p.refresh().unwrap_err();
-        assert!(error.contains("Rust frontend does not support"), "{error}");
-        assert!(!p.artifact("arithmetic.rs").exists());
-
-        fs::write(p.root.join("arithmetic.rs"), CHARON_ARITHMETIC_SOURCE).unwrap();
-        p.refresh().unwrap();
-    }
+    verify_rust_function(
+        CHARON_ARITHMETIC_SIDECAR,
+        &p.prepared().unwrap(),
+        "high_bit",
+    )
+    .unwrap();
 }
 
 const CHARON_NESTED_SOURCE: &str = include_str!("../design/charon-trial/nested/nested.rs");

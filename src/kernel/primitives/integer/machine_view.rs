@@ -1,6 +1,8 @@
 //! Borrowed root views of machine operands. Inspecting a shared root never
 //! requests its boxed expansion; child observations retain child handles.
 use super::*;
+use crate::kernel::constant_u32;
+use crate::kernel::int32_constant;
 use crate::kernel::{constant_i64, int64_constant};
 
 // Only written machine variables are cached. Registered-load dependencies are
@@ -331,6 +333,49 @@ impl<'a> MachineOperandView<'a> {
             }) => Some((*format, *op, Self::Legacy(operand))),
             _ => None,
         }
+    }
+
+    /// The legacy signed-32 constant-offset shapes, inspected at the root.
+    pub(crate) fn int32_add_const_base(self, value: u32) -> Option<Self> {
+        let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [left, right]) =
+            self.binary()?
+        else {
+            return None;
+        };
+        if right.literal() == Some(Bitvector32Term::constant(value)) {
+            Some(left)
+        } else if left.literal() == Some(Bitvector32Term::constant(value)) {
+            Some(right)
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn int32_add_const_parts(self) -> Option<(Self, u32)> {
+        let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [left, right]) =
+            self.binary()?
+        else {
+            return None;
+        };
+        if let Some(int32_constant!(value)) = right.literal() {
+            Some((left, constant_u32(value)))
+        } else if let Some(int32_constant!(value)) = left.literal() {
+            Some((right, constant_u32(value)))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn int32_subtract_const_parts(self) -> Option<(Self, u32)> {
+        let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Subtract, [left, right]) =
+            self.binary()?
+        else {
+            return None;
+        };
+        let Some(int32_constant!(value)) = right.literal() else {
+            return None;
+        };
+        Some((left, constant_u32(value)))
     }
 
     /// Literal payload only, without descending through an operation.

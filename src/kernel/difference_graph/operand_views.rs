@@ -132,6 +132,84 @@ impl DifferenceGraph {
         }
     }
 
+    /// The existing order decision, with retained comparison operands.
+    pub(crate) fn decide_shared_order(
+        &self,
+        view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+    ) -> Option<bool> {
+        use crate::kernel::machine_integer::Relation;
+        if self.contradictory {
+            return None;
+        }
+        let strict = match view.relation {
+            Relation::Less => true,
+            Relation::LessEqual => false,
+            _ => return None,
+        };
+        let domain = match view.format {
+            MachineIntegerType::Int32 => Domain::Int32,
+            MachineIntegerType::UInt32 => Domain::UInt32,
+            MachineIntegerType::Int64 => Domain::Int64,
+            MachineIntegerType::UInt64 => Domain::UInt64,
+            _ => return None,
+        };
+        let [lower, upper] = view.operands.each_ref().map(|p| p.operand_view());
+        let mut query = Query {
+            graph: self,
+            intervals: Default::default(),
+            resolved: Default::default(),
+        };
+        if domain == Domain::UInt64
+            && let Some((MachineIntegerType::UInt64, op, [a, b])) = lower.binary()
+            && Key::for_format(view.format, a) == Key::for_format(view.format, upper)
+        {
+            if op == MachineBinaryOp::Subtract
+                && let (Some(a), Some(b)) = (query.resolve(domain, a), query.resolve(domain, b))
+                && self.difference_bound(a, b) <= 0
+                && (!strict || self.affine_interval(b).0 >= 1)
+            {
+                return Some(true);
+            }
+            if op == MachineBinaryOp::Remainder && !strict {
+                return Some(true);
+            }
+        }
+        let (holds, fails) = match (query.resolve(domain, lower), query.resolve(domain, upper)) {
+            (Some(lower), Some(upper)) => {
+                if lower.0.is_some() && upper.0.is_some() {
+                    if self
+                        .direct_difference_bound(upper, lower)
+                        .is_some_and(|bound| bound <= -i128::from(strict))
+                    {
+                        return Some(true);
+                    }
+                    if self
+                        .direct_difference_bound(lower, upper)
+                        .is_some_and(|bound| bound <= -i128::from(!strict))
+                    {
+                        return Some(false);
+                    }
+                }
+                (
+                    self.difference_bound(upper, lower),
+                    self.difference_bound(lower, upper),
+                )
+            }
+            _ => {
+                let (l0, l1) = query.interval(domain, lower);
+                let (u0, u1) = query.interval(domain, upper);
+                (l1 - u0, u1 - l0)
+            }
+        };
+        if holds <= -i128::from(strict) {
+            Some(true)
+        } else if fails <= -i128::from(!strict) {
+            Some(false)
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn decide_overflow_query(
         &self,
         query: &crate::kernel::machine_integer::definedness::OverflowQueryView,
@@ -687,6 +765,71 @@ mod tests {
         assert_eq!(child.decide_overflow_query(&query), Some(false));
         assert_eq!(parent.decide_overflow_query(&query), None);
         assert_eq!(KernelTermExport::machine_export_count(), before);
+    }
+
+    #[test]
+    fn shared_graph_order_preserves_direct_edges_and_negative_answers() {
+        use crate::kernel::machine_integer::comparison::{
+            comparison_view, condition_for_operand_views,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let two = match ty {
+                MachineIntegerType::Int64 => Bitvector32Term::int64_constant(2),
+                MachineIntegerType::UInt64 => Bitvector32Term::uint64_constant(2),
+                _ => Bitvector32Term::constant(2),
+            };
+            let left = Bitvector32Term::Binary {
+                format: ty,
+                op: MachineBinaryOp::Add,
+                left: Box::new(Bitvector32Term::Variable(Variable(997851))),
+                right: Box::new(two),
+            };
+            let right = Bitvector32Term::Variable(Variable(997852));
+            let mut graph = DifferenceGraph::new();
+            graph.assume_condition(
+                &ConditionTerm::machine_compare(
+                    ty,
+                    CompareRelation::LessThan,
+                    left.clone(),
+                    right.clone(),
+                ),
+                true,
+            );
+            let left_root = KernelTermImport::default()
+                .machine_arithmetic(ty, &left)
+                .unwrap();
+            let right_root = KernelTermImport::default()
+                .machine_arithmetic(ty, &right)
+                .unwrap();
+            for relation in [
+                CompareRelation::LessThan,
+                CompareRelation::LessEqual,
+                CompareRelation::GreaterThan,
+                CompareRelation::GreaterEqual,
+            ] {
+                let native =
+                    ConditionTerm::machine_compare(ty, relation, left.clone(), right.clone());
+                let observed = condition_for_operand_views(
+                    ty,
+                    relation,
+                    [V::Shared(&left_root), V::Shared(&right_root)],
+                );
+                let view = comparison_view(&observed, true).unwrap();
+                let before = KernelTermExport::machine_export_count();
+                assert_eq!(
+                    graph.decide_shared_order(&view),
+                    graph.decide(&native),
+                    "{ty:?} {relation:?}"
+                );
+                assert_eq!(KernelTermExport::machine_export_count(), before);
+            }
+        }
     }
 
     #[cfg(test)]

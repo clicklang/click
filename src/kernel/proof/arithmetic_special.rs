@@ -289,10 +289,20 @@ fn pointer_equal(left: &Pointer, right: &Pointer) -> bool {
         && pointer_offset_equal(&left.offset, &right.offset)
 }
 
+mod operand_identity;
+
 /// Compare only the bounded structural fragment accepted by `bitvector_payload`.
 /// This avoids recursive equality on attacker-controlled expression depth after
 /// the payload has already been charged.
+
 fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
+    operand_identity::equal(
+        crate::kernel::MachineOperandView::Legacy(left),
+        crate::kernel::MachineOperandView::Legacy(right),
+    )
+}
+
+fn legacy_bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
     if !charge_bitvector(left) || !charge_bitvector(right) {
         return false;
     }
@@ -454,23 +464,16 @@ fn checked_pointer_alignment(condition: &ConditionTerm) -> Option<(&Pointer, u64
 
 /// [`condition_identity_as_written`] at fact identity. An Integer
 /// comparison of exact observations reads as its native comparison
-/// (`native_comparison_of_integer_observation`), so a conclusion and a goal
+/// (`native_comparison_view`), so a conclusion and a goal
 /// that spell one fact in the two sorts match. Two comparisons at an 8- or
 /// 16-bit identity compare by [`ConditionTerm::comparison_fact`], which
 /// reads a native comparison and the `int32` comparison of its widenings as
 /// one fact (rule K8). Root matches and the charged side comparisons.
 fn condition_identity(left: &ConditionTerm, right: &ConditionTerm) -> bool {
-    let native = |condition: &ConditionTerm| {
-        match crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
-            condition, true,
-        ) {
-            Some((native, true)) => Some(native),
-            _ => None,
-        }
-    };
-    let (left_native, right_native) = (native(left), native(right));
-    let left = left_native.as_ref().unwrap_or(left);
-    let right = right_native.as_ref().unwrap_or(right);
+    operand_identity::condition_equal(left, right)
+}
+
+fn condition_identity_native(left: &ConditionTerm, right: &ConditionTerm) -> bool {
     if let (Some(left_fact), Some(right_fact)) = (left.comparison_fact(), right.comparison_fact())
         && (left_fact.0.format().bits() < 32 || right_fact.0.format().bits() < 32)
     {
