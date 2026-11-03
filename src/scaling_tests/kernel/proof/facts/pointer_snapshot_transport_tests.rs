@@ -45,7 +45,7 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
             facts = facts.with_fact(Proposition::ConditionIs(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(992_100 + index)),
-                    Bitvector32Term::Constant(7),
+                    Bitvector32Term::constant(7),
                 ),
                 true,
             ));
@@ -53,7 +53,7 @@ fn full_pointer_fact_transport_checks_designations_and_the_whole_read() {
         for index in 0..size {
             let selected = pointer(&before).with_extent(Some(SubobjectExtent {
                 start: cell.clone(),
-                width: Bitvector32Term::Constant(u32::try_from(index + 1).unwrap()),
+                width: Bitvector32Term::constant(u32::try_from(index + 1).unwrap()),
             }));
             facts = facts.with_fact(Proposition::ConditionIs(
                 ConditionTerm::PointerValueEqual(Box::new(selected.clone()), Box::new(selected)),

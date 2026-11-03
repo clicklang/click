@@ -510,8 +510,19 @@ In `src/kernel/`:
   `Binary { op, format, .. }` or `Unary { format, op, .. }` node
   (`MachineBinaryOp`, `MachineUnaryOp`; signed and unsigned division,
   remainder and right shift are told apart by the format) at a 32- or
-  64-bit format. Every operator of a `uint32` value is built at `uint32`
-  over operands and constants in that format (`UInt32Constant`), through
+  64-bit format. A constant is one format-carrying node,
+  `Constant { format, bits }`, for every format (decision G9): build it with
+  `Bitvector32Term::constant` (`int32`), `uint32_constant`,
+  `int64_constant`, `uint64_constant` or `machine_constant`, and match it
+  with `int32_constant!`, `uint32_constant!`, `bits32_constant!` (either
+  32-bit format), `int64_constant!`, `uint64_constant!`, `native_constant!`
+  (8, 16 and 128 bits) or `Constant { .. }`. A pattern binds the `u128`
+  bits; read them with `constant_u32`, `constant_i64` or `constant_u64`, the
+  value types the per-format constants had; `Debug` still prints the
+  per-format variant names. Code that hashes or compares
+  nodes by discriminant also takes a constant's format. Every operator of a
+  `uint32` value is built at `uint32` over operands and constants in that
+  format, through
   the format-parametric constructors (`add_at`, `subtract_at`, ...,
   `machine_binary`); the width check refuses any other format. An operand
   keeps its structure: σ and a narrow widening are nodes of their own
@@ -519,18 +530,15 @@ In `src/kernel/`:
   graph, the signed interval rules and the representation map read a
   32-bit sign-free operator by its bits at either format, relating σ to
   its operand (R0, R-dist, the difference graph's σ link). A `uint32`
-  constant is still read as its bits' `Constant` inside an `int32`
-  operator, comparison or overflow test (`into_word32`), until constants
-  carry their format (decision G9). Code that compares nodes by
-  variant also compares
+  constant is read as the `int32` constant of its bits inside an `int32`
+  operator, comparison or overflow test (`into_word32`). Code that compares
+  nodes by variant also compares
   `machine_operator()`, since one variant spells every operator. This word
   identity is being removed (`design/machine-integers.md`, "Every format
   its own nodes"); a debug build with `CLICK_FORMAT_AUDIT=<path>` records
   each remaining use of it by kind and site (`scripts/format-audit.sh`,
   `machine_integer/format_audit.rs`). Elsewhere
-  the width is implied: by the constant's shape (`Constant`, `Int64Constant`,
-  `UInt64Constant`, a 128-bit `MachineIntegerConstant`), a load's kind, or a
-  cast's destination. Values of
+  the width is implied: by a load's kind or a cast's destination. Values of
   8 and 16 bits, and a `Bool`'s cast `b as F` to a narrow `F`, ride in the 32-bit carrier, and floats in the
   carrier of their bit width. `term_width.rs` infers that carrier width.
   Debug builds refuse a condition assumed into a fact context, a value an
@@ -600,7 +608,7 @@ value of its own width (`CarrierWidth::Bits8`, `Bits16`), not a 32-bit word
 2026-10-30, 2026-10-31 and 2026-11-01). `to_integer` of it is its value in
 its format, and its range is its format's: no range fact is filed for it.
 
-- A constant is a native `MachineIntegerConstant` of its format; the
+- A constant is a native `Constant` node of its format; the
   equality graph keys narrow constant atoms by their bits at the unsigned
   format, so `int8` -56 and `uint8` 200 are one node, and folds a cast of a
   constant class to the destination's constant.
@@ -668,9 +676,9 @@ signedness returns σ of the stored word (rule K5), and so does every route
 that answers a load term from a cell or a store (`LoadKind::read_cell`;
 `LoadKind::reads_value` holds only at the stored kind); the two reads of one
 cell are two loads, the `uint32` read σ of the `int32` read (R-mem).
-A `uint32` constant is `UInt32Constant`, an `int32` or kernel-internal one
-`Constant`; inside a signed operator or comparison it is read as its bits'
-`Constant` (decision G9). An equality of `uint32` values is a `uint32`
+A `uint32` constant is the `Constant` node at `uint32`, an `int32` or
+kernel-internal one the node at `int32`; inside a signed operator or
+comparison it is read as the `int32` constant of its bits. An equality of `uint32` values is a `uint32`
 term as written, and the same fact as the `int32` equality of the same bits
 at the fact-identity and lookup-key level only (rule K6). Unsigned division and
 remainder have distinct term nodes so high-bit operands do not inherit signed

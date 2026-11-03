@@ -65,12 +65,12 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
             // value, whatever bounds are cited.
             for carrier in [
                 word.clone(),
-                Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask)),
-                Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask + 1)),
-                Bitvector32Term::add(word.clone(), Bitvector32Term::Constant(1)),
+                Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::constant(mask)),
+                Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::constant(mask + 1)),
+                Bitvector32Term::add(word.clone(), Bitvector32Term::constant(1)),
                 Bitvector32Term::add(
-                    Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::Constant(mask)),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::constant(mask)),
+                    Bitvector32Term::constant(1),
                 ),
             ] {
                 let goal = equal(observation(destination, carrier), original.clone());

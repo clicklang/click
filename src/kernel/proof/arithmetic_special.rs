@@ -16,6 +16,10 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
+    native_constant, uint64_constant,
+};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -89,12 +93,7 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
             return None;
         }
         match term {
-            Bitvector32Term::Constant(_)
-            | Bitvector32Term::UInt32Constant(_)
-            | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_)
-            | Bitvector32Term::MachineIntegerConstant(_)
-            | Bitvector32Term::Variable(_) => {}
+            Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => {}
             // Integer operands are already interned by shallow identity.
             Bitvector32Term::IntegerToMachine { .. } => {}
             Bitvector32Term::Binary {
@@ -305,21 +304,18 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             | (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
                 pending.push((left, right));
             }
-            (
-                Bitvector32Term::Constant(left) | Bitvector32Term::UInt32Constant(left),
-                Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
-            ) => {
-                if left != right {
+            (bits32_constant!(left), bits32_constant!(right)) => {
+                if constant_u32(*left) != constant_u32(*right) {
                     return false;
                 }
             }
-            (Bitvector32Term::Int64Constant(left), Bitvector32Term::Int64Constant(right)) => {
-                if left != right {
+            (int64_constant!(left), int64_constant!(right)) => {
+                if constant_i64(*left) != constant_i64(*right) {
                     return false;
                 }
             }
-            (Bitvector32Term::UInt64Constant(left), Bitvector32Term::UInt64Constant(right)) => {
-                if left != right {
+            (uint64_constant!(left), uint64_constant!(right)) => {
+                if constant_u64(*left) != constant_u64(*right) {
                     return false;
                 }
             }
@@ -328,11 +324,8 @@ fn bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
                     return false;
                 }
             }
-            (
-                Bitvector32Term::MachineIntegerConstant(left),
-                Bitvector32Term::MachineIntegerConstant(right),
-            ) => {
-                if left != right {
+            (native_constant!(left_format, left), native_constant!(right_format, right)) => {
+                if (left_format, left) != (right_format, right) {
                     return false;
                 }
             }
@@ -2079,8 +2072,8 @@ fn pointer_translation(
         u128::from(wide_range(x).1) + u128::from(wide_range(y).1) <= u128::from(u64::MAX)
     };
     let atom_range = |value: &Bitvector32Term| match value {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            let value = i64::from(*value as i32);
+        bits32_constant!(value) => {
+            let value = i64::from(constant_u32(*value) as i32);
             Some((value, value))
         }
         Bitvector32Term::Variable(_) => Some(
@@ -2135,8 +2128,8 @@ fn pointer_translation(
                     pending.push(OffsetPart::Scaled(value, *byte_width));
                     continue;
                 }
-                OffsetPart::Scaled(Bitvector32Term::Constant(value), width) => {
-                    let value = i128::from(*value as i32) * i128::from(width);
+                OffsetPart::Scaled(int32_constant!(value), width) => {
+                    let value = i128::from(constant_u32(*value) as i32) * i128::from(width);
                     let Some(next) = constant.checked_add(sign * value) else {
                         return false;
                     };
@@ -2162,8 +2155,8 @@ fn pointer_translation(
                     pending.push(OffsetPart::Scaled64(value, *byte_width));
                     continue;
                 }
-                OffsetPart::Scaled64(Bitvector32Term::UInt64Constant(value), width) => {
-                    let value = i128::from(*value) * i128::from(width);
+                OffsetPart::Scaled64(uint64_constant!(value), width) => {
+                    let value = i128::from(constant_u64(*value)) * i128::from(width);
                     let Some(next) = constant.checked_add(sign * value) else {
                         return false;
                     };
@@ -2452,7 +2445,7 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
         }
         if expanded {
             let value = match term {
-                Bitvector32Term::UInt64Constant(value) => Some(*value),
+                uint64_constant!(value) => Some(constant_u64(*value)),
                 crate::kernel::binary_uint64_term!(_, _) => {
                     let (left, right) = match term {
                         crate::kernel::binary_uint64_term!(left, right) => (
@@ -2581,25 +2574,21 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
                     .flatten()
                     .map(|value| !value),
                 Bitvector32Term::UInt64From32(value) => match value.as_ref() {
-                    Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-                        Some(u64::from(*value))
-                    }
+                    bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
                     _ => values
                         .get(&(value.as_ref() as *const _ as usize))
                         .copied()
                         .flatten(),
                 },
                 Bitvector32Term::UInt64FromInt32(value) => match value.as_ref() {
-                    Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-                        Some((*value as i32 as i64) as u64)
-                    }
+                    bits32_constant!(value) => Some((constant_u32(*value) as i32 as i64) as u64),
                     _ => values
                         .get(&(value.as_ref() as *const _ as usize))
                         .copied()
                         .flatten(),
                 },
                 Bitvector32Term::UInt64FromInt64(value) => match value.as_ref() {
-                    Bitvector32Term::Int64Constant(value) => Some(*value as u64),
+                    int64_constant!(value) => Some(constant_i64(*value) as u64),
                     _ => values
                         .get(&(value.as_ref() as *const _ as usize))
                         .copied()
@@ -2611,7 +2600,7 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
             continue;
         }
         match term {
-            Bitvector32Term::UInt64Constant(_) => pending.push((term, true)),
+            uint64_constant!(_) => pending.push((term, true)),
             Bitvector32Term::Unary {
                 format: MachineIntegerType::UInt64,
                 op: MachineUnaryOp::BitwiseNot,
@@ -2623,16 +2612,9 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
                 pending.push((term, true));
                 let direct = matches!(
                     (term, value.as_ref()),
-                    (
-                        Bitvector32Term::UInt64From32(_),
-                        Bitvector32Term::Constant(_)
-                    ) | (
-                        Bitvector32Term::UInt64FromInt32(_),
-                        Bitvector32Term::Constant(_)
-                    ) | (
-                        Bitvector32Term::UInt64FromInt64(_),
-                        Bitvector32Term::Int64Constant(_)
-                    )
+                    (Bitvector32Term::UInt64From32(_), int32_constant!(_))
+                        | (Bitvector32Term::UInt64FromInt32(_), int32_constant!(_))
+                        | (Bitvector32Term::UInt64FromInt64(_), int64_constant!(_))
                 );
                 if !direct {
                     pending.push((value, false));
@@ -2757,12 +2739,14 @@ fn bounded_term_hashes(roots: &[&Bitvector32Term]) -> Option<HashMap<usize, u64>
             if let Bitvector32Term::Binary { format, op, .. } = term {
                 (format, op).hash(&mut hasher);
             }
+            // So is a constant's format: one variant spells every constant.
+            if let Bitvector32Term::Constant { format, .. } = term {
+                format.hash(&mut hasher);
+            }
             match term {
-                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-                    value.hash(&mut hasher)
-                }
-                Bitvector32Term::Int64Constant(value) => value.hash(&mut hasher),
-                Bitvector32Term::UInt64Constant(value) => value.hash(&mut hasher),
+                bits32_constant!(value) => constant_u32(*value).hash(&mut hasher),
+                int64_constant!(value) => constant_i64(*value).hash(&mut hasher),
+                uint64_constant!(value) => constant_u64(*value).hash(&mut hasher),
                 Bitvector32Term::Variable(value) => value.hash(&mut hasher),
                 Bitvector32Term::PointerAddress(pointer, _) => {
                     pointer_identity_hash(pointer)?.hash(&mut hasher)
@@ -2884,15 +2868,11 @@ fn masked_source(term: &Bitvector32Term) -> Option<(&Bitvector32Term, u64)> {
         return None;
     };
     match (&**left, &**right) {
-        (source, Bitvector32Term::UInt64Constant(mask))
-            if !matches!(source, Bitvector32Term::UInt64Constant(_)) =>
-        {
-            Some((source, *mask))
+        (source, uint64_constant!(mask)) if !matches!(source, uint64_constant!(_)) => {
+            Some((source, constant_u64(*mask)))
         }
-        (Bitvector32Term::UInt64Constant(mask), source)
-            if !matches!(source, Bitvector32Term::UInt64Constant(_)) =>
-        {
-            Some((source, *mask))
+        (uint64_constant!(mask), source) if !matches!(source, uint64_constant!(_)) => {
+            Some((source, constant_u64(*mask)))
         }
         _ => None,
     }
@@ -3591,9 +3571,9 @@ mod tests {
                             if format == MachineIntegerType::Int64
                                 || format == MachineIntegerType::UInt64
                             {
-                                Bitvector32Term::Int64Constant(1)
+                                Bitvector32Term::int64_constant(1)
                             } else {
-                                Bitvector32Term::Constant(1)
+                                Bitvector32Term::constant(1)
                             },
                         ),
                     },
@@ -3654,9 +3634,9 @@ mod tests {
             let term = Bitvector32Term::Variable(Variable(982601));
             for constant in [-5, 0, 7] {
                 let literal = if format == MachineIntegerType::Int32 {
-                    Bitvector32Term::Constant(constant as u32)
+                    Bitvector32Term::constant(constant as u32)
                 } else {
-                    Bitvector32Term::Int64Constant(constant)
+                    Bitvector32Term::int64_constant(constant)
                 };
                 for relation in [
                     CompareRelation::Equal,
@@ -3762,7 +3742,7 @@ mod tests {
             &observed(MachineIntegerType::Int64, 891_004)
         ));
         let constant = |value| {
-            Bitvector32Term::MachineIntegerConstant(
+            Bitvector32Term::machine_constant(
                 MachineIntegerConstant::from_integer(MachineIntegerType::Int128.format(), &value)
                     .unwrap(),
             )
@@ -3821,7 +3801,7 @@ mod tests {
     #[test]
     fn int64_defined_follows_from_constant_bounds_on_both_operands() {
         let (a, b) = (int64_var(1), int64_var(2));
-        let c = Bitvector32Term::Int64Constant;
+        let c = Bitvector32Term::int64_constant;
         let premises = vec![
             // `a < 100`, `b == 1`, `-5 <= a` spelled as `not (a < -5)`.
             int64_fact(
@@ -3886,7 +3866,7 @@ mod tests {
     fn int64_defined_uses_widening_ranges_and_refuses_unrelated_or_missing_bounds() {
         let tag = Bitvector32Term::Int64FromUInt32(Box::new(int64_var(3)));
         let b = int64_var(4);
-        let c = Bitvector32Term::Int64Constant;
+        let c = Bitvector32Term::int64_constant;
         let upper = int64_fact(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
@@ -3970,7 +3950,7 @@ mod tests {
     #[test]
     fn int32_defined_follows_from_constant_bounds_and_refuses_what_leaves_int32() {
         let (a, b) = (int64_var(1), int64_var(2));
-        let c = |value: i32| Bitvector32Term::Constant(value as u32);
+        let c = |value: i32| Bitvector32Term::constant(value as u32);
         let premises = vec![
             // `a < 100`, `b == 1`, `-5 <= a` spelled as `not (a < -5)`.
             int64_fact(
@@ -4006,7 +3986,7 @@ mod tests {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::LessThan,
                     left: Box::new(a.clone()),
-                    right: Box::new(Bitvector32Term::Int64Constant(100)),
+                    right: Box::new(Bitvector32Term::int64_constant(100)),
                 },
                 true,
             ),
@@ -4059,7 +4039,7 @@ mod tests {
     #[test]
     fn int32_defined_accepts_an_operands_own_definedness_only_from_a_cited_premise() {
         let (a, b) = (int64_var(1), int64_var(2));
-        let c = |value: i32| Bitvector32Term::Constant(value as u32);
+        let c = |value: i32| Bitvector32Term::constant(value as u32);
         let sum = binary_node!(Int32, Add, Box::new(a.clone()), Box::new(b.clone()));
         // `defined((a + b) - 1)` lowers with the inner sum's own definedness.
         let inner = int32_defined_goal(a.clone(), b.clone(), false);
@@ -4228,7 +4208,7 @@ mod tests {
                     Int32,
                     Add,
                     Box::new(i),
-                    Box::new(Bitvector32Term::Constant(1)),
+                    Box::new(Bitvector32Term::constant(1)),
                 )),
             ),
         );
@@ -4270,14 +4250,14 @@ mod tests {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Add,
             left: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(1))),
-            right: Box::new(Bitvector32Term::UInt64Constant(1)),
+            right: Box::new(Bitvector32Term::uint64_constant(1)),
         };
         let bound = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(wide),
-                right: Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
+                right: Box::new(Bitvector32Term::constant(i32::MAX as u32)),
             },
             true,
         );
@@ -4289,7 +4269,7 @@ mod tests {
         let n = Bitvector32Term::Variable(crate::kernel::Variable(1));
         let index = Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_subtract(
             n.clone(),
-            Bitvector32Term::uint64_remainder(n, Bitvector32Term::UInt64Constant(4)),
+            Bitvector32Term::uint64_remainder(n, Bitvector32Term::uint64_constant(4)),
         ));
         let p = PointerOffsetTerm::Variable(crate::kernel::Variable(100));
         let arr = PointerOffsetTerm::Variable(crate::kernel::Variable(101));
@@ -4300,12 +4280,12 @@ mod tests {
                 arr,
                 scaled(Bitvector32Term::add(
                     index.clone(),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::constant(1),
                 )),
             ),
         );
         let bound = Proposition::ConditionIs(
-            ConditionTerm::signed_less_than(index, Bitvector32Term::Constant(i32::MAX as u32)),
+            ConditionTerm::signed_less_than(index, Bitvector32Term::constant(i32::MAX as u32)),
             true,
         );
         let certificate = |bounds| SpecialArithmeticCertificate {
@@ -4334,8 +4314,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::Constant(0)),
-                right: Box::new(Bitvector32Term::Constant(1)),
+                left: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(Bitvector32Term::constant(1)),
             },
             true,
         );
@@ -4361,7 +4341,7 @@ mod tests {
         let word_relation = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 Bitvector32Term::Variable(crate::kernel::Variable(901)),
-                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::UInt64Constant(1)),
+                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::uint64_constant(1)),
             ),
             true,
         );
@@ -4370,9 +4350,9 @@ mod tests {
             ConditionTerm::uint64_equal(
                 Bitvector32Term::uint64_bitwise_or(
                     Bitvector32Term::Variable(crate::kernel::Variable(901)),
-                    Bitvector32Term::UInt64Constant(2),
+                    Bitvector32Term::uint64_constant(2),
                 ),
-                Bitvector32Term::uint64_add(address, Bitvector32Term::UInt64Constant(3)),
+                Bitvector32Term::uint64_add(address, Bitvector32Term::uint64_constant(3)),
             ),
             true,
         );
@@ -4590,9 +4570,9 @@ mod tests {
                         Box::new(Pointer::null()),
                         crate::kernel::AddressObjectClass::NONE,
                     )),
-                    right: Box::new(Bitvector32Term::UInt64Constant(alignment - 1)),
+                    right: Box::new(Bitvector32Term::uint64_constant(alignment - 1)),
                 }),
-                right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                right: Box::new(Bitvector32Term::uint64_constant(0)),
             };
             let null = Proposition::ConditionIs(null_condition.clone(), true);
             SpecialArithmeticCertificate {
@@ -4700,7 +4680,7 @@ mod tests {
         let relation = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 Bitvector32Term::Variable(crate::kernel::Variable(10)),
-                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::UInt64Constant(1)),
+                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::uint64_constant(1)),
             ),
             true,
         );
@@ -4709,9 +4689,9 @@ mod tests {
             ConditionTerm::uint64_equal(
                 Bitvector32Term::uint64_bitwise_or(
                     Bitvector32Term::Variable(crate::kernel::Variable(10)),
-                    Bitvector32Term::UInt64Constant(2),
+                    Bitvector32Term::uint64_constant(2),
                 ),
-                Bitvector32Term::uint64_add(address, Bitvector32Term::UInt64Constant(3)),
+                Bitvector32Term::uint64_add(address, Bitvector32Term::uint64_constant(3)),
             ),
             true,
         );
@@ -4762,7 +4742,7 @@ mod tests {
             crate::kernel::AddressObjectClass::NONE,
         );
         let direct_tag =
-            Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::UInt64Constant(1));
+            Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::uint64_constant(1));
         let direct = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 word.clone(),
@@ -4792,7 +4772,7 @@ mod tests {
             ConditionTerm::uint64_equal(
                 Bitvector32Term::uint64_bitwise_and(
                     word.clone(),
-                    Bitvector32Term::UInt64Constant(!3),
+                    Bitvector32Term::uint64_constant(!3),
                 ),
                 direct_address.clone(),
             ),
@@ -4821,7 +4801,7 @@ mod tests {
                 Bitvector32Term::uint64_bitwise_or(
                     Bitvector32Term::uint64_bitwise_and(
                         word.clone(),
-                        Bitvector32Term::UInt64Constant(1),
+                        Bitvector32Term::uint64_constant(1),
                     ),
                     direct_address.clone(),
                 ),
@@ -4829,7 +4809,7 @@ mod tests {
                     direct_address.clone(),
                     Bitvector32Term::uint64_bitwise_and(
                         word.clone(),
-                        Bitvector32Term::UInt64Constant(1),
+                        Bitvector32Term::uint64_constant(1),
                     ),
                 ),
             ),
@@ -4852,7 +4832,7 @@ mod tests {
                     direct_address.clone(),
                     Bitvector32Term::uint64_bitwise_and(
                         word.clone(),
-                        Bitvector32Term::UInt64Constant(3),
+                        Bitvector32Term::uint64_constant(3),
                     ),
                 ),
             ),
@@ -4904,11 +4884,11 @@ mod tests {
                 Bitvector32Term::uint64_bitwise_or(
                     Bitvector32Term::uint64_add(
                         address.clone(),
-                        Bitvector32Term::UInt64Constant(1),
+                        Bitvector32Term::uint64_constant(1),
                     ),
-                    Bitvector32Term::UInt64Constant(2),
+                    Bitvector32Term::uint64_constant(2),
                 ),
-                Bitvector32Term::uint64_add(address, Bitvector32Term::UInt64Constant(3)),
+                Bitvector32Term::uint64_add(address, Bitvector32Term::uint64_constant(3)),
             ),
             true,
         );
@@ -4981,16 +4961,16 @@ mod tests {
                             Box::new(pointer(PointerOffsetTerm::Constant(0))),
                             crate::kernel::AddressObjectClass::NONE,
                         ),
-                        Bitvector32Term::UInt64Constant(1),
+                        Bitvector32Term::uint64_constant(1),
                     ),
-                    Bitvector32Term::UInt64Constant(4),
+                    Bitvector32Term::uint64_constant(4),
                 ),
                 Bitvector32Term::uint64_add(
                     Bitvector32Term::PointerAddress(
                         Box::new(pointer(PointerOffsetTerm::Constant(0))),
                         crate::kernel::AddressObjectClass::NONE,
                     ),
-                    Bitvector32Term::UInt64Constant(4),
+                    Bitvector32Term::uint64_constant(4),
                 ),
             ),
             true,
@@ -5082,14 +5062,14 @@ mod tests {
         let relation = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 word,
-                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::UInt64Constant(1)),
+                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::uint64_constant(1)),
             ),
             true,
         );
         let goal = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
-                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::UInt64Constant(1)),
-                Bitvector32Term::uint64_add(address, Bitvector32Term::UInt64Constant(2)),
+                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::uint64_constant(1)),
+                Bitvector32Term::uint64_add(address, Bitvector32Term::uint64_constant(2)),
             ),
             false,
         );
@@ -5242,7 +5222,7 @@ mod tests {
                 left: Box::new(word.clone()),
                 right: Box::new(Bitvector32Term::uint64_add(
                     address.clone(),
-                    Bitvector32Term::UInt64Constant(1),
+                    Bitvector32Term::uint64_constant(1),
                 )),
             },
             true,
@@ -5288,7 +5268,7 @@ mod tests {
                 Int32,
                 Add,
                 Box::new(value),
-                Box::new(Bitvector32Term::Constant(1))
+                Box::new(Bitvector32Term::constant(1))
             );
         }
         let finite = Proposition::ConditionIs(
@@ -5314,13 +5294,13 @@ mod tests {
 
     #[test]
     fn alignment_masks_are_bounded_before_constant_recognition() {
-        let mut mask = Bitvector32Term::UInt64Constant(7);
+        let mut mask = Bitvector32Term::uint64_constant(7);
         for _ in 0..=MAX_TERM_PAYLOAD {
             mask = Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::BitwiseOr,
                 left: Box::new(mask),
-                right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                right: Box::new(Bitvector32Term::uint64_constant(0)),
             };
         }
         let deep_alignment = Proposition::ConditionIs(
@@ -5336,7 +5316,7 @@ mod tests {
                     )),
                     right: Box::new(mask),
                 }),
-                right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                right: Box::new(Bitvector32Term::uint64_constant(0)),
             },
             true,
         );
@@ -5365,7 +5345,7 @@ mod tests {
                 left: Box::new(word.clone()),
                 right: Box::new(Bitvector32Term::uint64_add(
                     address.clone(),
-                    Bitvector32Term::UInt64Constant(1),
+                    Bitvector32Term::uint64_constant(1),
                 )),
             },
             true,
@@ -5390,13 +5370,13 @@ mod tests {
             ConditionTerm::pointer_aligned(heap_pointer(PointerOffsetTerm::Constant(0)), 8),
             true,
         );
-        let mut mask = Bitvector32Term::UInt64Constant(7);
+        let mut mask = Bitvector32Term::uint64_constant(7);
         for _ in 0..=MAX_TERM_PAYLOAD {
             mask = Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::BitwiseOr,
                 left: Box::new(mask),
-                right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                right: Box::new(Bitvector32Term::uint64_constant(0)),
             };
         }
         let goal = Proposition::ConditionIs(
@@ -5412,7 +5392,7 @@ mod tests {
                     )),
                     right: Box::new(mask),
                 }),
-                right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                right: Box::new(Bitvector32Term::uint64_constant(0)),
             },
             true,
         );

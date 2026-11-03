@@ -7,7 +7,7 @@ fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
         block: PointerBlock::Heap(930_100),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let bytes = Bitvector32Term::Constant(16);
+    let bytes = Bitvector32Term::constant(16);
     let input = ResourceContext::new()
         .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), bytes.clone()));
     let memory = CMemory::new()
@@ -83,7 +83,7 @@ fn external_pointer(variable: u64) -> Pointer {
 fn contract_allocation_retirement_respects_initialized_mutex_storage() {
     for continuity_undecided in [false, true] {
         let base = external_pointer(930_004);
-        let bytes = Bitvector32Term::Constant(48);
+        let bytes = Bitvector32Term::constant(48);
         let input = ResourceContext::new()
             .try_compose_with_fact(
                 CResourceFact::own_allocation(base.clone(), bytes.clone()),
@@ -149,9 +149,9 @@ fn continuity_requires_both_the_allocation_base_and_size() {
     assert_eq!(
         allocation_continuity(
             &input,
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
             &input,
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
             &assumptions,
         ),
         AllocationContinuity::Same,
@@ -159,9 +159,9 @@ fn continuity_requires_both_the_allocation_base_and_size() {
     assert_eq!(
         allocation_continuity(
             &input,
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
             &input,
-            &Bitvector32Term::Constant(8),
+            &Bitvector32Term::constant(8),
             &assumptions,
         ),
         AllocationContinuity::Inconsistent,
@@ -172,12 +172,12 @@ fn continuity_requires_both_the_allocation_base_and_size() {
                 block: PointerBlock::Heap(930_002),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
             &Pointer {
                 block: PointerBlock::Heap(930_003),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
             &assumptions,
         ),
         AllocationContinuity::Distinct,
@@ -187,9 +187,9 @@ fn continuity_requires_both_the_allocation_base_and_size() {
     assert_eq!(
         allocation_continuity(
             &input,
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
             &other,
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
             &assumptions,
         ),
         AllocationContinuity::Undecided(ConditionTerm::pointer_equal(input, other)),
@@ -219,9 +219,9 @@ fn allocation_size_continuity_uses_graph_with_snapshot_scope() {
     );
     let after = crate::kernel::intern_c_memory(before.memory().clone().store(
         pointer(b.clone()),
-        CValue::Int32(Bitvector32Term::Constant(9)),
+        CValue::Int32(Bitvector32Term::constant(9)),
     ));
-    let size = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let size = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
     let input_size = size(load(&before, a.clone()));
     let output_size = size(load(&before, b.clone()));
     let later_size = size(load(&after, b.clone()));

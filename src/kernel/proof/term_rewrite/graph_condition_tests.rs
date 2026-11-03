@@ -16,8 +16,8 @@ fn guard() -> ConditionTerm {
 fn choice() -> Bitvector32Term {
     Bitvector32Term::If {
         condition: Box::new(guard()),
-        then_term: Box::new(Bitvector32Term::Constant(7)),
-        else_term: Box::new(Bitvector32Term::Constant(0)),
+        then_term: Box::new(Bitvector32Term::constant(7)),
+        else_term: Box::new(Bitvector32Term::constant(0)),
     }
 }
 
@@ -35,7 +35,7 @@ fn graph_condition_reduction_keeps_unknown_equalities_and_branches_isolated() {
     branch.add_offset_equality(&offset(51), &offset(52));
     assert_eq!(
         TermRewrite::for_conditions_with_graph(&empty, &branch).bits(&choice()),
-        Bitvector32Term::Constant(7)
+        Bitvector32Term::constant(7)
     );
     assert_eq!(
         TermRewrite::for_conditions_with_graph(&empty, &parent).bits(&choice()),
@@ -67,8 +67,8 @@ fn check_binder_bodies(scalar: bool) {
     };
     let choice = || Bitvector32Term::If {
         condition: Box::new(guard()),
-        then_term: Box::new(Bitvector32Term::Constant(7)),
-        else_term: Box::new(Bitvector32Term::Constant(0)),
+        then_term: Box::new(Bitvector32Term::constant(7)),
+        else_term: Box::new(Bitvector32Term::constant(0)),
     };
     let mut graph = graph();
     graph.add_int32_equality(
@@ -78,9 +78,9 @@ fn check_binder_bodies(scalar: bool) {
     let cited = HashMap::from([(guard(), true)]);
     let empty = HashMap::new();
     let machine_fold = Bitvector32Term::RangeFold {
-        start: Box::new(Bitvector32Term::Constant(0)),
-        end: Box::new(Bitvector32Term::Constant(2)),
-        initial: Box::new(Bitvector32Term::Constant(0)),
+        start: Box::new(Bitvector32Term::constant(0)),
+        end: Box::new(Bitvector32Term::constant(2)),
+        initial: Box::new(Bitvector32Term::constant(0)),
         accumulator: Variable(60),
         item: Variable(51),
         body: Box::new(choice()),
@@ -88,8 +88,8 @@ fn check_binder_bodies(scalar: bool) {
     let integer_body = IntegerTerm::from_machine(MachineIntegerType::Int32, choice()).unwrap();
     let integer_fold = IntegerTerm::RangeFold {
         index: IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(2)),
+            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
         },
         initial: IntegerTerm::constant_i64(0).into(),
         accumulator: Variable(60),

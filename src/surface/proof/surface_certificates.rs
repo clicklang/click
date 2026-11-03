@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::planning::solve::plan_explicit_equality_rewrites_from;
 
@@ -156,11 +157,11 @@ pub(super) fn surface_implication_parts(
 fn contract_expression_for_instantiation_value(
     value: &Bitvector32Term,
 ) -> Option<ContractExpression> {
-    let (Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) = value else {
+    let bits32_constant!(bits) = value else {
         return None;
     };
     Some(ContractExpression::CFragment(CExpression::Value(
-        CValue::Int32(Bitvector32Term::Constant(*bits)),
+        CValue::Int32(Bitvector32Term::constant(constant_u32(*bits))),
     )))
 }
 
@@ -690,7 +691,7 @@ pub(super) fn plan_explicit_loadability_transport(
     let goal_bytes = match goal {
         Proposition::CMemoryLoadable { bytes, .. } => bytes,
         Proposition::CMemoryReadDefined { value_type, .. } => {
-            goal_width = Bitvector32Term::Constant(value_type.byte_width());
+            goal_width = Bitvector32Term::constant(value_type.byte_width());
             &goal_width
         }
         _ => return None,
@@ -1168,7 +1169,7 @@ pub(super) fn plan_recorded_int32_equal_one_predecessor(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(Bitvector32Term::Constant(1)),
+            left: Box::new(Bitvector32Term::constant(1)),
             right: Box::new(value.clone()),
         },
         true,
@@ -1600,9 +1601,9 @@ fn increment_base(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
     let binary_term!(Int32, Add, left, right) = term else {
         return None;
     };
-    if right.as_ref() == &Bitvector32Term::Constant(1) {
+    if right.as_ref() == &Bitvector32Term::constant(1) {
         Some(left)
-    } else if left.as_ref() == &Bitvector32Term::Constant(1) {
+    } else if left.as_ref() == &Bitvector32Term::constant(1) {
         Some(right)
     } else {
         None
@@ -1734,14 +1735,14 @@ pub(super) fn plan_explicit_positive_is_nonnegative(
     // `0 <= value` and `value >= 0` are one order; arithmetic closes either
     // spelling.
     let (goal_lower, goal_value) = signed_nonstrict_parts(goal)?;
-    if goal_lower != &Bitvector32Term::Constant(0) {
+    if goal_lower != &Bitvector32Term::constant(0) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_lower, premise_value)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_lower != &Bitvector32Term::Constant(0) || premise_value != goal_value {
+        if premise_lower != &Bitvector32Term::constant(0) || premise_value != goal_value {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -1766,22 +1767,18 @@ pub(super) fn plan_explicit_le_transitive_constant_lower(
     else {
         return None;
     };
-    let (Bitvector32Term::Constant(goal_lower_bits)
-    | Bitvector32Term::UInt32Constant(goal_lower_bits)) = goal_lower.as_ref()
-    else {
+    let bits32_constant!(goal_lower_bits) = goal_lower.as_ref() else {
         return None;
     };
     for (kernel, surface) in premise_pairs {
         let Some((premise_lower, premise_value)) = signed_nonstrict_parts(kernel) else {
             continue;
         };
-        let (Bitvector32Term::Constant(premise_lower_bits)
-        | Bitvector32Term::UInt32Constant(premise_lower_bits)) = premise_lower
-        else {
+        let bits32_constant!(premise_lower_bits) = premise_lower else {
             continue;
         };
         if premise_value != goal_value.as_ref()
-            || (*goal_lower_bits as i32) >= (*premise_lower_bits as i32)
+            || (constant_u32(*goal_lower_bits) as i32) >= (constant_u32(*premise_lower_bits) as i32)
         {
             continue;
         }
@@ -2042,12 +2039,10 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
     else {
         return None;
     };
-    let (Bitvector32Term::Constant(lower) | Bitvector32Term::UInt32Constant(lower)) =
-        goal_lower.as_ref()
-    else {
+    let bits32_constant!(lower) = goal_lower.as_ref() else {
         return None;
     };
-    let upper = (*lower as i32).checked_add(1)? as u32;
+    let upper = (constant_u32(*lower) as i32).checked_add(1)? as u32;
     for (kernel, surface) in premise_pairs {
         let (premise_value, premise_upper) = match kernel {
             Proposition::Not(body) => match body.as_ref() {
@@ -2074,7 +2069,7 @@ pub(super) fn plan_explicit_negated_strict_successor_bound(
             _ => continue,
         };
         if premise_value != goal_value.as_ref()
-            || premise_upper != &Bitvector32Term::Constant(upper)
+            || premise_upper != &Bitvector32Term::constant(upper)
         {
             continue;
         }
@@ -2319,9 +2314,7 @@ fn plan_explicit_constant_strict_upper_bound_weakening(
     else {
         return None;
     };
-    let (Bitvector32Term::Constant(goal_constant) | Bitvector32Term::UInt32Constant(goal_constant)) =
-        goal_upper.as_ref()
-    else {
+    let bits32_constant!(goal_constant) = goal_upper.as_ref() else {
         return None;
     };
     for (premise_kernel, premise_surface) in premise_pairs {
@@ -2334,12 +2327,10 @@ fn plan_explicit_constant_strict_upper_bound_weakening(
         if premise_value != goal_value.as_ref() {
             continue;
         }
-        let (Bitvector32Term::Constant(premise_constant)
-        | Bitvector32Term::UInt32Constant(premise_constant)) = premise_upper
-        else {
+        let bits32_constant!(premise_constant) = premise_upper else {
             continue;
         };
-        if (*premise_constant as i32) >= (*goal_constant as i32) {
+        if (constant_u32(*premise_constant) as i32) >= (constant_u32(*goal_constant) as i32) {
             continue;
         }
         if strict {
@@ -2374,9 +2365,7 @@ pub(super) fn plan_explicit_increment_constant_upper_bound(
         return None;
     };
     let base = increment_base(incremented)?;
-    let (Bitvector32Term::Constant(goal_constant) | Bitvector32Term::UInt32Constant(goal_constant)) =
-        goal_upper.as_ref()
-    else {
+    let bits32_constant!(goal_constant) = goal_upper.as_ref() else {
         return None;
     };
     for (premise_kernel, premise_surface) in premise_pairs {
@@ -2386,12 +2375,10 @@ pub(super) fn plan_explicit_increment_constant_upper_bound(
         if premise_value != base {
             continue;
         }
-        let (Bitvector32Term::Constant(premise_constant)
-        | Bitvector32Term::UInt32Constant(premise_constant)) = premise_upper
-        else {
+        let bits32_constant!(premise_constant) = premise_upper else {
             continue;
         };
-        if (*premise_constant as i32) >= (*goal_constant as i32) {
+        if (constant_u32(*premise_constant) as i32) >= (constant_u32(*goal_constant) as i32) {
             continue;
         }
         surface_nonstrict_parts(premise_surface)?;
@@ -2410,9 +2397,7 @@ fn plan_explicit_constant_lower_bound_weakening(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (goal_lower, goal_value) = signed_nonstrict_parts(goal)?;
-    let (Bitvector32Term::Constant(goal_constant) | Bitvector32Term::UInt32Constant(goal_constant)) =
-        goal_lower
-    else {
+    let bits32_constant!(goal_constant) = goal_lower else {
         return None;
     };
     let Proposition::ConditionIs(
@@ -2434,12 +2419,11 @@ fn plan_explicit_constant_lower_bound_weakening(
         if premise_value != goal_value {
             continue;
         }
-        let (Bitvector32Term::Constant(premise_constant)
-        | Bitvector32Term::UInt32Constant(premise_constant)) = premise_lower
-        else {
+        let bits32_constant!(premise_constant) = premise_lower else {
             continue;
         };
-        if (*goal_constant as i32) > (*premise_constant as i32) || premise_constant == goal_constant
+        if (constant_u32(*goal_constant) as i32) > (constant_u32(*premise_constant) as i32)
+            || constant_u32(*premise_constant) == constant_u32(*goal_constant)
         {
             continue;
         }
@@ -2474,7 +2458,7 @@ pub(super) fn plan_explicit_increment_below_max_is_defined(
         return None;
     };
     let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
-    if amount.literal() != Some(Bitvector32Term::Constant(1)) {
+    if amount.literal() != Some(Bitvector32Term::constant(1)) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
@@ -2482,7 +2466,7 @@ pub(super) fn plan_explicit_increment_below_max_is_defined(
             continue;
         };
         if !same_written_int32_operand(value, premise_value)
-            || upper != &Bitvector32Term::Constant(i32::MAX as u32)
+            || upper != &Bitvector32Term::constant(i32::MAX as u32)
         {
             continue;
         }
@@ -2502,7 +2486,7 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
         return None;
     };
     let [one, value] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
-    if one.literal() != Some(Bitvector32Term::Constant(1)) {
+    if one.literal() != Some(Bitvector32Term::constant(1)) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
@@ -2510,7 +2494,7 @@ pub(super) fn plan_explicit_one_plus_below_max_is_defined(
             continue;
         };
         if !same_written_int32_operand(value, premise_value)
-            || upper != &Bitvector32Term::Constant(i32::MAX as u32)
+            || upper != &Bitvector32Term::constant(i32::MAX as u32)
         {
             continue;
         }
@@ -2539,14 +2523,14 @@ pub(super) fn plan_explicit_one_plus_strictly_increases(
     let binary_term!(Int32, Add, one, added_value) = sum.as_ref() else {
         return None;
     };
-    if one.as_ref() != &Bitvector32Term::Constant(1) || added_value.as_ref() != value.as_ref() {
+    if one.as_ref() != &Bitvector32Term::constant(1) || added_value.as_ref() != value.as_ref() {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_value, upper)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_value != value.as_ref() || upper != &Bitvector32Term::Constant(i32::MAX as u32) {
+        if premise_value != value.as_ref() || upper != &Bitvector32Term::constant(i32::MAX as u32) {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -2565,7 +2549,7 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
         return None;
     };
     let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
-    let zero = Bitvector32Term::Constant(0);
+    let zero = Bitvector32Term::constant(0);
     let (_, nonnegative_surface) = premise_pairs.iter().find(|(kernel, _)| {
         signed_nonstrict_parts(kernel)
             .is_some_and(|(left, right)| left == &zero && same_written_int32_operand(amount, right))
@@ -2578,7 +2562,7 @@ pub(super) fn plan_explicit_nonnegative_add_within_max_is_defined(
             return false;
         };
         same_written_int32_operand(value, left)
-            && maximum.as_ref() == &Bitvector32Term::Constant(i32::MAX as u32)
+            && maximum.as_ref() == &Bitvector32Term::constant(i32::MAX as u32)
             && same_written_int32_operand(amount, subtracted)
     })?;
     surface_nonstrict_parts(nonnegative_surface)?;
@@ -2675,7 +2659,7 @@ pub(super) fn plan_explicit_nonnegative_subtract_within_value_is_defined(
         return None;
     };
     let [value, amount] = [&operands[0], &operands[1]].map(|operand| operand.operand_view());
-    let zero = Bitvector32Term::Constant(0);
+    let zero = Bitvector32Term::constant(0);
     let (_, nonnegative_surface) = premise_pairs.iter().find(|(kernel, _)| {
         signed_nonstrict_parts(kernel)
             .is_some_and(|(left, right)| left == &zero && same_written_int32_operand(amount, right))
@@ -2700,20 +2684,20 @@ pub(super) fn plan_explicit_positive_predecessor_is_nonnegative(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let (goal_lower, predecessor) = goal_exact_less_equal_parts(goal)?;
-    if goal_lower != &Bitvector32Term::Constant(0) {
+    if goal_lower != &Bitvector32Term::constant(0) {
         return None;
     }
     let binary_term!(Int32, Subtract, value, amount) = predecessor else {
         return None;
     };
-    if amount.as_ref() != &Bitvector32Term::Constant(1) {
+    if amount.as_ref() != &Bitvector32Term::constant(1) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_lower, premise_value)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_lower != &Bitvector32Term::Constant(0) || premise_value != value.as_ref() {
+        if premise_lower != &Bitvector32Term::constant(0) || premise_value != value.as_ref() {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -2739,7 +2723,7 @@ pub(super) fn plan_explicit_predecessor_upper_bound(
     let binary_term!(Int32, Subtract, value, amount) = predecessor else {
         return None;
     };
-    if amount.as_ref() != &Bitvector32Term::Constant(1) {
+    if amount.as_ref() != &Bitvector32Term::constant(1) {
         return None;
     }
     for (bound_kernel, bound_surface) in premise_pairs {
@@ -2756,7 +2740,7 @@ pub(super) fn plan_explicit_predecessor_upper_bound(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::Constant(0)),
+                left: Box::new(Bitvector32Term::constant(0)),
                 right: value.clone(),
             },
             true,
@@ -2765,7 +2749,7 @@ pub(super) fn plan_explicit_predecessor_upper_bound(
         let nonnegative_surface = if let Some((_, surface)) =
             premise_pairs.iter().find(|(kernel, _)| {
                 signed_nonstrict_parts(kernel).is_some_and(|(lower, bounded)| {
-                    lower == &Bitvector32Term::Constant(0) && bounded == value.as_ref()
+                    lower == &Bitvector32Term::constant(0) && bounded == value.as_ref()
                 })
             }) {
             surface.clone()
@@ -2816,13 +2800,13 @@ pub(super) fn plan_explicit_one_le_predecessor(
     premise_pairs: &[(Proposition, ClickProposition)],
 ) -> Option<Vec<ProofTactic>> {
     let value = if let Some((goal_lower, predecessor)) = goal_exact_less_equal_parts(goal) {
-        if goal_lower != &Bitvector32Term::Constant(0) {
+        if goal_lower != &Bitvector32Term::constant(0) {
             return None;
         }
         let binary_term!(Int32, Subtract, value, amount) = predecessor else {
             return None;
         };
-        if amount.as_ref() != &Bitvector32Term::Constant(1) {
+        if amount.as_ref() != &Bitvector32Term::constant(1) {
             return None;
         }
         value.as_ref()
@@ -2831,7 +2815,7 @@ pub(super) fn plan_explicit_one_le_predecessor(
         let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
             return None;
         };
-        if predecessor_value.as_ref() != value || amount.as_ref() != &Bitvector32Term::Constant(1) {
+        if predecessor_value.as_ref() != value || amount.as_ref() != &Bitvector32Term::constant(1) {
             return None;
         }
         value
@@ -2840,7 +2824,7 @@ pub(super) fn plan_explicit_one_le_predecessor(
         let Some((premise_lower, premise_value)) = signed_nonstrict_parts(kernel) else {
             continue;
         };
-        if premise_lower != &Bitvector32Term::Constant(1) || premise_value != value {
+        if premise_lower != &Bitvector32Term::constant(1) || premise_value != value {
             continue;
         }
         surface_nonstrict_parts(surface)?;
@@ -2851,19 +2835,19 @@ pub(super) fn plan_explicit_one_le_predecessor(
 
 fn one_le_predecessor_value(goal: &Proposition) -> Option<Bitvector32Term> {
     if let Some((goal_lower, predecessor)) = goal_exact_less_equal_parts(goal) {
-        if goal_lower != &Bitvector32Term::Constant(0) {
+        if goal_lower != &Bitvector32Term::constant(0) {
             return None;
         }
         let binary_term!(Int32, Subtract, value, amount) = predecessor else {
             return None;
         };
-        (amount.as_ref() == &Bitvector32Term::Constant(1)).then(|| value.as_ref().clone())
+        (amount.as_ref() == &Bitvector32Term::constant(1)).then(|| value.as_ref().clone())
     } else {
         let (predecessor, value) = goal_exact_less_than_parts(goal)?;
         let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
             return None;
         };
-        (predecessor_value.as_ref() == value && amount.as_ref() == &Bitvector32Term::Constant(1))
+        (predecessor_value.as_ref() == value && amount.as_ref() == &Bitvector32Term::constant(1))
             .then(|| value.clone())
     }
 }
@@ -2898,14 +2882,14 @@ pub(super) fn plan_explicit_positive_predecessor_strictly_decreases(
     let binary_term!(Int32, Subtract, predecessor_value, amount) = predecessor else {
         return None;
     };
-    if predecessor_value.as_ref() != value || amount.as_ref() != &Bitvector32Term::Constant(1) {
+    if predecessor_value.as_ref() != value || amount.as_ref() != &Bitvector32Term::constant(1) {
         return None;
     }
     for (kernel, surface) in premise_pairs {
         let Some((premise_lower, premise_value)) = signed_strict_parts(kernel) else {
             continue;
         };
-        if premise_lower != &Bitvector32Term::Constant(0) || premise_value != value {
+        if premise_lower != &Bitvector32Term::constant(0) || premise_value != value {
             continue;
         }
         surface_strict_parts(surface)?;
@@ -3220,7 +3204,7 @@ pub(super) fn plan_explicit_successor_le_implies_lt(
             || successor
                 != &crate::kernel::canonical_term(&Bitvector32Term::add(
                     lower.clone(),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::constant(1),
                 ))
         {
             continue;
@@ -3237,10 +3221,7 @@ pub(super) fn plan_explicit_successor_le_implies_lt(
         if !normalizes_context_free(&no_overflow) {
             continue;
         }
-        if !matches!(
-            lower,
-            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
-        ) {
+        if !matches!(lower, bits32_constant!(_)) {
             continue;
         }
         surface_nonstrict_parts(bound_surface)?;
@@ -3272,11 +3253,11 @@ pub(super) fn plan_explicit_increment_preserves_order(
                     relation: CompareRelation::LessEqual,
                     left: Box::new(Bitvector32Term::add(
                         lower.clone(),
-                        Bitvector32Term::Constant(1),
+                        Bitvector32Term::constant(1),
                     )),
                     right: Box::new(Bitvector32Term::add(
                         value.clone(),
-                        Bitvector32Term::Constant(1),
+                        Bitvector32Term::constant(1),
                     )),
                 },
                 true,
@@ -3689,7 +3670,7 @@ mod selected_premise_tests {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             },
-            bytes: Bitvector32Term::Constant(4),
+            bytes: Bitvector32Term::constant(4),
             wide: false,
         };
         let surface = ClickProposition::Loadable {
@@ -3788,7 +3769,7 @@ mod shared_goal_spelling_tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: Box::new(Bitvector32Term::Variable(variable)),
-                    right: Box::new(Bitvector32Term::Constant(10)),
+                    right: Box::new(Bitvector32Term::constant(10)),
                 },
                 true,
             ),

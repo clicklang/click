@@ -24,6 +24,7 @@
 use super::representation;
 use crate::kernel::binary_term;
 use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType};
+use crate::kernel::{bits32_constant, constant_u32};
 
 /// What a language conversion asks of its operand.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -471,8 +472,8 @@ fn cast_through_readings(
     let masked_unsigned_source = match (operand.ty(), operand.value()) {
         (ty, binary_term!(Bits32, BitwiseAnd, left, right)) if narrow_unsigned(ty) => {
             let mask = (1u32 << operand.ty().format().bits()) - 1;
-            matches!(left.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
-                || matches!(right.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
+            matches!(left.as_ref(), bits32_constant!(value) if constant_u32(*value) == mask)
+                || matches!(right.as_ref(), bits32_constant!(value) if constant_u32(*value) == mask)
         }
         _ => false,
     };
@@ -738,8 +739,8 @@ mod shared_operand_tests {
         let masked_unsigned_source = match (operand.ty(), operand.value()) {
             (ty, binary_term!(Bits32, BitwiseAnd, left, right)) if narrow_unsigned(ty) => {
                 let mask = (1u32 << operand.ty().format().bits()) - 1;
-                matches!(left.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
-                    || matches!(right.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value == mask)
+                matches!(left.as_ref(), bits32_constant!(value) if constant_u32(*value) == mask)
+                    || matches!(right.as_ref(), bits32_constant!(value) if constant_u32(*value) == mask)
             }
             _ => false,
         };
@@ -898,14 +899,14 @@ mod shared_operand_tests {
                     words.push(Bitvector32Term::Binary {
                         format: source,
                         op,
-                        left: Box::new(Bitvector32Term::UInt64Constant(u64::MAX)),
-                        right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                        left: Box::new(Bitvector32Term::uint64_constant(u64::MAX)),
+                        right: Box::new(Bitvector32Term::uint64_constant(1)),
                     });
                 }
                 words.push(Bitvector32Term::Binary {
                     format: source,
                     op: MachineBinaryOp::Add,
-                    left: Box::new(Bitvector32Term::UInt64Constant(7)),
+                    left: Box::new(Bitvector32Term::uint64_constant(7)),
                     right: Box::new(Bitvector32Term::Variable(Variable(982104))),
                 });
             }

@@ -38,8 +38,8 @@ pub(super) fn initialize_c_function_globals_owned(
         );
         let literal_resource = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
             slot,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(literal.bytes().len() as u32),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(literal.bytes().len() as u32),
             1,
         ));
         if !function.is_program_entry()
@@ -892,8 +892,8 @@ pub(super) fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32,
                 CType::UInt8 => uint8(0),
                 CType::UInt16 => uint16(0),
                 CType::UInt32 => uint32(0),
-                CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(0)),
-                CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+                CType::Int64 => CValue::Int64(Bitvector32Term::int64_constant(0)),
+                CType::UInt64 => CValue::UInt64(Bitvector32Term::uint64_constant(0)),
                 CType::Int128 => MachineIntegerType::Int128
                     .constant_value(
                         MachineIntegerConstant::from_signed(MachineIntegerType::Int128.format(), 0)
@@ -909,8 +909,8 @@ pub(super) fn aggregate_zero_fields(layout: &CAggregateLayout) -> Vec<(u32, u32,
                         .unwrap(),
                     )
                     .unwrap(),
-                CType::Float32 => CValue::Float32(Bitvector32Term::Constant(0)),
-                CType::Float64 => CValue::Float64(Bitvector32Term::UInt64Constant(0)),
+                CType::Float32 => CValue::Float32(Bitvector32Term::constant(0)),
+                CType::Float64 => CValue::Float64(Bitvector32Term::uint64_constant(0)),
                 CType::Int128Pointer
                 | CType::UInt128Pointer
                 | CType::Int128PointerPointer
@@ -1502,10 +1502,12 @@ pub(super) fn copy_aggregate_fields(
                         }
                         CType::UInt16 => Some(uint16(0)),
                         CType::UInt32 => Some(uint32(0)),
-                        CType::Int64 => Some(CValue::Int64(Bitvector32Term::Int64Constant(0))),
-                        CType::UInt64 => Some(CValue::UInt64(Bitvector32Term::UInt64Constant(0))),
-                        CType::Float32 => Some(CValue::Float32(Bitvector32Term::Constant(0))),
-                        CType::Float64 => Some(CValue::Float64(Bitvector32Term::UInt64Constant(0))),
+                        CType::Int64 => Some(CValue::Int64(Bitvector32Term::int64_constant(0))),
+                        CType::UInt64 => Some(CValue::UInt64(Bitvector32Term::uint64_constant(0))),
+                        CType::Float32 => Some(CValue::Float32(Bitvector32Term::constant(0))),
+                        CType::Float64 => {
+                            Some(CValue::Float64(Bitvector32Term::uint64_constant(0)))
+                        }
                         _ => None,
                     };
                 }

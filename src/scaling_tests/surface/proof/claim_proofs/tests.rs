@@ -135,7 +135,7 @@ fn joint_resource_receipts_ignore_unrelated_holdings() {
                 name,
                 arguments: vec![].into(),
             },
-            Box::new(Bitvector32Term::Constant(1)),
+            Box::new(Bitvector32Term::constant(1)),
         )
     }
     for size in [64, 256, 1024] {

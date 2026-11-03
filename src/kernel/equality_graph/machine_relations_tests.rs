@@ -150,7 +150,7 @@ fn a_narrow_truncation_distributes_over_a_short_left_shift_only() {
             cast(
                 Ty::UInt32,
                 Ty::UInt8,
-                Bitvector32Term::shift_left(value, Bitvector32Term::Constant(count)),
+                Bitvector32Term::shift_left(value, Bitvector32Term::constant(count)),
             )
         };
         let mut graph = EqualityGraph::default();
@@ -289,10 +289,10 @@ fn the_32_bit_sign_cast_is_a_node_related_by_r0_and_r_dist() {
     }
     // σ of a class learned to hold a constant is that constant.
     let mut graph = EqualityGraph::default();
-    graph.add_int32_equality(&x, &Bitvector32Term::Constant(u32::MAX));
+    graph.add_int32_equality(&x, &Bitvector32Term::constant(u32::MAX));
     assert!(graph.are_int32_equal(
         &sigma(Ty::Int32, x.clone()),
-        &Bitvector32Term::UInt32Constant(u32::MAX)
+        &Bitvector32Term::uint32_constant(u32::MAX)
     ));
 }
 

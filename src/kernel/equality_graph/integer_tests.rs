@@ -127,13 +127,13 @@ fn integer_observations_keep_machine_types_and_read_snapshots() {
     assert!(!graph.are_integer_equal(&signed, &unsigned));
     let p = Pointer::symbolic(Variable(920_132));
     let before = intern_c_memory(
-        CMemory::new().store(p.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+        CMemory::new().store(p.clone(), CValue::Int32(Bitvector32Term::constant(7))),
     );
     let after = intern_c_memory(
         before
             .memory()
             .clone()
-            .store(p.clone(), CValue::Int32(Bitvector32Term::Constant(9))),
+            .store(p.clone(), CValue::Int32(Bitvector32Term::constant(9))),
     );
     let read = |memory| {
         I::from_machine(
@@ -194,18 +194,18 @@ fn fold_endpoint_congruence_keeps_the_bound_body_exact() {
         M::Int32,
         Op::Subtract,
         endpoint.clone(),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(1),
     );
     let restored = Bitvector32Term::logical_machine_binary(
         M::Int32,
         Op::Add,
         predecessor,
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(1),
     );
     let body = I::Variable(Variable(989_782));
     let fold = |end: Bitvector32Term, body: I| I::RangeFold {
         index: IntegerRangeFoldIndex::Int32 {
-            start: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
+            start: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
             end: crate::kernel::SharedIntegerRangeEndpoint::intern(end),
         },
         initial: I::constant_i64(0).into(),
@@ -255,7 +255,7 @@ fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
             let parent = graph.clone();
             graph.add_int32_equality(
                 &Bitvector32Term::Variable(Variable(982702)),
-                &Bitvector32Term::Constant(7),
+                &Bitvector32Term::constant(7),
             );
             assert!(parent.knows_condition(&wrapped, true));
         }
@@ -277,7 +277,7 @@ fn integer_residue_consequence_is_withdrawn_with_its_source() {
     let goal = Proposition::ConditionIs(
         ConditionTerm::equal(
             Bitvector32Term::subtract(x, y),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         ),
         true,
     );

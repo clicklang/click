@@ -247,7 +247,7 @@ fn widened_native_narrow_operators_are_linear() {
                     Ty::Int32,
                     Op::BitwiseAnd,
                     Bitvector32Term::machine_binary(Ty::Int32, op, widen(a), right),
-                    Bitvector32Term::Constant(255),
+                    Bitvector32Term::constant(255),
                 );
                 assert!(
                     graph.are_int32_equal(&widen(native), &masked),

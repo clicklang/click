@@ -29,7 +29,7 @@ fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(u64::from(500_000 + index))),
-                    Bitvector32Term::Constant(index),
+                    Bitvector32Term::constant(index),
                 ),
                 true,
             );
@@ -189,7 +189,7 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(1_910_000 + u64::from(index))),
-                    Bitvector32Term::Constant(index),
+                    Bitvector32Term::constant(index),
                 ),
                 true,
             );

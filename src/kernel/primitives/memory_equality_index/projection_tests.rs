@@ -69,8 +69,8 @@ fn owned_frontier_context(
 fn prior_child(context: ResourceContext, head: &CResourceFact) -> ResourceContext {
     let child = CResourceFact::own_memory(CMemoryRange::new(
         Pointer::symbolic(Variable(881_000)),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     ));
     context
         .without_exact_representation(head)
@@ -230,8 +230,8 @@ fn coverage_context(
 fn coverage_piece(id: u64, start: u32, end: u32) -> CResourceFact {
     CResourceFact::own_memory(CMemoryRange::new(
         Pointer::symbolic(Variable(id)),
-        Bitvector32Term::Constant(start),
-        Bitvector32Term::Constant(end),
+        Bitvector32Term::constant(start),
+        Bitvector32Term::constant(end),
     ))
 }
 
@@ -337,16 +337,16 @@ fn resource_satisfaction_uses_transitive_addresses_without_restoring_consumed_ow
     assert!(!residual.satisfies_fact(&coverage_piece(881_002, 1, 4), &facts));
     let alias = Pointer::symbolic(Variable(881_002));
     let shifted = CResourceFact::own_memory(CMemoryRange::new(
-        alias.offset_by_elements(Bitvector32Term::Constant(1), 4),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(2),
+        alias.offset_by_elements(Bitvector32Term::constant(1), 4),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(2),
     ));
     assert!(residual.satisfies_fact(&shifted, &facts));
     let bytes = |end| {
         CResourceFact::own_memory(CMemoryRange::new_with_element_width(
             alias.clone(),
-            Bitvector32Term::Constant(4),
-            Bitvector32Term::Constant(end),
+            Bitvector32Term::constant(4),
+            Bitvector32Term::constant(end),
             1,
         ))
     };

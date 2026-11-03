@@ -885,7 +885,7 @@ mod tests {
         Proposition::ConditionIs(
             ConditionTerm::equal(
                 Bitvector32Term::Variable(Variable(index as u64)),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
             value,
         )

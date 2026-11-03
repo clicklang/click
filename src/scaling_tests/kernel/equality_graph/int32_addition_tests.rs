@@ -49,14 +49,14 @@ fn int32_addition_nested_registration_and_literal_propagation_scale() {
         let _session = crate::kernel::VerificationSession::enter();
         let mut term = var(1);
         for _ in 0..size {
-            term = add(term, Bitvector32Term::Constant(1));
+            term = add(term, Bitvector32Term::constant(1));
         }
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
                 let mut graph = EqualityGraph::default();
                 graph.add_int32_equality(&term, &var(10));
-                graph.add_int32_equality(&var(1), &Bitvector32Term::Constant(0));
-                assert!(graph.are_int32_equal(&var(10), &Bitvector32Term::Constant(size as u32)));
+                graph.add_int32_equality(&var(1), &Bitvector32Term::constant(0));
+                assert!(graph.are_int32_equal(&var(10), &Bitvector32Term::constant(size as u32)));
             })
         });
         assert!(work < 200 * size as usize, "size={size}, work={work}");

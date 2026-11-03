@@ -4,6 +4,7 @@ use super::*;
 use crate::kernel::Proposition;
 use crate::kernel::PureFactContext;
 use crate::kernel::assumptions::record_implicit_reasoning_provenance;
+use crate::kernel::{constant_i64, constant_u64, int64_constant, uint64_constant};
 use std::collections::{BTreeMap, BTreeSet};
 impl EqualityGraph {
     pub(in crate::kernel) fn wide_constant(
@@ -38,8 +39,8 @@ impl EqualityGraph {
             }
             crate::instrumentation::record_deterministic_work(1);
             let mut value = match term {
-                Bitvector32Term::UInt64Constant(value) => Some(*value),
-                Bitvector32Term::Int64Constant(value) => Some(*value as u64),
+                uint64_constant!(value) => Some(constant_u64(*value)),
+                int64_constant!(value) => Some(constant_i64(*value) as u64),
                 Bitvector32Term::Binary {
                     format: MachineIntegerType::Int64,
                     op:

@@ -395,7 +395,7 @@ mod tests {
     use super::*;
 
     fn int(value: u32) -> SpecExpression {
-        SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(value)))
+        SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(value)))
     }
 
     fn comparison(left: SpecExpression, right: SpecExpression) -> SpecProposition {

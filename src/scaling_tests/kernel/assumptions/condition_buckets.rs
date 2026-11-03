@@ -315,7 +315,7 @@ fn excluded_runs_keep_duplicate_sources_and_widths_separate() {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
         left: x.clone().into(),
-        right: Bitvector32Term::Int64Constant(0).into(),
+        right: Bitvector32Term::int64_constant(0).into(),
     };
     index.adjust(&wide, false, true);
     assert_eq!(

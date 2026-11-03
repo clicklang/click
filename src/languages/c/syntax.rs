@@ -446,13 +446,13 @@ impl C0Global {
         let value = match self.c_type {
             C0Type::Float32 => match initializer {
                 C0Expression::Float32Literal(bits) => {
-                    crate::kernel::float32(crate::kernel::Bitvector32Term::Constant(*bits))
+                    crate::kernel::float32(crate::kernel::Bitvector32Term::constant(*bits))
                 }
                 _ => return None,
             },
             C0Type::Float64 => match initializer {
                 C0Expression::Float64Literal(bits) => {
-                    crate::kernel::float64(crate::kernel::Bitvector32Term::UInt64Constant(*bits))
+                    crate::kernel::float64(crate::kernel::Bitvector32Term::uint64_constant(*bits))
                 }
                 _ => return None,
             },
@@ -1095,13 +1095,13 @@ fn kernel_integer_literal_value(
         }
         C0Type::Float32 => match initializer {
             C0Expression::Float32Literal(bits) => {
-                crate::kernel::float32(crate::kernel::Bitvector32Term::Constant(*bits))
+                crate::kernel::float32(crate::kernel::Bitvector32Term::constant(*bits))
             }
             _ => return None,
         },
         C0Type::Float64 => match initializer {
             C0Expression::Float64Literal(bits) => {
-                crate::kernel::float64(crate::kernel::Bitvector32Term::UInt64Constant(*bits))
+                crate::kernel::float64(crate::kernel::Bitvector32Term::uint64_constant(*bits))
             }
             _ => return None,
         },
@@ -1114,45 +1114,45 @@ fn kernel_integer_literal_value(
         C0Type::UInt32 => crate::kernel::uint32(initializer_integer_bits(initializer)?),
         C0Type::Int64(_) => match initializer {
             C0Expression::Int64Literal(value) => {
-                crate::kernel::int64(crate::kernel::Bitvector32Term::Int64Constant(*value))
+                crate::kernel::int64(crate::kernel::Bitvector32Term::int64_constant(*value))
             }
             C0Expression::Int32Literal(value) => {
                 crate::kernel::int64(crate::kernel::Bitvector32Term::int64_from_32(
-                    crate::kernel::Bitvector32Term::Constant(*value),
+                    crate::kernel::Bitvector32Term::constant(*value),
                 ))
             }
             C0Expression::UInt8Literal(value) => {
                 crate::kernel::int64(crate::kernel::Bitvector32Term::int64_from_uint32(
-                    crate::kernel::Bitvector32Term::Constant(u32::from(*value)),
+                    crate::kernel::Bitvector32Term::constant(u32::from(*value)),
                 ))
             }
             C0Expression::UInt32Literal(value) => {
                 crate::kernel::int64(crate::kernel::Bitvector32Term::int64_from_uint32(
-                    crate::kernel::Bitvector32Term::Constant(*value),
+                    crate::kernel::Bitvector32Term::constant(*value),
                 ))
             }
             _ => return None,
         },
         C0Type::UInt64(_) => match initializer {
             C0Expression::UInt64Literal(value) => {
-                crate::kernel::uint64(crate::kernel::Bitvector32Term::UInt64Constant(*value))
+                crate::kernel::uint64(crate::kernel::Bitvector32Term::uint64_constant(*value))
             }
             C0Expression::Int64Literal(value) if *value >= 0 => crate::kernel::uint64(
-                crate::kernel::Bitvector32Term::UInt64Constant(*value as u64),
+                crate::kernel::Bitvector32Term::uint64_constant(*value as u64),
             ),
             C0Expression::Int32Literal(value) => {
                 crate::kernel::uint64(crate::kernel::Bitvector32Term::uint64_from_int32(
-                    crate::kernel::Bitvector32Term::Constant(*value),
+                    crate::kernel::Bitvector32Term::constant(*value),
                 ))
             }
             C0Expression::UInt8Literal(value) => {
                 crate::kernel::uint64(crate::kernel::Bitvector32Term::uint64_from_32(
-                    crate::kernel::Bitvector32Term::Constant(u32::from(*value)),
+                    crate::kernel::Bitvector32Term::constant(u32::from(*value)),
                 ))
             }
             C0Expression::UInt32Literal(value) => {
                 crate::kernel::uint64(crate::kernel::Bitvector32Term::uint64_from_32(
-                    crate::kernel::Bitvector32Term::Constant(*value),
+                    crate::kernel::Bitvector32Term::constant(*value),
                 ))
             }
             _ => return None,
@@ -1454,13 +1454,13 @@ impl C0StaticLocal {
         let value = match self.c_type {
             C0Type::Float32 => match &self.initializer {
                 C0Expression::Float32Literal(bits) => {
-                    crate::kernel::float32(crate::kernel::Bitvector32Term::Constant(*bits))
+                    crate::kernel::float32(crate::kernel::Bitvector32Term::constant(*bits))
                 }
                 _ => return None,
             },
             C0Type::Float64 => match &self.initializer {
                 C0Expression::Float64Literal(bits) => {
-                    crate::kernel::float64(crate::kernel::Bitvector32Term::UInt64Constant(*bits))
+                    crate::kernel::float64(crate::kernel::Bitvector32Term::uint64_constant(*bits))
                 }
                 _ => return None,
             },

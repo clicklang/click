@@ -58,7 +58,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Constant(index * 4),
                 },
-                CValue::Int32(Bitvector32Term::Constant(0)),
+                CValue::Int32(Bitvector32Term::constant(0)),
             );
         }
         // Snapshot construction/interning belongs to the producer. Measure
@@ -69,7 +69,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         });
         assert!(absent.is_none());
         samples.push(work);
-        let value = CValue::Int32(Bitvector32Term::Constant(17));
+        let value = CValue::Int32(Bitvector32Term::constant(17));
         memory = memory.store(alias.clone(), value.clone());
         assert_eq!(
             stored_value_at_equal_pointer(&memory, &target, &assumptions),

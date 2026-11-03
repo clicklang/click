@@ -59,8 +59,8 @@ pub(super) fn with_contract_interface_argument_views(
                 .unchecked_with_fact(CResourceFact::view_memory(
                     CMemoryRange::new_with_element_width(
                         pointer.pointer().clone(),
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(i32::MAX as u32),
+                        Bitvector32Term::constant(0),
+                        Bitvector32Term::constant(i32::MAX as u32),
                         element_width,
                     ),
                 ));
@@ -638,7 +638,7 @@ pub(super) fn append_string_literal_loadable_facts(
         let proposition = Proposition::CMemoryLoadable {
             memory: state.memory.clone(),
             base,
-            bytes: Bitvector32Term::Constant(literal.bytes().len() as u32),
+            bytes: Bitvector32Term::constant(literal.bytes().len() as u32),
             wide: false,
         };
         if !facts.iter().any(|fact| fact.proposition() == &proposition) {

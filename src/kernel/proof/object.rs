@@ -2824,7 +2824,7 @@ mod tests {
         let bound = Variable(2_000_000);
         let body = Proposition::ConditionIs(
             crate::kernel::ConditionTerm::signed_less_equal(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
                 Bitvector32Term::Variable(bound),
             ),
             true,
@@ -2855,7 +2855,7 @@ mod tests {
         let second = facts
             .with_fact(Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                     Bitvector32Term::Variable(witness),
                 ),
                 true,
@@ -2877,7 +2877,7 @@ mod tests {
         let bound = Variable(2_000_000);
         let body = Proposition::Predicate {
             name: "witness_body".into(),
-            arguments: vec![Term::Bitvector32(Bitvector32Term::Constant(0))],
+            arguments: vec![Term::Bitvector32(Bitvector32Term::constant(0))],
         };
         let reserving = Proposition::ForAll {
             name: Default::default(),
@@ -2943,7 +2943,7 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
-                            left: Box::new(Bitvector32Term::Constant(0)),
+                            left: Box::new(Bitvector32Term::constant(0)),
                             right: Box::new(Bitvector32Term::Variable(variable)),
                         },
                         true,
@@ -2953,7 +2953,7 @@ mod tests {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
                             left: Box::new(Bitvector32Term::Variable(variable)),
-                            right: Box::new(Bitvector32Term::Constant(16)),
+                            right: Box::new(Bitvector32Term::constant(16)),
                         },
                         true,
                     )),
@@ -2988,8 +2988,8 @@ mod tests {
         let fold = |accumulator, item| {
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::Int32 {
-                    start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-                    end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(2)),
+                    start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+                    end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
                 },
                 IntegerTerm::constant_i64(0),
                 accumulator,
@@ -3037,7 +3037,7 @@ mod tests {
                 block: "alpha".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::Constant(7)),
+            CValue::Int32(Bitvector32Term::constant(7)),
         );
         assert!(
             root(

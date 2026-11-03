@@ -52,7 +52,7 @@ fn shallow_scalar_decision_uses_only_registered_loads_in_one_snapshot() {
         before
             .memory()
             .clone()
-            .store(address(1), CValue::Int32(Bitvector32Term::Constant(9))),
+            .store(address(1), CValue::Int32(Bitvector32Term::constant(9))),
     );
     let changed = load(&after, &address(2), 4);
     let context =
@@ -85,7 +85,7 @@ fn int32_load_congruence_keeps_snapshots_blocks_and_widths_distinct() {
         memory
             .memory()
             .clone()
-            .store(address(1), CValue::Int32(Bitvector32Term::Constant(9))),
+            .store(address(1), CValue::Int32(Bitvector32Term::constant(9))),
     );
     let changed = load(&after, &address(2), 4);
     let mut other_block = address(2);
@@ -101,7 +101,7 @@ fn int32_load_congruence_keeps_snapshots_blocks_and_widths_distinct() {
     for unknown in [changed, other, narrow, wide] {
         assert!(!graph.are_int32_equal(&left, &unknown));
     }
-    assert!(!graph.are_int32_equal(&left, &Bitvector32Term::Constant(9)));
+    assert!(!graph.are_int32_equal(&left, &Bitvector32Term::constant(9)));
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
         before
             .memory()
             .clone()
-            .store(address(1), CValue::Int32(Bitvector32Term::Constant(9))),
+            .store(address(1), CValue::Int32(Bitvector32Term::constant(9))),
     );
     let left = Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
@@ -203,7 +203,7 @@ fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
         before
             .memory()
             .clone()
-            .store(address(3), CValue::Int32(Bitvector32Term::Constant(9))),
+            .store(address(3), CValue::Int32(Bitvector32Term::constant(9))),
     );
     let old_i = load(&before, &address(1), 4);
     let new_i = load(&after, &address(1), 4);
@@ -253,7 +253,7 @@ fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
         memory
             .memory()
             .clone()
-            .store(at("left", 8), CValue::Int32(Bitvector32Term::Constant(9))),
+            .store(at("left", 8), CValue::Int32(Bitvector32Term::constant(9))),
     );
     for field in [0, 8] {
         let left = load(&memory, &at("left", field), 4);
@@ -328,13 +328,13 @@ fn int32_load_congruence_connects_base_reads_to_early_and_late_zero_offsets() {
     for early in [false, true] {
         let mut graph = EqualityGraph::default();
         if early {
-            graph.add_int32_equality(&offset, &Bitvector32Term::Constant(0));
+            graph.add_int32_equality(&offset, &Bitvector32Term::constant(0));
         }
         graph.add_int32_equality(&direct, &var(940_083));
         graph.add_int32_equality(&indexed, &var(940_084));
         if !early {
             assert!(!graph.are_int32_equal(&var(940_083), &var(940_084)));
-            graph.add_int32_equality(&offset, &Bitvector32Term::Constant(0));
+            graph.add_int32_equality(&offset, &Bitvector32Term::constant(0));
         }
         assert!(
             graph.are_int32_equal(&var(940_083), &var(940_084)),

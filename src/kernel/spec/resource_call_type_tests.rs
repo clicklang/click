@@ -23,7 +23,7 @@ fn clause(value: CValue) -> SpecProposition {
             }],
         },
         operator: CComparisonOperator::Equal,
-        right: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(1))),
+        right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(1))),
     }
 }
 fn lower(

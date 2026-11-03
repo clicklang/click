@@ -6178,8 +6178,8 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     let resources =
         ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )));
     let arguments = vec![c_typed_pointer_value(pointer.clone(), CType::Int32Pointer)];
     let state = CState::new()

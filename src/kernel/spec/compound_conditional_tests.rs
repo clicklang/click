@@ -16,7 +16,7 @@ fn compound_guards_select_exact_values_and_keep_unknowns_undecided() {
         let CValue::Int32(bits) = value else {
             panic!("int32 conditional");
         };
-        let is_seven = ConditionTerm::equal(bits, Bitvector32Term::Constant(7));
+        let is_seven = ConditionTerm::equal(bits, Bitvector32Term::constant(7));
         assert_eq!(PureFactContext::new().decide(&is_seven), None);
         for left in [false, true] {
             for right in [false, true] {

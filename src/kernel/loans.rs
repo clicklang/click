@@ -10,6 +10,7 @@ mod exclusive_calls;
 mod local_references;
 pub(crate) mod mutex_calls;
 
+use crate::kernel::{bits32_constant, constant_u32};
 use exclusive_calls::{ExclusiveCallBinding, ExclusiveCallId, ExclusiveCallRecord};
 use local_references::{LocalReferenceBinding, LocalReferenceRecord};
 pub(in crate::kernel) use local_references::{LocalReferenceId, LocalScalarReference};
@@ -654,7 +655,7 @@ fn protected_range_proven_overlapping_with_separation(
     }
     let byte_range = |range: &CMemoryRange| {
         let (base, bytes) = range.byte_footprint();
-        CMemoryRange::new_with_element_width(base, Bitvector32Term::Constant(0), bytes, 1)
+        CMemoryRange::new_with_element_width(base, Bitvector32Term::constant(0), bytes, 1)
     };
     queries.iter().any(|query| {
         protected_ranges.iter().any(|protected| {
@@ -2797,9 +2798,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         .filter(|requirement| requirement.fact.is_own())
     {
         let clause = match requirement.fact.owned_quantity_term() {
-            Some(
-                Bitvector32Term::Constant(quantity) | Bitvector32Term::UInt32Constant(quantity),
-            ) => Some(*quantity),
+            Some(bits32_constant!(quantity)) => Some(constant_u32(*quantity)),
             _ => None,
         };
         let total = demanded_own_quantities
@@ -2816,13 +2815,14 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             .copied()
             .flatten();
         match (demanded, fact.owned_quantity_term()) {
-            (
-                Some(demanded),
-                Some(Bitvector32Term::Constant(clause) | Bitvector32Term::UInt32Constant(clause)),
-            ) if demanded > *clause => StableViewPlanError::MissingResource(CResourceFact::Own(
-                fact.resource().clone(),
-                Box::new(Bitvector32Term::Constant(demanded)),
-            )),
+            (Some(demanded), Some(bits32_constant!(clause)))
+                if demanded > constant_u32(*clause) =>
+            {
+                StableViewPlanError::MissingResource(CResourceFact::Own(
+                    fact.resource().clone(),
+                    Box::new(Bitvector32Term::constant(demanded)),
+                ))
+            }
             _ => StableViewPlanError::MissingResource(fact.clone()),
         }
     };

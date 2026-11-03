@@ -8,6 +8,7 @@ use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
+use crate::kernel::{bits32_constant, constant_u32};
 use std::sync::Arc;
 
 mod attempt;
@@ -213,13 +214,13 @@ mod certificate_tests {
             Int32,
             Add,
             Box::new(Bitvector32Term::Variable(Variable(1))),
-            Box::new(Bitvector32Term::Constant(1)),
+            Box::new(Bitvector32Term::constant(1)),
         )));
         assert!(!bitvector_term_is_load_free(&binary_node!(
             Int32,
             Add,
             Box::new(load),
-            Box::new(Bitvector32Term::Constant(1)),
+            Box::new(Bitvector32Term::constant(1)),
         )));
     }
 
@@ -231,7 +232,7 @@ mod certificate_tests {
                 Int32,
                 Add,
                 Box::new(term),
-                Box::new(Bitvector32Term::Constant(1))
+                Box::new(Bitvector32Term::constant(1))
             );
         }
         let proposition = Proposition::ConditionIs(
@@ -239,7 +240,7 @@ mod certificate_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );
@@ -263,7 +264,7 @@ mod certificate_tests {
             left: ContractExpression::CBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ))),
         };
         for _ in 0..=SNAPSHOT_ANNOTATION_DEPTH_LIMIT {
@@ -347,7 +348,7 @@ mod certificate_tests {
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );
@@ -389,7 +390,7 @@ mod certificate_tests {
             left: ContractExpression::CBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ))),
         };
         let selectors = (0..20)
@@ -2725,35 +2726,35 @@ fn evaluate_entry_resource_context(
             };
             let range = match bytes {
                 binary_term!(Int32, Multiply, left, right)
-                    if **right == Bitvector32Term::Constant(CType::Int32.byte_width()) =>
+                    if **right == Bitvector32Term::constant(CType::Int32.byte_width()) =>
                 {
                     CMemoryRange::new(
                         base.clone(),
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                         left.as_ref().clone(),
                     )
                 }
                 binary_term!(Int32, Multiply, left, right)
-                    if **left == Bitvector32Term::Constant(CType::Int32.byte_width()) =>
+                    if **left == Bitvector32Term::constant(CType::Int32.byte_width()) =>
                 {
                     CMemoryRange::new(
                         base.clone(),
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                         right.as_ref().clone(),
                     )
                 }
-                Bitvector32Term::Constant(bytes) | Bitvector32Term::UInt32Constant(bytes)
-                    if bytes % CType::Int32.byte_width() == 0 =>
+                bits32_constant!(bytes)
+                    if constant_u32(*bytes) % CType::Int32.byte_width() == 0 =>
                 {
                     CMemoryRange::new(
                         base.clone(),
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(bytes / CType::Int32.byte_width()),
+                        Bitvector32Term::constant(0),
+                        Bitvector32Term::constant(constant_u32(*bytes) / CType::Int32.byte_width()),
                     )
                 }
                 _ => CMemoryRange::new_with_element_width(
                     base.clone(),
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                     bytes.clone(),
                     1,
                 ),

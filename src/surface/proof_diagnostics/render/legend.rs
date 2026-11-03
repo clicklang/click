@@ -3,6 +3,9 @@ use super::*;
 use crate::kernel::{CMemoryConstructionKind, CMemoryDerivation, CValue, PointerBlock};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
+};
 
 const MAX_ROUNDS: usize = 96;
 const MAX_LEGEND_BYTES: usize = 12 * 1024;
@@ -40,11 +43,9 @@ impl SnapshotLabels {
 
     fn legend_bits(&mut self, value: &Bitvector32Term) -> String {
         match value {
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-                value.to_string()
-            }
-            Bitvector32Term::Int64Constant(value) => value.to_string(),
-            Bitvector32Term::UInt64Constant(value) => value.to_string(),
+            bits32_constant!(value) => constant_u32(*value).to_string(),
+            int64_constant!(value) => constant_i64(*value).to_string(),
+            uint64_constant!(value) => constant_u64(*value).to_string(),
             Bitvector32Term::Variable(variable) => {
                 if let Some((memory, address)) =
                     crate::kernel::registered_load_for_variable(variable)
@@ -674,7 +675,7 @@ mod tests {
                     block: "local:origin-test".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(Bitvector32Term::Constant(9)),
+                CValue::Int32(Bitvector32Term::constant(9)),
             )
         })
         .join()
@@ -723,7 +724,7 @@ mod tests {
     fn legend_shows_recorded_store_and_its_base() {
         let address = Pointer::symbolic(Variable(986_402));
         let memory =
-            CMemory::new().store(address.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+            CMemory::new().store(address.clone(), CValue::Int32(Bitvector32Term::constant(7)));
         let mut labels = SnapshotLabels::default();
         labels.immutable_pointer_name(&address, "p");
         labels.snapshot_name(&memory);
@@ -743,8 +744,8 @@ mod tests {
                 CResourceFact::own(CResource::Memory(
                     crate::kernel::CMemoryRange::new_with_element_width(
                         pointer.clone(),
-                        Bitvector32Term::Constant(index),
-                        Bitvector32Term::Constant(index + 1),
+                        Bitvector32Term::constant(index),
+                        Bitvector32Term::constant(index + 1),
                         8,
                     ),
                 ))
@@ -752,8 +753,8 @@ mod tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Constant(7)),
-            right: Box::new(Bitvector32Term::Constant(7)),
+            left: Box::new(Bitvector32Term::constant(7)),
+            right: Box::new(Bitvector32Term::constant(7)),
         };
         let premises = vec![(condition.clone(), true)];
         let mut labels = SnapshotLabels::default();

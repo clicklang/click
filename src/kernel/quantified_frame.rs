@@ -388,7 +388,7 @@ mod wide_condition_tests {
         let before = CMemory::new().with_block("wide-equality-frame", 16);
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(3)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(3)),
         );
         let load = |memory: &CMemory, kind| {
             Bitvector32Term::MemoryLoad(
@@ -403,7 +403,7 @@ mod wide_condition_tests {
             left: Box::new(read),
             right: Box::new(value),
         };
-        let stamp = Bitvector32Term::UInt64Constant(0x1_0000_0001);
+        let stamp = Bitvector32Term::uint64_constant(0x1_0000_0001);
         let source = condition(load(&before, LoadKind::Bits64), stamp.clone());
         let target = condition(load(&after, LoadKind::Bits64), stamp.clone());
         let carried = |target: &ConditionTerm| {
@@ -418,11 +418,11 @@ mod wide_condition_tests {
         )));
         assert!(!carried(&condition(
             load(&after, LoadKind::Bits64),
-            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::uint64_constant(1),
         )));
         let partial = before.clone().store(
             pointer.offset_by_bytes(4),
-            CValue::Int32(Bitvector32Term::Constant(0)),
+            CValue::Int32(Bitvector32Term::constant(0)),
         );
         assert!(!carried(&condition(
             load(&partial, LoadKind::Bits64),
@@ -434,7 +434,7 @@ mod wide_condition_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(&after, LoadKind::Bits64)),
-                right: Box::new(Bitvector32Term::Constant(1))
+                right: Box::new(Bitvector32Term::constant(1))
             },
             &|_, _| true,
         ));

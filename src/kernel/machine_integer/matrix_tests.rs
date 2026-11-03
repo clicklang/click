@@ -974,8 +974,8 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
             assert_eq!(cast.narrow_widening32_operand(), Some((source, &operand)));
             assert_eq!(cast.clone().into_word32(), cast);
             assert_ne!(
-                Bitvector32Term::add(cast, Bitvector32Term::Constant(1)),
-                Bitvector32Term::add(operand, Bitvector32Term::Constant(1)),
+                Bitvector32Term::add(cast, Bitvector32Term::constant(1)),
+                Bitvector32Term::add(operand, Bitvector32Term::constant(1)),
                 "{source:?} -> {destination:?}"
             );
         }
@@ -1090,7 +1090,7 @@ fn the_conversion_table_has_one_term_per_pair_of_formats() {
 fn a_division_reads_only_at_its_own_signedness() {
     let (x, four) = (
         Bitvector32Term::Variable(Variable(172_071)),
-        Bitvector32Term::Constant(4),
+        Bitvector32Term::constant(4),
     );
     let signed = binary_node!(Int32, Divide, Box::new(x.clone()), Box::new(four.clone()));
     let unsigned = binary_node!(UInt32, Divide, Box::new(x), Box::new(four));

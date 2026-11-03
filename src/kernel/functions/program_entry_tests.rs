@@ -8,8 +8,8 @@ fn storage_function(name: &str, globals: Vec<CGlobal>) -> CFunction {
 fn scalar_ownership(name: &str) -> CResourceFact {
     CResourceFact::own_memory(CMemoryRange::new(
         CMemory::global_pointer(name),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     ))
 }
 
@@ -244,8 +244,8 @@ fn startup_includes_uncalled_local_statics_and_typed_arrays() {
     );
     let owned = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
         CMemory::global_pointer("values"),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(2),
         2,
     ));
     assert!(
@@ -265,8 +265,8 @@ fn zero_element(element_type: CType) -> CValue {
         CType::UInt8 => uint8(0),
         CType::UInt16 => uint16(0),
         CType::UInt32 => uint32(0),
-        CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(0)),
-        CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+        CType::Int64 => CValue::Int64(Bitvector32Term::int64_constant(0)),
+        CType::UInt64 => CValue::UInt64(Bitvector32Term::uint64_constant(0)),
         pointer => CValue::typed_pointer(Pointer::null(), pointer),
     }
 }

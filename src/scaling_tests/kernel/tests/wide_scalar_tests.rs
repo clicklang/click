@@ -40,7 +40,7 @@ fn wide_scalar_root_validation_does_not_scan_legacy_operand_trees() {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(term),
-                right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                right: Box::new(Bitvector32Term::uint64_constant(1)),
             };
         }
         let (accepted, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -59,12 +59,12 @@ fn wide_cached_load_canonicalization_ignores_unrelated_cells() {
             block: "wide-cached-scaling".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let bits = Bitvector32Term::UInt64Constant(0x1_0000_0001);
+        let bits = Bitvector32Term::uint64_constant(0x1_0000_0001);
         let mut memory = CMemory::new().with_block("wide-cached-scaling", (count + 1) * 8);
         for index in 1..=count {
             memory = memory.store(
                 pointer.offset_by_bytes(index * 8),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(index as u64)),
+                CValue::UInt64(Bitvector32Term::uint64_constant(index as u64)),
             );
         }
         memory = memory.store(pointer.clone(), CValue::UInt64(bits.clone()));
@@ -104,7 +104,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
     let selected = PureFactContext::new().assume_condition(alias, true);
     let bits = Bitvector32Term::uint64_add(
         Bitvector32Term::Variable(Variable(78_103)),
-        Bitvector32Term::UInt64Constant(0x1_0000_0001),
+        Bitvector32Term::uint64_constant(0x1_0000_0001),
     );
     let kept = CallKeptOwnership::new(
         ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(memory_range(
@@ -122,7 +122,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         for index in 0..count {
             memory = memory.store(
                 Pointer::symbolic(Variable(79_000 + index)),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(index)),
+                CValue::UInt64(Bitvector32Term::uint64_constant(index)),
             );
         }
         memory = memory.store(read_pointer.clone(), CValue::UInt64(bits.clone()));
@@ -149,7 +149,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         assert!(!matches(&load, &bits, &PureFactContext::new()));
         assert!(!matches(
             &load,
-            &Bitvector32Term::UInt64Constant(1),
+            &Bitvector32Term::uint64_constant(1),
             &selected
         ));
         let narrow = Bitvector32Term::MemoryLoad(
@@ -161,7 +161,7 @@ fn selected_wide_read_value_keeps_alias_authority_and_scales_with_unrelated_cell
         let partial = read_pointer.offset_by_bytes(4);
         let changed = after
             .without_possible_aliasing_cells(&partial, 4, &selected)
-            .store(partial, CValue::Int32(Bitvector32Term::Constant(0)));
+            .store(partial, CValue::Int32(Bitvector32Term::constant(0)));
         let changed = Bitvector32Term::MemoryLoad(
             intern_c_memory(changed),
             Box::new(read_pointer.clone()),
@@ -190,7 +190,7 @@ fn selected_wide_read_value_bounds_unselected_call_history() {
         CallKeptRanges::new(ResourceContext::new(), Vec::new(), None),
         &selected,
     );
-    let bits = Bitvector32Term::UInt64Constant(7);
+    let bits = Bitvector32Term::uint64_constant(7);
     let mut previous = None;
     for count in [128, 256, 512] {
         let mut memory = CMemory::new().store(pointer.clone(), CValue::UInt64(bits.clone()));
@@ -240,12 +240,12 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
         for index in 0..count {
             memory = memory.store(
                 owned_pointer.offset_by_bytes((index + 1) * 8),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(u64::from(index))),
+                CValue::UInt64(Bitvector32Term::uint64_constant(u64::from(index))),
             );
             selected = selected.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(82_000 + u64::from(index))),
-                    Bitvector32Term::Constant(index),
+                    Bitvector32Term::constant(index),
                 ),
                 true,
             );
@@ -302,8 +302,8 @@ fn selected_wide_read_congruence_preserves_history_width_and_scales() {
             &selected,
         ));
         for (offset, value) in [
-            (0, CValue::UInt64(Bitvector32Term::UInt64Constant(1 << 32))),
-            (4, CValue::Int32(Bitvector32Term::Constant(1))),
+            (0, CValue::UInt64(Bitvector32Term::uint64_constant(1 << 32))),
+            (4, CValue::Int32(Bitvector32Term::constant(1))),
         ] {
             let address = owned_pointer.offset_by_bytes(offset);
             let changed = after

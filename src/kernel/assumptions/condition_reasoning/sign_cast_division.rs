@@ -163,7 +163,7 @@ impl PureFactContext {
         } else {
             (cast_dividend.clone(), cast_divisor.clone())
         };
-        let zero = || Bitvector32Term::Constant(0);
+        let zero = || Bitvector32Term::constant(0);
         if self.decide(&ConditionTerm::signed_less_equal(zero(), signed_dividend)) != Some(true)
             || self.decide(&ConditionTerm::signed_less_than(zero(), signed_divisor)) != Some(true)
         {
@@ -187,11 +187,11 @@ mod tests {
     }
 
     fn signed_nonnegative(value: Bitvector32Term) -> ConditionTerm {
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value)
+        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), value)
     }
 
     fn signed_positive(value: Bitvector32Term) -> ConditionTerm {
-        ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), value)
+        ConditionTerm::signed_less_than(Bitvector32Term::constant(0), value)
     }
 
     /// A bound on σ(x) is a bound on `x`'s bits: `0 < d as int32` excludes
@@ -204,14 +204,14 @@ mod tests {
         assert_eq!(
             context.decide(&ConditionTerm::uint32_equal(
                 d.clone(),
-                Bitvector32Term::UInt32Constant(0)
+                Bitvector32Term::uint32_constant(0)
             )),
             Some(false)
         );
         assert_eq!(
             context.decide(&ConditionTerm::unsigned_less_equal(
                 d,
-                Bitvector32Term::UInt32Constant(i32::MAX as u32)
+                Bitvector32Term::uint32_constant(i32::MAX as u32)
             )),
             Some(true)
         );

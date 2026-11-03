@@ -56,8 +56,8 @@ impl C {
             },
         };
         let mut guards = vec![
-            C::signed_less_equal(B::Constant(0), n.clone()),
-            C::signed_less_than(B::Constant(0), d),
+            C::signed_less_equal(B::constant(0), n.clone()),
+            C::signed_less_than(B::constant(0), d),
         ];
         if let Some(upper) = upper
             && &n != upper
@@ -94,7 +94,7 @@ impl C {
         };
         if (!strict && n.as_ref() == right) || (strict && d.as_ref() == right) {
             Some(C::uint64_less_than(
-                B::UInt64Constant(0),
+                B::uint64_constant(0),
                 d.as_ref().clone(),
             ))
         } else {
@@ -111,7 +111,7 @@ impl B {
                 op: MachineBinaryOp::Remainder,
                 left: _,
                 right: d,
-            } if d.uint64_as_const() == Some(1) => Some((Vec::new(), B::UInt64Constant(0))),
+            } if d.uint64_as_const() == Some(1) => Some((Vec::new(), B::uint64_constant(0))),
             // `n - n % d` is a multiple of `d`: the difference does not wrap,
             // since a remainder is at most its dividend.
             B::Binary {
@@ -130,7 +130,7 @@ impl B {
                         )
                 ) =>
             {
-                Some((Vec::new(), B::UInt64Constant(0)))
+                Some((Vec::new(), B::uint64_constant(0)))
             }
             // `(n - d) % d` is `n % d` when `d <= n`, where the difference
             // does not wrap.
@@ -169,7 +169,7 @@ impl B {
                 n.as_ref().clone(),
             )),
             binary_term!(Int32, Remainder, _, d) if d.as_const() == Some(1) => {
-                Some((Vec::new(), B::Constant(0)))
+                Some((Vec::new(), B::constant(0)))
             }
             binary_term!(Int32, Remainder, n, d) => {
                 let k = d.as_const()? as i32;
@@ -205,9 +205,9 @@ impl B {
                     return Some((
                         vec![C::uint64_less_equal(
                             original.as_ref().clone(),
-                            B::UInt64Constant(i32::MAX as u64),
+                            B::uint64_constant(i32::MAX as u64),
                         )],
-                        B::Constant(0),
+                        B::constant(0),
                     ));
                 }
                 if let binary_term!(Int32, Subtract, original, step) = n.as_ref()
@@ -223,7 +223,7 @@ impl B {
                 }
                 Some((
                     vec![
-                        C::signed_less_equal(B::Constant(0), n.as_ref().clone()),
+                        C::signed_less_equal(B::constant(0), n.as_ref().clone()),
                         C::signed_less_than(n.as_ref().clone(), d.as_ref().clone()),
                     ],
                     n.as_ref().clone(),
@@ -252,8 +252,8 @@ mod tests {
             binary_node!(UInt32, Remainder, Box::new(n.clone()), Box::new(d.clone())),
         ] {
             for goal in [
-                C::signed_less_equal(B::Constant(0), result.clone()),
-                C::signed_less_equal(result, B::Constant(65535)),
+                C::signed_less_equal(B::constant(0), result.clone()),
+                C::signed_less_equal(result, B::constant(65535)),
             ] {
                 let guards = goal.nonnegative_division_bound_guards().unwrap();
                 let facts: HashMap<_, _> =
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn remainder_rewrites_require_nonnegative_and_full_width_guards() {
         let n = B::Variable(Variable(100));
-        let d = B::Constant(4);
+        let d = B::constant(4);
         let input = B::remainder(B::subtract(n.clone(), d.clone()), d.clone());
         let guard = C::signed_less_equal(d.clone(), n.clone());
         assert_eq!(
@@ -298,26 +298,26 @@ mod tests {
             B::remainder(n.clone(), d)
         );
 
-        let wide_d = B::UInt64Constant(4);
+        let wide_d = B::uint64_constant(4);
         let complete = B::uint32_from_64(B::uint64_subtract(
             n.clone(),
             B::uint64_remainder(n.clone(), wide_d),
         ));
-        let input = B::remainder(complete, B::Constant(4));
-        let guard = C::uint64_less_equal(n.clone(), B::UInt64Constant(i32::MAX as u64));
+        let input = B::remainder(complete, B::constant(4));
+        let guard = C::uint64_less_equal(n.clone(), B::uint64_constant(i32::MAX as u64));
         assert_eq!(
             TermRewrite::for_conditions(&HashMap::new()).bits(&input),
             input
         );
         assert_eq!(
             TermRewrite::for_conditions(&HashMap::from([(guard, true)])).bits(&input),
-            B::Constant(0)
+            B::constant(0)
         );
 
         for divisor in [0u32, u32::MAX] {
             let input = B::remainder(
-                B::subtract(n.clone(), B::Constant(divisor)),
-                B::Constant(divisor),
+                B::subtract(n.clone(), B::constant(divisor)),
+                B::constant(divisor),
             );
             assert_eq!(
                 TermRewrite::for_conditions(&HashMap::new()).bits(&input),
@@ -329,9 +329,9 @@ mod tests {
     #[test]
     fn remainder_small_dividend_needs_both_signed_bounds() {
         let n = B::Variable(Variable(100));
-        let input = B::remainder(n.clone(), B::Constant(4));
-        let lower = C::signed_less_equal(B::Constant(0), n.clone());
-        let upper = C::signed_less_than(n.clone(), B::Constant(4));
+        let input = B::remainder(n.clone(), B::constant(4));
+        let lower = C::signed_less_equal(B::constant(0), n.clone());
+        let upper = C::signed_less_than(n.clone(), B::constant(4));
         for facts in [
             HashMap::new(),
             HashMap::from([(lower.clone(), true)]),

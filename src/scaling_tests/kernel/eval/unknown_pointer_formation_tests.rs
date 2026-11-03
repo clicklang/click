@@ -80,7 +80,7 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
             facts = facts.assume_condition(
                 ConditionTerm::signed_less_than(
                     Bitvector32Term::Variable(Variable(934_000)),
-                    Bitvector32Term::Constant(10_000 + index as u32),
+                    Bitvector32Term::constant(10_000 + index as u32),
                 ),
                 true,
             );

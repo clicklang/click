@@ -15,7 +15,7 @@ fn source_reference_selected_observation_merge_does_not_scan_ambient_facts() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(Bitvector32Term::Variable(Variable(index))),
-                    right: Box::new(Bitvector32Term::Constant(7)),
+                    right: Box::new(Bitvector32Term::constant(7)),
                 },
                 true,
             ));

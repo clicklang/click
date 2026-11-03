@@ -19,7 +19,7 @@ fn machine_backed_integer_substitution_scales_with_shared_dag() {
             substitute_bitvector_variable_in_integer(
                 &term,
                 Variable(7),
-                &Bitvector32Term::Constant(7),
+                &Bitvector32Term::constant(7),
             )
         });
         assert!(
@@ -71,7 +71,7 @@ fn machine_operator_chains_cost_the_same_per_node_at_every_format() {
         let substituted = substitute_bitvector_variable_in_condition(
             &equality,
             Variable(151_000),
-            &Bitvector32Term::Constant(1),
+            &Bitvector32Term::constant(1),
         );
         assert_ne!(substituted, equality);
         crate::instrumentation::measure_deterministic_work(|| {

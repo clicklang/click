@@ -2,7 +2,7 @@ use super::*;
 
 fn nonnegative_i() -> SpecProposition {
     SpecProposition::Comparison {
-        left: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
+        left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
         operator: CComparisonOperator::LessEqual,
         right: SpecExpression::CExpression(c_variable("i")),
     }

@@ -1,6 +1,7 @@
 //! Borrowed root views of machine operands. Inspecting a shared root never
 //! requests its boxed expansion; child observations retain child handles.
 use super::*;
+use crate::kernel::{constant_i64, int64_constant};
 
 // Only written machine variables are cached. Registered-load dependencies are
 // resolved by each collector against its current registry, never cached here.
@@ -355,8 +356,8 @@ impl<'a> MachineOperandView<'a> {
     /// arithmetic operand. Generic casts deliberately retain their old refusal.
     pub(crate) fn int64_width_interval(self) -> Option<(i64, i64)> {
         use crate::kernel::KernelMachineCastEncoding as E;
-        if let Some(Bitvector32Term::Int64Constant(value)) = self.literal() {
-            return Some((value, value));
+        if let Some(int64_constant!(value)) = self.literal() {
+            return Some((constant_i64(value), constant_i64(value)));
         }
         match self.cast() {
             Some((E::Int64From32, _, _, _)) => {
@@ -618,7 +619,7 @@ mod tests {
             format: ty,
             op: MachineBinaryOp::Add,
             left: Box::new(Bitvector32Term::Variable(Variable(956101))),
-            right: Box::new(Bitvector32Term::UInt32Constant(0)),
+            right: Box::new(Bitvector32Term::uint32_constant(0)),
         };
         let shared = KernelTermImport::default().machine(ty, &boxed);
         for observed_ty in [
@@ -686,7 +687,7 @@ mod cast_tests {
                     Int32,
                     MachineBinaryOp::Add,
                     &twice,
-                    &Bitvector32Term::Constant(0),
+                    &Bitvector32Term::constant(0),
                 );
             }
         }

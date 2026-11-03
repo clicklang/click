@@ -67,7 +67,7 @@ fn a_narrow_operator_has_its_own_width() {
         let mixed = Bitvector32Term::Binary {
             format,
             op: Op::Add,
-            left: Box::new(Bitvector32Term::Constant(1)),
+            left: Box::new(Bitvector32Term::constant(1)),
             right: Box::new(var(1)),
         };
         assert!(crate::kernel::term_width(&mixed).is_err(), "{format:?}");

@@ -433,7 +433,7 @@ fn cell_footprints_follow_merges_removals_and_normalization() {
             12u32.into(),
             1,
         )),
-        Box::new(Bitvector32Term::Constant(0)),
+        Box::new(Bitvector32Term::constant(0)),
     );
     let resources = ResourceContext::new()
         .unchecked_with_fact(short.clone())
@@ -1052,19 +1052,19 @@ fn symbolic_owned_suffix_start_checks_bounds_and_retained_authority() {
     let split = Bitvector32Term::Variable(Variable(989_001));
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
-        ConditionTerm::uint64_less_than(split.clone(), Bitvector32Term::UInt64Constant(32)),
+        ConditionTerm::uint64_less_than(split.clone(), Bitvector32Term::uint64_constant(32)),
         true,
     );
     let prefix = CMemoryRange::new_wide(
         base.clone(),
-        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::uint64_constant(0),
         split.clone(),
         1,
     );
     let suffix = CMemoryRange::new_wide(
         base.clone(),
         split.clone(),
-        Bitvector32Term::UInt64Constant(32),
+        Bitvector32Term::uint64_constant(32),
         1,
     );
     let owner = CResourceFact::own_memory(suffix.clone());
@@ -1085,8 +1085,8 @@ fn symbolic_owned_suffix_start_checks_bounds_and_retained_authority() {
             .memory_write_range(
                 &CMemoryRange::new_wide(
                     base,
-                    Bitvector32Term::UInt64Constant(32),
-                    Bitvector32Term::UInt64Constant(33),
+                    Bitvector32Term::uint64_constant(32),
+                    Bitvector32Term::uint64_constant(33),
                     1
                 )
                 .start_pointer(),

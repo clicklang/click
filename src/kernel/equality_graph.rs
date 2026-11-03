@@ -2908,8 +2908,8 @@ mod tests {
                     domain
                         .opaque_coverage_fact(&crate::kernel::CMemoryRange::new(
                             at(symbolic(985_100), 0),
-                            Bitvector32Term::Constant(0),
-                            Bitvector32Term::Constant(end),
+                            Bitvector32Term::constant(0),
+                            Bitvector32Term::constant(end),
                         ))
                         .expect("coverage names the opaque domain"),
                 ))
@@ -3041,7 +3041,7 @@ mod tests {
     #[test]
     fn a_constant_index_folds_with_its_sign() {
         let minus_one = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Constant(u32::MAX)),
+            value: Box::new(Bitvector32Term::constant(u32::MAX)),
             byte_width: 8,
         };
         assert_eq!(
@@ -3356,11 +3356,11 @@ mod tests {
     #[test]
     fn same_block_pointer_query_does_not_turn_wrapping_index_into_exact_offset() {
         let base = symbolic(11_014);
-        let max = Bitvector32Term::Constant(i32::MAX as u32);
+        let max = Bitvector32Term::constant(i32::MAX as u32);
         let wrapped = at_offset(
             base.clone(),
             PointerOffsetTerm::scale_int32(
-                Bitvector32Term::add(max.clone(), Bitvector32Term::Constant(1)),
+                Bitvector32Term::add(max.clone(), Bitvector32Term::constant(1)),
                 4,
             ),
         );
@@ -3466,7 +3466,7 @@ mod tests {
             memory
                 .memory()
                 .clone()
-                .store(p.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+                .store(p.clone(), CValue::Int32(Bitvector32Term::constant(7))),
         );
         let from_p = Pointer::loaded_value(&memory, &p);
         let from_p_again = Pointer::loaded_value(&memory, &p);
@@ -3601,7 +3601,7 @@ mod tests {
                 memory
                     .memory()
                     .clone()
-                    .store(p.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+                    .store(p.clone(), CValue::Int32(Bitvector32Term::constant(7))),
             );
             assert!(!graph.are_equal(&left, &Pointer::loaded_value(&changed, &q)));
         }
@@ -3615,7 +3615,7 @@ mod tests {
         // A later snapshot where the cell `p` addresses was written.
         let other_memory = crate::kernel::intern_c_memory(memory.memory().clone().store(
             at(symbolic(41), 0),
-            CValue::Int32(Bitvector32Term::Constant(7)),
+            CValue::Int32(Bitvector32Term::constant(7)),
         ));
         let name = |memory: &crate::kernel::SharedCMemory, address: Pointer| {
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
@@ -3689,7 +3689,7 @@ mod tests {
         let before = crate::kernel::CMemory::new().with_block(PointerBlock::Heap(95_001), 16);
         let after = before
             .clone()
-            .store(other.clone(), CValue::Int32(Bitvector32Term::Constant(3)));
+            .store(other.clone(), CValue::Int32(Bitvector32Term::constant(3)));
         let name = |memory: &crate::kernel::CMemory| {
             let memory = crate::kernel::intern_c_memory(memory.clone());
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
@@ -3956,7 +3956,7 @@ mod tests {
         ));
         let later = crate::kernel::intern_c_memory(memory.memory().clone().store(
             address.clone(),
-            CValue::UInt64(Bitvector32Term::Int64Constant(9)),
+            CValue::UInt64(Bitvector32Term::int64_constant(9)),
         ));
         let CValue::Pointer(changed) = later
             .memory()
@@ -3992,7 +3992,7 @@ mod tests {
         };
         let source = read(&raw.pointer().offset_by_bytes(24));
         let target = read(&model.offset_by_bytes(24));
-        let expected = Bitvector32Term::Constant(7);
+        let expected = Bitvector32Term::constant(7);
         for read in [&source, &target] {
             let Bitvector32Term::Variable(variable) = read else {
                 panic!("named scalar read");

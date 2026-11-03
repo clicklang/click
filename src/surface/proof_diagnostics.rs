@@ -973,7 +973,7 @@ mod tests {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             },
-            bytes: Bitvector32Term::Constant(1),
+            bytes: Bitvector32Term::constant(1),
             wide: false,
         };
         crate::surface::with_proof_trace("f", || {
@@ -1086,7 +1086,7 @@ mod tests {
                 format: crate::kernel::MachineIntegerType::Int32,
                 relation: crate::kernel::CompareRelation::Equal,
                 left: Box::new(crate::kernel::Bitvector32Term::Variable(variable)),
-                right: Box::new(crate::kernel::Bitvector32Term::Constant(0)),
+                right: Box::new(crate::kernel::Bitvector32Term::constant(0)),
             },
             true,
         )

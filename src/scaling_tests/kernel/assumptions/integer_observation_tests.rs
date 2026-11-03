@@ -9,7 +9,7 @@ fn native_observation_queries_use_the_selected_fact_index() {
         let mut context = PureFactContext::new().assume_condition(native, truth);
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(word(890_000 + index), Bitvector32Term::Constant(7)),
+                ConditionTerm::equal(word(890_000 + index), Bitvector32Term::constant(7)),
                 true,
             );
         }
@@ -314,9 +314,9 @@ fn observation_alias_source_lookup_does_not_scan_supports() {
                 );
             }
             let hit =
-                ConditionTerm::unsigned_less_equal(word(991900), Bitvector32Term::Constant(100));
+                ConditionTerm::unsigned_less_equal(word(991900), Bitvector32Term::constant(100));
             let miss =
-                ConditionTerm::unsigned_less_equal(word(991900), Bitvector32Term::Constant(101));
+                ConditionTerm::unsigned_less_equal(word(991900), Bitvector32Term::constant(101));
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 assert!(index.source(&hit, true).is_some());
                 assert!(index.source(&miss, true).is_none());

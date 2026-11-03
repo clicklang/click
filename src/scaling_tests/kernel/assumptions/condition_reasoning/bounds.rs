@@ -13,7 +13,7 @@ fn shared_bound_consumers_preserve_dag_operands() {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
                         Bitvector32Term::Variable(Variable(995000 + i)),
-                        Bitvector32Term::Constant(7),
+                        Bitvector32Term::constant(7),
                     ),
                     true,
                 );
@@ -77,7 +77,7 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
                 facts = facts.assume_condition(
                     ConditionTerm::signed_less_equal(
                         Bitvector32Term::Variable(Variable(997000 + i)),
-                        Bitvector32Term::Constant(7),
+                        Bitvector32Term::constant(7),
                     ),
                     true,
                 );

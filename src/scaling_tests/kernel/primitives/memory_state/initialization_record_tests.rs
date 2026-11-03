@@ -36,7 +36,7 @@ fn a_covering_query_scales_with_the_cells_it_crosses() {
         for index in 0..count {
             memory = memory.store(
                 element(&block, index),
-                CValue::Int32(Bitvector32Term::Constant(1)),
+                CValue::Int32(Bitvector32Term::constant(1)),
             );
         }
         let index = Bitvector32Term::Variable(Variable(924_008));

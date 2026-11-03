@@ -250,7 +250,7 @@ fn spell_condition(
             site.spell_proposition(&Proposition::CMemoryLoadable {
                 memory: site.state.memory().clone(),
                 base: pointer.clone(),
-                bytes: Bitvector32Term::Constant(4),
+                bytes: Bitvector32Term::constant(4),
                 wide: false,
             })
             .as_ref(),

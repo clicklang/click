@@ -86,8 +86,8 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
         let resource = |index| {
             CResource::Memory(CMemoryRange::new(
                 Pointer::symbolic(Variable(43_000)),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::add(variable(index), Bitvector32Term::Constant(1)),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::add(variable(index), Bitvector32Term::constant(1)),
             ))
         };
         let left = resource(0);
@@ -125,13 +125,13 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     let view = Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base: storage.clone(),
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let goal = Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base: result.clone(),
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     assert!(
@@ -155,7 +155,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
                     block: format!("unrelated-view-{index}").into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                bytes: Bitvector32Term::Constant(4),
+                bytes: Bitvector32Term::constant(4),
                 wide: false,
             });
         }
@@ -165,7 +165,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         assert!(!context.proves(&Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: result.offset_by_bytes(4),
-            bytes: Bitvector32Term::Constant(4),
+            bytes: Bitvector32Term::constant(4),
             wide: false,
         }));
         work
@@ -186,13 +186,13 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         .assume_proposition(Proposition::CMemoryLoadable {
             memory: before,
             base: local,
-            bytes: Bitvector32Term::Constant(4),
+            bytes: Bitvector32Term::constant(4),
             wide: false,
         });
     assert!(!context.proves(&Proposition::CMemoryLoadable {
         memory: after,
         base: result,
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     }));
 }
@@ -211,7 +211,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
                     memory: memory.clone(),
                     base: target.clone(),
-                    bytes: Bitvector32Term::Constant(8),
+                    bytes: Bitvector32Term::constant(8),
                     wide: false,
                 });
             for index in 0..size {
@@ -221,7 +221,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                         block: target.block.clone(),
                         offset: PointerOffsetTerm::Constant(index as i64),
                     },
-                    bytes: Bitvector32Term::Constant(4),
+                    bytes: Bitvector32Term::constant(4),
                     wide: false,
                 });
             }
@@ -229,7 +229,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 assumptions.proves(&Proposition::CMemoryLoadable {
                     memory: memory.clone(),
                     base: target.clone(),
-                    bytes: Bitvector32Term::Constant(4),
+                    bytes: Bitvector32Term::constant(4),
                     wide: false,
                 })
             });
@@ -328,11 +328,11 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
         block: "chain".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let cell = |index: usize| base.offset_by_elements(Bitvector32Term::Constant(index as u32), 4);
+    let cell = |index: usize| base.offset_by_elements(Bitvector32Term::constant(index as u32), 4);
     let mut samples = Vec::new();
     for length in [32usize, 64, 96, 128] {
         let mut memory =
-            CMemory::new().store(cell(length), CValue::Int32(Bitvector32Term::Constant(42)));
+            CMemory::new().store(cell(length), CValue::Int32(Bitvector32Term::constant(42)));
         for index in (0..length).rev() {
             let next = Bitvector32Term::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
@@ -349,7 +349,7 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
         let (proven, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                 &load,
-                &Bitvector32Term::Constant(42),
+                &Bitvector32Term::constant(42),
                 &PureFactContext::new(),
             )
         });
@@ -382,7 +382,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
                 Int32,
                 Add,
                 Box::new(index.clone()),
-                Box::new(Bitvector32Term::Constant(length)),
+                Box::new(Bitvector32Term::constant(length)),
             )),
             Box::new(index.clone()),
         )
@@ -401,7 +401,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
                 Int32,
                 Multiply,
                 Box::new(count(4)),
-                Box::new(Bitvector32Term::Constant(width)),
+                Box::new(Bitvector32Term::constant(width)),
             )
         };
         let mut costs = Vec::new();
@@ -411,7 +411,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
                 context = context.assume_condition(
                     ConditionTerm::equal(
                         Bitvector32Term::Variable(Variable(9_319_100 + offset)),
-                        Bitvector32Term::Constant(offset as u32),
+                        Bitvector32Term::constant(offset as u32),
                     ),
                     true,
                 );
@@ -420,7 +420,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
                 context.proves_memory_loadable(
                     &memory,
                     &base,
-                    &Bitvector32Term::Constant(4 * width),
+                    &Bitvector32Term::constant(4 * width),
                 )
             });
             assert!(proved);
@@ -431,29 +431,29 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
         assert!(!context.proves_memory_loadable(
             &memory,
             &base,
-            &Bitvector32Term::Constant(4 * width + 1),
+            &Bitvector32Term::constant(4 * width + 1),
         ));
         assert!(!context.proves_memory_loadable(
             &memory,
             &Pointer::symbolic(Variable(9_319_002)),
-            &Bitvector32Term::Constant(4 * width),
+            &Bitvector32Term::constant(4 * width),
         ));
     }
     assert!(!PureFactContext::new().proves_memory_loadable(
         &memory,
         &base,
-        &Bitvector32Term::Constant(4),
+        &Bitvector32Term::constant(4),
     ));
     let wrapped = binary_node!(
         Int32,
         Multiply,
         Box::new(count(0x4000_0000)),
-        Box::new(Bitvector32Term::Constant(4)),
+        Box::new(Bitvector32Term::constant(4)),
     );
     assert!(
         !PureFactContext::new()
             .assume_proposition(source(wrapped))
-            .proves_memory_loadable(&memory, &base, &Bitvector32Term::Constant(4))
+            .proves_memory_loadable(&memory, &base, &Bitvector32Term::constant(4))
     );
 }
 
@@ -461,7 +461,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
 fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     let native = Bitvector32Term::Variable(Variable(983_110));
     let alias = Bitvector32Term::Variable(Variable(983_111));
-    let last = |n| Bitvector32Term::uint64_subtract(n, Bitvector32Term::UInt64Constant(1));
+    let last = |n| Bitvector32Term::uint64_subtract(n, Bitvector32Term::uint64_constant(1));
     let wide = |n| PointerOffsetTerm::Int64Scaled {
         value: Box::new(n),
         byte_width: 4,
@@ -471,7 +471,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     let query = wide(last(alias.clone()));
     let bound = ConditionTerm::uint64_less_equal(
         last(native.clone()),
-        Bitvector32Term::UInt64Constant(1_073_741_822),
+        Bitvector32Term::uint64_constant(1_073_741_822),
     );
     let equality = ConditionTerm::uint64_equal(alias.clone(), native.clone());
     let project = |facts: &PureFactContext| {
@@ -484,7 +484,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     assert_eq!(project(&equal_only), None);
     let low_bound = ConditionTerm::signed_less_equal(
         projected.clone(),
-        Bitvector32Term::Constant(1_073_741_822),
+        Bitvector32Term::constant(1_073_741_822),
     );
     assert_eq!(
         project(&equal_only.clone().assume_condition(low_bound, true)),
@@ -492,7 +492,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     );
     let signed_bound = ConditionTerm::int64_signed_less_equal(
         last(native.clone()),
-        Bitvector32Term::Int64Constant(1_073_741_822),
+        Bitvector32Term::int64_constant(1_073_741_822),
     );
     assert_eq!(
         project(&equal_only.clone().assume_condition(signed_bound, true)),
@@ -505,7 +505,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_less_equal(
                     Bitvector32Term::Variable(Variable(984_000 + i)),
-                    Bitvector32Term::UInt64Constant(7),
+                    Bitvector32Term::uint64_constant(7),
                 ),
                 true,
             );
@@ -524,7 +524,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     );
     for value in [0, 1_073_741_823, 1u64 << 32, u64::MAX] {
         let actual = value.wrapping_sub(1);
-        let offset = wide(last(Bitvector32Term::UInt64Constant(value)));
+        let offset = wide(last(Bitvector32Term::uint64_constant(value)));
         let answer = crate::kernel::reasoning::element_index_from_offset_with_facts(
             &offset,
             4,
@@ -534,7 +534,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
             answer,
             i32::try_from(actual)
                 .ok()
-                .map(|x| Bitvector32Term::Constant(x as u32))
+                .map(|x| Bitvector32Term::constant(x as u32))
         );
     }
 }

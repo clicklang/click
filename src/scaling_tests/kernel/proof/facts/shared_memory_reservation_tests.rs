@@ -27,7 +27,7 @@ fn facts_over_one_memory_reserve_its_variables_once() {
             .map(|index| Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(index),
-                bytes: Bitvector32Term::Constant(4),
+                bytes: Bitvector32Term::constant(4),
                 wide: false,
             })
             .collect::<Vec<_>>();
@@ -65,7 +65,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
             .map(|index| Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(index),
-                bytes: Bitvector32Term::Constant(4),
+                bytes: Bitvector32Term::constant(4),
                 wide: false,
             })
             .collect::<Vec<_>>();
@@ -81,7 +81,7 @@ fn facts_over_one_memory_walk_its_bound_variables_once() {
         let extended = built.with_fact(Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: pointer(0),
-            bytes: Bitvector32Term::Constant(8),
+            bytes: Bitvector32Term::constant(8),
             wide: false,
         });
         assert_eq!(

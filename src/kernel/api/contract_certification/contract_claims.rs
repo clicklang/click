@@ -830,11 +830,11 @@ mod range_list_equality_graph_tests {
         let (a, b) = (var(91), var(92));
         let after = crate::kernel::intern_c_memory(before.memory().clone().store(
             pointer(b.clone()),
-            CValue::Int32(Bitvector32Term::Constant(9)),
+            CValue::Int32(Bitvector32Term::constant(9)),
         ));
         let base = Pointer::symbolic(Variable(9100));
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
-        let range = |start| CMemoryRange::new(base.clone(), start, Bitvector32Term::Constant(16));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
+        let range = |start| CMemoryRange::new(base.clone(), start, Bitvector32Term::constant(16));
         let left = range(sum(load(&before, a.clone())));
         let right = range(sum(load(&before, b.clone())));
         let later = range(sum(load(&after, b.clone())));
@@ -2793,11 +2793,7 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         CValue::Pointer(_) | CValue::Parameter(_) => return None,
     };
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_) => Some((exceptional, value.clone())),
+        Bitvector32Term::Constant { .. } => Some((exceptional, value.clone())),
         _ => None,
     }
 }
@@ -3372,7 +3368,7 @@ mod checked_proposition_index_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-                right: Box::new(Bitvector32Term::Constant(1)),
+                right: Box::new(Bitvector32Term::constant(1)),
             },
             value,
         )
@@ -3526,7 +3522,7 @@ mod checked_proposition_index_tests {
         let body_fact = Proposition::ConditionIs(
             ConditionTerm::signed_less_than(
                 Bitvector32Term::Variable(Variable(93_001)),
-                Bitvector32Term::Constant(8),
+                Bitvector32Term::constant(8),
             ),
             true,
         );
@@ -3536,7 +3532,7 @@ mod checked_proposition_index_tests {
             function: Box::new(function.clone()),
             arguments: Vec::new(),
             outcome: CFunctionOutcome::Return {
-                value: CValue::Int32(Bitvector32Term::Constant(0)),
+                value: CValue::Int32(Bitvector32Term::constant(0)),
                 state: Box::new(state),
             },
         };
@@ -3580,7 +3576,7 @@ mod heap_status_equality_tests {
         let mut base = CMemory::new().with_block(block.block.clone(), 4);
         std::sync::Arc::make_mut(&mut base.heap)
             .live_allocations
-            .insert(block.clone(), Bitvector32Term::Constant(4));
+            .insert(block.clone(), Bitvector32Term::constant(4));
         std::sync::Arc::make_mut(&mut base.heap)
             .zeroed_allocations
             .insert(block.clone());
@@ -3605,11 +3601,11 @@ mod heap_status_equality_tests {
         ));
 
         let left = CFunctionOutcome::Return {
-            value: CValue::Int32(Bitvector32Term::Constant(0)),
+            value: CValue::Int32(Bitvector32Term::constant(0)),
             state: Box::new(CState::new().with_memory(base)),
         };
         let right = CFunctionOutcome::Return {
-            value: CValue::Int32(Bitvector32Term::Constant(0)),
+            value: CValue::Int32(Bitvector32Term::constant(0)),
             state: Box::new(CState::new().with_memory(other)),
         };
         assert!(!c_function_outcomes_program_state_definitionally_equal(
@@ -3633,7 +3629,7 @@ mod unproved_path_obligation_message_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                right: Box::new(Bitvector32Term::Constant(3)),
+                right: Box::new(Bitvector32Term::constant(3)),
             },
             true,
         );
@@ -3659,8 +3655,8 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(984_400));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(1 << 33),
             1,
         );
         let narrow = CMemoryRange::new_with_element_width(base, 0u32.into(), 1u32.into(), 1);
@@ -3809,7 +3805,7 @@ mod claim_requirement_tests {
         let domain = Proposition::ConditionIs(
             ConditionTerm::equal(
                 Bitvector32Term::Variable(Variable(991_001)),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(1),
             ),
             true,
         );

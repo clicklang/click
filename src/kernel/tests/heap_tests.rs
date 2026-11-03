@@ -35,7 +35,7 @@ fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
         .unwrap()
         .store(
             cell.clone(),
-            CValue::Int64(Bitvector32Term::Int64Constant(7)),
+            CValue::Int64(Bitvector32Term::int64_constant(7)),
         );
     let assumptions = PureFactContext::new();
     for owned_bytes in [0u32, 4, 8] {
@@ -57,7 +57,7 @@ fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
         assert_eq!(
             freed.load(&cell),
             if owned_bytes == 8 {
-                CExpressionOutcome::Value(CValue::Int64(Bitvector32Term::Int64Constant(7)))
+                CExpressionOutcome::Value(CValue::Int64(Bitvector32Term::int64_constant(7)))
             } else {
                 CExpressionOutcome::UndefinedBehavior(CUndefinedBehavior::InvalidMemory)
             },
@@ -269,7 +269,7 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     };
     assert_eq!(
         success.memory().live_heap_block_size(pointer),
-        Some(&Bitvector32Term::Constant(16))
+        Some(&Bitvector32Term::constant(16))
     );
     let derivation = intern_c_memory_ref(success.memory())
         .derivation()
@@ -277,7 +277,7 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     assert!(matches!(
         derivation.as_ref(),
         CMemoryDerivation::HeapAllocated { block, bytes, .. }
-            if block == &pointer.block && *bytes == Bitvector32Term::Constant(16)
+            if block == &pointer.block && *bytes == Bitvector32Term::constant(16)
     ));
     assert!(
         success
@@ -338,8 +338,8 @@ fn call_havoc_preserves_initialization_of_a_heap_scalar() {
     );
     let range = CMemoryRange::new_with_element_width(
         pointer.pointer().clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
         4,
     );
     let after_call =
@@ -417,8 +417,8 @@ fn naming_an_initialized_heap_cell_preserves_its_initialization() {
     let stored = allocated.memory().clone().store(address.clone(), int32(7));
     let range = CMemoryRange::new_with_element_width(
         address.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
         4,
     );
     let havoc =
@@ -485,7 +485,7 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
         [CExpressionPath {
             outcome: CExpressionOutcome::Value(CValue::Int32(value)),
             ..
-        }] if *value == Bitvector32Term::Constant(0)
+        }] if *value == Bitvector32Term::constant(0)
     ));
 
     let stored = execute_c_statement_paths(
@@ -514,7 +514,7 @@ fn zeroed_heap_allocation_reads_zero_until_a_store() {
         [CExpressionPath {
             outcome: CExpressionOutcome::Value(CValue::Int32(value)),
             ..
-        }] if *value == Bitvector32Term::Constant(7)
+        }] if *value == Bitvector32Term::constant(7)
     ));
 }
 
@@ -579,7 +579,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
             .pending_reallocations
             .get(pending_pointer)
             .and_then(|pending| pending.zeroed_prefix.as_ref()),
-        Some(&Bitvector32Term::Constant(8))
+        Some(&Bitvector32Term::constant(8))
     );
     assert!(pending.memory().live_heap_block_size(old_pointer).is_some());
 
@@ -619,7 +619,7 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
         [CExpressionPath {
             outcome: CExpressionOutcome::Value(CValue::Int32(value)),
             ..
-        }] if *value == Bitvector32Term::Constant(0)
+        }] if *value == Bitvector32Term::constant(0)
     ));
 
     let tail_read = evaluate_c_expression_paths(
@@ -687,7 +687,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     };
     assert_eq!(base.as_ref(), state.memory());
     assert_eq!(allocation_base, pending_pointer.pointer());
-    assert_eq!(*bytes, Bitvector32Term::Constant(16));
+    assert_eq!(*bytes, Bitvector32Term::constant(16));
     assert!(checked_memory_load_equality(
         state.memory(),
         &pending_memory,
@@ -732,7 +732,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     };
     assert_eq!(base.as_ref(), &pending_memory);
     assert!(matches!(block, PointerBlock::Heap(_)));
-    assert_eq!(*bytes, Bitvector32Term::Constant(16));
+    assert_eq!(*bytes, Bitvector32Term::constant(16));
     assert!(checked_memory_load_equality(
         &pending_memory,
         succeeded.memory(),
@@ -931,7 +931,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
             ..
         }] if after == freed.memory()
             && allocation_base == pointer.pointer()
-            && *bytes == Bitvector32Term::Constant(16)
+            && *bytes == Bitvector32Term::constant(16)
     ));
     let derivation = intern_c_memory_ref(freed.memory())
         .derivation()
@@ -939,7 +939,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
     assert!(matches!(
         derivation.as_ref(),
         CMemoryDerivation::HeapFreed { allocation_base, bytes, .. }
-            if allocation_base == pointer.pointer() && *bytes == Bitvector32Term::Constant(16)
+            if allocation_base == pointer.pointer() && *bytes == Bitvector32Term::constant(16)
     ));
 
     let double = execute_c_statement_paths(
@@ -977,7 +977,7 @@ fn consuming_a_whole_range_drops_snapshot_equivalent_prefix_residues() {
     ));
     let required = CResourceFact::own_memory(CMemoryRange::new(
         owner.offset_by_int32_elements(required_start.clone()),
-        Bitvector32Term::Constant(0),
+        Bitvector32Term::constant(0),
         length,
     ));
     let assumptions = PureFactContext::new()
@@ -1055,8 +1055,8 @@ fn standalone_view_cannot_authorize_free() {
     let pointer = pointer.pointer().clone();
     let complete_access = CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(4),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(4),
     );
     let resources = ResourceContext::new()
         .unchecked_with_fact(CResourceFact::own_allocation(pointer, 16))
@@ -1135,8 +1135,8 @@ fn separated_persistent_view_survives_free() {
     };
     let view = CResourceFact::view_memory(CMemoryRange::new(
         other,
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     ));
     let state = state
         .clone()
@@ -1177,8 +1177,8 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
         .unchecked_with_fact(CResourceFact::own_allocation(allocation_base.clone(), 16))
         .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
             allocation_base.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(4),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(4),
         )));
     let state = CState::new()
         .with_memory(memory)
@@ -1253,7 +1253,7 @@ fn interface_heap_join_retains_potential_live_allocation() {
     let freed_join = freed_join.state;
     assert_eq!(
         freed_join.memory().live_heap_block_size(&allocation_base),
-        Some(&Bitvector32Term::Constant(16))
+        Some(&Bitvector32Term::constant(16))
     );
     assert!(
         freed_join
@@ -1342,8 +1342,8 @@ fn active_stable_loan_rejects_overlapping_heap_free_and_realloc() {
     // The second int32 cell is a strict subrange of the 16-byte allocation.
     let loan = active_heap_memory_loan(CMemoryRange::new(
         pointer.pointer().clone(),
-        Bitvector32Term::Constant(1),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(1),
+        Bitvector32Term::constant(2),
     ));
     let state = state.with_loan_ledger(Some(loan));
     let freed = execute_c_statement_paths(
@@ -1433,7 +1433,7 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
     };
     assert_eq!(
         success.memory().live_heap_block_size(resized.pointer()),
-        Some(&Bitvector32Term::Constant(8))
+        Some(&Bitvector32Term::constant(8))
     );
     assert!(
         success
@@ -1512,8 +1512,8 @@ fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
         .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), 16))
         .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
             base.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(4),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(4),
         )))
         .unchecked_with_fact(tail_resource.clone());
     let memory = CMemory::new()
@@ -1563,7 +1563,7 @@ fn nullable_owner_contract(body: CStatement) -> (CState, CFunction, Vec<CExpress
                 "allocation".to_string(),
                 vec![
                     c_variable("item"),
-                    CExpression::Value(CValue::Int32(Bitvector32Term::Constant(4))),
+                    CExpression::Value(CValue::Int32(Bitvector32Term::constant(4))),
                 ],
                 vec![CType::Int32Pointer, CType::Int32],
             ),
@@ -1850,7 +1850,7 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
             assert!(matches!(pointer.block, PointerBlock::Heap(_)));
             assert_eq!(
                 state.memory().live_heap_block_size(&pointer),
-                Some(&Bitvector32Term::Constant(16))
+                Some(&Bitvector32Term::constant(16))
             );
             assert!(
                 state
@@ -2000,7 +2000,7 @@ fn contract_retire_forgets_zeroed_reading_and_records_the_change() {
     let retired = success
         .memory()
         .clone()
-        .retire_contract_heap_allocation_claim(&base, &Bitvector32Term::Constant(4), &assumptions);
+        .retire_contract_heap_allocation_claim(&base, &Bitvector32Term::constant(4), &assumptions);
     assert!(
         !retired.is_zeroed_heap_address(&base, 4, &assumptions)
             && !retired.is_zeroed_heap_address(&alias, 4, &assumptions),
@@ -2088,7 +2088,7 @@ fn logical_heap_value_does_not_initialize_a_c_read() {
     };
     assert!(path.obligations.is_empty());
     let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::equal(value.clone(), Bitvector32Term::Constant(7)),
+        ConditionTerm::equal(value.clone(), Bitvector32Term::constant(7)),
         true,
     ));
     assert!(!assumptions.proves_memory_read_defined(
@@ -2128,8 +2128,8 @@ fn explicit_read_validity_is_typed_and_does_not_cross_havoc() {
     assert!(!assumptions.has_memory_read_defined_evidence(state.memory(), &address, CType::Int64));
     let range = CMemoryRange::new(
         address.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     );
     let changed = state.memory().clone().with_call_memory_havoc(
         Variable(903),
@@ -2287,11 +2287,11 @@ fn an_unplaced_heap_store_keeps_the_elements_it_may_alias_initialized() {
     let index = Bitvector32Term::Variable(Variable(925_001));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), index.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(index.clone(), Bitvector32Term::Constant(2)),
+            ConditionTerm::signed_less_than(index.clone(), Bitvector32Term::constant(2)),
             true,
         );
     let unplaced = Pointer {

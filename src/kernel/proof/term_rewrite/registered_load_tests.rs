@@ -28,8 +28,8 @@ fn exact_load(memory: &SharedCMemory, pointer: &Pointer) -> Variable {
 fn int32_fold(accumulator: Variable, item: Variable, body: IntegerTerm) -> IntegerTerm {
     IntegerTerm::range_fold(
         IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(1)),
+            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(1)),
         },
         IntegerTerm::constant_i64(0),
         accumulator,
@@ -90,7 +90,7 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
         Int32,
         Add,
         Box::new(Bitvector32Term::Variable(load)),
-        Box::new(Bitvector32Term::Constant(1)),
+        Box::new(Bitvector32Term::constant(1)),
     );
     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement_term);
     rewrite.enable_registered_load_resolution();
@@ -176,7 +176,7 @@ fn checked_registered_load_rewrite_remints_nested_direct_offset() {
     );
     let input = Term::Integer(machine_variable(outer));
     let source_term = Bitvector32Term::Variable(source);
-    let replacement_term = Bitvector32Term::Constant(9);
+    let replacement_term = Bitvector32Term::constant(9);
     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement_term);
     rewrite.enable_registered_load_resolution();
     let output = rewrite.term(&input);

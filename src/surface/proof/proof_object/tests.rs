@@ -25,7 +25,7 @@ fn indexed_fact(index: u32) -> Proposition {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(Bitvector32Term::Variable(Variable(0))),
-            right: Box::new(Bitvector32Term::Constant(index)),
+            right: Box::new(Bitvector32Term::constant(index)),
         },
         true,
     )
@@ -175,7 +175,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(remainder.clone()),
-            right: Box::new(Bitvector32Term::UInt64Constant(0)),
+            right: Box::new(Bitvector32Term::uint64_constant(0)),
         },
         true,
     );
@@ -184,7 +184,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(size),
-            right: Box::new(Bitvector32Term::UInt64Constant(22208)),
+            right: Box::new(Bitvector32Term::uint64_constant(22208)),
         },
         true,
     )];
@@ -192,7 +192,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         left: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(remainder))),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
-            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_constant(0),
         ))),
     };
     let snapshots = RecordedSnapshots::new();
@@ -384,7 +384,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(Bitvector32Term::Constant(0)),
+                        left: Box::new(Bitvector32Term::constant(0)),
                         right: Box::new(Bitvector32Term::Variable(Variable(30))),
                     },
                     true,
@@ -394,7 +394,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
                         left: Box::new(Bitvector32Term::Variable(Variable(30))),
-                        right: Box::new(Bitvector32Term::Constant(16)),
+                        right: Box::new(Bitvector32Term::constant(16)),
                     },
                     true,
                 )),
@@ -434,7 +434,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
 fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
     let x = Bitvector32Term::Variable(Variable(101));
     let y = Bitvector32Term::Variable(Variable(102));
-    let two = Bitvector32Term::Constant(2);
+    let two = Bitvector32Term::constant(2);
     let comparison = |left: Bitvector32Term, right: Bitvector32Term| {
         (
             Proposition::ConditionIs(
@@ -1803,8 +1803,8 @@ fn have_scope_rejects_mismatched_reported_goal_transactionally() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Constant(0)),
-            right: Box::new(Bitvector32Term::Constant(1)),
+            left: Box::new(Bitvector32Term::constant(0)),
+            right: Box::new(Bitvector32Term::constant(1)),
         },
         true,
     );
@@ -1880,7 +1880,7 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(Variable(8_765_432))),
-                right: Box::new(Bitvector32Term::Constant(7)),
+                right: Box::new(Bitvector32Term::constant(7)),
             },
             true,
         )),
@@ -3129,7 +3129,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(variable)),
-            right: Box::new(Bitvector32Term::Constant(7)),
+            right: Box::new(Bitvector32Term::constant(7)),
         },
         true,
     );
@@ -3338,7 +3338,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(source_variable)),
-                right: Box::new(Bitvector32Term::Constant(7)),
+                right: Box::new(Bitvector32Term::constant(7)),
             },
             true,
         )),
@@ -3353,7 +3353,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(goal_variable)),
-                right: Box::new(Bitvector32Term::Constant(7)),
+                right: Box::new(Bitvector32Term::constant(7)),
             },
             true,
         )),
@@ -4403,7 +4403,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
     let arguments = [CExpression::Value(CValue::Int32(
-        Bitvector32Term::Constant(7),
+        Bitvector32Term::constant(7),
     ))];
     let state = CState::new();
     let true_fact = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
@@ -4794,7 +4794,7 @@ fn supported_source_refusal_on_branch_does_not_enter_planning() {
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
     let arguments = [CExpression::Value(CValue::Int32(
-        Bitvector32Term::Constant(7),
+        Bitvector32Term::constant(7),
     ))];
     let root = Proof::for_execution_frontier(
         "smart branch refusal",
@@ -4886,7 +4886,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
     let arguments = [CExpression::Value(CValue::Int32(
-        Bitvector32Term::Constant(7),
+        Bitvector32Term::constant(7),
     ))];
     let state = CState::new().with_memory(CMemory::new().with_block(
         block,
@@ -4916,7 +4916,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
             ),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(5),
+                Bitvector32Term::constant(5),
             ))),
         };
         let source_lowered = lower_fixed_state_proposition_with_assumptions(
@@ -6162,16 +6162,16 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
     let equality = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
-        right: expression(Bitvector32Term::Constant(2)),
+        right: expression(Bitvector32Term::constant(2)),
     };
     let goal_surface = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(0)),
+        left: expression(Bitvector32Term::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(binary_node!(
             Int32,
             Subtract,
             Box::new(value),
-            Box::new(Bitvector32Term::Constant(2)),
+            Box::new(Bitvector32Term::constant(2)),
         )),
     };
     let lower = |surface: &ClickProposition| {
@@ -6254,7 +6254,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(selected_term.clone()),
-            right: Box::new(Bitvector32Term::Constant(2)),
+            right: Box::new(Bitvector32Term::constant(2)),
         },
         true,
     );
@@ -6266,9 +6266,9 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
                 Int32,
                 Subtract,
                 Box::new(selected_term.clone()),
-                Box::new(Bitvector32Term::Constant(1)),
+                Box::new(Bitvector32Term::constant(1)),
             )),
-            right: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(Bitvector32Term::constant(1)),
         },
         true,
     );
@@ -6296,7 +6296,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
                         left: Box::new(Bitvector32Term::Variable(Variable(
                             9_000_000 + u64::from(index),
                         ))),
-                        right: Box::new(Bitvector32Term::Constant(10_000 + index)),
+                        right: Box::new(Bitvector32Term::constant(10_000 + index)),
                     },
                     true,
                 )
@@ -6362,7 +6362,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
     let right = Bitvector32Term::Variable(Variable(8_174_061));
     let named = [left.clone(), right.clone()];
     let named_values = named_int32_values(&named);
-    let zero = Bitvector32Term::Constant(0);
+    let zero = Bitvector32Term::constant(0);
     let equality = |term: &Bitvector32Term| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -6414,7 +6414,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
                         left: Box::new(Bitvector32Term::Variable(Variable(
                             9_100_000 + u64::from(index),
                         ))),
-                        right: Box::new(Bitvector32Term::Constant(20_000 + index)),
+                        right: Box::new(Bitvector32Term::constant(20_000 + index)),
                     },
                     true,
                 )
@@ -6506,7 +6506,7 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
     let equality = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
-        right: expression(Bitvector32Term::Constant(1)),
+        right: expression(Bitvector32Term::constant(1)),
     };
     let upper_bound = ClickProposition::Comparison {
         left: expression(value.clone()),
@@ -6515,7 +6515,7 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
     };
     let nonnegative = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         ))),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
@@ -6525,7 +6525,7 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
             Int32,
             Subtract,
             Box::new(value),
-            Box::new(Bitvector32Term::Constant(1)),
+            Box::new(Bitvector32Term::constant(1)),
         )),
         operator: ComparisonOperator::LessEqual,
         right: expression(upper),
@@ -6713,7 +6713,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
     let recorded_snapshots = RecordedSnapshots::new();
     let left = Bitvector32Term::Variable(Variable(8_176_000));
     let right = Bitvector32Term::Variable(Variable(8_176_001));
-    let one = Bitvector32Term::Constant(1);
+    let one = Bitvector32Term::constant(1);
     let expression = |term: &Bitvector32Term| {
         ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone())))
     };
@@ -6739,7 +6739,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(binary_node!(Int32, Add, Box::new(left), Box::new(right))),
-            right: Box::new(Bitvector32Term::Constant(2)),
+            right: Box::new(Bitvector32Term::constant(2)),
         },
         true,
     );
@@ -6939,32 +6939,32 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
     let definedness_premise = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::LessThan,
-        right: expression(Bitvector32Term::Constant(i32::MAX as u32)),
+        right: expression(Bitvector32Term::constant(i32::MAX as u32)),
     };
     let positive_premise = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(0)),
+        left: expression(Bitvector32Term::constant(0)),
         operator: ComparisonOperator::LessThan,
         right: expression(value.clone()),
     };
     let successor_lower_premise = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(2)),
+        left: expression(Bitvector32Term::constant(2)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
     let strong_constant_lower_premise = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(3)),
+        left: expression(Bitvector32Term::constant(3)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
     let negated_successor_premise = ClickProposition::Not(Box::new(ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::LessThan,
-        right: expression(Bitvector32Term::Constant(2)),
+        right: expression(Bitvector32Term::constant(2)),
     }));
     let increment_constant_upper_premise = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::LessEqual,
-        right: expression(Bitvector32Term::Constant(3)),
+        right: expression(Bitvector32Term::constant(3)),
     };
     let surface_bound_goal = ClickProposition::Comparison {
         left: ContractExpression::Add(
@@ -7003,17 +7003,17 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
         ),
     };
     let surface_nonnegative_goal = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(0)),
+        left: expression(Bitvector32Term::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
     let surface_successor_lower_goal = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::GreaterEqual,
-        right: expression(Bitvector32Term::Constant(1)),
+        right: expression(Bitvector32Term::constant(1)),
     };
     let surface_adjacent_strict_goal = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(1)),
+        left: expression(Bitvector32Term::constant(1)),
         operator: ComparisonOperator::LessThan,
         right: expression(value.clone()),
     };
@@ -7023,7 +7023,7 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
             Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
         ),
         operator: ComparisonOperator::LessEqual,
-        right: expression(Bitvector32Term::Constant(5)),
+        right: expression(Bitvector32Term::constant(5)),
     };
     let lower = |surface: &ClickProposition| {
         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
@@ -8063,10 +8063,10 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
     let amount_nonnegative = ClickProposition::Comparison {
         left: expression(amount.clone()),
         operator: ComparisonOperator::GreaterEqual,
-        right: expression(Bitvector32Term::Constant(0)),
+        right: expression(Bitvector32Term::constant(0)),
     };
     let headroom = ContractExpression::Subtract(
-        Box::new(expression(Bitvector32Term::Constant(i32::MAX as u32))),
+        Box::new(expression(Bitvector32Term::constant(i32::MAX as u32))),
         Box::new(expression(amount.clone())),
     );
     let within_headroom = ClickProposition::Comparison {
@@ -8241,17 +8241,17 @@ fn selected_disjunction_solve_retains_checked_cases_and_scales() {
     let equal_zero = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
-        right: expression(Bitvector32Term::Constant(0)),
+        right: expression(Bitvector32Term::constant(0)),
     };
     let equal_one = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
-        right: expression(Bitvector32Term::Constant(1)),
+        right: expression(Bitvector32Term::constant(1)),
     };
     let disjunction =
         ClickProposition::Or(Box::new(equal_zero.clone()), Box::new(equal_one.clone()));
     let surface_goal = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(0)),
+        left: expression(Bitvector32Term::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value),
     };
@@ -8350,22 +8350,22 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
     let (parsed_function, arguments) = named_int32_function(&named);
     let expression = |term: Bitvector32Term| named_int32(&named, &term);
     let left_positive = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(1)),
+        left: expression(Bitvector32Term::constant(1)),
         operator: ComparisonOperator::LessEqual,
         right: expression(left_value.clone()),
     };
     let right_positive = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(1)),
+        left: expression(Bitvector32Term::constant(1)),
         operator: ComparisonOperator::LessEqual,
         right: expression(right_value.clone()),
     };
     let left_nonnegative = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(0)),
+        left: expression(Bitvector32Term::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(left_value.clone()),
     };
     let right_nonnegative = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(0)),
+        left: expression(Bitvector32Term::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(right_value.clone()),
     };
@@ -8377,7 +8377,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
     let negative = ClickProposition::Comparison {
         left: expression(left_value.clone()),
         operator: ComparisonOperator::LessThan,
-        right: expression(Bitvector32Term::Constant(0)),
+        right: expression(Bitvector32Term::constant(0)),
     };
     let reflexive = ClickProposition::Comparison {
         left: expression(left_value.clone()),
@@ -8550,12 +8550,12 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
         )
     };
     let positive = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(0)),
+        left: expression(Bitvector32Term::constant(0)),
         operator: ComparisonOperator::LessThan,
         right: expression(value.clone()),
     };
     let nonnegative = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(0)),
+        left: expression(Bitvector32Term::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
@@ -8565,14 +8565,14 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
         right: expression(bound.clone()),
     };
     let one_le = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::Constant(1)),
+        left: expression(Bitvector32Term::constant(1)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
     let surface_goals = [
         (
             ClickProposition::Comparison {
-                left: expression(Bitvector32Term::Constant(0)),
+                left: expression(Bitvector32Term::constant(0)),
                 operator: ComparisonOperator::LessEqual,
                 right: predecessor(),
             },
@@ -8602,7 +8602,7 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
         ),
         (
             ClickProposition::Comparison {
-                left: expression(Bitvector32Term::Constant(0)),
+                left: expression(Bitvector32Term::constant(0)),
                 operator: ComparisonOperator::LessEqual,
                 right: predecessor(),
             },
@@ -9033,7 +9033,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
     let function = parsed_function.to_kernel_function();
     let function_environment = CExecutionEnvironment::new();
     let state = CState::new();
-    let argument = CExpression::Value(CValue::Int32(Bitvector32Term::Constant(7)));
+    let argument = CExpression::Value(CValue::Int32(Bitvector32Term::constant(7)));
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let arguments = vec![argument.clone()];
     let surface = ClickProposition::PredicateCall {
@@ -9044,7 +9044,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
         name: "selected".to_string(),
         arguments: vec![
             Term::CState(Box::new(state.clone())),
-            Term::CValue(CValue::Int32(Bitvector32Term::Constant(7))),
+            Term::CValue(CValue::Int32(Bitvector32Term::constant(7))),
         ],
     };
 
@@ -9154,7 +9154,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         name: "selected".to_string(),
         arguments: vec![
             Term::CState(Box::new(state.clone())),
-            Term::CValue(CValue::Int32(Bitvector32Term::Constant(7))),
+            Term::CValue(CValue::Int32(Bitvector32Term::constant(7))),
         ],
     };
     let owner = CallerSourceOwnerId::ordinary("test.c", "identity");
@@ -11150,8 +11150,8 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
     let state = CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
         CResourceFact::own_memory(CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
     ));
     let arguments = vec![
@@ -11313,7 +11313,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(Bitvector32Term::Variable(Variable(60_001))),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         true,
     );
@@ -12369,7 +12369,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             name: "marker".to_string(),
             arguments: Vec::new().into(),
         },
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(2),
     );
     let mut normalized_quantity_samples = Vec::new();
     for size in [16_u32, 64, 256, 1024, 4096] {
@@ -13251,7 +13251,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             ))),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ))),
         };
         let forked = joined
@@ -13438,11 +13438,11 @@ fn completed_application_retention_does_not_rerun_and_scales() {
     let theorems = TheoremEnvironment::new(&[]);
     let surface = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         ))),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         ))),
     };
     let state = CState::new();
@@ -13873,8 +13873,8 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
             CMemoryRange::new_with_element_width(
                 argument.clone(),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
                 8,
             ),
         )),
@@ -13980,7 +13980,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
-            right: Box::new(Bitvector32Term::Constant(7)),
+            right: Box::new(Bitvector32Term::constant(7)),
         },
         true,
     );
@@ -14125,7 +14125,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
-            right: Box::new(Bitvector32Term::Constant(7)),
+            right: Box::new(Bitvector32Term::constant(7)),
         },
         true,
     );
@@ -14240,7 +14240,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),
-            right: Box::new(Bitvector32Term::Constant(7)),
+            right: Box::new(Bitvector32Term::constant(7)),
         },
         true,
     );
@@ -14310,13 +14310,13 @@ fn signed_certificate_premise_keeps_native_addition_when_printed() {
     for term in [y.clone(), z.clone()] {
         facts.push(compare(
             CompareRelation::LessEqual,
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             term.clone(),
         ));
         facts.push(compare(
             CompareRelation::LessEqual,
             term,
-            Bitvector32Term::Constant(100),
+            Bitvector32Term::constant(100),
         ));
     }
     let mut context = pure_identity_fixture();

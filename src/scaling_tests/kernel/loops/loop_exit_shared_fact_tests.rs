@@ -15,7 +15,7 @@ fn merged_exit_equations_have_output_sized_work() {
                     let mut restatement = LoopExitRestatement::default();
                     restatement.pin(
                         &fresh,
-                        &CValue::Int32(Bitvector32Term::Constant(value as u32)),
+                        &CValue::Int32(Bitvector32Term::constant(value as u32)),
                     );
                     restatement.restate(
                         vec![ExecutionPureFact::new(fact(1, value as i64))].into(),

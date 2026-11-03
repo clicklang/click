@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{bits32_constant, constant_u32};
 use std::borrow::Cow;
 
 pub(in crate::surface) fn unfold_structural_invariant_proposition(
@@ -3856,10 +3857,8 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
     contextual_numerals: bool,
 ) -> Result<ContractExpression, String> {
     match expression {
-        CExpression::Value(CValue::Int32(
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-        )) if contextual_numerals => {
-            let signed = *value as i32;
+        CExpression::Value(CValue::Int32(bits32_constant!(value))) if contextual_numerals => {
+            let signed = constant_u32(*value) as i32;
             let literal =
                 ContractExpression::IntegerLiteral(i64::from(signed).unsigned_abs().to_string());
             Ok(if signed < 0 {
@@ -4288,9 +4287,9 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
             Some(CExpression::Value(if value <= i32::MAX as u64 {
                 int32(value as u32)
             } else if value <= i64::MAX as u64 {
-                CValue::Int64(Bitvector32Term::Int64Constant(value as i64))
+                CValue::Int64(Bitvector32Term::int64_constant(value as i64))
             } else {
-                CValue::UInt64(Bitvector32Term::UInt64Constant(value))
+                CValue::UInt64(Bitvector32Term::uint64_constant(value))
             }))
         }
         ContractExpression::Negate(inner) => {

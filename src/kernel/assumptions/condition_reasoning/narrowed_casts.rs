@@ -70,7 +70,7 @@ pub(in crate::kernel) fn narrowed_cast_identity(
         (1i128 << source_bits) - 1
     };
     let needs_upper = source_max > i128::from(hi);
-    let word = |bound: i64| Bitvector32Term::Constant(bound as i32 as u32);
+    let word = |bound: i64| Bitvector32Term::constant(bound as i32 as u32);
     // A constant operand keeps its comparison unfolded, so a checked
     // conversion that fails on it names the value and the endpoint rather
     // than `false`; a symbolic one keeps the established spelling.
@@ -106,8 +106,8 @@ pub(in crate::kernel) fn narrowed_cast_identity(
         Some(c) => ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
-            left: Bitvector32Term::UInt64Constant(u64::from(c)).into(),
-            right: Bitvector32Term::UInt64Constant(b as u64).into(),
+            left: Bitvector32Term::uint64_constant(u64::from(c)).into(),
+            right: Bitvector32Term::uint64_constant(b as u64).into(),
         },
         None => ConditionTerm::unsigned_less_equal(v.clone(), word(b)),
     };
@@ -117,10 +117,10 @@ pub(in crate::kernel) fn narrowed_cast_identity(
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::GreaterEqual,
                 left: v.clone().into(),
-                right: Bitvector32Term::Int64Constant(b).into(),
+                right: Bitvector32Term::int64_constant(b).into(),
             }
         } else {
-            ConditionTerm::int64_signed_greater_equal(v.clone(), Bitvector32Term::Int64Constant(b))
+            ConditionTerm::int64_signed_greater_equal(v.clone(), Bitvector32Term::int64_constant(b))
         }
     };
     let int64_le = |v: &Bitvector32Term, b: i64| {
@@ -129,10 +129,10 @@ pub(in crate::kernel) fn narrowed_cast_identity(
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::LessEqual,
                 left: v.clone().into(),
-                right: Bitvector32Term::Int64Constant(b).into(),
+                right: Bitvector32Term::int64_constant(b).into(),
             }
         } else {
-            ConditionTerm::int64_signed_less_equal(v.clone(), Bitvector32Term::Int64Constant(b))
+            ConditionTerm::int64_signed_less_equal(v.clone(), Bitvector32Term::int64_constant(b))
         }
     };
     let uint64_le = |v: &Bitvector32Term, b: i64| {
@@ -141,10 +141,10 @@ pub(in crate::kernel) fn narrowed_cast_identity(
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
                 left: v.clone().into(),
-                right: Bitvector32Term::UInt64Constant(b as u64).into(),
+                right: Bitvector32Term::uint64_constant(b as u64).into(),
             }
         } else {
-            ConditionTerm::uint64_less_equal(v.clone(), Bitvector32Term::UInt64Constant(b as u64))
+            ConditionTerm::uint64_less_equal(v.clone(), Bitvector32Term::uint64_constant(b as u64))
         }
     };
     // An 8- or 16-bit operand is native: its bounds and carrier read its
@@ -390,11 +390,11 @@ mod tests {
         );
         let is_x = ConditionTerm::equal(byte.clone(), x.clone());
         let at_least_zero =
-            ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::Constant(0));
+            ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::constant(0));
         let at_most_255 =
-            ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::Constant(255));
+            ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::constant(255));
         let at_most_256 =
-            ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::Constant(256));
+            ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::constant(256));
         let bounded = PureFactContext::new()
             .assume_condition(at_least_zero.clone(), true)
             .assume_condition(at_most_255, true);
@@ -408,18 +408,18 @@ mod tests {
         assert_ne!(past.decide(&is_x), Some(true));
         // A known value outside the range converts to its residue.
         let wrapped = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(x.clone(), Bitvector32Term::Constant(300)),
+            ConditionTerm::equal(x.clone(), Bitvector32Term::constant(300)),
             true,
         );
         assert_eq!(
             wrapped.decide(&ConditionTerm::equal(
                 byte.clone(),
-                Bitvector32Term::Constant(44)
+                Bitvector32Term::constant(44)
             )),
             Some(true)
         );
         assert_eq!(
-            wrapped.decide(&ConditionTerm::equal(byte, Bitvector32Term::Constant(300))),
+            wrapped.decide(&ConditionTerm::equal(byte, Bitvector32Term::constant(300))),
             Some(false)
         );
     }
@@ -441,11 +441,11 @@ mod tests {
         let bounded = |upper: u32| {
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), y.clone()),
+                    ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), y.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(y.clone(), Bitvector32Term::Constant(upper)),
+                    ConditionTerm::signed_less_equal(y.clone(), Bitvector32Term::constant(upper)),
                     true,
                 )
                 .assume_condition(ConditionTerm::equal(result.clone(), byte.clone()), true)
@@ -455,7 +455,7 @@ mod tests {
         assert_ne!(bounded(300).decide(&same), Some(true));
         let known = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::equal(y.clone(), Bitvector32Term::Constant(44)),
+                ConditionTerm::equal(y.clone(), Bitvector32Term::constant(44)),
                 true,
             )
             .assume_condition(ConditionTerm::equal(result.clone(), byte.clone()), true);
@@ -463,13 +463,13 @@ mod tests {
         assert_eq!(
             known.decide(&ConditionTerm::equal(
                 result.clone(),
-                Bitvector32Term::Constant(44)
+                Bitvector32Term::constant(44)
             )),
             Some(true)
         );
         let wrapped = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::equal(y.clone(), Bitvector32Term::Constant(300)),
+                ConditionTerm::equal(y.clone(), Bitvector32Term::constant(300)),
                 true,
             )
             .assume_condition(ConditionTerm::equal(result.clone(), byte), true);
@@ -486,14 +486,14 @@ mod tests {
                 .assume_condition(
                     ConditionTerm::signed_greater_equal(
                         x.clone(),
-                        Bitvector32Term::Constant(lower as u32),
+                        Bitvector32Term::constant(lower as u32),
                     ),
                     true,
                 )
                 .assume_condition(
                     ConditionTerm::signed_less_equal(
                         x.clone(),
-                        Bitvector32Term::Constant(upper as u32),
+                        Bitvector32Term::constant(upper as u32),
                     ),
                     true,
                 )
@@ -519,9 +519,9 @@ mod tests {
         let goal = Proposition::ConditionIs(ConditionTerm::equal(short, x.clone()), true);
         let lower = ConditionTerm::signed_greater_equal(
             x.clone(),
-            Bitvector32Term::Constant(-32768i32 as u32),
+            Bitvector32Term::constant(-32768i32 as u32),
         );
-        let upper = ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::Constant(32767));
+        let upper = ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::constant(32767));
         let guards = crate::kernel::proof::term_rewrite::TermRewrite::conditional_guards(&goal);
         assert!(guards.contains(&lower) && guards.contains(&upper));
         let rewrite = |conditions: &std::collections::HashMap<ConditionTerm, bool>| {

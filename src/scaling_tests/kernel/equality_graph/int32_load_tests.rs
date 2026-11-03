@@ -231,7 +231,7 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
             for index in 0..size {
                 history = history.store(
                     address(500_000 + index),
-                    CValue::Int32(Bitvector32Term::Constant(index as u32)),
+                    CValue::Int32(Bitvector32Term::constant(index as u32)),
                 );
             }
             let source = intern_c_memory(history.clone());

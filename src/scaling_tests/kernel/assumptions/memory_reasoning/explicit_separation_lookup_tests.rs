@@ -73,8 +73,8 @@ fn wide_separation_lookup_ignores_unrelated_wide_facts() {
     let wide = |base| {
         CMemoryRange::new_wide(
             base,
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(8),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(8),
             4,
         )
     };
@@ -136,8 +136,8 @@ fn wide_separation_lookup_scales_with_its_related_alias_chain() {
     let wide = |base| {
         CMemoryRange::new_wide(
             base,
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(8),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(8),
             4,
         )
     };

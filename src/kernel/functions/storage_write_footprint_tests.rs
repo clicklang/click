@@ -8,8 +8,8 @@ fn write_extent_must_fit_inside_owned_byte_footprint() {
     };
     let owned = CMemoryRange::new_with_element_width(
         base.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(4),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(4),
         1,
     );
     let assumptions = PureFactContext::new();
@@ -45,7 +45,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     let owned = |end: Bitvector32Term| {
         vec![CMemoryRange::new_with_element_width(
             base.clone(),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             end,
             4,
         )]
@@ -53,11 +53,11 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     let bounded = |upper: i32| {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), j.clone()),
+                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), j.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(j.clone(), Bitvector32Term::Constant(upper as u32)),
+                ConditionTerm::signed_less_than(j.clone(), Bitvector32Term::constant(upper as u32)),
                 true,
             )
     };
@@ -66,7 +66,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
         |pointer: &Pointer, bytes: u32, owned: &[CMemoryRange], facts: &PureFactContext| {
             storage_write_within_owned_footprint(pointer, bytes, owned, facts)
         };
-    let thousand = owned(Bitvector32Term::Constant(1000));
+    let thousand = owned(Bitvector32Term::constant(1000));
     assert!(within(&at_j, 4, &thousand, &bounded(1000)));
     assert!(!within(&at_j, 4, &thousand, &bounded(1001)));
     // Two elements from `j`: the last is `j + 1`.
@@ -82,7 +82,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     // A symbolic end.
     let up_to_n = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), j.clone()),
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), j.clone()),
             true,
         )
         .assume_condition(ConditionTerm::signed_less_than(j.clone(), n.clone()), true);
@@ -90,7 +90,7 @@ fn a_symbolic_index_write_is_placed_by_its_element_bounds() {
     assert!(!within(&at_j, 4, &owned(n.clone()), &bounded(1000)));
     // The lower edge: nothing bounds `j` below.
     let upper_only = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_than(j.clone(), Bitvector32Term::Constant(10)),
+        ConditionTerm::signed_less_than(j.clone(), Bitvector32Term::constant(10)),
         true,
     );
     assert!(!within(&at_j, 4, &thousand, &upper_only));

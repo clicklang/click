@@ -96,7 +96,7 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
             context = context.assume_condition(
                 ConditionTerm::uint64_equal(
                     Bitvector32Term::Variable(Variable(993_000 + index)),
-                    Bitvector32Term::UInt64Constant(index),
+                    Bitvector32Term::uint64_constant(index),
                 ),
                 true,
             );

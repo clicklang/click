@@ -24,7 +24,7 @@ fn logical_cached_pointer_read_carries_its_current_cell_equation() {
             context = context.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(958_000 + i)),
-                    Bitvector32Term::Constant(7),
+                    Bitvector32Term::constant(7),
                 ),
                 true,
             );
@@ -211,8 +211,8 @@ fn naming_a_load_after_a_call_is_flat_in_its_address_read_depth() {
         let range = |start: Pointer| {
             CMemoryRange::new(
                 start,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )
         };
         // The callee may write one element, and the caller keeps another,
@@ -376,7 +376,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
             block: "observation:unrelated".into(),
             offset: PointerOffsetTerm::Constant(0),
         },
-        CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+        CValue::UInt64(Bitvector32Term::uint64_constant(7)),
     ));
     // Materialize the same named value in an independent live snapshot.
     let second_memory = intern_c_memory(
@@ -404,7 +404,7 @@ fn wide_observations_preserve_width_scope_and_selected_query_scaling() {
     );
     let changed = intern_c_memory(second_memory.memory().clone().store(
         pointer.clone(),
-        CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+        CValue::UInt64(Bitvector32Term::uint64_constant(9)),
     ));
     assert!(
         !crate::kernel::memory_provenance::wide_read_has_recorded_value(
@@ -460,7 +460,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
     let alias = Pointer::symbolic(Variable(944_019));
     let before = CMemory::new()
         .with_block(field.block.clone(), 16)
-        .store(field.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+        .store(field.clone(), CValue::Int32(Bitvector32Term::constant(1)));
     let range = CMemoryRange::new_with_element_width(field.clone(), 0u32.into(), 4u32.into(), 1);
     let memory =
         before.with_call_memory_havoc(Variable(944_020), &[range], &PureFactContext::new(), None);
@@ -517,7 +517,7 @@ fn logical_reads_of_a_returned_field_share_checked_alias_identity() {
             context = context.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(960_000 + index)),
-                    Bitvector32Term::Constant(index as u32),
+                    Bitvector32Term::constant(index as u32),
                 ),
                 true,
             );
@@ -703,7 +703,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
                     assert!(
                         retained
                             .equality_graph
-                            .are_int32_equal(read, &Bitvector32Term::Constant(7))
+                            .are_int32_equal(read, &Bitvector32Term::constant(7))
                     );
                     assert!(paths[0].obligations.is_empty());
                     outcomes.push(paths[0].outcome.clone());
@@ -721,7 +721,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
                     .condition_facts
                     .get(&ConditionTerm::equal(
                         read.clone(),
-                        Bitvector32Term::Constant(7)
+                        Bitvector32Term::constant(7)
                     ))
                     .is_none(),
                 "producing a side fact must not admit it into caller evidence"
@@ -729,7 +729,7 @@ fn logical_read_alias_samples(sizes: &[u64]) -> Vec<(usize, usize)> {
             assert!(
                 !before
                     .equality_graph
-                    .are_int32_equal(&read, &Bitvector32Term::Constant(7)),
+                    .are_int32_equal(&read, &Bitvector32Term::constant(7)),
                 "without the alias fact the read has no stored value"
             );
         }
@@ -777,7 +777,7 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
     };
     let field = owner.offset_by_bytes(8);
     let queried = alias.offset_by_bytes(8);
-    let value = CValue::UInt64(Bitvector32Term::UInt64Constant(17));
+    let value = CValue::UInt64(Bitvector32Term::uint64_constant(17));
     let memory = CMemory::new().materialize_named_cell(field.clone(), value.clone());
     let empty = PureFactContext::new();
     let resources = ResourceContext::new_with_equalities(&empty).unchecked_with_fact(
@@ -863,7 +863,7 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
             &value
         ));
         assert!(!ResourceContext::new().permits_memory_read(&queried, 8, &context));
-        let changed_value = CValue::UInt64(Bitvector32Term::UInt64Constant(19));
+        let changed_value = CValue::UInt64(Bitvector32Term::uint64_constant(19));
         let changed = memory.clone().store(field.clone(), changed_value.clone());
         assert!(equals(
             read(&changed, queried.clone(), &context),
@@ -876,7 +876,7 @@ fn logical_scalar_read_meets_model_cell_through_later_external_alias() {
             &value
         ));
         // An exact newer cell takes precedence over a cached alias.
-        let direct_value = CValue::UInt64(Bitvector32Term::UInt64Constant(23));
+        let direct_value = CValue::UInt64(Bitvector32Term::uint64_constant(23));
         let direct = memory.clone().store(queried.clone(), direct_value.clone());
         assert_eq!(
             read(&direct, queried.clone(), &context),
@@ -1096,7 +1096,7 @@ fn cached_pointer_value_keeps_its_defining_coordinates_and_scales() {
             canonicalized_pointer_value_from_int_cell(
                 &memory,
                 &cursor_address,
-                &CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+                &CValue::UInt64(Bitvector32Term::uint64_constant(0)),
                 CType::Int64Pointer,
                 &mut ExecutionFacts::new(),
                 &context,
@@ -1183,7 +1183,7 @@ fn cached_pointer_reads_retain_their_current_cell_identity() {
             context = context.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(97_000 + index)),
-                    Bitvector32Term::Constant(7),
+                    Bitvector32Term::constant(7),
                 ),
                 true,
             );
@@ -1327,7 +1327,7 @@ fn stored_pointer_read_preserves_blocks_and_ignores_unrelated_cells() {
         for index in 1..=count {
             memory = memory.store(
                 address.offset_by_bytes(index * 8),
-                CValue::Int64(Bitvector32Term::Int64Constant(i64::from(index))),
+                CValue::Int64(Bitvector32Term::int64_constant(i64::from(index))),
             );
         }
         memory = memory.store(
@@ -1360,7 +1360,7 @@ fn stored_pointer_read_preserves_blocks_and_ignores_unrelated_cells() {
             .without_possible_aliasing_cells(&address.offset_by_bytes(4), 4, &context)
             .store(
                 address.offset_by_bytes(4),
-                CValue::Int32(Bitvector32Term::Constant(0)),
+                CValue::Int32(Bitvector32Term::constant(0)),
             );
         let changed_read = Pointer::symbolic(Variable(99_000 + u64::from(count)));
         record_load_access_width(&changed, &address, 8);
@@ -1397,7 +1397,7 @@ fn recorded_pointer_normalization_has_bounded_history_work() {
         for index in 1..=count {
             memory = memory.store(
                 address.offset_by_bytes(index * 8),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(u64::from(index))),
+                CValue::UInt64(Bitvector32Term::uint64_constant(u64::from(index))),
             );
         }
         let read = Pointer::symbolic(Variable(99_200 + u64::from(count)));
@@ -1861,7 +1861,7 @@ fn typed_pointer_read_store_frames_use_the_selected_edge_and_owners() {
                 let before = intern_c_memory_ref(&memory);
                 memory = memory.clone().store(
                     write.clone(),
-                    CValue::UInt64(Bitvector32Term::UInt64Constant(n.into())),
+                    CValue::UInt64(Bitvector32Term::uint64_constant(n.into())),
                 );
                 let after = intern_c_memory_ref(&memory);
                 let source = context
@@ -2002,7 +2002,7 @@ fn symbolic_logical_wide_reads_do_not_scan_ambient_cells_or_facts() {
         }
         memory = memory.store(
             slot.clone(),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(7)),
         );
         context = context.assume_condition(ConditionTerm::pointer_equal(slot, alias.clone()), true);
         // The first read catches up the reachable-cell index with the stores
@@ -2092,10 +2092,10 @@ fn structural_read_definitions_scale_across_cache_only_records() {
         let written = memory.store(address.clone(), int32(7));
         let read = canonical_form_of_load(intern_c_memory_ref(&written), address, LoadKind::Int32);
         assert!(matches!(read, Bitvector32Term::Variable(next) if next != original));
-        assert_ne!(read, Bitvector32Term::Constant(7));
+        assert_ne!(read, Bitvector32Term::constant(7));
         assert_eq!(
             read_over_write_value(&read),
-            Some(Bitvector32Term::Constant(7))
+            Some(Bitvector32Term::constant(7))
         );
     }
     assert!(

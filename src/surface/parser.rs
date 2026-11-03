@@ -8,6 +8,7 @@ mod rust_generic_resources;
 mod rust_generic_traits;
 mod rust_literals;
 use super::names;
+use crate::kernel::{bits32_constant, constant_u32};
 mod rust_syntax;
 mod rust_trait_objects;
 mod spec_arithmetic;
@@ -13852,7 +13853,7 @@ impl Parser {
             if self.peek_next() == Some(&Token::Int64MinimumMagnitude) {
                 self.position += 2;
                 return Ok(ContractExpression::CFragment(CExpression::Value(
-                    CValue::Int64(Bitvector32Term::Int64Constant(i64::MIN)),
+                    CValue::Int64(Bitvector32Term::int64_constant(i64::MIN)),
                 )));
             }
             self.position += 1;
@@ -14966,16 +14967,16 @@ impl Parser {
                 CExpression::Value(crate::kernel::uint8(u32::from(value))),
             )),
             Some(Token::UInt32Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt32(Bitvector32Term::UInt32Constant(value))),
+                CExpression::Value(CValue::UInt32(Bitvector32Term::uint32_constant(value))),
             )),
             Some(Token::Int64MinimumMagnitude) => Err(self.error(
                 "positive int64 literal `9223372036854775808i64` is outside 0..9223372036854775807; this magnitude is allowed only after unary minus",
             )),
             Some(Token::Int64Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::Int64(Bitvector32Term::Int64Constant(value))),
+                CExpression::Value(CValue::Int64(Bitvector32Term::int64_constant(value))),
             )),
             Some(Token::UInt64Number(value)) => Ok(ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(value))),
+                CExpression::Value(CValue::UInt64(Bitvector32Term::uint64_constant(value))),
             )),
             Some(Token::CharLiteral(value)) => Ok(ContractExpression::CFragment(
                 CExpression::Value(self.character_constant_value(value)?),
@@ -15651,7 +15652,7 @@ impl Parser {
             Some(Token::UInt64Number(value)) => Ok(C0Expression::UInt64Literal(value)),
             Some(Token::CharLiteral(value)) => Ok(
                 match self.character_constant_value(value)? {
-                    CValue::Int32(Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) => C0Expression::Int32Literal(bits),
+                    CValue::Int32(bits32_constant!(bits)) => C0Expression::Int32Literal(constant_u32(bits)),
                     _ => C0Expression::UInt8Literal(value),
                 },
             ),
@@ -16051,7 +16052,7 @@ impl Parser {
             Some(syntax::PlainChar::Unsigned) => {
                 Ok(crate::kernel::uint8(u32::from(byte)))
             }
-            Some(plain @ syntax::PlainChar::Signed) => Ok(CValue::Int32(Bitvector32Term::Constant(
+            Some(plain @ syntax::PlainChar::Signed) => Ok(CValue::Int32(Bitvector32Term::constant(
                 plain.character_value(byte) as i32 as u32,
             ))),
             None => Err(self.error(format!(
@@ -16492,7 +16493,7 @@ fn source_nesting_error_message(
 fn aligned_proposition(pointer: CExpression, alignment: u64) -> ClickProposition {
     let uint64 = |value: u64| {
         ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
-            Bitvector32Term::UInt64Constant(value),
+            Bitvector32Term::uint64_constant(value),
         )))
     };
     ClickProposition::Comparison {
@@ -16795,7 +16796,7 @@ fn struct_byte_stride(index: CExpression, width: u32) -> CExpression {
             explicit_qualification: false,
         }),
         Box::new(CExpression::Value(crate::kernel::int64(
-            crate::kernel::Bitvector32Term::Int64Constant(i64::from(width)),
+            crate::kernel::Bitvector32Term::int64_constant(i64::from(width)),
         ))),
     )
 }

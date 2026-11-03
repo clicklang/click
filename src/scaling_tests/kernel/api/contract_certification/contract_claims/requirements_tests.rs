@@ -6,7 +6,7 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = Bitvector32Term::Variable(Variable(992_000));
         let required = Proposition::ConditionIs(
-            ConditionTerm::equal(variable.clone(), Bitvector32Term::Constant(7)),
+            ConditionTerm::equal(variable.clone(), Bitvector32Term::constant(7)),
             true,
         );
         let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&required));
@@ -18,7 +18,7 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
                 facts = facts.with_kernel_checked_fact(Proposition::ConditionIs(
                     ConditionTerm::signed_less_than(
                         left,
-                        Bitvector32Term::Constant(1000 + index as u32),
+                        Bitvector32Term::constant(1000 + index as u32),
                     ),
                     true,
                 ));
@@ -68,7 +68,7 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
                     ProofObligation::verification_condition(Proposition::ConditionIs(
                         ConditionTerm::equal(
                             Bitvector32Term::Variable(Variable(994_000 + index)),
-                            Bitvector32Term::Constant(7),
+                            Bitvector32Term::constant(7),
                         ),
                         true,
                     ))

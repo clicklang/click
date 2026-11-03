@@ -5,6 +5,7 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{PureFactContext, Variable};
+use crate::kernel::{constant_u32, int32_constant};
 
 thread_local! {
     pub(super) static GRAPH_WORK: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -21,7 +22,7 @@ fn variable(id: u64) -> Bitvector32Term {
 }
 
 fn constant(value: i32) -> Bitvector32Term {
-    Bitvector32Term::Constant(value as u32)
+    Bitvector32Term::constant(value as u32)
 }
 
 fn plus(term: &Bitvector32Term, value: i32) -> Bitvector32Term {
@@ -138,7 +139,7 @@ fn unsigned_conversion_keeps_a_nonnegative_value() {
     let length_positive = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
-        left: Box::new(Bitvector32Term::UInt64Constant(0)),
+        left: Box::new(Bitvector32Term::uint64_constant(0)),
         right: Box::new(length),
     };
     assert_eq!(graph.decide(&length_positive), Some(true));
@@ -180,13 +181,13 @@ fn decisions_hold_in_every_model_and_are_complete() {
     pool.extend([-2, 0, 3].map(constant));
     let value = |term: &Bitvector32Term, model: &[i128]| -> i128 {
         match term {
-            Bitvector32Term::Constant(value) => i128::from(*value as i32),
+            int32_constant!(value) => i128::from(constant_u32(*value) as i32),
             binary_term!(Int32, Add, base, offset) => {
                 let base = variables.iter().position(|v| v == base.as_ref()).unwrap();
-                let Bitvector32Term::Constant(offset) = offset.as_ref() else {
+                let int32_constant!(offset) = offset.as_ref() else {
                     unreachable!()
                 };
-                model[base] + i128::from(*offset as i32)
+                model[base] + i128::from(constant_u32(*offset) as i32)
             }
             _ => model[variables.iter().position(|v| v == term).unwrap()],
         }
@@ -337,10 +338,9 @@ fn arithmetic_decisions_hold_in_every_model_over_every_case() {
 }
 
 fn check_arithmetic_decisions_in_every_model(cases: usize) {
-    use Bitvector32Term as T;
     fn value(term: &Bitvector32Term, variables: &[Bitvector32Term], model: &[i32]) -> i32 {
         match term {
-            T::Constant(value) => *value as i32,
+            int32_constant!(value) => constant_u32(*value) as i32,
             binary_term!(Int32, Add, a, b) => {
                 value(a, variables, model).wrapping_add(value(b, variables, model))
             }
@@ -898,7 +898,7 @@ fn a_remainder_by_a_constant_is_bounded() {
 #[test]
 fn an_int64_division_guard_needs_a_nonzero_divisor() {
     let (n, d) = (variable(0), variable(1));
-    let int64 = Bitvector32Term::Int64Constant;
+    let int64 = Bitvector32Term::int64_constant;
     let nonnegative = graph(&[(
         ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
         true,
@@ -1028,7 +1028,7 @@ fn a_zero_extension_reads_its_operands_bounds() {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::LessEqual,
         left: boxed(a),
-        right: Box::new(T::Int64Constant(k)),
+        right: Box::new(T::int64_constant(k)),
     };
     let bounded = graph(&[
         (le(&constant(0), &x), true),
@@ -1037,7 +1037,7 @@ fn a_zero_extension_reads_its_operands_bounds() {
         (le(&y, &constant(1000)), true),
     ]);
     assert_eq!(
-        bounded.decide(&at_most(&sum(&wide(&x), &T::Int64Constant(1)), 255)),
+        bounded.decide(&at_most(&sum(&wide(&x), &T::int64_constant(1)), 255)),
         Some(true)
     );
     assert_eq!(
@@ -1075,7 +1075,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
     let quotient = T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Divide,
-        left: Box::new(T::UInt64Constant(u64::MAX)),
+        left: Box::new(T::uint64_constant(u64::MAX)),
         right: boxed(&y),
     };
     let fits = ConditionTerm::Compare {
@@ -1090,7 +1090,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&x),
-                right: Box::new(T::UInt64Constant(1 << 32)),
+                right: Box::new(T::uint64_constant(1 << 32)),
             },
             true,
         ),
@@ -1099,7 +1099,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&y),
-                right: Box::new(T::UInt64Constant(1 << 31)),
+                right: Box::new(T::uint64_constant(1 << 31)),
             },
             true,
         ),
@@ -1111,7 +1111,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&x),
-                right: Box::new(T::UInt64Constant(1 << 33)),
+                right: Box::new(T::uint64_constant(1 << 33)),
             },
             true,
         ),
@@ -1120,7 +1120,7 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&y),
-                right: Box::new(T::UInt64Constant(1 << 31)),
+                right: Box::new(T::uint64_constant(1 << 31)),
             },
             true,
         ),
@@ -1142,12 +1142,12 @@ fn a_constant_mask_bounds_an_unsigned_value() {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::BitwiseAnd,
         left: boxed(&x),
-        right: Box::new(T::UInt64Constant(65535)),
+        right: Box::new(T::uint64_constant(65535)),
     };
     let at_least = |k| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
-        left: Box::new(T::UInt64Constant(k)),
+        left: Box::new(T::uint64_constant(k)),
         right: Box::new(low_half.clone()),
     };
     let one = graph(&[(
@@ -1155,7 +1155,7 @@ fn a_constant_mask_bounds_an_unsigned_value() {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: boxed(&x),
-            right: Box::new(T::UInt64Constant(65537)),
+            right: Box::new(T::uint64_constant(65537)),
         },
         true,
     )]);
@@ -1182,7 +1182,7 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: boxed(&x),
-            right: Box::new(T::UInt64Constant(u64::MAX)),
+            right: Box::new(T::uint64_constant(u64::MAX)),
         },
         true,
     )]);
@@ -1190,7 +1190,7 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
         format: MachineIntegerType::Int64,
         op: OverflowOperation::Add,
         left: Box::new(value.clone()),
-        right: Box::new(T::Int64Constant(1)),
+        right: Box::new(T::int64_constant(1)),
     };
     assert_eq!(all_ones.decide(&increment_overflows(&x)), Some(false));
     let cast = T::MachineIntegerCast {
@@ -1206,7 +1206,7 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: boxed(&x),
-            right: Box::new(T::UInt64Constant(i64::MAX as u64)),
+            right: Box::new(T::uint64_constant(i64::MAX as u64)),
         },
         true,
     )]);
@@ -1228,7 +1228,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: boxed(&n),
-                right: Box::new(T::Int64Constant(7)),
+                right: Box::new(T::int64_constant(7)),
             },
             true,
         ),
@@ -1237,7 +1237,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: boxed(&d),
-                right: Box::new(T::Constant(3)),
+                right: Box::new(T::constant(3)),
             },
             true,
         ),
@@ -1253,20 +1253,20 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::GreaterThan,
         left: Box::new(remainder.clone()),
-        right: Box::new(T::Constant(0)),
+        right: Box::new(T::constant(0)),
     };
     assert_eq!(pinned.decide(&positive), Some(true));
     let correction = T::If {
         condition: Box::new(positive.clone()),
-        then_term: Box::new(T::Constant(1)),
-        else_term: Box::new(T::Constant(0)),
+        then_term: Box::new(T::constant(1)),
+        else_term: Box::new(T::constant(0)),
     };
     assert_eq!(
         pinned.decide(&ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(correction),
-            right: Box::new(T::Constant(0))
+            right: Box::new(T::constant(0))
         }),
         Some(false)
     );
@@ -1281,7 +1281,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left: Box::new(quotient),
-            right: Box::new(T::Int64Constant(1))
+            right: Box::new(T::int64_constant(1))
         }),
         Some(false)
     );
@@ -1299,21 +1299,21 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             format: MachineIntegerType::Int64,
             op: OverflowOperation::Add,
             left: Box::new(any_quotient),
-            right: Box::new(T::Int64Constant(1))
+            right: Box::new(T::int64_constant(1))
         }),
         None
     );
     let either = T::If {
         condition: Box::new(positive),
-        then_term: Box::new(T::Constant(1)),
-        else_term: Box::new(T::Constant(0)),
+        then_term: Box::new(T::constant(1)),
+        else_term: Box::new(T::constant(0)),
     };
     assert_eq!(
         unknown.decide(&ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(either.clone()),
-            right: Box::new(T::Constant(0))
+            right: Box::new(T::constant(0))
         }),
         None
     );
@@ -1322,7 +1322,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(either),
-            right: Box::new(T::Constant(2))
+            right: Box::new(T::constant(2))
         }),
         Some(false)
     );
@@ -1339,7 +1339,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Remainder,
         left: boxed(&x),
-        right: Box::new(T::UInt64Constant(4)),
+        right: Box::new(T::uint64_constant(4)),
     };
     let rounded = T::Binary {
         format: MachineIntegerType::UInt64,
@@ -1360,7 +1360,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
     let at_least_four = |rounded: &Bitvector32Term| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
-        left: Box::new(T::UInt64Constant(4)),
+        left: Box::new(T::uint64_constant(4)),
         right: Box::new(rounded.clone()),
     };
     assert_eq!(unknown.decide(&at_least_four(&rounded)), None);
@@ -1368,7 +1368,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
-            left: Box::new(T::UInt64Constant(4)),
+            left: Box::new(T::uint64_constant(4)),
             right: boxed(&x),
         },
         true,
@@ -1379,7 +1379,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessEqual,
-            left: Box::new(T::UInt64Constant(3)),
+            left: Box::new(T::uint64_constant(3)),
             right: boxed(&x),
         },
         true,
@@ -1397,14 +1397,14 @@ fn a_sign_flip_of_known_sign_is_bounded() {
     let flipped = binary_node!(
         Int32,
         BitwiseXor,
-        Box::new(T::Constant(i32::MIN as u32)),
+        Box::new(T::constant(i32::MIN as u32)),
         Box::new(binary_node!(Int32, Subtract, boxed(&a), boxed(&b))),
     );
     let below_zero = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
         left: Box::new(flipped),
-        right: Box::new(T::Constant(u32::MAX)),
+        right: Box::new(T::constant(u32::MAX)),
     };
     let ordered = graph(&[
         (
@@ -1420,7 +1420,7 @@ fn a_sign_flip_of_known_sign_is_bounded() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(T::Constant(0)),
+                left: Box::new(T::constant(0)),
                 right: boxed(&b),
             },
             true,
@@ -1442,7 +1442,7 @@ fn an_unsigned_quotient_of_words_is_bounded() {
         binary_node!(
             Int32,
             BitwiseXor,
-            Box::new(T::Constant(i32::MIN as u32)),
+            Box::new(T::constant(i32::MIN as u32)),
             Box::new(term)
         )
     };
@@ -1453,7 +1453,7 @@ fn an_unsigned_quotient_of_words_is_bounded() {
         right: Box::new(flip(binary_node!(
             UInt32,
             Divide,
-            Box::new(T::Constant(u32::MAX)),
+            Box::new(T::constant(u32::MAX)),
             boxed(&y),
         ))),
     };
@@ -1464,7 +1464,7 @@ fn an_unsigned_quotient_of_words_is_bounded() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: boxed(&x),
-                    right: Box::new(T::Constant(u32::MAX)),
+                    right: Box::new(T::constant(u32::MAX)),
                 },
                 true,
             ),
@@ -1473,7 +1473,7 @@ fn an_unsigned_quotient_of_words_is_bounded() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: boxed(&y),
-                    right: Box::new(T::Constant(y_value)),
+                    right: Box::new(T::constant(y_value)),
                 },
                 true,
             ),
@@ -1757,7 +1757,7 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(T::UInt64Constant(1)),
+                left: Box::new(T::uint64_constant(1)),
                 right: boxed(&b),
             },
             true,
@@ -1778,7 +1778,7 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
 fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
     use crate::kernel::{Pointer, PointerOffsetTerm as O};
     use Bitvector32Term as T;
-    let u = T::UInt64Constant;
+    let u = T::uint64_constant;
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
     let pointer = |offset| Pointer {
         block: crate::kernel::PointerBlock::ExternalArgument,
@@ -1965,12 +1965,12 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
             assert_eq!(
                 facts.decide(&ConditionTerm::int64_equal(
                     i.clone(),
-                    Bitvector32Term::UInt64Constant(1)
+                    Bitvector32Term::uint64_constant(1)
                 )),
                 Some(polarity)
             );
         }
-        let high = Bitvector32Term::UInt64Constant((1u64 << 32) + 1);
+        let high = Bitvector32Term::uint64_constant((1u64 << 32) + 1);
         let facts = graph(&[(ConditionTerm::int64_equal(i.clone(), high), true)]);
         assert_eq!(facts.decide(&equal), Some(false));
         assert_eq!(
@@ -1990,7 +1990,7 @@ fn excluding_one_masked_wide_table_slot_selects_the_other() {
         format: MachineIntegerType::UInt32,
         op: MachineBinaryOp::BitwiseAnd,
         left: Box::new(variable(989_981)),
-        right: Box::new(Bitvector32Term::UInt32Constant(1)),
+        right: Box::new(Bitvector32Term::uint32_constant(1)),
     });
     let offset = O::Int64Scaled {
         value: Box::new(index),

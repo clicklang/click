@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{bits32_constant, constant_u32};
 
 mod contract_claims;
 pub use contract_claims::*;
@@ -179,9 +180,9 @@ fn pointer_offset_bytes(
     offset: &PointerOffsetTerm,
 ) -> Option<Bitvector32Term> {
     if let Some(bytes) = offset.as_const() {
-        return u32::try_from(bytes).ok().map(Bitvector32Term::Constant);
+        return u32::try_from(bytes).ok().map(Bitvector32Term::constant);
     }
-    let zero = Bitvector32Term::Constant(0);
+    let zero = Bitvector32Term::constant(0);
     let max = i32::MAX as u32;
     match offset {
         PointerOffsetTerm::Constant(_) => None,
@@ -202,7 +203,7 @@ fn pointer_offset_bytes(
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok().filter(|width| *width > 0)?;
-            let limit = Bitvector32Term::Constant(max / width);
+            let limit = Bitvector32Term::constant(max / width);
             (certification_proves_signed_le(assumptions, &zero, value)
                 && (width == 1 || certification_proves_signed_le(assumptions, value, &limit)))
             .then(|| {
@@ -211,7 +212,7 @@ fn pointer_offset_bytes(
                 } else {
                     Bitvector32Term::multiply(
                         value.as_ref().clone(),
-                        Bitvector32Term::Constant(width),
+                        Bitvector32Term::constant(width),
                     )
                 }
             })
@@ -227,7 +228,7 @@ fn pointer_offset_byte_delta(
     fact_offset: &PointerOffsetTerm,
 ) -> Option<Bitvector32Term> {
     if goal_offset == fact_offset {
-        return Some(Bitvector32Term::Constant(0));
+        return Some(Bitvector32Term::constant(0));
     }
     if let PointerOffsetTerm::Add(left, right) = goal_offset {
         if left.as_ref() == fact_offset {
@@ -244,15 +245,11 @@ fn pointer_offset_byte_delta(
 fn split_additive_constant(term: &Bitvector32Term) -> (Bitvector32Term, u32) {
     match term {
         binary_term!(Int32, Add, left, right) => {
-            if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) =
-                right.as_ref()
-            {
-                return (left.as_ref().clone(), *value);
+            if let bits32_constant!(value) = right.as_ref() {
+                return (left.as_ref().clone(), constant_u32(*value));
             }
-            if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) =
-                left.as_ref()
-            {
-                return (right.as_ref().clone(), *value);
+            if let bits32_constant!(value) = left.as_ref() {
+                return (right.as_ref().clone(), constant_u32(*value));
             }
             (term.clone(), 0)
         }
@@ -294,7 +291,7 @@ pub fn c_state_justifies_loadability_obligation(
             let loadable = Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: pointer.clone(),
-                bytes: Bitvector32Term::Constant(value_type.byte_width()),
+                bytes: Bitvector32Term::constant(value_type.byte_width()),
                 wide: false,
             };
             c_state_justifies_loadability_obligation(state, &loadable, assumptions)
@@ -474,7 +471,7 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                     return u64::from(delta) + u64::from(width) <= u64::from(span);
                 }
 
-                let start = Bitvector32Term::Constant(0);
+                let start = Bitvector32Term::constant(0);
                 let end = assumptions.simplify_bitvector_under_assumptions(&Bitvector32Term::add(
                     delta.clone(),
                     width.clone(),
@@ -580,11 +577,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
         match term {
             Bitvector32Term::MachineIntegerCast { .. } | Bitvector32Term::BoolCast { .. } => {}
 
-            Bitvector32Term::Constant(_)
-            | Bitvector32Term::UInt32Constant(_)
-            | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_)
-            | Bitvector32Term::MachineIntegerConstant(_)
+            Bitvector32Term::Constant { .. }
             | Bitvector32Term::Int64From32(_)
             | Bitvector32Term::Int64FromUInt32(_)
             | Bitvector32Term::UInt64From32(_)
@@ -1271,8 +1264,8 @@ fn c_function_contract_entry_facts(
                 };
                 if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
                     pointer.pointer().clone(),
-                    Bitvector32Term::UInt64Constant(0),
-                    Bitvector32Term::UInt64Constant(u64::from(bytes)),
+                    Bitvector32Term::uint64_constant(0),
+                    Bitvector32Term::uint64_constant(u64::from(bytes)),
                     1,
                 )) {
                     assumptions =
@@ -1304,14 +1297,14 @@ fn c_function_contract_entry_facts(
                 Proposition::ConditionIs(
                     ConditionTerm::uint64_less_equal(
                         length.clone(),
-                        Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(width)),
+                        Bitvector32Term::uint64_constant(i64::MAX as u64 / u64::from(width)),
                     ),
                     true,
                 ),
             );
             if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
                 pointer.pointer().clone(),
-                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::uint64_constant(0),
                 length.clone(),
                 width,
             )) {
@@ -1556,7 +1549,7 @@ fn c_function_contract_entry_facts(
                     .offset_by_elements(range.start().clone(), width),
                 bytes: Bitvector32Term::multiply(
                     Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
-                    Bitvector32Term::Constant(width),
+                    Bitvector32Term::constant(width),
                 ),
                 wide: false,
             },
@@ -3009,10 +3002,9 @@ fn match_quantified_int32_term(
             && match_quantified_int32_term(pattern_right, target_right, binders, substitutions);
     }
     match (pattern, target) {
-        (
-            Bitvector32Term::Constant(left) | Bitvector32Term::UInt32Constant(left),
-            Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
-        ) => left == right,
+        (bits32_constant!(left), bits32_constant!(right)) => {
+            constant_u32(*left) == constant_u32(*right)
+        }
         (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => left == right,
         (
             unary_term!(Bits32 @ pattern_format, BitwiseNot, pattern),

@@ -24,7 +24,7 @@ fn uint64_small_remainder_requires_the_strict_full_width_guard() {
         let mut facts = HashMap::from([(guard.clone(), true)]);
         for i in 0..count {
             facts.insert(
-                C::equal(B::Variable(Variable(2000 + i)), B::Constant(i as u32)),
+                C::equal(B::Variable(Variable(2000 + i)), B::constant(i as u32)),
                 true,
             );
         }
@@ -55,7 +55,7 @@ fn division_bound_lookup_ignores_unrelated_conditions() {
     let d = B::Variable(Variable(101));
     let goal = C::signed_less_equal(
         binary_node!(UInt32, Divide, Box::new(n), Box::new(d)),
-        B::Constant(65535),
+        B::constant(65535),
     );
     let mut measured = Vec::new();
     for count in [0, 32, 128, 512] {
@@ -67,7 +67,7 @@ fn division_bound_lookup_ignores_unrelated_conditions() {
             .collect();
         for i in 0..count {
             facts.insert(
-                C::equal(B::Variable(Variable(1000 + i)), B::Constant(i as u32)),
+                C::equal(B::Variable(Variable(1000 + i)), B::constant(i as u32)),
                 true,
             );
         }
@@ -103,7 +103,7 @@ fn division_bound_work_scales_with_its_selected_expression() {
                 Box::new(n),
                 Box::new(B::Variable(Variable(101)))
             ),
-            B::Constant(65535),
+            B::constant(65535),
         );
         let facts: HashMap<_, _> = goal
             .nonnegative_division_bound_guards()
@@ -126,21 +126,21 @@ fn division_bound_work_scales_with_its_selected_expression() {
 #[test]
 fn remainder_guard_lookup_ignores_unrelated_conditions() {
     let n = B::Variable(Variable(100));
-    let input = B::remainder(B::subtract(n.clone(), B::Constant(4)), B::Constant(4));
-    let guard = C::signed_less_equal(B::Constant(4), n.clone());
+    let input = B::remainder(B::subtract(n.clone(), B::constant(4)), B::constant(4));
+    let guard = C::signed_less_equal(B::constant(4), n.clone());
     let mut measured = Vec::new();
     for count in [0, 32, 128, 512] {
         let mut facts = HashMap::from([(guard.clone(), true)]);
         for i in 0..count {
             facts.insert(
-                C::equal(B::Variable(Variable(1000 + i)), B::Constant(i as u32)),
+                C::equal(B::Variable(Variable(1000 + i)), B::constant(i as u32)),
                 true,
             );
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             TermRewrite::for_conditions(&facts).bits(&input)
         });
-        assert_eq!(result, B::remainder(n.clone(), B::Constant(4)));
+        assert_eq!(result, B::remainder(n.clone(), B::constant(4)));
         measured.push(work);
     }
     assert!(

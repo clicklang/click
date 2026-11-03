@@ -219,7 +219,7 @@ mod tests {
             format,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(Variable(961_001))),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         };
         let signed = comparison(MachineIntegerType::Int32);
         let unsigned = comparison(MachineIntegerType::UInt32);

@@ -418,9 +418,9 @@ mod tests {
             let x = Bitvector32Term::Variable(Variable(982003));
             let literal = |n| {
                 if format == MachineIntegerType::Int64 {
-                    Bitvector32Term::Int64Constant(n)
+                    Bitvector32Term::int64_constant(n)
                 } else {
-                    Bitvector32Term::Constant(n as u32)
+                    Bitvector32Term::constant(n as u32)
                 }
             };
             let bound = Bitvector32Term::Binary {
@@ -465,8 +465,9 @@ mod tests {
     fn signed_wide_extrema_keep_strictness_withdrawal_and_branches() {
         let _session = crate::kernel::VerificationSession::enter();
         let x = Bitvector32Term::Variable(Variable(982000));
-        let less =
-            |n| ConditionTerm::int64_signed_less_than(x.clone(), Bitvector32Term::Int64Constant(n));
+        let less = |n| {
+            ConditionTerm::int64_signed_less_than(x.clone(), Bitvector32Term::int64_constant(n))
+        };
         let mut index = CheckedOrderBounds::default();
         index.adjust(&less(10), true, true);
         index.adjust(&less(0), false, true);

@@ -24,7 +24,7 @@ fn assert_narrow_cast_work(size: u64) {
         chain = Bitvector32Term::machine_integer_cast(
             Ty::UInt32,
             destination,
-            Bitvector32Term::add(word, Bitvector32Term::Constant(1)),
+            Bitvector32Term::add(word, Bitvector32Term::constant(1)),
         );
     }
     let graph = EqualityGraph::default();
@@ -34,7 +34,7 @@ fn assert_narrow_cast_work(size: u64) {
                 Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, var(175_000 + i));
             let widened = Bitvector32Term::machine_integer_cast(Ty::UInt8, Ty::UInt32, cast);
             let mask =
-                Bitvector32Term::bitwise_and(var(175_000 + i), Bitvector32Term::Constant(255));
+                Bitvector32Term::bitwise_and(var(175_000 + i), Bitvector32Term::constant(255));
             assert!(graph.are_int32_equal(&widened, &mask));
         }
     });

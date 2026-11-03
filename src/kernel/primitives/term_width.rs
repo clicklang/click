@@ -15,6 +15,7 @@
 use super::*;
 use crate::kernel::unary_term;
 use crate::kernel::{CompareRelation, MachineBinaryOp, OverflowOperation};
+use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 
 /// The width of the carrier a term's value occupies.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -254,9 +255,9 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
     note_width_read();
     use CarrierWidth::{Bits32, Bits64};
     match term {
-        T::Constant(_) | T::UInt32Constant(_) => Ok(Some(Bits32)),
-        T::Int64Constant(_) | T::UInt64Constant(_) => Ok(Some(Bits64)),
-        T::MachineIntegerConstant(constant) => Ok(Some(match constant.format().bits() {
+        bits32_constant!(_) => Ok(Some(Bits32)),
+        int64_constant!(_) | uint64_constant!(_) => Ok(Some(Bits64)),
+        native_constant!(format, _) => Ok(Some(match format.format().bits() {
             8 => CarrierWidth::Bits8,
             16 => CarrierWidth::Bits16,
             bits => CarrierWidth::of_bits(bits),
@@ -398,9 +399,9 @@ pub(crate) fn root_width(term: &Bitvector32Term) -> Option<CarrierWidth> {
     note_width_read();
     use CarrierWidth::{Bits32, Bits64};
     Some(match term {
-        T::Constant(_) | T::UInt32Constant(_) => Bits32,
-        T::Int64Constant(_) | T::UInt64Constant(_) => Bits64,
-        T::MachineIntegerConstant(constant) => CarrierWidth::of_bits(constant.format().bits()),
+        bits32_constant!(_) => Bits32,
+        int64_constant!(_) | uint64_constant!(_) => Bits64,
+        native_constant!(format, _) => CarrierWidth::of_bits(format.format().bits()),
         T::Variable(_)
         | T::PointerAddress(_, _)
         | T::If { .. }

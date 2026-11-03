@@ -12,6 +12,9 @@ use crate::kernel::proof::arithmetic_special::{
 };
 use crate::kernel::{CFloatClassification, CFloatCondition, ConditionTerm, Proposition};
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
+};
 use crate::surface::{ArithmeticCertificate, SpecialArithmeticCertificate, SpecialArithmeticNode};
 
 pub(super) fn plan_special_arithmetic_certificate(
@@ -940,12 +943,9 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
                 pending.push((left, right))
             }
-            (
-                Bitvector32Term::Constant(a) | Bitvector32Term::UInt32Constant(a),
-                Bitvector32Term::Constant(b) | Bitvector32Term::UInt32Constant(b),
-            ) if a == b => {}
-            (Bitvector32Term::Int64Constant(a), Bitvector32Term::Int64Constant(b)) if a == b => {}
-            (Bitvector32Term::UInt64Constant(a), Bitvector32Term::UInt64Constant(b)) if a == b => {}
+            (bits32_constant!(a), bits32_constant!(b)) if constant_u32(*a) == constant_u32(*b) => {}
+            (int64_constant!(a), int64_constant!(b)) if constant_i64(*a) == constant_i64(*b) => {}
+            (uint64_constant!(a), uint64_constant!(b)) if constant_u64(*a) == constant_u64(*b) => {}
             (Bitvector32Term::Variable(a), Bitvector32Term::Variable(b)) if a == b => {}
             (Bitvector32Term::PointerAddress(_, _), Bitvector32Term::PointerAddress(_, _)) => {
                 return false;
@@ -1003,11 +1003,9 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
 
 fn bounded_u64_constant(term: &Bitvector32Term) -> Option<u64> {
     match term {
-        Bitvector32Term::UInt64Constant(value) => Some(*value),
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            Some(u64::from(*value))
-        }
-        Bitvector32Term::Int64Constant(value) if *value >= 0 => Some(*value as u64),
+        uint64_constant!(value) => Some(constant_u64(*value)),
+        bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
+        int64_constant!(value) if constant_i64(*value) >= 0 => Some(constant_i64(*value) as u64),
         _ => None,
     }
 }
@@ -1115,7 +1113,7 @@ mod tests {
                 Int32,
                 Add,
                 Box::new(term),
-                Box::new(Bitvector32Term::Constant(1))
+                Box::new(Bitvector32Term::constant(1))
             );
         }
         let goal = Proposition::ConditionIs(
@@ -1154,7 +1152,7 @@ mod tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(Bitvector32Term::Variable(Variable(100 + i))),
-                        right: Box::new(Bitvector32Term::Constant(i as u32)),
+                        right: Box::new(Bitvector32Term::constant(i as u32)),
                     },
                     true,
                 )

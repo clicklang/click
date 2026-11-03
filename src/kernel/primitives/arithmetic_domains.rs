@@ -12,12 +12,12 @@ impl ConditionTerm {
     ) -> [Self; 2] {
         let (minimum, minus_one) = match format {
             MachineIntegerType::Int32 => (
-                Bitvector32Term::Constant(i32::MIN as u32),
-                Bitvector32Term::Constant(u32::MAX),
+                Bitvector32Term::constant(i32::MIN as u32),
+                Bitvector32Term::constant(u32::MAX),
             ),
             MachineIntegerType::Int64 => (
-                Bitvector32Term::Int64Constant(i64::MIN),
-                Bitvector32Term::Int64Constant(-1),
+                Bitvector32Term::int64_constant(i64::MIN),
+                Bitvector32Term::int64_constant(-1),
             ),
             _ => unreachable!("native signed division uses int32 or int64"),
         };
@@ -123,8 +123,8 @@ impl Proposition {
         right: &Bitvector32Term,
     ) -> Self {
         let zero = match format {
-            MachineIntegerType::Int32 => Bitvector32Term::Constant(0),
-            MachineIntegerType::Int64 => Bitvector32Term::Int64Constant(0),
+            MachineIntegerType::Int32 => Bitvector32Term::constant(0),
+            MachineIntegerType::Int64 => Bitvector32Term::int64_constant(0),
             _ => unreachable!("native signed division uses int32 or int64"),
         };
         Self::And(

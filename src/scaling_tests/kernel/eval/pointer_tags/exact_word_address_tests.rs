@@ -22,7 +22,7 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
             context = context.assume_condition(
                 ConditionTerm::uint64_equal(
                     Bitvector32Term::Variable(Variable(970000 + index)),
-                    Bitvector32Term::UInt64Constant(index),
+                    Bitvector32Term::uint64_constant(index),
                 ),
                 true,
             );
@@ -52,7 +52,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
     let pointer = Pointer::symbolic(Variable(960001));
     let word = Bitvector32Term::Variable(Variable(960002));
     let expressions = [
-        Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::UInt64Constant(!3)),
+        Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::uint64_constant(!3)),
         Bitvector32Term::uint64_bitwise_or(word, Bitvector32Term::Variable(Variable(960003))),
     ];
     for expression in expressions {
@@ -73,7 +73,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::uint64_equal(
                         Bitvector32Term::Variable(Variable(970000 + index)),
-                        Bitvector32Term::UInt64Constant(index),
+                        Bitvector32Term::uint64_constant(index),
                     ),
                     true,
                 );
@@ -129,7 +129,7 @@ fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
             context = context.assume_condition(
                 ConditionTerm::uint64_equal(
                     Bitvector32Term::Variable(Variable(990_000 + index)),
-                    Bitvector32Term::UInt64Constant(index),
+                    Bitvector32Term::uint64_constant(index),
                 ),
                 true,
             );
@@ -139,7 +139,7 @@ fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
                 Bitvector32Term::pointer_address(pointer.clone()),
                 Bitvector32Term::UInt64FromInt32(Box::new(tag)),
             ),
-            Bitvector32Term::UInt64Constant(!3),
+            Bitvector32Term::uint64_constant(!3),
         );
         let (form, work) = crate::instrumentation::measure_deterministic_work(|| {
             tagged_address_form(&cleared, &context, &mut UsedFacts::new())

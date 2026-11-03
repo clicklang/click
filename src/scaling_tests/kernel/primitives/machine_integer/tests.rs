@@ -16,7 +16,7 @@ fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(operand),
-                right: Box::new(Bitvector32Term::Int64Constant(1)),
+                right: Box::new(Bitvector32Term::int64_constant(1)),
             };
         }
         let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -44,7 +44,7 @@ fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
         for size in [16, 64, 256, 1024] {
             let mut term = Bitvector32Term::Variable(super::super::super::Variable(138_002));
             for _ in 0..size {
-                let one = Bitvector32Term::UInt64Constant(1);
+                let one = Bitvector32Term::uint64_constant(1);
                 term = if right_nested {
                     Bitvector32Term::Binary {
                         format: MachineIntegerType::UInt64,
@@ -216,7 +216,7 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
         let sum = Bitvector32Term::add_at(
             MachineIntegerType::UInt32,
             cast.clone(),
-            Bitvector32Term::UInt32Constant(1),
+            Bitvector32Term::uint32_constant(1),
         );
         assert!(
             matches!(&sum, Bitvector32Term::Binary { left, .. } if **left == cast),
@@ -271,8 +271,8 @@ fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands
             });
             assert_eq!(read_work, 0, "size {size}");
             assert_ne!(
-                Bitvector32Term::add(cast.clone(), Bitvector32Term::Constant(1)),
-                Bitvector32Term::add(operand.clone(), Bitvector32Term::Constant(1)),
+                Bitvector32Term::add(cast.clone(), Bitvector32Term::constant(1)),
+                Bitvector32Term::add(operand.clone(), Bitvector32Term::constant(1)),
                 "size {size}"
             );
         }

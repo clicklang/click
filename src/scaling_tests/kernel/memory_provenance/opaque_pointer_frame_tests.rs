@@ -28,7 +28,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
                     block: PointerBlock::Concrete(block),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(Bitvector32Term::Constant(1)),
+                CValue::Int32(Bitvector32Term::constant(1)),
             );
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
@@ -220,11 +220,11 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         }
         let left = intern_c_memory(memory.clone().store(
             field.offset_by_bytes(8),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(1)),
         ));
         let right = intern_c_memory(memory.store(
             field.offset_by_bytes(16),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(2)),
         ));
         let producer = crate::kernel::equality_graph::EqualityGraph::default();
         for index in 0..size {
@@ -292,7 +292,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                     block: name.into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(Bitvector32Term::Constant(index)),
+                CValue::Int32(Bitvector32Term::constant(index)),
             );
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
@@ -319,7 +319,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
         context = context.assume_proposition(source.clone());
         let one_write = before.memory().clone().store(
             field.offset_by_bytes(24),
-            CValue::Int32(Bitvector32Term::Constant(1)),
+            CValue::Int32(Bitvector32Term::constant(1)),
         );
         let (one_theorem, unrelated_work) =
             crate::instrumentation::measure_deterministic_work(|| {
@@ -336,7 +336,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             for index in 0..size {
                 after = after.store(
                     field.offset_by_bytes(24),
-                    CValue::Int32(Bitvector32Term::Constant(index)),
+                    CValue::Int32(Bitvector32Term::constant(index)),
                 );
                 let theorem = prove_c_condition_fact_transport(&current, &after, &explicit_context)
                     .expect("the supplied adjacent transition preserves the packed pointer");
@@ -389,7 +389,7 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(9_891_000 + index)),
-                    Bitvector32Term::Constant(3),
+                    Bitvector32Term::constant(3),
                 ),
                 true,
             );
@@ -508,17 +508,17 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         // This is the actual read producer, not a warm-up of the query:
         // its designation names the pre-observation version of the word.
         let value = CPointerValue::from_read(
-            Pointer::integer_address(Bitvector32Term::UInt64Constant(8)),
+            Pointer::integer_address(Bitvector32Term::uint64_constant(8)),
             CType::Int32Pointer,
             &before,
             &field,
         );
         let after = intern_c_memory(before.memory().clone().store(
             write.clone(),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(1)),
         ));
         let target = CPointerValue::from_read(
-            Pointer::integer_address(Bitvector32Term::UInt64Constant(8)),
+            Pointer::integer_address(Bitvector32Term::uint64_constant(8)),
             CType::Int32Pointer,
             &after,
             &field,

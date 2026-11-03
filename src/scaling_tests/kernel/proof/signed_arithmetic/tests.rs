@@ -153,7 +153,7 @@ fn deep_opaque_payload_certificate_check_is_iterative() {
             arguments: vec![term],
         };
     }
-    let premise = le(term, Bitvector32Term::Constant(1));
+    let premise = le(term, Bitvector32Term::constant(1));
     let certificate = SignedArithmeticCertificate {
         nodes: vec![SignedArithmeticNode::Premise {
             index: 0,
@@ -170,7 +170,7 @@ fn deep_opaque_payload_certificate_check_is_iterative() {
 
 #[test]
 fn certificate_check_work_scales_with_node_count() {
-    let goal = le(x(), Bitvector32Term::Constant(1));
+    let goal = le(x(), Bitvector32Term::constant(1));
     let premise = std::slice::from_ref(&goal);
     let mut measurements = Vec::new();
     for count in [8usize, 16, 32, 64, 128] {
@@ -208,7 +208,7 @@ fn deep_certificate_check_work_has_bounded_scaling() {
                 arguments: vec![term],
             };
         }
-        let premise = le(term, Bitvector32Term::Constant(1));
+        let premise = le(term, Bitvector32Term::constant(1));
         let certificate = SignedArithmeticCertificate {
             nodes: vec![SignedArithmeticNode::Premise {
                 index: 0,
@@ -239,7 +239,7 @@ fn deep_interval_proposition_conclusion_uses_bounded_identity() {
             arguments: vec![term],
         };
     }
-    let goal = le(term.clone(), Bitvector32Term::Constant(0));
+    let goal = le(term.clone(), Bitvector32Term::constant(0));
     let premise_claim = claim(&goal);
     let certificate = SignedArithmeticCertificate {
         nodes: vec![
@@ -255,7 +255,7 @@ fn deep_interval_proposition_conclusion_uses_bounded_identity() {
             },
             SignedArithmeticNode::IntervalAtom {
                 carrier: SignedArithmeticCarrier::SignedInt32,
-                term: Bitvector32Term::Constant(0),
+                term: Bitvector32Term::constant(0),
                 lower: 0,
                 upper: 0,
             },
@@ -277,7 +277,7 @@ fn deep_interval_proposition_conclusion_uses_bounded_identity() {
 
 #[test]
 fn scale_work_grows_with_coefficient_magnitude() {
-    let premise = le(Bitvector32Term::Constant(0), Bitvector32Term::Constant(0));
+    let premise = le(Bitvector32Term::constant(0), Bitvector32Term::constant(0));
     let mut measurements = Vec::new();
     for bits in [8usize, 16, 32, 64] {
         let coefficient = BigInt::one() << bits;
@@ -433,7 +433,7 @@ fn exact_definedness_refuses_small_mismatch_without_expanding_shared_guard() {
                     format,
                     op: MachineBinaryOp::Add,
                     left: Box::new(x()),
-                    right: Box::new(Bitvector32Term::Constant(1)),
+                    right: Box::new(Bitvector32Term::constant(1)),
                 };
                 assert!(!is_exact_definedness(&guard, &small));
                 assert!(!observation.has_boxed_operand());
@@ -459,8 +459,8 @@ fn definedness_source_matching_reuses_shared_prefixes() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let mut import = KernelTermImport::default();
-        let mut left = import.machine(format, &Bitvector32Term::Constant(1));
-        let mut right = import.machine(format, &Bitvector32Term::UInt32Constant(1));
+        let mut left = import.machine(format, &Bitvector32Term::constant(1));
+        let mut right = import.machine(format, &Bitvector32Term::uint32_constant(1));
         let variable =
             KernelTerm::variable(KernelType::C(crate::kernel::CType::Int32), Variable(982500));
         left = KernelTerm::machine_binary_shared(

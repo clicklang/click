@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::loans::LoanLedger;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{constant_u32, int32_constant};
 use std::sync::Arc;
 
 #[test]
@@ -113,7 +114,7 @@ fn whole_function_execution_resumes_a_direct_forward_goto_target() {
             theorem.proposition(),
             Proposition::CFunctionExecutes {
                 outcome: CFunctionOutcome::Return {
-                    value: CValue::Int32(Bitvector32Term::Constant(1)),
+                    value: CValue::Int32(int32_constant!(1)),
                     ..
                 },
                 ..
@@ -196,8 +197,8 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
     let pointer = state.locals().slot("x").cloned().expect("local pointer");
     let loan = active_memory_loan(CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     ));
     let state = state.with_loan_ledger(Some(loan));
 
@@ -318,8 +319,8 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
     let base = state.locals().slot("a").cloned().expect("array pointer");
     let loan = active_memory_loan(CMemoryRange::new(
         base.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     ));
     let state = state.with_loan_ledger(Some(loan)).with_local(
         "p",
@@ -453,8 +454,8 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
             .unchecked_with_fact(CResourceFact::own_allocation(allocation.clone(), 16))
             .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
                 allocation,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(4),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(4),
             ))),
     );
     let freed = execute_c_statement_paths(
@@ -504,19 +505,19 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
         "i",
         int32(Bitvector32Term::add(
             original_bits.clone(),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(1),
         )),
     );
     let assumptions = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_greater_equal(
                 original_bits.clone(),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(original_bits, Bitvector32Term::Constant(1)),
+            ConditionTerm::signed_less_than(original_bits, Bitvector32Term::constant(1)),
             true,
         );
 
@@ -1186,7 +1187,7 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
         theorem.proposition(),
         Proposition::CStatementExecutes {
             outcome: CStatementOutcome::Return {
-                value: CValue::Int32(Bitvector32Term::Constant(9)),
+                value: CValue::Int32(int32_constant!(9)),
                 ..
             },
             ..
@@ -1203,7 +1204,7 @@ fn int32_handler_does_not_run_on_normal_or_return_paths() {
         theorem.proposition(),
         Proposition::CStatementExecutes {
             outcome: CStatementOutcome::Return {
-                value: CValue::Int32(Bitvector32Term::Constant(3)),
+                value: CValue::Int32(int32_constant!(3)),
                 ..
             },
             ..
@@ -1224,7 +1225,7 @@ fn throw_from_int32_handler_escapes_instead_of_being_recaught() {
         theorem.proposition(),
         Proposition::CStatementExecutes {
             outcome: CStatementOutcome::Throw {
-                value: CValue::Int32(Bitvector32Term::Constant(7)),
+                value: CValue::Int32(int32_constant!(7)),
                 ..
             },
             ..
@@ -1277,7 +1278,7 @@ fn caught_throw_satisfies_a_nonthrowing_function_signature() {
         theorem.proposition(),
         Proposition::CFunctionExecutes {
             outcome: CFunctionOutcome::Return {
-                value: CValue::Int32(Bitvector32Term::Constant(7)),
+                value: CValue::Int32(int32_constant!(7)),
                 ..
             },
             ..
@@ -1344,11 +1345,11 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
                 Proposition::CFunctionExecutes {
                     outcome:
                         CFunctionOutcome::Return {
-                            value: CValue::Int32(Bitvector32Term::Constant(value)),
+                            value: CValue::Int32(int32_constant!(value)),
                             ..
                         },
                     ..
-                } => *value,
+                } => constant_u32(*value),
                 other => panic!("conditional catch produced a non-return outcome: {other:?}"),
             }
         })
@@ -2083,7 +2084,7 @@ fn while_invariant_is_proof_obligation() {
     let invariant = Proposition::CMemoryLoadable {
         memory: CMemory::new(),
         base: pointer,
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let state = CState::new().with_local("x", int32(0));
@@ -2189,8 +2190,8 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     let (statement, base_rule) = prerequisite_loop_rule_fixture();
     let state = CState::new().with_local("i", int32(0));
     let bound = Bitvector32Term::Variable(Variable(900_001));
-    let required = ConditionTerm::signed_greater_equal(bound.clone(), Bitvector32Term::Constant(0));
-    let stronger = ConditionTerm::signed_greater_equal(bound, Bitvector32Term::Constant(1));
+    let required = ConditionTerm::signed_greater_equal(bound.clone(), Bitvector32Term::constant(0));
+    let stronger = ConditionTerm::signed_greater_equal(bound, Bitvector32Term::constant(1));
     let mut rule = base_rule;
     rule.required_assumptions = PureFactContext::new().assume_condition(required.clone(), true);
     let environment = CExecutionEnvironment::new().with_verified_loop_rules([rule]);
@@ -2222,7 +2223,7 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
 fn loop_rule_guard(value: u32) -> ConditionTerm {
     ConditionTerm::equal(
         Bitvector32Term::Variable(Variable(900_000)),
-        Bitvector32Term::Constant(value),
+        Bitvector32Term::constant(value),
     )
 }
 
@@ -2456,7 +2457,7 @@ fn guard_operand_fact(variable: u64, nonzero: bool) -> Proposition {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         !nonzero,
     )

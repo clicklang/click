@@ -609,9 +609,9 @@ impl PureFactContext {
                     term.clone()
                 } else if let Some(value) = value {
                     if operator < 4 {
-                        Bitvector32Term::Int64Constant(value as i64)
+                        Bitvector32Term::int64_constant(value as i64)
                     } else {
-                        Bitvector32Term::UInt64Constant(value)
+                        Bitvector32Term::uint64_constant(value)
                     }
                 } else {
                     term.clone()
@@ -1261,7 +1261,7 @@ impl PureFactContext {
         let target = signed_bitvector_constant(target)?;
         let (unsigned, source) = self.indexed_exact_int32_constant(byte)?;
         let unsigned = u8::try_from(unsigned).ok()?;
-        let signed = Bitvector32Term::signed_byte(Bitvector32Term::Constant(u32::from(unsigned)))
+        let signed = Bitvector32Term::signed_byte(Bitvector32Term::constant(u32::from(unsigned)))
             .as_const()? as i32;
         record_implicit_reasoning_provenance(self, &source);
         Some(i64::from(signed) == target)
@@ -1318,7 +1318,7 @@ impl PureFactContext {
                 None => return Some(!strict),
             }
         };
-        let bound = Bitvector32Term::Constant(shifted as u32);
+        let bound = Bitvector32Term::constant(shifted as u32);
         let equivalent = match (greater, strict) {
             (true, true) => ConditionTerm::signed_greater_equal(term, bound),
             (true, false) => ConditionTerm::signed_greater_than(term, bound),
@@ -1373,7 +1373,7 @@ impl PureFactContext {
                 None => return Some(!strict),
             }
         };
-        let bound = Bitvector32Term::Constant(shifted);
+        let bound = Bitvector32Term::constant(shifted);
         let equivalent = match (greater, strict) {
             (true, true) => ConditionTerm::unsigned_greater_equal(term, bound),
             (true, false) => ConditionTerm::unsigned_greater_than(term, bound),
@@ -2044,21 +2044,14 @@ impl PureFactContext {
         term: &Bitvector32Term,
     ) -> Bitvector32Term {
         if let Some(value) = self.bitvector_constant_from_direct_equalities(term) {
-            return Bitvector32Term::Constant(value);
+            return Bitvector32Term::constant(value);
         }
         match term {
-            Bitvector32Term::MachineIntegerConstant(value) => {
-                Bitvector32Term::MachineIntegerConstant(*value)
-            }
-
-            Bitvector32Term::Constant(value) => Bitvector32Term::Constant(*value),
-            Bitvector32Term::UInt32Constant(value) => Bitvector32Term::UInt32Constant(*value),
+            Bitvector32Term::Constant { .. } => term.clone(),
             Bitvector32Term::Variable(variable) => Bitvector32Term::Variable(*variable),
-            Bitvector32Term::Int64Constant(value) => Bitvector32Term::Int64Constant(*value),
-            Bitvector32Term::UInt64Constant(value) => Bitvector32Term::UInt64Constant(*value),
             Bitvector32Term::UInt32From64(value) => {
                 match self.wide_constant_from_equalities(value) {
-                    Some(bits) => Bitvector32Term::Constant(bits as u32),
+                    Some(bits) => Bitvector32Term::constant(bits as u32),
                     None => Bitvector32Term::uint32_from_64(
                         self.simplify_bitvector_under_assumptions(value),
                     ),
@@ -2118,7 +2111,7 @@ impl PureFactContext {
             }
             // Rule C1: a decided `Bool` casts to 1 or 0.
             Bitvector32Term::BoolCast { value, .. } => match self.decide(value) {
-                Some(value) => Bitvector32Term::Constant(u32::from(value)),
+                Some(value) => Bitvector32Term::constant(u32::from(value)),
                 None => term.clone(),
             },
             Bitvector32Term::ClickFunctionApplication { .. }

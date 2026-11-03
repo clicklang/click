@@ -229,7 +229,7 @@ mod tests {
         let left = CValue::Int8(Bitvector32Term::Variable(Variable(991_500)));
         let count = Bitvector32Term::Variable(Variable(991_501));
         let right = uint32(count.clone());
-        let bound = ConditionTerm::unsigned_less_than(count, Bitvector32Term::UInt32Constant(8));
+        let bound = ConditionTerm::unsigned_less_than(count, Bitvector32Term::uint32_constant(8));
         let empty = PureFactContext::new();
         let defined = empty.clone().assume_condition(bound.clone(), true);
         let invalid = empty.clone().assume_condition(bound, false);
@@ -280,14 +280,14 @@ mod tests {
             (int32(u32::MAX), int32(1), MachineBinaryOp::ShiftLeft),
             (int32(i32::MAX as u32), int32(1), MachineBinaryOp::ShiftLeft),
             (
-                CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+                CValue::UInt64(Bitvector32Term::uint64_constant(1)),
                 int32(64),
                 MachineBinaryOp::ShiftLeft,
             ),
             // Narrowing the count first would silently turn this into zero.
             (
                 int32(1),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(1 << 32)),
+                CValue::UInt64(Bitvector32Term::uint64_constant(1 << 32)),
                 MachineBinaryOp::ShiftRight,
             ),
         ] {
@@ -312,16 +312,16 @@ mod tests {
     #[test]
     fn logical_shift_value_agrees_with_c_for_defined_mixed_width_operands() {
         let values = [
-            CValue::Int32(Bitvector32Term::Constant(8)),
-            CValue::UInt32(Bitvector32Term::UInt32Constant(8)),
-            CValue::Int64(Bitvector32Term::Int64Constant(8)),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(8)),
+            CValue::Int32(Bitvector32Term::constant(8)),
+            CValue::UInt32(Bitvector32Term::uint32_constant(8)),
+            CValue::Int64(Bitvector32Term::int64_constant(8)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(8)),
         ];
         let counts = [
-            CValue::Int32(Bitvector32Term::Constant(2)),
-            CValue::UInt32(Bitvector32Term::UInt32Constant(2)),
-            CValue::Int64(Bitvector32Term::Int64Constant(2)),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(2)),
+            CValue::Int32(Bitvector32Term::constant(2)),
+            CValue::UInt32(Bitvector32Term::uint32_constant(2)),
+            CValue::Int64(Bitvector32Term::int64_constant(2)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(2)),
         ];
         for left in &values {
             for right in &counts {
@@ -413,7 +413,7 @@ mod tests {
     #[test]
     fn symbolic_arithmetic_retains_cancellation_and_identity_nodes() {
         let x = Bitvector32Term::Variable(Variable(991_100));
-        let one = Bitvector32Term::Constant(1);
+        let one = Bitvector32Term::constant(1);
         let sum = Bitvector32Term::logical_machine_binary(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
@@ -426,12 +426,12 @@ mod tests {
             (
                 MachineBinaryOp::Add,
                 x.clone(),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
             (
                 MachineBinaryOp::Multiply,
                 x.clone(),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
             (MachineBinaryOp::Divide, x, one),
         ] {

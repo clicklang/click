@@ -11,6 +11,7 @@ use crate::kernel::{
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum ArgumentTag {
@@ -120,7 +121,7 @@ fn add_sub_cancel_operand(term: &T) -> Option<&T> {
         )
         && matches!(
             added.as_ref(),
-            T::Constant(_) | T::UInt32Constant(_) | T::Int64Constant(_) | T::UInt64Constant(_)
+            bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)
         )
         && added == right)
         .then_some(base.as_ref())
@@ -291,11 +292,11 @@ impl TermClasses {
             I::Constant(value) => {
                 let modulus = num_bigint::BigInt::from(1u64 << 32);
                 let residue = ((value % &modulus) + &modulus) % &modulus;
-                self.intern_int32(&T::Constant(residue.to_u32()?))
+                self.intern_int32(&T::constant(residue.to_u32()?))
             }
             I::Negate(inner) => {
                 let inner = self.modular_integer_word32(inner, remaining, observed, pending)?;
-                let zero = self.intern_int32(&T::Constant(0));
+                let zero = self.intern_int32(&T::constant(0));
                 self.modular_word_operation(MachineBinaryOp::Subtract, zero, inner, pending)
             }
             _ => {
@@ -359,7 +360,7 @@ impl TermClasses {
                     Multiply => a.wrapping_mul(b),
                     _ => unreachable!(),
                 };
-                break self.intern_int32(&T::Constant(bits));
+                break self.intern_int32(&T::constant(bits));
             }
             let addition = |id| match self.applications.get(&id) {
                 Some(Application::Int32Add(a, b)) => Some((*a, *b)),
@@ -415,7 +416,7 @@ impl TermClasses {
                         break left;
                     }
                     if left == right {
-                        break self.intern_int32(&T::Constant(0));
+                        break self.intern_int32(&T::constant(0));
                     }
                     let (l, r) = (addition(left), addition(right));
                     if let (Some((a, b)), Some((c, d))) = (l, r) {
@@ -453,7 +454,7 @@ impl TermClasses {
                             None
                         };
                         if let Some(remaining) = remaining {
-                            left = self.intern_int32(&T::Constant(0));
+                            left = self.intern_int32(&T::constant(0));
                             right = remaining;
                             continue;
                         }
@@ -461,7 +462,7 @@ impl TermClasses {
                 }
                 Multiply => {
                     if a == Some(0) || b == Some(0) {
-                        break self.intern_int32(&T::Constant(0));
+                        break self.intern_int32(&T::constant(0));
                     }
                     if a == Some(1) {
                         break right;
@@ -871,8 +872,8 @@ impl TermClasses {
                             MachineIntegerType::Int64 | MachineIntegerType::UInt64
                         )
                     {
-                        let zero = |t: &T| matches!(t, T::Int64Constant(0) | T::UInt64Constant(0));
-                        let one = |t: &T| matches!(t, T::Int64Constant(1) | T::UInt64Constant(1));
+                        let zero = |t: &T| matches!(t, int64_constant!(0) | uint64_constant!(0));
+                        let one = |t: &T| matches!(t, int64_constant!(1) | uint64_constant!(1));
                         let identity = match op {
                             MachineBinaryOp::Add if zero(left) => Some(right.as_ref()),
                             MachineBinaryOp::Add | MachineBinaryOp::Subtract if zero(right) => {
@@ -892,9 +893,9 @@ impl TermClasses {
                         }
                         if *op == MachineBinaryOp::Subtract && left == right {
                             let zero = if *format == MachineIntegerType::Int64 {
-                                T::Int64Constant(0)
+                                T::int64_constant(0)
                             } else {
-                                T::UInt64Constant(0)
+                                T::uint64_constant(0)
                             };
                             values.push(self.intern_typed_machine(&zero, width));
                             continue;
@@ -1103,11 +1104,11 @@ impl TermClasses {
                         let cast = self.intern_node(Node::Apply(head, condition));
                         let constant = |value: u32| match width {
                             W::Bits64 if to.format().is_signed() => {
-                                T::Int64Constant(i64::from(value))
+                                T::int64_constant(i64::from(value))
                             }
-                            W::Bits64 => T::UInt64Constant(u64::from(value)),
+                            W::Bits64 => T::uint64_constant(u64::from(value)),
                             W::Bits8 | W::Bits16 => T::narrow_constant(*to, u128::from(value)),
-                            _ => T::Constant(value),
+                            _ => T::constant(value),
                         };
                         if width != W::Bits128 {
                             let zero = self.intern_typed_machine(&constant(0), width);
@@ -1142,8 +1143,8 @@ impl TermClasses {
                             crate::kernel::MachineIntegerType::UInt16
                         };
                         let atom = match term {
-                            T::MachineIntegerConstant(constant) => {
-                                T::narrow_constant(canonical, constant.bits())
+                            crate::kernel::native_constant!(_, bits) => {
+                                T::narrow_constant(canonical, *bits)
                             }
                             // A narrow read is named as its exact cell, as
                             // a 32-bit read is, so R-mem finds it.
@@ -1433,7 +1434,7 @@ impl TermClasses {
                 MachineIntegerType::UInt32,
             )
         };
-        let mask = self.intern_typed_machine(&T::Constant(mask), W::Bits32);
+        let mask = self.intern_typed_machine(&T::constant(mask), W::Bits32);
         let mut carrier = self.intern_node(Node::Int32Binary(
             Int32Binary::Other(B::Machine(
                 crate::kernel::MachineIntegerType::Int32,
@@ -1444,7 +1445,7 @@ impl TermClasses {
         ));
         if let Some(sign) = sign {
             // `bitwise_xor` orders a constant before the masked word.
-            let sign = self.intern_typed_machine(&T::Constant(sign), W::Bits32);
+            let sign = self.intern_typed_machine(&T::constant(sign), W::Bits32);
             let flipped =
                 self.intern_node(Node::Int32Binary(Int32Binary::BitwiseXor, sign, carrier));
             carrier = self.intern_node(Node::Int32Binary(

@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_term;
+use crate::kernel::{bits32_constant, constant_u32};
 
 pub(in crate::kernel) fn condition_as_order_fact(
     condition: &ConditionTerm,
@@ -151,13 +152,13 @@ pub(in crate::kernel) fn constant_below_successor_as_order(
     let base = upper.add_const_base(1)?;
     let reduced = if strict {
         (
-            Bitvector32Term::Constant(constant as u32),
+            Bitvector32Term::constant(constant as u32),
             base.clone(),
             false,
         )
     } else {
         let below = constant.checked_sub(1)?;
-        (Bitvector32Term::Constant(below as u32), base.clone(), false)
+        (Bitvector32Term::constant(below as u32), base.clone(), false)
     };
     Some((reduced, base))
 }
@@ -171,8 +172,8 @@ pub(in crate::kernel) fn order_holds_at_int32_extreme(
     strict: bool,
 ) -> bool {
     !strict
-        && (upper == &Bitvector32Term::Constant(i32::MAX as u32)
-            || lower == &Bitvector32Term::Constant(i32::MIN as u32))
+        && (upper == &Bitvector32Term::constant(i32::MAX as u32)
+            || lower == &Bitvector32Term::constant(i32::MIN as u32))
 }
 
 /// The `int64` counterpart of [`condition_as_order_fact`]: a signed 64-bit
@@ -252,7 +253,7 @@ impl FiniteForAllRange {
     /// One value of the range as the constant its variable takes.
     pub(crate) fn constant(&self, value: i64) -> Bitvector32Term {
         if self.unsigned64 {
-            Bitvector32Term::UInt64Constant(value as u64)
+            Bitvector32Term::uint64_constant(value as u64)
         } else {
             signed_i64_bitvector_constant(value)
         }
@@ -627,10 +628,7 @@ pub(in crate::kernel) fn order_facts_form_strict_cycle(
     let symbolic = {
         let mut flags = vec![false; nodes.len()];
         for (term, index) in &nodes {
-            flags[*index] = !matches!(
-                term,
-                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
-            );
+            flags[*index] = !matches!(term, bits32_constant!(_));
         }
         flags
     };
@@ -750,7 +748,7 @@ pub(in crate::kernel) fn propagate_variable_order_bounds(
 
 pub(crate) fn signed_i64_bitvector_constant(value: i64) -> Bitvector32Term {
     debug_assert!((i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(&value));
-    Bitvector32Term::Constant(value as i32 as u32)
+    Bitvector32Term::constant(value as i32 as u32)
 }
 
 pub(in crate::kernel) fn instantiate_range_fold_step(
@@ -964,8 +962,8 @@ pub(in crate::kernel) fn collect_bitvector_add_terms(
             collect_bitvector_add_terms(format, left, terms, constant);
             collect_bitvector_add_terms(format, right, terms, constant);
         }
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            *constant = constant.wrapping_add(*value);
+        bits32_constant!(value) => {
+            *constant = constant.wrapping_add(constant_u32(*value));
         }
         term => terms.push(term.clone()),
     }
@@ -984,7 +982,7 @@ pub(in crate::kernel) fn count_fold_parts(term: &Bitvector32Term) -> Option<Coun
         return None;
     };
 
-    if initial.as_ref() != &Bitvector32Term::Constant(0) {
+    if initial.as_ref() != &Bitvector32Term::constant(0) {
         return None;
     }
 
@@ -1352,11 +1350,11 @@ fn collect_bitvector_affine_atoms(
             collect_bitvector_affine_atoms(left, positive, atoms, constant);
             collect_bitvector_affine_atoms(right, !positive, atoms, constant);
         }
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
+        bits32_constant!(value) => {
             *constant = if positive {
-                constant.wrapping_add(*value)
+                constant.wrapping_add(constant_u32(*value))
             } else {
-                constant.wrapping_sub(*value)
+                constant.wrapping_sub(constant_u32(*value))
             };
         }
         term => atoms.push((positive, term.clone())),

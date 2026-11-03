@@ -116,7 +116,7 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_uint64_equality(
                 &Bitvector32Term::Variable(Variable(898_001)),
-                &Bitvector32Term::UInt64Constant(0),
+                &Bitvector32Term::uint64_constant(0),
             );
         });
         assert!(graph.are_equal(&pointer, &base));

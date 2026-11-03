@@ -12,7 +12,7 @@ fn int32(term: Bitvector32Term) -> SpecExpression {
 fn predecessor_of_hi() -> SpecExpression {
     SpecExpression::Subtract(
         Box::new(int32(Bitvector32Term::Variable(HI))),
-        Box::new(int32(Bitvector32Term::Constant(1))),
+        Box::new(int32(Bitvector32Term::constant(1))),
     )
 }
 
@@ -41,7 +41,7 @@ fn zero() -> SpecIntegerExpression {
 fn hi_is_positive() -> PureFactContext {
     PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(1),
             Bitvector32Term::Variable(HI),
         ),
         true,
@@ -53,14 +53,14 @@ fn subtraction_is_defined() -> Proposition {
         MachineIntegerType::Int32,
         MachineBinaryOp::Subtract,
         &Bitvector32Term::Variable(HI),
-        &Bitvector32Term::Constant(1),
+        &Bitvector32Term::constant(1),
     )
 }
 
 #[test]
 fn endpoint_definedness_the_context_decides_is_discharged() {
     let expression = fold(
-        int32(Bitvector32Term::Constant(0)),
+        int32(Bitvector32Term::constant(0)),
         predecessor_of_hi(),
         zero(),
         zero(),
@@ -93,7 +93,7 @@ fn endpoint_definedness_the_context_decides_is_discharged() {
 #[test]
 fn an_exactly_stated_endpoint_condition_is_discharged() {
     let expression = fold(
-        int32(Bitvector32Term::Constant(0)),
+        int32(Bitvector32Term::constant(0)),
         predecessor_of_hi(),
         zero(),
         zero(),
@@ -106,8 +106,8 @@ fn an_exactly_stated_endpoint_condition_is_discharged() {
 #[test]
 fn an_initializer_condition_is_named_as_the_initializer() {
     let expression = fold(
-        int32(Bitvector32Term::Constant(0)),
-        int32(Bitvector32Term::Constant(0)),
+        int32(Bitvector32Term::constant(0)),
+        int32(Bitvector32Term::constant(0)),
         SpecIntegerExpression::FromMachine(Box::new(predecessor_of_hi())),
         zero(),
     );

@@ -1464,7 +1464,7 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: Box::new(Bitvector32Term::Variable(Variable(1))),
-            right: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(Bitvector32Term::constant(1)),
         },
         false,
     );
@@ -1474,7 +1474,7 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(Variable(2))),
-            right: Box::new(Bitvector32Term::Constant(7)),
+            right: Box::new(Bitvector32Term::constant(7)),
         },
         true,
     );

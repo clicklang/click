@@ -1,5 +1,9 @@
 //! Smart closure search and linear script interpretation.
 use crate::kernel::binary_term;
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
+    uint64_constant,
+};
 use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
 
 use super::selected_arithmetic::RewriteClosers;
@@ -346,18 +350,12 @@ fn signed_surface_terms_equal(
             return false;
         }
         match (left, right) {
-            (
-                crate::kernel::Bitvector32Term::Constant(left),
-                crate::kernel::Bitvector32Term::Constant(right),
-            ) if left == right => {}
-            (
-                crate::kernel::Bitvector32Term::Int64Constant(left),
-                crate::kernel::Bitvector32Term::Int64Constant(right),
-            ) if left == right => {}
-            (
-                crate::kernel::Bitvector32Term::UInt64Constant(left),
-                crate::kernel::Bitvector32Term::UInt64Constant(right),
-            ) if left == right => {}
+            (int32_constant!(left), int32_constant!(right))
+                if constant_u32(*left) == constant_u32(*right) => {}
+            (int64_constant!(left), int64_constant!(right))
+                if constant_i64(*left) == constant_i64(*right) => {}
+            (uint64_constant!(left), uint64_constant!(right))
+                if constant_u64(*left) == constant_u64(*right) => {}
             (
                 crate::kernel::Bitvector32Term::Variable(left),
                 crate::kernel::Bitvector32Term::Variable(right),
@@ -1632,7 +1630,7 @@ fn kernel_upper_bound_split_candidate(
     let binary_term!(Int32, Add, pivot, one) = right.as_ref() else {
         return None;
     };
-    (**one == Bitvector32Term::Constant(1)).then(|| (*variable, pivot.as_ref().clone()))
+    (**one == Bitvector32Term::constant(1)).then(|| (*variable, pivot.as_ref().clone()))
 }
 
 // These split conditions come from a native int32 bound. Shield their pivot
@@ -1860,10 +1858,7 @@ impl<'a> Proof<'a> {
             // separate source occurrence.  It is still source-printable as
             // an ordinary signed literal, and the certificate checker will
             // re-lower that literal before accepting the step.
-            if matches!(
-                term,
-                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
-            ) {
+            if matches!(term, bits32_constant!(_)) {
                 return Some(ContractExpression::IntegerLiteral(
                     i32::from_ne_bytes(value.to_ne_bytes()).to_string(),
                 ));
@@ -1873,10 +1868,9 @@ impl<'a> Proof<'a> {
         // the same variable may lower to the same raw bitvector term, but is
         // not a valid typed witness for an int32 interval node.
         for candidate in candidates.iter().rev() {
-            if let crate::kernel::Bitvector32Term::Constant(value)
-            | crate::kernel::Bitvector32Term::UInt32Constant(value) = term
+            if let bits32_constant!(value) = term
                 && let ContractExpression::IntegerLiteral(literal) = *candidate
-                && literal.parse::<u32>().ok() == Some(*value)
+                && literal.parse::<u32>().ok() == Some(constant_u32(*value))
             {
                 return Some((*candidate).clone());
             }
@@ -3301,7 +3295,7 @@ impl<'a> Proof<'a> {
                 match term {
                     binary_term!(Int32, Add, base, delta)
                     | binary_term!(Int32, Subtract, base, delta)
-                        if matches!(delta.as_ref(), Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) if *value != 0) =>
+                        if matches!(delta.as_ref(), bits32_constant!(value) if constant_u32(*value) != 0) =>
                     {
                         Some(base)
                     }
@@ -3361,14 +3355,8 @@ impl<'a> Proof<'a> {
             _ => return false,
         };
         let assumptions = self.facts().assumptions();
-        let literal = |term: &Bitvector32Term| {
-            matches!(
-                term,
-                Bitvector32Term::Constant(_)
-                    | Bitvector32Term::UInt32Constant(_)
-                    | Bitvector32Term::Int64Constant(_)
-            )
-        };
+        let literal =
+            |term: &Bitvector32Term| matches!(term, bits32_constant!(_) | int64_constant!(_));
         if !literal(left) && !literal(right) {
             return false;
         }
@@ -4538,10 +4526,12 @@ impl<'a> Proof<'a> {
         // the operand's own type.
         let successor = match &right {
             ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
-                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-            ))) if unsigned && *value == bound => ContractExpression::CFragment(
-                CExpression::Value(CValue::UInt32(Bitvector32Term::UInt32Constant(value + 1))),
-            ),
+                bits32_constant!(value),
+            ))) if unsigned && constant_u32(*value) == bound => {
+                ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
+                    Bitvector32Term::uint32_constant(constant_u32(*value) + 1),
+                )))
+            }
             ContractExpression::IntegerLiteral(literal)
                 if !unsigned && literal.parse::<i32>().ok() == Some(bound as i32) =>
             {
@@ -6949,10 +6939,9 @@ impl<'a> Proof<'a> {
                 | CValue::Bool(term)
                 if matches!(
                     term,
-                    Bitvector32Term::Constant(_)
-                        | Bitvector32Term::UInt32Constant(_)
-                        | Bitvector32Term::Int64Constant(_)
-                        | Bitvector32Term::UInt64Constant(_)
+                    bits32_constant!(_)
+                        | int64_constant!(_)
+                        | uint64_constant!(_)
                 )
         );
         let variable = match field {
@@ -7039,7 +7028,7 @@ impl<'a> Proof<'a> {
         // source-backed existential requirements without searching ambient
         // facts.
         candidates.push(ContractExpression::CFragment(CExpression::Value(
-            CValue::Int32(Bitvector32Term::Constant(0)),
+            CValue::Int32(Bitvector32Term::constant(0)),
         )));
         for value in candidates {
             check_verification_deadline()?;
@@ -7620,8 +7609,8 @@ impl<'a> Proof<'a> {
                 continue;
             }
             if !strict
-                && !matches!(other, Bitvector32Term::Constant(constant) | Bitvector32Term::UInt32Constant(constant)
-                    if (constant as i32) < i32::MAX)
+                && !matches!(other, bits32_constant!(constant)
+                    if (constant_u32(constant) as i32) < i32::MAX)
             {
                 continue;
             }
@@ -8295,22 +8284,17 @@ impl<'a> Proof<'a> {
             } else {
                 continue;
             };
-            let (Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)) =
-                literal
-            else {
+            let bits32_constant!(value) = literal else {
                 continue;
             };
-            if matches!(
-                operand,
-                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
-            ) {
+            if matches!(operand, bits32_constant!(_)) {
                 continue;
             }
             let surface = ClickProposition::Comparison {
                 left: source.clone(),
                 operator: ComparisonOperator::Equal,
                 right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                    Bitvector32Term::Constant(*value),
+                    Bitvector32Term::constant(constant_u32(*value)),
                 ))),
             };
             let scope = self.begin_have(surface.clone()).ok()?;
@@ -8583,12 +8567,10 @@ impl<'a> Proof<'a> {
             ) => (value, bound, false),
             _ => return None,
         };
-        let (Bitvector32Term::Constant(goal_bits) | Bitvector32Term::UInt32Constant(goal_bits)) =
-            goal_bound.as_ref()
-        else {
+        let bits32_constant!(goal_bits) = goal_bound.as_ref() else {
             return None;
         };
-        let goal_constant = *goal_bits as i32;
+        let goal_constant = constant_u32(*goal_bits) as i32;
         let (surface_lower, surface_upper) = surface_nonstrict_parts(&surface_goal)?;
         let (surface_value, surface_goal_constant) = if lower_bound {
             (surface_upper, surface_lower)
@@ -8643,12 +8625,10 @@ impl<'a> Proof<'a> {
                 ) if value == goal_value => bound,
                 _ => continue,
             };
-            let (Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) =
-                bound.as_ref()
-            else {
+            let bits32_constant!(bits) = bound.as_ref() else {
                 continue;
             };
-            let constant = *bits as i32;
+            let constant = constant_u32(*bits) as i32;
             let stronger = if lower_bound {
                 constant > goal_constant
             } else {
@@ -8889,7 +8869,7 @@ impl<'a> Proof<'a> {
         reversals: bool,
     ) -> Option<Self> {
         let (order, left, right) = unsigned_order_parts(self.goal()?)?;
-        let zero = Bitvector32Term::Constant(0);
+        let zero = Bitvector32Term::constant(0);
         // The goal from one comparison read the other way round, by
         // Integer arithmetic: the premise's operands, compared the goal's
         // way. `arithmetic() using` reads such a premise itself.
@@ -8961,7 +8941,7 @@ impl<'a> Proof<'a> {
                         };
                         let positive = ClickProposition::Comparison {
                             left: ContractExpression::CFragment(CExpression::Value(
-                                CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
+                                CValue::UInt32(Bitvector32Term::uint32_constant(0)),
                             )),
                             operator: ComparisonOperator::LessThan,
                             right: difference.clone(),
@@ -9064,7 +9044,7 @@ impl<'a> Proof<'a> {
         let binary_term!(Int32, Subtract, value, amount) = predecessor.as_ref() else {
             return None;
         };
-        if amount.as_ref() != &Bitvector32Term::Constant(1) {
+        if amount.as_ref() != &Bitvector32Term::constant(1) {
             return None;
         }
         let upper_kernel = Proposition::ConditionIs(
@@ -9105,12 +9085,10 @@ impl<'a> Proof<'a> {
             } else {
                 continue;
             };
-            let (Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) =
-                selected_constant
-            else {
+            let bits32_constant!(bits) = selected_constant else {
                 continue;
             };
-            if (*bits as i32) < 0 {
+            if (constant_u32(*bits) as i32) < 0 {
                 continue;
             }
             let mut orientations = vec![surface.clone()];
@@ -9629,15 +9607,15 @@ impl<'a> Proof<'a> {
             for surface in surfaces {
                 for value in candidate_values.iter() {
                     let argument = match value {
-                        Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {
+                        bits32_constant!(bits) => {
                             Some(ContractExpression::CFragment(CExpression::Value(
-                                CValue::Int32(Bitvector32Term::Constant(*bits)),
+                                CValue::Int32(Bitvector32Term::constant(constant_u32(*bits))),
                             )))
                         }
-                        Bitvector32Term::UInt64Constant(_) => Some(ContractExpression::CFragment(
+                        uint64_constant!(_) => Some(ContractExpression::CFragment(
                             CExpression::Value(CValue::UInt64(value.clone())),
                         )),
-                        Bitvector32Term::Int64Constant(_) => Some(ContractExpression::CFragment(
+                        int64_constant!(_) => Some(ContractExpression::CFragment(
                             CExpression::Value(CValue::Int64(value.clone())),
                         )),
                         Bitvector32Term::Variable(variable) => {
@@ -13568,7 +13546,7 @@ pub(in crate::surface::proof) fn close_requirement_have_by_auto<'a>(
         attempt::candidate_outcome(have.apply_step(ProofStep::Witness(ProofWitness::single(
             written_name.as_ref().unwrap_or(name).clone(),
             ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ))),
         ))))?;
     match witnessed {
@@ -13654,14 +13632,7 @@ fn rewrite_equality_sides(equality: &Proposition) -> Option<(&Bitvector32Term, &
 /// A machine literal: a smart `rewrite` reduces operands to literals and
 /// never expands one.
 fn is_rewrite_literal(term: &Bitvector32Term) -> bool {
-    matches!(
-        term,
-        Bitvector32Term::Constant(_)
-            | Bitvector32Term::UInt32Constant(_)
-            | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_)
-            | Bitvector32Term::MachineIntegerConstant(_)
-    )
+    matches!(term, Bitvector32Term::Constant { .. })
 }
 
 #[test]
@@ -13706,13 +13677,13 @@ fn operation_identities_order_dependencies_with_multiple_roots() {
         format,
         MachineBinaryOp::Add,
         Bitvector32Term::Variable(Variable(989_776)),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(1),
     );
     let outer = Bitvector32Term::logical_machine_binary(
         format,
         MachineBinaryOp::Add,
         inner.clone(),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(2),
     );
     let inner = IntegerTerm::from_machine(format, inner).unwrap();
     let outer = IntegerTerm::from_machine(format, outer).unwrap();

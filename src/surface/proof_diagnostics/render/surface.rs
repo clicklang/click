@@ -22,6 +22,10 @@ use crate::kernel::OverflowOperation;
 use crate::kernel::binary_node;
 use crate::kernel::{MachineBinaryOp, MachineIntegerType, MachineUnaryOp};
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
+    native_constant, uint32_constant, uint64_constant,
+};
 
 /// Which spelling policy a printer applies.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1029,10 +1033,10 @@ impl Printer<'_> {
                 op: OverflowOperation::Subtract,
                 ..
             },
-            Bitvector32Term::Constant(bits),
+            int32_constant!(bits),
         ) = (condition, b)
         {
-            let offset = *bits as i32 as i64;
+            let offset = constant_u32(*bits) as i32 as i64;
             if offset == 0 {
                 return Some(atom((!polarity).to_string()));
             }
@@ -1104,14 +1108,16 @@ impl Printer<'_> {
             let value = self.bitvector(value, None, depth)?;
             return Some(cast("int32", value).text);
         }
-        if let Bitvector32Term::UInt32Constant(value) = value {
-            return Some(value.to_string());
+        if let uint32_constant!(value) = value {
+            return Some(constant_u32(*value).to_string());
         }
-        if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) = value {
+        if let bits32_constant!(value) = value {
             return match signed {
-                Some(true) => Some((*value as i32).to_string()),
-                Some(false) => Some(value.to_string()),
-                None if *value <= i32::MAX as u32 => Some(value.to_string()),
+                Some(true) => Some((constant_u32(*value) as i32).to_string()),
+                Some(false) => Some(constant_u32(*value).to_string()),
+                None if constant_u32(*value) <= i32::MAX as u32 => {
+                    Some(constant_u32(*value).to_string())
+                }
                 None => None,
             };
         }
@@ -1124,10 +1130,7 @@ impl Printer<'_> {
     fn as_type(&mut self, value: &Bitvector32Term, hint: Hint, depth: usize) -> Option<Spelled> {
         let literal = matches!(
             value,
-            Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_)
-                | Bitvector32Term::Int64Constant(_)
-                | Bitvector32Term::UInt64Constant(_)
+            bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)
         );
         let own = self.hint_of(value);
         let needs_cast = !literal
@@ -1149,11 +1152,11 @@ impl Printer<'_> {
         };
         let spelled_value = match value {
             // A constant in a 64-bit comparison is written in that type.
-            Bitvector32Term::Int64Constant(bits) if hint == Hint::UInt64 => {
-                atom(format!("{}u64", *bits as u64))
+            int64_constant!(bits) if hint == Hint::UInt64 => {
+                atom(format!("{}u64", constant_i64(*bits) as u64))
             }
-            Bitvector32Term::UInt64Constant(bits) if hint == Hint::Int64 => {
-                atom(format!("{}i64", *bits as i64))
+            uint64_constant!(bits) if hint == Hint::Int64 => {
+                atom(format!("{}i64", constant_u64(*bits) as i64))
             }
             _ => self.bitvector(value, inner_hint, depth)?,
         };
@@ -1174,9 +1177,9 @@ impl Printer<'_> {
     fn hint_of(&self, value: &Bitvector32Term) -> Option<Hint> {
         use Bitvector32Term as B;
         match value {
-            B::Int64Constant(_) => Some(Hint::Int64),
-            B::UInt64Constant(_) => Some(Hint::UInt64),
-            B::UInt32Constant(_) => Some(Hint::Unsigned32),
+            int64_constant!(_) => Some(Hint::Int64),
+            uint64_constant!(_) => Some(Hint::UInt64),
+            uint32_constant!(_) => Some(Hint::Unsigned32),
             B::Variable(variable) => self
                 .labels
                 .source_types
@@ -1339,10 +1342,8 @@ impl Printer<'_> {
         depth: usize,
     ) -> Option<Spelled> {
         let number = match (single, value) {
-            (true, Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) => {
-                f64::from(f32::from_bits(*bits))
-            }
-            (false, Bitvector32Term::UInt64Constant(bits)) => f64::from_bits(*bits),
+            (true, bits32_constant!(bits)) => f64::from(f32::from_bits(constant_u32(*bits))),
+            (false, uint64_constant!(bits)) => f64::from_bits(constant_u64(*bits)),
             _ => return self.bitvector(value, None, depth),
         };
         if let Err(elided) = self.enter(depth) {
@@ -1381,11 +1382,17 @@ impl Printer<'_> {
         let depth = depth + 1;
         use Bitvector32Term as B;
         match value {
-            B::Constant(value) => return self.constant(*value, hint),
+            int32_constant!(value) => return self.constant(constant_u32(*value), hint),
             // A `uint32` constant is written in its own type.
-            B::UInt32Constant(value) => return self.constant(*value, Some(Hint::Unsigned32)),
-            B::Int64Constant(value) => return Some(atom(format!("{value}i64"))),
-            B::UInt64Constant(value) => return Some(atom(format!("{value}u64"))),
+            uint32_constant!(value) => {
+                return self.constant(constant_u32(*value), Some(Hint::Unsigned32));
+            }
+            int64_constant!(value) => {
+                return Some(atom(format!("{value}i64", value = constant_i64(*value))));
+            }
+            uint64_constant!(value) => {
+                return Some(atom(format!("{value}u64", value = constant_u64(*value))));
+            }
             B::Variable(variable) => {
                 if self.mode == Mode::ExactIdentity && crate::kernel::is_load_variable(variable) {
                     return None;
@@ -1543,13 +1550,22 @@ impl Printer<'_> {
             // An 8- or 16-bit constant reads as its value, as the 32-bit
             // carrier of a narrow value did; its type, where printed, comes
             // from the value it is (`typed`).
-            B::MachineIntegerConstant(value) if value.format().bits() < 32 => {
-                Some(atom(value.to_integer().to_string()))
+            crate::kernel::native_constant!(format, bits) if format.format().bits() < 32 => {
+                Some(atom(
+                    crate::kernel::MachineIntegerConstant::from_term_bits(format.format(), *bits)
+                        .to_integer()
+                        .to_string(),
+                ))
             }
-            B::MachineIntegerConstant(value) => Some(atom(format!(
+            crate::kernel::native_constant!(format, bits) => Some(atom(format!(
                 "{}{}128",
-                value.to_integer(),
-                if value.format().is_signed() { "i" } else { "u" }
+                crate::kernel::MachineIntegerConstant::from_term_bits(format.format(), *bits)
+                    .to_integer(),
+                if format.format().is_signed() {
+                    "i"
+                } else {
+                    "u"
+                }
             ))),
             // Rule C1. A specification `Bool` travels as its cast to
             // `uint8`, which reads as the `Bool` itself; any other format is
@@ -1946,13 +1962,11 @@ impl Printer<'_> {
         let count = match width {
             Some(1) => self.bitvector(bytes, hint, depth),
             Some(width) => match bytes {
-                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
-                    if i64::from(*value) % width == 0 =>
-                {
-                    Some(atom((i64::from(*value) / width).to_string()))
+                bits32_constant!(value) if i64::from(constant_u32(*value)) % width == 0 => {
+                    Some(atom((i64::from(constant_u32(*value)) / width).to_string()))
                 }
-                Bitvector32Term::UInt64Constant(value) if (*value as i64) % width == 0 => {
-                    Some(atom(format!("{}u64", *value as i64 / width)))
+                uint64_constant!(value) if (constant_u64(*value) as i64) % width == 0 => {
+                    Some(atom(format!("{}u64", constant_u64(*value) as i64 / width)))
                 }
                 binary_term!(Int32, Multiply, left, right)
                 | Bitvector32Term::Binary {
@@ -2303,11 +2317,7 @@ impl Printer<'_> {
         let typed = |printer: &mut Self, value: &Bitvector32Term, hint: Hint, suffix: &str| {
             let spelled_value = printer.bitvector(value, Some(hint), depth)?;
             Some(match value {
-                Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_)
-                | Bitvector32Term::MachineIntegerConstant(_)
-                    if !suffix.is_empty() =>
-                {
+                bits32_constant!(_) | native_constant!(_, _) if !suffix.is_empty() => {
                     atom(typed_literal(spelled_value.text, suffix))
                 }
                 _ => spelled_value,
@@ -2333,11 +2343,12 @@ impl Printer<'_> {
             CValue::Int64(value) => typed(self, value, Hint::Int64, ""),
             CValue::UInt64(value) => typed(self, value, Hint::UInt64, ""),
             CValue::Int128(value) | CValue::UInt128(value) => self.bitvector(value, None, depth),
-            CValue::Float32(
-                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
-            ) => Some(atom(format!("{:?}f32", f32::from_bits(*bits)))),
-            CValue::Float64(Bitvector32Term::UInt64Constant(bits)) => {
-                Some(atom(format!("{:?}", f64::from_bits(*bits))))
+            CValue::Float32(bits32_constant!(bits)) => Some(atom(format!(
+                "{:?}f32",
+                f32::from_bits(constant_u32(*bits))
+            ))),
+            CValue::Float64(uint64_constant!(bits)) => {
+                Some(atom(format!("{:?}", f64::from_bits(constant_u64(*bits)))))
             }
             CValue::Float32(value) | CValue::Float64(value) => self.bitvector(value, None, depth),
             CValue::Pointer(pointer) => self.pointer(pointer.pointer(), depth),
@@ -2741,7 +2752,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(value),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         )
@@ -2781,7 +2792,7 @@ mod tests {
                 ConditionTerm::Float64(crate::kernel::CFloatCondition::Comparison {
                     operator: crate::kernel::CComparisonOperator::GreaterEqual,
                     left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                    right: Box::new(Bitvector32Term::UInt64Constant(value.to_bits())),
+                    right: Box::new(Bitvector32Term::uint64_constant(value.to_bits())),
                 }),
                 true,
             );
@@ -2793,9 +2804,9 @@ mod tests {
                 left: Box::new(Bitvector32Term::Float32Binary {
                     operator: crate::kernel::CFloatBinaryOperator::Add,
                     left: Box::new(Bitvector32Term::Variable(Variable(8))),
-                    right: Box::new(Bitvector32Term::Constant(1.5_f32.to_bits())),
+                    right: Box::new(Bitvector32Term::constant(1.5_f32.to_bits())),
                 }),
-                right: Box::new(Bitvector32Term::Constant(2.0_f32.to_bits())),
+                right: Box::new(Bitvector32Term::constant(2.0_f32.to_bits())),
             }),
             true,
         );
@@ -2804,7 +2815,7 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::UInt64Constant(1.5_f64.to_bits())),
+                left: Box::new(Bitvector32Term::uint64_constant(1.5_f64.to_bits())),
                 right: Box::new(Bitvector32Term::Variable(Variable(9))),
             },
             true,
@@ -2839,7 +2850,7 @@ mod tests {
                     Int32,
                     Add,
                     Box::new(term),
-                    Box::new(Bitvector32Term::Constant(1))
+                    Box::new(Bitvector32Term::constant(1))
                 );
             }
             let fact = equality(term);
@@ -2880,7 +2891,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(value),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );
@@ -2902,7 +2913,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                right: Box::new(Bitvector32Term::Constant((-56i32) as u32)),
+                right: Box::new(Bitvector32Term::constant((-56i32) as u32)),
             },
             true,
         );
@@ -2912,7 +2923,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(Variable(8))),
-                right: Box::new(Bitvector32Term::Constant((-56i32) as u32)),
+                right: Box::new(Bitvector32Term::constant((-56i32) as u32)),
             },
             false,
         );
@@ -2923,7 +2934,7 @@ mod tests {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                right: Box::new(Bitvector32Term::Constant(1073741823)),
+                right: Box::new(Bitvector32Term::constant(1073741823)),
             },
             true,
         );
@@ -3003,7 +3014,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(binary_node!(Int32, BitwiseAnd, a(), b())),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );
@@ -3318,7 +3329,7 @@ mod resource_tests {
         let mut labels = SnapshotLabels::default();
         labels.source_name(Variable(987551), "left_model".into());
         labels.source_name(Variable(987552), "right_model".into());
-        let left = CResourceFact::own_quantity(resource(987551), Bitvector32Term::Constant(2));
+        let left = CResourceFact::own_quantity(resource(987551), Bitvector32Term::constant(2));
         let right = CResourceFact::View(resource(987552));
         assert_eq!(
             source_resource_fact(&left, &mut labels),

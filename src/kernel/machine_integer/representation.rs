@@ -482,12 +482,12 @@ pub(crate) fn narrow_cast_word(
         64 => Bitvector32Term::uint32_from_64(value),
         _ => return None,
     };
-    let low = Bitvector32Term::bitwise_and(word, Bitvector32Term::Constant(mask));
+    let low = Bitvector32Term::bitwise_and(word, Bitvector32Term::constant(mask));
     Some(match sign {
         None => low,
         Some(sign) => Bitvector32Term::subtract(
-            Bitvector32Term::bitwise_xor(low, Bitvector32Term::Constant(sign)),
-            Bitvector32Term::Constant(sign),
+            Bitvector32Term::bitwise_xor(low, Bitvector32Term::constant(sign)),
+            Bitvector32Term::constant(sign),
         ),
     })
 }

@@ -2,6 +2,9 @@ use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{
+    bits32_constant, constant_u32, int32_constant, int64_constant, uint64_constant,
+};
 use crate::surface::planning::proposition_search::holds_by_lookup_or_decision;
 use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
 use crate::surface::proof_diagnostics::render::{
@@ -37,7 +40,7 @@ fn fold_resource_quantity_activity(
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(quantity.clone()),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         ),
@@ -49,7 +52,7 @@ fn fold_resource_quantity_activity(
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: Box::new(quantity.clone()),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         ),
@@ -320,8 +323,8 @@ fn dynamic_body_fact_dependency(
             .unwrap_or_else(|| {
                 CMemoryRange::new_with_element_width(
                     pointer,
-                    Bitvector32Term::Constant(0),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::constant(0),
+                    Bitvector32Term::constant(1),
                     width,
                 )
             });
@@ -1188,7 +1191,7 @@ pub(super) fn project_initial_composite_resource_cores(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
+            &CValue::Int32(Bitvector32Term::constant(0)),
             &assumptions,
             spec_definitions,
         )
@@ -1414,7 +1417,7 @@ pub(super) fn project_initial_resource_facts(
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
 ) -> Result<Vec<Proposition>, ClickError> {
-    let result = CValue::Int32(Bitvector32Term::Constant(0));
+    let result = CValue::Int32(Bitvector32Term::constant(0));
     let mut facts = ProofResourcePureFacts::new(ProofFacts::from_ordered(available_pure_facts));
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
@@ -1674,7 +1677,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 parameter_binding,
                 &state,
                 &state,
-                &CValue::Int32(Bitvector32Term::Constant(0)),
+                &CValue::Int32(Bitvector32Term::constant(0)),
                 available_pure_facts.assumptions(),
                 &count_witness,
                 spec_definitions,
@@ -1712,7 +1715,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
+            &CValue::Int32(Bitvector32Term::constant(0)),
             available_pure_facts.assumptions(),
             &nonnegative_witness,
             spec_definitions,
@@ -1752,7 +1755,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
+            &CValue::Int32(Bitvector32Term::constant(0)),
             available_pure_facts.assumptions(),
             &count_nonnegative_witness,
             spec_definitions,
@@ -1791,7 +1794,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(quantity.clone()),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                     true,
                 ),
@@ -1850,7 +1853,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &CValue::Int32(Bitvector32Term::Constant(0)),
+        &CValue::Int32(Bitvector32Term::constant(0)),
         available_pure_facts,
         spec_definitions,
         false,
@@ -2060,7 +2063,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         parameter_binding,
         pre_state,
         fact_state,
-        &CValue::Int32(Bitvector32Term::Constant(0)),
+        &CValue::Int32(Bitvector32Term::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )?
@@ -2252,7 +2255,7 @@ pub(super) fn record_initial_composite_surface_facts(
             parameter_binding,
             state,
             state,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
+            &CValue::Int32(Bitvector32Term::constant(0)),
             &assumptions,
             spec_definitions,
         )?
@@ -2268,7 +2271,7 @@ pub(super) fn record_initial_composite_surface_facts(
                 parameter_binding,
                 state,
                 state,
-                &CValue::Int32(Bitvector32Term::Constant(0)),
+                &CValue::Int32(Bitvector32Term::constant(0)),
                 available_pure_facts,
                 &surface,
                 spec_definitions,
@@ -2351,7 +2354,7 @@ fn owned_quantity_is_positive(quantity: &Bitvector32Term, assumptions: &PureFact
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: Box::new(quantity.clone()),
-                    right: Box::new(Bitvector32Term::Constant(0)),
+                    right: Box::new(Bitvector32Term::constant(0)),
                 },
                 true,
             ),
@@ -3259,7 +3262,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &CValue::Int32(Bitvector32Term::Constant(0)),
+        &CValue::Int32(Bitvector32Term::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )
@@ -3289,7 +3292,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     let requested_quantity = abstract_resource
         .owned_quantity_term()
         .cloned()
-        .unwrap_or(Bitvector32Term::Constant(1));
+        .unwrap_or(Bitvector32Term::constant(1));
     let assumptions = available_pure_facts.assumptions().clone();
     if let Some(authority) = state
         .resources()
@@ -3400,7 +3403,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     let (population_name, population_arguments, population_count) = (
         requested_population_name,
         requested_population_arguments,
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(1),
     );
     if state.population_body_is_open(&population_name, &population_arguments) {
         return Err(ClickError::new("population body is already open"));
@@ -3645,7 +3648,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &fact_state,
             &fact_state,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
+            &CValue::Int32(Bitvector32Term::constant(0)),
             available_pure_facts.assumptions(),
             &fact,
             spec_definitions,
@@ -5067,7 +5070,7 @@ fn fold_composite_resource_for_proof_with_closure(
 ) -> Result<CheckedResourceFold, ClickError> {
     let facts = ProofResourcePureFacts::new(facts);
     let outcome = CFunctionOutcome::Return {
-        value: CValue::Int32(Bitvector32Term::Constant(0)),
+        value: CValue::Int32(Bitvector32Term::constant(0)),
         state: Box::new(state),
     };
     let (outcome, mut selections, loan_holds) = fold_composite_resources_on_outcome_with_facts(
@@ -5296,10 +5299,9 @@ fn is_integer_constant(value: &CValue) -> bool {
             | CValue::UInt64(term)
             if matches!(
                 term,
-                Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_)
-                    | Bitvector32Term::Int64Constant(_)
-                    | Bitvector32Term::UInt64Constant(_)
+                bits32_constant!(_)
+                    | int64_constant!(_)
+                    | uint64_constant!(_)
             )
     )
 }
@@ -5478,14 +5480,10 @@ fn materialize_composite_resource_cells_from_snapshot(
         return memory;
     };
     // Only signed constant spans have the bounded cell-materialization rule.
-    let Some((
-        Bitvector32Term::Constant(start),
-        Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
-    )) = range.int32_bounds()
-    else {
+    let Some((int32_constant!(start), bits32_constant!(end))) = range.int32_bounds() else {
         return memory;
     };
-    if end < start {
+    if constant_u32(*end) < constant_u32(*start) {
         return memory;
     }
 
@@ -5493,7 +5491,7 @@ fn materialize_composite_resource_cells_from_snapshot(
     // Observe complete typed fields. In particular, an eight-byte pointer read
     // cannot reuse two independently named four-byte integer observations.
     if let Some(layout) = crate::surface::lowering::object_segment_layout(parameters, segment)
-        && *start == 0
+        && constant_u32(*start) == 0
     {
         for field in layout.fields().values() {
             memory = crate::surface::lowering::visit_struct_field_cells(
@@ -5531,10 +5529,10 @@ fn materialize_composite_resource_cells_from_snapshot(
         crate::surface::lowering::declared_segment_observation_count(segment)
     {
         let width = segment_type.byte_width();
-        let Some(first_byte) = start.checked_mul(element_width) else {
+        let Some(first_byte) = constant_u32(*start).checked_mul(element_width) else {
             return memory;
         };
-        let Some(end_byte) = end.checked_mul(element_width) else {
+        let Some(end_byte) = constant_u32(*end).checked_mul(element_width) else {
             return memory;
         };
         if !first_byte.is_multiple_of(width) {
@@ -5549,7 +5547,7 @@ fn materialize_composite_resource_cells_from_snapshot(
         }
         (width, first, last)
     } else {
-        (element_width, *start, *end)
+        (element_width, constant_u32(*start), constant_u32(*end))
     };
     // Keep typed reads at their physical stride. A narrower byte/word view
     // does not authorize overlapping whole-pointer observations.
@@ -5578,7 +5576,7 @@ fn materialize_composite_resource_cells_from_snapshot(
     for index in start..end {
         let pointer = offset_pointer_by_elements(
             range.base().clone(),
-            Bitvector32Term::Constant(index),
+            Bitvector32Term::constant(index),
             element_width,
         );
         if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
@@ -5788,7 +5786,7 @@ void child_release(struct child* obj) {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: index_term(),
-                    right: Box::new(Bitvector32Term::Constant(end)),
+                    right: Box::new(Bitvector32Term::constant(end)),
                 },
                 true,
             )
@@ -5797,7 +5795,7 @@ void child_release(struct child* obj) {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::Constant(0)),
+                left: Box::new(Bitvector32Term::constant(0)),
                 right: index_term(),
             },
             true,
@@ -5823,8 +5821,8 @@ void child_release(struct child* obj) {
         };
         let range = CMemoryRange::new(
             base,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(4),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(4),
         );
         let own = CResourceFact::own_memory(range.clone());
         let view = CResourceFact::view_memory(range);
@@ -5884,7 +5882,7 @@ void child_release(struct child* obj) {
             offset: PointerOffsetTerm::Constant(0),
         };
         let memory =
-            CMemory::new().store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(0)));
+            CMemory::new().store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(0)));
         let snapshot = crate::kernel::intern_c_memory_ref(&memory);
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -5894,7 +5892,7 @@ void child_release(struct child* obj) {
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         };
         let proposition = if definedness {
             Proposition::CMemoryReadDefined {
@@ -5907,8 +5905,8 @@ void child_release(struct child* obj) {
         };
         let range = CMemoryRange::new(
             pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         );
         let own = CResourceFact::own_memory(range.clone());
         let view = CResourceFact::view_memory(range.clone());
@@ -6023,7 +6021,7 @@ void child_release(struct child* obj) {
                 name: "opaque".into(),
                 arguments: Vec::new(),
             }),
-            Term::Bitvector32(Bitvector32Term::Constant(0)),
+            Term::Bitvector32(Bitvector32Term::constant(0)),
         );
         assert!(
             dynamic_body_fact_dependency(
@@ -6047,8 +6045,8 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(985_600));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(1 << 33),
             4,
         );
         let literal = || ContractExpression::IntegerLiteral("0".into());

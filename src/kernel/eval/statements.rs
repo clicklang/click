@@ -345,8 +345,8 @@ fn memory_write_permission_outcome_for_local(
 ) -> Option<CStatementOutcome> {
     let range = CMemoryRange::new_with_element_width(
         pointer.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
         bytes,
     );
     if let Some(error) = super::super::mutexes::storage_write_refusal(state, &range, assumptions) {
@@ -834,8 +834,8 @@ fn write_c_lvalue_paths_without_local_reference(
             if is_external && !has_external_write_resource {
                 let missing = CMemoryRange::new_with_element_width(
                     pointer.clone(),
-                    Bitvector32Term::Constant(0),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::constant(0),
+                    Bitvector32Term::constant(1),
                     value.byte_width(),
                 );
                 // A live mutex holds storage its initialization consumed;
@@ -1216,8 +1216,8 @@ fn missing_aggregate_copy_write_resource(
             return Some(CResourceFact::own_memory(
                 CMemoryRange::new_with_element_width(
                     pointer,
-                    Bitvector32Term::Constant(0),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::constant(0),
+                    Bitvector32Term::constant(1),
                     bytes,
                 ),
             ));
@@ -1254,8 +1254,8 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             return Some(CResourceFact::view_memory(
                 CMemoryRange::new_with_element_width(
                     source.offset_by_bytes(field.offset_bytes()),
-                    Bitvector32Term::Constant(0),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::constant(0),
+                    Bitvector32Term::constant(1),
                     crate::kernel::assumptions::read_candidate_byte_width(
                         field.c_type().byte_width(),
                     ),
@@ -1275,8 +1275,8 @@ pub(in crate::kernel) fn missing_aggregate_copy_read_resource(
             return Some(CResourceFact::view_memory(
                 CMemoryRange::new_with_element_width(
                     pointer,
-                    Bitvector32Term::Constant(0),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::constant(0),
+                    Bitvector32Term::constant(1),
                     union.size_bytes(),
                 ),
             ));
@@ -1368,7 +1368,7 @@ pub(super) fn execute_c_heap_allocate_paths(
             (
                 Bitvector32Term::multiply(
                     size.term.clone(),
-                    Bitvector32Term::Constant(element_width),
+                    Bitvector32Term::constant(element_width),
                 ),
                 positive && fits,
             )
@@ -1411,7 +1411,7 @@ pub(super) fn execute_c_heap_allocate_paths(
         }
         let object_class = object_type.and_then(|(class, size, alignment)| {
             let enough_space =
-                ConditionTerm::unsigned_less_equal(Bitvector32Term::Constant(*size), bytes.clone());
+                ConditionTerm::unsigned_less_equal(Bitvector32Term::constant(*size), bytes.clone());
             (*alignment as u64 <= crate::kernel::primitives::HEAP_ALLOCATION_ALIGNMENT
                 && effective_assumptions.decide(&enough_space) == Some(true))
             .then(|| class.clone())
@@ -1548,13 +1548,13 @@ fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option
         }),
         CValue::Int64(term) => exact_signed_size_value(&term, assumptions).and_then(|value| {
             u32::try_from(value).ok().map(|value| AllocationSize {
-                term: Bitvector32Term::Constant(value),
+                term: Bitvector32Term::constant(value),
                 unsigned: false,
             })
         }),
         CValue::UInt64(term) => exact_unsigned_size_value(&term, assumptions).and_then(|value| {
             u32::try_from(value).ok().map(|value| AllocationSize {
-                term: Bitvector32Term::Constant(value),
+                term: Bitvector32Term::constant(value),
                 unsigned: false,
             })
         }),
@@ -1667,9 +1667,9 @@ fn exact_unsigned_size_value(term: &Bitvector32Term, assumptions: &PureFactConte
 
 fn allocation_size_is_positive(size: &AllocationSize, assumptions: &PureFactContext) -> bool {
     let condition = if size.unsigned {
-        ConditionTerm::unsigned_greater_than(size.term.clone(), Bitvector32Term::Constant(0))
+        ConditionTerm::unsigned_greater_than(size.term.clone(), Bitvector32Term::constant(0))
     } else {
-        ConditionTerm::signed_greater_than(size.term.clone(), Bitvector32Term::Constant(0))
+        ConditionTerm::signed_greater_than(size.term.clone(), Bitvector32Term::constant(0))
     };
     assumptions.decide(&condition) == Some(true)
 }
@@ -1685,9 +1685,9 @@ fn allocation_size_fits_element_width(
         i32::MAX as u32 / element_width
     };
     let condition = if size.unsigned {
-        ConditionTerm::unsigned_less_equal(size.term.clone(), Bitvector32Term::Constant(maximum))
+        ConditionTerm::unsigned_less_equal(size.term.clone(), Bitvector32Term::constant(maximum))
     } else {
-        ConditionTerm::signed_less_equal(size.term.clone(), Bitvector32Term::Constant(maximum))
+        ConditionTerm::signed_less_equal(size.term.clone(), Bitvector32Term::constant(maximum))
     };
     assumptions.decide(&condition) == Some(true)
 }
@@ -1831,7 +1831,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
         let (old_count, old_range_width) = heap_range_element_count(&old_bytes, element_width);
         let old_allocation_range = CMemoryRange::new_with_element_width(
             old_pointer.clone(),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             old_bytes.clone(),
             1,
         );
@@ -1904,7 +1904,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 AllocationSize {
                     term: Bitvector32Term::multiply(
                         size.term.clone(),
-                        Bitvector32Term::Constant(element_width),
+                        Bitvector32Term::constant(element_width),
                     ),
                     unsigned: size.unsigned,
                 }
@@ -1953,7 +1953,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                         ));
                         continue;
                     };
-                    Some(Bitvector32Term::Constant(old_prefix.min(new_size)))
+                    Some(Bitvector32Term::constant(old_prefix.min(new_size)))
                 }
             };
 
@@ -1974,7 +1974,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
             };
             let complete_access = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
                 old_pointer.clone(),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
                 old_count.clone(),
                 old_range_width,
             ));
@@ -2070,24 +2070,24 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 };
                 let fits_condition = if new_bytes.unsigned {
                     ConditionTerm::unsigned_less_equal(
-                        Bitvector32Term::Constant(end),
+                        Bitvector32Term::constant(end),
                         new_bytes.term.clone(),
                     )
                 } else {
                     ConditionTerm::signed_less_equal(
-                        Bitvector32Term::Constant(end),
+                        Bitvector32Term::constant(end),
                         new_bytes.term.clone(),
                     )
                 };
                 let truncated_condition = if new_bytes.unsigned {
                     ConditionTerm::unsigned_less_than(
                         new_bytes.term.clone(),
-                        Bitvector32Term::Constant(end),
+                        Bitvector32Term::constant(end),
                     )
                 } else {
                     ConditionTerm::signed_less_than(
                         new_bytes.term.clone(),
-                        Bitvector32Term::Constant(end),
+                        Bitvector32Term::constant(end),
                     )
                 };
                 let fits = effective_assumptions.decide(&fits_condition);
@@ -2116,12 +2116,12 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 };
                 let fits_condition = if new_bytes.unsigned {
                     ConditionTerm::unsigned_less_equal(
-                        Bitvector32Term::Constant(end_constant),
+                        Bitvector32Term::constant(end_constant),
                         new_bytes.term.clone(),
                     )
                 } else {
                     ConditionTerm::signed_less_equal(
-                        Bitvector32Term::Constant(end_constant),
+                        Bitvector32Term::constant(end_constant),
                         new_bytes.term.clone(),
                     )
                 };
@@ -2354,7 +2354,7 @@ fn execute_c_heap_free_paths(
         }
         let full_allocation_range = CMemoryRange::new_with_element_width(
             pointer.pointer().clone(),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             bytes.clone(),
             1,
         );
@@ -2376,7 +2376,7 @@ fn execute_c_heap_free_paths(
         let (element_count, range_width) = heap_range_element_count(&bytes, element_width);
         let complete_access = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
             pointer.pointer().clone(),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             element_count,
             range_width,
         ));
@@ -2574,7 +2574,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                         Some((pointer, _)) => pointer.clone(),
                         None => unreachable!("allocation resource was just constructed"),
                     },
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                     old_count,
                     old_range_width,
                 ));
@@ -2594,7 +2594,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                             heap_range_element_count(&bytes, element_width);
                         CMemoryRange::new_with_element_width(
                             resolved_base,
-                            Bitvector32Term::Constant(0),
+                            Bitvector32Term::constant(0),
                             new_count,
                             new_range_width,
                         )
@@ -2646,7 +2646,7 @@ pub(crate) fn resolve_pending_heap_allocations(
                 .unchecked_with_fact(CResourceFact::own_memory(
                     CMemoryRange::new_with_element_width(
                         resolved_base,
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                         element_count,
                         range_width,
                     ),
@@ -4221,7 +4221,7 @@ fn execute_c_switch_dispatch_paths(
             judgment,
         );
     };
-    let condition = ConditionTerm::equal(selector.clone(), Bitvector32Term::Constant(value));
+    let condition = ConditionTerm::equal(selector.clone(), Bitvector32Term::constant(value));
     let mut paths = Vec::new();
     for condition_path in condition_as_c_int32_paths(condition, facts, obligations, assumptions) {
         let CExpressionPath {
@@ -4457,7 +4457,7 @@ pub(in crate::kernel) fn execute_c_while_paths(
             evaluate_c_condition_paths(&current_state, condition, &loop_assumptions, budget)?
         } else {
             vec![CExpressionPath {
-                outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Constant(1))),
+                outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::constant(1))),
                 facts: Vec::new().into(),
                 obligations: Vec::new(),
             }]
@@ -4682,7 +4682,7 @@ fn local_declaration_pointer(state: &mut CState, name: &str) -> Result<Pointer, 
             .unwrap_or(Bitvector32Term::Variable(Variable(u64::MAX)));
         let old_range = CMemoryRange::new_with_element_width(
             previous.clone(),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             end,
             1,
         );
@@ -4863,8 +4863,8 @@ fn own_local_array(state: &mut CState, pointer: &Pointer, bytes: u32) {
         .unchecked_with_fact(CResourceFact::own_memory(
             CMemoryRange::new_with_element_width(
                 pointer.clone(),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(bytes),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(bytes),
                 1,
             ),
         ));
@@ -5150,8 +5150,8 @@ pub(in crate::kernel) fn declare_local(
         .unchecked_with_fact(CResourceFact::own_memory(
             CMemoryRange::new_with_element_width(
                 pointer.clone(),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(byte_width),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(byte_width),
                 1,
             ),
         ));
@@ -5206,8 +5206,8 @@ pub(in crate::kernel) fn declare_aggregate_local(
         .unchecked_with_fact(CResourceFact::own_memory(
             CMemoryRange::new_with_element_width(
                 pointer,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(layout.size_bytes()),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(layout.size_bytes()),
                 1,
             ),
         ));

@@ -16,7 +16,7 @@ fn rust_shifts_are_fact_stable_and_do_not_scan_ambient_facts() {
             );
         }
         let bound =
-            ConditionTerm::unsigned_less_than(n.clone(), Bitvector32Term::UInt32Constant(8));
+            ConditionTerm::unsigned_less_than(n.clone(), Bitvector32Term::uint32_constant(8));
         let defined = base.clone().assume_condition(bound.clone(), true);
         let undefined = base.clone().assume_condition(bound.clone(), false);
         let impossible = defined.clone().assume_condition(bound, false);

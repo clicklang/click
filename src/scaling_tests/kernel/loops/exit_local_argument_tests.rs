@@ -85,7 +85,7 @@ fn exit_argument_checks_reuse_the_checked_path_context() {
         Proposition::ConditionIs(
             ConditionTerm::equal(
                 Bitvector32Term::Variable(Variable(id)),
-                Bitvector32Term::Constant(value),
+                Bitvector32Term::constant(value),
             ),
             true,
         )

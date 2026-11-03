@@ -42,8 +42,8 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
     );
     let written = CMemoryRange::new(
         object(2),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     );
     let after =
         memory.with_call_memory_havoc(Variable(781_100), &[written], &assumptions, Some(&kept));
@@ -155,8 +155,8 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let range = |pointer: &Pointer| {
             CMemoryRange::new(
                 pointer.clone(),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )
         };
         let memory_spec = |name: &str| {
@@ -248,7 +248,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let assumptions = PureFactContext::new().assume_condition(
             ConditionTerm::equal(
                 Bitvector32Term::Variable(old_name),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
             true,
         );
@@ -296,14 +296,14 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let post_facts = assumptions.assume_condition(
             ConditionTerm::equal(
                 Bitvector32Term::Variable(new_name),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(1),
             ),
             true,
         );
         assert!(
             !post_facts
                 .equality_graph
-                .are_int32_equal(&Bitvector32Term::Constant(0), &Bitvector32Term::Constant(1),),
+                .are_int32_equal(&Bitvector32Term::constant(0), &Bitvector32Term::constant(1),),
             "the old and new invariants must not imply zero equals one"
         );
     }

@@ -8,7 +8,7 @@ fn fact(variable: u64, value: i64) -> Proposition {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-            right: Box::new(Bitvector32Term::Constant(value as _)),
+            right: Box::new(Bitvector32Term::constant(value as _)),
         },
         true,
     )
@@ -37,7 +37,7 @@ fn merged_exit_equations_are_available_without_historical_guards() {
     let fresh = CValue::Int32(Bitvector32Term::Variable(Variable(100)));
     let make = |value: u32, guard: i64| {
         let mut restatement = LoopExitRestatement::default();
-        restatement.pin(&fresh, &CValue::Int32(Bitvector32Term::Constant(value)));
+        restatement.pin(&fresh, &CValue::Int32(Bitvector32Term::constant(value)));
         restatement.restate(
             vec![ExecutionPureFact::new(fact(1, guard))].into(),
             Vec::new(),

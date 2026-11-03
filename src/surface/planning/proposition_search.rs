@@ -29,6 +29,7 @@ use super::SearchPermission;
 use crate::kernel::planning_api::*;
 use crate::kernel::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{constant_u64, uint64_constant};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
@@ -1323,7 +1324,7 @@ impl PropositionSearch for PureFactContext {
         if sort != &Sort::CInt32 {
             return None;
         }
-        let witness = Bitvector32Term::Constant(0);
+        let witness = Bitvector32Term::constant(0);
         let instantiated = substitute_bitvector_variable_in_proposition(body, var, &witness);
         if !matches!(instantiated, Proposition::CMemoryLoadable { .. }) {
             return None;
@@ -1572,7 +1573,7 @@ mod monotone_forall_tests {
         };
         let old_is_zero = equality(
             Bitvector32Term::Variable(outer),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         );
         let old_equals_other = equality(
             Bitvector32Term::Variable(outer),
@@ -1580,7 +1581,7 @@ mod monotone_forall_tests {
         );
         let body = equality(
             Bitvector32Term::Variable(other),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         );
         let goal = Proposition::ForAll {
             name: Default::default(),
@@ -1699,7 +1700,7 @@ mod condition_premise_tests {
                 true,
             )
         };
-        let constant = Bitvector32Term::Constant(7);
+        let constant = Bitvector32Term::constant(7);
         let left = equal(term(1), constant.clone());
         let right = equal(constant, term(2));
         let goal = equal(term(1), term(2));
@@ -1709,7 +1710,7 @@ mod condition_premise_tests {
         for index in 8..136 {
             context = context.assume_proposition(Proposition::Not(Box::new(equal(
                 term(1),
-                Bitvector32Term::Constant(index),
+                Bitvector32Term::constant(index),
             ))));
         }
         reset_condition_selection_visits();
@@ -1728,7 +1729,7 @@ mod condition_premise_tests {
         }
         assert!(
             context
-                .derive_atomic_proposition(&equal(term(1), Bitvector32Term::Constant(8)))
+                .derive_atomic_proposition(&equal(term(1), Bitvector32Term::constant(8)))
                 .is_none()
         );
         let exact_constant_only = PureFactContext::new().assume_proposition(left.clone());
@@ -1764,7 +1765,7 @@ mod condition_premise_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(term(1)),
-                right: Box::new(Bitvector32Term::Constant(1000)),
+                right: Box::new(Bitvector32Term::constant(1000)),
             }
         } else {
             order(index, index - 1)
@@ -1785,7 +1786,7 @@ mod condition_premise_tests {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(term(size as u64)),
-            right: Box::new(Bitvector32Term::Constant(1000)),
+            right: Box::new(Bitvector32Term::constant(1000)),
         };
         (context, Proposition::ConditionIs(goal, true))
     }
@@ -2298,9 +2299,13 @@ fn reduce_solve_atomic_premises(
                 },
                 Bitvector32Term::Variable(upper),
             ) => match (base.as_ref(), amount.as_ref()) {
-                (Bitvector32Term::Variable(base), Bitvector32Term::UInt64Constant(amount)) => Some(
-                    AtomicReductionQuery::UnsignedSubtractionLessThan(*base, *amount, *upper),
-                ),
+                (Bitvector32Term::Variable(base), uint64_constant!(amount)) => {
+                    Some(AtomicReductionQuery::UnsignedSubtractionLessThan(
+                        *base,
+                        constant_u64(*amount),
+                        *upper,
+                    ))
+                }
                 _ => None,
             },
             _ => None,

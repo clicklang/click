@@ -60,6 +60,7 @@
 //! cells their producer has already proved separate.
 
 use crate::kernel::binary_term;
+use crate::kernel::bits32_constant;
 use crate::kernel::{Bitvector32Term, Pointer, PointerOffsetTerm, PureFactContext};
 
 /// The widest cell there is: no `CValue` is wider, and a cell holding
@@ -226,9 +227,7 @@ fn anchor_byte_form_cancels(anchor: &PointerOffsetTerm) -> bool {
     super::path_facts::byte_offset_from_pointer_offset(anchor).is_some_and(|form| {
         !matches!(
             form,
-            Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_)
-                | binary_term!(Int32, Subtract, ..)
+            bits32_constant!(_) | binary_term!(Int32, Subtract, ..)
         )
     })
 }
@@ -330,8 +329,8 @@ mod tests {
         match width {
             1 => crate::kernel::uint8(seed & 0xff),
             2 => crate::kernel::int16(seed & 0x7fff),
-            4 => CValue::Int32(Bitvector32Term::Constant(seed)),
-            8 => CValue::Int64(Bitvector32Term::Int64Constant(i64::from(seed))),
+            4 => CValue::Int32(Bitvector32Term::constant(seed)),
+            8 => CValue::Int64(Bitvector32Term::int64_constant(i64::from(seed))),
             16 => match crate::kernel::c_uint128_literal((1u128 << 127) | u128::from(seed)) {
                 crate::kernel::CExpression::Value(value) => value,
                 _ => unreachable!("literal is a value"),
@@ -345,20 +344,20 @@ mod tests {
         vec![
             PureFactContext::new(),
             PureFactContext::new().assume_condition(
-                ConditionTerm::equal(index.clone(), Bitvector32Term::Constant(2)),
+                ConditionTerm::equal(index.clone(), Bitvector32Term::constant(2)),
                 true,
             ),
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
+                    ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), index.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(index, Bitvector32Term::Constant(3)),
+                    ConditionTerm::signed_less_than(index, Bitvector32Term::constant(3)),
                     true,
                 ),
             PureFactContext::new().assume_condition(
-                ConditionTerm::equal(variable(900), Bitvector32Term::Constant(1)),
+                ConditionTerm::equal(variable(900), Bitvector32Term::constant(1)),
                 true,
             ),
         ]
@@ -487,8 +486,8 @@ mod tests {
         let anchor = PointerOffsetTerm::scale_int32(variable(900), 4);
         let shifted =
             |shift: i64| PointerOffsetTerm::add(anchor.clone(), PointerOffsetTerm::Constant(shift));
-        let int32 = |value: u32| CValue::Int32(Bitvector32Term::Constant(value));
-        let int64 = |value: i64| CValue::Int64(Bitvector32Term::Int64Constant(value));
+        let int32 = |value: u32| CValue::Int32(Bitvector32Term::constant(value));
+        let int64 = |value: i64| CValue::Int64(Bitvector32Term::int64_constant(value));
         // Far cells on both sides, which every later store skips.
         let far = [(shifted(-64), int32(90)), (shifted(64), int32(91))];
 

@@ -15,7 +15,7 @@ fn operator_families_imply_their_carrier() {
             Int32,
             Add,
             boxed(x.clone()),
-            boxed(Bitvector32Term::Constant(1))
+            boxed(Bitvector32Term::constant(1))
         )),
         Ok(Some(CarrierWidth::Bits32))
     );
@@ -24,19 +24,19 @@ fn operator_families_imply_their_carrier() {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Add,
             left: boxed(x.clone()),
-            right: boxed(Bitvector32Term::UInt64Constant(1))
+            right: boxed(Bitvector32Term::uint64_constant(1))
         }),
         Ok(Some(CarrierWidth::Bits64))
     );
     assert_eq!(
         term_width(&Bitvector32Term::Int64From32(boxed(
-            Bitvector32Term::Constant(7)
+            Bitvector32Term::constant(7)
         ))),
         Ok(Some(CarrierWidth::Bits64))
     );
     assert_eq!(
         term_width(&Bitvector32Term::MachineIntegerCast {
-            value: boxed(Bitvector32Term::UInt64Constant(7)),
+            value: boxed(Bitvector32Term::uint64_constant(7)),
             source: MachineIntegerType::UInt64,
             destination: MachineIntegerType::UInt128,
         }),
@@ -49,8 +49,8 @@ fn an_operand_of_the_wrong_width_is_reported_where_it_meets_its_operator() {
     let mixed = Bitvector32Term::Binary {
         format: MachineIntegerType::Int64,
         op: MachineBinaryOp::Add,
-        left: boxed(Bitvector32Term::Constant(1)),
-        right: boxed(Bitvector32Term::Int64Constant(2)),
+        left: boxed(Bitvector32Term::constant(1)),
+        right: boxed(Bitvector32Term::int64_constant(2)),
     };
     assert_eq!(
         term_width(&mixed),
@@ -62,8 +62,8 @@ fn an_operand_of_the_wrong_width_is_reported_where_it_meets_its_operator() {
     );
     let arms = Bitvector32Term::If {
         condition: Box::new(ConditionTerm::Variable(Variable(3))),
-        then_term: boxed(Bitvector32Term::Constant(0)),
-        else_term: boxed(Bitvector32Term::UInt64Constant(0)),
+        then_term: boxed(Bitvector32Term::constant(0)),
+        else_term: boxed(Bitvector32Term::uint64_constant(0)),
     };
     assert!(term_width(&arms).is_err());
 }
@@ -71,7 +71,7 @@ fn an_operand_of_the_wrong_width_is_reported_where_it_meets_its_operator() {
 #[test]
 fn a_value_tag_and_its_term_agree_on_the_carrier() {
     assert_eq!(
-        value_width_mismatch(&CValue::UInt64(Bitvector32Term::Constant(0))),
+        value_width_mismatch(&CValue::UInt64(Bitvector32Term::constant(0))),
         Some(WidthMismatch {
             site: "CValue::UInt64",
             expected: CarrierWidth::Bits64,
@@ -79,7 +79,7 @@ fn a_value_tag_and_its_term_agree_on_the_carrier() {
         })
     );
     assert_eq!(
-        value_width_mismatch(&CValue::UInt64(Bitvector32Term::UInt64Constant(0))),
+        value_width_mismatch(&CValue::UInt64(Bitvector32Term::uint64_constant(0))),
         None
     );
     // Narrow values ride in the 32-bit carrier.
@@ -92,7 +92,7 @@ fn a_value_tag_and_its_term_agree_on_the_carrier() {
 
 #[test]
 fn a_comparison_takes_operands_of_the_width_it_names() {
-    let wide = Bitvector32Term::Int64Constant(1);
+    let wide = Bitvector32Term::int64_constant(1);
     assert!(
         condition_width_mismatch(&ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
@@ -106,7 +106,7 @@ fn a_comparison_takes_operands_of_the_width_it_names() {
         condition_width_mismatch(&ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: boxed(Bitvector32Term::Constant(1)),
+            left: boxed(Bitvector32Term::constant(1)),
             right: boxed(wide)
         }),
         Some(WidthMismatch {
@@ -141,7 +141,7 @@ fn a_condition_reports_each_variable_at_the_width_it_is_used() {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: boxed(Bitvector32Term::Variable(n)),
-                right: boxed(Bitvector32Term::UInt64Constant(1)),
+                right: boxed(Bitvector32Term::uint64_constant(1)),
             },
         ))),
     };
@@ -166,7 +166,7 @@ fn one_fact_context_keeps_a_variable_at_one_width() {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: boxed(n.clone()),
-            right: boxed(Bitvector32Term::UInt64Constant(10)),
+            right: boxed(Bitvector32Term::uint64_constant(10)),
         },
         true,
     );
@@ -176,7 +176,7 @@ fn one_fact_context_keeps_a_variable_at_one_width() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: boxed(n),
-            right: boxed(Bitvector32Term::Constant(5)),
+            right: boxed(Bitvector32Term::constant(5)),
         },
         true,
     );
@@ -190,7 +190,7 @@ fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: boxed(n.clone()),
-            right: boxed(Bitvector32Term::UInt64Constant(10)),
+            right: boxed(Bitvector32Term::uint64_constant(10)),
         },
         true,
     );
@@ -199,7 +199,7 @@ fn separate_fact_contexts_may_use_one_variable_number_at_different_widths() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: boxed(n),
-            right: boxed(Bitvector32Term::Constant(5)),
+            right: boxed(Bitvector32Term::constant(5)),
         },
         true,
     );
@@ -226,7 +226,7 @@ fn a_bool_constant_is_the_byte_zero_or_one() {
     assert!(value_mismatch(&out_of_range).is_some());
     // A narrow value's constant is native: a 32-bit word in an 8- or 16-bit
     // value, a `Bool` among them, is a width mismatch, whatever its bits.
-    let c = Bitvector32Term::Constant;
+    let c = Bitvector32Term::constant;
     for word in [
         CValue::Bool(c(1)),
         CValue::Int8(c(127)),
@@ -245,14 +245,14 @@ fn order_chains_decide_alike_at_every_width() {
     type Less = fn(Bitvector32Term, Bitvector32Term) -> ConditionTerm;
     let widths: [(Less, fn(u64) -> Bitvector32Term); 3] = [
         (ConditionTerm::signed_less_than, |n| {
-            Bitvector32Term::Constant(n as u32)
+            Bitvector32Term::constant(n as u32)
         }),
         (ConditionTerm::int64_signed_less_than, |n| {
-            Bitvector32Term::Int64Constant(n as i64)
+            Bitvector32Term::int64_constant(n as i64)
         }),
         (
             ConditionTerm::uint64_less_than,
-            Bitvector32Term::UInt64Constant,
+            Bitvector32Term::uint64_constant,
         ),
     ];
     for (base, (less, constant)) in widths.into_iter().enumerate() {
@@ -342,7 +342,7 @@ fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::LessThan,
             left: boxed(binary),
-            right: boxed(Bitvector32Term::Int64Constant(0)),
+            right: boxed(Bitvector32Term::int64_constant(0)),
         };
         assert!(condition_variable_widths(&condition).is_err(), "{format:?}");
     }
@@ -351,7 +351,7 @@ fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
             format,
             op: MachineBinaryOp::ShiftRight,
             left: x.clone(),
-            right: boxed(Bitvector32Term::Constant(3)),
+            right: boxed(Bitvector32Term::constant(3)),
         };
         assert_eq!(term_width(&binary), Ok(Some(CarrierWidth::Bits64)));
     }
@@ -360,7 +360,7 @@ fn a_format_carrying_operator_at_a_format_without_such_nodes_is_refused() {
             format,
             op: MachineBinaryOp::ShiftRight,
             left: x.clone(),
-            right: boxed(Bitvector32Term::Constant(3)),
+            right: boxed(Bitvector32Term::constant(3)),
         };
         assert_eq!(term_width(&binary), Ok(Some(CarrierWidth::Bits32)));
     }

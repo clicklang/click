@@ -342,7 +342,7 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
                     crate::kernel::MachineBinaryOp::Multiply,
                 )
                 .build_raw(call(pointer), word(940_053)),
-                Bitvector32Term::Constant(7),
+                Bitvector32Term::constant(7),
             ),
         )
     };
@@ -373,8 +373,8 @@ fn a_uint32_constant_is_one_class_with_its_word() {
     let _session = crate::kernel::VerificationSession::enter();
     let graph = EqualityGraph::default();
     for bits in [0u32, 7, 0x7FFF_FFFF, 0x8000_0000, u32::MAX] {
-        let word = Bitvector32Term::Constant(bits);
-        let formatted = Bitvector32Term::UInt32Constant(bits);
+        let word = Bitvector32Term::constant(bits);
+        let formatted = Bitvector32Term::uint32_constant(bits);
         assert!(graph.are_int32_equal(&word, &formatted), "{bits}");
         let x = Bitvector32Term::Variable(Variable(961_001));
         assert!(
@@ -390,7 +390,7 @@ fn a_uint32_constant_is_one_class_with_its_word() {
             "{bits} as an operand"
         );
         assert!(
-            !graph.are_int32_equal(&formatted, &Bitvector32Term::Constant(bits.wrapping_add(1))),
+            !graph.are_int32_equal(&formatted, &Bitvector32Term::constant(bits.wrapping_add(1))),
             "{bits}"
         );
     }

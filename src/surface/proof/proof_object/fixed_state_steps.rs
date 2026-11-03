@@ -58,11 +58,11 @@ mod projection_path_tests {
     fn surface_leaf() -> ClickProposition {
         ClickProposition::Comparison {
             left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ))),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ))),
         }
     }

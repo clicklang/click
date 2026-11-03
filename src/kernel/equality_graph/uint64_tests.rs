@@ -21,7 +21,7 @@ fn packed(value: &Bitvector32Term, parent: &Pointer) -> Bitvector32Term {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::BitwiseAnd,
             left: Box::new(value.clone()),
-            right: Box::new(Bitvector32Term::UInt64Constant(1)),
+            right: Box::new(Bitvector32Term::uint64_constant(1)),
         }),
     }
 }
@@ -104,7 +104,7 @@ fn integer_address_definition_preserves_byte_displacements_and_load_snapshots() 
         block: decoded.block.clone(),
         offset: PointerOffsetTerm::Constant(8),
     };
-    let sum = Bitvector32Term::uint64_add(bits.clone(), Bitvector32Term::UInt64Constant(8));
+    let sum = Bitvector32Term::uint64_add(bits.clone(), Bitvector32Term::uint64_constant(8));
     let graph = EqualityGraph::default();
     assert!(graph.are_uint64_equal(&raw_address(&shifted), &sum));
     assert!(!graph.are_uint64_equal(&raw_address(&shifted), &bits));
@@ -116,7 +116,7 @@ fn integer_address_definition_preserves_byte_displacements_and_load_snapshots() 
     };
     let after = intern_c_memory(memory.memory().clone().store(
         pointer.clone(),
-        CValue::UInt64(Bitvector32Term::UInt64Constant(19)),
+        CValue::UInt64(Bitvector32Term::uint64_constant(19)),
     ));
     let mut graph = graph;
     assert!(!graph.are_uint64_equal(&word(&memory, &decoded, 8), &word(&memory, &pointer, 8)));
@@ -205,7 +205,7 @@ fn wide_reads_preserve_snapshot_width_and_value_sort() {
     let q = Pointer::symbolic(Variable(920_002));
     let after = intern_c_memory(before.memory().clone().store(
         p.clone(),
-        CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+        CValue::UInt64(Bitvector32Term::uint64_constant(9)),
     ));
     let a = word(&before, &p, 8);
     let b = word(&before, &q, 8);
@@ -266,11 +266,11 @@ fn a_read_through_an_alias_equals_the_value_stored_at_the_other_spelling() {
     };
     let after = intern_c_memory(memory.memory().clone().store(
         stored_at.clone(),
-        CValue::UInt64(Bitvector32Term::UInt64Constant(5)),
+        CValue::UInt64(Bitvector32Term::uint64_constant(5)),
     ));
     let alias_of = Pointer::symbolic(Variable(960_101));
     let read = word(&after, &alias_of, 8);
-    let five = Bitvector32Term::UInt64Constant(5);
+    let five = Bitvector32Term::uint64_constant(5);
     let base = PureFactContext::new();
     assert!(!base.equality_graph.are_uint64_equal(&read, &five));
     // The read keeps its own term; the alias equates it with the cell.

@@ -76,7 +76,7 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
         let (answer, widened) = graph_work(|| {
             graph.decide(&ConditionTerm::uint64_less_than(
                 Bitvector32Term::uint64_from_32(i.clone()),
-                Bitvector32Term::UInt64Constant(1000),
+                Bitvector32Term::uint64_constant(1000),
             ))
         });
         assert_eq!(answer, Some(true));
@@ -86,9 +86,9 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     op: crate::kernel::MachineBinaryOp::BitwiseAnd,
                     left: Box::new(unbounded_divisor.clone()),
-                    right: Box::new(Bitvector32Term::UInt32Constant(1)),
+                    right: Box::new(Bitvector32Term::uint32_constant(1)),
                 }),
-                Bitvector32Term::UInt64Constant(2),
+                Bitvector32Term::uint64_constant(2),
             ))
         });
         assert_eq!(answer, Some(true));
@@ -99,7 +99,7 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     op: crate::kernel::MachineBinaryOp::BitwiseAnd,
                     left: Box::new(unbounded_divisor.clone()),
-                    right: Box::new(Bitvector32Term::UInt32Constant(1)),
+                    right: Box::new(Bitvector32Term::uint32_constant(1)),
                 })),
                 byte_width: 8,
                 unsigned: true,
@@ -366,9 +366,9 @@ fn an_order_against_a_uint32_constant_costs_what_its_word_costs() {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             for bits in [8u32, 4_000_000_000] {
                 let (word, word_work) =
-                    graph_work(|| graph.decide(&order(format, Bitvector32Term::Constant(bits))));
+                    graph_work(|| graph.decide(&order(format, Bitvector32Term::constant(bits))));
                 let (formatted, formatted_work) = graph_work(|| {
-                    graph.decide(&order(format, Bitvector32Term::UInt32Constant(bits)))
+                    graph.decide(&order(format, Bitvector32Term::uint32_constant(bits)))
                 });
                 assert_eq!(formatted, word, "{format:?} {bits}, {size}");
                 assert_eq!(formatted_work, word_work, "{format:?} {bits}, {size}");

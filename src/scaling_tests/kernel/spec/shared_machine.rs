@@ -13,7 +13,7 @@ fn unsigned_production_and_single_export_are_linear_beside_unrelated_terms() {
                 expression = SpecExpression::Add(
                     Box::new(expression),
                     Box::new(SpecExpression::Value(CValue::UInt64(
-                        Bitvector32Term::UInt64Constant(1),
+                        Bitvector32Term::uint64_constant(1),
                     ))),
                 );
             }
@@ -71,13 +71,13 @@ fn signed_available_operand_production_is_linear_beside_unrelated_terms() {
                     format: MachineIntegerType::Int64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(operand),
-                    right: Box::new(Bitvector32Term::Int64Constant(1)),
+                    right: Box::new(Bitvector32Term::int64_constant(1)),
                 };
             }
             let expression = SpecExpression::Add(
                 Box::new(SpecExpression::Value(CValue::Int64(operand))),
                 Box::new(SpecExpression::Value(CValue::Int64(
-                    Bitvector32Term::Int64Constant(1),
+                    Bitvector32Term::int64_constant(1),
                 ))),
             );
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -127,7 +127,7 @@ fn a_deferred_operand_rejects_one_preparation_without_importing_prefixes() {
             expression = SpecExpression::Add(
                 Box::new(expression),
                 Box::new(SpecExpression::Value(CValue::UInt64(
-                    Bitvector32Term::UInt64Constant(1),
+                    Bitvector32Term::uint64_constant(1),
                 ))),
             );
         }

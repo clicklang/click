@@ -65,7 +65,7 @@ fn ordinary_authority_wrapper_checks_only_its_delta() {
                     format: crate::kernel::MachineIntegerType::Int32,
                     relation: crate::kernel::CompareRelation::Equal,
                     left: Box::new(Bitvector32Term::Variable(Variable(index as u64 + 100))),
-                    right: Box::new(Bitvector32Term::Constant(index as u32)),
+                    right: Box::new(Bitvector32Term::constant(index as u32)),
                 },
                 true,
             ));
