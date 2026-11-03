@@ -20838,7 +20838,7 @@ fn tokenize(source: &str) -> Result<(Vec<Token>, Vec<SourcePosition>), C0SyntaxE
             while index + 1 < chars.len() && !(chars[index] == '*' && chars[index + 1] == '/') {
                 index += 1;
             }
-            if index + 1 == chars.len() {
+            if index + 1 >= chars.len() {
                 return Err(C0SyntaxError::at(position, "unterminated block comment"));
             }
             index += 2;
