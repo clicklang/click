@@ -2341,6 +2341,115 @@ impl TermClasses {
         )
     }
 
+    pub(in crate::kernel::equality_graph) fn may_know_observation_comparison(
+        &self,
+        view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+        value: bool,
+    ) -> bool {
+        use crate::kernel::machine_integer::Relation;
+        let format = if view.format == MachineIntegerType::UInt64
+            && matches!(view.relation, Relation::Equal | Relation::NotEqual)
+        {
+            MachineIntegerType::Int64
+        } else {
+            view.format
+        };
+        if matches!(
+            (view.relation, value),
+            (Relation::Equal, true) | (Relation::NotEqual, false)
+        ) {
+            return true;
+        }
+        let relations: &[CompareRelation] =
+            if matches!(view.relation, Relation::Equal | Relation::NotEqual) {
+                &[CompareRelation::Equal]
+            } else {
+                &[
+                    CompareRelation::LessThan,
+                    CompareRelation::LessEqual,
+                    CompareRelation::GreaterThan,
+                    CompareRelation::GreaterEqual,
+                ]
+            };
+        relations.iter().any(|relation| {
+            Self::machine_comparison_kind(format, *relation).is_some_and(|kind| {
+                self.condition_kinds.contains(&(kind, true))
+                    || self.condition_kinds.contains(&(kind, false))
+            })
+        })
+    }
+
+    pub(in crate::kernel::equality_graph) fn knows_observation_comparison(
+        &mut self,
+        view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+        value: bool,
+    ) -> bool {
+        use crate::kernel::machine_integer::Relation;
+        let (relation, truth) = match view.relation {
+            Relation::Equal => (CompareRelation::Equal, value),
+            Relation::NotEqual => (CompareRelation::Equal, !value),
+            Relation::Less => (CompareRelation::LessThan, value),
+            Relation::LessEqual => (CompareRelation::LessEqual, value),
+        };
+        let format =
+            if relation == CompareRelation::Equal && view.format == MachineIntegerType::UInt64 {
+                MachineIntegerType::Int64
+            } else {
+                view.format
+            };
+        let operands = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        if relation == CompareRelation::Equal && truth {
+            let width = Self::machine_comparison_width(format, relation, operands);
+            let [left, right] = operands.map(|operand| match operand {
+                crate::kernel::MachineOperandView::Shared(term) => {
+                    self.intern_shared_machine(term, width)
+                }
+                crate::kernel::MachineOperandView::Legacy(term) => {
+                    self.intern_typed_machine(term, width)
+                }
+            });
+            self.register_pending_loads();
+            return self.root(left) == self.root(right);
+        }
+        use CompareRelation::*;
+        let alternatives: &[(CompareRelation, bool, bool)] = match relation {
+            LessThan => &[
+                (LessThan, false, truth),
+                (GreaterThan, true, truth),
+                (GreaterEqual, false, !truth),
+                (LessEqual, true, !truth),
+            ],
+            LessEqual => &[
+                (LessEqual, false, truth),
+                (GreaterEqual, true, truth),
+                (GreaterThan, false, !truth),
+                (LessThan, true, !truth),
+            ],
+            Equal => &[(Equal, false, truth)],
+            _ => unreachable!("normalized comparison view"),
+        };
+        alternatives
+            .iter()
+            .copied()
+            .any(|(relation, reverse, truth)| {
+                let Some(kind) = Self::machine_comparison_kind(format, relation) else {
+                    return false;
+                };
+                if !self.condition_kinds.contains(&(kind, truth)) {
+                    return false;
+                }
+                let operands = if reverse {
+                    [operands[1], operands[0]]
+                } else {
+                    operands
+                };
+                self.knows_machine_comparison(format, relation, operands, truth)
+            })
+    }
+
     pub(in crate::kernel::equality_graph) fn knows_machine_comparison(
         &mut self,
         format: MachineIntegerType,

@@ -60,8 +60,10 @@ pub(in crate::kernel) struct OrderBoundIndex {
 }
 impl OrderBoundIndex {
     pub(in crate::kernel) fn get(&self, term: &Bitvector32Term) -> Option<&Bounds> {
-        self.endpoints
-            .get(&Key::for_format(self.format?, V::Legacy(term)))
+        self.get_operand(V::Legacy(term))
+    }
+    pub(in crate::kernel) fn get_operand(&self, term: V<'_>) -> Option<&Bounds> {
+        self.endpoints.get(&Key::for_format(self.format?, term))
     }
     pub(in crate::kernel) fn shares_root_with(&self, other: &Self) -> bool {
         self.format == other.format && self.endpoints.shares_root_with(&other.endpoints)

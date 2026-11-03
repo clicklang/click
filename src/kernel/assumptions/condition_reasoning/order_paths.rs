@@ -53,6 +53,26 @@ impl PureFactContext {
         // Successor rules the memory-resolution prover reads the same way
         // (`proves_order_condition_for_memory_resolution`), after the direct
         // rules have missed. Each asks one smaller strict question.
+        // Select these root-specific rules before crossing their remaining
+        // written-endpoint boundary. An unrelated shared arithmetic operand
+        // must not be expanded merely to discover it is not a successor.
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+        {
+            let [lower, upper] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            let successor = |term: MachineOperandView<'_>| {
+                matches!(term.binary(), Some((MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [a, b]))
+                    if a.literal() == Some(Bitvector32Term::Constant(1)) || b.literal() == Some(Bitvector32Term::Constant(1)))
+            };
+            let variable_bound = (lower.word32_constant().is_some() && upper.variable().is_some())
+                || (upper.word32_constant().is_some() && lower.variable().is_some());
+            if !successor(lower) && !successor(upper) && !variable_bound {
+                return None;
+            }
+        }
         let (lower, upper, strict) = condition_as_order_fact(condition, true)?;
         if let Some((below, above)) = successor_bound_as_strict_order(&lower, &upper, strict)
             && self.decide(&ConditionTerm::signed_less_than(below, above)) == Some(true)
@@ -2311,6 +2331,37 @@ impl PureFactContext {
             && guards.iter().all(|guard| self.decide(guard) == Some(true))
         {
             return Some(true);
+        }
+        // This route needs a low-word extraction at one root (possibly
+        // plus a small literal). Reject other shared roots before exporting.
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+        {
+            let low_word = |operand: MachineOperandView<'_>| {
+                matches!(
+                    operand.cast(),
+                    Some((
+                        crate::kernel::KernelMachineCastEncoding::UInt32From64,
+                        _,
+                        _,
+                        _
+                    ))
+                )
+            };
+            let truncated = |operand: MachineOperandView<'_>| {
+                low_word(operand)
+                    || matches!(operand.binary(),
+                    Some((MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [a, b]))
+                    if (low_word(a) && b.word32_constant().is_some_and(|n| n <= i32::MAX as u32))
+                        || (low_word(b) && a.word32_constant().is_some_and(|n| n <= i32::MAX as u32)))
+            };
+            if !view
+                .operands
+                .iter()
+                .any(|operand| truncated(operand.operand_view()))
+            {
+                return None;
+            }
         }
         let (left, right, strict) = condition_as_order_fact(condition, true)?;
         let small = |term: &Bitvector32Term| match term {
