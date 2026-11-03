@@ -1574,7 +1574,6 @@ impl PureFactContext {
 
     /// Preserve the existing wide constant rules on borrowed operand roots.
     fn decide_wide_constant_comparison(&self, condition: &ConditionTerm) -> Option<bool> {
-        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
         use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
         let view = comparison_view(condition, true)?;
         if !matches!(
@@ -1592,8 +1591,14 @@ impl PureFactContext {
         if equality {
             let a = self.bitvector64_identity_base_view(left);
             let b = self.bitvector64_identity_base_view(right);
-            if (Key::for_format(view.format, a) != Key::for_format(view.format, left)
-                || Key::for_format(view.format, b) != Key::for_format(view.format, right))
+            let same_root = |a, b| match (a, b) {
+                (MachineOperandView::Legacy(a), MachineOperandView::Legacy(b)) => {
+                    std::ptr::eq(a, b)
+                }
+                (MachineOperandView::Shared(a), MachineOperandView::Shared(b)) => a == b,
+                _ => false,
+            };
+            if (!same_root(a, left) || !same_root(b, right))
                 && let Some(answer) =
                     self.decide_operand_comparison(MachineIntegerType::Int64, Relation::Equal, a, b)
             {
