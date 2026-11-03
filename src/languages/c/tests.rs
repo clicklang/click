@@ -4126,6 +4126,36 @@ fn c0_syntax_reports_unterminated_block_comments() {
 }
 
 #[test]
+fn c0_syntax_rejects_unescaped_character_literal_delimiters() {
+    for (literal, message) in [
+        ("'''", "character literals must contain exactly one byte"),
+        ("''", "character literals must contain exactly one byte"),
+        (
+            "'\n'",
+            "character literals may not contain an unescaped newline",
+        ),
+        (
+            "'\r'",
+            "character literals may not contain an unescaped newline",
+        ),
+    ] {
+        let source = format!("int32 value(void) {{ return {literal}; }}");
+        let error = syntax::parse_function(&source).expect_err(&source);
+        assert_eq!(error.message(), message, "{source:?}");
+        assert_eq!(
+            error.position(),
+            Some(crate::source::SourcePosition::new(1, 28)),
+            "{source:?}"
+        );
+    }
+
+    for literal in [r"'\''", r"'\n'", r"'\r'", "'a'"] {
+        let source = format!("int32 value(void) {{ return {literal}; }}");
+        syntax::parse_function(&source).expect(&source);
+    }
+}
+
+#[test]
 fn c0_syntax_errors_carry_source_positions() {
     let error = syntax::parse_function("int32 broken(int32 x) {\n    return x\n}\n")
         .expect_err("a missing semicolon should be rejected");
@@ -12087,6 +12117,34 @@ fn c0_floating_point_storage_types_preserve_abi_layout() {
     assert_eq!(layout.field("wide_samples").unwrap().byte_width(), 16);
     assert_eq!(layout.alignment_bytes(), 8);
     assert_eq!(layout.size_bytes(), 40);
+}
+
+#[test]
+fn c0_floating_point_literals_may_start_with_a_decimal_point() {
+    use syntax::C0Expression::{Float32Literal, Float64Literal};
+
+    for (c_type, literal, expected) in [
+        ("double", ".5", Float64Literal(0.5f64.to_bits())),
+        ("double", ".5e+2", Float64Literal(50.0f64.to_bits())),
+        ("double", ".5E-1", Float64Literal(0.05f64.to_bits())),
+        ("float", ".5f", Float32Literal(0.5f32.to_bits())),
+        ("float", ".5F", Float32Literal(0.5f32.to_bits())),
+        ("float", ".5e+2f", Float32Literal(50.0f32.to_bits())),
+        ("float", "-.0f", Float32Literal(0x8000_0000)),
+    ] {
+        let source = format!("{c_type} value(void) {{ return {literal}; }}");
+        let function = syntax::parse_function(&source).expect(&source);
+        assert_eq!(
+            function.body(),
+            &syntax::C0Statement::Return(expected, syntax::C0Site::NONE),
+            "{source}"
+        );
+    }
+
+    for literal in [".5e", ".5e+", ".5ff", ".5L"] {
+        let source = format!("double value(void) {{ return {literal}; }}");
+        syntax::parse_function(&source).expect_err(&source);
+    }
 }
 
 #[test]
