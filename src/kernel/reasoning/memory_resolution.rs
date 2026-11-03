@@ -3994,7 +3994,8 @@ pub(in crate::kernel) fn run_slots_kept_by_store(
             // directly. This also handles runs whose values overlap because
             // their access width exceeds the slot stride.
             let covered_low = clamp((shift + width - 1).div_euclid(width));
-            let covered_high = clamp((shift + i128::from(bytes) - value_width).div_euclid(width) + 1);
+            let covered_high =
+                clamp((shift + i128::from(bytes) - value_width).div_euclid(width) + 1);
             crate::instrumentation::record_deterministic_work(2);
             let forgot = !run.holes().covers_range(low, covered_low)
                 || !run.holes().covers_range(covered_high, high);

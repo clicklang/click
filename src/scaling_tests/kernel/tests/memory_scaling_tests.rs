@@ -3193,11 +3193,21 @@ fn compact_run_partial_store_checks_overlapping_value_widths() {
     holes.insert_range(0, 1);
     holes.insert_range(2, 3);
     let run = CellRun::new(
-        base.clone(), 1, CType::Int32, 8,
-        crate::kernel::intern_c_memory(CMemory::new()), holes,
+        base.clone(),
+        1,
+        CType::Int32,
+        8,
+        crate::kernel::intern_c_memory(CMemory::new()),
+        holes,
     );
     // Both boundary slots are holes, but the middle slot still loses bytes.
-    assert!(crate::kernel::reasoning::run_slots_kept_by_store(
-        &run, &base.offset_by_bytes(2), 1, &PureFactContext::new(),
-    ).1);
+    assert!(
+        crate::kernel::reasoning::run_slots_kept_by_store(
+            &run,
+            &base.offset_by_bytes(2),
+            1,
+            &PureFactContext::new(),
+        )
+        .1
+    );
 }

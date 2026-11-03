@@ -31,22 +31,7 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Compact-run store preservation.**
-   `run_slots_kept_by_store` still asks
-   `typed_ranges_disjoint_from_pointer_evidence` and may inspect symbolic slots.
-   Complete the conservative-forgetting experiment, retaining deterministic
-   growth tests for logical run sizes and separation/ownership buckets.
-   Repair affected proofs with explicit separation and transport while
-   preserving C and contracts. The saved experiment is on
-   `codex/compact-run-stores` (checkpoint `0685d0293`). Remaining proof repairs:
-   `c_pointer_field_subrange_write_preserves_resources` needs an explicit final
-   quantified postcondition; `iterated_give_preserves_descriptor_loop_ownership`
-   needs descriptor-field separation and preservation across the loop store.
-   Rerun the full ordinary corpus and affected expansion checks on the combined
-   experiment before landing compact-run changes.
-   Keep actual changed-cell work separate from candidate discovery; add
-   bounded automation only for demonstrated proof friction.
-2. **Direct resource support selection.**
+1. **Direct resource support selection.**
    `directly_supporting_owned_entry_with_separation` and
    `has_other_directly_supporting_owned_entry` in
    `src/kernel/primitives/resource_algebra.rs` examine candidate resources.
@@ -76,8 +61,8 @@ a concrete proof need; support whole-region separation by explicit composition,
 not a transition scan. Extend observations beyond memory only with an explicit
 primitive design and a concrete use.
 
-Keep history removal separate from the compact-run experiment above. Migrate
-implicit framing tests to explicit proofs, retaining aliasing and overlap controls.
+Migrate implicit framing tests to explicit proofs, retaining aliasing and
+overlap controls.
 This item does not require a general audit of all history upkeep, diagnostics,
 or verifier code before closure.
 

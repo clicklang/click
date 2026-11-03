@@ -375,9 +375,15 @@ it does not enumerate aliases. A miss forgets the cached value. The boundary
 rejects general resolution, range search, alias enumeration and order-path walks
 in this helper. Growing same-block separation buckets leave cold and repeated
 miss work unchanged, while written index disequality still respects access
-widths. Byte-gap eligibility also reads only an exact stated signed order;
-it does not follow recorded order chains. State the endpoint inequality with
-an explicit proof when needed.
+widths.
+
+Automatic store byte-gap eligibility reads an exact stated endpoint order;
+it does not follow recorded order chains or invoke general condition decision.
+For an order that follows transitively, write the endpoint bound before the
+store (for example `have i < j by solve() using { i < middle; middle < j; };`).
+That search expands into explicit proof steps. The checking boundary rejects
+order-walk helpers in `one_element_gap_separates_bytes`; deterministic tests
+hold the store fixed while increasing both successful and missing order chains.
 
 Store preservation of compact runs uses constant byte geometry or the cached
 signed interval of the written index. It forgets the entire possible write
@@ -388,12 +394,21 @@ run/write address anchors can likewise retain the whole run, provided both
 complete byte footprints fit.
 The lookup inspects at most two candidates and declines an ambiguous bucket.
 An otherwise unplaced write forgets the whole run. It does not enumerate
-logical slots or search separation-fact buckets. Initialization records and immutable
+logical slots or search separation-fact buckets. Fixed-offset writes query hole
+coverage only for the two partially covered boundary intervals, including when
+value widths exceed slot strides. Initialization records and immutable
 source history remain available; explicit separation and `transport` recover
 selected values, as in
 `mdtests/store_geometry_uses_explicit_order_and_transport.md`. Scaling tests
 grow order chains, separation buckets and logical run lengths independently;
 the build boundary rejects the removed search and per-slot routes.
+
+Named `unfold` publishes the constructed successor composition so explicit
+separation can use the existing checked-borrow partition rule. This publication
+follows body evaluation; temporary body assumptions must not index the caller
+frame. Incoming loans remain distinct from ordinary read observations, and a
+caller cannot lend the owner it transfers. The named-unfold alias-call and
+two-view refusal fixtures pin these restrictions.
 
 An explicit loop read frame can select a flat range withheld from the loop
 body by the checked ownership partition. The loop history retains that

@@ -1,3 +1,37 @@
+import click::separation;
+
+theorem selected_array_cell(whole: Resource, kept: Resource, p: int32*, lo: int32, hi: int32, i: int32) {
+    requires separate(whole, memory(p[lo..hi]));
+    requires contains(whole, kept);
+    requires 0 <= lo;
+    requires lo <= i;
+    requires i < hi;
+    ensures separate(kept, memory(p[i])) by {
+        have 0 <= i by { solve() using { 0 <= lo; lo <= i; }; }
+        have i <= 2147483646 by { solve() using { i < hi; }; }
+        have defined(i + 1) by { solve() using { 0 <= i; i <= 2147483646; }; }
+        have i <= ((i + 1) as int32) by { solve() using { 0 <= i; i < hi; }; }
+        have ((i + 1) as int32) <= hi by { solve() using { 0 <= i; i < hi; }; }
+        have contains(memory(p[lo..hi]), memory(p[i..i + 1])) by {
+            apply(separation::subrange(p, lo, hi, i, i + 1)) using {
+                defined(i + 1); lo <= i; i <= ((i + 1) as int32); ((i + 1) as int32) <= hi;
+            };
+        }
+        have separate(kept, memory(p[i..i + 1])) by {
+            apply(separation::restrict(whole, memory(p[lo..hi]), kept, memory(p[i..i + 1]))) using {
+                defined(i + 1); separate(whole, memory(p[lo..hi])); contains(whole, kept);
+                contains(memory(p[lo..hi]), memory(p[i..i + 1]));
+            };
+        }
+        have contains(kept, kept) by { normalize(); }
+        have contains(memory(p[i..i + 1]), memory(p[i])) by { normalize(); }
+        apply(separation::restrict(kept, memory(p[i..i + 1]), kept, memory(p[i]))) using {
+            defined(i + 1); separate(kept, memory(p[i..i + 1])); contains(kept, kept);
+            contains(memory(p[i..i + 1]), memory(p[i]));
+        };
+    }
+}
+
 verifying "fork_join.c";
 
 predicate range_filled(job: struct range_job*) {
@@ -57,26 +91,87 @@ void *fill_range(void *argument) {
         }
         preserve by {
             have separate(memory(*job), memory(job->output[job->begin..job->end]));
-            mark iteration;
             have job->begin <= index;
-            step();
-            have job->output == at(iteration, job->output) and
-                 job->begin == at(iteration, job->begin) and
-                 job->end == at(iteration, job->end) and
-                 job->value == at(iteration, job->value) by {
-                transport(at(iteration, job->output) == at(iteration, job->output) and
-                          at(iteration, job->begin) == at(iteration, job->begin) and
-                          at(iteration, job->end) == at(iteration, job->end) and
-                          at(iteration, job->value) == at(iteration, job->value),
-                          job->output == at(iteration, job->output) and
-                          job->begin == at(iteration, job->begin) and
-                          job->end == at(iteration, job->end) and
-                          job->value == at(iteration, job->value)) using {
-                    at(iteration, separate(memory(*job), memory(job->output[job->begin..job->end])));
-                    at(iteration, job->begin) <= index;
-                    index < at(iteration, job->end);
+            have contains(memory(*job), memory(job->output)) by { normalize(); }
+            have separate(memory(job->output[index]), memory(job->output)) by {
+                apply(selected_array_cell(memory(*job), memory(job->output), job->output, job->begin, job->end, index)) using {
+                    separate(memory(*job), memory(job->output[job->begin..job->end]));
+                    contains(memory(*job), memory(job->output));
+                    0 <= job->begin; job->begin <= index; index < job->end;
+                };
+                apply(separation::separate_symm(memory(job->output), memory(job->output[index]))) using {
+                    separate(memory(job->output), memory(job->output[index]));
                 };
             }
+            have contains(memory(*job), memory(job->begin)) by { normalize(); }
+            have separate(memory(job->output[index]), memory(job->begin)) by {
+                apply(selected_array_cell(memory(*job), memory(job->begin), job->output, job->begin, job->end, index)) using {
+                    separate(memory(*job), memory(job->output[job->begin..job->end]));
+                    contains(memory(*job), memory(job->begin));
+                    0 <= job->begin; job->begin <= index; index < job->end;
+                };
+                apply(separation::separate_symm(memory(job->begin), memory(job->output[index]))) using {
+                    separate(memory(job->begin), memory(job->output[index]));
+                };
+            }
+            have contains(memory(*job), memory(job->end)) by { normalize(); }
+            have separate(memory(job->output[index]), memory(job->end)) by {
+                apply(selected_array_cell(memory(*job), memory(job->end), job->output, job->begin, job->end, index)) using {
+                    separate(memory(*job), memory(job->output[job->begin..job->end]));
+                    contains(memory(*job), memory(job->end));
+                    0 <= job->begin; job->begin <= index; index < job->end;
+                };
+                apply(separation::separate_symm(memory(job->end), memory(job->output[index]))) using {
+                    separate(memory(job->end), memory(job->output[index]));
+                };
+            }
+            have contains(memory(*job), memory(job->value)) by { normalize(); }
+            have separate(memory(job->output[index]), memory(job->value)) by {
+                apply(selected_array_cell(memory(*job), memory(job->value), job->output, job->begin, job->end, index)) using {
+                    separate(memory(*job), memory(job->output[job->begin..job->end]));
+                    contains(memory(*job), memory(job->value));
+                    0 <= job->begin; job->begin <= index; index < job->end;
+                };
+                apply(separation::separate_symm(memory(job->value), memory(job->output[index]))) using {
+                    separate(memory(job->value), memory(job->output[index]));
+                };
+            }
+            mark iteration;
+            step();
+            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))) by { normalize() using {
+                at(iteration, separate(memory(job->output[index]), memory(job->output)));
+            }; }
+            have job->output == at(iteration, job->output) by {
+                transport_certificate {
+                    premise 0: at(iteration, separate(loop(0).statement(0).footprint, memory(job->output))) => at(iteration, separate(loop(0).statement(0).footprint, memory(job->output)));
+                    preserve 0 => job->output == at(iteration, job->output);
+                    conclusion 1;
+                }
+            }
+            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))) by { normalize() using {
+                at(iteration, separate(memory(job->output[index]), memory(job->begin)));
+            }; }
+            have job->begin == at(iteration, job->begin) by {
+                transport_certificate {
+                    premise 0: at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin))) => at(iteration, separate(loop(0).statement(0).footprint, memory(job->begin)));
+                    preserve 0 => job->begin == at(iteration, job->begin);
+                    conclusion 1;
+                }
+            }
+            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))) by { normalize() using {
+                at(iteration, separate(memory(job->output[index]), memory(job->end)));
+            }; }
+            have job->end == at(iteration, job->end) by {
+                transport_certificate {
+                    premise 0: at(iteration, separate(loop(0).statement(0).footprint, memory(job->end))) => at(iteration, separate(loop(0).statement(0).footprint, memory(job->end)));
+                    preserve 0 => job->end == at(iteration, job->end);
+                    conclusion 1;
+                }
+            }
+            have at(iteration, separate(loop(0).statement(0).footprint, memory(job->value))) by { normalize() using {
+                at(iteration, separate(memory(job->output[index]), memory(job->value)));
+            }; }
+            have job->value == at(iteration, job->value) by { assumption(); }
             have forall (k: int32) {
                 job->begin <= k and k <= index implies job->output[k] == job->value
             } by {
