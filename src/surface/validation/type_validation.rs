@@ -1865,8 +1865,8 @@ fn validate_comparison_expression_types(
         | (
             SpecValueType::Algebraic(application),
             SpecValueType::Scalar(Some(C0Type::Parameter(name))),
-        ) if name.is_enum()
-            && name.algebraic_type().name == application.name()
+        ) if AlgebraicTypeApplication::of_enum_c_type(C0Type::Parameter(name))
+            .is_some_and(|value| value.name() == application.name())
             && matches!(
                 operator,
                 ComparisonOperator::Equal | ComparisonOperator::NotEqual

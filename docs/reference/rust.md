@@ -1410,7 +1410,7 @@ complete Rust loan protocol or infer ownership contracts from Rust types.
 The adapter supports moving a reference field out of a plain local struct.
 It still excludes general partial moves with cleanup, nested owned fields,
 nested aggregate arguments or returns, unstructured control flow, heap owners
-other than the [`Box`](#boxes) such as `Vec`, and panic
+other than the [`Box`](#boxes) and a [`Vec`](#vec-values) of scalars, and panic
 unwinding. Arithmetic, owned values, and loops use the
 same native body representation; there is no whole-function coverage switch.
 
@@ -1676,6 +1676,50 @@ over `unwrap`, `expect` and `unwrap_or`; each false claim mutated into the
 sidecar is refused (`tests/rust_import.rs::charon_result_values_read_as_click_results`).
 Other `Result` methods, `map_err`, and `?` across error types remain later
 work.
+
+## Vec values
+
+A `Vec<T>` of an integer or `bool` is a value of the library's primitive
+[`Vec<T>`](library/index.md#rust-vectors): the sequence it holds, with no
+heap buffer or capacity in the model. A sidecar writes the type as Rust
+does, `Vec<u32>`, `&Vec<u32>` or `&mut Vec<u32>`, and a contract reads
+`v.len()` and `v[i]`, which are `vec::len(v)` and `vec::get(v, i)` (of `*v`
+for a reference). A signature that names a `Vec` brings the library module
+`click::rust::vec` in, so a sidecar needs no import to use them.
+
+`Vec::new()`, `Vec::with_capacity(n)`, `v.push(x)`, `v.len()` and `v[i]`
+call external functions whose contracts Click supplies:
+
+- `new` and `with_capacity` ensure `vec::len(result) == 0`; the reserved
+  capacity is not modeled.
+- `push` owns `*v`, requires `vec::len(*v)` below `u64::MAX`, and ensures
+  `*v == vec::push(old(*v), x)` together with what the library's axioms
+  say of that vector: its length is one more, its last element is `x`, and
+  every earlier element is unchanged. A caller therefore reads the length
+  and elements after a push without citing an axiom.
+- `len` views `*v` and ensures `result == vec::len(old(*v))`.
+- `v[i]` views `*v`, requires `i < vec::len(*v)`, Rust's index panic, and
+  ensures `result == vec::get(old(*v), i)`. The compiler reads the element
+  through the reference `Index::index` returns; the importer reads the
+  element itself.
+
+Dropping a `Vec` has no effect a contract reads. A local the body borrows,
+`let mut v = Vec::new(); v.push(x);`, keeps its value in its stack object,
+which a proof names `v` ([held values](#option-values)).
+[`design/charon-trial/vec-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/vec-values/vecs.click)
+verifies `single` (`result.len() == 1u64` and `result[0u64] == x` after
+`Vec::new` and one push), `count`, `first` (`v[0]` under `requires 0u64 <
+v.len();`), `append`, `pushed_len`, `empty_len`, `pair` over
+`Vec::with_capacity`, and `second_of_pair`, which indexes a vector a call
+returned; each false claim mutated into the sidecar is refused, and `first`
+without its requirement is refused as the index panic
+(`tests/rust_import.rs::charon_vec_values_read_as_the_library_vec`).
+
+An element before the last after two pushes, `pair`'s `result[0u64] == x`,
+needs the push contract's `forall` instantiated at that index, which `solve`
+does not do on its own. A `Vec` of anything but an integer or `bool`, a
+`Vec` field or `Vec` parameter taken by value and then borrowed, `&v` as a
+slice, iteration, and the other `Vec` methods remain later work.
 
 ## Enums and `match`
 

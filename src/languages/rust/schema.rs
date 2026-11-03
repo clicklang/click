@@ -105,6 +105,12 @@ pub enum Type {
     OptionBox {
         pointee: Box<Type>,
     },
+    /// A `Vec<T>` of a scalar: the value of the library's primitive type
+    /// `Vec<T>`, the sequence the vector holds. Its heap buffer and capacity
+    /// are outside the model.
+    Vec {
+        element: Box<Type>,
+    },
     /// What a reference to a type parameter bound by a crate trait, `&T`
     /// for `T: Shape`, or a `&dyn Shape` refers to: a value of a type the
     /// function does not know, which it reaches only through the trait's

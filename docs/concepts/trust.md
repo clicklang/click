@@ -147,6 +147,11 @@ with the library function of the same path in `library/rust/`
 contract is assumed: it trusts that the library function is the method Rust
 runs. The functions themselves are ordinary Click definitions, and
 `mdtests/stdlib_every_symbol.md` checks each at the edge of its type.
+It writes one for each `Vec` method an import calls, `Vec::push<u32>`,
+stating the call with the library's `vec` operations
+([Vec values](../reference/rust.md#vec-values)): these are assumed too,
+including that pushing past `u64::MAX` elements, the model's bound, cannot
+happen before Rust's own allocation limit aborts.
 
 ## Your assumptions
 

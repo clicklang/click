@@ -109,6 +109,16 @@ pub(super) fn unify_click_type(
     allowed: &BTreeSet<&str>,
     substitution: &mut TypeSubstitution,
 ) -> Result<(), String> {
+    // A C value of a primitive type's instance, a Rust `Vec<u32>`, is that
+    // instance's Surface value.
+    let primitive;
+    let actual = match primitive_instance_value_type(actual) {
+        Some(value_type) => {
+            primitive = value_type;
+            &primitive
+        }
+        None => actual,
+    };
     match pattern {
         ClickType::Resource if actual == &ClickType::Resource => Ok(()),
         ClickType::Resource => Err("expected Resource argument".into()),
@@ -291,12 +301,14 @@ static PRIMITIVE_INSTANCES: std::sync::LazyLock<
     std::sync::RwLock<BTreeMap<String, (String, Vec<AlgebraicValueType>)>>,
 > = std::sync::LazyLock::new(Default::default);
 
-/// Records the kernel name of a primitive type instance and returns it.
-pub(super) fn primitive_instance_kernel_name(
+/// The kernel type of an instance of a Click library primitive type,
+/// `Vec<uint32>`: a rigid type named by `primitive_kernel_type_name`,
+/// recorded so the name reads back as its Surface application.
+pub(crate) fn primitive_instance_type(
     name: &str,
     arguments: &[AlgebraicValueType],
-    kernel_name: String,
-) -> String {
+) -> crate::kernel::AlgebraicType {
+    let kernel_name = primitive_kernel_type_name(name, arguments);
     let known = PRIMITIVE_INSTANCES
         .read()
         .expect("primitive instance table")
@@ -307,7 +319,63 @@ pub(super) fn primitive_instance_kernel_name(
             .expect("primitive instance table")
             .insert(kernel_name.clone(), (name.to_string(), arguments.to_vec()));
     }
-    kernel_name
+    crate::kernel::AlgebraicType::parameter(kernel_name)
+}
+
+/// The kernel's name for an instance of a Click library primitive type,
+/// `Vec<uint32>`. The kernel reads each instance as a rigid type of its own:
+/// it has no constructors to case on and no structure to induct over, and
+/// two instances are one type exactly when their arguments are equal.
+fn primitive_kernel_type_name(name: &str, arguments: &[AlgebraicValueType]) -> String {
+    fn argument_name(argument: &AlgebraicValueType) -> String {
+        match argument {
+            AlgebraicValueType::Algebraic { name, arguments } if !arguments.is_empty() => {
+                primitive_kernel_type_name(name, arguments)
+            }
+            AlgebraicValueType::Algebraic { name, .. } => name.clone(),
+            AlgebraicValueType::Parameter(name) => format!("[rigid {name}]"),
+            AlgebraicValueType::Integer => "Integer".to_string(),
+            AlgebraicValueType::C(c_type) => {
+                validation::describe_click_type(&ClickType::C(c0_type_from_kernel(*c_type)))
+            }
+            AlgebraicValueType::ObjectPointer(c_type, class) => format!("{c_type:?} [{class:?}]"),
+        }
+    }
+    format!(
+        "{name}<{}>",
+        arguments
+            .iter()
+            .map(argument_name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+/// The primitive type and arguments the kernel type `kernel_name` is an
+/// instance of, `("Vec", [uint32])`.
+pub(crate) fn primitive_instance_of(
+    kernel_name: &str,
+) -> Option<(String, Vec<AlgebraicValueType>)> {
+    PRIMITIVE_INSTANCES
+        .read()
+        .expect("primitive instance table")
+        .get(kernel_name)
+        .cloned()
+}
+
+/// The Surface type of a value whose type names an instance of a
+/// primitive type: a C value of the kernel's rigid `Vec<uint32>`, or the
+/// rigid type itself, is `Vec<uint32>`.
+pub(super) fn primitive_instance_value_type(click_type: &ClickType) -> Option<ClickType> {
+    let kernel_name = match click_type {
+        ClickType::C(C0Type::Parameter(name)) => name.name(),
+        ClickType::Algebraic(application) if application.rigid => application.name.as_str(),
+        _ => return None,
+    };
+    primitive_instance_of(kernel_name)?;
+    Some(click_type_from_algebraic_value_type(
+        &AlgebraicValueType::Parameter(kernel_name.to_string()),
+    ))
 }
 
 /// Whether the kernel type `kernel_name` is the instance of a Click library

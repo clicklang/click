@@ -865,6 +865,10 @@ struct Parser {
     /// The slice parameters of the Rust signature being parsed. Each is one
     /// name in the sidecar and a pointer with a `name_len` length underneath.
     rust_slice_params: BTreeSet<String>,
+    /// The `Vec` parameters of the Rust signature being parsed, and
+    /// `result` when it returns one: each reads `v.len()` and `v[i]`, through
+    /// `*v` when the parameter is a reference (`true`).
+    rust_vec_params: BTreeMap<String, bool>,
     /// The type of the `impl` block being parsed: its methods are the
     /// functions `Type_name`, and `self` is their receiver.
     rust_impl_type: Option<String>,
@@ -1552,6 +1556,7 @@ impl Parser {
             int64_t_rank: LongRank::Long,
             exact_long_rank: false,
             rust_slice_params: BTreeSet::new(),
+            rust_vec_params: BTreeMap::new(),
             rust_impl_type: None,
             rust_impl_method_suffix: None,
             rust_impl_module: None,
@@ -5238,6 +5243,7 @@ impl Parser {
             });
         }
         self.rust_slice_params.clear();
+        self.rust_vec_params.clear();
         if self.peek_ident() == Some("fn") {
             return self.parse_rust_function_signature();
         }
@@ -5483,6 +5489,9 @@ impl Parser {
     #[inline(never)]
     fn c_variable_expression(&mut self, name: String) -> Result<ContractExpression, ClickError> {
         self.refuse_unknown_loop_value(&name)?;
+        if let Some(expression) = self.take_rust_vec_method(&name)? {
+            return Ok(expression);
+        }
         let name = self.take_rust_slice_len(&name).unwrap_or(name);
         Ok(ContractExpression::CFragment(CExpression::Variable(name)))
     }
