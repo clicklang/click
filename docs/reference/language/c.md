@@ -1158,7 +1158,9 @@ Supported C surface includes:
   `#if defined(NAME)`, `#if !defined(NAME)`, and those atoms combined with
   `!`, `&&`, `||`, or parentheses; `#elif`, `#else`, and `#endif` are also
   supported. The `defined` operand accepts both `defined NAME` and
-  `defined(NAME)`, with optional whitespace inside the parentheses.
+  `defined(NAME)`, with optional whitespace inside the parentheses. Within a
+  conditional line, comments between tokens act as whitespace; comments do not
+  join separate identifiers, literals, or operators into one token.
   Equality and inequality comparisons (`==` and `!=`) are supported
   between integer or character literals, literal-valued macros, and
   `defined(NAME)`, and can be combined with those boolean operators. Undefined

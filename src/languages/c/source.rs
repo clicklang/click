@@ -1614,7 +1614,7 @@ impl<'a> ConditionalParser<'a> {
 
     fn parse(&mut self) -> Result<Conditional, ()> {
         let condition = self.parse_or()?;
-        self.skip_whitespace();
+        self.skip_trivia();
         trailing_comments_only(&self.input[self.position..])
             .then_some(condition)
             .ok_or(())
@@ -1623,7 +1623,7 @@ impl<'a> ConditionalParser<'a> {
     fn parse_or(&mut self) -> Result<Conditional, ()> {
         let mut condition = self.parse_and()?;
         loop {
-            self.skip_whitespace();
+            self.skip_trivia();
             if !self.consume("||") {
                 return Ok(condition);
             }
@@ -1635,7 +1635,7 @@ impl<'a> ConditionalParser<'a> {
     fn parse_and(&mut self) -> Result<Conditional, ()> {
         let mut condition = self.parse_comparison()?;
         loop {
-            self.skip_whitespace();
+            self.skip_trivia();
             if !self.consume("&&") {
                 return Ok(condition);
             }
@@ -1646,7 +1646,7 @@ impl<'a> ConditionalParser<'a> {
 
     fn parse_comparison(&mut self) -> Result<Conditional, ()> {
         let left = self.parse_unary()?;
-        self.skip_whitespace();
+        self.skip_trivia();
         let operator = if self.consume("==") {
             ComparisonOperator::Equal
         } else if self.consume("!=") {
@@ -1666,7 +1666,7 @@ impl<'a> ConditionalParser<'a> {
     }
 
     fn parse_unary(&mut self) -> Result<Conditional, ()> {
-        self.skip_whitespace();
+        self.skip_trivia();
         if self.consume("!") {
             Ok(Conditional::Not(Box::new(self.parse_unary()?)))
         } else {
@@ -1675,10 +1675,10 @@ impl<'a> ConditionalParser<'a> {
     }
 
     fn parse_primary(&mut self) -> Result<Conditional, ()> {
-        self.skip_whitespace();
+        self.skip_trivia();
         if self.consume("(") {
             let condition = self.parse_or()?;
-            self.skip_whitespace();
+            self.skip_trivia();
             if !self.consume(")") {
                 return Err(());
             }
@@ -1689,7 +1689,7 @@ impl<'a> ConditionalParser<'a> {
     }
 
     fn parse_atom(&mut self) -> Result<Conditional, ()> {
-        self.skip_whitespace();
+        self.skip_trivia();
         if let Some(literal) = self.parse_literal() {
             return Ok(match literal.as_str() {
                 "0" => Conditional::Literal(false),
@@ -1701,12 +1701,12 @@ impl<'a> ConditionalParser<'a> {
         if name != "defined" {
             return Ok(Conditional::Macro(name));
         }
-        self.skip_whitespace();
+        self.skip_trivia();
         let parenthesized = self.consume("(");
-        self.skip_whitespace();
+        self.skip_trivia();
         let name = self.parse_identifier().ok_or(())?;
         if parenthesized {
-            self.skip_whitespace();
+            self.skip_trivia();
             if !self.consume(")") {
                 return Err(());
             }
@@ -1733,12 +1733,22 @@ impl<'a> ConditionalParser<'a> {
         Some(name)
     }
 
-    fn skip_whitespace(&mut self) {
-        while let Some(character) = self.input[self.position..].chars().next() {
-            if !character.is_ascii_whitespace() {
-                break;
+    fn skip_trivia(&mut self) {
+        loop {
+            let rest = &self.input[self.position..];
+            let trimmed = rest.trim_start_matches(|ch: char| ch.is_ascii_whitespace());
+            self.position += rest.len() - trimmed.len();
+            if trimmed.starts_with("//") {
+                self.position = self.input.len();
+                return;
             }
-            self.position += character.len_utf8();
+            if let Some(comment) = trimmed.strip_prefix("/*")
+                && let Some(end) = comment.find("*/")
+            {
+                self.position += 2 + end + 2;
+                continue;
+            }
+            return;
         }
     }
 
@@ -3353,6 +3363,44 @@ int32 run(void) { return 3; }
         let expanded = expand_includes("main.c", &sources).unwrap();
         assert!(expanded.source().contains("int32 run(void) { return 3; }"));
         assert!(!expanded.source().contains("wrong(void)"));
+    }
+
+    #[test]
+    fn conditional_comments_are_whitespace_between_tokens() {
+        for condition in [
+            "1 /* enabled */ && !0",
+            "/* leading */ 1",
+            "1/**//**/&&/**/!/**/0",
+            "(/**/1/**/) /* operator */ == /**/ 1",
+            "defined/**/(/**/FEATURE/**/)",
+            "defined/**/FEATURE && !defined/**/MISSING",
+            "1 /* && 0 */ // || 0",
+            "'/' == '/' && '*' == '*'",
+        ] {
+            let source = format!(
+                "#define FEATURE 1\n#if 0\nint wrong_if;\n#elif {condition}\nint selected;\n#else\nint wrong_else;\n#endif\n"
+            );
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(condition);
+            assert!(expanded.source().contains("int selected;"), "{condition}");
+            assert!(!expanded.source().contains("int wrong_"), "{condition}");
+        }
+    }
+
+    #[test]
+    fn conditional_comments_do_not_join_tokens_or_hide_missing_operands() {
+        for condition in [
+            "1/**/1",
+            "1 &/**/& 1",
+            "defined(FEA/**/TURE)",
+            "1 && // missing operand",
+            "1 && /**/",
+            "1 /* unterminated",
+        ] {
+            let source = format!("#if {condition}\nint selected;\n#endif\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            assert!(expand_includes("main.c", &sources).is_err(), "{condition}");
+        }
     }
 
     #[test]
