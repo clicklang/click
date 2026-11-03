@@ -706,6 +706,68 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// Retain the kernel's exact failed proposition, including a failed
+    /// evaluation prerequisite, rather than reducing it to message text.
+    fn interface_join_error(
+        &self,
+        message: &str,
+        assertions: &[ProofAssertion],
+        rejoins_cases: bool,
+        parameter_binding: ParameterBinding<'_>,
+        missing: Option<crate::kernel::proof::UnestablishedInterfaceGoal>,
+    ) -> ClickError {
+        let requirement = missing
+            .as_ref()
+            .map(|missing| ("goal", Box::new(missing.goal.clone()), None));
+        let detail = missing
+                .map(|missing| {
+                    let fact = assertions
+                        .iter()
+                        .filter_map(|assertion| match assertion {
+                            ProofAssertion::Fact(fact) => Some(fact),
+                            ProofAssertion::Resource(_) => None,
+                        })
+                        .nth(missing.fact)
+                        .map_or_else(String::new, |fact| {
+                            format!(
+                                " `{}`",
+                                crate::surface::printing::source_click_proposition(fact)
+                            )
+                        });
+                    let arm = match (rejoins_cases, missing.arm) {
+                        (true, 0) => "first",
+                        (true, _) => "second",
+                        (false, 0) => "then",
+                        (false, _) => "else",
+                    };
+                    let goal = crate::surface::diagnostics::describe_required_pure_fact(
+                        &missing.goal,
+                        parameter_binding,
+                    );
+                    if missing.arm == 2 && missing.side_condition {
+                        // Each arm holds it from its own facts, which the
+                        // join does not carry.
+                        format!(
+                            ": the arms hold the interface fact{fact}, but the join does not carry what its terms need to denote a value, `{goal}`. Prove that in each arm as well, for example `have defined(j + 1) by {{ ... }}` for a fact that mentions `j + 1`"
+                        )
+                    } else if missing.arm == 2 {
+                        format!(": the join does not retain the interface fact{fact}")
+                    } else if missing.side_condition {
+                        format!(
+                            ": the {arm} arm holds the interface fact{fact} but not what its terms need to denote a value, `{goal}`. Prove that in each arm as well, for example `have defined(j + 1) by {{ ... }}` for a fact that mentions `j + 1`"
+                        )
+                    } else {
+                        format!(": the {arm} arm does not hold the interface fact{fact}")
+                    }
+                })
+            .unwrap_or_default();
+        self.step_error_with_requirement(
+            format!("kernel rejected the checked `ensuring` interface: {message}{detail}"),
+            None,
+            requirement,
+        )
+    }
+
     /// The merge law for a checked two-arm interface join: each arm is
     /// independently abstracted through the explicit `branch ensuring`
     /// interface before any result is selected, the join is accepted only
@@ -1099,59 +1161,17 @@ impl<'a> Proof<'a> {
             ),
         }
         .map_err(|message| {
-            // The kernel proves each interface fact in each arm from facts
-            // that are already there, the fact's side conditions included.
-            // The arm's own check above does not ask for those, so a fact
-            // an arm proved can still be refused here. Say which fact, in
-            // which arm, and what that arm does not hold.
             let missing = (message == "an interface fact is not established by both concrete arms"
                 || message == "an interface fact is not retained at the abstract successor")
                 .then(crate::kernel::proof::take_unestablished_interface_goal)
-                .flatten()
-                .map(|missing| {
-                    let fact = assertions
-                        .iter()
-                        .filter_map(|assertion| match assertion {
-                            ProofAssertion::Fact(fact) => Some(fact),
-                            ProofAssertion::Resource(_) => None,
-                        })
-                        .nth(missing.fact)
-                        .map_or_else(String::new, |fact| {
-                            format!(
-                                " `{}`",
-                                crate::surface::diagnostics::describe_click_proposition(fact)
-                            )
-                        });
-                    let arm = match (rejoins_cases, missing.arm) {
-                        (true, 0) => "first",
-                        (true, _) => "second",
-                        (false, 0) => "then",
-                        (false, _) => "else",
-                    };
-                    let goal = crate::surface::diagnostics::describe_required_pure_fact(
-                        &missing.goal,
-                        context.parameter_binding(),
-                    );
-                    if missing.arm == 2 && missing.side_condition {
-                        // Each arm holds it from its own facts, which the
-                        // join does not carry.
-                        format!(
-                            ": the arms hold the interface fact{fact}, but the join does not carry what its terms need to denote a value, `{goal}`. Prove that in each arm as well, for example `have defined(j + 1) by {{ ... }}` for a fact that mentions `j + 1`"
-                        )
-                    } else if missing.arm == 2 {
-                        format!(": the join does not retain the interface fact{fact}")
-                    } else if missing.side_condition {
-                        format!(
-                            ": the {arm} arm holds the interface fact{fact} but not what its terms need to denote a value, `{goal}`. Prove that in each arm as well, for example `have defined(j + 1) by {{ ... }}` for a fact that mentions `j + 1`"
-                        )
-                    } else {
-                        format!(": the {arm} arm does not hold the interface fact{fact}")
-                    }
-                })
-                .unwrap_or_default();
-            self.step_error(format!(
-                "kernel rejected the checked `ensuring` interface: {message}{missing}"
-            ))
+                .flatten();
+            self.interface_join_error(
+                message,
+                &assertions,
+                rejoins_cases,
+                context.parameter_binding(),
+                missing,
+            )
         })?;
         append_execution_effect_facts(&mut execution.core.effect_facts, &joined_effect);
 
@@ -4449,6 +4469,128 @@ mod progress_tests {
             },
             true,
         )
+    }
+
+    #[test]
+    fn rejected_interface_reports_the_exact_kernel_goal() {
+        let file =
+            crate::surface::parse("int32 identity(int32 x) { ensures result == x; }").unwrap();
+        let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
+        let function = parsed.to_kernel_function();
+        let arguments = [CExpression::Value(CValue::Int32(
+            Bitvector32Term::Variable(Variable(71_000)),
+        ))];
+        let functions = CExecutionEnvironment::new();
+        let resources = ResourceEnvironment::new(&[]);
+        let predicates = PredicateEnvironment::new(&[]);
+        let click_functions = ClickFunctionEnvironment::new(&[]);
+        let theorems = TheoremEnvironment::new(&[]);
+        let proof = Proof::for_execution_frontier(
+            "identity.contract",
+            0,
+            ExecutionProofState::at_entry(
+                CState::new(),
+                ExecutionFrontier::default(),
+                RecordedSnapshots::new(),
+                SurfacePropositionMap::default(),
+                PersistentSequence::default(),
+            ),
+            vec![],
+            ExecutionProofConstants::default(),
+            &file.function_blocks()[0],
+            &function,
+            &parsed,
+            &arguments,
+            &functions,
+            &resources,
+            SpecDefinitions::new(&predicates, &click_functions),
+            &theorems,
+        );
+        let written = ClickProposition::Comparison {
+            left: ContractExpression::CFragment(CExpression::Variable("x".into())),
+            operator: ComparisonOperator::LessThan,
+            right: ContractExpression::CFragment(CExpression::Value(int32(10))),
+        };
+        let assertions = [
+            ProofAssertion::Fact(ClickProposition::Comparison {
+                left: ContractExpression::CFragment(CExpression::Value(int32(0))),
+                operator: ComparisonOperator::Equal,
+                right: ContractExpression::CFragment(CExpression::Value(int32(0))),
+            }),
+            ProofAssertion::Fact(written),
+        ];
+        let comparison = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(Bitvector32Term::Variable(Variable(71_000))),
+                right: Box::new(Bitvector32Term::Constant(10)),
+            },
+            true,
+        );
+        let read = Proposition::CMemoryReadDefined {
+            memory: CMemory::new(),
+            pointer: Pointer::symbolic(Variable(71_001)),
+            value_type: CType::Int32,
+        };
+        for arm in [0, 1, 2] {
+            for (goal, side_condition, expected, expected_trace) in [
+                (comparison.clone(), false, "goal: x < 10", "goal: x < 10"),
+                (
+                    read.clone(),
+                    true,
+                    "goal: defined(",
+                    "goal: defined-read(snapshot#1, value#1)",
+                ),
+            ] {
+                let error = proof.interface_join_error(
+                    "an interface fact is not retained at the abstract successor",
+                    &assertions,
+                    true,
+                    ParameterBinding::new(parsed.parameters(), &arguments),
+                    Some(crate::kernel::proof::UnestablishedInterfaceGoal {
+                        fact: 1,
+                        arm,
+                        goal: goal.clone(),
+                        side_condition,
+                    }),
+                );
+                let report = error.concise_report();
+                assert!(report.contains("interface fact `x < 10`"), "{report}");
+                assert!(report.contains(expected), "{report}");
+                assert_eq!(
+                    error
+                        .diagnostic()
+                        .unwrap()
+                        .state
+                        .as_ref()
+                        .unwrap()
+                        .failed_requirement()
+                        .unwrap()
+                        .1,
+                    &goal,
+                    "the report must retain the exact checked proposition",
+                );
+                let trace =
+                    crate::surface::with_proof_trace("identity", || error.trace_context_report())
+                        .expect("retained diagnostic context");
+                assert!(trace.contains(expected_trace), "{trace}");
+                assert_eq!(
+                    trace
+                        .lines()
+                        .filter(|line| line.starts_with("goal:"))
+                        .count(),
+                    1,
+                    "{trace}"
+                );
+                if side_condition {
+                    assert!(
+                        trace.contains("snapshot#1 = initial empty memory"),
+                        "{trace}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
