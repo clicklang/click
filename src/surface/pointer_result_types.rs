@@ -161,6 +161,10 @@ impl Analysis<'_> {
             self.results.insert(name.to_string(), result.clone());
             return result;
         }
+        // A library primitive operation has no body to derive an origin from.
+        let Some(body) = definition.body() else {
+            return None;
+        };
         if !(matches!(definition.return_type(), ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
             || matches!(definition.return_type(), ClickType::Parameter(_)))
             || !self.active.insert(name.to_string())
@@ -184,7 +188,7 @@ impl Analysis<'_> {
                 (parameter.name().to_string(), origin)
             })
             .collect();
-        let result = self.expression(definition.body(), &mut bindings);
+        let result = self.expression(body, &mut bindings);
         self.active.remove(name);
         self.results.insert(name.to_string(), result.clone());
         result
@@ -331,15 +335,12 @@ impl Analysis<'_> {
                 (parameter.name().to_string(), origin)
             })
             .collect();
-        self.check_expression(definition.body(), &mut bindings, definition)?;
+        let Some(body) = definition.body() else {
+            return Ok(());
+        };
+        self.check_expression(body, &mut bindings, definition)?;
         if let Some(class) = nominal_return_class(definition) {
-            self.require_class(
-                definition.body(),
-                class,
-                &mut bindings,
-                definition,
-                "return value",
-            )?;
+            self.require_class(body, class, &mut bindings, definition, "return value")?;
         }
         Ok(())
     }

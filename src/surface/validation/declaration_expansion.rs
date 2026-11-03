@@ -1082,14 +1082,16 @@ fn expand_declared_resource_clauses_with_rules(
         // The return type fixes the constructors in the body's result
         // positions before their arguments are read, so an argument that
         // converts to a field exactly does not fix a narrower type argument.
-        let mut body = function.body.clone();
-        resource_definitions
-            .constructors
-            .push_expected(&mut body, &function.return_type);
-        function.body = expand_declared_resource_expression(body, &resource_definitions)?;
-        resource_definitions
-            .constructors
-            .push_expected(&mut function.body, &function.return_type);
+        if let Some(mut body) = function.body.clone() {
+            resource_definitions
+                .constructors
+                .push_expected(&mut body, &function.return_type);
+            let mut body = expand_declared_resource_expression(body, &resource_definitions)?;
+            resource_definitions
+                .constructors
+                .push_expected(&mut body, &function.return_type);
+            function.body = Some(body);
+        }
         function.decreases = function
             .decreases
             .take()

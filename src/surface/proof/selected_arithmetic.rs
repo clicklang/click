@@ -1478,6 +1478,9 @@ impl<'a> Proof<'a> {
             let Some(definition) = functions.get(name) else {
                 continue;
             };
+            let Some(definition_body) = definition.body() else {
+                continue;
+            };
             if definition.parameters().len() != arguments.len() {
                 continue;
             }
@@ -1536,7 +1539,7 @@ impl<'a> Proof<'a> {
                 let mut leaves = 0;
                 let mut meets_goal = false;
                 let Some(plan) = self.definition_condition_plan(
-                    definition.body(),
+                    definition_body,
                     &environment,
                     &goal_forms,
                     value,
@@ -1762,7 +1765,7 @@ impl<'a> Proof<'a> {
                     arguments,
                 });
                 self.definition_condition_plan(
-                    definition.body(),
+                    definition.body()?,
                     &inner,
                     goal,
                     value,

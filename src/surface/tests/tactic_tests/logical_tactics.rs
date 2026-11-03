@@ -782,7 +782,7 @@ fn parses_rust_style_let_annotations() {
             }
         "#;
     let file = parse(source).expect("Rust-style let annotation should parse");
-    let body = file.click_function_definitions()[0].body();
+    let body = file.click_function_definitions()[0].body().unwrap();
 
     assert!(matches!(
         body,

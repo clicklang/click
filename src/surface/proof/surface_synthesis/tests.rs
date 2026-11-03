@@ -3415,7 +3415,10 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                 };
                 let parsed = parser::parse(&format!("{prefix} function indexed(a: {pointer_type}, i: {source_type}) -> {result_type} {{ {text} }}")).unwrap();
                 let reparsed = ClickProposition::Comparison {
-                    left: parsed.click_function_definitions()[0].body().clone(),
+                    left: parsed.click_function_definitions()[0]
+                        .body()
+                        .unwrap()
+                        .clone(),
                     operator: ComparisonOperator::Equal,
                     right,
                 };
