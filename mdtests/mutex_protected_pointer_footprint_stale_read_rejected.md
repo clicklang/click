@@ -46,6 +46,7 @@ int32 read_twice(struct box *b) {
     let { guard: first_guard, state: first_state } = step(pthread_mutex_lock, { access: access });
     let { v: first_v, held: first_held } = unfold(first_state);
     unfold(first_held);
+    have b->slot == at(statement(2).exit, b->slot) by { assumption(); }
     step();
     let first_target = fold(target(b->slot), { v: *b->slot });
     let first_restored = fold(box_state(b), { v: *b->slot }, { held: first_target });
@@ -53,6 +54,7 @@ int32 read_twice(struct box *b) {
     let { guard: second_guard, state: second_state } = step(pthread_mutex_lock, { access: access });
     let { v: second_v, held: second_held } = unfold(second_state);
     unfold(second_held);
+    have b->slot == at(statement(5).exit, b->slot) by { assumption(); }
     step();
     let second_target = fold(target(b->slot), { v: *b->slot });
     let second_restored = fold(box_state(b), { v: *b->slot }, { held: second_target });

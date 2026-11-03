@@ -5075,6 +5075,52 @@ mod tests {
     }
 
     #[test]
+    fn logical_read_of_copied_pointer_retains_its_complete_value() {
+        let complete_equalities = [false, true].map(|declare_after_store| {
+            let _session = crate::kernel::VerificationSession::enter();
+            let field = CMemory::frame_local_pointer(0, "copied_pointer");
+            let stored =
+                CPointerValue::new(Pointer::symbolic(Variable(210_399)), CType::Int32Pointer);
+            let mut memory = CMemory::new().store(field.clone(), CValue::Pointer(stored.clone()));
+            // Aggregate parameter binding writes its fields, then declares
+            // the private destination block. Compare the immediate store.
+            if declare_after_store {
+                memory = memory.with_block(field.block.clone(), 8);
+            }
+            let context = PureFactContext::new()
+                .allow_symbolic_contract_loads()
+                .force_symbolic_external_loads();
+            let paths = evaluate_logical_memory_load_paths(
+                &memory,
+                field,
+                CType::Int32Pointer,
+                ExecutionFacts::new(),
+                vec![],
+                &context,
+            );
+            let [path] = paths.as_slice() else {
+                panic!("one logical read expected");
+            };
+            let CExpressionOutcome::Value(CValue::Pointer(read)) = &path.outcome else {
+                panic!("pointer read expected");
+            };
+            let known = assumptions_with_path_context(&context, &path.facts, &path.obligations);
+            assert!(known.pointers_known_equal(read.pointer(), stored.pointer()));
+            // Check entailment, not exact premise spelling: the producer's
+            // equation may name the endpoints in the opposite order.
+            known.contains_known(&Proposition::ConditionIs(
+                ConditionTerm::pointer_value_equal(read.clone(), stored),
+                true,
+            ))
+        });
+        assert_eq!(
+            complete_equalities,
+            [true, true],
+            "complete pointer equality immediately after store / after declaration"
+        );
+    }
+
+    #[test]
     fn forced_logical_pointer_read_reuses_a_materialized_reads_definition() {
         let _session = crate::kernel::VerificationSession::enter();
         let address = Pointer {
@@ -7373,7 +7419,7 @@ mod tests {
             (0, false, 0, false),
             (4, false, 0, false),
             (8, false, 0, true),
-            (8, false, 4, true),
+            (8, false, 4, false),
             (8, true, 0, false),
         ] {
             let written = if overlap {
@@ -7381,22 +7427,27 @@ mod tests {
             } else {
                 write.clone()
             };
-            let mut memory = before
-                .memory()
-                .clone()
-                .store(written, CValue::UInt64(Bitvector32Term::UInt64Constant(0)));
-            // These stores are structurally separate. The frame producer must
-            // use the complete read's named boundary, not the newest edge.
+            let mut memory = before.memory().clone().store(
+                written.clone(),
+                CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+            );
+            let mut transitions = vec![(before.memory().clone(), memory.clone(), written)];
+            // Separation across more than one write requires an explicit
+            // chain; the cached prefix alone is not a complete-pointer proof.
             for n in 0..later_stores {
+                let previous = memory.clone();
+                let write = slot.offset_by_bytes(16 + 8 * n);
                 memory = memory.store(
-                    slot.offset_by_bytes(16 + 8 * n),
+                    write.clone(),
                     CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
                 );
+                transitions.push((previous, memory.clone(), write));
             }
             let old_read = Pointer::loaded_value(&before, &slot);
             let mut context = PureFactContext::new();
+            let mut resources = ResourceContext::new();
             if owned_bytes != 0 {
-                let resources = ResourceContext::new()
+                resources = ResourceContext::new()
                     .unchecked_with_fact(CResourceFact::own_memory(
                         CMemoryRange::new_with_element_width(
                             slot.clone(),
@@ -7413,7 +7464,8 @@ mod tests {
                             8,
                         ),
                     ));
-                context = context.assume_proposition(Proposition::CResourceComposition(resources));
+                context = context
+                    .assume_proposition(Proposition::CResourceComposition(resources.clone()));
             }
             let mut facts = ExecutionFacts::new();
             let CValue::Pointer(result) = canonicalized_pointer_value_from_int_cell(
@@ -7438,13 +7490,79 @@ mod tests {
                     .equality_graph
                     .designations_equal(&old_read, new_read),
                 expected,
-                "owned bytes={owned_bytes}, overlap={overlap}"
+                "owned bytes={owned_bytes}, overlap={overlap}, later stores={later_stores}"
             );
             assert!(
                 !PureFactContext::new()
                     .equality_graph
                     .designations_equal(&old_read, new_read)
             );
+            if owned_bytes == 8 && !overlap {
+                let left = CResource::Memory(CMemoryRange::new_with_element_width(
+                    write.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    8,
+                ));
+                let right = CResource::Memory(CMemoryRange::new_with_element_width(
+                    slot.clone(),
+                    0u32.into(),
+                    1u32.into(),
+                    8,
+                ));
+                assert!(context.proves_held_resources_separate(&resources, &left, &right));
+                let separation = Proposition::CResourceSeparate {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                };
+                let mut explicit = context.clone().assume_proposition(
+                    crate::kernel::region_footprint::byte_premise(&separation).unwrap(),
+                );
+                for (index, (entry, exit, write)) in transitions.into_iter().enumerate() {
+                    if index != 0 {
+                        // These synthetic writes are at slot + 16, +24, ...;
+                        // supply their separation as each certificate's premise.
+                        explicit = explicit.assume_proposition(Proposition::CResourceSeparate {
+                            left: Box::new(CResource::Memory(
+                                CMemoryRange::new_with_element_width(
+                                    write.clone(),
+                                    0u32.into(),
+                                    8u32.into(),
+                                    1,
+                                ),
+                            )),
+                            right: Box::new(CResource::Memory(
+                                CMemoryRange::new_with_element_width(
+                                    slot.clone(),
+                                    0u32.into(),
+                                    8u32.into(),
+                                    1,
+                                ),
+                            )),
+                        });
+                    }
+                    let (_, _, equality) = crate::kernel::tests::explicit_frame(
+                        &entry,
+                        &exit,
+                        &slot,
+                        CType::Int64Pointer,
+                        &[Proposition::CMemoryMutatesOnly {
+                            before: entry.clone(),
+                            after: exit.clone(),
+                            writes: vec![(write, 8)],
+                        }],
+                        &explicit,
+                    )
+                    .expect("one explicitly supplied separated write");
+                    explicit = explicit.assume_proposition(equality);
+                }
+                assert!(
+                    explicit
+                        .equality_graph
+                        .designations_equal(&old_read, new_read),
+                    "explicit complete-pointer frames recover the long case"
+                );
+            }
         }
     }
 

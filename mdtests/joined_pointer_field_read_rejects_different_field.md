@@ -79,7 +79,37 @@ void inspect(struct node* parent) {
             match c.model {
                 Pair::At(model, lm) => {
                     let { l: l } = unfold(c);
+                    have parent->left == model by { assumption(); }
+                    mark before_sibling;
                     step();
+                    have separate(loop(0).statement(0).footprint, memory(parent->right)) by { normalize() using {}; }
+                    have parent->right == at(before_sibling, parent->right) by {
+                        transport_certificate {
+                            premise 0: separate(loop(0).statement(0).footprint, memory(parent->right))
+                                => separate(loop(0).statement(0).footprint, memory(parent->right));
+                            preserve 0 => parent->right == at(before_sibling, parent->right);
+                            conclusion 1;
+                        }
+                    }
+                    have separate(loop(0).statement(0).footprint, memory(parent->left)) by { normalize() using {}; }
+                    have parent->left == at(before_sibling, parent->left) by {
+                        transport_certificate {
+                            premise 0: separate(loop(0).statement(0).footprint, memory(parent->left))
+                                => separate(loop(0).statement(0).footprint, memory(parent->left));
+                            preserve 0 => parent->left == at(before_sibling, parent->left);
+                            conclusion 1;
+                        }
+                    }
+                    have separate(loop(0).statement(0).footprint, memory(parent->left->left)) by { normalize() using {}; }
+                    have parent->left->left == at(before_sibling, parent->left->left) by {
+                        transport_certificate {
+                            premise 0: separate(loop(0).statement(0).footprint, memory(parent->left->left))
+                                => separate(loop(0).statement(0).footprint, memory(parent->left->left));
+                            preserve 0 => parent->left->left == at(before_sibling, parent->left->left);
+                            conclusion 1;
+                        }
+                    }
+                    have sibling == model by { assumption(); }
                     mark split;
                     match f.model ensuring {
                         owns nf: focus_at(parent->right);
@@ -94,16 +124,23 @@ void inspect(struct node* parent) {
                         Focus::Live(identity) => {
                             have at(split, f.model) == Focus::Live(identity);
                             unfold(f);
+                            have at(before_sibling, parent->right) == identity by { assumption(); }
+                            have parent->right == identity by { assumption(); }
                             let nf = fold(focus_at(parent->right), { model: Focus::Live(identity) });
                             have nf.model == at(split, f.model);
                         },
                     }
+                    have sibling->left == at(before_sibling, parent->left->left) by { assumption(); }
+                    mark before_child;
                     step();
+                    have child == at(before_child, sibling->left) by { assumption(); }
                     match lm {
                         Identity::At(leaf) => {
                             unfold(l);
                             have sibling == model;
-                            have child == leaf;
+                            have at(before_sibling, parent->left->left) == leaf by { assumption(); }
+                            have at(before_child, sibling->left) == at(before_sibling, parent->left->left) by { assumption(); }
+                            have child == leaf by { assumption(); }
                             have sibling->left == child;
                             have model->right == leaf by {
                                 normalize() using { sibling == model; sibling->left == child; child == leaf; };

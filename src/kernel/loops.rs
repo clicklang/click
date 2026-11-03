@@ -7502,7 +7502,10 @@ fn loop_binder_declared_arguments(
 /// the body simply does not hold it.
 fn viewed_form_of_resource_fact(fact: &CResourceFact) -> Option<CResourceFact> {
     match fact {
-        CResourceFact::Own(CResource::Footprint(_) | CResource::Parameter(_), _) => None,
+        CResourceFact::Own(
+            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+            _,
+        ) => None,
         CResourceFact::View(_) => Some(fact.clone()),
         CResourceFact::Own(resource @ (CResource::Memory(_) | CResource::Composite { .. }), _) => {
             Some(CResourceFact::View(resource.clone()))

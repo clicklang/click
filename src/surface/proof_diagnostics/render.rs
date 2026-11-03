@@ -2292,6 +2292,14 @@ impl Renderer<'_> {
     }
     fn resource(&mut self, resource: &CResource) {
         match resource {
+            CResource::Emp => self.push("separation::emp"),
+            CResource::Star(pair) => {
+                self.push("(");
+                self.resource(&pair.0);
+                self.push(" * ");
+                self.resource(&pair.1);
+                self.push(")");
+            }
             CResource::Footprint(fp) => self.push(&fp.source),
             CResource::Parameter(v) => self.push(&format!("resource#{:?}", v)),
             CResource::MutexGuard(identity) => {

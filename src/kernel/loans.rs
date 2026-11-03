@@ -3043,7 +3043,10 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         };
         let owned = &owned;
         match owned.resource() {
-            CResource::Footprint(_) | CResource::Parameter(_) => continue,
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => continue,
             CResource::PopulationAuthority(_)
             | CResource::Instance(_)
             | CResource::MutexGuard(_)
@@ -5911,7 +5914,10 @@ impl LoanLedger {
                     return Err(LoanRefusal::InvalidEvidence);
                 }
                 let memory_backing = match escrow.resource() {
-                    CResource::Footprint(_) | CResource::Parameter(_) => {
+                    CResource::Footprint(_)
+                    | CResource::Parameter(_)
+                    | CResource::Emp
+                    | CResource::Star(_) => {
                         return Err(LoanRefusal::InvalidEvidence);
                     }
                     CResource::Memory(range) => vec![range.clone()],

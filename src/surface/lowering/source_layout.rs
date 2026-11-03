@@ -1325,6 +1325,11 @@ pub(in crate::surface) fn collect_resource_subject_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceSubject::Emp => (),
+        ResourceSubject::Star(left, right) => {
+            collect_resource_subject_referenced_names(left, names);
+            collect_resource_subject_referenced_names(right, names);
+        }
         ResourceSubject::Footprint(_) => {}
         ResourceSubject::Parameter { name, .. } | ResourceSubject::Instance { name, .. } => {
             names.insert(name.clone());

@@ -2081,6 +2081,12 @@ pub(in crate::surface) fn describe_iterated_memory(
 
 pub(super) fn describe_resource_subject(resource: &ResourceSubject) -> String {
     match resource {
+        ResourceSubject::Emp => "separation::emp".into(),
+        ResourceSubject::Star(a, b) => format!(
+            "({} * {})",
+            describe_resource_subject(a),
+            describe_resource_subject(b)
+        ),
         ResourceSubject::Footprint(region) => {
             format!("{}.footprint", describe_code_region_ref(region))
         }

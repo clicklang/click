@@ -7995,6 +7995,17 @@ impl ExecutionProofCore {
                 execution_facts,
             )
         });
+        if let Some(fp) = &self.last_footprint
+            && let Some(bound) = &fp.resource_bound
+        {
+            let fact = Proposition::CResourceContains {
+                parent: Box::new(bound.clone()),
+                child: Box::new(CResource::Footprint(fp.clone())),
+            };
+            self.effect_facts
+                .push(ExecutionPureFact::new(fact.clone()).into_certified());
+            self.retain_step_case(fact);
+        }
         let memory_effects = self.append_statement_effects(execution_facts);
         self.advance_path_context(&context);
         for trace in self.execution_evidence.iter_mut() {
@@ -9814,6 +9825,7 @@ impl ExecutionProofCore {
         state: &CState,
         names: &[String],
     ) -> Result<CState, CRuntimeError> {
+        self.last_footprint = None;
         if names.is_empty() {
             return Ok(state.clone());
         }
@@ -9826,6 +9838,12 @@ impl ExecutionProofCore {
                 "automatic lifetime end does not start from the running state".into(),
             ));
         }
+        self.last_footprint = Some(crate::kernel::RegionFootprint::transition(
+            format!("region({}).footprint", self.frontier.next_statement_index),
+            state,
+            &after_state,
+            &ExecutionFacts::new(),
+        ));
         let end = CheckedAutomaticLifetimeEnd {
             before_state: state.clone(),
             after_state: after_state.clone(),

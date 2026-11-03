@@ -2147,18 +2147,12 @@ impl CPointerValue {
             return value;
         }
         value.qualifiers = None;
-        // The domain comes from one complete pointer read.
-        // Name its eight-byte version using the tracker's cached, assumption-
-        // free naming query rather than a cached four-byte scalar prefix.
-        let point = crate::kernel::resource_tracker::last_same_point(
-            crate::kernel::resource_tracker::Resource::Cell {
-                pointer: cell,
-                bytes: C_POINTER_BYTE_WIDTH,
-            },
-            &crate::kernel::resource_tracker::ProgramPoint::at(memory),
-        );
-        let source = point.as_ref().map_or(memory, |point| point.snapshot());
-        let origin = Arc::new(Pointer::loaded_value(source, cell));
+        // Cache observations retain their unchanged-byte source directly.
+        // This lookup crosses no writes: preservation across program states
+        // needs explicit evidence, not a search for an older cell version.
+        crate::instrumentation::record_deterministic_work(1);
+        let source = memory.unchanged_bytes_source();
+        let origin = Arc::new(Pointer::loaded_value(&source, cell));
         value
             .with_opaque_extent(Some(origin.clone()))
             .with_designation(origin)
@@ -4792,6 +4786,7 @@ pub enum SequenceTermNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum SpecResource {
+    Star(Box<SpecResource>, Box<SpecResource>),
     Instance {
         identity: Variable,
         at_entry: bool,
@@ -10202,6 +10197,10 @@ pub type ResourceArguments = std::sync::Arc<[AlgebraicValue]>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResource {
+    /// Separating conjunction; repeated components retain their multiplicity.
+    Star(std::sync::Arc<super::ResourceConjunction>),
+    /// Empty resource descriptor.
+    Emp,
     Footprint(Arc<super::RegionFootprint>),
     /// Rigid descriptor for a resource-valued theorem parameter.
     Parameter(Variable),
@@ -10336,11 +10335,18 @@ impl MutexIdentity {
 }
 
 impl CResource {
+    pub(crate) fn star(left: Self, right: Self) -> Self {
+        Self::Star(super::resource_conjunction::intern(left, right))
+    }
+
     /// The resource's name in a diagnostic, with no argument or address
     /// spelling: the kernel has no source names for those.
     pub(crate) fn diagnostic_name(&self) -> &str {
         match self {
-            CResource::Footprint(_) | CResource::Parameter(_) => "resource parameter",
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => "resource parameter",
             CResource::Composite { name, .. } | CResource::Token { name, .. } => name,
             CResource::Memory(_) => "memory",
             CResource::PopulationAuthority(_) => "population authority",
@@ -13620,6 +13626,8 @@ pub struct ExecutionPureFact {
     /// arms' own checked effects. See
     /// [`ExecutionPureFact::certified_join_summary`].
     pub(super) join_summary: bool,
+    /// Checked resource bound for this modular memory effect, retained by its producer.
+    pub(super) resource_effect_bound: Option<std::sync::Arc<CResource>>,
     pub(super) certified_store: Option<Box<CertifiedMemoryStore>>,
     pub(super) transport: Option<Box<CertifiedExecutionFactTransport>>,
     /// Exact producer metadata for a kernel-minted load variable.  This is
@@ -13632,17 +13640,18 @@ pub struct ExecutionPureFact {
 
 /// Source events are execution provenance, not part of the proposition's
 /// semantic identity. Keep them beside the fact while making fact equality
-/// and hashing remain proposition-oriented.
+/// and hashing remain proposition-oriented. Allocate the event list only for
+/// facts carrying source events; ordinary pure facts keep one optional pointer.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct GeneratedLoadSourceEvents(Vec<GeneratedLoadSourceEvent>);
+pub(crate) struct GeneratedLoadSourceEvents(Option<Box<Vec<GeneratedLoadSourceEvent>>>);
 
 impl GeneratedLoadSourceEvents {
     pub(crate) fn as_slice(&self) -> &[GeneratedLoadSourceEvent] {
-        &self.0
+        self.0.as_deref().map_or(&[], Vec::as_slice)
     }
 
     pub(crate) fn push(&mut self, event: GeneratedLoadSourceEvent) {
-        self.0.push(event);
+        self.0.get_or_insert_with(Default::default).push(event);
     }
 }
 

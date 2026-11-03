@@ -2952,11 +2952,11 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
         )
     })
     .expect("the walk has an answer");
-    // The version walk crosses the retirement by itself, so the walk records
-    // it inside one hop; the edge's own rule is what crossed it.
+    // The bounded check records the retirement's actual rule, even when
+    // the history lookup above has already warmed a version summary.
     assert!(matches!(
         retained_memory_dag_path(&cell)[0].justification,
-        MemoryDagHopJustification::SameVersion { .. }
+        MemoryDagHopJustification::RetirementInsideItsCallHavoc
     ));
     let retired_snapshot = intern_c_memory_ref(&retired);
     let derivation = retired_snapshot.derivation().expect("the retirement edge");

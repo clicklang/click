@@ -611,6 +611,11 @@ fn collect_spec_resource_carriers(
         return;
     }
     let arguments = match resource {
+        SpecResource::Star(a, b) => {
+            collect_spec_resource_carriers(a, variables, integer_seen);
+            collect_spec_resource_carriers(b, variables, integer_seen);
+            return;
+        }
         SpecResource::Instance { .. } | SpecResource::Value(_) => return,
         SpecResource::Memory {
             base, start, end, ..
@@ -1665,6 +1670,10 @@ impl<'a> TermRewrite<'a> {
         resource: &SpecResource,
     ) -> Result<SpecResource, SpecRewriteError> {
         Ok(match resource {
+            SpecResource::Star(a, b) => SpecResource::Star(
+                Box::new(self.rewrite_spec_resource(a)?),
+                Box::new(self.rewrite_spec_resource(b)?),
+            ),
             SpecResource::Instance { .. } | SpecResource::Value(_) => resource.clone(),
             SpecResource::Memory {
                 base,

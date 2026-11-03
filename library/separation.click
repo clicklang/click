@@ -19,3 +19,23 @@ theorem subrange<T>(p: T*, lo: int32, hi: int32, inner_lo: int32, inner_hi: int3
     requires inner_hi <= hi;
     ensures contains(memory(p[lo..hi]), memory(p[inner_lo..inner_hi]));
 }
+
+// Descriptor laws grant no ownership. Star retains both requirements.
+theorem contains_refl(A: Resource) { ensures contains(A, A); }
+theorem contains_trans(A: Resource, B: Resource, C: Resource) {
+    requires contains(A, B);
+    requires contains(B, C);
+    ensures contains(A, C);
+}
+theorem contains_left(A: Resource, B: Resource) { ensures contains(A * B, A); }
+theorem contains_right(A: Resource, B: Resource) { ensures contains(A * B, B); }
+theorem separate_symm(A: Resource, B: Resource) {
+    requires separate(A, B);
+    ensures separate(B, A);
+}
+theorem separate_star(A: Resource, B: Resource, C: Resource) {
+    requires separate(A, C);
+    requires separate(B, C);
+    ensures separate(A * B, C);
+}
+theorem separate_emp(A: Resource) { ensures separate(separation::emp, A); }

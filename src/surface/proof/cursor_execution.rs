@@ -725,6 +725,10 @@ pub(super) fn execute_branch_step_from_frontier_position(
                 ))
                 .with_kind(runtime_refusal_kind(&error))
             })?;
+        execution
+            .presentation
+            .recorded_snapshots
+            .record_effect(execution.core.last_footprint.as_ref());
         execution.core.state = state.clone().into();
         for exited in proof_context
             .constants
@@ -1056,6 +1060,10 @@ fn execute_concrete_loop_head_step(
             ))
             .with_kind(runtime_refusal_kind(&error))
         })?;
+    execution
+        .presentation
+        .recorded_snapshots
+        .record_effect(execution.core.last_footprint.as_ref());
     execution.core.state = current_state.clone().into();
     record_statement_program_snapshot_state(
         &mut execution.presentation.recorded_snapshots,
@@ -2205,7 +2213,10 @@ fn execute_step_from_frontier_position_selecting_path(
         ));
     }
     if let Some(transport) = &function_environment.selected_call_binders
-        && !matches!(source_region.kind, SourceStatementKind::Plain)
+        && !matches!(
+            source_region.kind,
+            SourceStatementKind::Plain | SourceStatementKind::Try { .. }
+        )
     {
         return Err(ClickError::new(format!(
             "`step({}, {{ ... }})` requires a call to `{}` at the current frontier",
@@ -3090,10 +3101,15 @@ fn execute_step_from_frontier_position_selecting_path(
                 describe_evidence_refusal(&refusal, parameter_binding)
             ))
         })?;
-    execution
-        .presentation
-        .recorded_snapshots
-        .record_effect(execution.core.last_footprint.as_ref());
+    let statement_footprint = execution.core.last_footprint.clone();
+    // A loop exit names the state before its enclosing scope retires locals.
+    // Keep that intermediate boundary; ordinary statements include cleanup.
+    if loop_index.is_some() {
+        execution
+            .presentation
+            .recorded_snapshots
+            .record_effect(statement_footprint.as_ref());
+    }
     if let Some(parent) = loop_return_parent {
         for (return_index, returned) in loop_return_transitions.into_iter().enumerate() {
             // The path's fact base: what was available at the loop, plus what
@@ -3283,9 +3299,23 @@ fn execute_step_from_frontier_position_selecting_path(
                     ))
                     .with_kind(runtime_refusal_kind(&error))
                 })?;
+            if loop_index.is_none() {
+                execution.core.last_footprint =
+                    match (&statement_footprint, &execution.core.last_footprint) {
+                        (Some(statement), Some(cleanup)) => Some(
+                            crate::kernel::RegionFootprint::with_scope_cleanup(statement, cleanup),
+                        ),
+                        (Some(statement), None) => Some(statement.clone()),
+                        (_, cleanup) => cleanup.clone(),
+                    };
+            }
         }
         _ => {}
     }
+    execution
+        .presentation
+        .recorded_snapshots
+        .record_effect(execution.core.last_footprint.as_ref());
     if let Some(statement_exit_state) = match &outcome {
         CStatementOutcome::Normal(state)
         | CStatementOutcome::Break(state)

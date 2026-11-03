@@ -1199,23 +1199,35 @@ impl<'a> Proof<'a> {
                     FrontierPosition::StatementEntry { remaining } => Some(remaining.as_ref()),
                     _ => None,
                 });
-        let call = remaining
-            .and_then(|remaining| split_next_source_operation(remaining).ok())
-            .and_then(|(statement, _)| match statement {
-                CStatement::Call {
-                    function_name,
-                    arguments,
-                }
-                | CStatement::CallAssign {
-                    function_name,
-                    arguments,
-                    ..
-                } => Some(FrontierCall {
-                    callee: function_name,
-                    arguments,
-                }),
-                _ => None,
-            });
+        // C++ cleanup wrappers do not introduce an executable step. Select
+        // the same first operation that ordinary `step()` will execute, while
+        // leaving the wrapper intact for the kernel's exception continuation.
+        // Borrow only the leading source path. Splitting/cloning each try
+        // wrapper here would also copy its unrelated cleanup handler.
+        let mut operation = remaining;
+        loop {
+            operation = match operation {
+                Some(CStatement::Seq(statements)) => Some(statements.first()),
+                Some(CStatement::TryCatchInt32 { try_body, .. }) => Some(try_body.as_ref()),
+                _ => break,
+            };
+            crate::instrumentation::record_deterministic_work(1);
+        }
+        let call = operation.and_then(|statement| match statement {
+            CStatement::Call {
+                function_name,
+                arguments,
+            }
+            | CStatement::CallAssign {
+                function_name,
+                arguments,
+                ..
+            } => Some(FrontierCall {
+                callee: function_name.clone(),
+                arguments: arguments.clone(),
+            }),
+            _ => None,
+        });
         let names_written = |callee: &str| {
             callee == written
                 || crate::surface::call_source_spelling(callee) == written

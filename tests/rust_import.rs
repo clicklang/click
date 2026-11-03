@@ -3574,7 +3574,10 @@ fn charon_generic_container_refuses_a_stronger_put_and_a_false_caller() {
     ] {
         assert!(GENERIC_CONTAINER_SIDECAR.contains(before), "{before}");
         let invalid = GENERIC_CONTAINER_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // The positive test checks every implementation body. Here the
+        // interface-refinement check and the mutated caller are the targets;
+        // do not replay the unrelated stack transport proofs for each case.
+        let error = verify_rust_function(&invalid, &prepared, "generic_container::round_trip_dyn")
             .err()
             .unwrap_or_else(|| panic!("`{after}` must fail"));
         let rendered = format!("{error:?} {error}");
@@ -6065,4 +6068,62 @@ fn rust_recursive_countdown_expansion_checks_without_search() {
             .map_err(|error| error.to_string())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: selected stack transport expansion and cold replay"]
+fn charon_stack_transport_repairs_expand_and_replay() {
+    for (directory, sidecar, function) in [
+        (
+            "recursive-drop",
+            "list.click",
+            "__rust_q_I14_recursive_drop_T36___rust_q_I14_recursive_drop_I5_Stack_I3_pop",
+        ),
+        (
+            "generic-stack",
+            "stack.click",
+            "__rust_q_I13_generic_stack_T40___rust_q_I13_generic_stack_I5_Stack_A1_T_I3_pop",
+        ),
+        (
+            "generic-container",
+            "container.click",
+            "__rust_q_I17_generic_container_T44___rust_q_I17_generic_container_I5_Stack_A1_T_I3_pop",
+        ),
+    ] {
+        if std::env::var("CLICK_STACK_REPAIR_CASE").is_ok_and(|selected| selected != directory) {
+            continue;
+        }
+        let fixture = format!("design/charon-trial/{directory}");
+        let source = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(&fixture)
+                .join(sidecar),
+        )
+        .unwrap();
+        let p = Project::from_fixture(&fixture);
+        fs::write(p.root.join("borrow.click"), &source).unwrap();
+        let prepared = p.prepared().unwrap();
+        click::surface::with_proof_trace(function, || {
+            C0VerificationSession::new_program_prepared(&source, &prepared).unwrap_or_else(
+                |error| {
+                    panic!(
+                        "{directory}: {}\n{}",
+                        error.report(),
+                        error.trace_context_report().unwrap_or_default()
+                    )
+                },
+            );
+        });
+        let claim = format!("{function}.contract");
+        let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+            &source, &prepared, &claim,
+        )
+        .unwrap_or_else(|error| panic!("{directory}: {}", error.report()));
+        click::surface::without_implicit_auto_for_claim(&claim, || {
+            C0VerificationSession::new_program_prepared(&expanded, &prepared)
+                .map(|_| ())
+                .map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{directory}: {error}\n{expanded}"));
+    }
 }

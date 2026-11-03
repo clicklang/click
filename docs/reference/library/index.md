@@ -5098,6 +5098,85 @@ history or discover containment facts.
 
 **Verified use:** [`mdtests/resource_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_theorem_parameters.md).
 
+### Separating conjunction laws
+
+`A * B` is a resource descriptor for separating conjunction; `separation::emp`
+is the empty descriptor. Neither grants ownership. The following named axioms
+construct their conclusions from exactly the written premises, without opening
+resource definitions or discovering containment paths.
+
+| Theorem | Required premises | Conclusion |
+| --- | --- | --- |
+| `contains_refl(A)` | none | `contains(A, A)` |
+| `contains_trans(A, B, C)` | `contains(A, B)`; `contains(B, C)` | `contains(A, C)` |
+| `contains_left(A, B)` | none | `contains(A * B, A)` |
+| `contains_right(A, B)` | none | `contains(A * B, B)` |
+| `separate_symm(A, B)` | `separate(A, B)` | `separate(B, A)` |
+| `separate_star(A, B, C)` | `separate(A, C)`; `separate(B, C)` | `separate(A * B, C)` |
+| `separate_emp(A)` | none | `separate(separation::emp, A)` |
+
+Import `click::separation`; each theorem above is in the `separation::`
+namespace. All parameters have type `Resource`. There is no rule deriving
+separation between the two operands merely from writing their conjunction.
+For example, `A * A` retains two occurrences and is not identified with `A`.
+Use `restrict` to pass separation from a containing resource to a selected part.
+
+**Checked examples:** `mdtests/separation_conjunction.md` and
+`mdtests/separation_conjunction_missing_premise.md`.
+
+### `separation::contains_refl`
+
+```click
+theorem contains_refl(A: Resource) { ensures contains(A, A); }
+```
+
+### `separation::contains_trans`
+
+```click
+theorem contains_trans(A: Resource, B: Resource, C: Resource) {
+    requires contains(A, B);
+    requires contains(B, C);
+    ensures contains(A, C);
+}
+```
+
+### `separation::contains_left`
+
+```click
+theorem contains_left(A: Resource, B: Resource) { ensures contains(A * B, A); }
+```
+
+### `separation::contains_right`
+
+```click
+theorem contains_right(A: Resource, B: Resource) { ensures contains(A * B, B); }
+```
+
+### `separation::separate_symm`
+
+```click
+theorem separate_symm(A: Resource, B: Resource) {
+    requires separate(A, B);
+    ensures separate(B, A);
+}
+```
+
+### `separation::separate_star`
+
+```click
+theorem separate_star(A: Resource, B: Resource, C: Resource) {
+    requires separate(A, C);
+    requires separate(B, C);
+    ensures separate(A * B, C);
+}
+```
+
+### `separation::separate_emp`
+
+```click
+theorem separate_emp(A: Resource) { ensures separate(separation::emp, A); }
+```
+
 ### `separation::elements`
 
 ```click
