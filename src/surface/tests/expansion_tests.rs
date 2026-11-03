@@ -1,6 +1,38 @@
 use super::*;
 
 #[test]
+fn mirrored_implication_consequents_expand_to_checked_extraction() {
+    for (premise, goal, false_goal) in [
+        ("100u32 < x", "x > 100u32", "x <= 100u32"),
+        ("100u32 <= x", "x >= 100u32", "x < 100u32"),
+        ("100u32 > x", "x < 100u32", "x >= 100u32"),
+        ("100u32 >= x", "x <= 100u32", "x > 100u32"),
+    ] {
+        let source = format!(
+            "theorem bound(x: uint32, enabled: Bool) {{
+                requires enabled implies {premise};
+                requires enabled;
+                ensures {goal};
+            }}"
+        );
+        verify_click_theorems(&source).unwrap_or_else(|error| panic!("{goal}: {error}"));
+        let expanded = expand_c0_claim_source_by_label(&source, &[], "bound.ensures_0").unwrap();
+        assert!(expanded.contains("extract("), "{expanded}");
+        without_implicit_auto(|| verify_click_theorems(&expanded))
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+        let missing_guard = expanded.replace("requires enabled;", "");
+        assert_ne!(missing_guard, expanded);
+        assert!(without_implicit_auto(|| verify_click_theorems(&missing_guard)).is_err());
+        let false_claim = source.replace(
+            &format!("ensures {goal};"),
+            &format!("ensures {false_goal};"),
+        );
+        assert_ne!(false_claim, source);
+        assert!(verify_click_theorems(&false_claim).is_err());
+    }
+}
+
+#[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn unfolded_member_quantifier_keeps_written_pointer_arguments_in_expansion() {
     let source = r#"

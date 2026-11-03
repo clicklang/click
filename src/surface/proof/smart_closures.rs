@@ -2669,8 +2669,9 @@ impl<'a> Proof<'a> {
     /// available, such as a call guarantee `left_result == 0 implies X`
     /// inside the branch whose path condition is `left_result == 0`. The
     /// indexed consequent lookup that the checked `extract` rule performs
-    /// decides it; nothing is searched, and a goal no available implication
-    /// concludes costs one index probe. Expansion prints `extract(goal)`.
+    /// decides it. For an order comparison, search also tries its mirrored
+    /// spelling with one additional probe. Expansion prints the selected
+    /// `extract` and, if needed, `assumption`.
     fn try_discharged_consequent_closure(&self) -> Result<Option<Self>, ClickError> {
         let (Some(goal), Some(surface)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
@@ -2679,6 +2680,47 @@ impl<'a> Proof<'a> {
             .facts()
             .contains_discharged_implication_consequent(goal)
         {
+            // Implication extraction deliberately requires the consequent as
+            // written. Select its mirrored order spelling in search, then
+            // let the checked extraction and ordinary assumption close it.
+            if let ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } = surface
+            {
+                let mirrored_operator = match operator {
+                    ComparisonOperator::LessThan => Some(ComparisonOperator::GreaterThan),
+                    ComparisonOperator::LessEqual => Some(ComparisonOperator::GreaterEqual),
+                    ComparisonOperator::GreaterThan => Some(ComparisonOperator::LessThan),
+                    ComparisonOperator::GreaterEqual => Some(ComparisonOperator::LessEqual),
+                    _ => None,
+                };
+                if let Some(operator) = mirrored_operator {
+                    let mirrored = ClickProposition::Comparison {
+                        left: right.clone(),
+                        operator,
+                        right: left.clone(),
+                    };
+                    let kernel = self
+                        .lower_surface_proposition(&mirrored, "mirrored implication consequent")?;
+                    if self
+                        .facts()
+                        .contains_discharged_implication_consequent(&kernel)
+                        && let Some(extracted) = attempt::candidate_outcome(
+                            self.apply_step(ProofStep::Extract(mirrored)),
+                        )?
+                    {
+                        if extracted.focused_discharged() {
+                            return Ok(Some(extracted));
+                        }
+                        return Ok(attempt::candidate_outcome(
+                            extracted.apply_step(ProofStep::Assumption),
+                        )?
+                        .filter(Self::focused_discharged));
+                    }
+                }
+            }
             return self.try_discharged_consequent_conjunct_closure(goal, surface);
         }
         Ok(
