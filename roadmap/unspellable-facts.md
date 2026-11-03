@@ -59,7 +59,10 @@ Merged checkpoints relevant to the active work:
   historical reads use `at(point, o)` and call results use `<region>.result`.
 
 Endpoint-bound helpers and the exact signed-order walk now consume operand
-views. The general comparison dispatcher still needs its compatibility bridge;
+views (#2333). Wide constant evaluation, wide order-chain endpoints, constant
+comparison decisions, and signed-64 interval entry points also consume views.
+Wide equality sources retain their original propositions in an endpoint index,
+so implicit reasoning can cite a shared equality without exporting its operands. The general comparison dispatcher still needs its compatibility bridge;
 its migration must preserve the existing rule order as well as proof results.
 Moving endpoint queries ahead of cheaper rules can multiply nested bound visits.
 

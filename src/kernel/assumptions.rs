@@ -4368,6 +4368,7 @@ impl PureFactContext {
         self.equality_graph.admitted.bitvector64_equality_facts =
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.wide_load_sources = Default::default();
+        self.equality_graph.admitted.wide_constant_sources = Default::default();
         self.equality_graph
             .admitted
             .wide_pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
@@ -4794,6 +4795,10 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
+        self.equality_graph
+            .admitted
+            .wide_constant_sources
+            .adjust(condition, value, insert);
         let ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,

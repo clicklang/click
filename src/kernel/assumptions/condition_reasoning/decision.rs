@@ -495,146 +495,8 @@ impl PureFactContext {
         if let Some(value) = self.decide_by_sign_cast_division(condition) {
             return Some(value);
         }
-        // Wide comparisons may use a recorded constant equality. Consult only
-        // the queried terms' equality components, never unrelated conditions.
-        let wide_comparison = match condition {
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            } => Some((a, b, 0)),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            } => Some((a, b, 1)),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterThan,
-                left: a,
-                right: b,
-            } => Some((a, b, 2)),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterEqual,
-                left: a,
-                right: b,
-            } => Some((a, b, 3)),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            } => Some((a, b, 4)),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            } => Some((a, b, 5)),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterThan,
-                left: a,
-                right: b,
-            } => Some((a, b, 6)),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterEqual,
-                left: a,
-                right: b,
-            } => Some((a, b, 7)),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            } => Some((a, b, 8)),
-            _ => None,
-        };
-        if let Some((left, right, operator)) = wide_comparison {
-            if operator == 8 {
-                let left_base = self.bitvector64_identity_base(left);
-                let right_base = self.bitvector64_identity_base(right);
-                if (!std::ptr::eq(left_base, left.as_ref())
-                    || !std::ptr::eq(right_base, right.as_ref()))
-                    && let Some(answer) = self.decide(&ConditionTerm::int64_equal(
-                        left_base.clone(),
-                        right_base.clone(),
-                    ))
-                {
-                    return Some(answer);
-                }
-            }
-            let left_constant = self.wide_constant_from_equalities(left);
-            let right_constant = self.wide_constant_from_equalities(right);
-            // A constant outside the queried operand's signed interval cannot
-            // have the same bits. Consult only that operand's indexed facts;
-            // do not clone pointer or memory terms to try extra comparisons.
-            if operator == 8 {
-                let bounded = match (left_constant, right_constant) {
-                    (None, Some(value)) => self
-                        .int64_interval(left)
-                        .map(|bounds| (bounds, value as i64)),
-                    (Some(value), None) => self
-                        .int64_interval(right)
-                        .map(|bounds| (bounds, value as i64)),
-                    _ => None,
-                };
-                if bounded.is_some_and(|((lower, upper), value)| value < lower || value > upper) {
-                    return Some(false);
-                }
-            }
-            if let (Some(left), Some(right)) = (left_constant, right_constant) {
-                return Some(match operator {
-                    0 => (left as i64) < (right as i64),
-                    1 => (left as i64) <= (right as i64),
-                    2 => (left as i64) > (right as i64),
-                    3 => (left as i64) >= (right as i64),
-                    4 => left < right,
-                    5 => left <= right,
-                    6 => left > right,
-                    7 => left >= right,
-                    _ => left == right,
-                });
-            }
-            // A single constant endpoint also transports an indexed order
-            // fact through an equality (e.g. i < 4, len == 4 => i < len).
-            // Consult only the two equality components, and recurse only if
-            // replacing a nonconstant endpoint makes the goal smaller.
-            let replacement = |term: &Bitvector32Term, value: Option<u64>| {
-                if term.uint64_as_const().is_some() || term.int64_as_const().is_some() {
-                    term.clone()
-                } else if let Some(value) = value {
-                    if operator < 4 {
-                        Bitvector32Term::Int64Constant(value as i64)
-                    } else {
-                        Bitvector32Term::UInt64Constant(value)
-                    }
-                } else {
-                    term.clone()
-                }
-            };
-            let a = replacement(left, left_constant);
-            let b = replacement(right, right_constant);
-            if &a != left.as_ref() || &b != right.as_ref() {
-                let rewritten = match operator {
-                    0 => ConditionTerm::int64_signed_less_than(a, b),
-                    1 => ConditionTerm::int64_signed_less_equal(a, b),
-                    2 => ConditionTerm::int64_signed_greater_than(a, b),
-                    3 => ConditionTerm::int64_signed_greater_equal(a, b),
-                    4 => ConditionTerm::uint64_less_than(a, b),
-                    5 => ConditionTerm::uint64_less_equal(a, b),
-                    6 => ConditionTerm::uint64_greater_than(a, b),
-                    7 => ConditionTerm::uint64_greater_equal(a, b),
-                    _ => ConditionTerm::uint64_equal(a, b),
-                };
-                if let Some(value) = self.decide(&rewritten) {
-                    return Some(value);
-                }
-            }
+        if let Some(value) = self.decide_wide_constant_comparison(condition) {
+            return Some(value);
         }
         match condition {
             ConditionTerm::AlgebraicEqual(left, right) => {
@@ -1710,34 +1572,155 @@ impl PureFactContext {
         self.equality_graph.direct_scalar_constant(term)
     }
 
-    /// Strip bit-preserving 64-bit conversions and signed additive identities
-    /// through borrowed operands. Each node costs at most its operand's indexed
-    /// query; clone only after the walk, not each remaining subtree.
-    fn bitvector64_identity_base<'a>(&self, mut term: &'a Bitvector32Term) -> &'a Bitvector32Term {
-        loop {
-            term = match term {
-                Bitvector32Term::Binary {
-                    format: MachineIntegerType::Int64,
-                    op: MachineBinaryOp::Add,
-                    left: a,
-                    right: b,
-                } if self.wide_constant_from_equalities(b) == Some(0) => a,
-                Bitvector32Term::Binary {
-                    format: MachineIntegerType::Int64,
-                    op: MachineBinaryOp::Add,
-                    left: a,
-                    right: b,
-                } if self.wide_constant_from_equalities(a) == Some(0) => b,
-                Bitvector32Term::Binary {
-                    format: MachineIntegerType::Int64,
-                    op: MachineBinaryOp::Subtract,
-                    left: a,
-                    right: b,
-                } if self.wide_constant_from_equalities(b) == Some(0) => a,
-                // A signed-to-unsigned 64-bit conversion preserves all bits.
-                Bitvector32Term::UInt64FromInt64(value) => value,
-                _ => return term,
+    /// Preserve the existing wide constant rules on borrowed operand roots.
+    fn decide_wide_constant_comparison(&self, condition: &ConditionTerm) -> Option<bool> {
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let view = comparison_view(condition, true)?;
+        if !matches!(
+            view.format,
+            MachineIntegerType::Int64 | MachineIntegerType::UInt64
+        ) {
+            return None;
+        }
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let equality = matches!(view.relation, Relation::Equal | Relation::NotEqual);
+        let negate = view.relation == Relation::NotEqual;
+        if equality {
+            let a = self.bitvector64_identity_base_view(left);
+            let b = self.bitvector64_identity_base_view(right);
+            if (Key::for_format(view.format, a) != Key::for_format(view.format, left)
+                || Key::for_format(view.format, b) != Key::for_format(view.format, right))
+                && let Some(answer) =
+                    self.decide_operand_comparison(MachineIntegerType::Int64, Relation::Equal, a, b)
+            {
+                return Some(answer != negate);
+            }
+        }
+        let left_constant = self.wide_constant_from_equalities_view(left);
+        let right_constant = self.wide_constant_from_equalities_view(right);
+        if equality {
+            let bounded = match (left_constant, right_constant) {
+                (None, Some(value)) => self
+                    .int64_interval_view(left)
+                    .map(|bounds| (bounds, value as i64)),
+                (Some(value), None) => self
+                    .int64_interval_view(right)
+                    .map(|bounds| (bounds, value as i64)),
+                _ => None,
             };
+            if bounded.is_some_and(|((lower, upper), value)| value < lower || value > upper) {
+                return Some(negate);
+            }
+        }
+        if let (Some(a), Some(b)) = (left_constant, right_constant) {
+            let order = if view.format == MachineIntegerType::Int64 {
+                (a as i64).cmp(&(b as i64))
+            } else {
+                a.cmp(&b)
+            };
+            return Some(match view.relation {
+                Relation::Equal => a == b,
+                Relation::NotEqual => a != b,
+                Relation::Less => order.is_lt(),
+                Relation::LessEqual => !order.is_gt(),
+            });
+        }
+        // Replace only an endpoint that was not already a literal. Retain
+        // the other operand's DAG handle instead of exporting its subtree.
+        let replacement = |term: MachineOperandView<'_>, value: Option<u64>| {
+            if term.uint64_constant().is_some() || term.int64_constant().is_some() {
+                None
+            } else {
+                value.map(|value| {
+                    if view.format == MachineIntegerType::Int64 && !equality {
+                        Bitvector32Term::Int64Constant(value as i64)
+                    } else {
+                        Bitvector32Term::UInt64Constant(value)
+                    }
+                })
+            }
+        };
+        let a = replacement(left, left_constant);
+        let b = replacement(right, right_constant);
+        if a.is_none() && b.is_none() {
+            return None;
+        }
+        self.decide_operand_comparison(
+            view.format,
+            view.relation,
+            a.as_ref().map(MachineOperandView::Legacy).unwrap_or(left),
+            b.as_ref().map(MachineOperandView::Legacy).unwrap_or(right),
+        )
+    }
+
+    /// Build a checking consequence without exporting shared operands. Native
+    /// inputs keep their existing native condition and constructor behavior.
+    pub(super) fn decide_operand_comparison(
+        &self,
+        format: MachineIntegerType,
+        relation: crate::kernel::machine_integer::Relation,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Option<bool> {
+        use crate::kernel::machine_integer::comparison::{ComparisonOperand, NativeComparisonView};
+        if let (MachineOperandView::Legacy(left), MachineOperandView::Legacy(right)) = (left, right)
+        {
+            let (condition, truth) = crate::kernel::machine_integer::representation::comparison(
+                format,
+                relation,
+                left.clone(),
+                right.clone(),
+            )?;
+            self.decide(&condition).map(|answer| answer == truth)
+        } else {
+            self.decide(
+                &NativeComparisonView {
+                    format,
+                    relation,
+                    operands: [left, right]
+                        .map(|operand| ComparisonOperand::Observation(operand.retain(format))),
+                }
+                .integer_condition(),
+            )
+        }
+    }
+
+    /// Strip bit-preserving conversions and signed additive identities by
+    /// inspecting each root and querying only its selected operand.
+    fn bitvector64_identity_base_view<'a>(
+        &self,
+        mut term: MachineOperandView<'a>,
+    ) -> MachineOperandView<'a> {
+        loop {
+            if let Some((MachineIntegerType::Int64, op, [a, b])) = term.binary() {
+                if matches!(op, MachineBinaryOp::Add | MachineBinaryOp::Subtract)
+                    && self.wide_constant_from_equalities_view(b) == Some(0)
+                {
+                    term = a;
+                    continue;
+                }
+                if op == MachineBinaryOp::Add
+                    && self.wide_constant_from_equalities_view(a) == Some(0)
+                {
+                    term = b;
+                    continue;
+                }
+            }
+            if let Some((
+                crate::kernel::KernelMachineCastEncoding::UInt64FromInt64,
+                _,
+                _,
+                operand,
+            )) = term.cast()
+            {
+                term = operand;
+                continue;
+            }
+            return term;
         }
     }
 
@@ -1746,6 +1729,13 @@ impl PureFactContext {
         term: &Bitvector32Term,
     ) -> Option<u64> {
         self.equality_graph.wide_constant(self, term)
+    }
+
+    pub(in crate::kernel) fn wide_constant_from_equalities_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<u64> {
+        self.equality_graph.wide_constant_view(self, term)
     }
 
     /// Query wrapping int32 value equality maintained by the trusted graph.
@@ -2264,12 +2254,35 @@ impl PureFactContext {
         term: &Bitvector32Term,
         visiting: &mut BTreeSet<u64>,
     ) -> SignedConstantResolution {
+        self.constant_class_resolution_view(MachineOperandView::Legacy(term), visiting)
+    }
+
+    pub(in crate::kernel) fn known_signed_constant_after_normalization_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<i64> {
+        match term {
+            MachineOperandView::Legacy(term) => {
+                self.known_signed_constant_after_normalization(term)
+            }
+            _ => match self.constant_class_resolution_view(term, &mut BTreeSet::new()) {
+                SignedConstantResolution::Known(value) => Some(value),
+                _ => None,
+            },
+        }
+    }
+
+    fn constant_class_resolution_view(
+        &self,
+        term: MachineOperandView<'_>,
+        visiting: &mut BTreeSet<u64>,
+    ) -> SignedConstantResolution {
         crate::instrumentation::record_deterministic_work(1);
-        if let Some(value) = signed_bitvector_constant(term) {
+        if let Some(value) = term.word32_constant().map(|value| i64::from(value as i32)) {
             return SignedConstantResolution::Known(value);
         }
         let classes = &self.equality_graph;
-        if let Some((id, constant)) = classes.scalar_constant_class(term) {
+        if let Some((id, constant)) = classes.scalar_normalization_class_view(term) {
             if constant != SignedConstantResolution::Unknown || !visiting.insert(id) {
                 return constant;
             }
@@ -2280,6 +2293,9 @@ impl PureFactContext {
             visiting.remove(&id);
             return result;
         }
+        let MachineOperandView::Legacy(term) = term else {
+            return SignedConstantResolution::Unknown;
+        };
         match term {
             Bitvector32Term::If { .. } => self.conditional_constant_resolution(term, visiting),
             _ => crate::kernel::equality_graph::fold_arithmetic(term, |operand| {
@@ -2429,5 +2445,78 @@ mod owned_anchor_tests {
             samples.iter().all(|(_, work)| *work <= smallest + 4),
             "offset distinctness grew with unrelated compositions: {samples:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod shared_wide_decision_tests {
+    use super::*;
+    use crate::kernel::{KernelTerm, KernelType, SharedMachineIntegerTerm};
+
+    #[test]
+    fn wide_constant_decision_reads_shared_values_and_intervals() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            let variable = KernelTerm::variable(KernelType::C(format.c_type()), Variable(997561));
+            let operand = SharedMachineIntegerTerm::from_shared(
+                format,
+                KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [variable.clone(), variable],
+                ),
+            )
+            .unwrap();
+            let observation = || IntegerTerm::Machine(operand.clone());
+            let equal =
+                ConditionTerm::integer_equal(observation(), IntegerTerm::constant(7.into()));
+            let context = PureFactContext::new().assume_condition(equal, true);
+            for (query, expected) in [
+                (
+                    ConditionTerm::integer_less_than(
+                        observation(),
+                        IntegerTerm::constant(8.into()),
+                    ),
+                    Some(true),
+                ),
+                (
+                    ConditionTerm::integer_greater_than(
+                        observation(),
+                        IntegerTerm::constant(8.into()),
+                    ),
+                    Some(false),
+                ),
+                (
+                    ConditionTerm::integer_not_equal(
+                        observation(),
+                        IntegerTerm::constant(7.into()),
+                    ),
+                    Some(false),
+                ),
+            ] {
+                assert_eq!(context.decide_wide_constant_comparison(&query), expected);
+            }
+            let ranged = PureFactContext::new().assume_condition(
+                ConditionTerm::integer_less_equal(observation(), IntegerTerm::constant(10.into())),
+                true,
+            );
+            if format == MachineIntegerType::Int64 {
+                assert_eq!(
+                    ranged.decide_wide_constant_comparison(&ConditionTerm::integer_equal(
+                        observation(),
+                        IntegerTerm::constant(11.into())
+                    )),
+                    Some(false)
+                );
+                assert_eq!(
+                    ranged.decide_wide_constant_comparison(&ConditionTerm::integer_equal(
+                        observation(),
+                        IntegerTerm::constant(9.into())
+                    )),
+                    None
+                );
+            }
+            assert!(!operand.has_boxed_operand());
+        }
     }
 }
