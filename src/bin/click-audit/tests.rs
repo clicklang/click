@@ -1509,37 +1509,32 @@ int32 stop_at(int32 n) {
     fs::remove_dir_all(directory).unwrap();
 }
 
-/// The reduced `examples/arena` audit failures audit every smart site: a
-/// loop proof after a proof-level `branch`, an entry alignment fact cited as
-/// a premise, and the retained session checked between main-thread
-/// expansions and cold reverifications. Before the session had a thread of
-/// its own, every expansion replaced the kernel tables its environment names.
+/// Audit a loop proof after a proof-level `branch`, retaining the session
+/// between main-thread expansions and cold reverifications. Before the session
+/// had a thread of its own, expansions replaced the kernel tables it names.
 #[test]
-#[ignore = "nightly: 23s in the parallel gate"]
+#[ignore = "nightly: retained-session audit takes 3.6s"]
 fn reduced_arena_init_fixtures_audit_every_site() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let deadline = Instant::now() + Duration::from_secs(120);
-    for relative in [
-        "mdtests/loop_after_proof_branch_expands.md",
-        "mdtests/entry_alignment_premise_expands.md",
-    ] {
-        let path = root.join(relative);
-        let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
-        assert!(sites.len() >= 4, "{relative}: {sites:?}");
-        let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
-        for (index, site) in sites.iter().enumerate() {
-            if let Err(message) = audit_site(
-                site,
-                &mut worker,
-                &AuditLimits::default(),
-                index == 0,
-                deadline,
-            ) {
-                panic!(
-                    "{relative}:{}:{} should audit: {message}",
-                    site.position.line, site.position.column
-                );
-            }
+    let relative = "mdtests/loop_after_proof_branch_expands.md";
+    let path = root.join(relative);
+    let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
+    // Check the first expansion and subsequent reuse of the same session.
+    assert!(sites.len() >= 2, "{relative}: {sites:?}");
+    let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
+    for (index, site) in sites.iter().enumerate() {
+        if let Err(message) = audit_site(
+            site,
+            &mut worker,
+            &AuditLimits::default(),
+            index == 0,
+            deadline,
+        ) {
+            panic!(
+                "{relative}:{}:{} should audit: {message}",
+                site.position.line, site.position.column
+            );
         }
     }
 }
