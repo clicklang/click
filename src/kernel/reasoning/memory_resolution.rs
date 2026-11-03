@@ -3985,21 +3985,19 @@ pub(in crate::kernel) fn run_slots_kept_by_store(
             if low >= high {
                 return (SlotSet::All, false);
             }
-            let width = i64::from(run.element_width());
-            let value_width = i64::from(run.value_width());
-            let covered = |index: u32| {
-                let start = i64::from(index) * width;
-                shift <= start && start + value_width <= shift + i64::from(bytes)
-            };
-            // Coverage is an interval, so its endpoints decide each live
-            // interval. Walking logical slots here also made a known whole-
-            // array store cost the array's extent despite its compact form.
-            let forgot = run.holes().gap_intervals(run.count()).any(|(start, end)| {
-                crate::instrumentation::record_deterministic_work(1);
-                let first = start.max(low);
-                let end = end.min(high);
-                first < end && (!covered(first) || !covered(end - 1))
-            });
+            let width = i128::from(run.element_width()).max(1);
+            let value_width = i128::from(run.value_width());
+            let shift = i128::from(shift);
+            let clamp = |index: i128| index.clamp(i128::from(low), i128::from(high)) as u32;
+            // Fully covered slots form an interval. Only its two outside
+            // intervals can lose untouched bytes; query their hole coverage
+            // directly. This also handles runs whose values overlap because
+            // their access width exceeds the slot stride.
+            let covered_low = clamp((shift + width - 1).div_euclid(width));
+            let covered_high = clamp((shift + i128::from(bytes) - value_width).div_euclid(width) + 1);
+            crate::instrumentation::record_deterministic_work(2);
+            let forgot = !run.holes().covers_range(low, covered_low)
+                || !run.holes().covers_range(covered_high, high);
             (SlotSet::Except(low, high), forgot)
         }
         RunAccess::Scaled { .. } | RunAccess::ScaledWide { .. } | RunAccess::Other => {

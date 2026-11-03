@@ -3137,3 +3137,67 @@ fn compact_run_live_footprint_bounds_prefix_and_hole_work() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn compact_run_fixed_store_does_not_walk_holes() {
+    use crate::kernel::{CellRun, IndexIntervals};
+    let mut samples = Vec::new();
+    for size in [4u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = scaling_cell("local:hole-run", 0);
+        let mut holes = IndexIntervals::default();
+        for i in 0..size {
+            holes.insert_range(2 * i + 1, 2 * i + 2);
+        }
+        let run = CellRun::new(
+            base.clone(),
+            4,
+            CType::Int32,
+            2 * size,
+            crate::kernel::intern_c_memory(CMemory::new()),
+            holes,
+        );
+        let facts = PureFactContext::new();
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::reasoning::run_slots_kept_by_store(&run, &base, 4, &facts)
+        });
+        assert!(
+            !result.1,
+            "a complete write does not forget untouched bytes"
+        );
+        samples.push(work);
+        assert!(crate::kernel::reasoning::run_slots_kept_by_store(&run, &base, 2, &facts).1);
+        assert!(
+            !crate::kernel::reasoning::run_slots_kept_by_store(
+                &run,
+                &base.offset_by_bytes(4),
+                2,
+                &facts,
+            )
+            .1,
+            "a hole has no cached value to forget"
+        );
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn compact_run_partial_store_checks_overlapping_value_widths() {
+    use crate::kernel::{CellRun, IndexIntervals};
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = scaling_cell("local:overlapping-run", 0);
+    let mut holes = IndexIntervals::default();
+    holes.insert_range(0, 1);
+    holes.insert_range(2, 3);
+    let run = CellRun::new(
+        base.clone(), 1, CType::Int32, 8,
+        crate::kernel::intern_c_memory(CMemory::new()), holes,
+    );
+    // Both boundary slots are holes, but the middle slot still loses bytes.
+    assert!(crate::kernel::reasoning::run_slots_kept_by_store(
+        &run, &base.offset_by_bytes(2), 1, &PureFactContext::new(),
+    ).1);
+}

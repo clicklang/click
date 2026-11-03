@@ -1127,3 +1127,40 @@ fn saved_iterated_base_ignores_aliases_snapshots_and_unrelated_resources() {
     assert_eq!(work[0], work[1], "saved-base work: {work:?}");
     assert_eq!(work[1], work[2], "saved-base work: {work:?}");
 }
+
+#[test]
+fn named_unfold_beside_views_scales_with_the_opened_delta() {
+    let mut totals = Vec::new();
+    for count in [4, 8, 16] {
+        let parameters = lines(count, |i| format!("int32* p{i},"));
+        let owned = lines(count, |i| format!("consumes r{i}: owner(p{i});"));
+        let opens = lines(count, |i| format!("let {{ unused: m{i} }} = unfold(r{i});"));
+        let c = format!("void check({parameters} int32* q) {{}}");
+        let proof = format!(
+            r#"
+            resource owner(p: int32*) {{ field unused: int32; owns p[0..1]; }}
+            verifying "hunt.c";
+            void check({parameters} int32* q) {{ views q[0..1]; {owned} }} by {{
+                {opens}
+                have separate(memory(p0[0..1]), memory(q[0..1])) by {{ solve(); }}
+                step_until(function.exit);
+            }}
+        "#
+        );
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&proof, &[("hunt.c", c.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("count {count}: {}", error.message()));
+        let work = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "unfold")
+            .map(|sample| sample.work)
+            .collect::<Vec<_>>();
+        assert_eq!(work.len(), count);
+        totals.push(work.iter().sum::<usize>());
+    }
+    assert!(
+        totals.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{totals:?}"
+    );
+}
