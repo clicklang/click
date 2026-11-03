@@ -31,47 +31,27 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Parent loan-binding selection.**
-   `view_occurrences_for_fact` in `src/kernel/primitives/resource_algebra.rs`
-   enumerates matching observations; the call planner in `src/kernel/loans.rs`
-   collects them and searches for a live parent loan binding. This happens
-   both while deciding whether to coalesce a view and while selecting its
-   backing. A crowded bucket of unbound observations must not cost a scan.
+1. **Call-side fragment composition: next measurement candidate.**
+   The loan planner's coalescing prepass calls
+   `ResourceContext::with_coalesced_owned_memory` when no nominated owner or
+   bound view supplies a memory requirement. That helper materializes the
+   candidate frontier before trying to join owned pieces. Owned requirement
+   reservation also uses `reserve_owned_memory_fragments_with_origins` and
+   the unselected `without_fact_incrementally_with_origins` route.
 
-   `split_owner_reconciliation_ignores_duplicate_observations` in
-   `src/scaling_tests/kernel/loans/tests.rs` holds a call fixed: consume
-   `[0..4]` and borrow `[6..8]` from one `[0..8]` owner. At 4/16/64/256 duplicate
-   observations, identity reconciliation itself is flat, but the test also
-   reports growing complete-call persistent-map work. Ordinary work counters
-   miss rejected-view traversal, so retain the persistent-work measurement.
-   The complete-call curve is diagnostic, not yet a flatness assertion.
+   Isolate a fixed call requirement while varying rejected observations and
+   irrelevant fragments in the selected bucket. Measure both deterministic
+   work and persistent-map work, including misses and repeated queries.
+   Distinguish a scan of rejected candidates from work proportional to the
+   pieces actually consumed or produced; explicit composition may legitimately
+   touch its selected pieces. The existing complete-call observation tests do
+   not establish bounded cost for arbitrary fragment composition.
 
-   The local red test
-   `parent_loan_binding_selection_ignores_unbound_observations` in the same
-   file measures the selection expression and the actual call, with index
-   preparation outside both. It repeats queries at 4/16/64/256 observations
-   for early and late bindings, two usable shares, no binding, an ordinary
-   owner beside unbound observations, and a stale binding. Success, refusal,
-   and branch-isolation controls pass before the scaling assertion fails.
-   With an early binding, repeated selection map visits are
-   195/399/1467/6855; complete-call visits are 1879/2291/4431/15211. No-binding
-   selection is almost identical: 194/398/1466/6854. Ordinary selection work
-   stays at 35, so it does not expose this traversal. The test is explicitly
-   ignored while red; run its exact name with `--run-ignored all --no-capture`.
-
-   Design checkpoint: skip discovery when the parent-binding map is empty;
-   for nonempty maps, nominate a bound occurrence from an index maintained
-   with binding updates, rather than collecting all matching observations.
-   Start with exact requested views, including the two-usable-shares case.
-   Keep the existing live-occurrence, live-loan, and actual-view/binding
-   coverage checks. A stale or unsuitable nominee must not start another
-   search. The coalescing prepass must likewise stop enumerating observations
-   just to test whether one exists. Subrange and checked-offset-alias cases
-   need bounded selection too: retain `nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority`
-   and the wider-child refusal as acceptance controls, without an iterator
-   fallback. No new separation axiom or surface tactic is indicated.
-   Discuss this design before implementation; keep it separate from split
-   origins and do not reconstruct bindings from context or ledger history.
+   Start with a red scaling test, then discuss the design before removal.
+   Prefer retaining an explicitly selected supplier or explicit composition
+   over adding automatic candidate searches. Keep the C and contracts fixed,
+   preserve ownership and loan refusals, and investigate proof failures for
+   missing explicit steps before proposing new primitives.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).

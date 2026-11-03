@@ -645,6 +645,7 @@ fn single_memory_owner_selection_rejects_fragment_enumeration() {
 fn loan_origin_reconciliation_rejects_search_and_history() {
     for name in [
         "has_other_directly_supporting_owned_entry",
+        "view_occurrences_for_fact",
         "changed_facts_since",
         "descends_from",
     ] {
@@ -664,4 +665,31 @@ fn loan_origin_reconciliation_rejects_search_and_history() {
         )
         .is_ok()
     );
+}
+
+#[test]
+fn loan_binding_selection_rejects_candidate_search() {
+    for function in ["bound_view_candidate", "select_bound_view"] {
+        for name in ["find", "find_map", "filter", "filter_map", "collect"] {
+            let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
+            assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+        }
+    }
+}
+
+#[test]
+fn selected_loan_consumption_rejects_supplier_discovery() {
+    for name in [
+        "iter",
+        "find",
+        "find_map",
+        "collect",
+        "normalized_memory_suppliers",
+        "without_fact_incrementally",
+    ] {
+        let source = format!("fn without_selected_fact_with_origins(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
 }

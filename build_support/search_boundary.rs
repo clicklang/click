@@ -53,6 +53,38 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: {}: loan provenance must retain split origins, not reconstruct them by search or history ({name})", self.path, self.function));
         }
+        if self.path == "src/kernel/loans.rs"
+            && (name == "view_occurrences_for_fact"
+                || (matches!(
+                    self.function.as_str(),
+                    "bound_view_candidate" | "select_bound_view"
+                ) && matches!(
+                    name,
+                    "find" | "find_map" | "filter" | "filter_map" | "collect"
+                )))
+        {
+            self.errors.push(format!("{}: {}: loan binding selection must nominate an indexed identity, not scan observations ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && matches!(
+                self.function.as_str(),
+                "without_selected_fact_with_origins" | "has_indexed_view_witness"
+            )
+            && matches!(
+                name,
+                "iter"
+                    | "find"
+                    | "find_map"
+                    | "collect"
+                    | "normalized_memory_suppliers"
+                    | "without_fact_incrementally"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: selected consumption must use the supplied occurrence ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && self.function == "origin_of"
             && matches!(

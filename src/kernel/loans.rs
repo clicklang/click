@@ -16,8 +16,9 @@ pub(in crate::kernel) use local_references::{LocalReferenceId, LocalScalarRefere
 
 use super::functions::CCheckedResourceFact;
 use super::primitives::{
-    MemorySplitOrigins, PointerBlock, ResourceMemoryIntervalNode, memory_interval_ancestors,
-    memory_interval_nodes, memory_range_is_proven_empty, memory_ranges_proven_overlapping,
+    MemorySplitOrigins, OwnedMemberKey, Pointer, PointerBlock, ResourceMemoryIntervalNode,
+    memory_interval_ancestors, memory_interval_nodes, memory_range_is_proven_empty,
+    memory_ranges_proven_overlapping,
 };
 use super::{
     Bitvector32Term, CMemoryRange, CResource, CResourceFact, CResourceSnapshot,
@@ -181,11 +182,28 @@ pub(crate) struct LoanViewBindings {
     state: Arc<LoanViewBindingsState>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum BoundViewKey {
+    Memory(Pointer),
+    Other(OwnedMemberKey),
+}
+
+impl BoundViewKey {
+    fn of(fact: &CResourceFact) -> Self {
+        match fact.memory_range() {
+            Some(range) => Self::Memory(range.base().clone()),
+            None => Self::Other(OwnedMemberKey::of(fact).expect("non-memory resource")),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct LoanViewBindingsState {
     pub(crate) identity: u64,
     pub(crate) map: PersistentMap<ResourceOccurrenceId, LoanViewBinding>,
     changes: imbl::Vector<(u64, ResourceOccurrenceId)>,
+    by_view: PersistentMap<CResourceFact, PersistentSet<ResourceOccurrenceId>>,
+    by_key: PersistentMap<BoundViewKey, PersistentSet<ResourceOccurrenceId>>,
 }
 
 impl LoanViewBindingsState {
@@ -196,11 +214,25 @@ impl LoanViewBindingsState {
     ) -> Arc<Self> {
         let mut changes = self.changes.clone();
         let identity = next_loan_binding_identity();
-        changes.extend(changed.into_iter().map(|occurrence| (identity, occurrence)));
+        let mut by_view = self.by_view.clone();
+        let mut by_key = self.by_key.clone();
+        for occurrence in changed {
+            changes.push_back((identity, occurrence));
+            if let Some(old) = self.map.get(&occurrence) {
+                remove_bound_occurrence(&mut by_view, &old.viewed, occurrence);
+                remove_bound_occurrence(&mut by_key, &BoundViewKey::of(&old.viewed), occurrence);
+            }
+            if let Some(new) = map.get(&occurrence) {
+                insert_bound_occurrence(&mut by_view, new.viewed.clone(), occurrence);
+                insert_bound_occurrence(&mut by_key, BoundViewKey::of(&new.viewed), occurrence);
+            }
+        }
         Arc::new(Self {
             identity,
             map,
             changes,
+            by_view,
+            by_key,
         })
     }
 
@@ -223,6 +255,34 @@ impl LoanViewBindingsState {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
             .map(|(_, occurrence)| *occurrence)
             .collect()
+    }
+}
+
+fn insert_bound_occurrence<K: Ord>(
+    index: &mut PersistentMap<K, PersistentSet<ResourceOccurrenceId>>,
+    key: K,
+    occurrence: ResourceOccurrenceId,
+) {
+    let bucket = index
+        .get(&key)
+        .cloned()
+        .unwrap_or_default()
+        .with_value(occurrence);
+    *index = index.with_inserted(key, bucket);
+}
+
+fn remove_bound_occurrence<K: Ord + Clone>(
+    index: &mut PersistentMap<K, PersistentSet<ResourceOccurrenceId>>,
+    key: &K,
+    occurrence: ResourceOccurrenceId,
+) {
+    if let Some(bucket) = index.get(key) {
+        let bucket = bucket.without_value(&occurrence);
+        *index = if bucket.is_empty() {
+            index.without_key(key)
+        } else {
+            index.with_inserted(key.clone(), bucket)
+        };
     }
 }
 
@@ -282,6 +342,36 @@ impl LoanViewBindings {
 
     pub(crate) fn get(&self, occurrence: &ResourceOccurrenceId) -> Option<&LoanViewBinding> {
         self.state.map.get(occurrence)
+    }
+
+    /// Nominate one bound occurrence, never enumerate observations or retry
+    /// another binding after a failed coverage/liveness check. Exact bindings
+    /// take priority; nonexact queries use a singleton resource bucket (or a
+    /// singleton binding map for a checked alias).
+    fn bound_view_candidate(&self, required: &CResourceFact) -> Option<ResourceOccurrenceId> {
+        if self.state.map.is_empty() {
+            return None;
+        }
+        if let Some(exact) = self.state.by_view.get(required) {
+            return exact.iter().next().copied();
+        }
+        if let Some(bucket) = self.state.by_key.get(&BoundViewKey::of(required)) {
+            return (bucket.len() == 1).then(|| *bucket.iter().next().unwrap());
+        }
+        (self.state.map.len() == 1).then(|| *self.state.map.iter().next().unwrap().0)
+    }
+
+    fn select_bound_view(
+        &self,
+        required: &CResourceFact,
+        resources: &ResourceContext,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        let occurrence = self.bound_view_candidate(required)?;
+        let held = resources.view_fact_for_occurrence(occurrence)?;
+        // Binding metadata alone cannot turn an owned composite or an absent
+        // occurrence into a view. Check only the nominated held occurrence.
+        bound_view_covers_requirement(held, None, required, assumptions).then_some(occurrence)
     }
 
     pub(crate) fn with_inserted(
@@ -2501,7 +2591,7 @@ fn lend_owned_view_to_suspended_worker(
     transitions.push(root.transition);
     *residual = residual
         .clone()
-        .without_fact_incrementally_with_origins(selected, assumptions, split_origins)
+        .without_selected_fact_with_origins(support, selected, assumptions, split_origins)
         .ok_or_else(|| StableViewPlanError::MissingResource(selected.clone()))?;
     let viewed = CResourceFact::view_memory(range);
     let (next_residual, occurrence) = residual
@@ -2633,9 +2723,10 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             .fact
             .memory_range()
             .is_none_or(|range| memory_range_is_proven_empty(range, assumptions))
-            || !context
-                .view_occurrences_for_fact(&requirement.fact, assumptions)
-                .is_empty()
+            || context.has_indexed_view_witness(&requirement.fact, assumptions)
+            || parent_view_bindings
+                .select_bound_view(&requirement.fact, context, assumptions)
+                .is_some()
             || context
                 .directly_supporting_owned_entry(&requirement.fact, assumptions)
                 .is_some()
@@ -3009,16 +3100,16 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         {
             continue;
         }
-        let view_occurrences =
-            caller_resources.view_occurrences_for_fact(&requirement.fact, assumptions);
-        let bound_occurrence = view_occurrences.iter().find_map(|occurrence| {
-            parent_view_bindings
-                .get(occurrence)
-                .cloned()
-                .map(|binding| (*occurrence, binding))
-        });
+        let bound_occurrence = parent_view_bindings
+            .select_bound_view(&requirement.fact, caller_resources, assumptions)
+            .map(|occurrence| {
+                (
+                    occurrence,
+                    parent_view_bindings.get(&occurrence).unwrap().clone(),
+                )
+            });
         if bound_occurrence.is_none()
-            && !view_occurrences.is_empty()
+            && caller_resources.has_indexed_view_witness(&requirement.fact, assumptions)
             && caller_resources
                 .directly_supporting_owned_entry(&requirement.fact, assumptions)
                 .is_none()
@@ -3145,7 +3236,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 entry_transitions.push(opening.transition.clone());
                 planned_ledger = planned_ledger.apply(&opening.transition)?;
                 residual = residual
-                    .without_fact_incrementally_with_origins(
+                    .without_selected_fact_with_origins(
+                        support,
                         &selected,
                         assumptions,
                         &mut split_origins,
@@ -3187,10 +3279,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 let occurrence = occurrence
                     .or_else(|| owner_occurrences.get(&binding).copied())
                     .or_else(|| {
-                        next_resources
-                            .view_occurrences_for_fact(&requirement.fact, assumptions)
-                            .into_iter()
-                            .find(|occurrence| {
+                        callee_view_bindings
+                            .select_bound_view(&requirement.fact, &next_resources, assumptions)
+                            .filter(|occurrence| {
                                 callee_view_bindings.get(occurrence) == Some(&binding)
                             })
                     })
@@ -3377,7 +3468,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             } else if let Some(backing) = composite_backings.get(&support) {
                 let remaining = residual
                     .clone()
-                    .without_fact_incrementally_with_origins(
+                    .without_selected_fact_with_origins(
+                        support,
                         &selected,
                         assumptions,
                         &mut split_origins,
@@ -3416,7 +3508,8 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 entry_transitions.push(opening.transition.clone());
                 planned_ledger = planned_ledger.apply(&opening.transition)?;
                 residual = residual
-                    .without_fact_incrementally_with_origins(
+                    .without_selected_fact_with_origins(
+                        support,
                         &selected,
                         assumptions,
                         &mut split_origins,
@@ -3470,10 +3563,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 let occurrence = occurrence
                     .or_else(|| owner_occurrences.get(&binding).copied())
                     .or_else(|| {
-                        next_resources
-                            .view_occurrences_for_fact(&requirement.fact, assumptions)
-                            .into_iter()
-                            .find(|occurrence| {
+                        callee_view_bindings
+                            .select_bound_view(&requirement.fact, &next_resources, assumptions)
+                            .filter(|occurrence| {
                                 callee_view_bindings.get(occurrence) == Some(&binding)
                             })
                     })
@@ -3554,10 +3646,9 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             let occurrence = occurrence
                 .or(child_occurrence)
                 .or_else(|| {
-                    next_resources
-                        .view_occurrences_for_fact(&requirement.fact, assumptions)
-                        .into_iter()
-                        .find(|occurrence| {
+                    callee_view_bindings
+                        .select_bound_view(&requirement.fact, &next_resources, assumptions)
+                        .filter(|occurrence| {
                             callee_view_bindings.get(occurrence) == Some(&child_binding)
                         })
                 })
