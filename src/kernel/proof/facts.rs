@@ -1590,12 +1590,10 @@ impl ProofFacts {
             crate::kernel::machine_integer::comparison::comparison_view_through_integer_operations(
                 condition, *truth,
             )?;
-        if !bounds.iter().all(|bound| {
-            bound
-                .stating_facts()
-                .iter()
-                .any(|bound| self.assumptions().contains_known(bound))
-        }) {
+        if !bounds
+            .iter()
+            .all(|bound| self.assumptions().knows_operation_range_bound(bound))
+        {
             return None;
         }
         Some(view.integer_proposition())

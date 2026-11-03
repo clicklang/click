@@ -535,6 +535,23 @@ pub(super) fn clear_machine_observation_memo() {
 }
 
 impl SharedMachineIntegerTerm {
+    /// An explicit native operand already imported in this verification.
+    /// Read-only: a miss does not import syntax or retain an opaque payload.
+    pub(crate) fn retained_import(ty: MachineIntegerType, value: &Bitvector32Term) -> Option<Self> {
+        let key = MachineIntegerKey::Legacy {
+            ty,
+            value: value.clone(),
+        };
+        let found = MACHINE_INTEGER_INTERNER
+            .get()?
+            .lock()
+            .expect("machine Integer interner lock poisoned")
+            .find(&key)?;
+        (found.shared_operand().is_some()
+            && MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow().contains_key(&found.id())))
+        .then_some(found)
+    }
+
     pub fn intern(ty: MachineIntegerType, value: Bitvector32Term) -> Self {
         // Legacy callers already supply a boxed tree. Reuse its existing
         // interned observation before importing, and retain that explicit tree

@@ -85,6 +85,37 @@ pub(crate) struct OverflowQueryView {
 }
 
 impl OverflowQueryView {
+    pub(crate) fn from_operands(
+        format: MachineIntegerType,
+        operation: Operation,
+        operands: [crate::kernel::MachineOperandView<'_>; 2],
+    ) -> Option<Self> {
+        if !representation::has_overflow_test(format) {
+            return None;
+        }
+        let exact = operation.exact(operands[0].observe(format)?, operands[1].observe(format)?);
+        Some(Self {
+            format,
+            operation,
+            operands: operands.map(|operand| match operand {
+                crate::kernel::MachineOperandView::Legacy(term) => {
+                    ComparisonOperand::Constant(term.clone())
+                }
+                crate::kernel::MachineOperandView::Shared(_) => {
+                    ComparisonOperand::Observation(operand.retain(format))
+                }
+            }),
+            exact,
+        })
+    }
+    pub(crate) fn operation_kind(&self) -> crate::kernel::OverflowOperation {
+        match self.operation {
+            Operation::Add => crate::kernel::OverflowOperation::Add,
+            Operation::Subtract => crate::kernel::OverflowOperation::Subtract,
+            Operation::Multiply => crate::kernel::OverflowOperation::Multiply,
+        }
+    }
+
     pub(crate) fn bounds(&self) -> [Proposition; 2] {
         ordinary_bounds(self.format, self.exact.clone())
     }

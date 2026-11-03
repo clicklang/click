@@ -60,11 +60,25 @@ Merged checkpoints relevant to the active work:
 
 Endpoint-bound helpers and the exact signed-order walk now consume operand
 views (#2333). Wide constant evaluation, wide order-chain endpoints, constant
-comparison decisions, and signed-64 interval entry points also consume views.
-Wide equality sources retain their original propositions in an endpoint index,
-so implicit reasoning can cite a shared equality without exporting its operands. The general comparison dispatcher still needs its compatibility bridge;
-its migration must preserve the existing rule order as well as proof results.
-Moving endpoint queries ahead of cheaper rules can multiply nested bound visits.
+comparison decisions, and signed-64 interval entry points also consume views
+(#2337). Wide equality sources retain their original propositions in an endpoint
+index, so implicit reasoning can cite a shared equality without exporting its
+operands.
+
+Ordinary ring-operation domain decisions consume `OverflowQueryView`. Legacy
+overflow premises retain their exact sources in an operand index, including
+withdrawal and branch scope. Operation-range authority checks and constant-offset
+upper/lower bound helpers also consume views. Atomic variable/literal queries
+keep their fixed-size native decision path; shared arithmetic is not exported.
+The built difference graph's ring-overflow route also reads shared operands,
+including chained bounds, modular source keys, and subtraction relationships.
+General difference-graph comparison/admission adapters remain to be migrated.
+Certificate premise adapters still need their across-effect availability routes
+migrated before their boxed compatibility forms can be removed.
+
+The general comparison dispatcher still needs its compatibility bridge. Its
+migration must preserve the existing rule order as well as proof results;
+moving endpoint queries ahead of cheaper rules can multiply nested bound visits.
 
 Nested signed production remains disabled until checker consumers are shared
 end to end. A green PR migrating a subset does **not** complete part 1.

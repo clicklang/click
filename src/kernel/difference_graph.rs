@@ -27,6 +27,8 @@ use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::persistent::PersistentMap;
 
+mod operand_views;
+
 /// The integer domain a node's value ranges over.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum Domain {
@@ -84,6 +86,13 @@ struct PendingLink {
 #[derive(Clone, Default)]
 pub(crate) struct DifferenceGraph {
     nodes: PersistentMap<(Domain, Bitvector32Term), NodeId>,
+    operand_nodes: PersistentMap<
+        (
+            Domain,
+            crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey,
+        ),
+        NodeId,
+    >,
     domains: PersistentMap<NodeId, Domain>,
     /// Tightened intervals; a node absent here ranges over its domain.
     bounds: PersistentMap<NodeId, (i128, i128)>,
@@ -392,6 +401,7 @@ impl DifferenceGraph {
             charge();
             self.nodes
                 .insert((domain, new.clone()), node.expect("checked above"));
+            self.index_operand_node(domain, new, node.expect("checked above"));
         }
         true
     }
@@ -688,6 +698,7 @@ impl DifferenceGraph {
         let node = self.next;
         self.next += 1;
         self.nodes.insert((domain, term.clone()), node);
+        self.index_operand_node(domain, term, node);
         self.domains.insert(node, domain);
         // Intrinsic mask bounds belong to the node when it is introduced,
         // so excluding one endpoint can tighten the maintained interval.

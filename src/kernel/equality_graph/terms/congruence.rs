@@ -2487,6 +2487,37 @@ impl TermClasses {
         false
     }
 
+    pub(in crate::kernel::equality_graph) fn may_know_int32_add_overflow(
+        &self,
+        value: bool,
+    ) -> bool {
+        self.condition_kinds
+            .contains(&(ConditionKind::Int32AddOverflow, value))
+    }
+
+    pub(in crate::kernel::equality_graph) fn knows_int32_add_overflow_views(
+        &mut self,
+        operands: [crate::kernel::MachineOperandView<'_>; 2],
+        value: bool,
+    ) -> bool {
+        let [left, right] = operands.map(|operand| match operand {
+            crate::kernel::MachineOperandView::Shared(term) => {
+                self.intern_shared_machine(term, W::Bits32)
+            }
+            crate::kernel::MachineOperandView::Legacy(term) => self.intern_int32(term),
+        });
+        let node = self.intern_node(Node::Condition(
+            ConditionKind::Int32AddOverflow,
+            left,
+            right,
+        ));
+        self.register_pending_loads();
+        let truth = if value { 1 } else { 2 };
+        self.condition_truth
+            .get(&self.root(node))
+            .is_some_and(|known| known & truth != 0)
+    }
+
     pub(in crate::kernel::equality_graph) fn knows_condition(
         &mut self,
         condition: &C,

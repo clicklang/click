@@ -834,3 +834,132 @@ fn signed_ranges_keep_shared_prefixes_and_memoize_refusals() {
         );
     }
 }
+
+#[test]
+fn shared_overflow_queries_keep_prefixes_across_context_changes() {
+    use crate::kernel::machine_integer::{Operation, definedness};
+    use crate::kernel::{KernelTerm, KernelType, SharedMachineIntegerTerm};
+    let mut samples = Vec::new();
+    // Cross the 32-bit wrap threshold while keeping admission in the fast gate.
+    for size in [4, 12, 36] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(format.c_type()), Variable(996701));
+        let mut context = PureFactContext::new();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                let operand = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+                let observed = IntegerTerm::Machine(operand.clone());
+                let exact = Operation::Add.exact(observed.clone(), IntegerTerm::constant(2.into()));
+                let query = definedness::overflow_query_of_integer_bound(
+                    &definedness::ordinary_bounds(format, exact)[0],
+                    std::iter::once(format),
+                )
+                .unwrap();
+                // File the bounds normally, so their context identity and
+                // interval memoization are the ones used during proof steps.
+                context = context
+                    .assume_condition(
+                        ConditionTerm::IntegerLessEqual(
+                            IntegerTerm::constant(0.into()).into(),
+                            observed.clone().into(),
+                        ),
+                        true,
+                    )
+                    .assume_condition(
+                        ConditionTerm::IntegerLessEqual(
+                            observed.into(),
+                            IntegerTerm::constant(10.into()).into(),
+                        ),
+                        true,
+                    );
+                assert_eq!(
+                    context.decide_overflow_query(&query),
+                    Some(false),
+                    "prefix {index}"
+                );
+                context = context.clone().assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(996800 + index)),
+                        Bitvector32Term::Constant(3),
+                    ),
+                    true,
+                );
+                assert_eq!(context.decide_overflow_query(&query), Some(false));
+                assert!(!operand.has_boxed_operand());
+            }
+        });
+        samples.push((size as usize, work));
+    }
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small <= sw * large * 2, "{samples:?}");
+    }
+}
+
+#[test]
+fn retained_overflow_source_lookup_ignores_unrelated_guards() {
+    use crate::kernel::machine_integer::{Operation, definedness};
+    use crate::kernel::{KernelTermImport, SharedMachineIntegerTerm};
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let written = Bitvector32Term::Variable(Variable(997701));
+        let operand = SharedMachineIntegerTerm::from_shared(
+            format,
+            KernelTermImport::default()
+                .machine_arithmetic(format, &written)
+                .unwrap(),
+        )
+        .unwrap();
+        let source = Proposition::ConditionIs(
+            ConditionTerm::Overflows {
+                format,
+                op: OverflowOperation::Multiply,
+                left: written.into(),
+                right: Bitvector32Term::Constant(2).into(),
+            },
+            false,
+        );
+        let mut context = PureFactContext::new().assume_proposition(source.clone());
+        for i in 0..size {
+            context = context.assume_condition(
+                ConditionTerm::Overflows {
+                    format,
+                    op: OverflowOperation::Multiply,
+                    left: Bitvector32Term::Variable(Variable(997800 + i)).into(),
+                    right: Bitvector32Term::Constant(2).into(),
+                },
+                false,
+            );
+        }
+        let exact = Operation::Multiply.exact(
+            IntegerTerm::Machine(operand.clone()),
+            IntegerTerm::constant(2.into()),
+        );
+        let query = definedness::overflow_query_of_integer_bound(
+            &definedness::ordinary_bounds(format, exact)[0],
+            std::iter::once(format),
+        )
+        .unwrap();
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.contains_known_overflow_query(&query, false)
+        });
+        assert!(answer);
+        assert_eq!(context.stated_overflow_source(&query, false), Some(&source));
+        assert!(!operand.has_boxed_operand());
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
