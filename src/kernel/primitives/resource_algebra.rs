@@ -3579,6 +3579,12 @@ impl ResourceContext {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
             let candidate = self.fact(entry);
+            // An index nominates geometry, not authority. The former candidate
+            // iterator filtered quantities; indexed selection must check its
+            // chosen supplier before consuming any piece.
+            if !candidate.has_proven_positive_quantity(assumptions) {
+                return None;
+            }
             let available = candidate.memory_own_range()?;
             let base = entries.address()?;
             let (bytes, piece) = if let Some((_, available_end)) = available.wide_bounds() {
@@ -6893,6 +6899,7 @@ impl ResourceContext {
         let range = required.memory_own_range()?;
         let candidates = self.memory_fact_candidates(range, true, assumptions);
         if let Some(entry) = candidates.entries.single_supplier()
+            && self.fact(entry).has_proven_positive_quantity(assumptions)
             && let Some(aligned) = candidates.requirement(entry, required)
             && self.consume_fact_from_candidates_with_origins(
                 &aligned,
