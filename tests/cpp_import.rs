@@ -5181,8 +5181,8 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
         .expect("the expanded nested-scope proof must reverify");
 
     let wrong_fallthrough = NESTED_SCOPE_DESTRUCTOR_SIDECAR.replace(
-        "ensures early == 0 implies result == old(value);",
-        "ensures early == 0 implies result == 9;",
+        "ensures early == false implies result == old(value);",
+        "ensures early == false implies result == 9;",
     );
     fs::write(&sidecar, &wrong_fallthrough).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_fallthrough).unwrap();
@@ -5309,8 +5309,8 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
         .expect("the expanded sibling-scope proof must reverify");
 
     let wrong_final = SIBLING_SCOPE_DESTRUCTORS_SIDECAR.replace(
-        "second_early == 0 implies result == old(value)",
-        "second_early == 0 implies result == 11",
+        "second_early == false implies result == old(value)",
+        "second_early == false implies result == 11",
     );
     fs::write(&sidecar, &wrong_final).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_final).unwrap();
@@ -5340,22 +5340,7 @@ fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
             .count(),
         3
     );
-    let (contracts, _) = SIBLING_SCOPE_DESTRUCTORS_SIDECAR
-        .rsplit_once("} by {")
-        .unwrap();
-    let proof = r#"step(); step();
-    branch { step_until(function.exit); solve(); } else { }
-    step(); step();
-    have value == old(value) by { solve(); }
-    step(); step();
-    branch { step_until(function.exit); solve(); } else { }
-    step(); step();
-    have value == old(value) by { solve(); }
-    step(); step(); step(); step();
-    have value == old(value) by { solve(); }
-    step_until(function.exit); solve();"#;
-    let source = format!("{contracts}}} by {{\n{proof}\n}}\n");
-    check_selected_claim_certificate(&growing, &growing_import, &source);
+    check_selected_claim_certificate(&growing, &growing_import, SIBLING_SCOPE_DESTRUCTORS_SIDECAR);
 }
 
 #[test]
