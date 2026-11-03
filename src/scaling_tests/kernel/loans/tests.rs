@@ -5,6 +5,142 @@
 use super::*;
 
 #[test]
+fn memory_split_origin_lookup_does_not_follow_successive_splits() {
+    let mut samples = Vec::new();
+    for count in [4u32, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let owner = memory(0, count + 2, true);
+        let mut resources =
+            ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owner.clone());
+        let original = resources.occurrences_for_fact(&owner)[0];
+        let mut origins = MemorySplitOrigins::default();
+        for start in 0..count {
+            let (next, _, next_origins) = resources
+                .reserve_owned_memory_fragments_with_origins(
+                    &memory(start, start + 1, true),
+                    &assumptions,
+                    &origins,
+                )
+                .unwrap();
+            resources = next;
+            origins = next_origins;
+        }
+        let (remaining, _) = resources
+            .directly_supporting_owned_entry(&memory(count, count + 2, true), &assumptions)
+            .unwrap();
+        let mut queries = Vec::new();
+        for _ in 0..3 {
+            let ((source, work), map_work) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| origins.origin_of(remaining))
+            });
+            assert_eq!(source, original);
+            queries.push((work, map_work));
+        }
+        samples.push(queries);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "origin lookup follows split history: {samples:?}"
+    );
+}
+
+/// A fixed call consumes one half of an owner and borrows the other. Extra
+/// observations of the borrowed slice are not alternative owned authority.
+#[test]
+fn split_owner_reconciliation_ignores_duplicate_observations() {
+    let mut curves = Vec::new();
+    for count in [4usize, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let owner = memory(0, 8, true);
+        let read = memory(6, 8, false);
+        let selected = memory(6, 8, true);
+        let resources = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_fact(owner.clone())
+            .unchecked_with_facts(std::iter::repeat_n(read.clone(), count));
+        resources.synchronize_memory_equalities(&assumptions);
+        let original = resources.occurrences_for_fact(&owner)[0];
+        let mut consume = checked(memory(0, 4, true));
+        consume.role = CResourceTransferRole::Consume;
+        let requirements = [consume, checked(read)];
+        let (ledger, caller, callee) = participants();
+        let (residual, _, origins) = resources
+            .clone()
+            .reserve_owned_memory_fragments_with_origins(
+                &requirements[0].fact,
+                &assumptions,
+                &MemorySplitOrigins::default(),
+            )
+            .expect("reserve the write and retain residual origins");
+        let (remaining, _) = residual
+            .directly_supporting_owned_entry(&selected, &assumptions)
+            .expect("remaining read support");
+        let mut helper_work = Vec::new();
+        let mut helper_map_work = Vec::new();
+        let mut call_map_work = Vec::new();
+        let mut call_work = Vec::new();
+        for _ in 0..3 {
+            let ((other, units), map_units) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    origins.origin_of(remaining) == original
+                })
+            });
+            assert!(other);
+            helper_work.push(units);
+            helper_map_work.push(map_units);
+            let ((plan, units), map_units) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    plan_stable_view_transfer(
+                        &resources,
+                        &requirements,
+                        &assumptions,
+                        &ledger,
+                        caller,
+                        callee,
+                    )
+                })
+            });
+            let plan = plan.expect("disjoint write and view retain their original owner");
+            assert_eq!(plan.stable_views().len(), 1);
+            call_work.push(units);
+            call_map_work.push(map_units);
+        }
+        // An independent equal-looking owner cannot acquire this origin.
+        let child = resources.clone().unchecked_with_fact(selected.clone());
+        let other = child.occurrences_for_fact(&selected)[0];
+        assert_ne!(origins.origin_of(other), original);
+        assert_eq!(origins.origin_of(remaining), original);
+        curves.push((
+            count,
+            helper_work,
+            call_work,
+            helper_map_work,
+            call_map_work,
+        ));
+    }
+    eprintln!("split-owner reconciliation (count/helper/call/helper maps/call maps): {curves:?}");
+    assert!(
+        curves[3]
+            .3
+            .iter()
+            .zip(&curves[0].3)
+            .all(|(large, small)| *large <= *small * 3 + 128),
+        "alternative-owner query traverses observations: {curves:?}"
+    );
+    assert!(
+        curves.windows(2).all(|pair| pair[0]
+            .1
+            .iter()
+            .zip(&pair[1].1)
+            .all(|(small, large)| *large <= *small + 32)),
+        "alternative-owner query scans observations: {curves:?}"
+    );
+    // Whole-call curves remain visible: parent loan-binding selection still
+    // enumerates observations and is a separate roadmap target.
+}
+
+#[test]
 fn concrete_view_carrier_recovery_ignores_unrelated_owners() {
     let mut samples = Vec::new();
     for size in [0u64, 16, 64, 256] {

@@ -872,6 +872,17 @@ fn indexed_memory_support_never_promotes_zero_quantity() {
             .directly_supporting_owned_entry(&owner, &facts)
             .is_none()
     );
+    let view = CResourceFact::view_memory(owner.memory_own_range().unwrap().clone());
+    assert!(
+        resources
+            .directly_supporting_owned_entry(&view, &facts)
+            .is_none()
+    );
+    assert!(
+        resources
+            .directly_supporting_owned_entry_ignoring_separation(&view, &facts)
+            .is_none()
+    );
     assert!(
         resources
             .without_fact_incrementally(&owner, &facts)

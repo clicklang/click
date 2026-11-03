@@ -31,14 +31,27 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Direct resource support selection.**
-   `directly_supporting_owned_entry_with_separation` and
-   `has_other_directly_supporting_owned_entry` in
-   `src/kernel/primitives/resource_algebra.rs` still examine memory candidates.
-   Execution, call-resource checking and loan handling reach these helpers.
-   Audit the memory paths and remaining alternative-support queries; distinguish
-   an explicitly selected resource or footprint from an implicit candidate bucket.
-   Measure ambiguous buckets and refusals as well as exact hits.
+1. **Parent loan-binding selection.**
+   `view_occurrences_for_fact` in `src/kernel/primitives/resource_algebra.rs`
+   enumerates matching observations; the call planner in `src/kernel/loans.rs`
+   collects them and searches for a live parent loan binding. This happens
+   both while deciding whether to coalesce a view and while selecting its
+   backing. A crowded bucket of unbound observations must not cost a scan.
+
+   `split_owner_reconciliation_ignores_duplicate_observations` in
+   `src/scaling_tests/kernel/loans/tests.rs` holds a call fixed: consume
+   `[0..4]` and borrow `[6..8]` from one `[0..8]` owner. At 4/16/64/256 duplicate
+   observations, identity reconciliation itself is flat, but the test also
+   reports growing complete-call persistent-map work. Ordinary work counters
+   miss rejected-view traversal, so retain the persistent-work measurement.
+   The complete-call curve is diagnostic, not yet a flatness assertion.
+
+   Next design cycle: isolate binding selection in a red scaling assertion,
+   including exact bound hits, unbound duplicates, ambiguous bindings and
+   refusals. Select a live binding by an indexed identity or decline without
+   treating an unbound observation as authority. Preserve stale-binding,
+   equal-looking-owner, and parent/child-isolation refusals. Do not fold this
+   into memory split-origin tracking or reconstruct origins from history.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).

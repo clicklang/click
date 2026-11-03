@@ -987,6 +987,97 @@ pub(super) struct MemoryFactEntries {
     bound_coordinates: Option<(Pointer, Bitvector32Term)>,
 }
 impl MemoryFactEntries {
+    /// Nominate one whole-range supplier. Fragment starts, fragment chains,
+    /// and incident order premises belong to composition/search, not this
+    /// single-owner query. The consumer checks the nominated entry once.
+    pub(super) fn single_supplier(&self) -> Option<ResourceEntryId> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = &self.index;
+        let range = &self.range;
+        let exact = if self.owned {
+            CResourceFact::own_memory(range.clone())
+        } else {
+            CResourceFact::view_memory(range.clone())
+        };
+        if let Some(entries) = index.resources.index.exact.get(&exact) {
+            return entries.iter().next().copied();
+        }
+        if let Some(entries) = index
+            .resources
+            .index
+            .by_resource
+            .get(&CResource::Memory(range.clone()))
+            && entries.len() == 1
+        {
+            let entry = *entries.iter().next()?;
+            if !self.owned || index.resources.facts.get(&entry)?.is_own() {
+                return Some(entry);
+            }
+        }
+        let graph = &index.graph;
+        if index.points_initialized {
+            if let Some(class) = graph.footprint_class(range)
+                && let Some(entries) = index.symbolic.footprint_entries(class, self.owned)
+                && entries.len() == 1
+            {
+                return entries.iter().next().copied();
+            }
+            // An exact start address with one supplier is more precise than
+            // a tentative affine covering interval. In particular x[j..j+1]
+            // must supply x+j before an unrelated symbolic prefix is tried.
+            if let Some(class) = graph.address_class(&range.start_pointer())
+                && let Some(bucket) = index.points.classes.get(&class)
+            {
+                let entries = if self.owned {
+                    &bucket.owners
+                } else {
+                    &bucket.entries
+                };
+                if entries.len() == 1 {
+                    return entries.iter().next().copied();
+                }
+            }
+            if let Some(mut entries) = index.symbolic.relative_entries(range, self.owned, graph)
+                && let Some(entry) = entries.next()
+            {
+                return Some(entry);
+            }
+        }
+        let start_pointer = range.start_pointer();
+        let end_pointer = range.end_pointer();
+        if let (Some(point), Some(limit)) = (
+            graph.canonical_pointer(&start_pointer),
+            graph.canonical_pointer(&end_pointer),
+        ) && point.representative == limit.representative
+            && limit
+                .offset
+                .constant_difference(&point.offset)
+                .is_some_and(|bytes| bytes > 0)
+            && let Some(bucket) = index.addresses.classes.get(&point.representative)
+            && let (Some(start), Some(end)) = (
+                point.offset.checked_add(&bucket.origin),
+                limit.offset.checked_add(&bucket.origin),
+            )
+        {
+            let intervals = if self.owned {
+                &bucket.write_intervals
+            } else {
+                &bucket.read_intervals
+            };
+            if let Some(entry) = intervals
+                .covering(&AddressCoordinate(start), &AddressCoordinate(end))
+                .next()
+            {
+                return Some(entry);
+            }
+        }
+        if !index.points_initialized {
+            return None;
+        }
+        ResourceContext::sole_access_supplier(index, &start_pointer, self.owned)
+            .or_else(|| ResourceContext::sole_affine_supplier(index, &start_pointer, self.owned))
+    }
+
     #[cfg(test)]
     pub(super) fn len(&self) -> usize {
         self.iter().count()

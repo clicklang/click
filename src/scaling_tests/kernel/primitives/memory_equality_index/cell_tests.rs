@@ -855,10 +855,6 @@ fn indexed_memory_support_and_fragment_consumption_ignore_unrelated_spans() {
                     resources.directly_supporting_owned_entry(&piece, &facts),
                     Some((occurrence, &left))
                 );
-                assert!(
-                    !resources
-                        .has_other_directly_supporting_owned_entry(&piece, occurrence, &facts)
-                );
                 assert!(resources.satisfies_fact(&whole, &facts));
                 assert!(
                     resources

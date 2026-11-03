@@ -43,6 +43,28 @@ struct Boundary<'a> {
 impl Boundary<'_> {
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
+        if self.path == "src/kernel/loans.rs"
+            && matches!(
+                name,
+                "has_other_directly_supporting_owned_entry"
+                    | "changed_facts_since"
+                    | "descends_from"
+            )
+        {
+            self.errors.push(format!("{}: {}: loan provenance must retain split origins, not reconstruct them by search or history ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "origin_of"
+            && matches!(
+                name,
+                "iter" | "find" | "find_map" | "filter" | "filter_map" | "collect"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: split origin lookup must read a direct identity ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && self.function == "direct_nonmemory_support_entry"
             && matches!(
@@ -58,6 +80,31 @@ impl Boundary<'_> {
             )
         {
             self.errors.push(format!("{}: {}: owned support must select an indexed witness, not search a candidate bucket ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "directly_supporting_owned_entry_with_separation"
+            && matches!(
+                name,
+                "iter" | "find" | "find_map" | "filter" | "filter_map" | "flat_map" | "collect"
+            )
+        {
+            self.errors.push(format!("{}: {}: single-owner support must select one supplier, not enumerate fragments ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/primitives/memory_equality_index.rs"
+            && self.function == "single_supplier"
+            && matches!(
+                name,
+                "signed_order_bound_entries"
+                    | "get_greater_than"
+                    | "find"
+                    | "find_map"
+                    | "filter"
+                    | "filter_map"
+                    | "flat_map"
+                    | "collect"
+            )
+        {
+            self.errors.push(format!("{}: {}: whole-range supplier selection must not search a fragment or premise frontier ({name})", self.path, self.function));
         }
         if self.path.starts_with("src/kernel/") && name == "PropositionSearch" {
             self.errors.push(format!(

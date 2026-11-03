@@ -1288,6 +1288,14 @@ fn collect_memory_load_work<'a>(
     }
 }
 
+impl MemorySplitOrigins {
+    /// One indexed lookup, including after arbitrarily many successive splits.
+    pub(crate) fn origin_of(&self, occurrence: ResourceOccurrenceId) -> ResourceOccurrenceId {
+        crate::instrumentation::record_deterministic_work(1);
+        self.origins.get(&occurrence).copied().unwrap_or(occurrence)
+    }
+}
+
 impl ResourceContext {
     fn exclusive_validity_error(
         &self,
@@ -3332,40 +3340,43 @@ impl ResourceContext {
     ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
         if let Some(range) = required.memory_range() {
             let candidates = self.memory_fact_candidates(range, true, assumptions);
-            for entry in candidates.entries.iter() {
-                let Some(aligned) = candidates.requirement(entry, required) else {
-                    continue;
-                };
+            if let Some(entry) = candidates.entries.single_supplier() {
                 let candidate = self.fact(entry);
-                if Self::memory_support_entails(candidate, &aligned, assumptions, use_separation) {
-                    return Some((self.occurrence(entry), candidate));
-                }
-            }
-            if required.is_view() && !self.storage.supported_by.is_empty() {
-                let projections = self.memory_fact_candidates(range, false, assumptions);
-                for entry in projections.entries.iter() {
-                    let Some(support_occurrence) =
-                        self.storage.support_occurrence_by_projection.get(&entry)
-                    else {
-                        continue;
-                    };
-                    let Some(support) = self.owned_fact_for_occurrence(*support_occurrence) else {
-                        continue;
-                    };
-                    if self.storage.supported_by.get(&entry) != Some(support) {
-                        continue;
-                    }
-                    let Some(aligned) = projections.requirement(entry, required) else {
-                        continue;
-                    };
-                    if Self::memory_support_entails(
-                        self.fact(entry),
+                if candidate.is_own()
+                    && candidate.has_proven_positive_quantity(assumptions)
+                    && let Some(aligned) = candidates.requirement(entry, required)
+                    && Self::memory_support_entails(
+                        candidate,
                         &aligned,
                         assumptions,
                         use_separation,
-                    ) {
-                        return Some((*support_occurrence, support));
-                    }
+                    )
+                {
+                    return Some((self.occurrence(entry), candidate));
+                }
+                // A nominated owner's failed check is final, not a reason
+                // to try another owner or a projection of one.
+                return None;
+            }
+            if required.is_view() && !self.storage.supported_by.is_empty() {
+                let projections = self.memory_fact_candidates(range, false, assumptions);
+                let entry = projections.entries.single_supplier()?;
+                let support_occurrence =
+                    *self.storage.support_occurrence_by_projection.get(&entry)?;
+                let support = self.owned_fact_for_occurrence(support_occurrence)?;
+                if self.storage.supported_by.get(&entry) != Some(support)
+                    || !support.has_proven_positive_quantity(assumptions)
+                {
+                    return None;
+                }
+                let aligned = projections.requirement(entry, required)?;
+                if Self::memory_support_entails(
+                    self.fact(entry),
+                    &aligned,
+                    assumptions,
+                    use_separation,
+                ) {
+                    return Some((support_occurrence, support));
                 }
             }
             return None;
@@ -3441,83 +3452,6 @@ impl ResourceContext {
         }
     }
 
-    /// Whether another owned occurrence besides `excluded` directly supports
-    /// this fact. The lookup stays within the same indexed candidate frontier
-    /// as `directly_supporting_owned_entry` so provenance checks do not scan
-    /// unrelated resources.
-    pub(crate) fn has_other_directly_supporting_owned_entry(
-        &self,
-        required: &CResourceFact,
-        excluded: ResourceOccurrenceId,
-        assumptions: &PureFactContext,
-    ) -> bool {
-        if let Some(range) = required.memory_range() {
-            for owned in [true, false] {
-                if !owned && (!required.is_view() || self.storage.supported_by.is_empty()) {
-                    break;
-                }
-                let candidates = self.memory_fact_candidates(range, owned, assumptions);
-                for entry in candidates.entries.iter() {
-                    let support = if self.fact(entry).is_own() {
-                        Some(self.occurrence(entry))
-                    } else {
-                        self.storage
-                            .support_occurrence_by_projection
-                            .get(&entry)
-                            .copied()
-                            .filter(|support| {
-                                self.owned_fact_for_occurrence(*support)
-                                    .is_some_and(|live| {
-                                        self.storage.supported_by.get(&entry) == Some(live)
-                                    })
-                            })
-                    };
-                    if support.is_some_and(|support| support != excluded)
-                        && candidates
-                            .requirement(entry, required)
-                            .is_some_and(|aligned| {
-                                resource_fact_entails(self.fact(entry), &aligned, assumptions)
-                            })
-                    {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-        let supports_other = |entry: ResourceEntryId| {
-            let candidate = self.fact(entry);
-            if !resource_fact_entails(candidate, required, assumptions) {
-                return false;
-            }
-            let support = if candidate.is_own() {
-                Some(self.occurrence(entry))
-            } else {
-                self.storage
-                    .support_occurrence_by_projection
-                    .get(&entry)
-                    .copied()
-                    .filter(|support_occurrence| {
-                        self.storage
-                            .entry_by_occurrence
-                            .get(support_occurrence)
-                            .is_some_and(|support_entry| {
-                                self.storage.facts.get(support_entry)
-                                    == self.storage.supported_by.get(&entry)
-                                    && self.fact(*support_entry).is_own()
-                            })
-                    })
-            };
-            support.is_some_and(|support| support != excluded)
-        };
-
-        self.direct_match_candidate_positions(required)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .copied()
-            .any(supports_other)
-    }
-
     pub(crate) fn owned_fact_for_occurrence(
         &self,
         occurrence: ResourceOccurrenceId,
@@ -3544,10 +3478,37 @@ impl ResourceContext {
     /// returned provenance retains every supplier rather than inventing a
     /// single owner for the joined range. Work follows the consumed fragments,
     /// with logarithmic queries and edits, not unrelated memory in the block.
+    #[cfg(test)]
     pub(crate) fn reserve_owned_memory_fragments(
+        self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
+        self.reserve_owned_memory_fragments_impl(required, assumptions, None)
+    }
+
+    /// Speculative reservation returns its origins only on success. The caller
+    /// can discard this result without changing its retained origin map.
+    pub(crate) fn reserve_owned_memory_fragments_with_origins(
+        self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+        origins: &MemorySplitOrigins,
+    ) -> Option<(Self, Vec<ResourceOccurrenceId>, MemorySplitOrigins)> {
+        let mut next_origins = origins.clone();
+        let (next, supports) = self.reserve_owned_memory_fragments_impl(
+            required,
+            assumptions,
+            Some(&mut next_origins),
+        )?;
+        Some((next, supports, next_origins))
+    }
+
+    fn reserve_owned_memory_fragments_impl(
         mut self,
         required: &CResourceFact,
         assumptions: &PureFactContext,
+        mut origins: Option<&mut MemorySplitOrigins>,
     ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
         if required.owned_quantity_term()?.as_const()? != 1 {
             return None;
@@ -3601,7 +3562,12 @@ impl ResourceContext {
                 return None;
             }
             let support = self.occurrence(entry);
-            if !self.consume_fact_from_candidates(&piece, assumptions, std::iter::once(entry)) {
+            if !self.consume_fact_from_candidates_with_origins(
+                &piece,
+                assumptions,
+                std::iter::once(entry),
+                origins.as_deref_mut(),
+            ) {
                 return None;
             }
             supports.push(support);
@@ -6680,6 +6646,29 @@ impl ResourceContext {
         fact: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
+        self.without_fact_incrementally_impl(fact, assumptions, None)
+    }
+
+    /// Commit split origins together with a successful persistent successor.
+    pub(crate) fn without_fact_incrementally_with_origins(
+        self,
+        fact: &CResourceFact,
+        assumptions: &PureFactContext,
+        origins: &mut MemorySplitOrigins,
+    ) -> Option<Self> {
+        let mut next_origins = origins.clone();
+        let next =
+            self.without_fact_incrementally_impl(fact, assumptions, Some(&mut next_origins))?;
+        *origins = next_origins;
+        Some(next)
+    }
+
+    fn without_fact_incrementally_impl(
+        self,
+        fact: &CResourceFact,
+        assumptions: &PureFactContext,
+        mut origins: Option<&mut MemorySplitOrigins>,
+    ) -> Option<Self> {
         if !fact.has_valid_exclusive_access() {
             return None;
         }
@@ -6697,10 +6686,11 @@ impl ResourceContext {
         let mut selected = self;
         for entry in candidates.entries.iter() {
             if let Some(required) = candidates.requirement(entry, fact)
-                && selected.consume_fact_from_candidates(
+                && selected.consume_fact_from_candidates_with_origins(
                     &required,
                     assumptions,
                     std::iter::once(entry),
+                    origins.as_deref_mut(),
                 )
             {
                 return Some(selected);
@@ -7234,6 +7224,16 @@ impl ResourceContext {
         assumptions: &PureFactContext,
         candidates: impl IntoIterator<Item = ResourceEntryId>,
     ) -> bool {
+        self.consume_fact_from_candidates_with_origins(fact, assumptions, candidates, None)
+    }
+
+    fn consume_fact_from_candidates_with_origins(
+        &mut self,
+        fact: &CResourceFact,
+        assumptions: &PureFactContext,
+        candidates: impl IntoIterator<Item = ResourceEntryId>,
+        mut origins: Option<&mut MemorySplitOrigins>,
+    ) -> bool {
         let algebra = resource_family_algebra(fact.family());
         for entry in candidates {
             crate::instrumentation::record_deterministic_work(1);
@@ -7245,6 +7245,9 @@ impl ResourceContext {
                 if fact.is_view() {
                     return true;
                 }
+                if let Some(origins) = origins.as_deref_mut() {
+                    origins.origins.remove(&self.occurrence(entry));
+                }
                 self.remove_entry(entry);
                 return true;
             }
@@ -7253,9 +7256,33 @@ impl ResourceContext {
                 continue;
             };
             if let ResourceFactConsumption::Replace(residual) = consumption {
+                let occurrence = self.occurrence(entry);
+                let original = available.memory_own_range().and_then(|_| {
+                    origins
+                        .as_deref()
+                        .map(|origins| origins.origin_of(occurrence))
+                });
+                if let Some(origins) = origins.as_deref_mut() {
+                    origins.origins.remove(&occurrence);
+                }
                 self.remove_entry(entry);
                 for residual in residual {
-                    self.insert_fact(residual);
+                    if residual.memory_own_range().is_some()
+                        && let Some(original) = original
+                        && let Some(origins) = origins.as_deref_mut()
+                    {
+                        let occurrence = ResourceOccurrenceId::fresh();
+                        self.insert_fact_with_support_occurrence_and_metadata_at(
+                            residual,
+                            None,
+                            None,
+                            None,
+                            Some(occurrence),
+                        );
+                        origins.origins.insert(occurrence, original);
+                    } else {
+                        self.insert_fact(residual);
+                    }
                 }
             }
             return true;
