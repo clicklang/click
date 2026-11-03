@@ -148,3 +148,101 @@ fn remainder_guard_lookup_ignores_unrelated_conditions() {
         "{measured:?}"
     );
 }
+
+#[test]
+fn division_guards_retain_shared_prefixes_in_linear_work() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{CType, KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
+    let samples = [16usize, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut n = KernelTerm::variable(KernelType::C(CType::Int32), Variable(990201));
+        let d = KernelTerm::variable(KernelType::C(CType::Int32), Variable(990202));
+        let zero = B::Constant(0);
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                n = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [n.clone(), n.clone()],
+                );
+                let q = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Divide,
+                    [n.clone(), d.clone()],
+                );
+                for (relation, expected) in [
+                    (CompareRelation::LessEqual, true),
+                    (CompareRelation::LessThan, false),
+                ] {
+                    let query = condition_for_operand_views(
+                        format,
+                        relation,
+                        [V::Legacy(&zero), V::Shared(&q)],
+                    );
+                    assert_eq!(
+                        query.nonnegative_division_bound_guards().is_some(),
+                        expected
+                    );
+                }
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        (size, work)
+    });
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small <= sw * large * 2, "{samples:?}");
+    }
+}
+
+#[test]
+fn division_guard_casts_reuse_growing_composition_prefixes() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{
+        CType, KernelMachineCastEncoding as Encoding, KernelTerm, KernelTermExport, KernelType,
+        MachineOperandView as V,
+    };
+    let samples = [16usize, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let unsigned = MachineIntegerType::UInt32;
+        let signed = MachineIntegerType::Int32;
+        let mut n = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(990211));
+        let d = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(990212));
+        let zero = B::Constant(0);
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                n = KernelTerm::machine_cast_shared(
+                    Encoding::Generic,
+                    unsigned,
+                    unsigned,
+                    n.clone(),
+                );
+                let q = KernelTerm::machine_binary_shared(
+                    unsigned,
+                    MachineBinaryOp::Divide,
+                    [n.clone(), d.clone()],
+                );
+                let q = KernelTerm::machine_cast_shared(Encoding::Generic, unsigned, signed, q);
+                let query = condition_for_operand_views(
+                    signed,
+                    CompareRelation::LessEqual,
+                    [V::Legacy(&zero), V::Shared(&q)],
+                );
+                assert_eq!(query.nonnegative_division_bound_guards().unwrap().len(), 2);
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        (size, work)
+    });
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small <= sw * large * 2, "{samples:?}");
+    }
+}
