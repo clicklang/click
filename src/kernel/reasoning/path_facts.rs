@@ -850,9 +850,13 @@ pub(in crate::kernel) fn element_count_from_bytes(
         binary_term!(Int32, Multiply, left, right) if left.as_ref() == &element_width => {
             Some(right.as_ref().clone())
         }
-        bits32_constant!(bytes) if constant_u32(*bytes) % element_width.as_const()? == 0 => Some(
-            Bitvector32Term::constant(constant_u32(*bytes) / element_width.as_const()?),
-        ),
+        bits32_constant!(bytes)
+            if constant_u32(*bytes).is_multiple_of(element_width.as_const()?) =>
+        {
+            Some(Bitvector32Term::constant(
+                constant_u32(*bytes) / element_width.as_const()?,
+            ))
+        }
         _ => None,
     }
 }

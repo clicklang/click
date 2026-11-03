@@ -131,9 +131,8 @@ pub(in crate::kernel) struct OrderEdgeIndex {
     endpoints: PersistentMap<Key, Edges>,
 }
 impl OrderEdgeIndex {
-    pub(in crate::kernel) fn get(&self, term: &Bitvector32Term) -> Option<&Edges> {
-        self.endpoints
-            .get(&Key::for_format(self.format?, V::Legacy(term)))
+    pub(in crate::kernel) fn get_operand(&self, term: V<'_>) -> Option<&Edges> {
+        self.endpoints.get(&Key::for_format(self.format?, term))
     }
     pub(super) fn adjust(
         &mut self,

@@ -2744,7 +2744,7 @@ fn evaluate_entry_resource_context(
                     )
                 }
                 bits32_constant!(bytes)
-                    if constant_u32(*bytes) % CType::Int32.byte_width() == 0 =>
+                    if constant_u32(*bytes).is_multiple_of(CType::Int32.byte_width()) =>
                 {
                     CMemoryRange::new(
                         base.clone(),

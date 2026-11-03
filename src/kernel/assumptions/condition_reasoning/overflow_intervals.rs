@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::binary_node;
 #[cfg(test)]
 use crate::kernel::binary_term;
+use crate::kernel::int32_constant;
 use crate::kernel::{CompareRelation, MachineIntegerType, MachineOperandView, OverflowOperation};
 use crate::kernel::{bits32_constant, constant_i64, constant_u32, int64_constant};
 
@@ -65,180 +66,19 @@ impl PureFactContext {
         if let Some(value) = self.exact_condition_value(condition) {
             return Some(value);
         }
+        if let Some((format, operation, left, right)) =
+            crate::kernel::machine_integer::representation::overflow_operation(condition)
+        {
+            return self.decide_ring_overflow(
+                format,
+                operation,
+                [
+                    MachineOperandView::Legacy(left),
+                    MachineOperandView::Legacy(right),
+                ],
+            );
+        }
         match condition {
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Subtract,
-                left,
-                right,
-            } => {
-                if self.decide(&ConditionTerm::equal(
-                    left.as_ref().clone(),
-                    right.as_ref().clone(),
-                )) == Some(true)
-                {
-                    return Some(false);
-                }
-                let left = left.as_ref().clone();
-                let right = right.as_ref().clone();
-                let zero = Bitvector32Term::constant(0);
-                let ordered_nonnegative = self.has_condition_fact(
-                    ConditionTerm::signed_greater_equal(right.clone(), zero.clone()),
-                    true,
-                ) && self.has_condition_fact(
-                    ConditionTerm::signed_greater_equal(left.clone(), right.clone()),
-                    true,
-                );
-                let nonnegative_minus_one = right == Bitvector32Term::constant(1)
-                    && (self.has_condition_fact(
-                        ConditionTerm::signed_greater_equal(left.clone(), zero.clone()),
-                        true,
-                    ) || self.has_lower_bound_at_or_above(&left, &zero));
-                if ordered_nonnegative || nonnegative_minus_one {
-                    return Some(false);
-                }
-                if right == Bitvector32Term::constant(1) {
-                    let int_min = Bitvector32Term::constant(i32::MIN as u32);
-                    if self.has_condition_fact(
-                        ConditionTerm::signed_less_than(int_min, left.clone()),
-                        true,
-                    ) {
-                        return Some(false);
-                    }
-                }
-
-                // The operands' intervals subtracted over the integers: the
-                // subtraction is defined exactly when that fits. Not the
-                // `signed_interval` of the difference, which reads the bounds
-                // recorded on the difference itself first; those bound its
-                // wrapped value, and a wrapped difference of `5` (from
-                // `INT_MIN - (INT_MAX - 4)`) says nothing about overflow.
-                //
-                // Each operand's range is first moved past the values exact
-                // disequalities on it exclude. Unary minus lowers to `0 - x`,
-                // which overflows at exactly one value of `x`, so the one
-                // fact `x != INT_MIN` decides it: `x` then ranges over
-                // `[INT_MIN + 1, INT_MAX]` and the difference fits. Each
-                // exclusion step is one keyed disequality lookup on the
-                // operand, never a scan.
-                let (left_lower, left_upper) = self.signed_interval_past_exclusions(&left)?;
-                let (right_lower, right_upper) = self.signed_interval_past_exclusions(&right)?;
-                let lower = i128::from(left_lower) - i128::from(right_upper);
-                let upper = i128::from(left_upper) - i128::from(right_lower);
-                (i128::from(i32::MIN) <= lower && upper <= i128::from(i32::MAX)).then_some(false)
-            }
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Add,
-                left,
-                right,
-            } => {
-                // An established definedness fact follows the same typed
-                // operand classes as other checked predicates. No interval
-                // reconstruction is needed to reuse that evidence.
-                let reversed = ConditionTerm::signed_add_overflows(
-                    right.as_ref().clone(),
-                    left.as_ref().clone(),
-                );
-                for value in [false, true] {
-                    if self.equality_graph.knows_condition(condition, value)
-                        || self.equality_graph.knows_condition(&reversed, value)
-                    {
-                        return Some(value);
-                    }
-                }
-
-                if right.as_ref() == &Bitvector32Term::constant(1) {
-                    let int_max = Bitvector32Term::constant(i32::MAX as u32);
-                    let left = left.as_ref().clone();
-                    // Keep the direct increment certificate ahead of general
-                    // interval reconstruction. Loop execution commonly has
-                    // an exact strict bound on a materialized local even when
-                    // that bound is awkward to transport into a full range.
-                    let strict_upper_bound = self.checked_order_bounds.strict_upper(&left);
-                    let direct_nonoverflowing_upper_bound =
-                        self.checked_order_bounds.upper_below_max(&left);
-                    if let Some(provenance) = strict_upper_bound
-                        .as_ref()
-                        .or(direct_nonoverflowing_upper_bound.as_ref())
-                    {
-                        record_implicit_reasoning_provenance(self, provenance);
-                    }
-                    let direct_nonoverflow = strict_upper_bound.is_some()
-                        || direct_nonoverflowing_upper_bound.is_some()
-                        || self.has_condition_fact(
-                            ConditionTerm::signed_less_than(left.clone(), int_max.clone()),
-                            true,
-                        )
-                        || self.has_upper_bound_below(&left, &int_max);
-                    if direct_nonoverflow {
-                        return Some(false);
-                    }
-                    // A materialized local may carry an expression such as
-                    // `(x + 1)` rather than a direct order fact. Reconstruct
-                    // its conservative interval before giving up on the fast
-                    // increment rule; nested additions are admitted only when
-                    // each inner range itself stays within int32.
-                    return self.signed_addition_interval_nonoverflow(
-                        &left,
-                        &Bitvector32Term::constant(1),
-                    );
-                }
-                self.signed_addition_interval_nonoverflow(left, right)
-            }
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int64,
-                op: OverflowOperation::Add,
-                left,
-                right,
-            } => {
-                // An unbounded int64 still has its full-width value range.
-                // This discharges x + zero (including a returned zero) without
-                // inventing tighter bounds or assuming the inner operations fit.
-                crate::kernel::primitives::int64_add_interval_fits(
-                    Some(self.int64_interval(left).unwrap_or((i64::MIN, i64::MAX))),
-                    Some(self.int64_interval(right).unwrap_or((i64::MIN, i64::MAX))),
-                )
-                .then_some(false)
-            }
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int64,
-                op: OverflowOperation::Subtract,
-                left,
-                right,
-            } => {
-                if self.decide(&ConditionTerm::int64_equal(
-                    left.as_ref().clone(),
-                    right.as_ref().clone(),
-                )) == Some(true)
-                {
-                    return Some(false);
-                }
-                crate::kernel::primitives::int64_subtract_interval_fits(
-                    Some(self.int64_interval(left).unwrap_or((i64::MIN, i64::MAX))),
-                    Some(self.int64_interval(right).unwrap_or((i64::MIN, i64::MAX))),
-                )
-                .then_some(false)
-            }
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int64,
-                op: OverflowOperation::Multiply,
-                left,
-                right,
-            } => {
-                let (a, b) = self.int64_interval(left).unwrap_or((i64::MIN, i64::MAX));
-                let (c, d) = self.int64_interval(right).unwrap_or((i64::MIN, i64::MAX));
-                let products = [
-                    i128::from(a) * i128::from(c),
-                    i128::from(a) * i128::from(d),
-                    i128::from(b) * i128::from(c),
-                    i128::from(b) * i128::from(d),
-                ];
-                products
-                    .iter()
-                    .all(|value| *value >= i128::from(i64::MIN) && *value <= i128::from(i64::MAX))
-                    .then_some(false)
-            }
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int64,
                 op: OverflowOperation::Divide,
@@ -250,44 +90,6 @@ impl PureFactContext {
                 // This guard includes zero and the sole signed overflow pair MIN / -1.
                 ((c > 0 || d < 0) && (a > i64::MIN || c > -1 || d < -1)).then_some(false)
             }
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Multiply,
-                left,
-                right,
-            } if right.as_ref() == &Bitvector32Term::constant(0)
-                || left.as_ref() == &Bitvector32Term::constant(0)
-                || right.as_ref() == &Bitvector32Term::constant(1)
-                || left.as_ref() == &Bitvector32Term::constant(1) =>
-            {
-                Some(false)
-            }
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Multiply,
-                left,
-                right,
-            } if right.as_ref() == &Bitvector32Term::constant((-1i32) as u32) => {
-                let int_min = Bitvector32Term::constant(i32::MIN as u32);
-                let left = left.as_ref().clone();
-                self.decide(&ConditionTerm::equal(left, int_min))
-            }
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Multiply,
-                left,
-                right,
-            } if left.as_ref() == &Bitvector32Term::constant((-1i32) as u32) => {
-                let int_min = Bitvector32Term::constant(i32::MIN as u32);
-                let right = right.as_ref().clone();
-                self.decide(&ConditionTerm::equal(right, int_min))
-            }
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Multiply,
-                left,
-                right,
-            } => self.signed_multiplication_interval_nonoverflow(left, right),
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Divide,
@@ -468,6 +270,312 @@ impl PureFactContext {
         }
     }
 
+    /// The original legacy premise for this shared query, selected by its
+    /// format, operation, operand identities and polarity.
+    pub(in crate::kernel) fn stated_overflow_source(
+        &self,
+        query: &crate::kernel::machine_integer::definedness::OverflowQueryView,
+        truth: bool,
+    ) -> Option<&Proposition> {
+        self.observation_comparisons.overflow_source(
+            query.format,
+            query.operation_kind(),
+            query
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view()),
+            truth,
+        )
+    }
+
+    /// The same membership judgment as `contains_known` on a legacy overflow
+    /// predicate, without constructing that predicate. This does not perform
+    /// interval reasoning or discharge a new arithmetic obligation.
+    pub(in crate::kernel) fn contains_known_overflow_query(
+        &self,
+        query: &crate::kernel::machine_integer::definedness::OverflowQueryView,
+        truth: bool,
+    ) -> bool {
+        if self.equality_graph.has_scalar_constant_conflict() {
+            return true;
+        }
+        if let Some(source) = self.stated_overflow_source(query, truth) {
+            record_implicit_reasoning_provenance(self, source);
+            return true;
+        }
+        query.format == MachineIntegerType::Int32
+            && query.operation == crate::kernel::machine_integer::Operation::Add
+            && self.equality_graph.knows_int32_add_overflow_views(
+                query
+                    .operands
+                    .each_ref()
+                    .map(|operand| operand.operand_view()),
+                truth,
+            )
+    }
+
+    pub(in crate::kernel) fn knows_operation_range_bound(
+        &self,
+        bound: &crate::kernel::machine_integer::identity::IntegerOperationRangeBound,
+    ) -> bool {
+        bound
+            .stating_facts()
+            .iter()
+            .any(|fact| self.contains_known(fact))
+            || bound
+                .overflow_query()
+                .is_some_and(|query| self.contains_known_overflow_query(&query, false))
+    }
+
+    /// Ordinary bounds and legacy predicates ask the same arithmetic query.
+    /// Only the original operands and their indexed ranges are inspected.
+    pub(super) fn decide_overflow_query(
+        &self,
+        query: &crate::kernel::machine_integer::definedness::OverflowQueryView,
+    ) -> Option<bool> {
+        let operands = query
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        // Literal and variable roots have fixed-size native spellings. Keep
+        // their existing atomic decision route without exporting arithmetic
+        // or traversing a shared operand's children.
+        let atoms = operands.map(|operand| {
+            operand
+                .literal()
+                .or_else(|| operand.variable().copied().map(Bitvector32Term::Variable))
+        });
+        let operands = std::array::from_fn(|index| {
+            atoms[index]
+                .as_ref()
+                .map(MachineOperandView::Legacy)
+                .unwrap_or(operands[index])
+        });
+        if let [
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        ] = operands
+        {
+            // Legacy producers and atomic roots keep their existing
+            // read-over-write and simplification rules.
+            let condition = crate::kernel::machine_integer::representation::overflow_condition(
+                query.format,
+                query.operation,
+                Box::new(left.clone()),
+                Box::new(right.clone()),
+            )?;
+            return self.decide_unrecorded(&condition);
+        }
+        if let Some(value) = self
+            .difference_graph
+            .built()
+            .and_then(|graph| graph.decide_overflow_query(query))
+        {
+            if let Some(source) = self.stated_overflow_source(query, value) {
+                record_implicit_reasoning_provenance(self, source);
+            }
+            return Some(value);
+        }
+        let bounds = query.bounds();
+        if bounds.iter().all(|bound| {
+            let Proposition::ConditionIs(condition, true) = bound else {
+                return false;
+            };
+            Self::decide_intrinsically(condition) == Some(true)
+                || integer_order_spellings(condition)
+                    .into_iter()
+                    .any(|condition| {
+                        self.contains_known(&Proposition::ConditionIs(condition, true))
+                    })
+        }) {
+            for bound in &bounds {
+                record_implicit_reasoning_provenance(self, bound);
+            }
+            return Some(false);
+        }
+        let operation = query.operation_kind();
+        for truth in [true, false] {
+            if let Some(source) = self.stated_overflow_source(query, truth) {
+                record_implicit_reasoning_provenance(self, source);
+                return Some(truth);
+            }
+        }
+        // The old simplifier folds a query whose operands normalize to
+        // constants. Construct only those two literals, never their trees.
+        let literal = |operand: MachineOperandView<'_>| {
+            operand.literal().or_else(|| match query.format {
+                MachineIntegerType::Int32 if operand.variable().is_some() => self
+                    .indexed_exact_int32_constant_view(operand)
+                    .map(|(value, source)| {
+                        record_implicit_reasoning_provenance(self, &source);
+                        Bitvector32Term::constant(value as u32)
+                    }),
+                MachineIntegerType::Int32 => self
+                    .known_signed_constant_after_normalization_view(operand)
+                    .map(|value| Bitvector32Term::constant(value as u32)),
+                MachineIntegerType::Int64 => self
+                    .wide_constant_from_equalities_view(operand)
+                    .map(|value| Bitvector32Term::int64_constant(value as i64)),
+                _ => None,
+            })
+        };
+        let literals = operands.map(literal);
+        if let [Some(left), Some(right)] = &literals
+            && let ConditionTerm::Constant(value) = ConditionTerm::machine_overflows(
+                query.format,
+                operation,
+                left.clone(),
+                right.clone(),
+            )
+        {
+            return Some(value);
+        }
+        // A single constant alias also matters: for example, the increment
+        // certificate recognizes a right operand known to be one.
+        let operands = std::array::from_fn(|index| {
+            literals[index]
+                .as_ref()
+                .map(MachineOperandView::Legacy)
+                .unwrap_or(operands[index])
+        });
+        self.decide_ring_overflow(query.format, query.operation, operands)
+    }
+
+    fn decide_ring_overflow(
+        &self,
+        format: MachineIntegerType,
+        operation: crate::kernel::machine_integer::Operation,
+        [left, right]: [MachineOperandView<'_>; 2],
+    ) -> Option<bool> {
+        use crate::kernel::machine_integer::{Operation as Op, Relation as R};
+        let zero = Bitvector32Term::constant(0);
+        let zero = MachineOperandView::Legacy(&zero);
+        let known = |relation, a, b| self.has_operand_comparison(format, relation, a, b);
+        let decide = |relation, a, b| self.decide_operand_comparison(format, relation, a, b);
+        match (format, operation) {
+            (MachineIntegerType::Int32, Op::Subtract) => {
+                if decide(R::Equal, left, right) == Some(true) {
+                    return Some(false);
+                }
+                let right_one = right.literal() == Some(Bitvector32Term::constant(1));
+                if (known(R::LessEqual, zero, right) && known(R::LessEqual, right, left))
+                    || (right_one
+                        && (known(R::LessEqual, zero, left)
+                            || self.has_lower_bound_at_or_above_views(left, zero)))
+                {
+                    return Some(false);
+                }
+                let minimum = Bitvector32Term::constant(i32::MIN as u32);
+                if right_one && known(R::Less, MachineOperandView::Legacy(&minimum), left) {
+                    return Some(false);
+                }
+                let (a, b) = self.signed_interval_past_exclusions_view(left)?;
+                let (c, d) = self.signed_interval_past_exclusions_view(right)?;
+                (i128::from(i32::MIN) <= i128::from(a) - i128::from(d)
+                    && i128::from(b) - i128::from(c) <= i128::from(i32::MAX))
+                .then_some(false)
+            }
+            (MachineIntegerType::Int32, Op::Add) => {
+                for value in [false, true] {
+                    if self
+                        .equality_graph
+                        .knows_int32_add_overflow_views([left, right], value)
+                        || self
+                            .equality_graph
+                            .knows_int32_add_overflow_views([right, left], value)
+                    {
+                        return Some(value);
+                    }
+                }
+                if right.literal() == Some(Bitvector32Term::constant(1)) {
+                    let maximum = Bitvector32Term::constant(i32::MAX as u32);
+                    let maximum = MachineOperandView::Legacy(&maximum);
+                    let strict = self.checked_order_bounds.strict_upper_view(left);
+                    let direct = self.checked_order_bounds.upper_below_max_view(left);
+                    if let Some(source) = strict.as_ref().or(direct.as_ref()) {
+                        record_implicit_reasoning_provenance(self, source);
+                    }
+                    if strict.is_some()
+                        || direct.is_some()
+                        || known(R::Less, left, maximum)
+                        || self.has_upper_bound_below_views(left, maximum)
+                    {
+                        return Some(false);
+                    }
+                }
+                let (a, b) = self.signed_interval_view(left)?;
+                let (c, d) = self.signed_interval_view(right)?;
+                (a.checked_add(c)? >= i64::from(i32::MIN)
+                    && b.checked_add(d)? <= i64::from(i32::MAX))
+                .then_some(false)
+            }
+            (MachineIntegerType::Int32, Op::Multiply) => {
+                let unit = |operand: MachineOperandView<'_>| {
+                    matches!(operand.literal(), Some(int32_constant!(0 | 1)))
+                };
+                if unit(left) || unit(right) {
+                    return Some(false);
+                }
+                let minus_one = Some(Bitvector32Term::constant((-1i32) as u32));
+                let minimum = Bitvector32Term::constant(i32::MIN as u32);
+                if right.literal() == minus_one {
+                    return decide(R::Equal, left, MachineOperandView::Legacy(&minimum));
+                }
+                if left.literal() == minus_one {
+                    return decide(R::Equal, right, MachineOperandView::Legacy(&minimum));
+                }
+                let (a, b) = self.signed_interval_view(left)?;
+                let (c, d) = self.signed_interval_view(right)?;
+                [
+                    i128::from(a) * i128::from(c),
+                    i128::from(a) * i128::from(d),
+                    i128::from(b) * i128::from(c),
+                    i128::from(b) * i128::from(d),
+                ]
+                .into_iter()
+                .all(|value| i128::from(i32::MIN) <= value && value <= i128::from(i32::MAX))
+                .then_some(false)
+            }
+            (MachineIntegerType::Int64, operation) => {
+                if operation == Op::Subtract && decide(R::Equal, left, right) == Some(true) {
+                    return Some(false);
+                }
+                let left = self
+                    .int64_interval_view(left)
+                    .unwrap_or((i64::MIN, i64::MAX));
+                let right = self
+                    .int64_interval_view(right)
+                    .unwrap_or((i64::MIN, i64::MAX));
+                match operation {
+                    Op::Add => {
+                        crate::kernel::primitives::int64_add_interval_fits(Some(left), Some(right))
+                            .then_some(false)
+                    }
+                    Op::Subtract => crate::kernel::primitives::int64_subtract_interval_fits(
+                        Some(left),
+                        Some(right),
+                    )
+                    .then_some(false),
+                    Op::Multiply => {
+                        let (a, b, c, d) = (
+                            i128::from(left.0),
+                            i128::from(left.1),
+                            i128::from(right.0),
+                            i128::from(right.1),
+                        );
+                        [a * c, a * d, b * c, b * d]
+                            .into_iter()
+                            .all(|value| {
+                                i128::from(i64::MIN) <= value && value <= i128::from(i64::MAX)
+                            })
+                            .then_some(false)
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Whether an exact disjunction fact excludes the one operand pair at
     /// which `left / right` overflows: `left != INT_MIN or right != -1`, in
     /// either arm order, as `requires` and `have` record it (each arm a
@@ -505,20 +613,6 @@ impl PureFactContext {
         let (right_lower, right_upper) = self.signed_interval(right)?;
         (left_lower == left_upper && right_lower == right_upper)
             .then_some(left_lower == right_lower)
-    }
-
-    fn signed_addition_interval_nonoverflow(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> Option<bool> {
-        self.signed_interval(left)
-            .zip(self.signed_interval(right))
-            .and_then(|((left_lower, left_upper), (right_lower, right_upper))| {
-                let lower = left_lower.checked_add(right_lower)?;
-                let upper = left_upper.checked_add(right_upper)?;
-                (lower >= i64::from(i32::MIN) && upper <= i64::from(i32::MAX)).then_some(false)
-            })
     }
 
     /// The range of an `int64` term: its width range from the root
@@ -746,20 +840,28 @@ impl PureFactContext {
     }
 
     pub(super) fn int64_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
-        if let Some(bits) = self.wide_constant_from_equalities(term) {
+        self.int64_interval_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(super) fn int64_interval_view(&self, term: MachineOperandView<'_>) -> Option<(i64, i64)> {
+        if let Some(bits) = self.wide_constant_from_equalities_view(term) {
             let value = bits as i64;
             return Some((value, value));
         }
         let (mut lower, mut upper) = term.int64_width_interval().unwrap_or((i64::MIN, i64::MAX));
-        let canonical = crate::kernel::eval::canonical_term(term);
-        let keys = if canonical == *term {
-            vec![term]
-        } else {
-            vec![term, &canonical]
+        let canonical = match term {
+            MachineOperandView::Legacy(term) => Some(crate::kernel::eval::canonical_term(term)),
+            _ => None,
         };
+        let mut keys = vec![term];
+        if let (MachineOperandView::Legacy(written), Some(canonical)) = (term, canonical.as_ref())
+            && written != canonical
+        {
+            keys.push(MachineOperandView::Legacy(canonical));
+        }
         for key in keys {
             if let Some((direct_lower, direct_upper)) =
-                self.checked_order_bounds.signed_wide_interval(key)
+                self.checked_order_bounds.signed_wide_interval_view(key)
             {
                 lower = lower.max(direct_lower);
                 upper = upper.min(direct_upper);
@@ -839,22 +941,6 @@ impl PureFactContext {
         facts
     }
 
-    fn signed_multiplication_interval_nonoverflow(
-        &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> Option<bool> {
-        // From the operands, as for subtraction: a bound recorded on the
-        // product bounds its wrapped value, not the integer product.
-        self.signed_interval_from_operands(&binary_node!(
-            Int32,
-            Multiply,
-            Box::new(left.clone()),
-            Box::new(right.clone()),
-        ))
-        .map(|_| false)
-    }
-
     /// Decide a signed comparison from the two sides' intervals, when one of
     /// them is a pure conditional.
     ///
@@ -899,14 +985,14 @@ impl PureFactContext {
     /// endpoints use the full int32 range, so callers can still prove
     /// identities such as `x + 0`. A compound term with no recorded bounds of
     /// its own is ranged from its operands only when that evaluation is known
-    /// not to overflow ([`Self::signed_interval_from_operands`]); this makes
+    /// not to overflow ([`Self::signed_interval_from_operands_view`]); this makes
     /// nested bounds safe to reuse.
     ///
     /// A range is a range of the *value*, and a bound recorded on a compound
     /// term bounds its wrapped value: `0 <= (a - b) <= 10` holds of the
     /// wrapped difference of `INT_MIN` and `INT_MAX - 4`. So a range here is
     /// never evidence that the term's own operation does not overflow; that
-    /// question is [`Self::signed_interval_from_operands`].
+    /// question is [`Self::signed_interval_from_operands_view`].
     pub(in crate::kernel) fn signed_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
         self.signed_interval_view(MachineOperandView::Legacy(term))
     }
@@ -1119,12 +1205,6 @@ impl PureFactContext {
     /// one and lies in the range. Unlike [`Self::signed_interval`], it never
     /// reads bounds recorded on `term` itself, which bound only the wrapped
     /// value, so this is the question an overflow decision asks.
-    pub(in crate::kernel) fn signed_interval_from_operands(
-        &self,
-        term: &Bitvector32Term,
-    ) -> Option<(i64, i64)> {
-        self.signed_interval_from_operands_view(MachineOperandView::Legacy(term))
-    }
 
     pub(in crate::kernel) fn signed_interval_from_operands_view(
         &self,
@@ -2293,6 +2373,160 @@ mod shared_widened_query_tests {
                     assert_eq!(selected_context.decide_widened_sum_bound(&shared), expected);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod shared_overflow_query_tests {
+    use super::*;
+    use crate::kernel::machine_integer::{Operation, definedness};
+    use crate::kernel::{KernelTermImport, SharedMachineIntegerTerm};
+
+    fn query(
+        format: MachineIntegerType,
+        operation: Operation,
+        operand: &SharedMachineIntegerTerm,
+        right: IntegerTerm,
+    ) -> definedness::OverflowQueryView {
+        let exact = operation.exact(IntegerTerm::Machine(operand.clone()), right);
+        definedness::overflow_query_of_integer_bound(
+            &definedness::ordinary_bounds(format, exact)[0],
+            std::iter::once(format),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn ordinary_overflow_queries_retain_legacy_sources_and_branch_scope() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let written = Bitvector32Term::Binary {
+            format,
+            op: MachineBinaryOp::Add,
+            left: Box::new(Bitvector32Term::Variable(Variable(983717))),
+            right: Box::new(Bitvector32Term::Variable(Variable(983718))),
+        };
+        let operand = SharedMachineIntegerTerm::from_shared(
+            format,
+            KernelTermImport::default()
+                .machine_arithmetic(format, &written)
+                .unwrap(),
+        )
+        .unwrap();
+        let query = query(
+            format,
+            Operation::Add,
+            &operand,
+            IntegerTerm::constant(2.into()),
+        );
+        let source = Proposition::ConditionIs(
+            ConditionTerm::Overflows {
+                format,
+                op: OverflowOperation::Add,
+                left: Box::new(written),
+                right: Box::new(Bitvector32Term::constant(2)),
+            },
+            false,
+        );
+        let parent = PureFactContext::new();
+        let child = parent.clone().assume_proposition(source.clone());
+        let (answer, sources) = collect_reasoning_provenance(|| {
+            capture_implicit_reasoning_provenance(|| child.decide_overflow_query(&query))
+        });
+        assert_eq!(answer, Some(false));
+        assert!(sources.contains(&source));
+        assert_eq!(parent.decide_overflow_query(&query), None);
+        assert_eq!(
+            child
+                .without_exact_fact(&source)
+                .decide_overflow_query(&query),
+            None
+        );
+        assert!(!operand.has_boxed_operand());
+    }
+
+    #[test]
+    fn shared_overflow_query_does_not_use_a_wrapped_result_bound() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        let format = MachineIntegerType::Int32;
+        let operand = SharedMachineIntegerTerm::from_shared(
+            format,
+            KernelTermImport::default()
+                .machine_arithmetic(format, &Bitvector32Term::Variable(Variable(983720)))
+                .unwrap(),
+        )
+        .unwrap();
+        let query = query(
+            format,
+            Operation::Multiply,
+            &operand,
+            IntegerTerm::constant(2.into()),
+        );
+        let observed = crate::kernel::machine_integer::representation::operation_observation(
+            format,
+            Operation::Multiply,
+            &operand,
+            &SharedMachineIntegerTerm::from_shared(
+                format,
+                KernelTermImport::default()
+                    .machine_arithmetic(format, &Bitvector32Term::constant(2))
+                    .unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::IntegerEqual(observed.into(), IntegerTerm::constant(6.into()).into()),
+            true,
+        );
+        assert_eq!(context.decide_overflow_query(&query), None);
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
+    }
+
+    #[test]
+    fn shared_ring_overflow_queries_use_operand_ranges_not_wrapped_results() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+            let exports = crate::kernel::KernelTermExport::machine_export_count();
+            let written = Bitvector32Term::Variable(Variable(983719));
+            let operand = SharedMachineIntegerTerm::from_shared(
+                format,
+                KernelTermImport::default()
+                    .machine_arithmetic(format, &written)
+                    .unwrap(),
+            )
+            .unwrap();
+            let observe = || IntegerTerm::Machine(operand.clone());
+            let parent = PureFactContext::new();
+            let bounded = parent
+                .clone()
+                .assume_condition(
+                    ConditionTerm::integer_less_equal(observe(), IntegerTerm::constant(10.into())),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::integer_greater_equal(
+                        observe(),
+                        IntegerTerm::constant(0.into()),
+                    ),
+                    true,
+                );
+            for operation in [Operation::Add, Operation::Multiply] {
+                let query = query(format, operation, &operand, IntegerTerm::constant(2.into()));
+                assert_eq!(bounded.decide_overflow_query(&query), Some(false));
+                assert_eq!(parent.decide_overflow_query(&query), None);
+            }
+            let same = query(format, Operation::Subtract, &operand, observe());
+            assert_eq!(parent.decide_overflow_query(&same), Some(false));
+            assert_eq!(
+                crate::kernel::KernelTermExport::machine_export_count(),
+                exports
+            );
         }
     }
 }

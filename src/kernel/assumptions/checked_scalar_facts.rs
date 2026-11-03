@@ -15,7 +15,7 @@ pub(in crate::kernel) enum ScalarOperandKey {
 }
 
 impl ScalarOperandKey {
-    pub(super) fn operand_view(&self) -> MachineOperandView<'_> {
+    pub(in crate::kernel) fn operand_view(&self) -> MachineOperandView<'_> {
         match self {
             Self::Shared(term) => term.operand_view(),
             Self::Written(term) => MachineOperandView::Legacy(term),

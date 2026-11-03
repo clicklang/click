@@ -95,9 +95,9 @@ pub(crate) struct IntegerOperationRangeBound {
 }
 
 impl IntegerOperationRangeBound {
-    /// The Integer facts that state this bound: its two order spellings
-    /// and, for an operation with an overflow test, the definedness fact
-    /// each of them reads (`definedness::definedness_of_integer_bound`).
+    /// Ordinary spellings of this bound. Legacy overflow evidence is selected
+    /// through `overflow_query`, retaining its exact source rather than
+    /// manufacturing a boxed predicate as a lookup key.
     pub(crate) fn stating_facts(&self) -> Vec<Proposition> {
         let bound = IntegerTerm::constant(self.bound.clone());
         let forms = if self.lower {
@@ -115,7 +115,7 @@ impl IntegerOperationRangeBound {
             .into_iter()
             .map(|form| Proposition::ConditionIs(form, true))
             .collect::<Vec<_>>();
-        // 0 <= (x - y) is exactly y <= x. Retain the native spelling
+        // 0 <= (x - y) is exactly y <= x. Retain a comparison view
         // when both observations have the same format, so a direct machine
         // bound can certify subtraction without a difference-graph walk.
         if self.lower
@@ -125,23 +125,25 @@ impl IntegerOperationRangeBound {
                 (left.as_ref(), right.as_ref())
             && left.ty() == right.ty()
         {
-            facts.push(Proposition::ConditionIs(
-                ConditionTerm::machine_compare(
-                    left.ty(),
-                    crate::kernel::CompareRelation::LessEqual,
-                    right.value().clone(),
-                    left.value().clone(),
-                ),
-                true,
-            ));
-        }
-        if let Some(defined) = facts
-            .iter()
-            .find_map(definedness::definedness_of_integer_bound)
-        {
-            facts.push(defined);
+            use super::comparison::{ComparisonOperand, NativeComparisonView};
+            facts.push(
+                NativeComparisonView {
+                    format: left.ty(),
+                    relation: super::Relation::LessEqual,
+                    operands: [
+                        ComparisonOperand::Observation(right.clone()),
+                        ComparisonOperand::Observation(left.clone()),
+                    ],
+                }
+                .integer_proposition(),
+            );
         }
         facts
+    }
+    pub(crate) fn overflow_query(&self) -> Option<definedness::OverflowQueryView> {
+        self.stating_facts().iter().find_map(|fact| {
+            definedness::overflow_query_of_integer_bound(fact, definedness::defined_formats())
+        })
     }
 }
 
@@ -433,4 +435,53 @@ fn inverse_operation_mapping_preserves_constant_operation_structure() {
             );
         }
     }
+}
+
+#[test]
+fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
+    use crate::kernel::{
+        KernelTermImport, MachineBinaryOp, OverflowOperation, PureFactContext, Variable,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let format = MachineIntegerType::Int32;
+    let written = Bitvector32Term::Binary {
+        format,
+        op: MachineBinaryOp::Add,
+        left: Box::new(Bitvector32Term::Variable(Variable(989798))),
+        right: Box::new(Bitvector32Term::Variable(Variable(989799))),
+    };
+    let operand = SharedMachineIntegerTerm::from_shared(
+        format,
+        KernelTermImport::default()
+            .machine_arithmetic(format, &written)
+            .unwrap(),
+    )
+    .unwrap();
+    let bound = IntegerOperationRangeBound {
+        exact: Operation::Add.exact(
+            IntegerTerm::Machine(operand.clone()),
+            IntegerTerm::constant(2.into()),
+        ),
+        bound: i32::MAX.into(),
+        lower: false,
+    };
+    let source = Proposition::ConditionIs(
+        ConditionTerm::Overflows {
+            format,
+            op: OverflowOperation::Add,
+            left: Box::new(written),
+            right: Box::new(Bitvector32Term::constant(2)),
+        },
+        false,
+    );
+    let parent = PureFactContext::new();
+    let child = parent.clone().assume_proposition(source.clone());
+    assert!(child.knows_operation_range_bound(&bound));
+    assert!(!parent.knows_operation_range_bound(&bound));
+    assert!(
+        !child
+            .without_exact_fact(&source)
+            .knows_operation_range_bound(&bound)
+    );
+    assert!(!operand.has_boxed_operand());
 }

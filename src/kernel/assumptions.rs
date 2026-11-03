@@ -4375,6 +4375,7 @@ impl PureFactContext {
         self.equality_graph.admitted.bitvector64_equality_facts =
             crate::persistent::PersistentMap::default();
         self.equality_graph.admitted.wide_load_sources = Default::default();
+        self.equality_graph.admitted.wide_constant_sources = Default::default();
         self.equality_graph
             .admitted
             .wide_pointer_alias_endpoints_by_object = crate::persistent::PersistentMap::default();
@@ -4801,6 +4802,18 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
+        let admitted_endpoints = self
+            .equality_graph
+            .admitted
+            .uint64_input_edges
+            .get(condition)
+            .cloned();
+        self.equality_graph.admitted.wide_constant_sources.adjust(
+            condition,
+            value,
+            insert,
+            admitted_endpoints.as_ref(),
+        );
         let ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
@@ -7431,12 +7444,9 @@ impl PureFactContext {
                 )
             })
             .flatten()
-            && bounds.iter().all(|bound| {
-                bound
-                    .stating_facts()
-                    .iter()
-                    .any(|fact| self.contains_known(fact))
-            })
+            && bounds
+                .iter()
+                .all(|bound| self.knows_operation_range_bound(bound))
         {
             self = self.assume_condition_uncharged(view.integer_condition(), true);
         }
@@ -7684,7 +7694,7 @@ impl PureFactContext {
                                 &mut variables,
                             );
                         }
-                        !variables.contains(&var) && facts.iter().any(|fact| self.contains_known(fact))
+                        !variables.contains(&var) && self.knows_operation_range_bound(bound)
                     }))
                 .then(|| view.integer_proposition())
             }

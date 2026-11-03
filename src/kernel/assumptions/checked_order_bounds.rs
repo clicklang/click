@@ -378,23 +378,27 @@ impl CheckedOrderBounds {
     }
 
     pub(super) fn strict_upper(&self, term: &Bitvector32Term) -> Option<Proposition> {
+        self.strict_upper_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(super) fn strict_upper_view(&self, term: MachineOperandView<'_>) -> Option<Proposition> {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select indexed order witness", 1);
         crate::instrumentation::record_deterministic_work(1);
         let (condition, value) = self
             .strict_upper
-            .get(&Self::word_key(MachineOperandView::Legacy(term)))?
+            .get(&Self::word_key(term))?
             .iter()
             .next()?;
         Some(Proposition::ConditionIs(condition.clone(), *value))
     }
 
-    pub(super) fn upper_below_max(&self, term: &Bitvector32Term) -> Option<Proposition> {
+    pub(super) fn upper_below_max_view(&self, term: MachineOperandView<'_>) -> Option<Proposition> {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select indexed order witness", 1);
         crate::instrumentation::record_deterministic_work(1);
         let (number, condition, value) = self.endpoints[0]
-            .get(&Self::word_key(MachineOperandView::Legacy(term)))?
+            .get(&Self::word_key(term))?
             .upper
             .iter()
             .next()?;

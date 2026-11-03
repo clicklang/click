@@ -314,12 +314,35 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
+    pub(crate) fn unary(self) -> Option<(MachineIntegerType, MachineUnaryOp, Self)> {
+        match self {
+            Self::Shared(term) => match term.node() {
+                KernelTermNode::MachineUnary {
+                    format,
+                    operator,
+                    operand,
+                } => Some((*format, *operator, Self::Shared(operand))),
+                _ => None,
+            },
+            Self::Legacy(Bitvector32Term::Unary {
+                format,
+                op,
+                operand,
+            }) => Some((*format, *op, Self::Legacy(operand))),
+            _ => None,
+        }
+    }
+
     /// Literal payload only, without descending through an operation.
     pub(crate) fn literal(self) -> Option<Bitvector32Term> {
         match self {
-            Self::Shared(term) if matches!(term.node(), KernelTermNode::MachineLiteral(_)) => {
-                Some(KernelTermExport::machine(term).expect("machine literal"))
-            }
+            Self::Shared(term) => match term.node() {
+                KernelTermNode::MachineLiteral(value) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    Some(value.legacy_term())
+                }
+                _ => None,
+            },
             Self::Legacy(value) if is_machine_constant(value) => Some(value.clone()),
             _ => None,
         }

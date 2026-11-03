@@ -281,3 +281,64 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
         );
     assert_eq!(reversed.decide_small_uint64_index_order(&goal), Some(false));
 }
+
+#[test]
+fn shared_wide_order_walks_scale_with_selected_chain() {
+    use crate::kernel::{KernelTerm, KernelType, SharedMachineIntegerTerm};
+    let mut samples = Vec::new();
+    for size in [8, 24, 72] {
+        for unrelated in [0, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let ty = MachineIntegerType::UInt64;
+            let operand = |id| {
+                let root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+                SharedMachineIntegerTerm::from_shared(
+                    ty,
+                    KernelTerm::machine_binary_shared(
+                        ty,
+                        crate::kernel::MachineBinaryOp::Add,
+                        [root.clone(), root],
+                    ),
+                )
+                .unwrap()
+            };
+            let terms: Vec<_> = (0..=size).map(|i| operand(999100 + i)).collect();
+            let observe = |term: &SharedMachineIntegerTerm| IntegerTerm::Machine(term.clone());
+            let mut parent = PureFactContext::new();
+            for i in 0..unrelated {
+                parent = parent.assume_condition(
+                    ConditionTerm::integer_less_than(
+                        observe(&operand(999300 + i)),
+                        IntegerTerm::constant(99.into()),
+                    ),
+                    true,
+                );
+            }
+            let mut context = parent.clone();
+            for pair in terms.windows(2) {
+                context = context.assume_condition(
+                    ConditionTerm::integer_less_than(observe(&pair[0]), observe(&pair[1])),
+                    true,
+                );
+            }
+            let last = terms.last().unwrap();
+            let goal = ConditionTerm::integer_less_than(observe(&terms[0]), observe(last));
+            let reverse = ConditionTerm::integer_less_equal(observe(last), observe(&terms[0]));
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert_eq!(context.decide_wide_order_chain(&goal), Some(true));
+                assert_eq!(context.decide_wide_order_chain(&reverse), Some(false));
+                assert_eq!(parent.decide_wide_order_chain(&goal), None);
+            });
+            assert!(terms.iter().all(|term| !term.has_boxed_operand()));
+            samples.push((size as usize, unrelated, work));
+        }
+    }
+    for pair in samples.chunks_exact(2) {
+        assert!(pair[1].2 <= pair[0].2 + 32, "{samples:?}");
+    }
+    for pair in samples.chunks_exact(2).collect::<Vec<_>>().windows(2) {
+        let (small, _, sw) = pair[0][0];
+        let (large, _, lw) = pair[1][0];
+        assert!(lw * small <= sw * large * 2, "{samples:?}");
+    }
+}
