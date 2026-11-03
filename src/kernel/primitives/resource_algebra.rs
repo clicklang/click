@@ -357,17 +357,23 @@ fn owned_range_base_variable(range: &CMemoryRange) -> Option<Variable> {
     memory_base_variable(range.base())
 }
 
-/// A range's two endpoints as the signed `int32` numbers they are, present
-/// only when both are constant.
-///
-/// This is the reading every *order* over endpoints takes — the partition
-/// check's sort, the `concrete_memory` key its neighbour probes walk — as
-/// against `as_const`, which answers the bit pattern and is what an equality
-/// or a width scaling wants. The two disagree exactly on the ranges that
-/// begin below their base, and those are the ranges a caller reaches with
-/// `q = p + 1` or with a clause instantiated at a negative index.
-fn signed_range_endpoints(range: &CMemoryRange) -> (Option<i64>, Option<i64>) {
-    (range.signed_constant_start(), range.signed_constant_end())
+/// Constant byte coordinates relative to the exact base, for ordered neighbour
+/// probes and partition sweeps. Narrow bounds retain their signed meaning;
+/// native bounds retain their unsigned meaning and enter this index only when
+/// both byte coordinates fit exactly. Resource terms themselves are unchanged.
+fn constant_relative_byte_endpoints(range: &CMemoryRange) -> (Option<i64>, Option<i64>) {
+    let (start, end) = match range.wide_bounds() {
+        Some((start, end)) => (
+            start.uint64_as_const().and_then(|n| i64::try_from(n).ok()),
+            end.uint64_as_const().and_then(|n| i64::try_from(n).ok()),
+        ),
+        None => (range.signed_constant_start(), range.signed_constant_end()),
+    };
+    let width = i64::from(range.element_width());
+    (
+        start.and_then(|n| n.checked_mul(width)),
+        end.and_then(|n| n.checked_mul(width)),
+    )
 }
 
 pub(super) fn remove_resource_index_entry<K: Ord + Clone>(
@@ -579,6 +585,9 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
+            if !matches!(block, PointerBlock::Concrete(_)) {
+                result.nonconcrete_memory_count += 1;
+            }
             result.memory_by_block =
                 insert_resource_index_entry(&result.memory_by_block, block.clone(), entry);
             result.memory_by_base =
@@ -633,7 +642,7 @@ impl ResourceContextIndex {
                         .with_inserted(block.clone(), ());
                 }
             }
-            if let (Some(start), Some(end)) = signed_range_endpoints(range) {
+            if let (Some(start), Some(end)) = constant_relative_byte_endpoints(range) {
                 let base = (range.base().clone(), mode);
                 result.concrete_memory = insert_resource_index_entry(
                     &result.concrete_memory,
@@ -863,6 +872,9 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
+            if !matches!(block, PointerBlock::Concrete(_)) {
+                result.nonconcrete_memory_count -= 1;
+            }
             result.memory_by_block =
                 remove_resource_index_entry(&result.memory_by_block, &block, entry);
             result.memory_by_base =
@@ -910,7 +922,7 @@ impl ResourceContextIndex {
                         result.shared_owned_memory_blocks.without_key(&block);
                 }
             }
-            if let (Some(start), Some(end)) = signed_range_endpoints(range) {
+            if let (Some(start), Some(end)) = constant_relative_byte_endpoints(range) {
                 let base = (range.base().clone(), mode);
                 result.concrete_memory = remove_resource_index_entry(
                     &result.concrete_memory,
@@ -2968,6 +2980,25 @@ impl ResourceContext {
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 
+    /// Positive absence evidence for implicit local-storage borrowing. Any
+    /// explicit memory fact in the allocation selects the explicit route,
+    /// including partial owners and views. Nonconcrete allocation identities
+    /// may alias local storage, including through recorded reads. Cross-block
+    /// aliases conservatively
+    /// require explicit backing whenever memory resources exist; do not search
+    /// those resources to decide whether they cover this particular request.
+    pub(in crate::kernel) fn has_no_explicit_memory_for_local_storage(
+        &self,
+        block: &PointerBlock,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage.index.memory_by_block.is_empty()
+            || (self.storage.index.nonconcrete_memory_count == 0
+                && !assumptions.has_pointer_block_aliases()
+                && !self.storage.index.memory_by_block.contains_key(block))
+    }
+
     /// The memory facts based in `block`, from the block index: the `owns`
     /// and `views` ranges a pointer formed in that block can lie in. Memory
     /// in other blocks, composite, iterated, token and instance facts are
@@ -3544,27 +3575,67 @@ impl ResourceContext {
             let entry = entries.entry();
             crate::instrumentation::record_deterministic_work(1);
             let candidate = self.fact(entry);
+            // An index nominates geometry, not authority. The former candidate
+            // iterator filtered quantities; indexed selection must check its
+            // chosen supplier before consuming any piece.
+            if !candidate.has_proven_positive_quantity(assumptions) {
+                return None;
+            }
             let available = candidate.memory_own_range()?;
-            // Symbolic 64-bit suppliers retain their native direct-coverage
-            // route; byte regrouping here handles constant 32-bit bounds.
-            available.int32_bounds()?;
             let base = entries.address()?;
-            let point =
-                CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
-            let byte_available = byte_normalized_memory_range(available);
-            let at = exact_constant_base_delta(&byte_available, &point, Some(assumptions))?;
-            let available_end = byte_available.signed_constant_end()?;
-            let bytes = available_end
-                .checked_sub(at)
-                .map(|bytes| bytes.min(end - cursor))
-                .filter(|bytes| *bytes > 0)
-                .and_then(|bytes| u32::try_from(bytes).ok())?;
-            let piece = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-                base,
-                0u32.into(),
-                bytes.into(),
-                1,
-            ));
+            let (bytes, piece) = if let Some((_, available_end)) = available.wide_bounds() {
+                // Keep native suppliers in their original coordinates. Only
+                // concrete, aligned pieces are consumed; never narrow a bound.
+                let point = CMemoryRange::new_with_element_width(
+                    base,
+                    0u32.into(),
+                    1u32.into(),
+                    available.element_width(),
+                );
+                let at = u64::try_from(exact_constant_base_delta(
+                    available,
+                    &point,
+                    Some(assumptions),
+                )?)
+                .ok()?;
+                let width = u64::from(available.element_width());
+                let bytes = available_end
+                    .uint64_as_const()?
+                    .checked_sub(at)?
+                    .checked_mul(width)?
+                    .min(u64::try_from(end - cursor).ok()?);
+                if bytes == 0 || bytes % width != 0 {
+                    return None;
+                }
+                let piece = CResourceFact::own_memory(
+                    CMemoryRange::new_wide(
+                        available.base().clone(),
+                        Bitvector32Term::uint64_constant(at),
+                        Bitvector32Term::uint64_constant(at.checked_add(bytes / width)?),
+                        available.element_width(),
+                    )
+                    .with_carrier_of(available),
+                );
+                (u32::try_from(bytes).ok()?, piece)
+            } else {
+                let point =
+                    CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
+                let byte_available = byte_normalized_memory_range(available);
+                let at = exact_constant_base_delta(&byte_available, &point, Some(assumptions))?;
+                let available_end = byte_available.signed_constant_end()?;
+                let bytes = available_end
+                    .checked_sub(at)
+                    .map(|bytes| bytes.min(end - cursor))
+                    .filter(|bytes| *bytes > 0)
+                    .and_then(|bytes| u32::try_from(bytes).ok())?;
+                let piece = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    base,
+                    0u32.into(),
+                    bytes.into(),
+                    1,
+                ));
+                (bytes, piece)
+            };
             if !resource_fact_entails(candidate, &piece, assumptions) {
                 return None;
             }
@@ -5714,7 +5785,7 @@ impl ResourceContext {
             let Some(right_range) = right.memory_own_range() else {
                 continue;
             };
-            let (start, end) = signed_range_endpoints(right_range);
+            let (start, end) = constant_relative_byte_endpoints(right_range);
             let same_base_concrete = start.zip(end).and_then(|(start, end)| {
                 let owned_in_block = self
                     .storage
@@ -6067,7 +6138,7 @@ impl ResourceContext {
             // signed numbers they are.
             let one_concrete_base = owned.first().map(|(_, range)| range.base()).filter(|base| {
                 owned.iter().all(|(_, range)| {
-                    let (start, end) = signed_range_endpoints(range);
+                    let (start, end) = constant_relative_byte_endpoints(range);
                     range.base() == *base && start.is_some() && end.is_some()
                 })
             });
@@ -6075,7 +6146,7 @@ impl ResourceContext {
                 let mut ordered = owned
                     .into_iter()
                     .map(|(fact, range)| {
-                        let (start, end) = signed_range_endpoints(range);
+                        let (start, end) = constant_relative_byte_endpoints(range);
                         (start.unwrap(), end.unwrap(), fact, range)
                     })
                     .collect::<Vec<_>>();
@@ -6758,6 +6829,13 @@ impl ResourceContext {
         {
             return Some(self);
         }
+        if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1)
+            && range.int32_bounds().is_some()
+            && range.signed_constant_start().is_some()
+            && range.signed_constant_end().is_some()
+        {
+            return self.consume_constant_owned_memory(fact, assumptions, origins);
+        }
         let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
         let mut selected = self;
         for entry in candidates.entries.iter() {
@@ -6806,56 +6884,30 @@ impl ResourceContext {
         Some(selected)
     }
 
-    /// Join the owned memory pieces that together cover `view`'s concrete
-    /// range, when no single piece does, into byte-granular owners in place:
-    /// the same join `without_fact_incrementally` composes to consume such a
-    /// footprint, kept rather than consumed, so one owner can then be lent
-    /// for a view that must stay lent. `None` when the range is symbolic,
-    /// one piece already covers it, the pieces leave a gap, or a piece is
-    /// loan-bound or projected. Proportional to the selected pieces.
-    pub(crate) fn with_coalesced_owned_memory(
-        &self,
-        view: &CResourceFact,
+    /// Consume an explicit constant footprint through retained supplier identities.
+    /// A gap ends the operation; no candidate frontier is collected or retried.
+    fn consume_constant_owned_memory(
+        mut self,
+        required: &CResourceFact,
         assumptions: &PureFactContext,
+        mut origins: Option<&mut MemorySplitOrigins>,
     ) -> Option<Self> {
-        let CResource::Memory(range) = view.resource() else {
-            return None;
-        };
-        if range.constant_start().is_none() || range.constant_end().is_none() {
-            return None;
-        }
-        let owned = CResourceFact::own_memory(range.clone());
+        let range = required.memory_own_range()?;
         let candidates = self.memory_fact_candidates(range, true, assumptions);
-        // Fewer than two pieces, or a bound one, joins nothing.
-        let joined = self.normalized_memory_suppliers(
-            &candidates.entries.iter().collect::<Vec<_>>(),
-            &candidates,
-            range.base(),
-            assumptions,
-        )?;
-        let support = joined.memory_fact_candidates(range, true, assumptions);
-        let covered = support.entries.iter().any(|entry| {
-            support.requirement(entry, &owned).is_some_and(|required| {
-                joined.clone().consume_fact_from_candidates(
-                    &required,
-                    assumptions,
-                    std::iter::once(entry),
-                )
-            })
-        });
-        if !covered {
-            return None;
+        if let Some(entry) = candidates.entries.single_supplier()
+            && self.fact(entry).has_proven_positive_quantity(assumptions)
+            && let Some(aligned) = candidates.requirement(entry, required)
+            && self.consume_fact_from_candidates_with_origins(
+                &aligned,
+                assumptions,
+                [entry],
+                origins.as_deref_mut(),
+            )
+        {
+            return Some(self);
         }
-        let mut coalesced = self.clone();
-        for entry in candidates.entries.iter() {
-            if coalesced.storage.facts.contains_key(&entry) {
-                coalesced.remove_entry(entry);
-            }
-        }
-        for piece in joined.iter() {
-            coalesced.insert_fact(piece.clone());
-        }
-        Some(coalesced)
+        self.reserve_owned_memory_fragments_impl(required, assumptions, origins)
+            .map(|(remaining, _)| remaining)
     }
 
     /// Join only the suppliers selected for the explicit footprint. Loan-bound
@@ -7028,7 +7080,7 @@ impl ResourceContext {
     ) -> Option<(ResourceEntryId, CResourceFact)> {
         let fact = self.fact(entry);
         let range = fact.memory_own_range()?;
-        let (Some(start), Some(end)) = signed_range_endpoints(range) else {
+        let (Some(start), Some(end)) = constant_relative_byte_endpoints(range) else {
             return None;
         };
         let key = (range.base().clone(), true, start, end);
@@ -10356,8 +10408,9 @@ fn wide_memory_range_covers_window(
         })
 }
 
-/// Whether two ranges, at least one of them wide, are proven to share an
-/// element: they have one base and one element width, and `a.start <
+/// Whether two ranges, at least one of them wide, are proven to overlap.
+/// Constant same-base ranges compare exact byte coordinates. Otherwise they
+/// must have one base and one element width, and `a.start <
 /// b.end`, `b.start < a.end` and each range's `start < end` are decided as
 /// unsigned 64-bit comparisons. An `Int32` range takes part through
 /// nonnegative constant bounds only. Anything undecided is not proven.
@@ -10366,6 +10419,18 @@ pub(in crate::kernel) fn wide_memory_ranges_proven_overlapping(
     right: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
+    // The neighbour index orders complete byte intervals, including mixed
+    // element widths. Compare those exact intervals before symbolic rules.
+    if left.base() == right.base()
+        && let (Some(a), Some(b), Some(c), Some(d)) = (
+            constant_relative_byte_endpoints(left).0,
+            constant_relative_byte_endpoints(left).1,
+            constant_relative_byte_endpoints(right).0,
+            constant_relative_byte_endpoints(right).1,
+        )
+    {
+        return a < b && c < d && a < d && c < b;
+    }
     if left.element_width() != right.element_width()
         || !(left.base() == right.base()
             || pointers_proven_equal_for_memory_resolution(left.base(), right.base(), assumptions))

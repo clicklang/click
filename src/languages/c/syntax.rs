@@ -20465,10 +20465,13 @@ fn parse_integer_literal_magnitude(literal: &str) -> Result<u64, &'static str> {
         return Err("missing digits");
     }
     let normalized_suffix = suffix.to_ascii_lowercase();
-    if !matches!(
-        normalized_suffix.as_str(),
-        "" | "u" | "l" | "ll" | "ul" | "lu" | "ull" | "llu"
-    ) {
+    if suffix.contains("lL")
+        || suffix.contains("Ll")
+        || !matches!(
+            normalized_suffix.as_str(),
+            "" | "u" | "l" | "ll" | "ul" | "lu" | "ull" | "llu"
+        )
+    {
         return Err("unsupported integer-literal suffix");
     }
     u64::from_str_radix(digits, radix).map_err(|_| match radix {
@@ -20838,7 +20841,7 @@ fn tokenize(source: &str) -> Result<(Vec<Token>, Vec<SourcePosition>), C0SyntaxE
             while index + 1 < chars.len() && !(chars[index] == '*' && chars[index + 1] == '/') {
                 index += 1;
             }
-            if index + 1 == chars.len() {
+            if index + 1 >= chars.len() {
                 return Err(C0SyntaxError::at(position, "unterminated block comment"));
             }
             index += 2;

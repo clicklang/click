@@ -891,6 +891,50 @@ fn indexed_memory_support_never_promotes_zero_quantity() {
 }
 
 #[test]
+fn constant_consumption_refuses_nonpositive_whole_and_fragment_suppliers() {
+    let p = Pointer::symbolic(Variable(976_100));
+    let facts = PureFactContext::new();
+    let own = |start: u32, end: u32, quantity: u32| {
+        CResourceFact::Own(
+            CResource::Memory(CMemoryRange::new_with_element_width(
+                p.clone(),
+                start.into(),
+                end.into(),
+                1,
+            )),
+            Box::new(quantity.into()),
+        )
+    };
+    for quantity in [0, u32::MAX] {
+        for pieces in [
+            vec![own(0, 8, quantity)],
+            vec![own(0, 2, 1), own(2, 8, quantity)],
+        ] {
+            let context =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_facts(pieces.clone());
+            for required in [own(0, 8, 1), own(0, 4, 1)] {
+                assert!(
+                    context
+                        .clone()
+                        .without_fact_incrementally(&required, &facts)
+                        .is_none()
+                );
+            }
+            for piece in &pieces {
+                assert!(context.contains_exact_representation(piece));
+            }
+        }
+    }
+    let context = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts([own(0, 2, 1), own(2, 8, 1)]);
+    assert!(
+        context
+            .without_fact_incrementally(&own(0, 8, 1), &facts)
+            .is_some()
+    );
+}
+
+#[test]
 fn fragment_coordinate_residues_do_not_establish_wide_pointer_adjacency() {
     let p = Pointer::symbolic(Variable(979_000));
     let positive = Pointer {

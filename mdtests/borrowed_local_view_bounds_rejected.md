@@ -1,9 +1,8 @@
 # a borrowed view of a caller's local must fit that local
 
-A callee's `views` requirement over the caller's own stack object needs no
-resource from the caller, since the object is already the caller's. It still
-has to name storage the object has: a range running past the block would let
-the callee read whatever the caller keeps beyond it.
+The caller owns its declared local array. A callee's `views` requirement must
+fit that ownership: a range running past the block must not be admitted through
+implicit local-storage authority just because the allocation exists.
 
 Here the callee views three elements of a two-element array, and reads the
 third. The call is rejected rather than discharged by the block merely
@@ -37,5 +36,5 @@ int32 borrowed_local_view_bounds_rejected() {
 ```
 
 ```expect
-fail: missing resource fact
+fail: selected resource `views pair[0..3]`
 ```

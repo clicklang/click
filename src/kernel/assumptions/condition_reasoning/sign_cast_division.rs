@@ -29,6 +29,14 @@
 use super::*;
 use crate::kernel::MachineBinaryOp as Op;
 use crate::kernel::MachineIntegerType as Ty;
+use crate::kernel::machine_integer::{
+    Relation,
+    comparison::{
+        ComparisonOperand, NativeComparisonView, comparison_view, condition_for_operand_views,
+        structural_native_comparison_view,
+    },
+};
+use crate::kernel::{MachineOperandView as View, SharedMachineIntegerTerm};
 
 thread_local! {
     static DECIDING_SIGN_CAST_DIVISION: std::cell::Cell<bool> =
@@ -75,21 +83,91 @@ fn division_at(
     }
 }
 
+fn comparison(condition: &ConditionTerm) -> Option<NativeComparisonView<'_>> {
+    let view = if matches!(condition, ConditionTerm::Compare { .. }) {
+        comparison_view(condition, true)?
+    } else {
+        structural_native_comparison_view(condition, true)?
+    };
+    matches!(view.format, Ty::Int32 | Ty::UInt32).then_some(view)
+}
+
+fn division_operands(term: View<'_>) -> Option<(Ty, Op, [View<'_>; 2])> {
+    let (crate::kernel::KernelMachineCastEncoding::Generic, source, destination, operand) =
+        term.cast()?
+    else {
+        return None;
+    };
+    if !crate::kernel::is_sign_cast32(source, destination) {
+        return None;
+    }
+    let (format, op, operands) = operand.binary()?;
+    (format == source && matches!(op, Op::Divide | Op::Remainder)).then_some((source, op, operands))
+}
+
+fn cast_operand(source: Ty, destination: Ty, value: View<'_>) -> ComparisonOperand<'static> {
+    match value {
+        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::sign_cast32(
+            source,
+            destination,
+            value.clone(),
+        )),
+        View::Shared(_) => {
+            ComparisonOperand::Observation(value.retain(source).checking_cast_operand(destination))
+        }
+    }
+}
+
+fn division_at_views(format: Ty, op: Op, operands: [View<'_>; 2]) -> ComparisonOperand<'static> {
+    use crate::kernel::{KernelTerm, KernelTermImport};
+    if let [View::Legacy(left), View::Legacy(right)] = operands {
+        return ComparisonOperand::Constant(division_at(format, op, left.clone(), right.clone()));
+    }
+    let literal = |operand: View<'_>| {
+        operand
+            .literal()
+            .map(|term| Bitvector32Term::operand32(format, term))
+    };
+    if let [Some(left), Some(right)] = operands.map(literal) {
+        return ComparisonOperand::Constant(division_at(format, op, left, right));
+    }
+    if op == Op::Divide && literal(operands[1]).is_some_and(|term| term.constant32() == Some(1)) {
+        return match literal(operands[0]) {
+            Some(term) => ComparisonOperand::Constant(term),
+            None => ComparisonOperand::Observation(operands[0].retain(format)),
+        };
+    }
+    let roots = operands.map(|operand| {
+        if let Some(literal) = literal(operand) {
+            KernelTermImport::default()
+                .machine_arithmetic(format, &literal)
+                .expect("typed literal")
+        } else {
+            let View::Shared(root) = operand else {
+                unreachable!("shared cast operands")
+            };
+            root.with_machine_observation_type(format)
+        }
+    });
+    ComparisonOperand::Observation(
+        SharedMachineIntegerTerm::from_shared(
+            format,
+            KernelTerm::machine_binary_shared(format, op, roots),
+        )
+        .expect("shared division operands"),
+    )
+}
+
 impl ConditionTerm {
     /// Whether this is a 32-bit comparison with a side that is σ of a
     /// quotient or remainder, which rule C reads. One match on the root and
     /// each side.
     pub(crate) fn names_sign_cast_division(&self) -> bool {
-        matches!(
-            self,
-            ConditionTerm::Compare {
-                format: Ty::Int32 | Ty::UInt32,
-                left,
-                right,
-                ..
-            } if left.sign_cast_division_operands().is_some()
-                || right.sign_cast_division_operands().is_some()
-        )
+        comparison(self).is_some_and(|view| {
+            view.operands
+                .iter()
+                .any(|operand| division_operands(operand.operand_view()).is_some())
+        })
     }
 }
 
@@ -117,59 +195,96 @@ impl PureFactContext {
         if DECIDING_SIGN_CAST_DIVISION.with(std::cell::Cell::get) {
             return None;
         }
-        let ConditionTerm::Compare {
-            format: format @ (Ty::Int32 | Ty::UInt32),
-            relation,
-            left,
-            right,
-        } = condition
-        else {
-            return None;
+        let mut view = comparison(condition)?;
+        // Keep native written directions, including greater-than spellings.
+        let relation = match condition {
+            ConditionTerm::Compare {
+                relation: CompareRelation::GreaterThan,
+                ..
+            }
+            | ConditionTerm::IntegerGreaterThan(..) => {
+                view.operands.swap(0, 1);
+                CompareRelation::GreaterThan
+            }
+            ConditionTerm::Compare {
+                relation: CompareRelation::GreaterEqual,
+                ..
+            }
+            | ConditionTerm::IntegerGreaterEqual(..) => {
+                view.operands.swap(0, 1);
+                CompareRelation::GreaterEqual
+            }
+            _ => match view.relation {
+                Relation::Equal | Relation::NotEqual => CompareRelation::Equal,
+                Relation::Less => CompareRelation::LessThan,
+                Relation::LessEqual => CompareRelation::LessEqual,
+            },
         };
-        if left.sign_cast_division_operands().is_none()
-            && right.sign_cast_division_operands().is_none()
+        let operands = view
+            .operands
+            .each_ref()
+            .map(ComparisonOperand::operand_view);
+        if !operands
+            .iter()
+            .any(|operand| division_operands(*operand).is_some())
         {
             return None;
         }
         let _deciding = Deciding::enter();
-        let left_reading = self.sign_cast_division_reading(left);
-        let right_reading = self.sign_cast_division_reading(right);
-        if left_reading.is_none() && right_reading.is_none() {
+        let [left, right] = operands.map(|operand| self.sign_cast_division_reading(operand));
+        if left.is_none() && right.is_none() {
             return None;
         }
-        Some(ConditionTerm::machine_compare(
-            *format,
-            *relation,
-            left_reading.unwrap_or_else(|| left.as_ref().clone()),
-            right_reading.unwrap_or_else(|| right.as_ref().clone()),
-        ))
+        let retain = |operand| match operand {
+            View::Legacy(term) => ComparisonOperand::Constant(term.clone()),
+            View::Shared(_) => ComparisonOperand::Observation(operand.retain(view.format)),
+        };
+        let results = [
+            left.unwrap_or_else(|| retain(operands[0])),
+            right.unwrap_or_else(|| retain(operands[1])),
+        ];
+        let operands = results.each_ref().map(ComparisonOperand::operand_view);
+        if view.relation == Relation::NotEqual {
+            return Some(ConditionTerm::integer_not_equal(
+                operands[0].observe(view.format)?,
+                operands[1].observe(view.format)?,
+            ));
+        }
+        Some(condition_for_operand_views(view.format, relation, operands))
     }
 
     /// σ of a quotient or remainder `term` read at the other signedness:
     /// the operator there over σ of its operands, when this context decides
     /// the dividend's `int32` reading nonnegative and the divisor's
     /// positive. `None` otherwise.
-    fn sign_cast_division_reading(&self, term: &Bitvector32Term) -> Option<Bitvector32Term> {
-        let (source, op, dividend, divisor) = term.sign_cast_division_operands()?;
+    fn sign_cast_division_reading(&self, term: View<'_>) -> Option<ComparisonOperand<'static>> {
+        let (source, op, operands) = division_operands(term)?;
         let destination = other(source);
-        let cast = |value: &Bitvector32Term| {
-            Bitvector32Term::sign_cast32(source, destination, value.clone())
-        };
-        let (cast_dividend, cast_divisor) = (cast(dividend), cast(divisor));
-        // The operands' `int32` readings: the operands themselves at
-        // `int32`, their σ at `uint32`.
-        let (signed_dividend, signed_divisor) = if source == Ty::Int32 {
-            (dividend.clone(), divisor.clone())
+        let casted = operands.map(|operand| cast_operand(source, destination, operand));
+        let signed = if source == Ty::Int32 {
+            operands
         } else {
-            (cast_dividend.clone(), cast_divisor.clone())
+            casted.each_ref().map(ComparisonOperand::operand_view)
         };
-        let zero = || Bitvector32Term::constant(0);
-        if self.decide(&ConditionTerm::signed_less_equal(zero(), signed_dividend)) != Some(true)
-            || self.decide(&ConditionTerm::signed_less_than(zero(), signed_divisor)) != Some(true)
+        let zero = Bitvector32Term::constant(0);
+        if self.decide(&condition_for_operand_views(
+            Ty::Int32,
+            CompareRelation::LessEqual,
+            [View::Legacy(&zero), signed[0]],
+        )) != Some(true)
+            || self.decide(&condition_for_operand_views(
+                Ty::Int32,
+                CompareRelation::LessThan,
+                [View::Legacy(&zero), signed[1]],
+            )) != Some(true)
         {
             return None;
         }
-        Some(division_at(destination, op, cast_dividend, cast_divisor))
+        Some(division_at_views(
+            destination,
+            op,
+            casted.each_ref().map(ComparisonOperand::operand_view),
+        ))
     }
 }
 
@@ -192,6 +307,221 @@ mod tests {
 
     fn signed_positive(value: Bitvector32Term) -> ConditionTerm {
         ConditionTerm::signed_less_than(Bitvector32Term::constant(0), value)
+    }
+
+    #[test]
+    fn shared_sign_division_readings_preserve_guards_directions_and_sources() {
+        use crate::kernel::{KernelTermExport, KernelTermImport};
+        let _session = crate::kernel::VerificationSession::enter();
+        let shape = |condition: ConditionTerm| {
+            let view = comparison(&condition).expect("machine comparison");
+            (
+                view.format,
+                view.relation,
+                view.operands
+                    .each_ref()
+                    .map(|operand| operand.operand_view().retain(view.format).value().clone()),
+            )
+        };
+        for source in [Ty::Int32, Ty::UInt32] {
+            for op in [Op::Divide, Op::Remainder] {
+                let n = Bitvector32Term::add(var(189101), var(189102));
+                let d = var(189103);
+                let signed_n = if source == Ty::Int32 {
+                    n.clone()
+                } else {
+                    sigma(source, n.clone())
+                };
+                let signed_d = if source == Ty::Int32 {
+                    d.clone()
+                } else {
+                    sigma(source, d.clone())
+                };
+                for (nonnegative, positive) in [(true, true), (false, true), (true, false)] {
+                    let sources = [
+                        Proposition::ConditionIs(signed_nonnegative(signed_n.clone()), nonnegative),
+                        Proposition::ConditionIs(signed_positive(signed_d.clone()), positive),
+                    ];
+                    let context = PureFactContext::new()
+                        .assume_proposition(sources[0].clone())
+                        .assume_proposition(sources[1].clone());
+                    let left = sigma(source, division_at(source, op, n.clone(), d.clone()));
+                    let right = var(189104);
+                    let format = other(source);
+                    for relation in [
+                        CompareRelation::Equal,
+                        CompareRelation::LessThan,
+                        CompareRelation::LessEqual,
+                        CompareRelation::GreaterThan,
+                        CompareRelation::GreaterEqual,
+                    ] {
+                        let native = ConditionTerm::machine_compare(
+                            format,
+                            relation,
+                            left.clone(),
+                            right.clone(),
+                        );
+                        let (expected, native_used) = collect_reasoning_provenance(|| {
+                            capture_implicit_reasoning_provenance(|| {
+                                context.sign_cast_division_equivalent(&native).map(&shape)
+                            })
+                        });
+                        let [left, right] = [&left, &right].map(|term| {
+                            KernelTermImport::default()
+                                .machine_arithmetic(format, term)
+                                .unwrap()
+                        });
+                        let shared = condition_for_operand_views(
+                            format,
+                            relation,
+                            [View::Shared(&left), View::Shared(&right)],
+                        );
+                        assert!(shared.names_sign_cast_division());
+                        let exports = KernelTermExport::machine_export_count();
+                        let (actual, used) = collect_reasoning_provenance(|| {
+                            capture_implicit_reasoning_provenance(|| {
+                                context.sign_cast_division_equivalent(&shared)
+                            })
+                        });
+                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                        assert_eq!(actual.map(&shape), expected, "{native:?}");
+                        if nonnegative && positive {
+                            assert!(
+                                native_used.iter().all(|source| used.contains(source))
+                                    && used
+                                        .iter()
+                                        .all(|source| context.contains_assumed_exact(source)),
+                                "native={native_used:?}, shared={used:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fresh_shared_sign_division_uses_structural_mask_bounds_without_export() {
+        use crate::kernel::{
+            CType, KernelMachineCastEncoding as Encoding, KernelTerm, KernelTermExport,
+            KernelTermImport, KernelType,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(189113));
+        let prefix = KernelTerm::machine_binary_shared(Ty::UInt32, Op::Add, [x.clone(), x]);
+        let literal = |format, value| {
+            KernelTermImport::default()
+                .machine_arithmetic(format, &Bitvector32Term::constant_at32(format, value))
+                .unwrap()
+        };
+        let n = KernelTerm::machine_binary_shared(
+            Ty::UInt32,
+            Op::BitwiseAnd,
+            [prefix, literal(Ty::UInt32, 255)],
+        );
+        let q = KernelTerm::machine_binary_shared(
+            Ty::UInt32,
+            Op::Divide,
+            [n.clone(), literal(Ty::UInt32, 2)],
+        );
+        let left = KernelTerm::machine_cast_shared(Encoding::Generic, Ty::UInt32, Ty::Int32, q);
+        let cast_n = KernelTerm::machine_cast_shared(Encoding::Generic, Ty::UInt32, Ty::Int32, n);
+        let right = KernelTerm::machine_binary_shared(
+            Ty::Int32,
+            Op::Divide,
+            [cast_n, literal(Ty::Int32, 2)],
+        );
+        let query = ConditionTerm::integer_not_equal(
+            View::Shared(&left).observe(Ty::Int32).unwrap(),
+            View::Shared(&right).observe(Ty::Int32).unwrap(),
+        );
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(
+            PureFactContext::new().decide_by_sign_cast_division(&query),
+            Some(false)
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_sign_division_disequality_keeps_its_polarity() {
+        use crate::kernel::{KernelTermExport, KernelTermImport};
+        let _session = crate::kernel::VerificationSession::enter();
+        let (n, d) = (var(189115), var(189116));
+        let context = PureFactContext::new()
+            .assume_condition(signed_nonnegative(sigma(Ty::UInt32, n.clone())), true)
+            .assume_condition(signed_positive(sigma(Ty::UInt32, d.clone())), true);
+        let left = sigma(
+            Ty::UInt32,
+            division_at(Ty::UInt32, Op::Divide, n.clone(), d.clone()),
+        );
+        let right = division_at(
+            Ty::Int32,
+            Op::Divide,
+            sigma(Ty::UInt32, n),
+            sigma(Ty::UInt32, d),
+        );
+        let roots = [&left, &right].map(|term| {
+            KernelTermImport::default()
+                .machine_arithmetic(Ty::Int32, term)
+                .unwrap()
+        });
+        let observed = roots
+            .each_ref()
+            .map(|root| View::Shared(root).observe(Ty::Int32).unwrap());
+        let [left, right] = observed;
+        let query = ConditionTerm::integer_not_equal(left, right);
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(context.decide_by_sign_cast_division(&query), Some(false));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_division_constructors_keep_literal_folding_and_format() {
+        use crate::kernel::{KernelTermExport, KernelTermImport};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [Ty::Int32, Ty::UInt32] {
+            for op in [Op::Divide, Op::Remainder] {
+                for (left, right) in [
+                    (var(189111), Bitvector32Term::constant(1)),
+                    (
+                        Bitvector32Term::constant(7),
+                        Bitvector32Term::uint32_constant(2),
+                    ),
+                    (Bitvector32Term::constant(7), Bitvector32Term::constant(0)),
+                    (var(189111), var(189112)),
+                    (
+                        Bitvector32Term::Binary {
+                            format,
+                            op: Op::Add,
+                            left: Box::new(Bitvector32Term::constant(1)),
+                            right: Box::new(Bitvector32Term::constant(1)),
+                        },
+                        Bitvector32Term::constant(2),
+                    ),
+                    (
+                        var(189111),
+                        Bitvector32Term::Binary {
+                            format,
+                            op: Op::Add,
+                            left: Box::new(Bitvector32Term::constant(0)),
+                            right: Box::new(Bitvector32Term::constant(1)),
+                        },
+                    ),
+                ] {
+                    let expected = division_at(format, op, left.clone(), right.clone());
+                    let roots = [&left, &right].map(|value| {
+                        KernelTermImport::default()
+                            .machine_arithmetic(format, value)
+                            .unwrap()
+                    });
+                    let exports = KernelTermExport::machine_export_count();
+                    let actual = division_at_views(format, op, roots.each_ref().map(View::Shared));
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                    assert_eq!(*actual.operand_view().retain(format).value(), expected);
+                }
+            }
+        }
     }
 
     /// A bound on σ(x) is a bound on `x`'s bits: `0 < d as int32` excludes
@@ -271,4 +601,11 @@ mod tests {
         );
         assert_eq!(context.decide_by_sign_cast_division(&equality), None);
     }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!(
+        "../../../scaling_tests/kernel/assumptions/condition_reasoning/sign_cast_division/tests.rs"
+    );
 }

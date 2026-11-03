@@ -645,6 +645,7 @@ fn single_memory_owner_selection_rejects_fragment_enumeration() {
 fn loan_origin_reconciliation_rejects_search_and_history() {
     for name in [
         "has_other_directly_supporting_owned_entry",
+        "with_coalesced_owned_memory",
         "view_occurrences_for_fact",
         "changed_facts_since",
         "descends_from",
@@ -705,4 +706,76 @@ fn loop_binding_handoff_rejects_view_rediscovery() {
             assert!(boundary::check_source(path, &source).is_err());
         }
     }
+}
+
+#[test]
+fn constant_owned_consumption_rejects_candidate_search() {
+    for name in [
+        "iter",
+        "collect",
+        "find",
+        "normalized_memory_suppliers",
+        "with_coalesced_owned_memory",
+    ] {
+        let source = format!("fn consume_constant_owned_memory(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+}
+
+#[test]
+fn local_storage_classification_rejects_candidate_search() {
+    for name in [
+        "iter",
+        "collect",
+        "find",
+        "find_map",
+        "memory_fact_candidates",
+        "view_occurrences_for_fact",
+    ] {
+        let source = format!("fn has_no_explicit_memory_for_local_storage(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/functions.rs",
+            "fn prepare(c: C) { c.with_coalesced_owned_memory(); }"
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn call_completion_rejects_frame_revalidation_and_normalization() {
+    for (path, function) in [
+        ("src/kernel/loans.rs", "recover_stable_views_impl"),
+        (
+            "src/kernel/functions.rs",
+            "recover_candidate_stable_view_resources",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "evaluate_contract_return_resources",
+        ),
+    ] {
+        for name in [
+            "normalized_around_facts",
+            "try_compose_with_fact_with_occurrence",
+            "try_compose_with_facts_delaying_normalization",
+            "try_compose_with_facts_delaying_normalization_with_occurrences",
+        ] {
+            let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
+            assert!(boundary::check_source(path, &source).is_err());
+        }
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c: C) { c.facts(); }"
+        )
+        .is_err()
+    );
 }

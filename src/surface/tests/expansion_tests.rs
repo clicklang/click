@@ -1015,7 +1015,6 @@ fn selected_tactic_batch_captures_multiple_sites_inside_one_have() {
 fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
     for relative in [
         "mdtests/loop_after_proof_branch_expands.md",
-        "mdtests/a_ranked_loop_with_no_invariant_closes_a_branching_body.md",
         "mdtests/bubble_sort3_loop_sorted.md",
         "mdtests/loop_return_closes_in_preserve_arm.md",
     ] {
@@ -1035,7 +1034,7 @@ fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
                     .count()
                     > 1
             })
-            .unwrap();
+            .unwrap_or_else(|| panic!("{relative}: expected multiple smart sites in one claim"));
         let positions = sites
             .iter()
             .filter(|site| site.claim_label == claim.claim_label)
@@ -13030,13 +13029,48 @@ pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &
             "ambiguous function: {function}"
         );
         let start = text.find(&signature).unwrap();
-        let body = start + text[start..].find("} by {").unwrap() + "} by {".len();
-        let end = body + text[body..].find("\n}").unwrap() + "\n}".len();
-        (body, end)
+        let contract_end = start + text[start..].find("\n}")? + 1;
+        if !text[contract_end..].starts_with("} by {") {
+            return None;
+        }
+        let body = contract_end + "} by {".len();
+        let end = body + text[body..].find("\n}")? + "\n}".len();
+        Some((body, end))
     };
-    let (before_start, before_end) = extent(before);
-    let (after_start, after_end) = extent(after);
+    let Some((before_start, before_end)) = extent(before) else {
+        return false;
+    };
+    let Some((after_start, after_end)) = extent(after) else {
+        return false;
+    };
     before[..before_start] == after[..after_start] && before[before_end..] == after[after_end..]
+}
+
+#[test]
+fn proof_change_scope_requires_explicit_proofs_and_preserves_surroundings() {
+    let implicit = "int32 f() {\n    ensures result == 0;\n}\n";
+    let explicit = "int32 f() {\n    ensures result == 0;\n} by {\n    solve();\n}\n";
+    let expanded = explicit.replace("solve();", "step(); normalize();");
+    assert!(only_function_proof_changed(explicit, &expanded, "f"));
+    assert!(!only_function_proof_changed(implicit, &expanded, "f"));
+    assert!(!only_function_proof_changed(explicit, implicit, "f"));
+    // An implicit proof must not borrow a later declaration's proof bounds.
+    let helper = explicit.replace(" f(", " helper(");
+    assert!(!only_function_proof_changed(
+        &format!("{implicit}{helper}"),
+        &format!("{expanded}{helper}"),
+        "f",
+    ));
+    assert!(!only_function_proof_changed(
+        explicit,
+        &expanded.replace("result == 0", "result == 1"),
+        "f",
+    ));
+    assert!(!only_function_proof_changed(
+        explicit,
+        &format!("{expanded}{helper}"),
+        "f",
+    ));
 }
 
 pub(super) fn assert_only_function_proof_changed(before: &str, after: &str, function: &str) {

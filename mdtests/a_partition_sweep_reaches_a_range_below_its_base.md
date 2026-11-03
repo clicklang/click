@@ -139,5 +139,5 @@ int32 below_the_owner(int32* p) {
 ```
 
 ```expect
-fail: overlapping owned memory resource facts `owns p[-1..1]` and `owns p[0..2]`
+fail: overlapping owned memory resource facts `owns p[0..2]` and `owns p[-1..1]`
 ```

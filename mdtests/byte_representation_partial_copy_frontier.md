@@ -5,7 +5,9 @@ representation lies inside the copied range. A copy of 2 bytes into the first
 half of a fresh `unsigned int` would split the source cell, so nothing is
 planted: the destination keeps its fresh allocation's uninitialized bytes with
 no `unsigned int` value, and the `dst->x` load is refused as uninitialized.
-This guards the rule against establishing an observation from a split cell.
+The proof explicitly composes the destination's two returned byte ranges
+before attempting that typed load. This guards the rule against establishing
+an observation from a split cell, independently of ownership fragmentation.
 
 ```c filename=scalar_partial_memcpy.c
 void *malloc(unsigned long size);
@@ -28,9 +30,18 @@ int h(void) {
 
 ```click
 verifying "scalar_partial_memcpy.c";
+resource Whole(p: struct box*) { owns *p; }
 
 int h() {
     ensures result == 7 or result == -1;
+} by {
+    step(); step();
+    branch { step(); solve(); } else {}
+    step(); step();
+    branch { step(); step(); solve(); } else {}
+    step(); step();
+    fold(Whole(dst));
+    unfold(Whole(dst));
 }
 ```
 

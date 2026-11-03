@@ -135,6 +135,9 @@ int32 ring_buffer_pipeline(
 } by {
     unfold(linear_ring(owner));
     unfold(ring_frame(owner));
+    step_until(statement(3));
+    fold(ring_frame(owner));
+    unfold(ring_frame(owner));
     step_until(function.exit);
     fold(ring_frame(owner));
     fold(linear_ring(owner));

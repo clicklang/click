@@ -700,7 +700,7 @@ mod tests {
 }
 
 thread_local! {
-    static CHECKED_CASTS: std::cell::RefCell<std::collections::HashMap<(u64, MachineIntegerType, MachineIntegerType), KernelTerm>> = Default::default();
+    static CHECKED_CASTS: std::cell::RefCell<std::collections::HashMap<(u64, MachineIntegerType, MachineIntegerType, bool), KernelTerm>> = Default::default();
 }
 
 impl KernelTerm {
@@ -715,6 +715,25 @@ impl KernelTerm {
         source: MachineIntegerType,
         destination: MachineIntegerType,
     ) -> Self {
+        self.checking_machine_cast_with_policy(source, destination, false)
+    }
+
+    /// Generated premises preserve the native constructor's written inverse
+    /// sign-cast pair; comparison readings may compose that pair instead.
+    pub(crate) fn checking_machine_cast_preserving_sign_pairs(
+        &self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+    ) -> Self {
+        self.checking_machine_cast_with_policy(source, destination, true)
+    }
+
+    fn checking_machine_cast_with_policy(
+        &self,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+        preserve_sign_pairs: bool,
+    ) -> Self {
         assert!(self.is_shared_machine_operand());
         CHECKED_CASTS.with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -723,7 +742,7 @@ impl KernelTerm {
             let mut path = Vec::new();
             let result = loop {
                 crate::instrumentation::record_deterministic_work(1);
-                let key = (term.id(), source, destination);
+                let key = (term.id(), source, destination, preserve_sign_pairs);
                 if let Some(result) = cache.get(&key) {
                     break result.clone();
                 }
@@ -750,6 +769,9 @@ impl KernelTerm {
                     && destination.carrier_bytes() == 4
                     && *intermediate == source
                     && destination.format().bits() <= intermediate.format().bits()
+                    && !(preserve_sign_pairs
+                        && *original == destination
+                        && crate::kernel::is_sign_cast32(*original, *intermediate))
                 {
                     source = *original;
                     term = operand.clone();

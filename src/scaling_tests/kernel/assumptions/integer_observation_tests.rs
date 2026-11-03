@@ -477,3 +477,69 @@ fn constant_bound_selection_rejects_shared_symbolic_candidates_without_export() 
         }
     }
 }
+
+#[test]
+fn shared_bound_source_selection_uses_existing_index_across_branches() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{KernelTermExport, KernelTermImport, MachineOperandView};
+    let samples = [16u64, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let term = Bitvector32Term::add(word(189141), word(189142));
+        let zero = Bitvector32Term::constant(0);
+        let source = Proposition::ConditionIs(
+            ConditionTerm::signed_less_equal(zero.clone(), term.clone()),
+            true,
+        );
+        let root = KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int32, &term)
+            .unwrap();
+        let goal = condition_for_operand_views(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            [
+                MachineOperandView::Legacy(&zero),
+                MachineOperandView::Shared(&root),
+            ],
+        );
+        let mut parent = PureFactContext::new().assume_proposition(source.clone());
+        for n in 0..size {
+            parent = parent.assume_condition(
+                ConditionTerm::signed_less_equal(zero.clone(), word(189150 + n)),
+                true,
+            );
+        }
+        let child = parent.without_exact_fact(&source);
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                parent
+                    .checked_order_bounds
+                    .exact_observation_source(&goal, true),
+                Some(source.clone())
+            );
+            assert_eq!(
+                child
+                    .checked_order_bounds
+                    .exact_observation_source(&goal, true),
+                None
+            );
+            assert_eq!(
+                parent
+                    .checked_order_bounds
+                    .exact_observation_source(&goal, false),
+                None
+            );
+            let (_, used) = collect_reasoning_provenance(|| {
+                record_reasoning_provenance(&parent, &Proposition::ConditionIs(goal.clone(), true));
+            });
+            assert_eq!(used, vec![source.clone()]);
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        work
+    });
+    assert!(samples[0] > 0);
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 2 + 32),
+        "{samples:?}"
+    );
+}

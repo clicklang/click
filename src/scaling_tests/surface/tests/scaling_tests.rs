@@ -8197,11 +8197,12 @@ fn consecutive_resource_closers_attempt_one_transition() {
             &(outputs + "    produces *anchor;"),
         );
         let tail = source
-            .rfind("    step_until(function.exit); solve();")
-            .unwrap();
-        source.replace_range(
-            tail..tail + "    step_until(function.exit); solve();".len(),
-            &format!("    step(); {}", "assumption(); ".repeat(8 + 2 * size)),
+            .rfind("    unfold(c);\n}")
+            .expect("caller ends by unfolding its returned cursor")
+            + "    unfold(c);".len();
+        source.insert_str(
+            tail,
+            &format!("\n    step(); {}", "assumption(); ".repeat(8 + 2 * size)),
         );
         let (verified, events) = crate::instrumentation::collect(|| {
             verify_c0_sources(&source, &[(c_name.as_str(), c_source.as_str())])

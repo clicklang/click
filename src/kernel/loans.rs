@@ -2743,36 +2743,6 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     }
 
     LAST_OWNED_RESERVATION_MISS.with(|miss| *miss.borrow_mut() = None);
-    // A concrete view no single owner covers, over unbound owned pieces that
-    // tile it, is backed by those pieces joined into one owner first, so the
-    // one loan below escrows them all and a produced composite can keep the
-    // view lent. Joined pieces stay joined after recovery; their bytes are
-    // the same authority.
-    let mut coalesced = None::<ResourceContext>;
-    for requirement in requirements {
-        if !requirement.fact.is_view() {
-            continue;
-        }
-        let context = coalesced.as_ref().unwrap_or(caller_resources);
-        if requirement
-            .fact
-            .memory_range()
-            .is_none_or(|range| memory_range_is_proven_empty(range, assumptions))
-            || context.has_indexed_view_witness(&requirement.fact, assumptions)
-            || parent_view_bindings
-                .select_bound_view(&requirement.fact, context, assumptions)
-                .is_some()
-            || context
-                .directly_supporting_owned_entry(&requirement.fact, assumptions)
-                .is_some()
-        {
-            continue;
-        }
-        if let Some(joined) = context.with_coalesced_owned_memory(&requirement.fact, assumptions) {
-            coalesced = Some(joined);
-        }
-    }
-    let caller_resources = coalesced.as_ref().unwrap_or(caller_resources);
     let mut residual = caller_resources.clone();
     let mut split_origins = MemorySplitOrigins::default();
     let mut parent_view_bindings = parent_view_bindings.clone();
@@ -4005,13 +3975,10 @@ impl StableViewTransferPlan {
         // frame would rebuild unrelated resource indexes at every child join.
         let restore_resource = |resources: ResourceContext, fact: &CResourceFact| {
             resources
-                .try_compose_with_facts_delaying_normalization(
+                .try_compose_into_valid_context_delaying_normalization(
                     std::iter::once(fact.clone()),
                     assumptions,
                 )
-                .map(|resources| {
-                    resources.normalized_around_facts(std::slice::from_ref(fact), assumptions)
-                })
                 .map_err(|error| composition_conflict(error, fact))
         };
         self.validate_exclusive_reservation()?;
@@ -4227,9 +4194,7 @@ impl StableViewTransferPlan {
                 ledger = returned.ledger;
                 transitions.extend(returned.exit_transitions);
                 let source = use_plan.source_resource().clone();
-                resources = resources
-                    .try_compose_with_facts_delaying_normalization([source.clone()], assumptions)
-                    .map_err(|error| composition_conflict(error, &source))?;
+                resources = restore_resource(resources, &source)?;
                 recovered_escrows.push((source, None));
             }
         }

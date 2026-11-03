@@ -4120,10 +4120,29 @@ fn c0_bundle_conflicting_inline_helpers_across_headers_are_rejected() {
 
 #[test]
 fn c0_syntax_reports_unterminated_block_comments() {
-    let error = syntax::parse_function("/* never closed")
-        .expect_err("an unterminated block comment should be rejected");
+    for (prefix, line) in [("", 1), ("int32 value(void) { return 1; }\n", 2)] {
+        for comment in ["/*", "/**", "/*x", "/* never closed"] {
+            let source = format!("{prefix}{comment}");
+            let errors = [
+                syntax::parse_function(&source).expect_err(&source),
+                syntax::parse_functions(&source).expect_err(&source),
+            ];
+            for error in errors {
+                assert_eq!(error.message(), "unterminated block comment", "{source:?}");
+                assert_eq!(
+                    error.position(),
+                    Some(crate::source::SourcePosition::new(line, 1)),
+                    "{source:?}"
+                );
+            }
+        }
+    }
 
-    assert_eq!(error.message(), "unterminated block comment");
+    for comment in ["/**/", "/*x*/", "/* closed */"] {
+        let source = format!("int32 value(void) {{ return 1; }}{comment}");
+        syntax::parse_function(&source).expect(&source);
+        assert_eq!(syntax::parse_functions(&source).unwrap().len(), 1);
+    }
 }
 
 #[test]
@@ -5237,6 +5256,31 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
                 syntax::C0Expression::Variable(name) if name == "value"
             )
     ));
+}
+
+#[test]
+fn c0_syntax_long_long_suffix_letters_must_match_case() {
+    for digits in ["1", "01", "0x1"] {
+        for suffix in [
+            "lL", "Ll", "ulL", "uLl", "UlL", "ULl", "lLu", "lLU", "Llu", "LlU",
+        ] {
+            let source = format!("long long value() {{ return {digits}{suffix}; }}");
+            let error = syntax::parse_function(&source).expect_err(&source);
+            assert!(
+                error
+                    .message()
+                    .contains("unsupported integer-literal suffix"),
+                "{error}"
+            );
+        }
+        for suffix in [
+            "", "u", "U", "l", "L", "ll", "LL", "ul", "uL", "Ul", "UL", "lu", "lU", "Lu", "LU",
+            "ull", "uLL", "Ull", "ULL", "llu", "llU", "LLu", "LLU",
+        ] {
+            let source = format!("unsigned long long value() {{ return {digits}{suffix}; }}");
+            syntax::parse_function(&source).expect(&source);
+        }
+    }
 }
 
 #[test]

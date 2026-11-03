@@ -716,14 +716,9 @@ fn with_canonical_borrowed_pointer_memory(
     state.clone().with_memory(memory)
 }
 
-/// Rejoins each owned memory piece this call borrowed and returned with the
-/// caller's pieces that abut it, as a recovered loan's return rejoins its
-/// block (`StableViewTransferPlan::recover_stable_views`). A call that lent
-/// nothing else returns before that recovery; without this its returned
-/// piece would stay split from the caller's residue, so a later typed access
-/// would depend on whether the call also borrowed something. Only the
-/// returned pieces' neighbours are read
-/// (`ResourceContext::rejoined_memory_around`).
+/// Rejoins returned owned pieces with their immediate indexed neighbours on
+/// the non-stable-view route. Stable-view recovery restores each exact escrow
+/// without normalizing its block. Neither route rebuilds the caller frame.
 fn rejoin_borrowed_memory(
     resources: ResourceContext,
     transfer: &CFunctionResourceTransfer,
@@ -745,6 +740,9 @@ fn rejoin_borrowed_memory(
 /// callee's ensures) on top of `assumptions`, for matching a produced
 /// composite's viewed pieces, which are evaluated at the post-state, against
 /// the descriptions lent at entry. It is not used to decide obligations.
+/// `return_resources` and `transfer.candidate_output_views` come from the same
+/// contract-return construction: the latter names every newly declared view.
+/// The unchanged frame and supported owner projections need no new authority.
 fn recover_candidate_stable_view_resources(
     caller_state: &CState,
     callee_state: &CState,
@@ -945,11 +943,10 @@ fn recover_candidate_stable_view_resources(
     // recovered caller frame after the child scope closes, and a view is never
     // accepted merely because some equal owner happens to satisfy it.
     let mut checked_return_views = std::collections::BTreeSet::new();
-    for fact in residual
-        .facts()
-        .iter()
-        .chain(transfer.candidate_output_views.iter())
-    {
+    // Only this call's newly published views need return-authority checks.
+    // The residual also contains the unchanged caller frame; produced owner
+    // projections already retain their checked support occurrences.
+    for fact in &transfer.candidate_output_views {
         if !fact.is_view() || !checked_return_views.insert((*fact).clone()) {
             continue;
         }
@@ -1031,12 +1028,13 @@ fn recover_candidate_stable_view_resources(
     let mut recovered_resources = residual;
     let mut recovered_bindings = recovery.view_bindings;
     for (escrow, hold_binding) in recovery.recovered_escrows {
-        if recovered_resources.satisfies_fact(&escrow, assumptions) {
+        if recovered_resources.contains_exact_representation(&escrow) {
             continue;
         }
-        let (next, occurrence) = recovered_resources
-            .try_compose_with_fact_with_occurrence(escrow, assumptions)
+        let (next, mut inserted) = recovered_resources
+            .try_compose_into_valid_context_with_occurrences([escrow], assumptions)
             .map_err(resource_context_runtime_error)?;
+        let occurrence = inserted.pop().map(|(_, occurrence)| occurrence);
         recovered_resources = next;
         // An escrowed borrowing composite keeps its hold binding across the
         // call: the hold stayed in the ledger while the head was lent, and
@@ -11442,7 +11440,7 @@ fn prepare_contract_resource_transfer_unexplained(
     // remain blocked even when a worker outlives the call. Read-only storage
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
-    let unsupplied_local = |fact: &CResourceFact, range: &CMemoryRange| {
+    let unsupplied_local = |range: &CMemoryRange| {
         range.base().block.is_local_block()
             && callee_state.memory().has_block(&range.base().block)
             && !callee_state
@@ -11450,18 +11448,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 .requires_explicit_scalar_ownership(range.base())
             && caller_state
                 .resources()
-                .directly_supporting_owned_entry(fact, assumptions)
-                .is_none()
-            && caller_state
-                .resources()
-                .view_occurrences_for_fact(fact, assumptions)
-                .is_empty()
-            // Owned pieces that together cover the range supply it:
-            // the planner joins them into one owner and lends that.
-            && caller_state
-                .resources()
-                .with_coalesced_owned_memory(fact, assumptions)
-                .is_none()
+                .has_no_explicit_memory_for_local_storage(&range.base().block, assumptions)
     };
     let implicit_read_views = checked_required_resources
         .iter()
@@ -11470,7 +11457,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 requirement.fact.resource(),
                 CResource::Memory(range)
                     if requirement.fact.is_view()
-                        && (unsupplied_local(&requirement.fact, range)
+                        && (unsupplied_local(range)
                             || callee_state.memory().is_read_only_block(&range.base().block))
             )
         })
@@ -11519,7 +11506,7 @@ fn prepare_contract_resource_transfer_unexplained(
             )?
             && pieces.iter().all(|piece| {
                 piece.memory_range().is_some_and(|range| {
-                    unsupplied_local(piece, range)
+                    unsupplied_local(range)
                         // Bytes the caller holds through any resource, such
                         // as a folded composite over part of the array, are
                         // not implicit local storage.
@@ -13130,8 +13117,7 @@ fn evaluate_contract_return_resources(
     // F14(c)). It was a filter against `satisfies_fact`, so an owner the
     // caller happened to hold silently answered a returned view; the
     // provenance routes in `recover_candidate_stable_view_resources` decide
-    // that question now, over `candidate_output_views` and the residual
-    // alike.
+    // that question now, over the declared output delta `candidate_output_views`.
     let (return_resources, inserted_ensured_occurrences) =
         match crate::instrumentation::measure_operation(
             interface_name,
@@ -13140,26 +13126,9 @@ fn evaluate_contract_return_resources(
             || {
                 let frame = caller_resources_after_requirements.clone();
                 let facts = ensured_resources.facts().iter().cloned();
-                if escrowed_owners.is_empty()
-                    && !entry_clauses.is_empty()
-                    && ensured_resources
-                        .iter()
-                        .all(|fact| fact.memory_range().is_some())
-                    && entry_clauses.iter().all(|input| {
-                        input.role == CResourceTransferRole::Borrow
-                            && input.fact.memory_own_range().is_some()
-                    })
-                {
-                    // A flat borrow's caller frame was checked by the entry
-                    // transfer. Still check every newly returned owner and
-                    // every pair involving it; do not recheck old-old pairs.
-                    frame.try_compose_into_valid_context_with_occurrences(facts, assumptions)
-                } else {
-                    frame.try_compose_with_facts_delaying_normalization_with_occurrences(
-                        facts,
-                        assumptions,
-                    )
-                }
+                // Entry established the caller frame. Check every new output
+                // against it without revalidating old-old pairs.
+                frame.try_compose_into_valid_context_with_occurrences(facts, assumptions)
             },
         ) {
             Ok(resources) => resources,

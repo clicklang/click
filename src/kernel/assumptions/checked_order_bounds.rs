@@ -325,6 +325,40 @@ impl CheckedOrderBounds {
         ]
     }
 
+    /// Recover an exact source for an observation query from the already
+    /// maintained extrema. No additional admission index or bucket scan.
+    pub(super) fn exact_observation_source(
+        &self,
+        condition: &ConditionTerm,
+        truth: bool,
+    ) -> Option<Proposition> {
+        use crate::kernel::machine_integer::{
+            Relation, comparison::structural_native_comparison_view,
+        };
+        let view = structural_native_comparison_view(condition, truth)?;
+        let unsigned = match view.format {
+            MachineIntegerType::Int32 => false,
+            MachineIntegerType::UInt32 => true,
+            _ => return None,
+        };
+        if !matches!(view.relation, Relation::Less | Relation::LessEqual) {
+            return None;
+        }
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let (term, upper) = if right.literal().is_some() {
+            (left, true)
+        } else if left.literal().is_some() {
+            (right, false)
+        } else {
+            return None;
+        };
+        let source = self.interval_sources_view(term, unsigned)[usize::from(upper)].clone()?;
+        super::observation_comparisons::same_comparison(condition, truth, &source).then_some(source)
+    }
+
     /// At most one numeric extremum and one unambiguous symbolic source per
     /// direction. The fixed four slots are selected, never a bucket iterator.
     pub(super) fn constant_evidence_sources(

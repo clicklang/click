@@ -1983,11 +1983,15 @@ fn macro_integer_literal_end(input: &str) -> Option<usize> {
     while bytes.get(end).is_some_and(u8::is_ascii_alphabetic) {
         end += 1;
     }
-    let suffix = input[suffix_start..end].to_ascii_lowercase();
-    if !matches!(
-        suffix.as_str(),
-        "" | "u" | "l" | "ll" | "ul" | "lu" | "ull" | "llu"
-    ) {
+    let suffix = &input[suffix_start..end];
+    let normalized_suffix = suffix.to_ascii_lowercase();
+    if suffix.contains("lL")
+        || suffix.contains("Ll")
+        || !matches!(
+            normalized_suffix.as_str(),
+            "" | "u" | "l" | "ll" | "ul" | "lu" | "ull" | "llu"
+        )
+    {
         return None;
     }
     if digit_end == 1 && input.starts_with('0') && end > 2 {
@@ -3300,6 +3304,37 @@ int32 run(void) { return 3; }
         let expanded = expand_includes("main.c", &sources).unwrap();
         assert!(expanded.source().contains("int32 run(void) { return 3; }"));
         assert!(!expanded.source().contains("wrong(void)"));
+    }
+
+    #[test]
+    fn conditional_long_long_suffix_letters_must_match_case() {
+        for digits in ["1", "01", "0x1"] {
+            for suffix in [
+                "lL", "Ll", "ulL", "uLl", "UlL", "ULl", "lLu", "lLU", "Llu", "LlU",
+            ] {
+                let source = format!("#if {digits}{suffix} == 1\nint selected;\n#endif\n");
+                let sources = BTreeMap::from([("main.c", source.as_str())]);
+                let error = expand_includes("main.c", &sources).expect_err(&source);
+                assert!(
+                    error
+                        .to_string()
+                        .contains("unsupported conditional expression"),
+                    "{error}"
+                );
+            }
+            for suffix in [
+                "", "u", "U", "l", "L", "ll", "LL", "ul", "uL", "Ul", "UL", "lu", "lU", "Lu", "LU",
+                "ull", "uLL", "Ull", "ULL", "llu", "llU", "LLu", "LLU",
+            ] {
+                let source = format!(
+                    "#if {digits}{suffix} == 1\nint selected;\n#else\nint wrong;\n#endif\n"
+                );
+                let sources = BTreeMap::from([("main.c", source.as_str())]);
+                let expanded = expand_includes("main.c", &sources).expect(&source);
+                assert!(expanded.source().contains("int selected;"), "{source}");
+                assert!(!expanded.source().contains("int wrong;"), "{source}");
+            }
+        }
     }
 
     #[test]

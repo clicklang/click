@@ -1670,7 +1670,7 @@ fn recover_with_extra_returned_view(
     let callee_template =
         bind_c_function_arguments(&caller, &function, &[CValue::pointer(pointer.clone())])
             .expect("reader argument should bind");
-    let transfer = prepare_function_resource_transfer(
+    let mut transfer = prepare_function_resource_transfer(
         &caller,
         &callee_template,
         &function,
@@ -1691,6 +1691,8 @@ fn recover_with_extra_returned_view(
         Bitvector32Term::constant(1),
         Bitvector32Term::constant(3),
     ));
+    // Mirror the output delta recorded by evaluate_contract_return_resources.
+    transfer.candidate_output_views.push(returned.clone());
     let base = ResourceContext::new().unchecked_with_fact(owner.clone());
     let (support_occurrence, _) = base
         .unique_owned_occurrence_for_fact(&owner)
@@ -1767,7 +1769,7 @@ fn recover_with_a_carried_view_of_another_block(
     let callee_template =
         bind_c_function_arguments(&caller, &function, &[CValue::pointer(pointer)])
             .expect("reader argument should bind");
-    let transfer = prepare_function_resource_transfer(
+    let mut transfer = prepare_function_resource_transfer(
         &caller,
         &callee_template,
         &function,
@@ -1783,6 +1785,8 @@ fn recover_with_a_carried_view_of_another_block(
         Bitvector32Term::constant(0),
         Bitvector32Term::constant(2),
     ));
+    // Mirror the output delta recorded by evaluate_contract_return_resources.
+    transfer.candidate_output_views.push(carried.clone());
     let return_resources = transfer
         .caller_resources_after_requirements
         .clone()
@@ -2725,4 +2729,125 @@ fn refused_composite_assembly_retains_the_failed_source_clause() {
         source.bindings,
         vec![("p".into(), CValue::pointer(pointer()))]
     );
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/functions/stable_view_call_tests.rs");
+}
+
+#[test]
+fn local_storage_classification_does_not_restore_partial_or_aliased_authority() {
+    for case in [
+        "implicit",
+        "other_local",
+        "partial",
+        "view",
+        "aliased_partial",
+        "aliased_whole",
+        "owner_with_alias_fact",
+        "unknown_pointer",
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let local = pointer();
+        let other = if matches!(
+            case,
+            "aliased_partial" | "aliased_whole" | "unknown_pointer"
+        ) {
+            Pointer::symbolic(Variable(941_001))
+        } else if case == "other_local" {
+            Pointer {
+                block: "local:other".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            }
+        } else {
+            local.clone()
+        };
+        let mut facts = PureFactContext::new();
+        if matches!(
+            case,
+            "aliased_partial" | "aliased_whole" | "owner_with_alias_fact"
+        ) {
+            facts = facts.assume_condition(
+                ConditionTerm::pointer_equal(local.clone(), Pointer::symbolic(Variable(941_001))),
+                true,
+            );
+        }
+        let mut resources = ResourceContext::new_with_equalities(&facts);
+        if case != "implicit" {
+            let range = CMemoryRange::new(
+                other,
+                0u32.into(),
+                if matches!(case, "aliased_whole" | "owner_with_alias_fact") {
+                    4u32.into()
+                } else {
+                    1u32.into()
+                },
+            );
+            resources = resources.unchecked_with_fact(if case == "view" {
+                CResourceFact::view_memory(range)
+            } else {
+                CResourceFact::own_memory(range)
+            });
+        }
+        resources.synchronize_memory_equalities(&facts);
+        let state = CState::new()
+            .with_memory(
+                CMemory::new()
+                    .with_block(local.block.clone(), 16)
+                    .store(local.clone(), int32(7)),
+            )
+            .with_resource_context(resources);
+        let function = reader_for_input("classify_local_storage_authority", 4);
+        let paths = execute_c_function_call_paths(
+            &state,
+            &function,
+            &[c_pointer_value(local)],
+            &facts,
+            CExecutionContext::execute_bodies(&environment(&function)),
+            &mut ExecutionBudget::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            matches!(
+                paths.as_slice(),
+                [CFunctionPath {
+                    outcome: CFunctionOutcome::Return { .. },
+                    ..
+                }]
+            ),
+            matches!(case, "implicit" | "other_local" | "owner_with_alias_fact"),
+            "{case}: {paths:?}"
+        );
+    }
+}
+
+#[test]
+fn local_storage_absence_summary_tracks_persistent_resource_edits() {
+    let facts = PureFactContext::new();
+    let local = pointer();
+    let unknown = CResourceFact::own_memory(CMemoryRange::new(
+        Pointer::symbolic(Variable(941_002)),
+        0u32.into(),
+        1u32.into(),
+    ));
+    let unrelated = CResourceFact::own_memory(CMemoryRange::new(
+        Pointer {
+            block: "local:other".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        0u32.into(),
+        1u32.into(),
+    ));
+    let clean = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(unrelated);
+    assert!(clean.has_no_explicit_memory_for_local_storage(&local.block, &facts));
+    let branch = clean.clone().unchecked_with_fact(unknown.clone());
+    assert!(!branch.has_no_explicit_memory_for_local_storage(&local.block, &facts));
+    let consumed = branch
+        .clone()
+        .without_fact_incrementally(&unknown, &facts)
+        .unwrap();
+    assert!(consumed.has_no_explicit_memory_for_local_storage(&local.block, &facts));
+    assert!(clean.has_no_explicit_memory_for_local_storage(&local.block, &facts));
+    assert!(!branch.has_no_explicit_memory_for_local_storage(&local.block, &facts));
 }
