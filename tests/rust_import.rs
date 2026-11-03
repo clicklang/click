@@ -3490,7 +3490,21 @@ fn charon_stack_refuses_false_push_pop_and_round_trip_claims() {
             "recursive_drop::round_trip",
         ),
     ] {
-        assert_recursive_drop_refused(&prepared, before, after, expected);
+        assert!(RECURSIVE_DROP_SIDECAR.contains(before), "{before}");
+        let invalid = RECURSIVE_DROP_SIDECAR.replacen(before, after, 1);
+        // The positive test checks the complete module. Each mutation here
+        // checks its entire affected function, without replaying unrelated
+        // recursive-drop and stack proofs three times.
+        let head = match expected {
+            "recursive_drop::Stack::push" => "fn push(",
+            "recursive_drop::Stack::pop" => "fn pop(",
+            _ => "fn recursive_drop::round_trip(",
+        };
+        let error = verify_rust_proof_after(&invalid, &prepared, head)
+            .expect_err("a false stack contract must fail");
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
     }
 }
 
