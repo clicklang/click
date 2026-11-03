@@ -231,16 +231,21 @@ impl PureFactContext {
     /// 32 bits: the operand's interval moved by the multiple of 2^N that
     /// brings it into the destination range, when one multiple does for the
     /// whole interval, and otherwise the destination range.
-    pub(super) fn narrowed_cast_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
-        let Bitvector32Term::MachineIntegerCast {
-            value,
-            source,
-            destination,
-        } = term
+    pub(super) fn narrowed_cast_interval_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<(i64, i64)> {
+        let (crate::kernel::KernelMachineCastEncoding::Generic, source, destination, value) =
+            term.cast()?
         else {
             return None;
         };
-        narrowed_cast_identity(value, *source, *destination)?;
+        if !matches!(destination.format().bits(), 8 | 16)
+            || destination.format().contains(source.format())
+            || source.format().bits() > 64
+        {
+            return None;
+        }
         let bits = destination.format().bits();
         let modulus = 1i64 << bits;
         let lo = if destination.format().is_signed() {
@@ -251,11 +256,13 @@ impl PureFactContext {
         let full = (lo, lo + modulus - 1);
         let operand = match source {
             Ty::Int8 | Ty::Int16 | Ty::Int32 | Ty::UInt8 | Ty::UInt16 => {
-                self.signed_interval(value)
+                self.signed_interval_view(value)
             }
             // A nonnegative signed reading of a 32-bit unsigned word is its
             // value; a word whose sign bit may be set is not bounded here.
-            Ty::UInt32 => self.signed_interval(value).filter(|(lower, _)| *lower >= 0),
+            Ty::UInt32 => self
+                .signed_interval_view(value)
+                .filter(|(lower, _)| *lower >= 0),
             _ => None,
         };
         let Some((lower, upper)) = operand else {

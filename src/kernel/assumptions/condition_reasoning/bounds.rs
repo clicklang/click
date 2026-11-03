@@ -766,25 +766,107 @@ impl PureFactContext {
             })
     }
 
+    /// The existing constant-offset order rule, over either operand representation.
+    /// Match only the operation root before reading the base's range or domain.
+    fn constant_offset_is_proven(
+        &self,
+        base: V<'_>,
+        term: V<'_>,
+        subtract: bool,
+        strict: bool,
+    ) -> bool {
+        use crate::kernel::MachineBinaryOp as Op;
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        let Some((MachineIntegerType::Int32, op, [a, b])) = term.binary() else {
+            return false;
+        };
+        if op != if subtract { Op::Subtract } else { Op::Add } {
+            return false;
+        }
+        let (term_base, addend) = match (a.literal(), b.literal()) {
+            (_, Some(Bitvector32Term::Constant(n))) => (a, n),
+            (Some(Bitvector32Term::Constant(n)), _) if !subtract => (b, n),
+            _ => return false,
+        };
+        if nonnegative_int32_value(addend).is_none_or(|n| n < i64::from(strict))
+            || Key::canonical(MachineIntegerType::Int32, term_base)
+                != Key::canonical(MachineIntegerType::Int32, base)
+        {
+            return false;
+        }
+        let operation = if subtract {
+            crate::kernel::machine_integer::Operation::Subtract
+        } else {
+            crate::kernel::machine_integer::Operation::Add
+        };
+        let base_value = base
+            .observe(MachineIntegerType::Int32)
+            .expect("int32 operand");
+        let offset_value = IntegerTerm::constant(addend.into());
+        let domain_known = |left, right| {
+            crate::kernel::machine_integer::definedness::ordinary_bounds(
+                MachineIntegerType::Int32,
+                operation.exact(left, right),
+            )
+            .iter()
+            .all(|bound| {
+                let Proposition::ConditionIs(condition, true) = bound else {
+                    unreachable!()
+                };
+                self.known_condition_value(condition) == Some(true)
+            })
+        };
+        // Preserve the native add-domain rule's two written operand orders.
+        if domain_known(base_value.clone(), offset_value.clone())
+            || !subtract && domain_known(offset_value, base_value)
+        {
+            return true;
+        }
+        let interval = if subtract {
+            self.signed_interval_past_exclusions_view(base)
+        } else {
+            self.signed_interval_view(base)
+        };
+        let Some((lower, upper)) = interval else {
+            return false;
+        };
+        let offset = if subtract {
+            -i64::from(addend)
+        } else {
+            i64::from(addend)
+        };
+        lower + offset >= i64::from(i32::MIN) && upper + offset <= i64::from(i32::MAX)
+    }
+
+    pub(super) fn decide_signed_constant_offset_order(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        use crate::kernel::machine_integer::comparison::comparison_view;
+        let view = comparison_view(condition, true)?;
+        if view.format != MachineIntegerType::Int32 {
+            return None;
+        }
+        let strict = match view.relation {
+            Relation::Less => true,
+            Relation::LessEqual => false,
+            _ => return None,
+        };
+        let [lower, upper] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        (self.constant_offset_is_proven(lower, upper, false, strict)
+            || strict && self.constant_offset_is_proven(upper, lower, true, true))
+        .then_some(true)
+    }
+
     pub(in crate::kernel) fn positive_offset_is_proven_above(
         &self,
         base: &Bitvector32Term,
         term: &Bitvector32Term,
     ) -> bool {
-        let Some((term_base, addend)) = term.add_const_parts() else {
-            return false;
-        };
-        // Base matching is by canonical form: a raw load and the canonical
-        // name for it are one base. Deterministic, so decisions check.
-        if !crate::kernel::eval::terms_have_same_canonical_form(&term_base, base)
-            || nonnegative_int32_value(addend).is_none_or(|value| value <= 0)
-        {
-            return false;
-        }
-        self.decide(&ConditionTerm::signed_add_overflows(
-            base.clone(),
-            Bitvector32Term::Constant(addend),
-        )) == Some(false)
+        self.constant_offset_is_proven(V::Legacy(base), V::Legacy(term), false, true)
     }
 
     pub(in crate::kernel) fn positive_subtraction_is_proven_below(
@@ -792,18 +874,7 @@ impl PureFactContext {
         term: &Bitvector32Term,
         base: &Bitvector32Term,
     ) -> bool {
-        let Some((term_base, subtrahend)) = term.subtract_const_parts() else {
-            return false;
-        };
-        if !crate::kernel::eval::terms_have_same_canonical_form(&term_base, base)
-            || nonnegative_int32_value(subtrahend).is_none_or(|value| value <= 0)
-        {
-            return false;
-        }
-        self.decide(&ConditionTerm::signed_subtract_overflows(
-            base.clone(),
-            Bitvector32Term::Constant(subtrahend),
-        )) == Some(false)
+        self.constant_offset_is_proven(V::Legacy(base), V::Legacy(term), true, true)
     }
 
     pub(in crate::kernel) fn nonnegative_offset_is_proven_at_or_above(
@@ -811,18 +882,7 @@ impl PureFactContext {
         base: &Bitvector32Term,
         term: &Bitvector32Term,
     ) -> bool {
-        let Some((term_base, addend)) = term.add_const_parts() else {
-            return false;
-        };
-        if !crate::kernel::eval::terms_have_same_canonical_form(&term_base, base)
-            || nonnegative_int32_value(addend).is_none_or(|value| value < 0)
-        {
-            return false;
-        }
-        self.decide(&ConditionTerm::signed_add_overflows(
-            base.clone(),
-            Bitvector32Term::Constant(addend),
-        )) == Some(false)
+        self.constant_offset_is_proven(V::Legacy(base), V::Legacy(term), false, false)
     }
 
     pub(in crate::kernel) fn is_bounded_by_base_before_nonnegative_offset(
@@ -928,6 +988,141 @@ fn shared_successor_of(term: V<'_>, right: &Bitvector32Term) -> bool {
 
 #[cfg(test)]
 mod shared_bound_tests {
+    #[test]
+    fn shared_constant_comparisons_use_operand_classes_without_export() {
+        use super::*;
+        use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let a = Variable(994811);
+        let b = Variable(994812);
+        let root = KernelTerm::machine_binary_shared(
+            ty,
+            MachineBinaryOp::Add,
+            [
+                KernelTerm::variable(KernelType::C(ty.c_type()), a),
+                KernelTerm::variable(KernelType::C(ty.c_type()), b),
+            ],
+        );
+        let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::equal(Bitvector32Term::Variable(a), Bitvector32Term::Constant(1)),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::equal(Bitvector32Term::Variable(b), Bitvector32Term::Constant(2)),
+                true,
+            );
+        for (limit, expected) in [(4, true), (3, false)] {
+            let query = ConditionTerm::integer_less_than(
+                IntegerTerm::Machine(operand.clone()),
+                IntegerTerm::constant(limit.into()),
+            );
+            assert_eq!(facts.decide(&query), Some(expected));
+            assert!(!operand.has_boxed_operand());
+        }
+    }
+
+    #[test]
+    fn shared_offset_decisions_keep_operands_and_require_definedness() {
+        use super::*;
+        use crate::kernel::machine_integer::{Operation, definedness::ordinary_bounds};
+        use crate::kernel::{
+            KernelTerm, KernelType, MachineBinaryOp as Op, MachineIntegerType as Ty,
+            SharedMachineIntegerTerm,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = Variable(994801);
+        let root = KernelTerm::variable(KernelType::C(Ty::Int32.c_type()), variable);
+        let base = SharedMachineIntegerTerm::from_shared(Ty::Int32, root.clone()).unwrap();
+        let literal = crate::kernel::KernelTermImport::default()
+            .machine_arithmetic(Ty::Int32, &Bitvector32Term::Constant(1))
+            .unwrap();
+        for (op, operation) in [
+            (Op::Add, Operation::Add),
+            (Op::Subtract, Operation::Subtract),
+        ] {
+            let term = SharedMachineIntegerTerm::from_shared(
+                Ty::Int32,
+                KernelTerm::machine_binary_shared(Ty::Int32, op, [root.clone(), literal.clone()]),
+            )
+            .unwrap();
+            let b = IntegerTerm::Machine(base.clone());
+            let t = IntegerTerm::Machine(term.clone());
+            let query = if op == Op::Add {
+                ConditionTerm::integer_less_than(b.clone(), t)
+            } else {
+                ConditionTerm::integer_less_than(t, b.clone())
+            };
+            let parent = PureFactContext::new();
+            assert_eq!(parent.decide_signed_constant_offset_order(&query), None);
+            assert!(!term.has_boxed_operand());
+            let exact = operation.exact(b, IntegerTerm::constant(1.into()));
+            let [upper, lower] = ordinary_bounds(Ty::Int32, exact);
+            let child = parent
+                .clone()
+                .assume_proposition(upper)
+                .assume_proposition(lower);
+            assert_eq!(child.decide(&query), Some(true));
+            assert!(!term.has_boxed_operand());
+            assert_eq!(parent.decide_signed_constant_offset_order(&query), None);
+            if op == Op::Add {
+                let reversed = Operation::Add.exact(
+                    IntegerTerm::constant(1.into()),
+                    IntegerTerm::Machine(base.clone()),
+                );
+                let [upper, lower] = ordinary_bounds(Ty::Int32, reversed);
+                let reversed = parent
+                    .clone()
+                    .assume_proposition(upper)
+                    .assume_proposition(lower);
+                assert_eq!(reversed.decide(&query), Some(true));
+                assert!(!term.has_boxed_operand());
+            }
+            if op == Op::Subtract {
+                let excluded = parent.clone().assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(variable),
+                        Bitvector32Term::Constant(i32::MIN as u32),
+                    ),
+                    false,
+                );
+                assert_eq!(excluded.decide(&query), Some(true));
+                assert!(!term.has_boxed_operand());
+            }
+            let endpoint = if op == Op::Add { i32::MAX } else { i32::MIN };
+            let safe = parent.clone().assume_condition(
+                if op == Op::Add {
+                    ConditionTerm::signed_less_than(
+                        Bitvector32Term::Variable(variable),
+                        Bitvector32Term::Constant(endpoint as u32),
+                    )
+                } else {
+                    ConditionTerm::signed_greater_than(
+                        Bitvector32Term::Variable(variable),
+                        Bitvector32Term::Constant(endpoint as u32),
+                    )
+                },
+                true,
+            );
+            assert_eq!(safe.decide(&query), Some(true));
+            assert!(!term.has_boxed_operand());
+            let overflowing = parent.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(variable),
+                    Bitvector32Term::Constant(endpoint as u32),
+                ),
+                true,
+            );
+            assert_eq!(
+                overflowing.decide_signed_constant_offset_order(&query),
+                None
+            );
+            assert!(!term.has_boxed_operand());
+        }
+    }
+
     use super::*;
     use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, Variable};
 

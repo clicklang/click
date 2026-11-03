@@ -357,12 +357,19 @@ impl CheckedOrderBounds {
 
     /// Numeric extrema and carrier limits implied by a direct strict edge.
     pub(super) fn interval_with_strict(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
+        self.interval_with_strict_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(super) fn interval_with_strict_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<(i64, i64)> {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("read direct signed interval", 1);
         crate::instrumentation::record_deterministic_work(1);
-        let bounds = self.endpoints[0].get(&Self::word_key(MachineOperandView::Legacy(term)))?;
+        let bounds = self.endpoints[0].get(&Self::word_key(term))?;
         let (lower, upper) = self
-            .interval(term, false)
+            .interval_view(term, false)
             .unwrap_or((i64::from(i32::MIN), i64::from(i32::MAX)));
         Some((
             lower.max(i64::from(i32::MIN) + i64::from(bounds.strict_lower > 0)),

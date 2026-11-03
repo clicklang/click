@@ -5,6 +5,12 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
 
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+enum SignedIntervalOperandKey {
+    Written(Bitvector32Term),
+    Shared(crate::kernel::KernelTerm),
+}
+
 #[cfg(test)]
 thread_local! {
     /// Facts whose whole execution-variable ceiling was taken.
@@ -971,7 +977,7 @@ thread_local! {
         std::collections::HashMap<(u64, Bitvector32Term), Option<i64>>,
     > = RefCell::new(std::collections::HashMap::new());
     static SIGNED_INTERVAL_MEMO: RefCell<
-        std::collections::HashMap<(u64, Bitvector32Term), (i64, i64)>,
+        std::collections::HashMap<(u64, SignedIntervalOperandKey), Option<(i64, i64)>>,
     > = RefCell::new(std::collections::HashMap::new());
     /// Keyed by `atomic_derivation_memo_key`: the premises, whether the
     /// query is for `solve`, and the DAG modes the derivation reads.

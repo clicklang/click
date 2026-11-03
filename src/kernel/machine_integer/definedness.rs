@@ -40,7 +40,7 @@ pub(crate) fn integer_bounds_of_definedness(proposition: &Proposition) -> Vec<Pr
     ordinary_bounds(ty, operation.exact(left, right)).into()
 }
 
-fn ordinary_bounds(format: MachineIntegerType, exact: IntegerTerm) -> [Proposition; 2] {
+pub(crate) fn ordinary_bounds(format: MachineIntegerType, exact: IntegerTerm) -> [Proposition; 2] {
     let (minimum, maximum) = range::range(format);
     [
         Proposition::ConditionIs(

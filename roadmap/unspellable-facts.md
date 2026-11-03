@@ -12,6 +12,41 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Shared signed ranges and constant-offset decisions (2026-11-03)
+
+After merged #2328, `codex/shared-arithmetic-ranges` migrates the signed 32-bit
+range engine to operand views. Legacy callers delegate to the same engine.
+Shared queries read constant-class and interval metadata directly, retain DAG
+identity in range memo keys, and handle add/subtract/multiply, masks, narrowing
+and widening without exporting arithmetic. Opaque conditional and memory
+payloads retain their existing legacy paths.
+
+A bound on a wrapped result remains distinct from an operand-derived range
+that proves no overflow. Constant-offset order rules now consume ordinary
+exact-result bounds or the shared operand range (including excluded endpoints
+for subtraction). The dispatcher runs those rules and shared constant-class
+comparisons before its remaining native conversion. This handles the prior
+`x < x + 1` regression and comparisons such as `x + y < 4` under `x == 1`,
+`y == 2` without exporting the queried arithmetic.
+
+Direct shared range calls establish a borrowed fact-context memo scope.
+Completed range refusals are cached as well as successful ranges, while
+interrupted queries remain uncached: otherwise successive overflowing DAG
+prefixes repeat the same failed traversal. Scaling coverage checks 8/32/96
+prefixes beside 1/64 unrelated facts, through successful ranges and refusal.
+Positive offset tests cover explicit definedness, inferred endpoint bounds,
+excluded `INT_MIN`, overflowing endpoints, and branch-local missing premises.
+
+The general comparison bridge remains: these migrated routes do not yet cover
+all order, wide-arithmetic and contextual normalization consumers. Nested
+signed preparation remains disabled. No lowering or surface syntax changes.
+
+Validation: `scripts/check.sh --no-fail-fast` passes all 7,245 unit/API/import/
+scaling tests and four fixture aggregates, including 5,026 proof fixtures.
+Unit runtime was 341.0s and fixture runtime 354.0s; the total 14m57s including
+compilation emitted the ten-minute budget advisory. No limits changed and no
+nightly suite ran. The focused range/cast/offset regressions also passed.
+
 ## Shared comparison class queries (2026-11-03)
 
 After merged #2325, `codex/shared-comparison-dispatch` lets Integer observations

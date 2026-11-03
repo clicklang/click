@@ -1892,6 +1892,22 @@ impl EqualityGraph {
         state.terms.signed_int32_interval(node)
     }
 
+    pub(in crate::kernel) fn signed_int32_interval_view(
+        &self,
+        term: crate::kernel::MachineOperandView<'_>,
+    ) -> Option<(i64, i64)> {
+        let crate::kernel::MachineOperandView::Shared(term) = term else {
+            let crate::kernel::MachineOperandView::Legacy(term) = term else {
+                unreachable!()
+            };
+            return self.signed_int32_interval(term);
+        };
+        let mut state = self.state.lock().expect("equality graph");
+        let node = state.terms.shared_int32_class(term);
+        state.close(Vec::new());
+        state.terms.signed_int32_interval(node)
+    }
+
     /// Admit an already established int32 equality in this proof context.
     pub(in crate::kernel) fn add_int32_equality(
         &mut self,
@@ -2823,6 +2839,28 @@ impl EqualityGraph {
             state.terms.scalar_constant_of_class(node),
         ))
     }
+    pub(in crate::kernel) fn scalar_constant_class_view(
+        &self,
+        term: crate::kernel::MachineOperandView<'_>,
+    ) -> Option<(u64, crate::kernel::assumptions::SignedConstantResolution)> {
+        let crate::kernel::MachineOperandView::Shared(term) = term else {
+            let crate::kernel::MachineOperandView::Legacy(term) = term else {
+                unreachable!()
+            };
+            return self.scalar_constant_class(term);
+        };
+        let mut state = self.state.lock().expect("equality graph");
+        if !state.has_scalar_inputs {
+            return None;
+        }
+        let node = state.terms.shared_int32_class(term);
+        state.close(Vec::new());
+        Some((
+            state.terms.scalar_class_root(node),
+            state.terms.scalar_constant_of_class(node),
+        ))
+    }
+
     /// The constant an atom's class is known to equal, read without
     /// interning: an atom the graph has no node for has had no equality
     /// filed about it, and a compound term is not looked up. One lookup and

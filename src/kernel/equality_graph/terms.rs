@@ -2119,6 +2119,12 @@ impl TermClasses {
         self.root(node)
     }
 
+    pub(super) fn shared_int32_class(&mut self, term: &crate::kernel::KernelTerm) -> u64 {
+        let node = self.intern_shared_machine(term, crate::kernel::CarrierWidth::Bits32);
+        self.register_pending_loads();
+        self.root(node)
+    }
+
     pub(super) fn existing_scalar_atom(
         &self,
         term: &crate::kernel::Bitvector32Term,
