@@ -551,38 +551,44 @@ static int64 FeeFrac::Div(int128 n, int32 d, bool round_down) {
     {
         let sites =
             project_smart_tactic_source_sites(&project, &ProgramInputs::program(&import)).unwrap();
-        let first = sites.first().unwrap();
-        let position = project_tactic_source_position(
-            &project,
-            &ProgramInputs::program(&import),
-            &first.claim_label,
-            first.source_index,
-        )
-        .unwrap();
-        let expanded = expand_project_tactic_source_at(
-            &project,
-            &ProgramInputs::program(&import),
-            position.line,
-            position.column,
-        )
-        .unwrap();
+        let expanded = if let Some(first) = sites.first() {
+            let position = project_tactic_source_position(
+                &project,
+                &ProgramInputs::program(&import),
+                &first.claim_label,
+                first.source_index,
+            )
+            .unwrap();
+            expand_project_tactic_source_at(
+                &project,
+                &ProgramInputs::program(&import),
+                position.line,
+                position.column,
+            )
+            .unwrap()
+        } else {
+            // Mul already carries a fully explicit certificate.
+            assert_eq!(selected, "FeeFrac::Mul");
+            expand_project_claim_source_by_label(
+                &project,
+                &ProgramInputs::program(&import),
+                "FeeFrac::Mul.contract",
+            )
+            .unwrap()
+        };
         let rewritten = project.with_entry_source(expanded.clone());
         verify_program_prepared_project(&rewritten, &import)
             .expect("expanded upstream proof reverifies");
         let (session, _) =
             C0VerificationSession::new_program_prepared_project(&project, &import).unwrap();
-        let sites = project_smart_tactic_source_sites(&rewritten, &ProgramInputs::program(&import))
-            .unwrap();
-        let first = sites.first().unwrap();
-        let position = project_tactic_source_position(
-            &rewritten,
-            &ProgramInputs::program(&import),
-            &first.claim_label,
-            first.source_index,
-        )
-        .unwrap();
+        // Expansion may remove every smart tactic. Select the resulting
+        // claim itself for the retained-session check.
+        let offset = expanded.find("ensures ").expect("upstream result claim");
+        let prefix = &expanded[..offset];
+        let line = prefix.bytes().filter(|byte| *byte == b'\n').count() + 1;
+        let column = prefix.rsplit('\n').next().unwrap().len() + 1;
         session
-            .verify_at_project(&expanded, position.line, position.column)
+            .verify_at_project(&expanded, line, column)
             .expect("upstream retained audit agrees");
         let false_source = source
             .replace("ensures 0 == 0;", "ensures 0 == 1;")
