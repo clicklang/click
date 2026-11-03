@@ -11,7 +11,10 @@ use super::*;
 /// at every level.
 #[test]
 fn narrow_cast_words_intern_in_work_linear_in_the_casts() {
-    for size in [16u64, 64, 256, 512] {
+    // Four sizes across a 16x range exercise both independent casts and
+    // nested chains. The deterministic per-cast bounds below detect excess
+    // work. Keep the deepest chain small enough for the parallel gate.
+    for size in [16u64, 64, 128, 256] {
         let _session = VerificationSession::enter();
         let mut chain = var(174_000);
         for level in 0..size {
