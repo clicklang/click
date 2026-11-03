@@ -1355,11 +1355,10 @@ fn expression_observers_preserve_short_circuit_read_permissions() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let numeric = if condition == "false" { 0 } else { 1 };
         let source = format!(
             r#"verifying "observe.cpp";
-bool enabled() {{ ensures result == {numeric}; }}
-bool read(const struct Count& count) {{ views count.value; requires count.value == 0u64; ensures result == 1; }}
+bool enabled() {{ ensures result == {condition}; }}
+bool read(const struct Count& count) {{ views count.value; requires count.value == 0u64; ensures result == true; }}
 bool probe(const struct Count& count) {{ ensures result == result; }}
 "#
         );
@@ -1558,19 +1557,19 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
     for (cpp, expected) in [
         (
             "bool probe() noexcept { return __builtin_is_constant_evaluated(); }",
-            0,
+            false,
         ),
         (
             "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { return evaluated(); }",
-            0,
+            false,
         ),
         (
             "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { if constexpr (evaluated()) { return true; } else { return false; } }",
-            1,
+            true,
         ),
         (
             "bool probe() noexcept { if (__builtin_is_constant_evaluated()) { return true; } else { return false; } }",
-            0,
+            false,
         ),
     ] {
         let project = Project::with_fixture("evaluation.cpp", "probe", cpp);
@@ -1583,7 +1582,7 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
             .iter()
             .any(|function| function.name == "evaluated")
         {
-            "bool evaluated() { ensures result == 0; }\n"
+            "bool evaluated() { ensures result == false; }\n"
         } else {
             ""
         };
@@ -1593,7 +1592,7 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
             &format!("result == {expected}"),
-            &format!("result == {}", 1 - expected),
+            &format!("result == {}", !expected),
         );
         let path = project.directory.join("bad.click");
         fs::write(&path, &hostile).unwrap();
@@ -9109,8 +9108,8 @@ fn direct_return_calls_preserve_each_scalar_type_and_branch_result() {
     let source = r#"verifying "relay.cpp";
 int32 echo(int32 value) { ensures result == value; }
 int32 choose(bool first, int32 value) {
- ensures first != 0 implies result == value;
- ensures first == 0 implies result == 7;
+ ensures first == true implies result == value;
+ ensures first == false implies result == 7;
 }
 "#;
     check_selected_claim_certificate(&project, &import, source);
