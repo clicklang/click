@@ -12120,6 +12120,34 @@ fn c0_floating_point_storage_types_preserve_abi_layout() {
 }
 
 #[test]
+fn c0_floating_point_literals_may_start_with_a_decimal_point() {
+    use syntax::C0Expression::{Float32Literal, Float64Literal};
+
+    for (c_type, literal, expected) in [
+        ("double", ".5", Float64Literal(0.5f64.to_bits())),
+        ("double", ".5e+2", Float64Literal(50.0f64.to_bits())),
+        ("double", ".5E-1", Float64Literal(0.05f64.to_bits())),
+        ("float", ".5f", Float32Literal(0.5f32.to_bits())),
+        ("float", ".5F", Float32Literal(0.5f32.to_bits())),
+        ("float", ".5e+2f", Float32Literal(50.0f32.to_bits())),
+        ("float", "-.0f", Float32Literal(0x8000_0000)),
+    ] {
+        let source = format!("{c_type} value(void) {{ return {literal}; }}");
+        let function = syntax::parse_function(&source).expect(&source);
+        assert_eq!(
+            function.body(),
+            &syntax::C0Statement::Return(expected, syntax::C0Site::NONE),
+            "{source}"
+        );
+    }
+
+    for literal in [".5e", ".5e+", ".5ff", ".5L"] {
+        let source = format!("double value(void) {{ return {literal}; }}");
+        syntax::parse_function(&source).expect_err(&source);
+    }
+}
+
+#[test]
 fn c0_floating_point_literals_use_declared_binary_formats() {
     let single = syntax::parse_function("float single() { return 1.5f; }")
         .expect("binary32 literal should parse");

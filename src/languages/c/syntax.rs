@@ -20863,7 +20863,9 @@ fn tokenize(source: &str) -> Result<(Vec<Token>, Vec<SourcePosition>), C0SyntaxE
             continue;
         }
 
-        if ch.is_ascii_digit() {
+        if ch.is_ascii_digit()
+            || (ch == '.' && chars.get(index + 1).is_some_and(char::is_ascii_digit))
+        {
             let start = index;
             if ch == '0' && matches!(chars.get(index + 1), Some('x') | Some('X')) {
                 index += 2;
