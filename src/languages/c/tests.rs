@@ -5239,6 +5239,31 @@ fn c0_syntax_parses_negative_literals_and_unary_minus() {
 }
 
 #[test]
+fn c0_syntax_long_long_suffix_letters_must_match_case() {
+    for digits in ["1", "01", "0x1"] {
+        for suffix in [
+            "lL", "Ll", "ulL", "uLl", "UlL", "ULl", "lLu", "lLU", "Llu", "LlU",
+        ] {
+            let source = format!("long long value() {{ return {digits}{suffix}; }}");
+            let error = syntax::parse_function(&source).expect_err(&source);
+            assert!(
+                error
+                    .message()
+                    .contains("unsupported integer-literal suffix"),
+                "{error}"
+            );
+        }
+        for suffix in [
+            "", "u", "U", "l", "L", "ll", "LL", "ul", "uL", "Ul", "UL", "lu", "lU", "Lu", "LU",
+            "ull", "uLL", "Ull", "ULL", "llu", "llU", "LLu", "LLU",
+        ] {
+            let source = format!("unsigned long long value() {{ return {digits}{suffix}; }}");
+            syntax::parse_function(&source).expect(&source);
+        }
+    }
+}
+
+#[test]
 fn c0_syntax_parses_c_integer_literal_radices_and_suffixes() {
     let literals = syntax::parse_function(
         r#"
