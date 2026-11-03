@@ -3003,3 +3003,34 @@ fn checked_child_read_definitions_scale_with_exchanges_not_ambient_facts() {
         "child read publication scanned ambient facts: {unrelated:?}"
     );
 }
+
+/// Companion isolation for the owner selection used by observation: include
+/// an exact first hit, a last hit, a miss, and repeated queries on one context.
+#[test]
+fn owned_support_lookup_ignores_same_shape_candidates() {
+    let mut curves = Vec::new();
+    for count in [4usize, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let owner = |i: usize| CResourceFact::own_composite("cell".into(), vec![int32(i as u32)]);
+        let context = ResourceContext::new().unchecked_with_facts((0..count).map(owner));
+        let facts = PureFactContext::new();
+        let mut work = Vec::new();
+        for query in [0, count - 1, count] {
+            for _ in 0..3 {
+                let (result, units) = crate::instrumentation::measure_deterministic_work(|| {
+                    context.directly_supporting_owned_entry(&owner(query), &facts)
+                });
+                assert_eq!(result.is_some(), query < count);
+                work.push(units);
+            }
+        }
+        curves.push((count, work));
+    }
+    eprintln!("same-shape owner lookup (owners, first/last/miss x3 work): {curves:?}");
+    assert!(
+        curves
+            .windows(2)
+            .all(|pair| { pair[0].1.iter().zip(&pair[1].1).all(|(a, b)| *b <= *a + 32) }),
+        "owner selection scans same-shape resources: {curves:?}"
+    );
+}
