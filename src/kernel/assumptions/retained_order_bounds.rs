@@ -1,5 +1,5 @@
-//! Retained endpoints for the remaining boxed order-query adapters. Admission
-//! stores shared keys; a legacy reader exports only an entry it actually visits.
+//! Shared endpoints and their original supporting propositions. Readers inspect
+//! views; a consumer requiring a written output exports that selected value.
 use super::checked_scalar_facts::ScalarOperandKey as Key;
 use super::*;
 use crate::kernel::MachineOperandView as V;
@@ -7,10 +7,8 @@ use crate::kernel::machine_integer::{
     Relation,
     comparison::{NativeComparisonView, comparison_view},
 };
-use crate::persistent::PersistentMap;
-use std::sync::{Arc, OnceLock};
+use crate::persistent::{PersistentMap, PersistentSet};
 
-type RawBound = (Bitvector32Term, Bitvector32Term, bool, bool);
 type BoundKey = (Key, Key, bool, bool);
 
 pub(super) fn order_view(
@@ -28,28 +26,30 @@ pub(super) fn order_view(
 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct Bounds {
-    entries: PersistentMap<BoundKey, (usize, Arc<OnceLock<RawBound>>)>,
+    entries: PersistentMap<BoundKey, PersistentSet<Proposition>>,
 }
 impl Bounds {
-    pub(in crate::kernel) fn iter(&self) -> impl Iterator<Item = (&RawBound, &usize)> {
+    pub(in crate::kernel) fn sourced_operands(
+        &self,
+    ) -> impl Iterator<Item = (V<'_>, V<'_>, bool, bool, &Proposition)> {
         self.entries
             .iter()
-            .map(|((own, other, strict, forward), (count, boxed))| {
+            .map(|((own, other, strict, forward), sources)| {
                 (
-                    boxed.get_or_init(|| {
-                        (
-                            own.value().clone(),
-                            other.value().clone(),
-                            *strict,
-                            *forward,
-                        )
-                    }),
-                    count,
+                    own.operand_view(),
+                    other.operand_view(),
+                    *strict,
+                    *forward,
+                    sources.iter().next().expect("bound source"),
                 )
             })
     }
-    pub(in crate::kernel) fn keys(&self) -> impl Iterator<Item = &RawBound> {
-        self.iter().map(|(key, _)| key)
+    pub(in crate::kernel) fn operand_keys(
+        &self,
+    ) -> impl Iterator<Item = (V<'_>, V<'_>, bool, bool)> {
+        self.entries.keys().map(|(own, other, strict, forward)| {
+            (own.operand_view(), other.operand_view(), *strict, *forward)
+        })
     }
 }
 
@@ -66,7 +66,12 @@ impl OrderBoundIndex {
     pub(in crate::kernel) fn shares_root_with(&self, other: &Self) -> bool {
         self.format == other.format && self.endpoints.shares_root_with(&other.endpoints)
     }
-    pub(super) fn adjust(&mut self, view: &NativeComparisonView<'_>, insert: bool) {
+    pub(super) fn adjust(
+        &mut self,
+        view: &NativeComparisonView<'_>,
+        source: &Proposition,
+        insert: bool,
+    ) {
         self.format = Some(view.format);
         let [left, right] = view
             .operands
@@ -86,21 +91,17 @@ impl OrderBoundIndex {
                 std::iter::once(key.clone()).chain((canonical != key).then_some(canonical))
             {
                 let mut bounds = self.endpoints.get(&endpoint).cloned().unwrap_or_default();
-                let (count, boxed) = bounds.entries.get(&bound).cloned().unwrap_or_default();
-                if let (V::Legacy(own), V::Legacy(other)) = (own, other) {
-                    boxed.get_or_init(|| (own.clone(), other.clone(), strict, forward));
-                }
-                if insert {
-                    bounds.entries = bounds
-                        .entries
-                        .with_inserted(bound.clone(), (count + 1, boxed));
-                } else if count <= 1 {
-                    bounds.entries = bounds.entries.without_key(&bound);
+                let sources = bounds.entries.get(&bound).cloned().unwrap_or_default();
+                let sources = if insert {
+                    sources.with_value(source.clone())
                 } else {
-                    bounds.entries = bounds
-                        .entries
-                        .with_inserted(bound.clone(), (count - 1, boxed));
-                }
+                    sources.without_value(source)
+                };
+                bounds.entries = if sources.is_empty() {
+                    bounds.entries.without_key(&bound)
+                } else {
+                    bounds.entries.with_inserted(bound.clone(), sources)
+                };
                 self.endpoints = if bounds.entries.is_empty() {
                     self.endpoints.without_key(&endpoint)
                 } else {
@@ -111,16 +112,15 @@ impl OrderBoundIndex {
     }
 }
 
-type RawEdge = (Bitvector32Term, bool);
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct Edges {
-    entries: PersistentMap<(Key, bool), (usize, Arc<OnceLock<RawEdge>>)>,
+    entries: PersistentMap<(Key, bool), usize>,
 }
 impl Edges {
-    pub(in crate::kernel) fn keys(&self) -> impl Iterator<Item = &RawEdge> {
-        self.entries.iter().map(|((term, strict), (_, boxed))| {
-            boxed.get_or_init(|| (term.value().clone(), *strict))
-        })
+    pub(in crate::kernel) fn operand_keys(&self) -> impl Iterator<Item = (V<'_>, bool)> {
+        self.entries
+            .keys()
+            .map(|(term, strict)| (term.operand_view(), *strict))
     }
 }
 #[derive(Clone, Debug, Default)]
@@ -142,23 +142,16 @@ impl OrderEdgeIndex {
         insert: bool,
     ) {
         self.format = Some(format);
-        let raw_to = match to {
-            V::Legacy(term) => Some(term),
-            V::Shared(_) => None,
-        };
         let from = Key::canonical(format, from);
         let edge = (Key::canonical(format, to), strict);
         let mut edges = self.endpoints.get(&from).cloned().unwrap_or_default();
-        let (count, boxed) = edges.entries.get(&edge).cloned().unwrap_or_default();
-        if let Some(to) = raw_to {
-            boxed.get_or_init(|| (to.clone(), strict));
-        }
+        let count = edges.entries.get(&edge).copied().unwrap_or(0);
         if insert {
-            edges.entries = edges.entries.with_inserted(edge, (count + 1, boxed));
+            edges.entries = edges.entries.with_inserted(edge, count + 1);
         } else if count <= 1 {
             edges.entries = edges.entries.without_key(&edge);
         } else {
-            edges.entries = edges.entries.with_inserted(edge, (count - 1, boxed));
+            edges.entries = edges.entries.with_inserted(edge, count - 1);
         }
         self.endpoints = if edges.entries.is_empty() {
             self.endpoints.without_key(&from)

@@ -189,6 +189,34 @@ impl NativeComparisonView<'_> {
         })
     }
 
+    /// An exact Integer reading retaining the carrier's shared operands.
+    /// This is a checking consequence; the original lowered term is untouched.
+    pub(crate) fn integer_condition(&self) -> ConditionTerm {
+        let [left, right] = self.operands.each_ref().map(|operand| match operand {
+            ComparisonOperand::Observation(value) => IntegerTerm::Machine(value.clone()).into(),
+            other => IntegerTerm::from_machine(self.format, other.boxed_value().clone())
+                .expect("comparison carrier has its declared format")
+                .into(),
+        });
+        match self.relation {
+            Relation::Equal => ConditionTerm::IntegerEqual(left, right),
+            Relation::NotEqual => ConditionTerm::IntegerNotEqual(left, right),
+            Relation::Less => ConditionTerm::IntegerLessThan(left, right),
+            Relation::LessEqual => ConditionTerm::IntegerLessEqual(left, right),
+        }
+    }
+
+    /// Match the native comparison representation's polarity for exact
+    /// quantified-body identity: disequality is a false equality.
+    pub(crate) fn integer_proposition(&self) -> crate::kernel::Proposition {
+        let condition = self.integer_condition();
+        if let ConditionTerm::IntegerNotEqual(left, right) = condition {
+            crate::kernel::Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), false)
+        } else {
+            crate::kernel::Proposition::ConditionIs(condition, true)
+        }
+    }
+
     fn boxed_condition(&self) -> Option<(ConditionTerm, bool)> {
         representation::comparison(
             self.format,
@@ -373,12 +401,29 @@ fn comparison_view_at_format(
 /// them. A comparison with no operation side, or whose native form folds
 /// to a constant, has no such reading. At most one candidate format per
 /// observation the two sides name is tried; nothing else is visited.
+#[cfg(test)]
 pub(crate) fn native_comparison_through_integer_operations(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(
     ConditionTerm,
     bool,
+    Vec<identity::IntegerOperationRangeBound>,
+)> {
+    let (view, bounds) = comparison_view_through_integer_operations(condition, value)?;
+    match view.boxed_condition()? {
+        (ConditionTerm::Constant(_), _) => None,
+        (native, truth) => Some((native, truth, bounds)),
+    }
+}
+
+/// The operation bridge before any legacy condition is exported. Range
+/// premises are explicit outputs, so callers retain the same authority checks.
+pub(crate) fn comparison_view_through_integer_operations(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(
+    NativeComparisonView<'static>,
     Vec<identity::IntegerOperationRangeBound>,
 )> {
     let (left, right) = match condition {
@@ -437,10 +482,7 @@ pub(crate) fn native_comparison_through_integer_operations(
             ConditionTerm::IntegerEqual(..) => ConditionTerm::IntegerEqual(left, right),
             _ => ConditionTerm::IntegerNotEqual(left, right),
         };
-        match native_comparison_of_integer_observation(&read, value)? {
-            (ConditionTerm::Constant(_), _) => None,
-            (native, truth) => Some((native, truth, bounds)),
-        }
+        Some((native_comparison_view(&read, value)?, bounds))
     })
 }
 

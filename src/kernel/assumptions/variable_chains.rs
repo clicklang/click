@@ -216,8 +216,15 @@ impl PureFactContext {
         }
         let direct = |left: Bitvector32Term, right: Bitvector32Term| {
             self.signed_order_bounds.get(&left).is_some_and(|bounds| {
-                bounds.iter().any(|((lower, upper, _, outgoing), _)| {
-                    *outgoing && lower == &left && upper == &right
+                use super::checked_scalar_facts::ScalarOperandKey as Key;
+                use crate::kernel::MachineOperandView as V;
+                let format = MachineIntegerType::Int32;
+                let left = Key::for_format(format, V::Legacy(&left));
+                let right = Key::for_format(format, V::Legacy(&right));
+                bounds.operand_keys().any(|(lower, upper, _, outgoing)| {
+                    outgoing
+                        && Key::for_format(format, lower) == left
+                        && Key::for_format(format, upper) == right
                 })
             })
         };

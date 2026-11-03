@@ -12,6 +12,51 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Shared range bridges and interval sources (2026-11-03)
+
+The follow-up on `codex/ordinary-admission` keeps operation-through-range
+consequences as Integer comparisons over shared machine operands. Admission,
+selected-fact instantiation, and quantified antecedent conversion retain their
+existing range-premise checks. Compound/quantified comparison membership uses
+shared operand keys instead of exporting a second proposition tree. The binder
+capture collector reads the shared syntax-variable summary and still follows a
+registered load's pointer when checking capture.
+
+Retained order bounds now store original supporting propositions beside shared
+endpoint identities. Constant-bound selection and uint64 interval decisions
+cite that source, including its truth polarity, rather than reconstructing a
+native comparison. Source withdrawal preserves other supports and persistent
+branches. Signed-bound certificate spelling accepts both Integer and native
+comparison views. Order-bound and edge indexes no longer provide implicit
+boxed-term caches; direction, constant and identity checks inspect views.
+
+The integrated fixture gate exposed one additional boundary: C-string body
+assembly uses the alpha-identity index, whose native and Integer comparison
+keys differed. That common key now reads shared comparison views and locally
+interns machine arithmetic as a DAG, preserving the existing binder and load
+leaf identities without exporting repeated arithmetic. Written operands are
+traversed directly rather than imported into a cache: a failed strict work
+regression caught cold/warm import cost in query identity construction. The
+existing positive C-string fixture and its missing-range refusal are end-to-end regressions.
+Alpha identity preserves written operator direction and truth: `obtain` still
+refuses a mirrored existential body. The bridge retains the native comparison's
+false-equality representation when deriving a quantified disequality.
+
+Some downstream derivation, memory-matching and contextual constant-evaluation
+APIs still return or require written endpoints. Their conversions are explicit
+at those boundaries; this increment does not migrate those engines or enable
+nested signed preparation. No lowering semantics or search limits change.
+
+Validation on upstream `053ec754d`: `scripts/check.sh` passes all 7,214
+unit/API/import/scaling tests and four fixture aggregates, including 61 example
+projects and 5,007 proof fixtures. The gate took 11m07s (unit phase 327.6s,
+fixture phase 323.1s), emitting its ten-minute budget advisory; no limits changed.
+The arithmetic fact-stability audit passes 106 fixtures with zero differences.
+Shared-DAG regressions cover 8/32/96 levels through operation and quantified
+bridges, original-source indexing, alpha keys, and nonconstant bound rejection
+without export. Exact-body refusal, source polarity/withdrawal, and the strict
+cache-independence regression remain enforced. No nightly suite ran.
+
 ## Ordinary arithmetic domains (2026-11-01)
 
 The user approved representing definedness as conjunctions of ordinary

@@ -13384,8 +13384,10 @@ pub struct PureFactContext {
     /// only a search path, not the whole set.
     pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
     /// Numeric comparison views retain their exact source for withdrawal.
-    pub(super) comparison_sources: PersistentMap<Proposition, Proposition>,
-    pub(super) comparison_counts: PersistentMap<Proposition, usize>,
+    pub(super) comparison_sources:
+        PersistentMap<Proposition, super::assumptions::observation_comparisons::PropositionKey>,
+    pub(super) comparison_counts:
+        PersistentMap<super::assumptions::observation_comparisons::PropositionKey, usize>,
     /// Alpha/load identity index for propositions that may be stated as a
     /// call requirement.  The key retains memory versions and canonicalizes
     /// only binders; the persistent buckets keep updates local to one key.

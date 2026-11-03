@@ -36,9 +36,9 @@ pub(in crate::kernel) mod observation_comparisons;
 pub(in crate::kernel) mod retained_order_bounds;
 pub(in crate::kernel) mod variable_chains;
 use super::equality_graph::EqualityGraph;
-use super::machine_integer::comparison::{
-    native_comparison_of_integer_observation, native_comparison_through_integer_operations,
-};
+use super::machine_integer::comparison::native_comparison_of_integer_observation;
+#[cfg(test)]
+use super::machine_integer::comparison::native_comparison_through_integer_operations;
 #[cfg(test)]
 use super::machine_integer::definedness::{
     definedness_of_integer_bound, integer_bounds_of_definedness,
@@ -2880,7 +2880,11 @@ impl PureFactContext {
             MachineIntegerType::UInt64 => &mut self.uint64_order_bounds,
             _ => return,
         };
-        index.adjust(&view, insert);
+        index.adjust(
+            &view,
+            &Proposition::ConditionIs(condition.clone(), value),
+            insert,
+        );
         let kind = match view.format {
             MachineIntegerType::UInt64 => 0,
             MachineIntegerType::Int64 => 1,
@@ -6445,10 +6449,10 @@ impl PureFactContext {
         }
         if insert {
             // Only the newly admitted proposition is visited, never the context.
-            let view = observation_comparison_form(source, true);
-            if &view == source {
+            if !observation_comparisons::PropositionKey::observes_machine(source) {
                 return;
             }
+            let view = observation_comparisons::PropositionKey::new(source);
             let count = self.comparison_counts.get(&view).copied().unwrap_or(0);
             self.comparison_counts.insert(view.clone(), count + 1);
             self.comparison_sources.insert(source.clone(), view);
@@ -7082,6 +7086,13 @@ impl PureFactContext {
         if self.contains_assumed_exact(proposition) {
             return true;
         }
+        if matches!(
+            proposition,
+            Proposition::ForAll { .. } | Proposition::Exists { .. } | Proposition::Implies(..)
+        ) && self.contains_proposition_fact(proposition)
+        {
+            return true;
+        }
         match proposition {
             Proposition::Equal(
                 Term::CValue(CValue::Pointer(left)),
@@ -7395,15 +7406,18 @@ impl PureFactContext {
         // its type. A range bound the operands' types do not already imply
         // must be a fact here (`IntegerOperationRangeBound`). At most two
         // sides and two bounds of three spellings each are looked up.
-        if let Some((native, truth, bounds)) =
+        if let Some((view, bounds)) =
             (super::machine_integer::comparison::native_comparison_view(&condition, value)
                 .is_none()
                 && !super::machine_integer::modular::has_word_equality_projection(
                     &condition, value,
                 ))
-            .then(|| native_comparison_through_integer_operations(&condition, value))
+            .then(|| {
+                super::machine_integer::comparison::comparison_view_through_integer_operations(
+                    &condition, value,
+                )
+            })
             .flatten()
-            && native != condition
             && bounds.iter().all(|bound| {
                 bound
                     .stating_facts()
@@ -7411,7 +7425,7 @@ impl PureFactContext {
                     .any(|fact| self.contains_known(fact))
             })
         {
-            self = self.assume_condition_uncharged(native, truth);
+            self = self.assume_condition_uncharged(view.integer_condition(), true);
         }
         // Arithmetic domains stay as ordinary bounds. Overflow queries read
         // those bounds directly; do not publish a second opaque fact here.
@@ -7572,7 +7586,7 @@ impl PureFactContext {
             proposition => {
                 let decided = decided_algebraic_if(&proposition);
                 let reduced = self.reduce_by_decided_conditions(&proposition);
-                let native = self.native_antecedent_reading(&proposition);
+                let native = self.shared_antecedent_reading(&proposition);
                 self.insert_proposition_fact(proposition);
                 if let Some(native) = native {
                     self.insert_proposition_fact(native);
@@ -7591,8 +7605,7 @@ impl PureFactContext {
     /// A quantified fact `forall k { A(k) implies B(k) }` whose antecedent
     /// compares the Integer value of an in-range machine `+` or `-`, such as
     /// `to_integer(k) < to_integer(len) + 1`, filed again with that
-    /// comparison read natively, `k < len + 1u64`, as a top-level fact is
-    /// ([`native_comparison_through_integer_operations`]). The two
+    /// comparison read through a shared machine operation. The two
     /// antecedents agree once each operation's result lies in its type, so a
     /// range bound the operand types do not imply must already be a fact, and
     /// it may not name the bound variable. Built-in checks that match a
@@ -7600,7 +7613,7 @@ impl PureFactContext {
     /// `cstr_at(p, len)`, then see what a specification stated with Integer
     /// arithmetic. The work is the antecedent's conjuncts, each one shape
     /// match and at most a few exact lookups.
-    fn native_antecedent_reading(&self, proposition: &Proposition) -> Option<Proposition> {
+    fn shared_antecedent_reading(&self, proposition: &Proposition) -> Option<Proposition> {
         let Proposition::ForAll {
             var,
             sort,
@@ -7613,7 +7626,7 @@ impl PureFactContext {
         let Proposition::Implies(antecedent, consequent) = body.as_ref() else {
             return None;
         };
-        let native = self.native_conjunct_reading(antecedent, *var)?;
+        let native = self.shared_conjunct_reading(antecedent, *var)?;
         Some(Proposition::ForAll {
             var: *var,
             sort: sort.clone(),
@@ -7624,7 +7637,7 @@ impl PureFactContext {
 
     /// The native reading of each conjunct of `antecedent` that has one, or
     /// `None` when no conjunct changes.
-    fn native_conjunct_reading(
+    fn shared_conjunct_reading(
         &self,
         antecedent: &Proposition,
         var: Variable,
@@ -7632,8 +7645,8 @@ impl PureFactContext {
         match antecedent {
             Proposition::And(left, right) => {
                 let (native_left, native_right) = (
-                    self.native_conjunct_reading(left, var),
-                    self.native_conjunct_reading(right, var),
+                    self.shared_conjunct_reading(left, var),
+                    self.shared_conjunct_reading(right, var),
                 );
                 if native_left.is_none() && native_right.is_none() {
                     return None;
@@ -7645,10 +7658,11 @@ impl PureFactContext {
             }
             Proposition::ConditionIs(condition, value) => {
                 crate::instrumentation::record_deterministic_work(1);
-                let (native, truth, bounds) =
-                    native_comparison_through_integer_operations(condition, *value)?;
-                (native != *condition
-                    && bounds.iter().all(|bound| {
+                let (view, bounds) =
+                    super::machine_integer::comparison::comparison_view_through_integer_operations(
+                        condition, *value,
+                    )?;
+                (bounds.iter().all(|bound| {
                         let facts = bound.stating_facts();
                         let mut variables = std::collections::BTreeSet::new();
                         for fact in &facts {
@@ -7659,7 +7673,7 @@ impl PureFactContext {
                         }
                         !variables.contains(&var) && facts.iter().any(|fact| self.contains_known(fact))
                     }))
-                .then(|| Proposition::ConditionIs(native, truth))
+                .then(|| view.integer_proposition())
             }
             _ => None,
         }
@@ -8183,7 +8197,11 @@ impl PureFactContext {
     /// Whether `proposition` is an exact proposition fact of this context.
     pub fn contains_proposition_fact(&self, proposition: &Proposition) -> bool {
         self.prop_facts.contains(proposition)
-            || self.comparison_counts.get(proposition).is_some()
+            || (!self.comparison_counts.is_empty()
+                && self
+                    .comparison_counts
+                    .get(&observation_comparisons::PropositionKey::new(proposition))
+                    .is_some())
             || matches!(proposition,
                 Proposition::ConditionIs(condition @ ConditionTerm::Compare { .. }, truth)
                 if self.observation_comparisons.source(condition, *truth).is_some())
@@ -9095,18 +9113,28 @@ fn recorded_less_equal_candidates<'a>(
             .signed_order_bounds
             .get(&key)
             .into_iter()
-            .flat_map(|bounds| bounds.keys().cloned().collect::<Vec<_>>())
+            .flat_map(|bounds| bounds.operand_keys())
             .filter(|(_, _, _, own_is_lower)| !*own_is_lower)
-            .map(|(own, other, _, _)| (other, own))
+            .map(|(own, other, _, _)| {
+                (
+                    other.retain(MachineIntegerType::Int32).value().clone(),
+                    own.retain(MachineIntegerType::Int32).value().clone(),
+                )
+            })
     });
     let lower_side = endpoint_keys(left).into_iter().flat_map(move |key| {
         assumptions
             .signed_order_bounds
             .get(&key)
             .into_iter()
-            .flat_map(|bounds| bounds.keys().cloned().collect::<Vec<_>>())
+            .flat_map(|bounds| bounds.operand_keys())
             .filter(|(_, _, _, own_is_lower)| *own_is_lower)
-            .map(|(own, other, _, _)| (own, other))
+            .map(|(own, other, _, _)| {
+                (
+                    own.retain(MachineIntegerType::Int32).value().clone(),
+                    other.retain(MachineIntegerType::Int32).value().clone(),
+                )
+            })
     });
     upper_side
         .chain(lower_side)
@@ -11310,6 +11338,43 @@ mod integer_observation_tests {
         let facts = facts.without_exact_fact(&first);
         assert!(facts.contains_known(&goal));
         assert!(!facts.without_exact_fact(&second).contains_known(&goal));
+    }
+
+    #[test]
+    fn signed_bound_selection_preserves_sources_polarity_and_withdrawal() {
+        for (ty, width) in [
+            (MachineIntegerType::Int32, SignedDefinedWidth::Int32),
+            (MachineIntegerType::Int64, SignedDefinedWidth::Int64),
+        ] {
+            let first = Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterThan(observe(ty, 1815), constant(100)),
+                false,
+            );
+            let second = Proposition::ConditionIs(
+                ConditionTerm::IntegerGreaterEqual(constant(100), observe(ty, 1815)),
+                true,
+            );
+            let parent = PureFactContext::new().assume_proposition(first.clone());
+            let child = parent.clone().assume_proposition(second.clone());
+            let selected = child.signed_constant_bound_facts(width, &word(1815));
+            assert_eq!(selected.len(), 1);
+            assert!(selected[0] == first || selected[0] == second);
+            let child = child.without_exact_fact(&first);
+            assert_eq!(
+                child.signed_constant_bound_facts(width, &word(1815)),
+                vec![second.clone()]
+            );
+            assert!(
+                child
+                    .without_exact_fact(&second)
+                    .signed_constant_bound_facts(width, &word(1815))
+                    .is_empty()
+            );
+            assert_eq!(
+                parent.signed_constant_bound_facts(width, &word(1815)),
+                vec![first]
+            );
+        }
     }
 
     #[test]

@@ -9,15 +9,80 @@ use crate::kernel::machine_integer::{
 use crate::persistent::{PersistentMap, PersistentSet};
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum OperandKey {
+pub(in crate::kernel) enum OperandKey {
     Constant(u128),
     Term(ScalarOperandKey),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-enum Key {
+pub(in crate::kernel) enum Key {
     Truth(bool),
     Comparison(MachineIntegerType, u8, [OperandKey; 2]),
+}
+
+/// Comparison identity for compound and quantified facts. Numeric leaves use
+/// shared operand identities; all other leaves keep their exact proposition.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(in crate::kernel) enum PropositionKey {
+    Comparison(Key),
+    Exact(Proposition),
+    Not(Box<Self>),
+    And(Box<Self>, Box<Self>),
+    Or(Box<Self>, Box<Self>),
+    Implies(Box<Self>, Box<Self>),
+    ForAll(Variable, Sort, Box<Self>),
+    Exists(Variable, Sort, Box<Self>),
+}
+impl PropositionKey {
+    pub(in crate::kernel) fn observes_machine(proposition: &Proposition) -> bool {
+        let mut pending = vec![proposition];
+        while let Some(proposition) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match proposition {
+                Proposition::ConditionIs(condition, truth)
+                    if native_comparison_view(condition, *truth).is_some() =>
+                {
+                    return true;
+                }
+                Proposition::And(a, b) | Proposition::Or(a, b) | Proposition::Implies(a, b) => {
+                    pending.push(a);
+                    pending.push(b);
+                }
+                Proposition::Not(body)
+                | Proposition::ForAll { body, .. }
+                | Proposition::Exists { body, .. } => pending.push(body),
+                _ => {}
+            }
+        }
+        false
+    }
+
+    pub(in crate::kernel) fn new(proposition: &Proposition) -> Self {
+        crate::instrumentation::record_deterministic_work(1);
+        match proposition {
+            Proposition::ConditionIs(condition, truth) => {
+                if let Some(view) = comparison_view(condition, *truth) {
+                    let view = view.widened().unwrap_or(view);
+                    Self::Comparison(key(&view))
+                } else {
+                    Self::Exact(proposition.clone())
+                }
+            }
+            Proposition::Not(body) => Self::Not(Box::new(Self::new(body))),
+            Proposition::And(a, b) => Self::And(Box::new(Self::new(a)), Box::new(Self::new(b))),
+            Proposition::Or(a, b) => Self::Or(Box::new(Self::new(a)), Box::new(Self::new(b))),
+            Proposition::Implies(a, b) => {
+                Self::Implies(Box::new(Self::new(a)), Box::new(Self::new(b)))
+            }
+            Proposition::ForAll {
+                var, sort, body, ..
+            } => Self::ForAll(*var, sort.clone(), Box::new(Self::new(body))),
+            Proposition::Exists {
+                var, sort, body, ..
+            } => Self::Exists(*var, sort.clone(), Box::new(Self::new(body))),
+            _ => Self::Exact(proposition.clone()),
+        }
+    }
 }
 
 fn key(view: &NativeComparisonView<'_>) -> Key {

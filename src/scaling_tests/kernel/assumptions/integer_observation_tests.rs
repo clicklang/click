@@ -405,3 +405,75 @@ fn repeated_shared_comparison_admission_is_near_linear() {
         assert!(lw * small * 2 <= sw * large * 3, "{samples:?}");
     }
 }
+
+#[test]
+fn operation_and_quantified_bridges_retain_shared_operands() {
+    use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm};
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994001));
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                ty,
+                MachineBinaryOp::Add,
+                [root.clone(), root.clone()],
+            );
+        }
+        let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+        let sum: SharedIntegerTerm =
+            IntegerTerm::Add(IntegerTerm::Machine(operand.clone()).into(), constant(1)).into();
+        let source = ConditionTerm::IntegerLessThan(observe(ty, 830), sum.clone());
+        let (view, _) =
+            crate::kernel::machine_integer::comparison::comparison_view_through_integer_operations(
+                &source, true,
+            )
+            .unwrap();
+        let reading = view.integer_condition();
+        let bounded = PureFactContext::new()
+            .assume_condition(ConditionTerm::IntegerLessEqual(sum, uint64_max()), true);
+        let facts = bounded.clone().assume_condition(source.clone(), true);
+        assert!(facts.contains_known(&Proposition::ConditionIs(reading.clone(), true)));
+        let facts =
+            bounded.assume_proposition(quantified_over_k(Proposition::ConditionIs(source, true)));
+        assert!(facts.contains_known(&quantified_over_k(Proposition::ConditionIs(reading, true))));
+        // Key both the original Integer source and its shared consequence.
+        facts.build_stated_proposition_index();
+        assert!(!operand.has_boxed_operand(), "size={size}");
+    }
+}
+
+#[test]
+fn constant_bound_selection_rejects_shared_symbolic_candidates_without_export() {
+    use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm};
+    for ty in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        for size in [8, 32, 96] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994011));
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+            }
+            let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+            let source = ConditionTerm::IntegerLessEqual(
+                observe(ty, 994010),
+                IntegerTerm::Machine(operand.clone()).into(),
+            );
+            let facts = PureFactContext::new().assume_condition(source, true);
+            let width = if ty == MachineIntegerType::Int32 {
+                SignedDefinedWidth::Int32
+            } else {
+                SignedDefinedWidth::Int64
+            };
+            assert!(
+                facts
+                    .signed_constant_bound_facts(width, &word(994010))
+                    .is_empty()
+            );
+            assert!(!operand.has_boxed_operand(), "{ty:?}, size={size}");
+        }
+    }
+}

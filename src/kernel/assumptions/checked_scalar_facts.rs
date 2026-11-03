@@ -15,10 +15,10 @@ pub(in crate::kernel) enum ScalarOperandKey {
 }
 
 impl ScalarOperandKey {
-    pub(super) fn value(&self) -> &Bitvector32Term {
+    pub(super) fn operand_view(&self) -> MachineOperandView<'_> {
         match self {
-            Self::Shared(term) => term.value(),
-            Self::Written(term) => term,
+            Self::Shared(term) => term.operand_view(),
+            Self::Written(term) => MachineOperandView::Legacy(term),
         }
     }
 

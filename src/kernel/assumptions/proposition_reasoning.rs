@@ -2797,9 +2797,18 @@ impl PureFactContext {
         direct
             .into_iter()
             .chain(alias)
-            .flat_map(|bounds| bounds.keys())
+            .flat_map(|bounds| bounds.operand_keys())
             .map(|(fact_endpoint, other, strict, forward)| {
-                (fact_endpoint.clone(), other.clone(), *strict, *forward)
+                // This derivation API returns written endpoints for proof construction.
+                (
+                    fact_endpoint
+                        .retain(MachineIntegerType::Int32)
+                        .value()
+                        .clone(),
+                    other.retain(MachineIntegerType::Int32).value().clone(),
+                    strict,
+                    forward,
+                )
             })
     }
 
@@ -2821,9 +2830,18 @@ impl PureFactContext {
         direct
             .into_iter()
             .chain(alias)
-            .flat_map(|bounds| bounds.keys())
+            .flat_map(|bounds| bounds.operand_keys())
             .map(|(fact_endpoint, other, strict, forward)| {
-                (fact_endpoint.clone(), other.clone(), *strict, *forward)
+                // This derivation API returns written endpoints for proof construction.
+                (
+                    fact_endpoint
+                        .retain(MachineIntegerType::UInt32)
+                        .value()
+                        .clone(),
+                    other.retain(MachineIntegerType::UInt32).value().clone(),
+                    strict,
+                    forward,
+                )
             })
     }
 
