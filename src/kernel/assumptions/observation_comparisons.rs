@@ -1,0 +1,219 @@
+//! Atomic observation aliases retain their original source, not a second fact.
+//! Keys inspect the selected operands only; shared arithmetic is never exported.
+use super::checked_scalar_facts::ScalarOperandKey;
+use super::*;
+use crate::kernel::machine_integer::{
+    Relation,
+    comparison::{NativeComparisonView, comparison_view, native_comparison_view},
+};
+use crate::persistent::{PersistentMap, PersistentSet};
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum OperandKey {
+    Constant(u128),
+    Term(ScalarOperandKey),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+enum Key {
+    Truth(bool),
+    Comparison(MachineIntegerType, u8, [OperandKey; 2]),
+}
+
+fn key(view: &NativeComparisonView<'_>) -> Key {
+    let equality = matches!(view.relation, Relation::Equal | Relation::NotEqual);
+    let format = if equality {
+        match view.format {
+            MachineIntegerType::UInt8 => MachineIntegerType::Int8,
+            MachineIntegerType::UInt16 => MachineIntegerType::Int16,
+            MachineIntegerType::UInt32 => MachineIntegerType::Int32,
+            MachineIntegerType::UInt64 => MachineIntegerType::Int64,
+            other => other,
+        }
+    } else {
+        view.format
+    };
+    let mut operands = view.operands.each_ref().map(|operand| {
+        let operand = operand.operand_view();
+        if let Some(value) = operand
+            .literal()
+            .and_then(|literal| view.format.constant_from_term(&literal))
+        {
+            OperandKey::Constant(value.bits())
+        } else {
+            OperandKey::Term(ScalarOperandKey::for_format(format, operand))
+        }
+    });
+    if equality && operands[1] < operands[0] {
+        operands.swap(0, 1);
+    }
+    let relation = match view.relation {
+        Relation::Equal => 0,
+        Relation::NotEqual => 1,
+        Relation::Less => 2,
+        Relation::LessEqual => 3,
+    };
+    Key::Comparison(format, relation, operands)
+}
+
+// A constant comparison view is still supported by its source. In particular,
+// `to_integer(count) <= UINT64_MAX` used to file `true`; retain that authority
+// without adding a tautology to the proof-state fact collection.
+fn constant_reading(view: &NativeComparisonView<'_>, key: &Key) -> Option<bool> {
+    let Key::Comparison(_, _, [left, right]) = key else {
+        return None;
+    };
+    if left == right {
+        return Some(matches!(
+            view.relation,
+            Relation::Equal | Relation::LessEqual
+        ));
+    }
+    let values = view.operands.each_ref().map(|operand| {
+        operand
+            .operand_view()
+            .literal()
+            .and_then(|literal| view.format.constant_from_term(&literal))
+            .map(|value| value.to_integer())
+    });
+    let [left, right] = &values;
+    if let (Some(left), Some(right)) = (left, right) {
+        return Some(match view.relation {
+            Relation::Equal => left == right,
+            Relation::NotEqual => left != right,
+            Relation::Less => left < right,
+            Relation::LessEqual => left <= right,
+        });
+    }
+    if view.format == MachineIntegerType::Int64 {
+        let [left, right] = view.operands.each_ref().map(|operand| {
+            operand
+                .operand_view()
+                .int64_width_interval()
+                .unwrap_or((i64::MIN, i64::MAX))
+        });
+        match view.relation {
+            Relation::Less if left.1 < right.0 => return Some(true),
+            Relation::Less if left.0 >= right.1 => return Some(false),
+            Relation::LessEqual if left.1 <= right.0 => return Some(true),
+            Relation::LessEqual if left.0 > right.1 => return Some(false),
+            _ => {}
+        }
+    }
+    if view.format == MachineIntegerType::UInt32 {
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        if let Some(bound) = right.word32_constant() {
+            let upper = left
+                .word32_constant()
+                .or_else(|| {
+                    let (format, operation, [a, b]) = left.binary()?;
+                    (format.format().bits() == 32
+                        && operation == crate::kernel::MachineBinaryOp::BitwiseAnd)
+                        .then(|| a.word32_constant().or_else(|| b.word32_constant()))
+                        .flatten()
+                })
+                .unwrap_or(u32::MAX);
+            if (view.relation == Relation::Less && upper < bound)
+                || (view.relation == Relation::LessEqual && upper <= bound)
+            {
+                return Some(true);
+            }
+        }
+    }
+    // The unsigned 64-bit folding constructors recognize these endpoint rules.
+    if view.format == MachineIntegerType::UInt64 {
+        let (min, max) = view.format.format().bounds();
+        match view.relation {
+            Relation::LessEqual if left.as_ref() == Some(&min) || right.as_ref() == Some(&max) => {
+                return Some(true);
+            }
+            Relation::Less if left.as_ref() == Some(&max) || right.as_ref() == Some(&min) => {
+                return Some(false);
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+#[derive(Clone, Debug, Default)]
+pub(in crate::kernel) struct ObservationComparisons {
+    keys_by_source: PersistentMap<Proposition, Vec<Key>>,
+    sources: PersistentMap<Key, PersistentSet<Proposition>>,
+}
+
+impl ObservationComparisons {
+    pub(super) fn adjust(&mut self, condition: &ConditionTerm, truth: bool, insert: bool) {
+        let source = Proposition::ConditionIs(condition.clone(), truth);
+        let keys = if insert {
+            let Some(view) = native_comparison_view(condition, truth) else {
+                return;
+            };
+            let comparison = key(&view);
+            let mut keys = vec![comparison.clone()];
+            let cancelled_view = view.clone().cancelled_form();
+            let cancelled = key(&cancelled_view);
+            if cancelled != comparison {
+                keys.push(cancelled.clone());
+            }
+            if let Some(widened) = view.widened() {
+                keys.push(key(&widened));
+            }
+            if let Some(value) = constant_reading(&view, &comparison)
+                .or_else(|| constant_reading(&cancelled_view, &cancelled))
+            {
+                keys.push(Key::Truth(value));
+            }
+            self.keys_by_source = self
+                .keys_by_source
+                .with_inserted(source.clone(), keys.clone());
+            keys
+        } else {
+            let Some(keys) = self.keys_by_source.get(&source).cloned() else {
+                return;
+            };
+            self.keys_by_source = self.keys_by_source.without_key(&source);
+            keys
+        };
+        for key in keys {
+            crate::instrumentation::record_deterministic_work(1);
+            let sources = self.sources.get(&key).cloned().unwrap_or_default();
+            let sources = if insert {
+                sources.with_value(source.clone())
+            } else {
+                sources.without_value(&source)
+            };
+            self.sources = if sources.is_empty() {
+                self.sources.without_key(&key)
+            } else {
+                self.sources.with_inserted(key, sources)
+            };
+        }
+    }
+
+    pub(super) fn false_source(&self) -> Option<&Proposition> {
+        self.sources.get(&Key::Truth(false))?.iter().next()
+    }
+
+    pub(in crate::kernel) fn source(
+        &self,
+        condition: &ConditionTerm,
+        truth: bool,
+    ) -> Option<&Proposition> {
+        if self.sources.is_empty() {
+            return None;
+        }
+        let _checking =
+            crate::instrumentation::CheckingWorkScope::new("read observation comparison source", 1);
+        crate::instrumentation::record_deterministic_work(1);
+        let key = if let ConditionTerm::Constant(value) = condition {
+            Key::Truth(*value == truth)
+        } else {
+            key(&comparison_view(condition, truth)?)
+        };
+        self.sources.get(&key)?.iter().next()
+    }
+}

@@ -84,6 +84,111 @@ impl ComparisonOperand<'_> {
 }
 
 impl NativeComparisonView<'_> {
+    /// A shared reading of the existing 32-bit additive cancellation rule.
+    /// Only the selected roots and at most four child identities are inspected.
+    pub(crate) fn cancelled_equality(&self) -> Option<NativeComparisonView<'static>> {
+        use crate::kernel::{KernelTermImport, MachineBinaryOp, MachineOperandView as V};
+        if self.format.format().bits() != 32
+            || !matches!(self.relation, Relation::Equal | Relation::NotEqual)
+        {
+            return None;
+        }
+        let [left, right] = self
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        fn sum(view: V<'_>) -> Option<(MachineIntegerType, MachineBinaryOp, [V<'_>; 2])> {
+            view.binary().filter(|(format, operation, _)| {
+                format.format().bits() == 32 && *operation == MachineBinaryOp::Add
+            })
+        }
+        let same = |format, a: V<'_>, b: V<'_>| match (a, b) {
+            (V::Shared(a), V::Shared(b)) => a == b,
+            (V::Legacy(a), V::Legacy(b)) => a == b,
+            (V::Shared(a), V::Legacy(b)) | (V::Legacy(b), V::Shared(a)) => {
+                KernelTermImport::default()
+                    .machine_arithmetic(format, b)
+                    .as_ref()
+                    == Some(a)
+            }
+        };
+        let owned = |view: V<'_>| match view {
+            V::Shared(_) => ComparisonOperand::Observation(view.retain(self.format)),
+            V::Legacy(term) => ComparisonOperand::Constant(term.clone()),
+        };
+        let result = |a, b| NativeComparisonView {
+            format: self.format,
+            relation: self.relation,
+            operands: [a, b],
+        };
+        if let (Some((lf, _, [a, b])), Some((rf, _, [c, d]))) = (sum(left), sum(right))
+            && lf == rf
+        {
+            for ((kept, other), (matched, remainder)) in [
+                ((a, b), (c, d)),
+                ((a, b), (d, c)),
+                ((b, a), (c, d)),
+                ((b, a), (d, c)),
+            ] {
+                if same(lf, kept, matched) {
+                    return Some(result(owned(other), owned(remainder)));
+                }
+            }
+        }
+        for (side, partner, reverse) in [(left, right, false), (right, left, true)] {
+            if let Some((format, _, [a, b])) = sum(side) {
+                for (kept, other) in [(a, b), (b, a)] {
+                    if same(format, kept, partner) {
+                        let zero =
+                            ComparisonOperand::Constant(Bitvector32Term::constant_at32(format, 0));
+                        return Some(if reverse {
+                            result(zero, owned(other))
+                        } else {
+                            result(owned(other), zero)
+                        });
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub(crate) fn cancelled_form(mut self) -> Self {
+        while let Some(next) = self.cancelled_equality() {
+            self = next;
+        }
+        self
+    }
+
+    /// The value-preserving 32-bit reading of a narrow comparison, retaining
+    /// shared operands. Checking folds only the two cast roots.
+    pub(crate) fn widened(&self) -> Option<NativeComparisonView<'static>> {
+        if self.format.format().bits() >= 32 {
+            return None;
+        }
+        let destination = MachineIntegerType::Int32;
+        let operands = self
+            .operands
+            .each_ref()
+            .map(|operand| match operand.operand_view() {
+                crate::kernel::MachineOperandView::Shared(term) => ComparisonOperand::Observation(
+                    SharedMachineIntegerTerm::from_shared(
+                        destination,
+                        term.checking_machine_cast(self.format, destination),
+                    )
+                    .expect("shared widening"),
+                ),
+                crate::kernel::MachineOperandView::Legacy(term) => ComparisonOperand::Constant(
+                    super::conversion::convert_term(self.format, destination, term.clone()),
+                ),
+            });
+        Some(NativeComparisonView {
+            format: destination,
+            relation: self.relation,
+            operands,
+        })
+    }
+
     fn boxed_condition(&self) -> Option<(ConditionTerm, bool)> {
         representation::comparison(
             self.format,
@@ -108,7 +213,7 @@ pub(crate) fn comparison_view(
         right,
     } = condition
     else {
-        return native_comparison_view(condition, value);
+        return native_comparison_view(condition, value).map(NativeComparisonView::cancelled_form);
     };
     let (relation, left, right) = match (relation, value) {
         (R::Equal, true) => (Relation::Equal, left, right),

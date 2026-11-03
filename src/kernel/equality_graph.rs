@@ -1933,8 +1933,19 @@ impl EqualityGraph {
         self.register_expression_operands(&mut state, [], [], [left.as_ref(), right.as_ref()]);
         let changed = state.terms.add_integer_equality(left, right);
         let modular = state.terms.add_modular_integer_equality(left, right);
-        state.has_scalar_inputs |= modular;
-        let changed = changed || modular;
+        let observation = crate::kernel::machine_integer::comparison::native_comparison_view(
+            &ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+            true,
+        );
+        let native = observation
+            .as_ref()
+            .is_some_and(|view| state.terms.admit_observation_comparison(view));
+        state.has_scalar_inputs |= modular
+            || (native
+                && observation
+                    .as_ref()
+                    .is_some_and(|view| view.format.format().bits() <= 32));
+        let changed = changed || modular || native;
         state.close(Vec::new());
         if changed {
             state.remember_input(inputs::Input::Integer(left.clone(), right.clone()));
@@ -2022,6 +2033,11 @@ impl EqualityGraph {
         }
         let mut state = self.state.lock().expect("equality graph");
         self.prepare_condition(&mut state, condition);
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::native_comparison_view(condition, value)
+        {
+            state.terms.admit_observation_comparison(&view);
+        }
         // A `Bool` value or binder (`design/machine-integers.md`, Stage 5):
         // its class's truth, and for a true equality the merge of its
         // operands (rule L-Eq).

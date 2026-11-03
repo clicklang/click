@@ -1818,17 +1818,7 @@ pub(in crate::kernel) fn condition_as_uint64_order_fact(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    held_order_at(MachineIntegerType::UInt64, condition, value)
-        .map(|(lower, upper, strict)| (lower.clone(), upper.clone(), strict))
-}
-
-/// The `uint32` counterpart of [`condition_as_uint64_order_fact`].
-pub(in crate::kernel) fn condition_as_uint32_order_fact(
-    condition: &ConditionTerm,
-    value: bool,
-) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    held_order_at(MachineIntegerType::UInt32, condition, value)
-        .map(|(lower, upper, strict)| (lower.clone(), upper.clone(), strict))
+    wide_order_fact(condition, value, MachineIntegerType::UInt64)
 }
 
 /// The formats whose order facts the format-indexed order walk
@@ -1848,8 +1838,19 @@ pub(in crate::kernel) fn wide_order_fact(
     value: bool,
     format: MachineIntegerType,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    held_order_at(format, condition, value)
-        .map(|(lower, upper, strict)| (lower.clone(), upper.clone(), strict))
+    let view = super::super::retained_order_bounds::order_view(condition, value)?;
+    if view.format != format {
+        return None;
+    }
+    let [lower, upper] = view
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view().retain(format).value().clone());
+    Some((
+        lower,
+        upper,
+        view.relation == crate::kernel::machine_integer::Relation::Less,
+    ))
 }
 
 impl PureFactContext {

@@ -182,6 +182,64 @@ impl TermClasses {
         self.close(vec![(a, b)])
     }
 
+    /// Read an admitted observation through its carrier without exporting it.
+    /// The caller retains the original Integer source for restriction/replay.
+    pub(in crate::kernel::equality_graph) fn admit_observation_comparison(
+        &mut self,
+        view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+    ) -> bool {
+        let mut next = Some(view.clone());
+        let mut changed = false;
+        while let Some(view) = next {
+            next = view.cancelled_equality();
+            changed = self.admit_observation_comparison_leaf(&view) || changed;
+        }
+        changed
+    }
+
+    fn admit_observation_comparison_leaf(
+        &mut self,
+        view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+    ) -> bool {
+        use crate::kernel::machine_integer::Relation;
+        if matches!(view.relation, Relation::Less | Relation::LessEqual)
+            && let Some(widened) = view.widened()
+        {
+            return self.admit_observation_comparison(&widened);
+        }
+        let operands = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let (relation, truth) = match view.relation {
+            Relation::Equal => (CompareRelation::Equal, true),
+            Relation::NotEqual => (CompareRelation::Equal, false),
+            Relation::Less => (CompareRelation::LessThan, true),
+            Relation::LessEqual => (CompareRelation::LessEqual, true),
+        };
+        let format =
+            if relation == CompareRelation::Equal && view.format == MachineIntegerType::UInt64 {
+                MachineIntegerType::Int64
+            } else {
+                view.format
+            };
+        if relation == CompareRelation::Equal && truth {
+            let width = Self::machine_comparison_width(format, relation, operands);
+            let [left, right] = operands.map(|operand| match operand {
+                crate::kernel::MachineOperandView::Shared(term) => {
+                    self.intern_shared_machine(term, width)
+                }
+                crate::kernel::MachineOperandView::Legacy(term) => {
+                    self.intern_typed_machine(term, width)
+                }
+            });
+            self.register_pending_loads();
+            self.close(vec![(left, right)])
+        } else {
+            self.admit_machine_comparison(format, relation, operands, truth)
+        }
+    }
+
     /// Equality of Integers implies equality of their 32-bit residues.
     /// Visit only the rule's bounded Integer skeleton; machine observations
     /// register their existing shared graph, never a boxed expansion.

@@ -13343,32 +13343,23 @@ pub struct PureFactContext {
     /// `has_pointer_offset_snapshot_fact` checks.
     pub(super) pointer_offset_equalities_by_shape:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
+    pub(super) observation_comparisons:
+        super::assumptions::observation_comparisons::ObservationComparisons,
     pub(super) checked_scalar_facts: super::assumptions::checked_scalar_facts::CheckedScalarFacts,
     pub(super) checked_order_bounds: super::assumptions::checked_order_bounds::CheckedOrderBounds,
-    pub(super) signed_order_bounds: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
-    >,
+    pub(super) signed_order_bounds: super::assumptions::retained_order_bounds::OrderBoundIndex,
     /// The `int64` counterpart of `signed_order_bounds`, maintained by the
     /// same insert and remove path over `int64` order facts. It
     /// is kept separate so an `int64` bound is never read as an int32 one.
-    pub(super) int64_signed_order_bounds: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
-    >,
+    pub(super) int64_signed_order_bounds:
+        super::assumptions::retained_order_bounds::OrderBoundIndex,
     /// Unsigned 32-bit order facts indexed by either endpoint, as
     /// `signed_order_bounds` files signed ones; kept separate so a `uint32`
     /// bound is never read as an `int32` one.
-    pub(super) uint32_order_bounds: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
-    >,
+    pub(super) uint32_order_bounds: super::assumptions::retained_order_bounds::OrderBoundIndex,
     /// Unsigned 64-bit order facts indexed by either endpoint. This keeps
     /// slice-index range transport proportional to the queried order chain.
-    pub(super) uint64_order_bounds: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
-    >,
+    pub(super) uint64_order_bounds: super::assumptions::retained_order_bounds::OrderBoundIndex,
     /// The 64-bit order facts again, split by direction for the chain walk:
     /// for each kind (`[unsigned, signed]`) and each direction (`[upward,
     /// downward]`), the canonical far ends of the facts leaving a canonical
@@ -13377,10 +13368,8 @@ pub struct PureFactContext {
     /// `c0 < n`, `c1 < n`, ..., costs an upward walk through it nothing for
     /// the facts below it. Derived from the two indexes above by the same
     /// insert and remove path.
-    pub(super) wide_order_edges: [[crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, bool), usize>,
-    >; 2]; 2],
+    pub(super) wide_order_edges:
+        [[super::assumptions::retained_order_bounds::OrderEdgeIndex; 2]; 2],
     /// Condition facts containing a memory-load atom, indexed by the loaded
     /// pointer's snapshot-blind structural fingerprint. This is derived from
     /// `condition_facts`; it narrows snapshot-aware load-form checks

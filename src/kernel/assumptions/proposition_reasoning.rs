@@ -4433,6 +4433,11 @@ impl PureFactContext {
     }
 
     pub(crate) fn is_inconsistent(&self) -> bool {
+        if let Some(source) = self.observation_comparisons.false_source() {
+            record_implicit_reasoning_provenance(self, source);
+            return true;
+        }
+
         // Exact opposite assumptions construct this fact directly, without
         // deleting the original condition or invalidating derived indexes.
         if self.prop_facts.contains(&Proposition::ConditionIs(

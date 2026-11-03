@@ -349,6 +349,53 @@ explicitly isolate that boundary and cover source truth, removal, persistent
 branches, excluded runs, and shared DAGs. The full admission no-export acceptance
 criterion remains open.
 
+## Ordinary comparison sources without native copies (2026-11-03)
+
+Ordinary exact Integer observations are admitted under their written source.
+The source index retains shared comparison keys, truth and direction, including
+native and promoted narrow readings. A folded type-range reading retains its
+source authority without filing an independent `true` or `false` fact. Exact
+membership, source withdrawal and persistent branch isolation stay distinct
+from semantic availability.
+
+Carrier equalities and comparison truth enter the graph through operand views.
+Integer equality replay retains its original input and restores the carrier
+merge, including 64-bit equations; mixed native/Integer chains therefore keep
+their equality and order transport. Scalar, order-endpoint, variable-chain and
+contradiction admission no longer need the duplicate native condition.
+Additive cancellation retains both the original endpoint classes and each
+reduced equation, so an order conflict on the original sums remains visible.
+The excluded-type-bound certificate reads literal arithmetic in its selected
+premise, so `x != -2147483647 - 1` supports negation's definedness without
+relying on admission to file a folded constant copy.
+
+Order indexes retain shared endpoints. Their remaining boxed query adapters
+export only a visited entry. Contradiction endpoints keep context-local opaque
+keys and incremental shared sum keys: repeated children contribute modular
+coefficients, and a canonical binary trie updates the selected addend without
+rebuilding all earlier addends. These are checking keys, not lowered terms or
+independently assumed facts.
+
+Regressions cover all eight native integer formats, relation/polarity pairs,
+source withdrawal, duplicate supporting spellings, mixed equality chains,
+promoted narrow readings, contradiction detection and 8/32/96-level shared
+DAG admission without export. Deterministic tests separately grow equivalent
+supporting sources, repeated full admissions, and distinct addends in the
+contradiction index. Full admission still maintains each fact's mentioned-variable
+indexes; the distinct-addend test isolates sum-index maintenance from that
+existing cost.
+
+Validation on upstream `2bcb3e849`: `scripts/check.sh` passed 7,209
+unit/API/import/scaling checks and all four fixture aggregates (61 example
+projects). Total time was 14m51s including a 3m08s rebuild, with the ten-minute
+budget advisory. A focused run of 1,230 comparison/contradiction/scaling checks
+also passed before the final upstream integration. The 106-fixture arithmetic
+fact-stability audit reports zero differences. No nightly run.
+
+Operation-through-range and quantified-antecedent bridges still file their native
+readings. Compound comparison forms and older query/interval adapters also
+remain compatibility boundaries. Nested signed preparation stays disabled.
+
 ## Shared inverse-operation operands (2026-11-02)
 
 The inverse map from an exact Integer sum/difference to its machine operation

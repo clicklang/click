@@ -125,14 +125,25 @@ impl ChainGraph {
 
 impl VariableChains {
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
-        let Some((Bitvector32Term::Variable(left), Bitvector32Term::Variable(right), true)) =
-            condition_as_order_fact(condition, value)
+        let Some(view) = retained_order_bounds::order_view(condition, value) else {
+            return;
+        };
+        if view.format != MachineIntegerType::Int32
+            || view.relation != super::super::machine_integer::Relation::Less
+        {
+            return;
+        }
+        let [Some(left), Some(right)] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view().variable())
         else {
             return;
         };
         if crate::kernel::is_load_variable(&left) || crate::kernel::is_load_variable(&right) {
             return;
         }
+        let (left, right) = (*left, *right);
         let edge = (left, right);
         let count = self.sources.get(&edge).copied().unwrap_or(0);
         if insert {
