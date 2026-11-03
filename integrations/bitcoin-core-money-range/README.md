@@ -142,13 +142,9 @@ flags, and that the `bitcoin` unit states exactly that command, before
 changing the checked-in closure. A changed archive also requires
 deliberately updating the pinned digest in the gate test after review.
 
-The sidecar also contains four one-call, modular `executes MoneyRange`
-proofs. They apply the verified upstream function contract to an arbitrary
-`const CAmount&` whose value is respectively `-1`, `0`, `MAX_MONEY`, or
-`MAX_MONEY + 1`, and establish false, true, true, or false while returning
-the reference's owned cell unchanged. These are proof-level callers: they
-introduce no C++ wrapper, alternate implementation, or verifier-specific
-build flag.
+The sidecar proves the exact Boolean range result for every input while
+preserving the reference's owned cell. The contract covers `-1`, `0`,
+`MAX_MONEY`, and `MAX_MONEY + 1` without separate boundary execution theorems.
 
 The gate also rejects an exclusive upper-bound claim against the unchanged
 upstream function. It refuses to load the locked artifact after changes to
@@ -156,12 +152,13 @@ upstream function. It refuses to load the locked artifact after changes to
 configured profile. Selecting `MoneyRange` from a different upstream header
 fails refresh, and that rejected selector cannot load the old artifact.
 
-The gate profiles the complete upstream proof, resolves every profiled tactic
-to its sidecar location, and audits all 14 smart-tactic sites. Each site is
+The gate profiles the complete upstream proof and audits all six source
+smart-tactic sites. Profile events may also include generated execution steps;
+source positions come from the source-site inventory. Each site is
 expanded against the same locked import, the resulting certificate is checked
 by ordinary verification and a retained audit session, and the expanded
-claim has fewer smart sites. This covers the range contract and all four
-boundary theorems without invoking Clang during verification or expansion.
+claim has fewer smart sites. The exact range contract covers both endpoints
+and out-of-range values without invoking Clang during verification or expansion.
 
 This is one function under one Clang profile, not general Bitcoin Core or
 Linux binary verification.
@@ -322,8 +319,8 @@ verifies native output bounds and unrelated memory through a modular caller.
 The sidecar also proves the exact corrected quotient in each remainder-sign
 case, including zero, and the defining mathematical product inequalities:
 
-- Floor (`round_down != 0`): `result * d <= n < (result + 1) * d`.
-- Ceiling (`round_down == 0`): `(result - 1) * d < n <= result * d`.
+- Floor (`round_down == true`): `result * d <= n < (result + 1) * d`.
+- Ceiling (`round_down == false`): `(result - 1) * d < n <= result * d`.
 
 These specifications use `to_integer` observations and Integer arithmetic, so
 their products and successor/predecessor expressions have no native overflow.
@@ -350,8 +347,8 @@ helper contract, rather than declarations to load together.
 
 With `N = to_integer(n)`, `D = to_integer(d)`, `MIN = INT64_MIN` and
 `MAX = INT64_MAX`, both require a positive int32 divisor and explicit native
-`d <= INT32_MAX`. Down requires `round_down != 0` and
-`MIN * D <= N < (MAX + 1) * D`. Up requires `round_down == 0` and
+`d <= INT32_MAX`. Down requires `round_down == true` and
+`MIN * D <= N < (MAX + 1) * D`. Up requires `round_down == false` and
 `(MIN - 1) * D < N <= MAX * D`. For `D > 1`, Down includes positive
 numerators above `MAX * D`; Up includes negative numerators below `MIN * D`.
 For example, with `D = 2`, Down accepts `2 * MAX + 1` and returns `MAX`,

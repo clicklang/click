@@ -4,8 +4,8 @@ bool MoneyRange(const int64& nValue) {
     owns nValue;
     ensures nValue == old(nValue);
     ensures result == (if old(nValue) >= 0i64 {
-        if old(nValue) <= 2100000000000000i64 { 1 } else { 0 }
-    } else { 0 });
+        if old(nValue) <= 2100000000000000i64 { true } else { false }
+    } else { false });
 } by {
     if nValue >= 0i64 {
         if nValue <= 2100000000000000i64 {
@@ -19,48 +19,4 @@ bool MoneyRange(const int64& nValue) {
         step_until(function.exit);
         solve();
     }
-}
-
-contract bool BelowRange(const int64& nValue) {
-    requires nValue == -1i64;
-    owns nValue;
-    ensures nValue == old(nValue);
-    ensures result == 0;
-}
-
-theorem below_range_is_false() executes MoneyRange(const int64& nValue) {
-    ensures BelowRange(&MoneyRange);
-}
-
-contract bool AtZero(const int64& nValue) {
-    requires nValue == 0i64;
-    owns nValue;
-    ensures nValue == old(nValue);
-    ensures result == 1;
-}
-
-theorem zero_is_in_range() executes MoneyRange(const int64& nValue) {
-    ensures AtZero(&MoneyRange);
-}
-
-contract bool AtMaxMoney(const int64& nValue) {
-    requires nValue == 2100000000000000i64;
-    owns nValue;
-    ensures nValue == old(nValue);
-    ensures result == 1;
-}
-
-theorem max_money_is_in_range() executes MoneyRange(const int64& nValue) {
-    ensures AtMaxMoney(&MoneyRange);
-}
-
-contract bool AboveRange(const int64& nValue) {
-    requires nValue == 2100000000000001i64;
-    owns nValue;
-    ensures nValue == old(nValue);
-    ensures result == 0;
-}
-
-theorem above_range_is_false() executes MoneyRange(const int64& nValue) {
-    ensures AboveRange(&MoneyRange);
 }

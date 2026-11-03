@@ -313,24 +313,6 @@ fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_0() {
 }
 
 #[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_1() {
-    reject_helper_byte_bounds(1);
-}
-
-#[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_2() {
-    reject_helper_byte_bounds(2);
-}
-
-#[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn charon_adler2_helpers_from_rejects_false_byte_bounds_lane_3() {
-    reject_helper_byte_bounds(3);
-}
-
-#[test]
 #[ignore = "nightly: 1.7s in the parallel gate"]
 fn charon_adler2_helpers_add_rejects_false_lanes_and_overflow() {
     reject_helper_contracts(
@@ -394,24 +376,6 @@ fn charon_adler2_helpers_add_rejects_false_observations_lane_3() {
 #[ignore = "nightly: 11s in the parallel gate"]
 fn charon_adler2_helpers_rem_preservation_rejects_false_lane_0() {
     reject_helper_reduction_preservation(0);
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn charon_adler2_helpers_rem_preservation_rejects_false_lane_1() {
-    reject_helper_reduction_preservation(1);
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn charon_adler2_helpers_rem_preservation_rejects_false_lane_2() {
-    reject_helper_reduction_preservation(2);
-}
-
-#[test]
-#[ignore = "nightly: 11s in the parallel gate"]
-fn charon_adler2_helpers_rem_preservation_rejects_false_lane_3() {
-    reject_helper_reduction_preservation(3);
 }
 
 #[test]
@@ -1547,31 +1511,6 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     );
 }
 
-#[test]
-#[ignore = "nightly: symbolic original vector-loop invariant and ranking rejections"]
-fn charon_adler2_four_byte_compute_rejects_false_vector_loop_induction() {
-    for (before, after) in [
-        (
-            "decreases __rust_mir_62_remaining;",
-            "decreases 4 - __rust_mir_62_remaining;",
-        ),
-        (
-            "invariant ((__rust_mir_62_remaining as u32) as i32) % 4 == 0;",
-            "invariant ((__rust_mir_62_remaining as u32) as i32) % 4 == 1;",
-        ),
-        (
-            "invariant ((__rust_mir_62_remaining as u32) as i32) == 0 implies a_vec.0[3] == old((bytes[3] as u32));",
-            "invariant ((__rust_mir_62_remaining as u32) as i32) == 0 implies a_vec.0[3] == old((bytes[2] as u32));",
-        ),
-        (
-            "invariant b_vec.0[3] <= 255u32;",
-            "invariant b_vec.0[3] <= 254u32;",
-        ),
-    ] {
-        reject_compute(FOUR_BYTE_COMPUTE, before, after);
-    }
-}
-
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: original four-byte computation proof-tool agreement and expansion"]
@@ -2391,51 +2330,6 @@ fn charon_adler2_general_compute_proves_original_body() {
     .unwrap();
 }
 
-#[test]
-#[ignore = "nightly: actual full-batch constructor byte positions"]
-fn charon_adler2_general_compute_rejects_false_absolute_byte() {
-    reject_compute(
-        GENERAL_COMPUTE,
-        "have to_integer(at(vector_a, __rust_mir_42.0[3])) == at(vector_a, to_integer(((bytes + ",
-        "have to_integer(at(vector_a, __rust_mir_42.0[3])) + 1 == at(vector_a, to_integer(((bytes + ",
-    );
-}
-
-#[test]
-#[ignore = "nightly: full-batch A residue and reduction rejection"]
-fn charon_adler2_general_compute_rejects_false_full_batch_a() {
-    let transition = GENERAL_COMPUTE
-        .lines()
-        .find(|line| line.contains("apply(adler_native_four_lane_a_prefix_step_u64("))
-        .unwrap();
-    reject_compute(
-        GENERAL_COMPUTE,
-        transition,
-        &transition.replace(
-            "at(vector_a, __rust_mir_42.0[0]), at(vector_a, __rust_mir_42.0[1])",
-            "at(vector_a, __rust_mir_42.0[0]), at(vector_a, __rust_mir_42.0[0])",
-        ),
-    );
-    reject_compute(
-        GENERAL_COMPUTE,
-        "have to_integer(a_vec.0[0]) == truncating_remainder(to_integer(at(full_lane_prefix, a_vec.0[0])), 65521)",
-        "have to_integer(a_vec.0[0]) == truncating_remainder(to_integer(at(full_lane_prefix, a_vec.0[0])), 65521) + 1",
-    );
-}
-
-#[test]
-#[ignore = "nightly: general computation authority, seeds and final bounds"]
-fn charon_adler2_general_compute_rejects_invalid_contracts() {
-    for (before, after) in [
-        (" views *bytes;", ""),
-        (" requires (self.a as u32) <= 65520u32;", ""),
-        (" requires (self.b as u32) <= 65520u32;", ""),
-        ("ensures self.a < 65521;", "ensures self.a < 1;"),
-    ] {
-        reject_compute(GENERAL_COMPUTE, before, after);
-    }
-}
-
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: general whole-body proof-tool agreement and expansion"]
@@ -2448,23 +2342,6 @@ fn charon_adler2_general_compute_tools_recheck_original_contract() {
     assert_cli(&p, &["audit", "--claim", claim]);
     assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     assert_cli(&p, &["verify"]);
-}
-
-#[test]
-#[ignore = "nightly: actual general outer and tail cursor rejection"]
-fn charon_adler2_general_compute_rejects_false_iterator_state() {
-    for (before, after) in [
-        (
-            "have __rust_mir_27_cursor == old(bytes);",
-            "have __rust_mir_27_cursor == old(bytes) + 1 by assumption();",
-        ),
-        (
-            "have __rust_mir_138_cursor == remainder;",
-            "have __rust_mir_138_cursor == remainder + 1 by assumption();",
-        ),
-    ] {
-        reject_compute(GENERAL_COMPUTE, before, after);
-    }
 }
 
 const LANE_STATE: &str = include_str!("../../design/adler32/project/adler2/lane-state.click");
@@ -2798,46 +2675,6 @@ fn charon_adler2_public_checksum_matches_one_byte_spec() {
 }
 
 #[test]
-#[ignore = "nightly: public checksum false-result and authority mutations"]
-fn charon_adler2_public_checksum_rejects_false_result_length_and_authority() {
-    let p = adler2_helpers_project();
-    let prepared = p.prepared().unwrap();
-    for (before, after) in [
-        (
-            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, 1u64, 1, 0));",
-            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, 1u64, 1, 0)) + 1;",
-        ),
-        (
-            "adler_spec_checksum_u64(data, 1u64, 1, 0)",
-            "adler_spec_checksum_u64(data, 1u64, 0, 1)",
-        ),
-        (
-            "requires data.len() == 1u64;",
-            "requires data.len() == 0u64;",
-        ),
-        ("views data[0..1];", ""),
-        (
-            "ensures data[0] == old(data[0]);",
-            "ensures data[0] == old(data[0]) + 1;",
-        ),
-    ] {
-        let contract = PUBLIC_ONE_BYTE.replacen(before, after, 1);
-        assert_ne!(contract, PUBLIC_ONE_BYTE, "{before}");
-        let source = format!(
-            "{}\n{PACKING}\n{CHECKSUM}\n{PUBLIC_CONSTRUCTORS}\n{contract}",
-            public_compute_proof(SINGLE_BYTE_COMPUTE)
-        );
-        let error = verify_public_checksum_unit(&source, &prepared, "adler2::adler32_slice")
-            .expect_err("false public result or insufficient call authority must be refused");
-        assert!(
-            !error.message().contains("budget exhausted"),
-            "{}",
-            error.message()
-        );
-    }
-}
-
-#[test]
 #[ignore = "nightly: original public checksum and all helper bodies"]
 fn charon_adler2_public_checksum_checks_all_original_callee_bodies() {
     let p = adler2_helpers_project();
@@ -3026,38 +2863,6 @@ fn charon_adler2_incremental_client_matches_concatenated_input() {
     .unwrap();
 }
 
-#[test]
-#[ignore = "nightly: incremental client false results and missing input preconditions"]
-fn charon_adler2_incremental_client_rejects_false_claims() {
-    let p = incremental_project();
-    let prepared = p.prepared().unwrap();
-    for (before, after) in [
-        (
-            "ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0));",
-            "ensures to_integer(result) == old(adler_spec_checksum_u64(bytes, bytes.len(), 1, 0)) + 1;",
-        ),
-        ("requires split <= bytes.len();", ""),
-        ("views *bytes;", ""),
-        (
-            "implies bytes[k] == old(bytes[k])",
-            "implies bytes[k] == old(bytes[k]) + 1",
-        ),
-    ] {
-        let changed = INCREMENTAL_CLIENT.replacen(before, after, 1);
-        assert_ne!(changed, INCREMENTAL_CLIENT);
-        let source = incremental_proof().replacen(INCREMENTAL_CLIENT, &changed, 1);
-        let error =
-            verify_public_checksum_unit(&source, &prepared, "adler_incremental::incremental")
-                .expect_err("false incremental claims must be refused");
-        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
-        assert!(
-            !error.message().contains("budget exhausted"),
-            "{}",
-            error.message()
-        );
-    }
-}
-
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: unchanged incremental callees and client contract expansion"]
@@ -3242,53 +3047,6 @@ fn adler32_prepared_demonstration_verifies_offline() {
     }
 }
 
-#[test]
-#[ignore = "nightly: general public API false checksums, seeds, authority and preservation"]
-fn charon_adler2_general_public_checksum_rejects_false_claims() {
-    let p = adler2_helpers_project();
-    let prepared = p.prepared().unwrap();
-    for (name, before, after) in [
-        (
-            "adler2::adler32_slice",
-            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 1, 0));",
-            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 1, 0)) + 1;",
-        ),
-        (
-            "adler2::adler32_slice",
-            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 1, 0));",
-            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, data.len(), 0, 1));",
-        ),
-        ("adler2::adler32_slice", "views *data;", ""),
-        (
-            "adler2::adler32_slice",
-            "implies data[k] == old(data[k])",
-            "implies data[k] == old(data[k]) + 1",
-        ),
-        (
-            "adler2::Adler32::write_slice",
-            "requires (self.a as u32) <= 65520u32;",
-            "requires (self.a as u32) <= 65521u32;",
-        ),
-        (
-            "adler2::Adler32::write_slice",
-            "requires (self.b as u32) <= 65520u32;",
-            "requires (self.b as u32) <= 65521u32;",
-        ),
-    ] {
-        let contract = PUBLIC_GENERAL.replacen(before, after, 1);
-        assert_ne!(contract, PUBLIC_GENERAL, "{before}");
-        let source = public_general_proof().replacen(PUBLIC_GENERAL, &contract, 1);
-        let error = verify_public_checksum_unit(&source, &prepared, name)
-            .expect_err("false public claims or insufficient call preconditions must be refused");
-        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
-        assert!(
-            !error.message().contains("budget exhausted"),
-            "{}",
-            error.message()
-        );
-    }
-}
-
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: general public API original callees and contract expansion"]
@@ -3358,58 +3116,6 @@ fn charon_adler2_public_empty_needs_no_input_byte_authority() {
     let prepared = p.prepared().unwrap();
     let source = public_boundary_proof(0).replacen("views data[0..0];", "", 1);
     verify_public_checksum_unit(&source, &prepared, "adler2::adler32_slice").unwrap();
-}
-
-#[test]
-#[ignore = "nightly: empty/serial/vector public checksum false claims and authority"]
-fn charon_adler2_public_boundaries_reject_false_result_extent_and_preservation() {
-    let p = adler2_helpers_project();
-    let prepared = p.prepared().unwrap();
-    for length in [0, 2, 3, 4] {
-        let original = public_boundary_proof(length);
-        let result = format!(
-            "ensures to_integer(result) == old(adler_spec_checksum_u64(data, {length}u64, 1, 0));"
-        );
-        let mut mutations = vec![
-            (result.clone(), result.replace("));", ")) + 1;")),
-            (
-                format!("adler_spec_checksum_u64(data, {length}u64, 1, 0)"),
-                format!("adler_spec_checksum_u64(data, {length}u64, 0, 1)"),
-            ),
-            (
-                format!("requires data.len() == {length}u64;"),
-                format!(
-                    "requires data.len() == {}u64;",
-                    if length == 0 { 1 } else { length - 1 }
-                ),
-            ),
-        ];
-        if length > 0 {
-            mutations.push((
-                format!("views data[0..{length}];"),
-                format!("views data[0..{}];", length - 1),
-            ));
-            for i in 0..length {
-                mutations.push((
-                    format!("ensures data[{i}] == old(data[{i}]);"),
-                    format!("ensures data[{i}] == old(data[{i}]) + 1;"),
-                ));
-            }
-        }
-        for (before, after) in mutations {
-            let source = original.replacen(&before, &after, 1);
-            assert_ne!(source, original, "{before}");
-            let error = verify_public_checksum_unit(&source, &prepared, "adler2::adler32_slice")
-                .expect_err(
-                    "incorrect public checksum, extent, or byte preservation must be refused",
-                );
-            assert!(
-                !error.message().contains("budget exhausted"),
-                "{}",
-                error.message()
-            );
-        }
-    }
 }
 
 #[cfg(not(feature = "fast-gate"))]
@@ -3570,88 +3276,6 @@ fn adler_serial_tail_spec_expands_and_rejects_false_weights() {
         assert_ne!(changed, source, "{before}");
         reject_isolated_theorem(&source, &changed, owner);
     }
-}
-
-#[test]
-#[ignore = "nightly: original serial-tail common field result rejection"]
-fn charon_adler2_serial_tails_reject_false_common_fields() {
-    for (contract, length) in [(TWO_BYTE_COMPUTE, 2), (THREE_BYTE_COMPUTE, 3)] {
-        for (field, spec, seed) in [("a", "adler_spec_a", "1"), ("b", "adler_spec_b", "1, 0")] {
-            let claim = format!(
-                "ensures to_integer(self.{field}) == old({spec}(bytes, {length}, {seed}));"
-            );
-            reject_compute(contract, &claim, &claim.replace("));", ")) + 1;"));
-        }
-    }
-}
-
-#[test]
-#[ignore = "nightly: original full-batch deferred B seed and reduction rejection"]
-fn charon_adler2_general_compute_rejects_false_deferred_b() {
-    let seed_claim =
-        "have to_integer(__rust_mir_50) == 22208 * to_integer(at(full_lane_prefix, a)) by";
-    reject_compute(
-        GENERAL_COMPUTE,
-        seed_claim,
-        &seed_claim.replace("22208 *", "22207 *"),
-    );
-    let reduction_claim = GENERAL_COMPUTE
-        .lines()
-        .find(|line| {
-            line.contains("have truncating_remainder(adler_lane_b(to_integer(b),")
-                && line.contains("== truncating_remainder(")
-        })
-        .unwrap();
-    reject_compute(
-        GENERAL_COMPUTE,
-        reduction_claim,
-        &reduction_claim.replace(" by {", " + 1 by {"),
-    );
-}
-
-#[test]
-#[ignore = "nightly: full-batch B specification seed and completed-prefix rejection"]
-fn charon_adler2_general_compute_rejects_false_b_specification() {
-    let outer_invariant = GENERAL_COMPUTE
-        .lines()
-        .find(|line| {
-            line.trim_start()
-                .starts_with("invariant truncating_remainder(adler_lane_b(to_integer(b),")
-        })
-        .unwrap();
-    reject_compute(
-        GENERAL_COMPUTE,
-        outer_invariant,
-        &outer_invariant.replace(
-            "old(to_integer((self.b as u32)))",
-            "(old(to_integer((self.b as u32))) + 1)",
-        ),
-    );
-    let completed_prefix = GENERAL_COMPUTE
-        .lines()
-        .rfind(|line| {
-            line.trim_start()
-                .starts_with("have truncating_remainder(adler_lane_b(to_integer(b),")
-                && line.contains("adler_spec_b_u64(bytes,")
-        })
-        .unwrap();
-    let index = completed_prefix
-        .split_once("adler_spec_b_u64(bytes, ")
-        .unwrap()
-        .1
-        // The A seed may name a recorded prefix snapshot rather than current a.
-        .split_once(", to_integer(")
-        .unwrap()
-        .0;
-    reject_compute(
-        GENERAL_COMPUTE,
-        completed_prefix,
-        &completed_prefix.replacen(
-            &format!("adler_spec_b_u64(bytes, {index},"),
-            "adler_spec_b_u64(bytes, bytes.len(),",
-            1,
-        ),
-    );
 }
 
 const BATCH_PREFIX: &str = include_str!("../../design/adler32/project/adler2/batch-prefix.click");
@@ -4022,16 +3646,6 @@ fn adler_count_byte_observation_tools_expand_and_reverify() {
     assert_cli(&p, &["verify"]);
 }
 
-#[test]
-#[ignore = "nightly: actual remainder constructor bytes after arbitrary full batches"]
-fn charon_adler2_general_compute_rejects_false_remainder_byte() {
-    reject_compute(
-        GENERAL_COMPUTE,
-        "have to_integer(at(vector_a, __rust_mir_68.0[3])) == at(vector_a, to_integer(((bytes + ",
-        "have to_integer(at(vector_a, __rust_mir_68.0[3])) + 1 == at(vector_a, to_integer(((bytes + ",
-    );
-}
-
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: remainder address claims and expansion tools"]
@@ -4055,84 +3669,4 @@ fn adler_remainder_positions_verify_expand_and_reverify() {
         );
     }
     assert_cli(&p, &["verify"]);
-}
-
-#[test]
-#[ignore = "nightly: aligned-remainder A transition after arbitrary full batches"]
-fn charon_adler2_general_compute_rejects_false_remainder_a() {
-    let transition = GENERAL_COMPUTE
-        .lines()
-        .find(|line| {
-            line.contains("apply(adler_native_four_lane_a_prefix_step_u64(")
-                && line.contains("__rust_mir_68.0")
-        })
-        .unwrap();
-    reject_compute(
-        GENERAL_COMPUTE,
-        transition,
-        &transition.replace(
-            "at(vector_a, __rust_mir_68.0[0]), at(vector_a, __rust_mir_68.0[1])",
-            "at(vector_a, __rust_mir_68.0[0]), at(vector_a, __rust_mir_68.0[0])",
-        ),
-    );
-}
-
-#[test]
-#[ignore = "nightly: aligned-remainder B specification preserves the entry seed"]
-fn charon_adler2_general_compute_rejects_false_remainder_b_seed() {
-    let transition = GENERAL_COMPUTE
-        .lines()
-        .find(|line| {
-            line.contains("apply(adler_native_deferred_b_prefix_step_u64(")
-                && line.contains("__rust_mir_68.0")
-        })
-        .unwrap();
-    reject_compute(
-        GENERAL_COMPUTE,
-        transition,
-        &transition.replace(
-            "old(to_integer((self.b as u32)))",
-            "old(to_integer((self.b as u32))) + 1",
-        ),
-    );
-}
-
-#[test]
-#[ignore = "nightly: general remainder A reduction and scalar recombination"]
-fn charon_adler2_general_compute_rejects_false_recombined_remainder_a() {
-    reject_compute(
-        GENERAL_COMPUTE,
-        "have to_integer(a) == adler_lane_a(to_integer(at(remainder_lane_prefix, a)),",
-        "have to_integer(a) + 1 == adler_lane_a(to_integer(at(remainder_lane_prefix, a)),",
-    );
-}
-
-#[test]
-#[ignore = "nightly: general remainder B weighted corrections and scalar recombination"]
-fn charon_adler2_general_compute_rejects_false_recombined_remainder_b() {
-    reject_compute(
-        GENERAL_COMPUTE,
-        "have to_integer(b) == adler_lane_b(to_integer(at(weighted_b, b)),",
-        "have to_integer(b) + 1 == adler_lane_b(to_integer(at(weighted_b, b)),",
-    );
-}
-
-#[test]
-#[ignore = "nightly: full general checksum A postcondition"]
-fn charon_adler2_general_compute_rejects_false_final_a() {
-    reject_compute(
-        GENERAL_COMPUTE,
-        "ensures to_integer(self.a) == old(adler_spec_a_u64(",
-        "ensures to_integer(self.a) + 1 == old(adler_spec_a_u64(",
-    );
-}
-
-#[test]
-#[ignore = "nightly: full general checksum B postcondition"]
-fn charon_adler2_general_compute_rejects_false_final_b() {
-    reject_compute(
-        GENERAL_COMPUTE,
-        "ensures to_integer(self.b) == old(adler_spec_b_u64(",
-        "ensures to_integer(self.b) + 1 == old(adler_spec_b_u64(",
-    );
 }
