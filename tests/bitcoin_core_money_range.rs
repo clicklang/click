@@ -3171,8 +3171,8 @@ fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
             .split_once("int64 CFeeRate::GetFeePerK(")
             .unwrap()
             .1
-            .split_once("} by {")
-            .unwrap()
+            .split_once("\n}")
+            .expect("GetFeePerK fixture has a complete contract")
             .0
             .replacen(") const {", ") {", 1)
     );
@@ -3184,7 +3184,7 @@ fn upstream_getfee_per_k_modular_callers_cover_signed_and_oversize_rates() {
         ("WidePerK", 8589934592, 1000),
     ] {
         let contract = root_contract.replacen("views this->m_feerate.base.fee;", &format!("requires this->m_feerate.base.fee == {fee}i64; requires this->m_feerate.base.size == {size}; views this->m_feerate.base.fee;"), 1);
-        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate::GetFeePerK(const struct CFeeRate* this) {{ ensures {name}(&CFeeRate::GetFeePerK); }}\n"));
+        callers.push_str(&format!("\ncontract int64 {name}({contract} }}\ntheorem {name}_application() executes CFeeRate::GetFeePerK(const struct CFeeRate* this) {{ ensures {name}(&CFeeRate::GetFeePerK) by {{ step_until(function.exit); solve(); }} }}\n"));
     }
     check_upstream_cpp_rounding_phase(
         "CFeeRate::GetFeePerK",
