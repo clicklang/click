@@ -909,92 +909,103 @@ impl PureFactContext {
         right: &Bitvector32Term,
         require_strict: bool,
     ) -> bool {
+        self.has_exact_order_path_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+            require_strict,
+        )
+    }
+
+    pub(in crate::kernel) fn has_exact_order_path_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        require_strict: bool,
+    ) -> bool {
+        use crate::kernel::MachineOperandView as V;
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let format = MachineIntegerType::Int32;
         let bridging = crate::kernel::api::extended_dag_bridging_active();
-        // Two forms of one load at different snapshots connect along
-        // recorded memory-derivation edges; the walk is deterministic (exact
-        // facts plus DAG edges, no ambient condition reasoning), so an exact
-        // order path may link through it — inside the loadable prover's
-        // extended-bridging scope only. Non-loads still match verbatim.
-        let terms_match = |current: &Bitvector32Term, other: &Bitvector32Term| {
-            current == other
-                || bridging
-                    && crate::kernel::api::atomic_loads_equal_along_memory_derivations(
-                        current, other, self,
-                    )
+        let terms_match = |current: V<'_>, other: V<'_>| {
+            Key::for_format(format, current) == Key::for_format(format, other)
+                || matches!((current, other), (V::Legacy(current), V::Legacy(other))
+                if bridging && crate::kernel::api::atomic_loads_equal_along_memory_derivations(
+                    current, other, self,
+                ))
         };
-        let mut stack = vec![(left.clone(), false)];
+        let constant = |operand: V<'_>| {
+            operand
+                .word32_constant()
+                .map(|value| i64::from(value as i32))
+        };
+        let connection = |current: V<'_>, other: V<'_>| {
+            constant(current)
+                .zip(constant(other))
+                .and_then(|(current, other)| (current <= other).then_some(current < other))
+        };
+        let mut stack = vec![(Key::for_format(format, left), false)];
         let mut seen = BTreeSet::new();
         while let Some((current, strict_so_far)) = stack.pop() {
             if !seen.insert((current.clone(), strict_so_far)) {
                 continue;
             }
             crate::instrumentation::record_deterministic_work(1);
-            let constant_connection = signed_bitvector_constant(&current)
-                .zip(signed_bitvector_constant(right))
-                .and_then(|(current, right)| (current <= right).then_some(current < right));
-            if (terms_match(&current, right) || constant_connection.is_some())
+            let current = current.operand_view();
+            let constant_connection = connection(current, right);
+            if (terms_match(current, right) || constant_connection.is_some())
                 && (!require_strict || strict_so_far || constant_connection == Some(true))
             {
                 return true;
             }
-            // Bridging relates two loads only (`atomic_memory_load_equality_evidence`).
-            let bridged_load = bridging && matches!(current, Bitvector32Term::MemoryLoad(..));
-            if bridged_load || signed_bitvector_constant(&current).is_some() {
-                // A constant node takes the edges from a constant at least
-                // as large; a bridged load, those from a load of its cell at
-                // any snapshot (`OrderFactsByLower`). No other edge matches
-                // either node.
+            let bridged_load =
+                bridging && matches!(current, V::Legacy(Bitvector32Term::MemoryLoad(..)));
+            if bridged_load || constant(current).is_some() {
                 let index = &self.order_facts_by_lower;
-                let candidates = match (&current, signed_bitvector_constant(&current)) {
+                let candidates = match (current, constant(current)) {
                     (_, Some(constant)) => index.constant_at_least(constant).collect::<Vec<_>>(),
-                    (Bitvector32Term::MemoryLoad(_, pointer, kind), None) => {
+                    (V::Legacy(Bitvector32Term::MemoryLoad(_, pointer, kind)), None) => {
                         index.loads_of(pointer, *kind).collect()
                     }
                     _ => Vec::new(),
                 };
                 for condition in candidates {
-                    let Some((edge_left, edge_right, edge_strict)) = self
+                    let Some(view) = self
                         .condition_facts
                         .get(condition)
-                        .and_then(|value| condition_as_order_fact(condition, *value))
+                        .and_then(|value| comparison_view(condition, *value))
+                        .filter(|view| {
+                            view.format == format
+                                && matches!(view.relation, Relation::Less | Relation::LessEqual)
+                        })
                     else {
                         continue;
                     };
-                    let constant_connection = signed_bitvector_constant(&current)
-                        .zip(signed_bitvector_constant(&edge_left))
-                        .and_then(|(current, edge_left)| {
-                            (current <= edge_left).then_some(current < edge_left)
-                        });
-                    if terms_match(&current, &edge_left) || constant_connection.is_some() {
+                    let [edge_left, edge_right] = view
+                        .operands
+                        .each_ref()
+                        .map(|operand| operand.operand_view());
+                    let constant_connection = connection(current, edge_left);
+                    if terms_match(current, edge_left) || constant_connection.is_some() {
                         stack.push((
-                            edge_right,
-                            strict_so_far || edge_strict || constant_connection == Some(true),
+                            Key::for_format(format, edge_right),
+                            strict_so_far
+                                || view.relation == Relation::Less
+                                || constant_connection == Some(true),
                         ));
                     }
                 }
                 continue;
             }
-            let Some(bounds) = self.signed_order_bounds.get(&current) else {
+            let Some(bounds) = self.signed_order_bounds.get_operand(current) else {
                 continue;
             };
             for (lower, upper, edge_strict, outgoing) in bounds.operand_keys() {
                 crate::instrumentation::record_deterministic_work(1);
-                // Entries filed under a canonical alias carry the written
-                // lower end, which an exact walk does not match.
-                use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
-                if outgoing
-                    && Key::for_format(MachineIntegerType::Int32, lower)
-                        == Key::for_format(
-                            MachineIntegerType::Int32,
-                            MachineOperandView::Legacy(&current),
-                        )
-                {
-                    // This walk's memory-matching engine still takes a written
-                    // endpoint. Export only the selected outgoing endpoint.
-                    stack.push((
-                        upper.retain(MachineIntegerType::Int32).value().clone(),
-                        strict_so_far || edge_strict,
-                    ));
+                // Canonical aliases are indexed, but an exact walk still
+                // requires the written endpoint to match.
+                if outgoing && Key::for_format(format, lower) == Key::for_format(format, current) {
+                    stack.push((Key::for_format(format, upper), strict_so_far || edge_strict));
                 }
             }
         }

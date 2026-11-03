@@ -136,3 +136,86 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
         );
     }
 }
+
+#[test]
+fn shared_exact_order_walk_visits_dag_endpoints_once() {
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        for ambient in [0, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let ty = MachineIntegerType::Int32;
+            let variable = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(997001));
+            let first = SharedMachineIntegerTerm::from_shared(
+                ty,
+                KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [variable.clone(), variable],
+                ),
+            )
+            .unwrap();
+            let mut last = first.clone();
+            let mut roots = vec![first.clone()];
+            let mut facts = PureFactContext::new();
+            for i in 0..ambient {
+                facts = facts.assume_condition(
+                    ConditionTerm::signed_less_than(
+                        Bitvector32Term::Variable(Variable(998000 + i * 2)),
+                        Bitvector32Term::Variable(Variable(998001 + i * 2)),
+                    ),
+                    true,
+                );
+            }
+            for _ in 0..size {
+                let V::Shared(root) = last.operand_view() else {
+                    panic!("shared root")
+                };
+                let next = SharedMachineIntegerTerm::from_shared(
+                    ty,
+                    KernelTerm::machine_binary_shared(
+                        ty,
+                        MachineBinaryOp::Add,
+                        [root.clone(), root.clone()],
+                    ),
+                )
+                .unwrap();
+                facts = facts.assume_condition(
+                    ConditionTerm::integer_less_than(
+                        IntegerTerm::Machine(last),
+                        IntegerTerm::Machine(next.clone()),
+                    ),
+                    true,
+                );
+                roots.push(next.clone());
+                last = next;
+            }
+            assert!(
+                roots.iter().all(|root| !root.has_boxed_operand()),
+                "admission exported an endpoint"
+            );
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                assert!(facts.has_exact_order_path_views(
+                    first.operand_view(),
+                    last.operand_view(),
+                    true
+                ));
+                let missing = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(997002));
+                assert!(!facts.has_exact_order_path_views(
+                    first.operand_view(),
+                    V::Shared(&missing),
+                    true
+                ));
+            });
+            assert!(roots.iter().all(|root| !root.has_boxed_operand()));
+            samples.push((size, ambient, work));
+        }
+    }
+    for pair in samples.chunks_exact(2) {
+        assert_eq!(pair[0].2, pair[1].2, "{samples:?}");
+    }
+    for pair in samples.chunks_exact(2).collect::<Vec<_>>().windows(2) {
+        let (small, _, sw) = pair[0][0];
+        let (large, _, lw) = pair[1][0];
+        assert!(lw * small <= sw * large * 2, "{samples:?}");
+    }
+}

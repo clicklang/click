@@ -213,27 +213,37 @@ impl PureFactContext {
         upper: &Bitvector32Term,
         strict: bool,
     ) -> bool {
+        self.has_unsigned32_bound_between_views(V::Legacy(lower), V::Legacy(upper), strict)
+    }
+
+    pub(in crate::kernel) fn has_unsigned32_bound_between_views(
+        &self,
+        lower: V<'_>,
+        upper: V<'_>,
+        strict: bool,
+    ) -> bool {
         let kind = OrderKind::Unsigned32;
-        self.bounds_for_search(kind, lower, true)
+        self.bounds_for_search_view(kind, lower, true)
             .into_iter()
             .any(|(bound, bound_strict)| {
                 self.bound_proves_order_views(
                     kind,
                     bound.operand_view(),
-                    V::Legacy(upper),
+                    upper,
                     strict && !bound_strict,
                 )
             })
-            || self.bounds_for_search(kind, upper, false).into_iter().any(
-                |(bound, bound_strict)| {
+            || self
+                .bounds_for_search_view(kind, upper, false)
+                .into_iter()
+                .any(|(bound, bound_strict)| {
                     self.bound_proves_order_views(
                         kind,
-                        V::Legacy(lower),
+                        lower,
                         bound.operand_view(),
                         strict && !bound_strict,
                     )
-                },
-            )
+                })
     }
 
     /// Whether a recorded upper bound of `left` lies at or below `right`
@@ -243,13 +253,17 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.upper_bounds_for_search(left)
+        self.has_upper_bound_below_views(V::Legacy(left), V::Legacy(right))
+    }
+
+    pub(in crate::kernel) fn has_upper_bound_below_views(&self, left: V<'_>, right: V<'_>) -> bool {
+        self.bounds_for_search_view(OrderKind::Signed32, left, true)
             .into_iter()
             .any(|(upper, strict)| {
                 self.bound_proves_order_views(
                     OrderKind::Signed32,
                     upper.operand_view(),
-                    V::Legacy(right),
+                    right,
                     !strict,
                 )
             })
@@ -262,13 +276,21 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.upper_bounds_for_search(left)
+        self.has_upper_bound_at_or_below_views(V::Legacy(left), V::Legacy(right))
+    }
+
+    pub(in crate::kernel) fn has_upper_bound_at_or_below_views(
+        &self,
+        left: V<'_>,
+        right: V<'_>,
+    ) -> bool {
+        self.bounds_for_search_view(OrderKind::Signed32, left, true)
             .into_iter()
             .any(|(upper, _)| {
                 self.bound_proves_order_views(
                     OrderKind::Signed32,
                     upper.operand_view(),
-                    V::Legacy(right),
+                    right,
                     false,
                 )
             })
@@ -555,19 +577,34 @@ impl PureFactContext {
         term: &Bitvector32Term,
         upper: bool,
     ) -> Vec<(SharedMachineIntegerTerm, bool)> {
+        self.bounds_for_search_view(kind, V::Legacy(term), upper)
+    }
+
+    pub(super) fn bounds_for_search_view(
+        &self,
+        kind: OrderKind,
+        term: V<'_>,
+        upper: bool,
+    ) -> Vec<(SharedMachineIntegerTerm, bool)> {
         let index = match kind {
             OrderKind::Signed32 => &self.signed_order_bounds,
             OrderKind::Unsigned32 => &self.uint32_order_bounds,
         };
-        let canonical = crate::kernel::eval::canonical_term(term);
-        let keys = if canonical == *term {
-            vec![canonical]
-        } else {
-            vec![term.clone(), canonical]
+        // Only written terms have a separate canonical spelling. Shared roots
+        // are queried directly; their endpoint keys preserve DAG identity.
+        let canonical = match term {
+            V::Legacy(term) => Some(crate::kernel::eval::canonical_term(term)),
+            V::Shared(_) => None,
         };
+        let mut keys = vec![term];
+        if let (V::Legacy(written), Some(canonical)) = (term, canonical.as_ref())
+            && written != canonical
+        {
+            keys.push(V::Legacy(canonical));
+        }
         let mut bounds = Vec::new();
         for key in keys {
-            let Some(entries) = index.get(&key) else {
+            let Some(entries) = index.get_operand(key) else {
                 continue;
             };
             for (_, other, strict, own_is_lower) in entries.operand_keys() {
@@ -678,14 +715,18 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.lower_bounds_for_search(left)
+        self.has_lower_bound_above_views(V::Legacy(left), V::Legacy(right))
+    }
+
+    pub(in crate::kernel) fn has_lower_bound_above_views(&self, left: V<'_>, right: V<'_>) -> bool {
+        self.bounds_for_search_view(OrderKind::Signed32, left, false)
             .into_iter()
             .any(|(lower, strict)| {
                 // `lower < left` and `lower >= right`, or `lower <= left` and
                 // `lower > right`, give `left > right`.
                 self.bound_proves_order_views(
                     OrderKind::Signed32,
-                    V::Legacy(right),
+                    right,
                     lower.operand_view(),
                     !strict,
                 )
@@ -699,12 +740,20 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
-        self.lower_bounds_for_search(left)
+        self.has_lower_bound_at_or_above_views(V::Legacy(left), V::Legacy(right))
+    }
+
+    pub(in crate::kernel) fn has_lower_bound_at_or_above_views(
+        &self,
+        left: V<'_>,
+        right: V<'_>,
+    ) -> bool {
+        self.bounds_for_search_view(OrderKind::Signed32, left, false)
             .into_iter()
             .any(|(lower, _)| {
                 self.bound_proves_order_views(
                     OrderKind::Signed32,
-                    V::Legacy(right),
+                    right,
                     lower.operand_view(),
                     false,
                 )
@@ -988,6 +1037,93 @@ fn shared_successor_of(term: V<'_>, right: &Bitvector32Term) -> bool {
 
 #[cfg(test)]
 mod shared_bound_tests {
+    #[test]
+    fn shared_endpoint_bounds_keep_roots_and_contexts() {
+        use super::*;
+        use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            let make = |id| {
+                let variable = KernelTerm::variable(KernelType::C(format.c_type()), Variable(id));
+                let root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [variable.clone(), variable],
+                );
+                SharedMachineIntegerTerm::from_shared(format, root).unwrap()
+            };
+            let left = make(994821);
+            let right = make(994822);
+            let comparison =
+                |relation, a: &SharedMachineIntegerTerm, b: &SharedMachineIntegerTerm| {
+                    NativeComparisonView {
+                        format,
+                        relation,
+                        operands: [
+                            ComparisonOperand::Observation(a.clone()),
+                            ComparisonOperand::Observation(b.clone()),
+                        ],
+                    }
+                    .integer_condition()
+                };
+            let parent = PureFactContext::new();
+            assert!(!parent.has_upper_bound_below_views(left.operand_view(), right.operand_view()));
+            let middle = make(994823);
+            let child = parent
+                .clone()
+                .assume_condition(comparison(Relation::Less, &left, &middle), true)
+                .assume_condition(comparison(Relation::LessEqual, &middle, &right), true);
+            match format {
+                MachineIntegerType::Int32 => {
+                    assert!(
+                        child
+                            .has_upper_bound_below_views(left.operand_view(), right.operand_view())
+                    );
+                    assert!(
+                        child
+                            .has_lower_bound_above_views(right.operand_view(), left.operand_view())
+                    );
+                }
+                MachineIntegerType::UInt32 => {
+                    assert!(child.has_unsigned32_bound_between_views(
+                        left.operand_view(),
+                        right.operand_view(),
+                        true
+                    ));
+                    assert!(!child.has_unsigned32_bound_between_views(
+                        right.operand_view(),
+                        left.operand_view(),
+                        false
+                    ));
+                }
+                _ => unreachable!(),
+            }
+            if format == MachineIntegerType::Int32 {
+                assert!(child.has_exact_order_path_views(
+                    left.operand_view(),
+                    right.operand_view(),
+                    true
+                ));
+                assert!(!child.has_exact_order_path_views(
+                    right.operand_view(),
+                    left.operand_view(),
+                    false
+                ));
+                assert!(!parent.has_exact_order_path_views(
+                    left.operand_view(),
+                    right.operand_view(),
+                    true
+                ));
+            }
+            assert!(!left.has_boxed_operand());
+            assert!(!right.has_boxed_operand());
+            assert!(!middle.has_boxed_operand());
+            assert!(!parent.has_upper_bound_below_views(left.operand_view(), right.operand_view()));
+            assert!(!left.has_boxed_operand());
+            assert!(!right.has_boxed_operand());
+        }
+    }
+
     #[test]
     fn shared_constant_comparisons_use_operand_classes_without_export() {
         use super::*;
