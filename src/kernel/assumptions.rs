@@ -11927,6 +11927,111 @@ mod integer_observation_tests {
     }
 
     #[test]
+    fn shared_comparison_queries_read_native_sources_in_both_polarities() {
+        use crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison;
+        for ty in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for relation in [
+                CompareRelation::LessThan,
+                CompareRelation::LessEqual,
+                CompareRelation::GreaterThan,
+                CompareRelation::GreaterEqual,
+            ] {
+                for truth in [false, true] {
+                    let _session = crate::kernel::VerificationSession::enter();
+                    let source =
+                        ConditionTerm::machine_compare(ty, relation, word(994301), word(994302));
+                    let source = Proposition::ConditionIs(source, truth);
+                    let readings = integer_observations_of_native_comparison(&source);
+                    assert!(!readings.is_empty(), "{ty:?} {relation:?}");
+                    let parent = PureFactContext::new();
+                    let child = parent.clone().assume_proposition(source);
+                    for reading in readings {
+                        let Proposition::ConditionIs(query, value) = reading else {
+                            unreachable!()
+                        };
+                        assert_eq!(parent.decide(&query), None, "{ty:?} {relation:?}");
+                        assert!(
+                            child.equality_graph.knows_condition(&query, value),
+                            "{ty:?} {relation:?} {truth}"
+                        );
+                        assert!(
+                            !child.equality_graph.knows_condition(&query, !value),
+                            "{ty:?} {relation:?} {truth}"
+                        );
+                        assert_eq!(
+                            child.decide(&query),
+                            Some(value),
+                            "{ty:?} {relation:?} {truth}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn observation_dispatch_preserves_native_arithmetic_order_rules() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = word(994501);
+        let y = word(994502);
+        let upper = Bitvector32Term::Constant(i32::MAX as u32);
+        let context = PureFactContext::new()
+            .assume_condition(ConditionTerm::signed_less_than(x.clone(), upper), true)
+            .assume_condition(
+                ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::Constant(0)),
+                true,
+            );
+        let plus_one = Bitvector32Term::add(x.clone(), Bitvector32Term::Constant(1));
+        let cases = [
+            ConditionTerm::signed_less_than(x.clone(), plus_one.clone()),
+            ConditionTerm::signed_less_equal(x.clone(), plus_one),
+        ];
+        for native in cases {
+            let expected = context.decide(&native);
+            assert_eq!(expected, Some(true));
+            for reading in
+                integer_observations_of_native_comparison(&Proposition::ConditionIs(native, true))
+            {
+                let Proposition::ConditionIs(query, value) = reading else {
+                    unreachable!()
+                };
+                assert_eq!(context.decide(&query), Some(value), "{query:?}");
+            }
+        }
+        let constants = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::equal(x.clone(), Bitvector32Term::Constant(1)),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::equal(y.clone(), Bitvector32Term::Constant(2)),
+                true,
+            );
+        let native = ConditionTerm::signed_less_than(
+            Bitvector32Term::add(x, y),
+            Bitvector32Term::Constant(4),
+        );
+        assert_eq!(constants.decide(&native), Some(true));
+        for reading in
+            integer_observations_of_native_comparison(&Proposition::ConditionIs(native, true))
+        {
+            let Proposition::ConditionIs(query, value) = reading else {
+                unreachable!()
+            };
+            assert_eq!(constants.decide(&query), Some(value), "{query:?}");
+        }
+    }
+
+    #[test]
     fn a_native_fact_decides_its_integer_observation() {
         let context = PureFactContext::new().assume_condition(
             ConditionTerm::signed_less_equal(word(1), Bitvector32Term::Constant(3)),

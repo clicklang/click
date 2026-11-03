@@ -12,6 +12,40 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Shared comparison class queries (2026-11-03)
+
+After merged #2325, `codex/shared-comparison-dispatch` lets Integer observations
+query native comparison classes directly. The query retains shared operand
+handles, checks a fixed set of equivalent directions/polarities, and uses the
+existing condition-kind index to skip absent kinds. Narrow orders use the same
+widening as admission. The general dispatcher consults these classes and the
+existing intrinsic observation rules before its compatibility conversion.
+Variable-chain endpoint matching also reads shared operand views, and the
+successor/low-word rules reject inapplicable roots before exporting endpoints.
+
+This is a prerequisite, not removal of the unresolved-comparison export.
+Deleting the general native bridge made `to_integer(x) < to_integer(x + 1)`
+undecidable even with `0 <= x` and `x < INT_MAX`, while the native comparison
+still succeeded. The bridge is retained, with a positive regression for this
+case and arithmetic whose operands are pinned by equalities. The next step is
+to migrate these arithmetic decision rules (including their definedness and
+constant-class consumers), then remove the bridge. Graph-only lookup is not a
+replacement for the ordinary dispatcher. Nested signed preparation stays off.
+
+The shared-DAG regression covers 8/32/96 prefixes with 1/64 unrelated facts:
+class-query misses and a successful full-dispatcher query through an equality
+alias retain the DAG; the parent context still lacks the child's fact. Both
+ambient samples contain order classes so the test compares indexed lookup
+costs, rather than an empty-kind shortcut against first registration. The
+format/polarity matrix covers all eight machine formats and four order
+directions.
+
+Validation: `scripts/check.sh --no-fail-fast` passes all 7,239 unit/API/import/
+scaling tests and four fixture aggregates, including 5,025 proof fixtures.
+The gate took 14m13s including compilation and emitted its ten-minute advisory;
+unit runtime was 324.2s and fixture runtime 330.0s, close to the preceding
+327.6s/323.1s baseline. No limits changed and no nightly suite ran.
+
 ## Shared bound consumers (2026-11-03)
 
 Following merged #2309, `codex/shared-bound-consumers` keeps selected
