@@ -6794,7 +6794,9 @@ impl AnnotationLowerer<'_> {
         environment: &SpecElaborationContext,
     ) -> Option<crate::kernel::TypeParameterName> {
         match self.c_name_type(name, environment)? {
-            CType::Parameter(enum_type) if enum_type.is_enum() => Some(enum_type),
+            CType::Parameter(enum_type) if crate::surface::holds_spec_value(enum_type) => {
+                Some(enum_type)
+            }
             _ => None,
         }
     }
@@ -6844,7 +6846,11 @@ impl AnnotationLowerer<'_> {
                     return None;
                 };
                 match self.c_name_type(name, environment)? {
-                    CType::ParameterPointer(enum_type) if enum_type.is_enum() => Some(enum_type),
+                    CType::ParameterPointer(enum_type)
+                        if crate::surface::holds_spec_value(enum_type) =>
+                    {
+                        Some(enum_type)
+                    }
                     _ => None,
                 }
             }
@@ -6854,7 +6860,7 @@ impl AnnotationLowerer<'_> {
                 match self.snapshots?.region_result_value(region).ok()? {
                     CValue::Parameter(term) => {
                         let enum_type = crate::kernel::TypeParameterName::of(&term.algebraic_type);
-                        enum_type.is_enum().then_some(enum_type)
+                        crate::surface::holds_spec_value(enum_type).then_some(enum_type)
                     }
                     _ => None,
                 }
@@ -9180,13 +9186,7 @@ fn algebraic_kernel_type_from_parts(
         .get(name)
         .is_some_and(|definition| definition.is_primitive())
     {
-        return Ok(AlgebraicType::parameter(
-            generics::primitive_instance_kernel_name(
-                name,
-                arguments,
-                primitive_kernel_type_name(name, arguments),
-            ),
-        ));
+        return Ok(generics::primitive_instance_type(name, arguments));
     }
     let root_type = AlgebraicValueType::Algebraic {
         name: name.to_string(),
@@ -9214,35 +9214,6 @@ fn algebraic_kernel_type_from_parts(
 /// fields name, with the declared object classes of their pointer fields
 /// (`AlgebraicSchemas::with_object_classes`). A type whose fields declare no
 /// class records none.
-/// The kernel's name for an instance of a Click library primitive type,
-/// `Vec<uint32>`. The kernel reads each instance as a rigid type of its own:
-/// it has no constructors to case on and no structure to induct over, and
-/// two instances are one type exactly when their arguments are equal.
-fn primitive_kernel_type_name(name: &str, arguments: &[AlgebraicValueType]) -> String {
-    fn argument_name(argument: &AlgebraicValueType) -> String {
-        match argument {
-            AlgebraicValueType::Algebraic { name, arguments } if !arguments.is_empty() => {
-                primitive_kernel_type_name(name, arguments)
-            }
-            AlgebraicValueType::Algebraic { name, .. } => name.clone(),
-            AlgebraicValueType::Parameter(name) => format!("[rigid {name}]"),
-            AlgebraicValueType::Integer => "Integer".to_string(),
-            AlgebraicValueType::C(c_type) => validation::describe_click_type(&ClickType::C(
-                generics::c0_type_from_kernel(*c_type),
-            )),
-            AlgebraicValueType::ObjectPointer(c_type, class) => format!("{c_type:?} [{class:?}]"),
-        }
-    }
-    format!(
-        "{name}<{}>",
-        arguments
-            .iter()
-            .map(argument_name)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
-}
-
 fn collect_algebraic_kernel_schemas(
     environment: &ClickFunctionEnvironment,
     value_type: &AlgebraicValueType,

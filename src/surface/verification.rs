@@ -5437,9 +5437,10 @@ impl parser::ProgramLayouts {
                 .map(|parameter| parameter.c_type())
                 .chain([function.return_type()])
             {
-                // An enum a parameter or result holds or refers to.
+                // An enum or a `Vec` a parameter or result holds or refers to.
                 if let C0Type::Parameter(enum_type) | C0Type::ParameterPointer(enum_type) = c_type
-                    && enum_type.is_enum()
+                    && (enum_type.is_enum()
+                        || generics::primitive_instance_of(enum_type.name()).is_some())
                 {
                     tables
                         .rust_enum_types
@@ -9099,6 +9100,12 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
             _ => "?".into(),
         }
     };
+    if let Some((primitive, arguments)) = generics::primitive_instance_of(&algebraic_type.name)
+        && primitive == "Vec"
+        && let [element] = arguments.as_slice()
+    {
+        return crate::languages::rust::names::vec_type_name(&spelling(element));
+    }
     match algebraic_type.arguments.as_slice() {
         [argument] if algebraic_type.name == "Option" => {
             crate::languages::rust::names::option_type_name(&spelling(argument))

@@ -3328,6 +3328,56 @@ fn charon_held_value_locals_are_spelled_by_name() {
     }
 }
 
+const VEC_VALUE_SIDECAR: &str = include_str!("../design/charon-trial/vec-values/vecs.click");
+
+// A `Vec<u32>` is the library's `Vec<uint32>`: `Vec::new`, `with_capacity`,
+// `push`, `len` and `v[i]` call externs whose contracts state each with the
+// library's `vec` functions, a contract reads `v.len()` and `v[i]`, and a
+// drop has no effect. Each claim mutated false is refused, and `v[0]` without
+// the caller showing the vector is nonempty is refused as Rust's panic.
+#[test]
+fn charon_vec_values_read_as_the_library_vec() {
+    let p = Project::from_fixture("design/charon-trial/vec-values");
+    fs::write(p.root.join("borrow.click"), VEC_VALUE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(VEC_VALUE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (before, after, expected) in [
+        (
+            "    ensures result.len() == 1u64;",
+            "    ensures result.len() == 2u64;",
+            "vec_values::single.ensures_0",
+        ),
+        ("    requires 0u64 < v.len();\n", "", "vec_values::first"),
+        (
+            "    ensures v.len() == old(v.len()) + 1;",
+            "    ensures v.len() == old(v.len()) + 2;",
+            "vec_values::append.ensures_1",
+        ),
+        (
+            "fn vec_values::pushed_len(x: u32) -> usize {\n    ensures result == 1u64;",
+            "fn vec_values::pushed_len(x: u32) -> usize {\n    ensures result == 2u64;",
+            "vec_values::pushed_len.ensures_0",
+        ),
+        (
+            "fn vec_values::second_of_pair(x: u32, y: u32) -> u32 {\n    ensures result == y;",
+            "fn vec_values::second_of_pair(x: u32, y: u32) -> u32 {\n    ensures result == x;",
+            "vec_values::second_of_pair.ensures_0",
+        ),
+    ] {
+        assert!(VEC_VALUE_SIDECAR.contains(before), "{before}");
+        let invalid = VEC_VALUE_SIDECAR.replacen(before, after, 1);
+        let function = expected.split('.').next().unwrap();
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
+            .err()
+            .expect("a claim the vector program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
+    }
+}
+
 const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-take/take.click");
 
 // `o.take()` moves the option out and leaves `None`, for an option of a box,

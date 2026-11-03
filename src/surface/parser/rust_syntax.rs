@@ -4,6 +4,9 @@
 
 use super::*;
 
+/// The Click library module that specifies Rust's `Vec<T>`.
+const VEC_MODULE: &str = "library/rust/vec.click";
+
 /// The importer name of the crate trait at `path` with type `arguments`:
 /// `traits::Shape`, or `traits::Scale<i32>`.
 fn trait_instance_name(path: &[String], arguments: &[String]) -> String {
@@ -244,6 +247,7 @@ impl Parser {
                 continue;
             }
             let parsed_type = self.parse_rust_type()?;
+            self.record_rust_vec_param(&parameter_name, parsed_type.c_type);
             let parsed = self.parse_parameter_array_suffix(parameter_name, parsed_type)?;
             if let Some(struct_name) = parsed.struct_name {
                 struct_params.insert(parsed.parameter.name.clone(), struct_name);
@@ -257,7 +261,9 @@ impl Parser {
         self.expect(Token::RParen)?;
         let parsed_return_type = if self.peek() == Some(&Token::Arrow) {
             self.position += 1;
-            self.parse_rust_type()?
+            let parsed = self.parse_rust_type()?;
+            self.record_rust_vec_param("result", parsed.c_type);
+            parsed
         } else {
             ParsedType {
                 c_type: C0Type::Void,
@@ -736,6 +742,13 @@ impl Parser {
         {
             return Ok(crate::languages::rust::names::result_type_name(ok, err));
         }
+        if let [element] = arguments.as_slice()
+            && crate::languages::rust::names::is_vec_path(
+                &path.iter().map(String::as_str).collect::<Vec<_>>(),
+            )
+        {
+            return Ok(crate::languages::rust::names::vec_type_name(element));
+        }
         Ok(trait_instance_name(&path, &arguments))
     }
 
@@ -1024,6 +1037,63 @@ impl Parser {
 
     /// `name.len()` where `name` is a slice parameter: consumes `.len()` and
     /// answers the length's own name.
+    /// Records `name` as a `Vec` parameter, or `result` as a `Vec` result,
+    /// when `c_type` is the library's `Vec<T>` or a reference to it, and
+    /// brings in the library module that specifies it.
+    fn record_rust_vec_param(&mut self, name: &str, c_type: C0Type) {
+        let (C0Type::Parameter(value_type) | C0Type::ParameterPointer(value_type)) = c_type else {
+            return;
+        };
+        if !matches!(super::generics::primitive_instance_of(value_type.name()), Some((primitive, _)) if primitive == "Vec")
+        {
+            return;
+        }
+        self.rust_vec_params.insert(
+            name.to_string(),
+            matches!(c_type, C0Type::ParameterPointer(_)),
+        );
+        self.implied_library_modules.insert(VEC_MODULE);
+    }
+
+    /// `v.len()` or `v[i]` of a `Vec` parameter: `vec::len(v)` or
+    /// `vec::get(v, i)`, of `*v` for a reference, as Rust reads through one.
+    pub(super) fn take_rust_vec_method(
+        &mut self,
+        name: &str,
+    ) -> Result<Option<ContractExpression>, ClickError> {
+        let Some(&reference) = self.rust_vec_params.get(name) else {
+            return Ok(None);
+        };
+        let vector = if reference {
+            ContractExpression::CFragment(CExpression::Load(Box::new(CExpression::Variable(
+                name.to_string(),
+            ))))
+        } else {
+            ContractExpression::CFragment(CExpression::Variable(name.to_string()))
+        };
+        if self.peek() == Some(&Token::Dot)
+            && self.peek_next() == Some(&Token::Ident("len".into()))
+            && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+            && self.tokens.get(self.position + 3) == Some(&Token::RParen)
+        {
+            self.position += 4;
+            return Ok(Some(ContractExpression::Call {
+                name: "click::rust::vec::len".to_string(),
+                arguments: vec![vector],
+            }));
+        }
+        if self.peek() == Some(&Token::LBracket) {
+            self.position += 1;
+            let index = self.parse_contract_expression()?;
+            self.expect(Token::RBracket)?;
+            return Ok(Some(ContractExpression::Call {
+                name: "click::rust::vec::get".to_string(),
+                arguments: vec![vector, index],
+            }));
+        }
+        Ok(None)
+    }
+
     pub(super) fn take_rust_slice_len(&mut self, name: &str) -> Option<String> {
         if !self.rust_slice_params.contains(name)
             || self.peek() != Some(&Token::Dot)

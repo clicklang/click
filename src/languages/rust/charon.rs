@@ -29,6 +29,7 @@ mod split_slices;
 #[cfg(test)]
 mod split_slices_tests;
 mod traits;
+mod vec_methods;
 
 use super::profile;
 use super::schema::{self as out, Expression as E, MirStatement as S, MirTerminator as T, Type};
@@ -843,6 +844,20 @@ impl Adapter<'_> {
             a::TyKind::Adt(_) if let Some((ok, err)) = self.result_payloads(t) => {
                 self.result_enum(self.ty(ok)?, self.ty(err)?)?
             }
+            // A `Vec<T>` of a scalar is the value of the library's primitive
+            // type `Vec<T>` at that scalar.
+            a::TyKind::Adt(_) if let Some(element) = self.vec_element(t) => {
+                let element = self.ty(element)?;
+                if !element.is_scalar() {
+                    return Err(unsupported(&format!(
+                        "type `{}`: a `Vec` holds integers or `bool` only",
+                        self.describe_type(t)
+                    )));
+                }
+                Type::Vec {
+                    element: Box::new(element),
+                }
+            }
             // An instance of a generic struct is a record of its own, named
             // with its type arguments: `Cell<T>` in generic code, `Cell<i32>`
             // in a caller.
@@ -1030,6 +1045,18 @@ impl Adapter<'_> {
             && self.option_box_payload(ty).is_none()
             && !self.protocol_option(ty))
         .then_some(payload)
+    }
+    /// The element type of an `alloc::vec::Vec<T, Global>`.
+    fn vec_element<'t>(&self, ty: &'t a::Ty) -> Option<&'t a::Ty> {
+        let a::TyKind::Adt(r) = ty.kind() else {
+            return None;
+        };
+        let decl = self.krate.type_decls.get(r.id)?;
+        let [element, _allocator] = r.generics.types.as_raw_slice() else {
+            return None;
+        };
+        (!decl.item_meta.is_local && protocol::path(&decl.item_meta.name, &["alloc", "vec", "Vec"]))
+            .then_some(element)
     }
     /// The `Ok` and `Err` payload types of a `core::result::Result<T, E>`.
     fn result_payloads<'t>(&self, ty: &'t a::Ty) -> Option<(&'t a::Ty, &'t a::Ty)> {
@@ -2374,6 +2401,17 @@ impl BodyAdapter<'_, '_> {
             } if matches!(self.adapter.ty(&place.ty), Ok(Type::Parameter { .. })) => T::Goto {
                 target: target.index(),
             },
+            // A `Vec` of scalars: its elements have no drop, and the heap
+            // buffer it frees is outside the model, so dropping one has no
+            // effect a proof reads.
+            u::TerminatorKind::Drop {
+                kind: a::DropKind::Precise,
+                place,
+                target,
+                ..
+            } if matches!(self.adapter.ty(&place.ty), Ok(Type::Vec { .. })) => T::Goto {
+                target: target.index(),
+            },
             // A box of a record, or an option of one: its drop runs the
             // record's glue on a `Some` box and frees the allocation, and
             // freeing `None`'s null is no effect.
@@ -2560,7 +2598,10 @@ impl BodyAdapter<'_, '_> {
                         Some(function) => Some(function),
                         None => match self.adapter.result_method_call(callee, ptr, call)? {
                             Some(function) => Some(function),
-                            None => self.adapter.slice_method_call(callee, ptr, call)?,
+                            None => match self.adapter.slice_method_call(callee, ptr, call)? {
+                                Some(function) => Some(function),
+                                None => self.adapter.vec_method_call(callee, ptr, call)?,
+                            },
                         },
                     },
                 };
@@ -3409,6 +3450,18 @@ pub(super) fn decode_crate(
         let body = if let Some(rewritten) = adapter.referent_match_body(body) {
             referent_body = rewritten;
             &referent_body
+        } else {
+            body
+        };
+        let vec_index_body;
+        let body = if let Some(rewritten) = adapter.vec_index_body(body).map_err(|e| {
+            format!(
+                "{} in {name}: {e}",
+                refusal_location(&krate, source, body.span, f.item_meta.span)
+            )
+        })? {
+            vec_index_body = rewritten;
+            &vec_index_body
         } else {
             body
         };

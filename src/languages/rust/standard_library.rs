@@ -23,6 +23,63 @@ fn slice_swap_contract(function: &super::schema::Function) -> String {
     )
 }
 
+/// The prefix of the `core_method` of each `Vec` method, `Vec::push`.
+pub(super) const VEC: &str = "Vec::";
+
+/// The largest length a `Vec` reaches before `push` panics: a vector of
+/// `u8` holds at most `isize::MAX` elements, and a longer element fewer.
+/// The model bounds every vector by the length `vec::len` can state,
+/// `u64::MAX`, and `push` requires room below it; the program's own bound
+/// is the smaller, so a proof that meets this requirement is sound for it
+/// only up to Rust's allocation limit, which aborts rather than returns.
+const VEC_LENGTH_LIMIT: &str = "18446744073709551615u64";
+
+/// The contract of the `Vec` method `function`, `Vec::push<u32>`: the
+/// call's effect on the library's `Vec<T>` values.
+fn vec_contract(function: &super::schema::Function, method: &str) -> String {
+    let element_of = |ty: &Type| match ty {
+        Type::Vec { element } => element.scalar_name(),
+        Type::Reference { pointee, .. } => match pointee.as_ref() {
+            Type::Vec { element } => element.scalar_name(),
+            _ => None,
+        },
+        _ => None,
+    };
+    let element = element_of(&function.return_type)
+        .or_else(|| {
+            function
+                .parameters
+                .first()
+                .and_then(|parameter| element_of(&parameter.value_type))
+        })
+        .expect("a `Vec` method names its element type");
+    let name = &function.name;
+    let vector = format!("Vec<{element}>");
+    let body = match method {
+        "new" => format!(
+            "extern fn {name}() -> {vector} {{\n    ensures click::rust::vec::len(result) == 0u64;\n}}"
+        ),
+        // The capacity is outside the model: the vector is empty.
+        "with_capacity" => format!(
+            "extern fn {name}(capacity: usize) -> {vector} {{\n    ensures click::rust::vec::len(result) == 0u64;\n}}"
+        ),
+        // The new value, and what the library's axioms say of it, so a
+        // caller reads the length and elements without citing them.
+        "push" => format!(
+            "extern fn {name}(v: &mut {vector}, x: {element}) {{\n    owns *v;\n    requires click::rust::vec::len(*v) < {VEC_LENGTH_LIMIT};\n    ensures *v == click::rust::vec::push(old(*v), x);\n    ensures click::rust::vec::len(*v) == click::rust::vec::len(old(*v)) + 1;\n    ensures click::rust::vec::get(*v, click::rust::vec::len(old(*v))) == x;\n    ensures forall (k: usize) {{ k < click::rust::vec::len(old(*v)) implies click::rust::vec::get(*v, k) == click::rust::vec::get(old(*v), k) }};\n}}"
+        ),
+        "len" => format!(
+            "extern fn {name}(v: &{vector}) -> usize {{\n    views *v;\n    ensures result == click::rust::vec::len(old(*v));\n}}"
+        ),
+        // Rust panics unless the index is in bounds.
+        "index" => format!(
+            "extern fn {name}(v: &{vector}, i: usize) -> {element} {{\n    views *v;\n    requires i < click::rust::vec::len(*v);\n    ensures result == click::rust::vec::get(old(*v), i);\n}}"
+        ),
+        _ => unreachable!("checked by the importer"),
+    };
+    format!("\n{body}\n")
+}
+
 /// The `core_method` of `Result::unwrap` and `Result::expect`, which Rust
 /// panics on at `Err`.
 pub(super) const RESULT_UNWRAP: &str = "result::unwrap";
@@ -90,6 +147,10 @@ pub(super) fn contracts(export: &RustExport) -> String {
         let Some(specification) = &function.core_method else {
             continue;
         };
+        if let Some(method) = specification.strip_prefix(VEC) {
+            source.push_str(&vec_contract(function, method));
+            continue;
+        }
         if specification == SLICE_SWAP {
             source.push_str(&slice_swap_contract(function));
             continue;

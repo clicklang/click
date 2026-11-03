@@ -5087,6 +5087,9 @@ bodyless `function`s and the `axiom`s are forms only the built-in library
 modules may declare; each axiom is trusted, not proved
 ([trust](../../concepts/trust.md#the-click-library)). Capacity and allocation
 are outside the model.
+A Rust `Vec<u32>` an import reads is this type at `uint32`, and its methods'
+contracts are stated with these operations
+([Vec values](../rust.md#vec-values)).
 
 ### `Vec`
 

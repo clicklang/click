@@ -287,6 +287,26 @@ pub(crate) fn result_type_name(ok: &str, err: &str) -> String {
     name
 }
 
+/// The importer's name for the type Rust `Vec<element>`, the library's
+/// primitive `Vec<T>` at `element`, which a sidecar names `Vec<element>`.
+pub(crate) fn vec_type_name(element: &str) -> String {
+    let mut name = qualified_name(["alloc", "vec", "Vec"]);
+    // As for `Option`, `u64` and `usize`, and `i64` and `isize`, are one
+    // kernel type.
+    let element = match element {
+        "u64" => "usize",
+        "isize" => "i64",
+        other => other,
+    };
+    push_type_argument(&mut name, element);
+    name
+}
+
+/// Whether a sidecar path names Rust's `Vec`, `Vec` or its full path.
+pub(crate) fn is_vec_path(segments: &[&str]) -> bool {
+    matches!(segments, ["Vec"] | ["alloc" | "std", "vec", "Vec"])
+}
+
 /// Whether a sidecar path names Rust's `Result`, `Result` or its full path.
 pub(crate) fn is_result_path(segments: &[&str]) -> bool {
     matches!(segments, ["Result"] | ["core" | "std", "result", "Result"])

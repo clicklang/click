@@ -79,6 +79,7 @@ mod claim_labels;
 mod diagnostics;
 mod expansion;
 mod generics;
+pub(crate) use generics::primitive_instance_type;
 mod integer_conversions;
 mod integer_truncation;
 mod lowering;
@@ -889,6 +890,13 @@ impl ClickType {
     }
 }
 
+/// Whether a C value of type `name` is a spec value: a Rust enum's, or a
+/// library primitive type's, a Rust `Vec<u32>`, rather than an abstract
+/// type parameter's.
+pub(in crate::surface) fn holds_spec_value(name: crate::kernel::TypeParameterName) -> bool {
+    name.is_enum() || generics::primitive_instance_of(name.name()).is_some()
+}
+
 impl AlgebraicTypeApplication {
     pub(crate) fn concrete(name: impl Into<String>) -> Self {
         Self {
@@ -919,6 +927,12 @@ impl AlgebraicTypeApplication {
     /// The `spec enum` a C value of `c_type` holds, when it holds a Rust
     /// enum's: an enum parameter or result is that enum's value.
     pub(in crate::surface) fn of_enum_c_type(c_type: C0Type) -> Option<Self> {
+        // A Rust `Vec<u32>` is the library's primitive `Vec<uint32>`.
+        if let Some(ClickType::Algebraic(application)) =
+            generics::primitive_instance_value_type(&ClickType::C(c_type))
+        {
+            return Some(application);
+        }
         match c_type {
             C0Type::Parameter(enum_type) if enum_type.is_enum() => Some(Self {
                 rigid: false,

@@ -240,7 +240,7 @@ pub(super) fn lower(
             ),
             // A borrowed enum or type-parameter local keeps its value in its
             // object's memory, where a write through the borrow lands.
-            t @ (Type::Enum { .. } | Type::Parameter { .. })
+            t @ (Type::Enum { .. } | Type::Parameter { .. } | Type::Vec { .. })
                 if borrowed.contains(local.name.as_str()) =>
             {
                 let value_type = scalar_type(t)?.to_kernel_type();
@@ -511,8 +511,9 @@ pub(super) fn lower(
                 } else if callee.return_type == Type::Unit {
                     c_call(function, arguments_values)
                 } else if let Some(&value_type) = cx.memory_values.get(destination.as_str()) {
-                    // A borrowed enum or type-parameter local receives the
-                    // result through a temporary stored to its object.
+                    // A memory-backed local, a borrowed enum or `Vec`,
+                    // receives the result through a temporary stored to its
+                    // object.
                     let temporary = cx.fresh_temporary()?;
                     let address = cx.address(&E::Local {
                         name: destination.clone(),

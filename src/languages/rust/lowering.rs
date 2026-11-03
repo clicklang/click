@@ -199,6 +199,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
         Type::Parameter { name } => Ok(C0Type::Parameter(
             crate::kernel::TypeParameterName::intern(name),
         )),
+        Type::Vec { element } => Ok(C0Type::Parameter(vec_type(element)?)),
         // A box of a crate struct is its address, as a struct reference is.
         Type::Box { .. } | Type::OptionBox { .. } => Ok(C0Type::Int32Pointer),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
@@ -217,6 +218,7 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             )),
             // An enum value is a spec value, as a type parameter's is.
             Type::Enum { name } => Ok(C0Type::ParameterPointer(EnumTypes::get(name)?)),
+            Type::Vec { element } => Ok(C0Type::ParameterPointer(vec_type(element)?)),
             Type::Array { element, .. } => match element.as_ref() {
                 Type::I32 => Ok(C0Type::Int32Pointer),
                 Type::U8 => Ok(C0Type::UInt8Pointer),
@@ -229,6 +231,14 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
         Type::FnPointer { .. } => Ok(fn_pointer_signature(t)?.pointer_type()),
         _ => Err("Rust value type outside direct scalar/reference lowering".into()),
     }
+}
+/// The type of a `Vec<element>` value: the library's primitive `Vec` at
+/// `element`, which the kernel reads as a rigid type of its own.
+fn vec_type(element: &Type) -> Result<crate::kernel::TypeParameterName, String> {
+    let element = scalar_type(element)?.to_kernel_type();
+    Ok(crate::kernel::TypeParameterName::of(
+        &crate::surface::primitive_instance_type("Vec", &[AlgebraicValueType::C(element)]),
+    ))
 }
 /// A function-pointer type's signature, as a sidecar's `fn(i32) -> i32`
 /// parameter type spells it.
@@ -451,6 +461,7 @@ fn lower_function(
                 | Type::Record { .. }
                 | Type::Enum { .. }
                 | Type::Parameter { .. }
+                | Type::Vec { .. }
                 | Type::Box { .. }
                 | Type::OptionBox { .. }
         ))

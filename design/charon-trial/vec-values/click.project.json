@@ -1,0 +1,28 @@
+{
+  "units": {
+    "vec_values": {
+      "language": "rust",
+      "sources": {
+        "vecs.rs": {}
+      },
+      "crate": {
+        "name": "vec_values",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "vec_values::single",
+          "vec_values::count",
+          "vec_values::first",
+          "vec_values::append",
+          "vec_values::pushed_len",
+          "vec_values::empty_len",
+          "vec_values::pair",
+          "vec_values::second_of_pair"
+        ],
+        "files": [
+          "vecs.rs"
+        ]
+      }
+    }
+  }
+}
