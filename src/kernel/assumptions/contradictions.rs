@@ -523,9 +523,9 @@ mod tests {
         fn term(&mut self) -> Bitvector32Term {
             match self.next() % 6 {
                 0 | 1 => var(self.next() % 4),
-                2 => Bitvector32Term::Constant((self.next() % 7) as u32),
-                3 => Bitvector32Term::Constant(u32::MAX - (self.next() % 2) as u32),
-                4 => Bitvector32Term::add(var(self.next() % 4), Bitvector32Term::Constant(1)),
+                2 => Bitvector32Term::constant((self.next() % 7) as u32),
+                3 => Bitvector32Term::constant(u32::MAX - (self.next() % 2) as u32),
+                4 => Bitvector32Term::add(var(self.next() % 4), Bitvector32Term::constant(1)),
                 _ => var(self.next() % 4),
             }
         }
@@ -735,7 +735,7 @@ mod tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: Box::new(var(size + 1)),
-                        right: Box::new(Bitvector32Term::Constant(7)),
+                        right: Box::new(Bitvector32Term::constant(7)),
                     },
                     true,
                 );

@@ -1,6 +1,8 @@
 use super::*;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{bits32_constant, constant_u32};
+use crate::kernel::{constant_u64, uint64_constant};
 
 impl PureFactContext {
     #[cfg(test)]
@@ -91,8 +93,8 @@ impl PureFactContext {
                 (constant as i32).checked_sub(1)
             })
         {
-            let reduced = Bitvector32Term::Constant(reduced as u32);
-            let maximum = Bitvector32Term::Constant(i32::MAX as u32);
+            let reduced = Bitvector32Term::constant(reduced as u32);
+            let maximum = Bitvector32Term::constant(i32::MAX as u32);
             if self.decide_written_operand_comparison(
                 format,
                 CompareRelation::LessEqual,
@@ -167,7 +169,7 @@ impl PureFactContext {
             .uint32_order_bounds
             .get(&crate::kernel::eval::canonical_term(term))
             .is_some_and(|bounds| bounds.operand_keys().any(|(_, _, _, below)| below));
-        let target = Bitvector32Term::Constant(target);
+        let target = Bitvector32Term::constant(target);
         has_unsigned_bound
             && self.difference_graph_proves(&if walk_strict {
                 ConditionTerm::unsigned_less_than(term.clone(), target)
@@ -236,7 +238,7 @@ impl PureFactContext {
                         {
                             return self.decide(&ConditionTerm::equal(
                                 index.clone(),
-                                Bitvector32Term::Constant(element as u32),
+                                Bitvector32Term::constant(element as u32),
                             ));
                         }
                         let left_index = int32_element_index_from_offset(left);
@@ -548,9 +550,9 @@ impl PureFactContext {
                         self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::LessThan, base, right, true)
                     })
                     || right.int32_subtract_const_parts().filter(|(_, n)| *n == 1).map(|(base, _)| base).is_some_and(|base| {
-                        let zero_literal = Bitvector32Term::Constant(0);
+                        let zero_literal = Bitvector32Term::constant(0);
                         let zero = MachineOperandView::Legacy(&zero_literal);
-                        left.literal() == Some(Bitvector32Term::Constant(0))
+                        left.literal() == Some(Bitvector32Term::constant(0))
                             && (self.has_written_operand_comparison(MachineIntegerType::Int32, CompareRelation::GreaterThan, base, zero, true) || self.has_lower_bound_above_views(base, zero))
                     })
                     || self.has_add_const_upper_bound_at_or_below_views(left, right)
@@ -1149,10 +1151,10 @@ impl PureFactContext {
             && let Some((term, bound, _)) = unsigned_upper_bound_below_sign_bit(condition, true)
         {
             return self.proves_order_condition_for_memory_resolution(
-                &ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), term.clone()),
+                &ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), term.clone()),
                 true,
             ) && self.proves_order_condition_for_memory_resolution(
-                &ConditionTerm::signed_less_equal(term.clone(), Bitvector32Term::Constant(bound)),
+                &ConditionTerm::signed_less_equal(term.clone(), Bitvector32Term::constant(bound)),
                 true,
             );
         }
@@ -1184,7 +1186,7 @@ impl PureFactContext {
                     ) && self.proves_order_condition_for_memory_resolution(
                         &ConditionTerm::signed_less_than(
                             base,
-                            Bitvector32Term::Constant(i32::MAX as u32),
+                            Bitvector32Term::constant(i32::MAX as u32),
                         ),
                         true,
                     )
@@ -1543,7 +1545,7 @@ impl PureFactContext {
         (self.decide_citing(
             &ConditionTerm::uint64_less_than(
                 value.as_ref().clone(),
-                Bitvector32Term::UInt64Constant(bound),
+                Bitvector32Term::uint64_constant(bound),
             ),
             used,
         ) == Some(true))
@@ -1800,8 +1802,8 @@ impl PureFactContext {
         {
             term = bits;
         }
-        let zero = Bitvector32Term::Constant(0);
-        let maximum = Bitvector32Term::Constant(bound);
+        let zero = Bitvector32Term::constant(0);
+        let maximum = Bitvector32Term::constant(bound);
         let nonnegative = self.decide_written_operand_comparison(
             MachineIntegerType::Int32,
             CompareRelation::LessEqual,
@@ -1936,7 +1938,7 @@ impl PureFactContext {
                 };
                 self.decide(&ConditionTerm::signed_multiply_overflows(
                     value.as_ref().clone(),
-                    Bitvector32Term::Constant(width),
+                    Bitvector32Term::constant(width),
                 )) == Some(false)
             }
             PointerOffsetTerm::Add(left, right)
@@ -2052,7 +2054,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn uint64_index_fits_int32(&self, term: &Bitvector32Term) -> bool {
         let guard = ConditionTerm::uint64_less_equal(
             term.clone(),
-            Bitvector32Term::UInt64Constant(i32::MAX as u64),
+            Bitvector32Term::uint64_constant(i32::MAX as u64),
         );
         // A maintained bound keyed by this exact value also handles exact
         // widening. Do not invoke the general decision fallbacks here: this
@@ -2071,12 +2073,12 @@ impl PureFactContext {
     /// the value.
     pub(in crate::kernel) fn int64_index_fits_int32(&self, term: &Bitvector32Term) -> bool {
         self.decide(&ConditionTerm::int64_signed_less_equal(
-            Bitvector32Term::Int64Constant(0),
+            Bitvector32Term::int64_constant(0),
             term.clone(),
         )) == Some(true)
             && self.decide(&ConditionTerm::int64_signed_less_equal(
                 term.clone(),
-                Bitvector32Term::Int64Constant(i32::MAX as i64),
+                Bitvector32Term::int64_constant(i32::MAX as i64),
             )) == Some(true)
     }
 
@@ -2113,7 +2115,7 @@ impl PureFactContext {
         }
         let as_signed = |term: MachineOperandView<'_>| -> Option<ComparisonOperand<'static>> {
             if let Some((Cast::UInt64FromInt64, _, _, value)) = term.cast() {
-                let zero = Bitvector32Term::Int64Constant(0);
+                let zero = Bitvector32Term::int64_constant(0);
                 let nonnegative = self.decide_operand_comparison(
                     MachineIntegerType::Int64,
                     Relation::LessEqual,
@@ -2128,9 +2130,9 @@ impl PureFactContext {
                 });
             }
             let constant = i64::try_from(term.uint64_constant()?).ok()?;
-            Some(ComparisonOperand::Constant(Bitvector32Term::Int64Constant(
-                constant,
-            )))
+            Some(ComparisonOperand::Constant(
+                Bitvector32Term::int64_constant(constant),
+            ))
         };
         let left = as_signed(left)?;
         let right = as_signed(right)?;
@@ -2395,7 +2397,7 @@ impl PureFactContext {
             }
             .integer_condition(),
         };
-        let zero = Bitvector32Term::UInt64Constant(0);
+        let zero = Bitvector32Term::uint64_constant(0);
         if unsigned
             && matches!(
                 (lower.uint64_constant(), strict),
@@ -2517,10 +2519,8 @@ impl PureFactContext {
             .map(|operand| operand.operand_view());
         fn small(operand: MachineOperandView<'_>) -> Option<u64> {
             match operand.literal()? {
-                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
-                    if value <= i32::MAX as u32 =>
-                {
-                    Some(u64::from(value))
+                bits32_constant!(value) if constant_u32(value) <= i32::MAX as u32 => {
+                    Some(u64::from(constant_u32(value)))
                 }
                 _ => None,
             }
@@ -2556,9 +2556,9 @@ impl PureFactContext {
                 (low_word(b)?, small(a)?)
             };
             let literal = if unsigned {
-                Bitvector32Term::UInt64Constant(constant)
+                Bitvector32Term::uint64_constant(constant)
             } else {
-                Bitvector32Term::Int64Constant(constant as i64)
+                Bitvector32Term::int64_constant(constant as i64)
             };
             let native = |value| {
                 if unsigned {
@@ -2582,7 +2582,7 @@ impl PureFactContext {
                 }
                 if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Subtract, [inner, taken])) =
                     value.binary()
-                    && matches!(taken.literal(), Some(Bitvector32Term::UInt64Constant(taken)) if taken == constant)
+                    && matches!(taken.literal(), Some(uint64_constant!(taken)) if constant_u64(taken) == constant)
                 {
                     return Some(inner.retain(format));
                 }
@@ -2611,12 +2611,12 @@ impl PureFactContext {
                     let (format, value) = if unsigned {
                         (
                             MachineIntegerType::UInt64,
-                            Bitvector32Term::UInt64Constant(value),
+                            Bitvector32Term::uint64_constant(value),
                         )
                     } else {
                         (
                             MachineIntegerType::Int64,
-                            Bitvector32Term::Int64Constant(value as i64),
+                            Bitvector32Term::int64_constant(value as i64),
                         )
                     };
                     SharedMachineIntegerTerm::intern(format, value)
@@ -2648,7 +2648,7 @@ impl PureFactContext {
         let b = wide(right, false)?;
         let signed_small = |term: &SharedMachineIntegerTerm| {
             self.wide_order_chain_views(
-                MachineOperandView::Legacy(&Bitvector32Term::Int64Constant(0)),
+                MachineOperandView::Legacy(&Bitvector32Term::int64_constant(0)),
                 term.operand_view(),
                 false,
             )
@@ -2656,7 +2656,7 @@ impl PureFactContext {
                 && self
                     .wide_order_chain_views(
                         term.operand_view(),
-                        MachineOperandView::Legacy(&Bitvector32Term::Int64Constant(
+                        MachineOperandView::Legacy(&Bitvector32Term::int64_constant(
                             i32::MAX as i64,
                         )),
                         false,
@@ -2683,9 +2683,9 @@ mod slice_index_tests {
         use crate::kernel::{KernelTermExport, SharedMachineIntegerTerm};
         let _session = crate::kernel::VerificationSession::enter();
         let n = Bitvector32Term::Variable(Variable(998191));
-        let wide = Bitvector32Term::uint64_add(n.clone(), Bitvector32Term::UInt64Constant(2));
+        let wide = Bitvector32Term::uint64_add(n.clone(), Bitvector32Term::uint64_constant(2));
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_less_equal(wide, Bitvector32Term::UInt64Constant(20)),
+            ConditionTerm::uint64_less_equal(wide, Bitvector32Term::uint64_constant(20)),
             true,
         );
         let add = |a, b| Bitvector32Term::Binary {
@@ -2696,9 +2696,9 @@ mod slice_index_tests {
         };
         let low = add(
             Bitvector32Term::UInt32From64(Box::new(n)),
-            add(Bitvector32Term::Constant(1), Bitvector32Term::Constant(1)),
+            add(Bitvector32Term::constant(1), Bitvector32Term::constant(1)),
         );
-        let native = ConditionTerm::signed_less_than(low.clone(), Bitvector32Term::Constant(22));
+        let native = ConditionTerm::signed_less_than(low.clone(), Bitvector32Term::constant(22));
         assert_eq!(context.decide_small_uint64_index_order(&native), None);
         let operand = SharedMachineIntegerTerm::from_shared(
             MachineIntegerType::Int32,
@@ -2726,9 +2726,9 @@ mod slice_index_tests {
                         let _session = crate::kernel::VerificationSession::enter();
                         let constant = |value| {
                             if format == MachineIntegerType::UInt64 {
-                                Bitvector32Term::UInt64Constant(value as u64)
+                                Bitvector32Term::uint64_constant(value as u64)
                             } else {
-                                Bitvector32Term::Int64Constant(value)
+                                Bitvector32Term::int64_constant(value)
                             }
                         };
                         let add = |a, b| {
@@ -2774,11 +2774,11 @@ mod slice_index_tests {
                         let low = if offset == 0 {
                             low
                         } else {
-                            Bitvector32Term::add(low, Bitvector32Term::Constant(offset))
+                            Bitvector32Term::add(low, Bitvector32Term::constant(offset))
                         };
                         let native = ConditionTerm::signed_less_than(
                             low.clone(),
-                            Bitvector32Term::Constant(limit),
+                            Bitvector32Term::constant(limit),
                         );
                         let expected = context.decide_small_uint64_index_order(&native);
                         assert_eq!(
@@ -2949,7 +2949,7 @@ mod slice_index_tests {
     fn wide_order_chains_reach_constants_as_their_kind_compares_them() {
         let a = Bitvector32Term::Variable(Variable(997100));
         let b = Bitvector32Term::Variable(Variable(997101));
-        let u = Bitvector32Term::UInt64Constant;
+        let u = Bitvector32Term::uint64_constant;
         let unsigned = PureFactContext::new()
             .assume_condition(ConditionTerm::uint64_less_than(a.clone(), b.clone()), true)
             .assume_condition(ConditionTerm::uint64_less_equal(b.clone(), u(10)), true)
@@ -3002,18 +3002,18 @@ mod slice_index_tests {
         let value = Bitvector32Term::Variable(Variable(991003));
         let context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::uint64_less_than(Bitvector32Term::UInt64Constant(0), value.clone()),
+                ConditionTerm::uint64_less_than(Bitvector32Term::uint64_constant(0), value.clone()),
                 true,
             )
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     value.clone(),
-                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
+                    Bitvector32Term::uint64_constant(i32::MAX as u64),
                 ),
                 true,
             );
         let goal = ConditionTerm::signed_less_than(
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             Bitvector32Term::uint32_from_64(value),
         );
         assert_eq!(
@@ -3050,9 +3050,9 @@ mod annotated_alignment_premise_tests {
                     pointer.clone(),
                     Some(CAccessClass::Scalar(CScalarClass::Int)),
                 ),
-                Bitvector32Term::UInt64Constant(7),
+                Bitvector32Term::uint64_constant(7),
             )),
-            right: Box::new(Bitvector32Term::UInt64Constant(0)),
+            right: Box::new(Bitvector32Term::uint64_constant(0)),
         };
         assert_eq!(source, ConditionTerm::pointer_aligned(pointer.clone(), 8));
         let bare = ConditionTerm::pointer_aligned(pointer.clone(), 4);
@@ -3135,11 +3135,11 @@ mod exact_order_path_tests {
         }
         fn term(&mut self) -> Bitvector32Term {
             match self.next() % 5 {
-                0 => Bitvector32Term::Constant((self.next() % 5) as u32),
-                1 => Bitvector32Term::add(var(self.next() % 6), Bitvector32Term::Constant(1)),
+                0 => Bitvector32Term::constant((self.next() % 5) as u32),
+                1 => Bitvector32Term::add(var(self.next() % 6), Bitvector32Term::constant(1)),
                 // A sum whose canonical form differs from its spelling, so
                 // its facts are also filed under an alias key.
-                2 => Bitvector32Term::add(Bitvector32Term::Constant(1), var(self.next() % 6)),
+                2 => Bitvector32Term::add(Bitvector32Term::constant(1), var(self.next() % 6)),
                 _ => var(self.next() % 6),
             }
         }

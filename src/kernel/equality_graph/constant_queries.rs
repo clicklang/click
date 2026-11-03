@@ -5,6 +5,7 @@ use crate::kernel::assumptions::record_implicit_reasoning_provenance;
 use crate::kernel::{
     KernelMachineCastEncoding as Cast, MachineOperandView as V, Proposition, PureFactContext,
 };
+use crate::kernel::{constant_i64, constant_u64, int64_constant, uint64_constant};
 use std::collections::{BTreeMap, BTreeSet};
 
 impl EqualityGraph {
@@ -45,8 +46,8 @@ impl EqualityGraph {
             }
             crate::instrumentation::record_deterministic_work(1);
             let mut value = match term.literal() {
-                Some(Bitvector32Term::UInt64Constant(value)) => Some(value),
-                Some(Bitvector32Term::Int64Constant(value)) => Some(value as u64),
+                Some(uint64_constant!(value)) => Some(constant_u64(value)),
+                Some(int64_constant!(value)) => Some(constant_i64(value) as u64),
                 _ => None,
             };
             if let Some((format, op, [left, right])) = term.binary()
@@ -255,7 +256,7 @@ mod tests {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(written),
-                right: Box::new(Bitvector32Term::UInt64Constant(7)),
+                right: Box::new(Bitvector32Term::uint64_constant(7)),
             },
             true,
         );
@@ -277,34 +278,34 @@ mod tests {
         for (ty, written, expected) in [
             (
                 Ty::Int64,
-                Bitvector32Term::Int64From32(Box::new(Bitvector32Term::Constant(u32::MAX))),
+                Bitvector32Term::Int64From32(Box::new(Bitvector32Term::constant(u32::MAX))),
                 u64::MAX,
             ),
             (
                 Ty::UInt64,
-                Bitvector32Term::UInt64FromInt32(Box::new(Bitvector32Term::Constant(u32::MAX))),
+                Bitvector32Term::UInt64FromInt32(Box::new(Bitvector32Term::constant(u32::MAX))),
                 u64::MAX,
             ),
             (
                 Ty::Int64,
-                Bitvector32Term::Int64FromUInt32(Box::new(Bitvector32Term::UInt32Constant(
+                Bitvector32Term::Int64FromUInt32(Box::new(Bitvector32Term::uint32_constant(
                     u32::MAX,
                 ))),
                 u32::MAX as u64,
             ),
             (
                 Ty::UInt64,
-                Bitvector32Term::UInt64From32(Box::new(Bitvector32Term::UInt32Constant(u32::MAX))),
+                Bitvector32Term::UInt64From32(Box::new(Bitvector32Term::uint32_constant(u32::MAX))),
                 u32::MAX as u64,
             ),
             (
                 Ty::UInt64,
-                Bitvector32Term::UInt64FromInt64(Box::new(Bitvector32Term::Int64Constant(-3))),
+                Bitvector32Term::UInt64FromInt64(Box::new(Bitvector32Term::int64_constant(-3))),
                 (-3i64) as u64,
             ),
             (
                 Ty::UInt32,
-                Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::UInt64Constant(
+                Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::uint64_constant(
                     0x1234567887654321,
                 ))),
                 0x87654321,
@@ -352,9 +353,9 @@ mod tests {
         ] {
             let literal = |value| {
                 if ty == Ty::Int64 {
-                    Bitvector32Term::Int64Constant(value as i64)
+                    Bitvector32Term::int64_constant(value as i64)
                 } else {
-                    Bitvector32Term::UInt64Constant(value)
+                    Bitvector32Term::uint64_constant(value)
                 }
             };
             let written = Bitvector32Term::Binary {

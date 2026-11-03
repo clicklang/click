@@ -283,8 +283,8 @@ pub(in crate::kernel) fn unsigned_index_in_range(
         return None;
     }
     let index = *value;
-    let end_term = Bitvector32Term::UInt64Constant(end as u64);
-    let last = Bitvector32Term::UInt64Constant((end - 1) as u64);
+    let end_term = Bitvector32Term::uint64_constant(end as u64);
+    let last = Bitvector32Term::uint64_constant((end - 1) as u64);
     let guards = vec![
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
@@ -752,7 +752,7 @@ impl MemoryDagHopJustification {
                     && first.checks(pointer, range, assumptions)
                     && last.checks(
                         &pointer.offset_by_elements(
-                            Bitvector32Term::Constant(bytes / width - 1),
+                            Bitvector32Term::constant(bytes / width - 1),
                             width,
                         ),
                         range,
@@ -836,12 +836,12 @@ impl PositiveTermEvidence {
         if signed_bitvector_constant(term).is_some_and(|value| value > 0) {
             return Some(Self::Constant);
         }
-        let exact = ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), term.clone());
+        let exact = ConditionTerm::signed_less_than(Bitvector32Term::constant(0), term.clone());
         if assumptions.exact_condition_value(&exact) == Some(true) {
             return Some(Self::ExactCondition(exact));
         }
         let lower_bound =
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(1), term.clone());
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(1), term.clone());
         (assumptions.exact_condition_value(&lower_bound) == Some(true))
             .then_some(Self::OneLowerBound(lower_bound))
     }
@@ -851,12 +851,12 @@ impl PositiveTermEvidence {
             Self::Constant => signed_bitvector_constant(term).is_some_and(|value| value > 0),
             Self::ExactCondition(condition) => {
                 condition
-                    == &ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), term.clone())
+                    == &ConditionTerm::signed_less_than(Bitvector32Term::constant(0), term.clone())
                     && assumptions.exact_condition_value(condition) == Some(true)
             }
             Self::OneLowerBound(condition) => {
                 condition
-                    == &ConditionTerm::signed_less_equal(Bitvector32Term::Constant(1), term.clone())
+                    == &ConditionTerm::signed_less_equal(Bitvector32Term::constant(1), term.clone())
                     && assumptions.exact_condition_value(condition) == Some(true)
             }
         }
@@ -1467,7 +1467,7 @@ fn range_structurally_covers_allocation(
     if range.wide_bounds().is_some() {
         return false;
     }
-    if range.base() != allocation_base || range.start() != &Bitvector32Term::Constant(0) {
+    if range.base() != allocation_base || range.start() != &Bitvector32Term::constant(0) {
         return false;
     }
     let covered = memory_range_byte_count(
@@ -1832,8 +1832,8 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(984_300));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(1 << 33),
             4,
         );
         let facts = PureFactContext::new();
@@ -1848,7 +1848,7 @@ mod wide_range_reader_tests {
         assert!(!range_structurally_covers_allocation(
             &wide,
             &base,
-            &Bitvector32Term::Constant(4)
+            &Bitvector32Term::constant(4)
         ));
         let indexed = PointerInRangeEvidence::Indexed {
             index: 0u32.into(),
@@ -2041,7 +2041,7 @@ mod unsigned_index_membership_tests {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: Box::new(Bitvector32Term::Variable(index)),
-            right: Box::new(Bitvector32Term::UInt64Constant(end)),
+            right: Box::new(Bitvector32Term::uint64_constant(end)),
         }
     }
 
@@ -2071,7 +2071,7 @@ mod unsigned_index_membership_tests {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(Bitvector32Term::Variable(k)),
-                right: Box::new(Bitvector32Term::UInt64Constant(3)),
+                right: Box::new(Bitvector32Term::uint64_constant(3)),
             },
             true,
         );
@@ -2173,8 +2173,8 @@ mod empty_range_frame_tests {
             CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into()),
             CMemoryRange::new_wide(
                 base.clone(),
-                Bitvector32Term::UInt64Constant(0),
-                Bitvector32Term::UInt64Constant(1),
+                Bitvector32Term::uint64_constant(0),
+                Bitvector32Term::uint64_constant(1),
                 4,
             ),
         ];

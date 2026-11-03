@@ -53,7 +53,7 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
     let facts = PureFactContext::new().assume_condition(
         crate::kernel::ConditionTerm::equal(
             entry.observe_symbolic(&description).unwrap().entry_count,
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         ),
         true,
     );
@@ -64,7 +64,7 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
                     &PointerBlock::ExternalArgument,
                     &description,
                     true,
-                    &Bitvector32Term::Constant(amount),
+                    &Bitvector32Term::constant(amount),
                     &facts,
                 )
                 .unwrap()
@@ -90,11 +90,11 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
     let quantity = Bitvector32Term::Variable(Variable(940_150));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+            ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_add_overflows(quantity.clone(), Bitvector32Term::Constant(3)),
+            ConditionTerm::signed_add_overflows(quantity.clone(), Bitvector32Term::constant(3)),
             false,
         );
     let work = [16, 64, 256].map(|size| {
@@ -109,7 +109,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 .import_opaque_contract_population_inner(
                     &unrelated,
                     0,
-                    Some(Bitvector32Term::Constant(0)),
+                    Some(Bitvector32Term::constant(0)),
                     None,
                     None,
                 )
@@ -119,7 +119,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
             .import_opaque_contract_population_inner(
                 &description,
                 0,
-                Some(Bitvector32Term::Constant(0)),
+                Some(Bitvector32Term::constant(0)),
                 None,
                 None,
             )
@@ -133,7 +133,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 &block,
                 &description,
                 true,
-                &Bitvector32Term::Constant(3),
+                &Bitvector32Term::constant(3),
                 &PureFactContext::new()
             ),
             Err(CreationRefusal::InvalidQuantity)
@@ -144,7 +144,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     true,
-                    &Bitvector32Term::Constant(3),
+                    &Bitvector32Term::constant(3),
                     &assumptions,
                 )
                 .unwrap()
@@ -155,7 +155,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 observed.combined_delta(),
                 Some((
                     true,
-                    Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(3))
+                    Bitvector32Term::add(quantity.clone(), Bitvector32Term::constant(3))
                 ))
             );
             assert_eq!(
@@ -197,7 +197,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     false,
-                    &Bitvector32Term::Constant(1),
+                    &Bitvector32Term::constant(1),
                     &assumptions,
                 )
                 .unwrap()
@@ -213,7 +213,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     false,
-                    &Bitvector32Term::Constant(2),
+                    &Bitvector32Term::constant(2),
                     &assumptions,
                 )
                 .unwrap()
@@ -231,12 +231,12 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     false,
-                    &Bitvector32Term::Constant(1),
+                    &Bitvector32Term::constant(1),
                     &assumptions
                 ),
                 Err(CreationRefusal::MissingMembers)
             ));
-            let wrong = Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(1));
+            let wrong = Bitvector32Term::add(quantity.clone(), Bitvector32Term::constant(1));
             assert!(
                 restored
                     .transfer_call_fact_quantity(
@@ -257,7 +257,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     true,
-                    &Bitvector32Term::Constant(1),
+                    &Bitvector32Term::constant(1),
                     &assumptions
                 ),
                 Err(CreationRefusal::MissingAuthority)
@@ -277,7 +277,7 @@ fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
     let quantity = Bitvector32Term::Variable(Variable(940_131));
     let description = member_description(PointerBlock::ExternalArgument);
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+        ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::constant(0)),
         true,
     );
     for born_batch in [false, true] {
@@ -294,7 +294,7 @@ fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
                     .import_opaque_contract_population_inner(
                         &unrelated,
                         0,
-                        Some(Bitvector32Term::Constant(0)),
+                        Some(Bitvector32Term::constant(0)),
                         None,
                         None,
                     )
@@ -305,7 +305,7 @@ fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
                     &description,
                     0,
                     Some(if born_batch {
-                        Bitvector32Term::Constant(0)
+                        Bitvector32Term::constant(0)
                     } else {
                         quantity.clone()
                     }),
@@ -386,7 +386,7 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
                 .import_opaque_contract_population_inner(
                     &description_at(id),
                     1,
-                    Some(Bitvector32Term::Constant(3)),
+                    Some(Bitvector32Term::constant(3)),
                     None,
                     None,
                 )
@@ -506,7 +506,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
             .import_opaque_contract_population_inner(
                 &description,
                 2,
-                Some(Bitvector32Term::Constant(7)),
+                Some(Bitvector32Term::constant(7)),
                 None,
                 None,
             )
@@ -534,7 +534,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
             )
             .unwrap()
         });
-        assert_eq!(paths[0].value, CValue::Int32(Bitvector32Term::Constant(7)));
+        assert_eq!(paths[0].value, CValue::Int32(Bitvector32Term::constant(7)));
         work
     });
     assert!(samples[0] > 0, "lookup must charge its work: {samples:?}");
@@ -562,7 +562,7 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
                 .import_opaque_contract_population_inner(
                     &unrelated,
                     0,
-                    Some(Bitvector32Term::Constant(0)),
+                    Some(Bitvector32Term::constant(0)),
                     None,
                     None,
                 )
@@ -570,7 +570,7 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(991_000 + index)),
-                    Bitvector32Term::Constant(index as u32),
+                    Bitvector32Term::constant(index as u32),
                 ),
                 true,
             );
@@ -579,13 +579,13 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
             .import_opaque_contract_population_inner(
                 &description,
                 0,
-                Some(Bitvector32Term::Constant(0)),
+                Some(Bitvector32Term::constant(0)),
                 None,
                 None,
             )
             .unwrap();
         facts = facts.assume_condition(
-            ConditionTerm::equal(quantity.clone(), Bitvector32Term::Constant(1_000_000_000)),
+            ConditionTerm::equal(quantity.clone(), Bitvector32Term::constant(1_000_000_000)),
             true,
         );
         PureFactContext::reset_exact_constant_fact_visits();
@@ -672,7 +672,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
                 .import_opaque_contract_population_inner(
                     &unrelated,
                     0,
-                    Some(Bitvector32Term::Constant(0)),
+                    Some(Bitvector32Term::constant(0)),
                     None,
                     None,
                 )
@@ -680,7 +680,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
             facts = facts.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(993_000 + index)),
-                    Bitvector32Term::Constant(index as u32),
+                    Bitvector32Term::constant(index as u32),
                 ),
                 true,
             );
@@ -689,14 +689,14 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
             .import_opaque_contract_population_inner(
                 &description,
                 0,
-                Some(Bitvector32Term::Constant(0)),
+                Some(Bitvector32Term::constant(0)),
                 None,
                 None,
             )
             .unwrap();
         for quantity in [&first_quantity, &second_quantity] {
             facts = facts.assume_condition(
-                ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::Constant(0)),
+                ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::constant(0)),
                 true,
             );
         }
@@ -721,7 +721,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
             CreationRefusal::InvalidQuantity,
             "nonnegative quantities alone do not establish a non-wrapping total"
         );
-        let current = Bitvector32Term::add(Bitvector32Term::Constant(0), first_quantity.clone());
+        let current = Bitvector32Term::add(Bitvector32Term::constant(0), first_quantity.clone());
         facts = facts.assume_condition(
             ConditionTerm::signed_add_overflows(current, second_quantity.clone()),
             false,
@@ -800,7 +800,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
                 Some((true, total.clone()))
             );
             facts = facts.assume_condition(
-                ConditionTerm::signed_greater_equal(total.clone(), Bitvector32Term::Constant(0)),
+                ConditionTerm::signed_greater_equal(total.clone(), Bitvector32Term::constant(0)),
                 true,
             );
             assert!(
@@ -925,7 +925,7 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
             );
             assert_eq!(
                 one.observe_symbolic(&description).unwrap().symbolic_delta,
-                Some((false, Bitvector32Term::Constant(1)))
+                Some((false, Bitvector32Term::constant(1)))
             );
             assert_eq!(
                 one.checked_imported_instance_consumption(&left)
@@ -947,7 +947,7 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
             );
             assert_eq!(
                 observed.symbolic_delta,
-                Some((false, Bitvector32Term::Constant(2)))
+                Some((false, Bitvector32Term::constant(2)))
             );
             assert!(
                 !two.owns_population_member(&description),
@@ -1015,7 +1015,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
             let entry = entry.import_observable_named_authority(&scope).unwrap();
             let count = entry.observe_symbolic(&scope).unwrap().entry_count;
             let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::signed_add_overflows(count.clone(), Bitvector32Term::Constant(1)),
+                ConditionTerm::signed_add_overflows(count.clone(), Bitvector32Term::constant(1)),
                 false,
             ));
             let (_, work) = crate::persistent::measure_persistent_work(|| {
@@ -1069,7 +1069,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
                 assert_eq!(observed.entry_owned_members, 2);
                 assert_eq!(
                     observed.combined_delta(),
-                    Some((false, Bitvector32Term::Constant(2)))
+                    Some((false, Bitvector32Term::constant(2)))
                 );
                 if wildcard {
                     let exact_count = spent.observe_exact_member(&exact).unwrap();

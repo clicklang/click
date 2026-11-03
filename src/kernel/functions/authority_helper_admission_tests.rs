@@ -20,7 +20,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
             name: "member".into(),
             arguments: vec![pointer.clone().into()].into(),
         };
-        let member = CResourceFact::own_quantity(resource, Bitvector32Term::Constant(amount));
+        let member = CResourceFact::own_quantity(resource, Bitvector32Term::constant(amount));
         let mut entry = CState::new()
             .with_population_creation_tracking()
             .with_local("p", pointer)
@@ -121,14 +121,14 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
             .assume_condition(
                 ConditionTerm::signed_greater_equal(
                     count.clone(),
-                    Bitvector32Term::Constant(amount),
+                    Bitvector32Term::constant(amount),
                 ),
                 true,
             )
             .assume_condition(
                 ConditionTerm::signed_less_equal(
                     count,
-                    Bitvector32Term::Constant((i32::MAX - 1) as u32),
+                    Bitvector32Term::constant((i32::MAX - 1) as u32),
                 ),
                 true,
             );
@@ -138,7 +138,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
                     &PointerBlock::ExternalArgument,
                     &description,
                     false,
-                    &Bitvector32Term::Constant(amount),
+                    &Bitvector32Term::constant(amount),
                     &assumptions,
                 )
                 .unwrap()
@@ -148,7 +148,7 @@ fn quantity_exchange_net_certification_scales_beside_unrelated_populations() {
                     &PointerBlock::ExternalArgument,
                     &description,
                     true,
-                    &Bitvector32Term::Constant(amount - 1),
+                    &Bitvector32Term::constant(amount - 1),
                     &assumptions,
                 )
                 .unwrap()

@@ -32,7 +32,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::BitwiseAnd,
                         left: Box::new(word.clone()),
-                        right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                        right: Box::new(Bitvector32Term::uint64_constant(1)),
                     }),
                 }),
             },
@@ -78,7 +78,7 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: Box::new(Bitvector32Term::Variable(Variable(720_000 + index))),
-                    right: Box::new(Bitvector32Term::UInt64Constant(index)),
+                    right: Box::new(Bitvector32Term::uint64_constant(index)),
                 },
                 true,
             ));
@@ -125,7 +125,7 @@ fn a_narrow_equality_between_wide_words_is_not_an_alias() {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::BitwiseAnd,
                         left: Box::new(word.clone()),
-                        right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                        right: Box::new(Bitvector32Term::uint64_constant(1)),
                     }),
                 }),
             },
@@ -192,7 +192,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
                         CType::Int32Pointer,
                     ))],
                 }),
-                right: Box::new(Bitvector32Term::Constant(value)),
+                right: Box::new(Bitvector32Term::constant(value)),
             },
             true,
         )
@@ -445,7 +445,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
                 left: SpecExpression::CExpression(CExpression::Load(Box::new(c_variable("p")))),
                 operator: CComparisonOperator::Equal,
                 right: SpecExpression::CExpression(CExpression::Value(CValue::UInt64(
-                    Bitvector32Term::UInt64Constant(0),
+                    Bitvector32Term::uint64_constant(0),
                 ))),
             }],
         };

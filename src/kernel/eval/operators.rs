@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::binary_term;
+use crate::kernel::{bits32_constant, constant_u32};
 
 mod division_domains;
 mod narrow_arithmetic;
@@ -382,17 +383,15 @@ pub(in crate::kernel) fn evaluate_c_add_paths(
 fn fold_c_int32_constant_increment(mut path: CExpressionPath) -> CExpressionPath {
     if let CExpressionOutcome::Value(CValue::Int32(binary_term!(Int32, Add, base, increment))) =
         &path.outcome
-        && let (
-            binary_term!(Int32, Add, inner, addend),
-            Bitvector32Term::Constant(increment) | Bitvector32Term::UInt32Constant(increment),
-        ) = (base.as_ref(), increment.as_ref())
-        && let Bitvector32Term::Constant(addend) | Bitvector32Term::UInt32Constant(addend) =
-            addend.as_ref()
-        && let Some(sum) = (*addend as i32).checked_add(*increment as i32)
+        && let (binary_term!(Int32, Add, inner, addend), bits32_constant!(increment)) =
+            (base.as_ref(), increment.as_ref())
+        && let bits32_constant!(addend) = addend.as_ref()
+        && let Some(sum) =
+            (constant_u32(*addend) as i32).checked_add(constant_u32(*increment) as i32)
     {
         path.outcome = CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::add(
             inner.as_ref().clone(),
-            Bitvector32Term::Constant(sum as u32),
+            Bitvector32Term::constant(sum as u32),
         )));
     }
     path
@@ -1496,8 +1495,8 @@ pub(in crate::kernel) fn apply_c_remainder(
 
 fn word_low_bits_clear(word: &Bitvector32Term, mask: u64, assumptions: &PureFactContext) -> bool {
     let clear = ConditionTerm::uint64_equal(
-        Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::UInt64Constant(mask)),
-        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::uint64_constant(mask)),
+        Bitvector32Term::uint64_constant(0),
     );
     clear == ConditionTerm::Constant(true)
         || [clear.clone(), clear.flipped()].iter().any(|condition| {
@@ -1559,7 +1558,7 @@ fn bounded_uint64_tag_equation(
                 value.clone(),
                 Bitvector32Term::uint64_bitwise_and(
                     word.as_ref().clone(),
-                    Bitvector32Term::UInt64Constant(mask),
+                    Bitvector32Term::uint64_constant(mask),
                 ),
             ));
         }
@@ -1795,7 +1794,7 @@ fn pointer_element_indices(
     right: &Pointer,
     byte_width: u32,
 ) -> Option<(Bitvector32Term, Bitvector32Term)> {
-    let zero = Bitvector32Term::Constant(0);
+    let zero = Bitvector32Term::constant(0);
     let relative = match (&left.offset, &right.offset) {
         (left, right) if left == right => Some((zero.clone(), zero.clone())),
         (
@@ -1957,9 +1956,9 @@ fn pointer_has_object_provenance_evidence(
                 };
                 // A wide fact's count is an unsigned 64-bit term.
                 let positive = if *wide {
-                    ConditionTerm::uint64_less_than(Bitvector32Term::Constant(0), bytes.clone())
+                    ConditionTerm::uint64_less_than(Bitvector32Term::constant(0), bytes.clone())
                 } else {
-                    ConditionTerm::signed_greater_than(bytes.clone(), Bitvector32Term::Constant(0))
+                    ConditionTerm::signed_greater_than(bytes.clone(), Bitvector32Term::constant(0))
                 };
                 crate::kernel::reasoning::memory_range_still_available(
                     memory,
@@ -2297,7 +2296,7 @@ pub(in crate::kernel) fn apply_c_subtract(
             pointer_offset_by_elements_paths(
                 state,
                 pointer,
-                Bitvector32Term::subtract(Bitvector32Term::Constant(0), right),
+                Bitvector32Term::subtract(Bitvector32Term::constant(0), right),
                 byte_width,
                 false,
                 false,
@@ -2329,14 +2328,14 @@ pub(in crate::kernel) fn apply_c_subtract(
                 PointerFormationGuard {
                     condition: ConditionTerm::uint64_less_equal(
                         offset.clone(),
-                        Bitvector32Term::UInt64Constant(i64::MAX as u64),
+                        Bitvector32Term::uint64_constant(i64::MAX as u64),
                     ),
                     value: true,
                 }
             } else {
                 PointerFormationGuard {
                     condition: ConditionTerm::int64_signed_subtract_overflows(
-                        Bitvector32Term::Int64Constant(0),
+                        Bitvector32Term::int64_constant(0),
                         offset.clone(),
                     ),
                     value: false,
@@ -2355,7 +2354,7 @@ pub(in crate::kernel) fn apply_c_subtract(
                 offset
             };
             let negated =
-                Bitvector32Term::int64_subtract(Bitvector32Term::Int64Constant(0), offset);
+                Bitvector32Term::int64_subtract(Bitvector32Term::int64_constant(0), offset);
             guarded
                 .into_iter()
                 .flat_map(|path| {
@@ -2365,7 +2364,7 @@ pub(in crate::kernel) fn apply_c_subtract(
                     // Keep the existing zero-displacement treatment for null and
                     // otherwise unbounded pointers independent of integer width.
                     let (negated, wide) = if negated.int64_as_const() == Some(0) {
-                        (Bitvector32Term::Constant(0), false)
+                        (Bitvector32Term::constant(0), false)
                     } else {
                         (negated.clone(), true)
                     };
@@ -2478,9 +2477,9 @@ fn pointer_offset_by_elements_paths(
     // undefined. Displacing by zero is left alone: it is the shape real code
     // writes, and C23 defines it.
     let zero_term = match (wide, unsigned) {
-        (true, true) => Bitvector32Term::UInt64Constant(0),
-        (true, false) => Bitvector32Term::Int64Constant(0),
-        (false, _) => Bitvector32Term::Constant(0),
+        (true, true) => Bitvector32Term::uint64_constant(0),
+        (true, false) => Bitvector32Term::int64_constant(0),
+        (false, _) => Bitvector32Term::constant(0),
     };
     let zero = Proposition::ConditionIs(
         if wide {
@@ -2546,8 +2545,8 @@ fn pointer_offset_by_elements_paths(
     // an unsigned value do not decide.
     let small_unsigned = wide && unsigned && assumptions.uint64_index_fits_int32(&offset);
     if let Some(index) = pointer_index_from_offset(&pointer, byte_width)
-        && index != Bitvector32Term::Constant(0)
-        && offset != Bitvector32Term::Constant(0)
+        && index != Bitvector32Term::constant(0)
+        && offset != Bitvector32Term::constant(0)
         && !small_unsigned
     {
         guards.push(PointerFormationGuard {
@@ -2788,7 +2787,7 @@ fn pointer_index_from_concrete_offset(offset: i64, byte_width: u32) -> Option<Bi
     let index = offset / i64::from(byte_width);
     (i32::MIN as i64..=i32::MAX as i64)
         .contains(&index)
-        .then_some(Bitvector32Term::Constant((index as i32) as u32))
+        .then_some(Bitvector32Term::constant((index as i32) as u32))
 }
 
 fn pointer_arithmetic_index(
@@ -2804,7 +2803,7 @@ fn pointer_arithmetic_index(
         // The first addend is the pointer's opaque base. It is not an
         // element displacement, even if its byte representation happens to
         // be aligned.
-        _ => Bitvector32Term::Constant(0),
+        _ => Bitvector32Term::constant(0),
     };
     Some(Bitvector32Term::add(left, right))
 }
@@ -2827,7 +2826,7 @@ fn exact_pointer_offset_i64_with_guards(
     guards: &mut Vec<PointerFormationGuard>,
 ) -> Option<Bitvector32Term> {
     match offset {
-        PointerOffsetTerm::Constant(value) => Some(Bitvector32Term::Int64Constant(*value)),
+        PointerOffsetTerm::Constant(value) => Some(Bitvector32Term::int64_constant(*value)),
         PointerOffsetTerm::Variable(_) => None,
         PointerOffsetTerm::Add(left, right) => {
             let left = exact_pointer_offset_i64_with_guards(left, guards)?;
@@ -2840,7 +2839,7 @@ fn exact_pointer_offset_i64_with_guards(
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             let left = Bitvector32Term::int64_from_32(value.as_ref().clone());
-            let right = Bitvector32Term::Int64Constant(*byte_width);
+            let right = Bitvector32Term::int64_constant(*byte_width);
             guards.push(PointerFormationGuard {
                 condition: ConditionTerm::int64_signed_multiply_overflows(
                     left.clone(),
@@ -2851,7 +2850,7 @@ fn exact_pointer_offset_i64_with_guards(
             Some(Bitvector32Term::int64_multiply(left, right))
         }
         PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => {
-            Some(Bitvector32Term::Int64Constant(0))
+            Some(Bitvector32Term::int64_constant(0))
         }
         PointerOffsetTerm::Int64Scaled {
             value,
@@ -2859,7 +2858,7 @@ fn exact_pointer_offset_i64_with_guards(
             unsigned: false,
         } => {
             let left = value.as_ref().clone();
-            let right = Bitvector32Term::Int64Constant(*byte_width);
+            let right = Bitvector32Term::int64_constant(*byte_width);
             guards.push(PointerFormationGuard {
                 condition: ConditionTerm::int64_signed_multiply_overflows(
                     left.clone(),
@@ -2879,12 +2878,12 @@ fn exact_pointer_offset_i64_with_guards(
             guards.push(PointerFormationGuard {
                 condition: ConditionTerm::uint64_less_equal(
                     value.as_ref().clone(),
-                    Bitvector32Term::UInt64Constant(maximum_index),
+                    Bitvector32Term::uint64_constant(maximum_index),
                 ),
                 value: true,
             });
             let left = value.as_ref().clone();
-            let right = Bitvector32Term::Int64Constant(*byte_width);
+            let right = Bitvector32Term::int64_constant(*byte_width);
             guards.push(PointerFormationGuard {
                 condition: ConditionTerm::int64_signed_multiply_overflows(
                     left.clone(),
@@ -2914,8 +2913,8 @@ fn pointer_block_bounds(
         if offset < 0 || offset > i64::from(size) {
             return Some(vec![PointerFormationGuard {
                 condition: ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Constant(1),
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(1),
+                    Bitvector32Term::constant(0),
                 ),
                 value: true,
             }]);
@@ -2940,7 +2939,7 @@ fn pointer_block_bounds(
             } else {
                 Bitvector32Term::uint64_divide(
                     bytes,
-                    Bitvector32Term::UInt64Constant(*scale as u64),
+                    Bitvector32Term::uint64_constant(*scale as u64),
                 )
             }
         } else {
@@ -2948,7 +2947,7 @@ fn pointer_block_bounds(
             if *scale == 1 {
                 bytes
             } else {
-                Bitvector32Term::int64_divide(bytes, Bitvector32Term::Int64Constant(*scale))
+                Bitvector32Term::int64_divide(bytes, Bitvector32Term::int64_constant(*scale))
             }
         };
         let mut guards = Vec::new();
@@ -2956,7 +2955,7 @@ fn pointer_block_bounds(
             guards.push(PointerFormationGuard {
                 condition: ConditionTerm::int64_signed_greater_equal(
                     value.as_ref().clone(),
-                    Bitvector32Term::Int64Constant(0),
+                    Bitvector32Term::int64_constant(0),
                 ),
                 value: true,
             });
@@ -2984,7 +2983,7 @@ fn pointer_block_bounds(
             PointerFormationGuard {
                 condition: ConditionTerm::int64_signed_greater_equal(
                     offset.clone(),
-                    Bitvector32Term::Int64Constant(0),
+                    Bitvector32Term::int64_constant(0),
                 ),
                 value: true,
             },
@@ -3024,7 +3023,7 @@ fn pointer_block_bounds(
         PointerFormationGuard {
             condition: ConditionTerm::signed_greater_equal(
                 offset.clone(),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
             value: true,
         },
@@ -3077,7 +3076,7 @@ fn strided_block_bounds(
         PointerFormationGuard {
             condition: ConditionTerm::signed_greater_equal(
                 index.as_ref().clone(),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
             value: true,
         },
@@ -3327,7 +3326,7 @@ fn held_range_membership(
         if survey.consider(
             assumptions,
             facts,
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             offset,
             bytes.clone(),
             true,
@@ -3494,17 +3493,14 @@ fn owed_guard_paths(
 /// it does not reassociate the C expression or discard intermediate guards.
 /// Keep the combined offset signed-representable for interval reconstruction.
 fn c_int32_add_value(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
-    if let (
-        binary_term!(Int32, Add, base, trailing),
-        Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
-    ) = (&left, &right)
-        && let Bitvector32Term::Constant(trailing) | Bitvector32Term::UInt32Constant(trailing) =
-            trailing.as_ref()
-        && let Some(offset) = (*trailing as i32).checked_add(*right as i32)
+    if let (binary_term!(Int32, Add, base, trailing), bits32_constant!(right)) = (&left, &right)
+        && let bits32_constant!(trailing) = trailing.as_ref()
+        && let Some(offset) =
+            (constant_u32(*trailing) as i32).checked_add(constant_u32(*right) as i32)
     {
         return Bitvector32Term::add(
             base.as_ref().clone(),
-            Bitvector32Term::Constant(offset as u32),
+            Bitvector32Term::constant(offset as u32),
         );
     }
     Bitvector32Term::add(left, right)
@@ -3658,7 +3654,7 @@ fn apply_c_int32_division_like(
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
 ) -> Vec<CExpressionPath> {
-    let zero = Bitvector32Term::Constant(0);
+    let zero = Bitvector32Term::constant(0);
     let divides_by_zero = ConditionTerm::equal(right.clone(), zero);
     match decide_with_facts(assumptions, &facts, &divides_by_zero) {
         Some(true) => {
@@ -3762,7 +3758,7 @@ fn apply_c_int64_division_like(
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
 ) -> Vec<CExpressionPath> {
-    let zero = ConditionTerm::int64_equal(right.clone(), Bitvector32Term::Int64Constant(0));
+    let zero = ConditionTerm::int64_equal(right.clone(), Bitvector32Term::int64_constant(0));
     match decide_with_facts(assumptions, &facts, &zero) {
         Some(true) => {
             return vec![CExpressionPath {
@@ -3825,7 +3821,7 @@ fn apply_c_uint64_division_like(
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
 ) -> Vec<CExpressionPath> {
-    let zero = ConditionTerm::uint64_equal(right.clone(), Bitvector32Term::UInt64Constant(0));
+    let zero = ConditionTerm::uint64_equal(right.clone(), Bitvector32Term::uint64_constant(0));
     split_on_undefined_behavior(
         zero,
         CUndefinedBehavior::DivisionByZero,
@@ -3850,7 +3846,7 @@ fn apply_c_uint32_division_like(
     assumptions: &PureFactContext,
     result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
 ) -> Vec<CExpressionPath> {
-    let divides_by_zero = ConditionTerm::equal(right.clone(), Bitvector32Term::Constant(0));
+    let divides_by_zero = ConditionTerm::equal(right.clone(), Bitvector32Term::constant(0));
     split_on_undefined_behavior(
         divides_by_zero,
         CUndefinedBehavior::DivisionByZero,
@@ -4176,9 +4172,9 @@ fn apply_c_int64_with_valid_shift_count(
         Bitvector32Term::int64_from_32(right)
     };
     let invalid_count = if unsigned_count {
-        ConditionTerm::uint64_greater_equal(count.clone(), Bitvector32Term::UInt64Constant(64))
+        ConditionTerm::uint64_greater_equal(count.clone(), Bitvector32Term::uint64_constant(64))
     } else {
-        ConditionTerm::int64_signed_less_than(count.clone(), Bitvector32Term::Int64Constant(0))
+        ConditionTerm::int64_signed_less_than(count.clone(), Bitvector32Term::int64_constant(0))
     };
     match decide_with_facts(assumptions, &facts, &invalid_count) {
         Some(true) => vec![CExpressionPath {
@@ -4189,7 +4185,7 @@ fn apply_c_int64_with_valid_shift_count(
         Some(false) if !unsigned_count => {
             let too_large = ConditionTerm::int64_signed_greater_equal(
                 count.clone(),
-                Bitvector32Term::Int64Constant(64),
+                Bitvector32Term::int64_constant(64),
             );
             apply_c_int64_shift_count_upper_bound(
                 left,
@@ -4230,7 +4226,7 @@ fn apply_c_int64_with_valid_shift_count(
             } else {
                 let too_large = ConditionTerm::int64_signed_greater_equal(
                     count.clone(),
-                    Bitvector32Term::Int64Constant(64),
+                    Bitvector32Term::int64_constant(64),
                 );
                 apply_c_int64_shift_count_upper_bound(
                     left,
@@ -4279,7 +4275,7 @@ fn apply_c_int64_shift_left_valid_count(
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
     let negative_left =
-        ConditionTerm::int64_signed_less_than(left.clone(), Bitvector32Term::Int64Constant(0));
+        ConditionTerm::int64_signed_less_than(left.clone(), Bitvector32Term::int64_constant(0));
     split_on_undefined_behavior(
         negative_left,
         CUndefinedBehavior::InvalidShift,
@@ -4403,7 +4399,7 @@ fn apply_c_int32_with_valid_shift_count(
         );
     }
     let negative_count =
-        ConditionTerm::signed_less_than(right.clone(), Bitvector32Term::Constant(0));
+        ConditionTerm::signed_less_than(right.clone(), Bitvector32Term::constant(0));
     match decide_with_facts(assumptions, &facts, &negative_count) {
         Some(true) => {
             return vec![CExpressionPath {
@@ -4478,7 +4474,7 @@ fn apply_c_int32_with_valid_wide_shift_count(
     }
 
     let negative_count =
-        ConditionTerm::int64_signed_less_than(right.clone(), Bitvector32Term::Int64Constant(0));
+        ConditionTerm::int64_signed_less_than(right.clone(), Bitvector32Term::int64_constant(0));
     split_on_undefined_behavior(
         negative_count,
         CUndefinedBehavior::InvalidShift,
@@ -4509,9 +4505,12 @@ fn apply_c_int32_with_nonnegative_wide_shift_count(
     apply_valid_count: ValidShiftCountEvaluator,
 ) -> Vec<CExpressionPath> {
     let too_large_count = if unsigned_count {
-        ConditionTerm::uint64_greater_equal(right.clone(), Bitvector32Term::UInt64Constant(32))
+        ConditionTerm::uint64_greater_equal(right.clone(), Bitvector32Term::uint64_constant(32))
     } else {
-        ConditionTerm::int64_signed_greater_equal(right.clone(), Bitvector32Term::Int64Constant(32))
+        ConditionTerm::int64_signed_greater_equal(
+            right.clone(),
+            Bitvector32Term::int64_constant(32),
+        )
     };
     split_on_undefined_behavior(
         too_large_count,
@@ -4541,9 +4540,9 @@ fn apply_c_int32_with_nonnegative_shift_count(
     apply_valid_count: ValidShiftCountEvaluator,
 ) -> Vec<CExpressionPath> {
     let too_large_count = if unsigned_count {
-        ConditionTerm::unsigned_greater_equal(right.clone(), Bitvector32Term::Constant(32))
+        ConditionTerm::unsigned_greater_equal(right.clone(), Bitvector32Term::constant(32))
     } else {
-        ConditionTerm::signed_greater_equal(right.clone(), Bitvector32Term::Constant(32))
+        ConditionTerm::signed_greater_equal(right.clone(), Bitvector32Term::constant(32))
     };
     split_on_undefined_behavior(
         too_large_count,
@@ -4562,7 +4561,7 @@ fn apply_c_int32_shift_left_valid_count(
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
 ) -> Vec<CExpressionPath> {
-    let negative_left = ConditionTerm::signed_less_than(left.clone(), Bitvector32Term::Constant(0));
+    let negative_left = ConditionTerm::signed_less_than(left.clone(), Bitvector32Term::constant(0));
     match decide_with_facts(assumptions, &facts, &negative_left) {
         Some(true) => {
             return vec![CExpressionPath {
@@ -5311,7 +5310,7 @@ fn pointer_at_object_start_condition(pointer: &Pointer) -> Option<ConditionTerm>
         Some(0) => Some(ConditionTerm::Constant(true)),
         Some(_) => None,
         None => match byte_offset_from_pointer_offset(&displacement) {
-            Some(offset) => Some(ConditionTerm::equal(offset, Bitvector32Term::Constant(0))),
+            Some(offset) => Some(ConditionTerm::equal(offset, Bitvector32Term::constant(0))),
             None => Some(ConditionTerm::Constant(true)),
         },
     }
@@ -5363,14 +5362,14 @@ fn subobject_extent_guards(
     Some(vec![
         PointerFormationGuard {
             condition: ConditionTerm::signed_less_equal(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
                 offset.clone(),
             ),
             value: true,
         },
         PointerFormationGuard {
             condition: ConditionTerm::signed_less_equal(
-                Bitvector32Term::add(offset, Bitvector32Term::Constant(bytes)),
+                Bitvector32Term::add(offset, Bitvector32Term::constant(bytes)),
                 extent.width.clone(),
             ),
             value: true,
@@ -5400,7 +5399,7 @@ fn subobject_extent_proven(
         pointer,
         bytes,
         &extent.start,
-        &Bitvector32Term::Constant(0),
+        &Bitvector32Term::constant(0),
         &extent.width,
         1,
     )
@@ -5597,8 +5596,8 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(985_100));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(1 << 33),
             4,
         );
         let state = CState::new().with_resource_context(
@@ -5630,8 +5629,8 @@ mod word_tag_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let (bits, value) = word();
         let clear = ConditionTerm::uint64_equal(
-            Bitvector32Term::uint64_bitwise_and(bits.clone(), Bitvector32Term::UInt64Constant(1)),
-            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_bitwise_and(bits.clone(), Bitvector32Term::uint64_constant(1)),
+            Bitvector32Term::uint64_constant(0),
         );
         let context = PureFactContext::new().assume_condition(clear, true);
         for (tag, assumptions, retained) in [
@@ -5643,7 +5642,7 @@ mod word_tag_tests {
             let paths = apply_c_add(
                 &CState::new(),
                 value.clone(),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(tag)),
+                CValue::UInt64(Bitvector32Term::uint64_constant(tag)),
                 None,
                 None,
                 Vec::new().into(),
@@ -5664,7 +5663,7 @@ mod word_tag_tests {
                     record.numeric.as_ref(),
                     &CValue::UInt64(Bitvector32Term::uint64_add(
                         bits.clone(),
-                        Bitvector32Term::UInt64Constant(1),
+                        Bitvector32Term::uint64_constant(1),
                     ))
                 );
             }
@@ -5682,7 +5681,7 @@ mod word_tag_tests {
         let bounded = nonnegative.clone().assume_condition(upper.clone(), true);
         let upper_only = empty.clone().assume_condition(upper, true);
         let masked = |inner, mask| {
-            Bitvector32Term::uint64_bitwise_and(inner, Bitvector32Term::UInt64Constant(mask))
+            Bitvector32Term::uint64_bitwise_and(inner, Bitvector32Term::uint64_constant(mask))
         };
         let tagged = Bitvector32Term::uint64_bitwise_or(
             word.clone(),
@@ -5700,10 +5699,10 @@ mod word_tag_tests {
             );
         }
         assert!(bounded_uint64_tag_equation(&masked(tagged, !2), &bounded).is_none());
-        let added = Bitvector32Term::uint64_add(word.clone(), Bitvector32Term::UInt64Constant(1));
+        let added = Bitvector32Term::uint64_add(word.clone(), Bitvector32Term::uint64_constant(1));
         assert!(bounded_uint64_tag_equation(&masked(added.clone(), !3), &empty).is_none());
         let clear = empty.assume_condition(
-            ConditionTerm::uint64_equal(masked(word, 1), Bitvector32Term::UInt64Constant(0)),
+            ConditionTerm::uint64_equal(masked(word, 1), Bitvector32Term::uint64_constant(0)),
             true,
         );
         assert!(bounded_uint64_tag_equation(&masked(added, !3), &clear).is_some());
@@ -5751,7 +5750,7 @@ mod held_range_scaling_tests {
                         .assume_proposition(owner_of(&Pointer::symbolic(Variable(992_100 + index))))
                 })
                 .assume_proposition(owner_of(&base));
-            let pointer = base.offset_by_int32_elements(Bitvector32Term::Constant(1));
+            let pointer = base.offset_by_int32_elements(Bitvector32Term::constant(1));
             HELD_RANGE_COMPOSITIONS.with(|visits| visits.set(0));
             let (inside, work) = crate::instrumentation::measure_deterministic_work(|| {
                 matches!(

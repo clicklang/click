@@ -1079,7 +1079,7 @@ fn thread_guarantees_are_withheld_until_join() {
                 Box::new(pointer(0)),
                 crate::kernel::LoadKind::Int32,
             ),
-            Bitvector32Term::Constant(77),
+            Bitvector32Term::constant(77),
         ),
         true,
     );

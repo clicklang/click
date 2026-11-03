@@ -320,7 +320,7 @@ impl PendingThreadCreate {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(self.storage.status.clone()),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         };
         let success = assumptions.decide(&zero)?;
         let mut selected = visible.clone();

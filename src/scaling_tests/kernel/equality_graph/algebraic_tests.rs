@@ -79,18 +79,18 @@ fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
             base = base.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(1000 + index)),
-                    Bitvector32Term::Constant(7),
+                    Bitvector32Term::constant(7),
                 ),
                 true,
             );
         }
         base = base
             .assume_condition(
-                ConditionTerm::equal(getter(a.clone()), Bitvector32Term::Constant(1)),
+                ConditionTerm::equal(getter(a.clone()), Bitvector32Term::constant(1)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::equal(getter(b.clone()), Bitvector32Term::Constant(0)),
+                ConditionTerm::equal(getter(b.clone()), Bitvector32Term::constant(0)),
                 true,
             );
         let (child, work) = crate::instrumentation::measure_deterministic_work(|| {

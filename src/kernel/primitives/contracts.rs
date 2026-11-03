@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{bits32_constant, constant_i64, constant_u32, int32_constant, int64_constant};
 
 impl CParameter {
     pub fn new(name: impl Into<String>, c_type: CType) -> Self {
@@ -2635,7 +2636,7 @@ impl CMemoryRange {
             return None;
         }
         let mut lower =
-            (kind == RangeIndexKind::UInt64).then_some(Bitvector32Term::UInt64Constant(0));
+            (kind == RangeIndexKind::UInt64).then_some(Bitvector32Term::uint64_constant(0));
         let mut upper = None;
         let mut pending = vec![guard];
         while let Some(conjunct) = pending.pop() {
@@ -2757,11 +2758,11 @@ impl CMemoryRange {
                 block: super::PointerBlock::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
                 offset: super::PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             // Endpoints are `int32` values: this is the largest extent whose
             // guards hold, so no consumer that assumes a held range's extent
             // guards can meet a false one here.
-            Bitvector32Term::Constant(i32::MAX as u32),
+            Bitvector32Term::constant(i32::MAX as u32),
             1,
         )
     }
@@ -2794,17 +2795,16 @@ pub(crate) fn memory_range_byte_count(
 ) -> Bitvector32Term {
     assert!(element_width > 0, "memory element width must be positive");
     let element_count = canonical_subtract(end, start);
-    canonical_multiply(element_count, Bitvector32Term::Constant(element_width))
+    canonical_multiply(element_count, Bitvector32Term::constant(element_width))
 }
 
 fn canonical_subtract(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
     match (&left, &right) {
-        (
-            Bitvector32Term::Constant(left) | Bitvector32Term::UInt32Constant(left),
-            Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
-        ) => Bitvector32Term::Constant(left.wrapping_sub(*right)),
-        (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0)) => left,
-        _ if left == right => Bitvector32Term::Constant(0),
+        (bits32_constant!(left), bits32_constant!(right)) => {
+            Bitvector32Term::constant(constant_u32(*left).wrapping_sub(constant_u32(*right)))
+        }
+        (_, bits32_constant!(0)) => left,
+        _ if left == right => Bitvector32Term::constant(0),
         (
             binary_term!(Int32, Add, left_base, left_addend),
             binary_term!(Int32, Add, right_base, right_addend),
@@ -2817,14 +2817,12 @@ fn canonical_subtract(left: Bitvector32Term, right: Bitvector32Term) -> Bitvecto
 
 fn canonical_multiply(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
     match (&left, &right) {
-        (
-            Bitvector32Term::Constant(left) | Bitvector32Term::UInt32Constant(left),
-            Bitvector32Term::Constant(right) | Bitvector32Term::UInt32Constant(right),
-        ) => Bitvector32Term::Constant(left.wrapping_mul(*right)),
-        (_, Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)) => left,
-        (Bitvector32Term::Constant(1), _) => right,
-        (_, Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0))
-        | (Bitvector32Term::Constant(0), _) => Bitvector32Term::Constant(0),
+        (bits32_constant!(left), bits32_constant!(right)) => {
+            Bitvector32Term::constant(constant_u32(*left).wrapping_mul(constant_u32(*right)))
+        }
+        (_, bits32_constant!(1)) => left,
+        (int32_constant!(1), _) => right,
+        (_, bits32_constant!(0)) | (int32_constant!(0), _) => Bitvector32Term::constant(0),
         _ => binary_node!(Int32, Multiply, Box::new(left), Box::new(right)),
     }
 }
@@ -2872,14 +2870,14 @@ pub(crate) fn memory_range_element_count_guards(
 ) -> Vec<Proposition> {
     assert!(element_width > 0, "memory element width must be positive");
     let mut guards = vec![Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), element_count.clone()),
+        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), element_count.clone()),
         true,
     )];
     if element_count_limit_constrains_int32(element_width) {
         guards.push(Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(
                 element_count,
-                Bitvector32Term::Constant(memory_range_element_count_limit(element_width)),
+                Bitvector32Term::constant(memory_range_element_count_limit(element_width)),
             ),
             true,
         ));
@@ -2946,7 +2944,7 @@ pub(crate) fn memory_range_byte_count_extent(
             MachineIntegerType::UInt32,
             element_count,
         ),
-        Bitvector32Term::Constant(memory_range_element_count_limit(element_width)),
+        Bitvector32Term::constant(memory_range_element_count_limit(element_width)),
     );
     MemoryRangeExtent::Guards(vec![
         Proposition::ConditionIs(forward, true),
@@ -2965,11 +2963,8 @@ pub(crate) fn scaled_extent_element_width(bytes: &Bitvector32Term) -> Option<u32
         return None;
     };
     match (left.as_ref(), right.as_ref()) {
-        (Bitvector32Term::Constant(width) | Bitvector32Term::UInt32Constant(width), _)
-        | (_, Bitvector32Term::Constant(width) | Bitvector32Term::UInt32Constant(width))
-            if *width > 0 =>
-        {
-            Some(*width)
+        (bits32_constant!(width), _) | (_, bits32_constant!(width)) if constant_u32(*width) > 0 => {
+            Some(constant_u32(*width))
         }
         _ => None,
     }
@@ -3074,7 +3069,7 @@ fn collect_stated_loadable_extent_guards(
             let guard = Proposition::ConditionIs(
                 ConditionTerm::uint64_less_equal(
                     elements.clone(),
-                    Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(width)),
+                    Bitvector32Term::uint64_constant(i64::MAX as u64 / u64::from(width)),
                 ),
                 true,
             );
@@ -3093,7 +3088,7 @@ fn collect_stated_loadable_extent_guards(
             };
             let endpoints = if every_spelling {
                 memory_range_byte_count_guards(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                     element_count.clone(),
                     element_width,
                 )
@@ -3166,15 +3161,13 @@ pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Propositio
 pub(crate) fn narrow_range_constant(value: &CValue) -> Option<Bitvector32Term> {
     let value = value.numeric_value();
     let constant = match value {
-        CValue::Int32(Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) => {
-            i64::from(*bits as i32)
-        }
-        CValue::Int64(Bitvector32Term::Int64Constant(value)) => *value,
+        CValue::Int32(bits32_constant!(bits)) => i64::from(constant_u32(*bits) as i32),
+        CValue::Int64(int64_constant!(value)) => constant_i64(*value),
         CValue::UInt64(term) => i64::try_from(term.uint64_as_const()?).ok()?,
         _ => return None,
     };
     let constant = i32::try_from(constant).ok()?;
-    Some(Bitvector32Term::Constant(constant as u32))
+    Some(Bitvector32Term::constant(constant as u32))
 }
 
 pub(crate) fn wide_range_bounds(
@@ -3190,12 +3183,12 @@ pub(crate) fn wide_range_bounds(
         // unsigned 64-bit value. A negative one becomes larger than any
         // extent the range's guards allow, so the range denotes memory only
         // when its bounds are nonnegative.
-        CValue::Int32(Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) => {
-            Some(Bitvector32Term::UInt64Constant(*bits as i32 as i64 as u64))
-        }
+        CValue::Int32(bits32_constant!(bits)) => Some(Bitvector32Term::uint64_constant(
+            constant_u32(*bits) as i32 as i64 as u64,
+        )),
         CValue::Int32(term) => Some(Bitvector32Term::UInt64FromInt32(Box::new(term.clone()))),
-        CValue::Int64(Bitvector32Term::Int64Constant(value)) => {
-            Some(Bitvector32Term::UInt64Constant(*value as u64))
+        CValue::Int64(int64_constant!(value)) => {
+            Some(Bitvector32Term::uint64_constant(constant_i64(*value) as u64))
         }
         CValue::Int64(term) => Some(Bitvector32Term::UInt64FromInt64(Box::new(term.clone()))),
         _ => None,
@@ -3224,7 +3217,7 @@ pub(crate) fn wide_loadable_byte_count(elements: Bitvector32Term, width: u32) ->
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Multiply,
         left: Box::new(elements),
-        right: Box::new(Bitvector32Term::UInt64Constant(u64::from(width))),
+        right: Box::new(Bitvector32Term::uint64_constant(u64::from(width))),
     }
 }
 
@@ -3263,7 +3256,7 @@ fn wide_memory_range_extent_guards(range: &CMemoryRange) -> Option<Vec<Propositi
             true,
         ),
         Proposition::ConditionIs(
-            ConditionTerm::uint64_less_equal(end.clone(), Bitvector32Term::UInt64Constant(limit)),
+            ConditionTerm::uint64_less_equal(end.clone(), Bitvector32Term::uint64_constant(limit)),
             true,
         ),
     ])
@@ -4153,7 +4146,7 @@ mod guarded_quantified_cell_tests {
             CMemoryRange::guarded_quantified_cells(&wide_cell(&base), index(), &guard, 1),
             Some(CMemoryRange::new_wide(
                 base,
-                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::uint64_constant(0),
                 length,
                 1
             ))

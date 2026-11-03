@@ -12,9 +12,10 @@
 //! the observation names, with the two bounds as premises.
 
 use super::{Operation, definedness, range, representation};
+#[cfg(test)]
+use crate::kernel::Bitvector32Term;
 use crate::kernel::{
-    Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition,
-    SharedMachineIntegerTerm,
+    ConditionTerm, IntegerTerm, MachineIntegerType, Proposition, SharedMachineIntegerTerm,
 };
 use num_bigint::BigInt;
 
@@ -240,7 +241,7 @@ fn explicit_operation_identity_keeps_its_read_operands() {
         format,
         crate::kernel::MachineBinaryOp::Add,
         x.clone(),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(1),
     );
     let memory = CMemory::new().store(address.clone(), CValue::Int32(stored));
     let read = crate::kernel::canonical_form_of_load(
@@ -469,7 +470,7 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
             format,
             op: OverflowOperation::Add,
             left: Box::new(written),
-            right: Box::new(Bitvector32Term::Constant(2)),
+            right: Box::new(Bitvector32Term::constant(2)),
         },
         false,
     );

@@ -127,7 +127,7 @@ fn allocation_lifetimes_up_to_ended_admit_only_new_tombstones() {
     let _session = crate::kernel::VerificationSession::enter();
     let freed = Pointer::symbolic(Variable(990_901));
     let live = Pointer::symbolic(Variable(990_902));
-    let size = Bitvector32Term::Constant(8);
+    let size = Bitvector32Term::constant(8);
     let mut head = CHeapMemory::default();
     head.live_allocations.insert(live.clone(), size.clone());
 

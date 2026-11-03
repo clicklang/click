@@ -16,7 +16,7 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(Variable(300))),
-                right: Box::new(Bitvector32Term::Constant(5)),
+                right: Box::new(Bitvector32Term::constant(5)),
             },
             true,
         )),
@@ -30,7 +30,7 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(Variable(20_000 + index))),
-                right: Box::new(Bitvector32Term::Constant(index as u32)),
+                right: Box::new(Bitvector32Term::constant(index as u32)),
             },
             true,
         ));
@@ -119,7 +119,7 @@ fn a_32_bit_equality_is_one_fact_at_either_signedness() {
         format,
         relation: CompareRelation::Equal,
         left: Box::new(x.clone()),
-        right: Box::new(Bitvector32Term::Constant(right)),
+        right: Box::new(Bitvector32Term::constant(right)),
     };
     let mut samples = Vec::new();
     for size in [16u32, 64, 256, 1024] {
@@ -136,7 +136,7 @@ fn a_32_bit_equality_is_one_fact_at_either_signedness() {
                         left: Box::new(Bitvector32Term::Variable(Variable(
                             32_000 + u64::from(index),
                         ))),
-                        right: Box::new(Bitvector32Term::Constant(index)),
+                        right: Box::new(Bitvector32Term::constant(index)),
                     },
                     true,
                 );

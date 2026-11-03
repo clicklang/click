@@ -4465,7 +4465,7 @@ mod progress_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(Bitvector32Term::Variable(Variable(0))),
-                right: Box::new(Bitvector32Term::Constant(index)),
+                right: Box::new(Bitvector32Term::constant(index)),
             },
             true,
         )
@@ -4524,7 +4524,7 @@ mod progress_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(Bitvector32Term::Variable(Variable(71_000))),
-                right: Box::new(Bitvector32Term::Constant(10)),
+                right: Box::new(Bitvector32Term::constant(10)),
             },
             true,
         );

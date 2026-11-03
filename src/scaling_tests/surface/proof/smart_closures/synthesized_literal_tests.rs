@@ -22,8 +22,8 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Constant(0)),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                left: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         ),
@@ -45,7 +45,7 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(Bitvector32Term::Variable(Variable(8_179_000 + index))),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                     true,
                 )
@@ -148,7 +148,7 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(x),
-            right: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(Bitvector32Term::constant(1)),
         },
         true,
     );
@@ -196,7 +196,7 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(Bitvector32Term::Variable(Variable(8_173_000 + i))),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                     true,
                 )

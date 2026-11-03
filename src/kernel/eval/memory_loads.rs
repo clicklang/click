@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 
 #[derive(Default)]
 struct MemoryLoadAliasCache {
@@ -1422,14 +1423,14 @@ fn evaluate_c_memory_load_case(
 
     if memory.is_zeroed_heap_address(&pointer, value_type.byte_width(), assumptions) {
         let value = match value_type {
-            CType::Int8 => int8(Bitvector32Term::Constant(0)),
-            CType::Int16 => int16(Bitvector32Term::Constant(0)),
-            CType::Int32 => int32(Bitvector32Term::Constant(0)),
-            CType::UInt8 => uint8(Bitvector32Term::Constant(0)),
-            CType::UInt16 => uint16(Bitvector32Term::Constant(0)),
-            CType::UInt32 => CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
-            CType::Int64 => CValue::Int64(Bitvector32Term::Int64Constant(0)),
-            CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+            CType::Int8 => int8(Bitvector32Term::constant(0)),
+            CType::Int16 => int16(Bitvector32Term::constant(0)),
+            CType::Int32 => int32(Bitvector32Term::constant(0)),
+            CType::UInt8 => uint8(Bitvector32Term::constant(0)),
+            CType::UInt16 => uint16(Bitvector32Term::constant(0)),
+            CType::UInt32 => CValue::UInt32(Bitvector32Term::uint32_constant(0)),
+            CType::Int64 => CValue::Int64(Bitvector32Term::int64_constant(0)),
+            CType::UInt64 => CValue::UInt64(Bitvector32Term::uint64_constant(0)),
             CType::Int128 => match crate::kernel::c_int128_literal(0) {
                 CExpression::Value(value) => value,
                 _ => unreachable!("wide literal is a value"),
@@ -1438,8 +1439,8 @@ fn evaluate_c_memory_load_case(
                 CExpression::Value(value) => value,
                 _ => unreachable!("wide literal is a value"),
             },
-            CType::Float32 => CValue::Float32(Bitvector32Term::Constant(0)),
-            CType::Float64 => CValue::Float64(Bitvector32Term::UInt64Constant(0)),
+            CType::Float32 => CValue::Float32(Bitvector32Term::constant(0)),
+            CType::Float64 => CValue::Float64(Bitvector32Term::uint64_constant(0)),
             _ if value_type.is_pointer() => CValue::typed_pointer(Pointer::null(), value_type),
             _ => {
                 return vec![CExpressionPath {
@@ -1514,7 +1515,7 @@ fn evaluate_c_memory_load_case(
         let proposition = Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: pointer.clone(),
-            bytes: Bitvector32Term::Constant(value_type.byte_width()),
+            bytes: Bitvector32Term::constant(value_type.byte_width()),
             wide: false,
         };
         if purpose == LoadPurpose::Validity {
@@ -1525,7 +1526,7 @@ fn evaluate_c_memory_load_case(
             if !assumptions.proves_memory_loadable_for_memory_resolution(
                 &memory,
                 &pointer,
-                &Bitvector32Term::Constant(value_type.byte_width()),
+                &Bitvector32Term::constant(value_type.byte_width()),
             ) && !assumptions.proves_exact(&proposition)
                 && !obligations
                     .iter()
@@ -1920,7 +1921,7 @@ fn symbolic_index_run_load(
                             && *live_high <= run.count()
                             && assumptions.decide(&ConditionTerm::uint64_less_than(
                                 index.clone(),
-                                Bitvector32Term::UInt64Constant(u64::from(*live_high - first)),
+                                Bitvector32Term::uint64_constant(u64::from(*live_high - first)),
                             )) == Some(true)
                     });
             }
@@ -3833,12 +3834,11 @@ fn substitute_load_variables(
                 #[cfg(test)]
                 LOAD_SUBSTITUTION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
-                    Bitvector32Term::Constant(_)
-                    | Bitvector32Term::UInt32Constant(_)
+                    bits32_constant!(_)
                     | Bitvector32Term::Variable(_)
-                    | Bitvector32Term::Int64Constant(_)
-                    | Bitvector32Term::UInt64Constant(_)
-                    | Bitvector32Term::MachineIntegerConstant(_) => term_results.push(term.clone()),
+                    | int64_constant!(_)
+                    | uint64_constant!(_)
+                    | native_constant!(_, _) => term_results.push(term.clone()),
                     Bitvector32Term::MemoryLoad(_, _, _) => match load_variable_for_term(term) {
                         Some((variable, load)) => {
                             if let Some(facts) = facts.as_deref_mut() {
@@ -4152,12 +4152,11 @@ pub(crate) fn offsets_have_same_canonical_form(
 /// comparators use to answer load-free mismatches without a walk.
 fn term_mentions_a_memory_load(term: &Bitvector32Term) -> bool {
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
+        bits32_constant!(_)
         | Bitvector32Term::Variable(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_) => false,
+        | int64_constant!(_)
+        | uint64_constant!(_)
+        | native_constant!(_, _) => false,
         Bitvector32Term::MemoryLoad(_, _, _) => true,
         Bitvector32Term::PointerAddress(pointer, _) => {
             pointer.offset.any_scaled_value(term_mentions_a_memory_load)
@@ -5506,7 +5505,7 @@ mod tests {
             .assume_proposition(Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: cell.clone(),
-                bytes: Bitvector32Term::Constant(8),
+                bytes: Bitvector32Term::constant(8),
                 wide: false,
             });
         let paths = evaluate_spec_memory_load_paths(
@@ -5557,7 +5556,7 @@ mod tests {
                     .assume_proposition(Proposition::CMemoryLoadable {
                         memory: memory.clone(),
                         base: cell.clone(),
-                        bytes: Bitvector32Term::Constant(8),
+                        bytes: Bitvector32Term::constant(8),
                         wide: false,
                     });
                 for logical in [false, true] {
@@ -5667,7 +5666,7 @@ mod tests {
                 Box::new(PointerOffsetTerm::Constant(16)),
             ),
         };
-        let expected = CValue::Int32(Bitvector32Term::Constant(7));
+        let expected = CValue::Int32(Bitvector32Term::constant(7));
         let memory = CMemory::new().store(pointer.clone(), expected.clone());
         let paths = evaluate_logical_memory_load_paths(
             &memory,
@@ -5795,7 +5794,7 @@ mod tests {
             ),
         };
         let assumptions = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(index, Bitvector32Term::Constant(1)),
+            ConditionTerm::equal(index, Bitvector32Term::constant(1)),
             true,
         );
         let memory = CMemory::new()
@@ -6350,7 +6349,7 @@ mod tests {
         let alias = Pointer::symbolic(Variable(989_961));
         let memory = CMemory::new().store(
             slot.clone(),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(7)),
         );
         let empty = PureFactContext::new()
             .allow_symbolic_contract_loads()
@@ -6546,7 +6545,7 @@ mod tests {
             PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: field.clone(),
-                bytes: Bitvector32Term::Constant(bytes),
+                bytes: Bitvector32Term::constant(bytes),
                 wide: false,
             })
         };
@@ -6738,7 +6737,7 @@ mod tests {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::BitwiseOr,
                     left: Box::new(bits),
-                    right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                    right: Box::new(Bitvector32Term::uint64_constant(1)),
                 }
             } else {
                 bits
@@ -7431,7 +7430,7 @@ mod tests {
             };
             let mut memory = before.memory().clone().store(
                 written.clone(),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+                CValue::UInt64(Bitvector32Term::uint64_constant(0)),
             );
             let mut transitions = vec![(before.memory().clone(), memory.clone(), written)];
             // Separation across more than one write requires an explicit
@@ -7441,7 +7440,7 @@ mod tests {
                 let write = slot.offset_by_bytes(16 + 8 * n);
                 memory = memory.store(
                     write.clone(),
-                    CValue::UInt64(Bitvector32Term::UInt64Constant(1)),
+                    CValue::UInt64(Bitvector32Term::uint64_constant(1)),
                 );
                 transitions.push((previous, memory.clone(), write));
             }
@@ -7683,7 +7682,7 @@ mod tests {
                 .extent()
                 .unwrap()
                 .width,
-            Bitvector32Term::Constant(4)
+            Bitvector32Term::constant(4)
         );
         let unchanged = before.clone().with_block("unrelated-pointer-cache", 4);
         assert_eq!(
@@ -7692,7 +7691,7 @@ mod tests {
                 .extent()
                 .unwrap()
                 .width,
-            Bitvector32Term::Constant(4)
+            Bitvector32Term::constant(4)
         );
         let observed = before
             .clone()
@@ -7707,7 +7706,7 @@ mod tests {
                 .extent()
                 .unwrap()
                 .width,
-            Bitvector32Term::Constant(4)
+            Bitvector32Term::constant(4)
         );
         let overwritten = observed.store(
             address.clone().offset_by_bytes(4),
@@ -7964,7 +7963,7 @@ mod tests {
             .without_possible_aliasing_cells(&address.offset_by_bytes(4), 4, &empty)
             .store(
                 address.offset_by_bytes(4),
-                CValue::Int32(Bitvector32Term::Constant(0)),
+                CValue::Int32(Bitvector32Term::constant(0)),
             );
         let changed = read(changed, &address, 99_104, 8);
         assert!(
@@ -7997,7 +7996,7 @@ mod tests {
         let scalar = read(
             CMemory::new().store(
                 scalar_address.clone(),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+                CValue::UInt64(Bitvector32Term::uint64_constant(0)),
             ),
             &scalar_address,
             99_108,
@@ -8055,7 +8054,7 @@ mod tests {
             .without_possible_aliasing_cells(&address.offset_by_bytes(4), 4, &context)
             .store(
                 address.offset_by_bytes(4),
-                CValue::Int32(Bitvector32Term::Constant(0)),
+                CValue::Int32(Bitvector32Term::constant(0)),
             );
         record_load_access_width(&partial, &address, 8);
         let changed = Pointer::loaded_value(&intern_c_memory(partial), &address);
@@ -8404,7 +8403,7 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
     let written = Bitvector32Term::logical_machine_binary(
         MachineIntegerType::UInt64,
         MachineBinaryOp::Add,
-        Bitvector32Term::UInt64Constant(0),
+        Bitvector32Term::uint64_constant(0),
         index.clone(),
     );
     let pointer = |value| Pointer {
@@ -8442,7 +8441,7 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
     ));
     let changed = CMemory::new().store(
         pointer(index.clone()),
-        CValue::Int32(Bitvector32Term::Constant(17)),
+        CValue::Int32(Bitvector32Term::constant(17)),
     );
     let different_snapshot = equality(
         original,

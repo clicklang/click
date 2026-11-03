@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::{AlgebraicTerm, AlgebraicTermNode, CLoopEffectOrigin};
+use crate::kernel::{bits32_constant, constant_u32};
 
 // The lowerers share these two finite bands. Refusing at each ceiling keeps
 // quantifiers, algebraic binders, pointer identities, and spec fold binders
@@ -5893,11 +5894,13 @@ impl AnnotationLowerer<'_> {
                         )
                 };
                 let as_uint64 = |expression: SpecExpression| match &expression {
-                    SpecExpression::Value(CValue::Int32(
-                        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-                    )) if *value <= i32::MAX as u32 => SpecExpression::Value(CValue::UInt64(
-                        Bitvector32Term::UInt64Constant(u64::from(*value)),
-                    )),
+                    SpecExpression::Value(CValue::Int32(bits32_constant!(value)))
+                        if constant_u32(*value) <= i32::MAX as u32 =>
+                    {
+                        SpecExpression::Value(CValue::UInt64(Bitvector32Term::uint64_constant(
+                            u64::from(constant_u32(*value)),
+                        )))
+                    }
                     _ => expression,
                 };
                 let (start, end, unsigned64) = if is_uint64(&start) || is_uint64(&end) {
@@ -6166,11 +6169,11 @@ impl AnnotationLowerer<'_> {
                     "an arbitrary Integer literal requires Integer context".to_string()
                 })?;
                 let value = if value <= i32::MAX as u64 {
-                    CValue::Int32(Bitvector32Term::Constant(value as u32))
+                    CValue::Int32(Bitvector32Term::constant(value as u32))
                 } else if value <= i64::MAX as u64 {
-                    CValue::Int64(Bitvector32Term::Int64Constant(value as i64))
+                    CValue::Int64(Bitvector32Term::int64_constant(value as i64))
                 } else {
-                    CValue::UInt64(Bitvector32Term::UInt64Constant(value))
+                    CValue::UInt64(Bitvector32Term::uint64_constant(value))
                 };
                 Ok(SpecExpression::Value(value))
             }
@@ -6509,7 +6512,7 @@ impl AnnotationLowerer<'_> {
                     && value <= (i32::MAX as u64) + 1
                 {
                     return Ok(SpecExpression::Value(CValue::Int32(
-                        Bitvector32Term::Constant(0u32.wrapping_sub(value as u32)),
+                        Bitvector32Term::constant(0u32.wrapping_sub(value as u32)),
                     )));
                 }
                 Ok(SpecExpression::Subtract(
@@ -8623,7 +8626,7 @@ impl AnnotationLowerer<'_> {
                     let offset = self.lower_contract_expression_to_spec(right, environment)?;
                     let negative_offset = SpecExpression::Subtract(
                         Box::new(SpecExpression::Value(CValue::Int32(
-                            Bitvector32Term::Constant(0),
+                            Bitvector32Term::constant(0),
                         ))),
                         Box::new(offset),
                     );

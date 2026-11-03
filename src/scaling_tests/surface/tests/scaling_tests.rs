@@ -1854,7 +1854,7 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(Bitvector32Term::Variable(Variable(441_000 + index as u64))),
-                    right: Box::new(Bitvector32Term::Constant(1_000 + index as u32)),
+                    right: Box::new(Bitvector32Term::constant(1_000 + index as u32)),
                 },
                 true,
             ));
@@ -1952,7 +1952,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     let loadable = |base: Pointer, bytes: u32| Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: Bitvector32Term::Constant(bytes),
+        bytes: Bitvector32Term::constant(bytes),
         wide: false,
     };
     // (sources stated about the goal's object, goal, premises the
@@ -2076,8 +2076,8 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
     let range = |base: Pointer, start: u32, end: u32| {
         CResource::Memory(CMemoryRange::new(
             base,
-            Bitvector32Term::Constant(start),
-            Bitvector32Term::Constant(end),
+            Bitvector32Term::constant(start),
+            Bitvector32Term::constant(end),
         ))
     };
     let separate =
@@ -4227,7 +4227,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-                right: Box::new(Bitvector32Term::Constant(value)),
+                right: Box::new(Bitvector32Term::constant(value)),
             },
             true,
         )
@@ -4248,7 +4248,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(Bitvector32Term::Variable(Variable(433_000))),
-                    right: Box::new(Bitvector32Term::Constant(5)),
+                    right: Box::new(Bitvector32Term::constant(5)),
                 },
                 true,
             );
@@ -4331,7 +4331,7 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(Bitvector32Term::Variable(Variable(435_000))),
-                    right: Box::new(Bitvector32Term::Constant(5)),
+                    right: Box::new(Bitvector32Term::constant(5)),
                 },
                 true,
             );
@@ -6663,7 +6663,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
     let loadable = |base: Pointer, bytes: u32| Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: Bitvector32Term::Constant(bytes),
+        bytes: Bitvector32Term::constant(bytes),
         wide: false,
     };
     let equal = |left: u64, right: u64| {
@@ -6734,7 +6734,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                                 block: format!("other{index}").as_str().into(),
                                 offset: PointerOffsetTerm::Constant(0),
                             },
-                            bytes: Bitvector32Term::Constant(16),
+                            bytes: Bitvector32Term::constant(16),
                             wide: false,
                         });
                 }
@@ -6817,7 +6817,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(index.clone()),
-            right: Box::new(Bitvector32Term::Constant(2)),
+            right: Box::new(Bitvector32Term::constant(2)),
         },
         true,
     );
@@ -6839,7 +6839,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(value),
-                    right: Box::new(Bitvector32Term::Constant(7)),
+                    right: Box::new(Bitvector32Term::constant(7)),
                 },
                 true,
             ));
@@ -6853,8 +6853,8 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
         };
         let source = Proposition::CMemoryLoadable {
             memory: memory.clone(),
-            base: at(Bitvector32Term::Constant(2)),
-            bytes: Bitvector32Term::Constant(4),
+            base: at(Bitvector32Term::constant(2)),
+            bytes: Bitvector32Term::constant(4),
             wide: false,
         };
         let goal = Proposition::CMemoryLoadable {
@@ -6864,7 +6864,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
                 Box::new(index_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            bytes: Bitvector32Term::Constant(4),
+            bytes: Bitvector32Term::constant(4),
             wide: false,
         };
         context = context
@@ -6957,10 +6957,10 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         )),
     };
     // not (exit < 3), so index 2 is below exit.
-    let bound = less(variable(480_001), Bitvector32Term::Constant(3), false);
+    let bound = less(variable(480_001), Bitvector32Term::constant(3), false);
     let goal = equal(
         load(PointerOffsetTerm::Constant(8)),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(2),
     );
     let context = |unrelated: u64, with_bound: bool| {
         let mut context = PureFactContext::new();
@@ -6980,7 +6980,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                             byte_width: 4,
                         },
                     },
-                    bytes: Bitvector32Term::Constant(16),
+                    bytes: Bitvector32Term::constant(16),
                     wide: false,
                 });
         }
@@ -7058,7 +7058,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                             block: format!("extension{step}").as_str().into(),
                             offset: PointerOffsetTerm::Constant(0),
                         },
-                        bytes: Bitvector32Term::Constant(16),
+                        bytes: Bitvector32Term::constant(16),
                         wide: false,
                     });
                 let proof = available

@@ -58,7 +58,7 @@ impl C {
         let compare = |relation, a, b| {
             condition_for_operand_views(MachineIntegerType::Int32, relation, [a, b])
         };
-        let zero = B::Constant(0);
+        let zero = B::constant(0);
         let mut guards = vec![
             compare(CompareRelation::LessEqual, V::Legacy(&zero), n),
             compare(CompareRelation::LessThan, V::Legacy(&zero), d),
@@ -145,7 +145,7 @@ impl B {
                 op: MachineBinaryOp::Remainder,
                 left: _,
                 right: d,
-            } if d.uint64_as_const() == Some(1) => Some((Vec::new(), B::UInt64Constant(0))),
+            } if d.uint64_as_const() == Some(1) => Some((Vec::new(), B::uint64_constant(0))),
             // `n - n % d` is a multiple of `d`: the difference does not wrap,
             // since a remainder is at most its dividend.
             B::Binary {
@@ -164,7 +164,7 @@ impl B {
                         )
                 ) =>
             {
-                Some((Vec::new(), B::UInt64Constant(0)))
+                Some((Vec::new(), B::uint64_constant(0)))
             }
             // `(n - d) % d` is `n % d` when `d <= n`, where the difference
             // does not wrap.
@@ -203,7 +203,7 @@ impl B {
                 n.as_ref().clone(),
             )),
             binary_term!(Int32, Remainder, _, d) if d.as_const() == Some(1) => {
-                Some((Vec::new(), B::Constant(0)))
+                Some((Vec::new(), B::constant(0)))
             }
             binary_term!(Int32, Remainder, n, d) => {
                 let k = d.as_const()? as i32;
@@ -239,9 +239,9 @@ impl B {
                     return Some((
                         vec![C::uint64_less_equal(
                             original.as_ref().clone(),
-                            B::UInt64Constant(i32::MAX as u64),
+                            B::uint64_constant(i32::MAX as u64),
                         )],
-                        B::Constant(0),
+                        B::constant(0),
                     ));
                 }
                 if let binary_term!(Int32, Subtract, original, step) = n.as_ref()
@@ -257,7 +257,7 @@ impl B {
                 }
                 Some((
                     vec![
-                        C::signed_less_equal(B::Constant(0), n.as_ref().clone()),
+                        C::signed_less_equal(B::constant(0), n.as_ref().clone()),
                         C::signed_less_than(n.as_ref().clone(), d.as_ref().clone()),
                     ],
                     n.as_ref().clone(),
@@ -283,13 +283,13 @@ mod tests {
         use crate::kernel::{KernelTermExport, KernelTermImport, MachineOperandView as V};
         let _session = crate::kernel::VerificationSession::enter();
         let n = B::add(B::Variable(Variable(990101)), B::Variable(Variable(990102)));
-        let d = B::add(B::Variable(Variable(990103)), B::Constant(1));
+        let d = B::add(B::Variable(Variable(990103)), B::constant(1));
         let narrow = B::machine_integer_cast(
             MachineIntegerType::UInt16,
             MachineIntegerType::UInt32,
             B::Variable(Variable(990104)),
         );
-        for n in [n, narrow, B::Constant(5)] {
+        for n in [n, narrow, B::constant(5)] {
             for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
                 for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
                     let result = B::Binary {
@@ -304,9 +304,9 @@ mod tests {
                     }
                     for result in results {
                         for (left, right) in [
-                            (B::Constant(0), result.clone()),
+                            (B::constant(0), result.clone()),
                             (result.clone(), n.clone()),
-                            (result, B::Constant(99)),
+                            (result, B::constant(99)),
                         ] {
                             for relation in [
                                 CompareRelation::LessEqual,
@@ -369,8 +369,8 @@ mod tests {
             binary_node!(UInt32, Remainder, Box::new(n.clone()), Box::new(d.clone())),
         ] {
             for goal in [
-                C::signed_less_equal(B::Constant(0), result.clone()),
-                C::signed_less_equal(result, B::Constant(65535)),
+                C::signed_less_equal(B::constant(0), result.clone()),
+                C::signed_less_equal(result, B::constant(65535)),
             ] {
                 let guards = goal.nonnegative_division_bound_guards().unwrap();
                 let facts: HashMap<_, _> =
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn remainder_rewrites_require_nonnegative_and_full_width_guards() {
         let n = B::Variable(Variable(100));
-        let d = B::Constant(4);
+        let d = B::constant(4);
         let input = B::remainder(B::subtract(n.clone(), d.clone()), d.clone());
         let guard = C::signed_less_equal(d.clone(), n.clone());
         assert_eq!(
@@ -415,26 +415,26 @@ mod tests {
             B::remainder(n.clone(), d)
         );
 
-        let wide_d = B::UInt64Constant(4);
+        let wide_d = B::uint64_constant(4);
         let complete = B::uint32_from_64(B::uint64_subtract(
             n.clone(),
             B::uint64_remainder(n.clone(), wide_d),
         ));
-        let input = B::remainder(complete, B::Constant(4));
-        let guard = C::uint64_less_equal(n.clone(), B::UInt64Constant(i32::MAX as u64));
+        let input = B::remainder(complete, B::constant(4));
+        let guard = C::uint64_less_equal(n.clone(), B::uint64_constant(i32::MAX as u64));
         assert_eq!(
             TermRewrite::for_conditions(&HashMap::new()).bits(&input),
             input
         );
         assert_eq!(
             TermRewrite::for_conditions(&HashMap::from([(guard, true)])).bits(&input),
-            B::Constant(0)
+            B::constant(0)
         );
 
         for divisor in [0u32, u32::MAX] {
             let input = B::remainder(
-                B::subtract(n.clone(), B::Constant(divisor)),
-                B::Constant(divisor),
+                B::subtract(n.clone(), B::constant(divisor)),
+                B::constant(divisor),
             );
             assert_eq!(
                 TermRewrite::for_conditions(&HashMap::new()).bits(&input),
@@ -446,9 +446,9 @@ mod tests {
     #[test]
     fn remainder_small_dividend_needs_both_signed_bounds() {
         let n = B::Variable(Variable(100));
-        let input = B::remainder(n.clone(), B::Constant(4));
-        let lower = C::signed_less_equal(B::Constant(0), n.clone());
-        let upper = C::signed_less_than(n.clone(), B::Constant(4));
+        let input = B::remainder(n.clone(), B::constant(4));
+        let lower = C::signed_less_equal(B::constant(0), n.clone());
+        let upper = C::signed_less_than(n.clone(), B::constant(4));
         for facts in [
             HashMap::new(),
             HashMap::from([(lower.clone(), true)]),

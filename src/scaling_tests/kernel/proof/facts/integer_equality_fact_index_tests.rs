@@ -20,21 +20,24 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
             true,
         )
     };
-    let required = equality(left.clone(), Bitvector32Term::UInt64Constant(7));
-    let wrong = equality(left.clone(), Bitvector32Term::UInt64Constant(9));
+    let required = equality(left.clone(), Bitvector32Term::uint64_constant(7));
+    let wrong = equality(left.clone(), Bitvector32Term::uint64_constant(9));
     let mut work = Vec::new();
     for size in [8, 16, 32, 64] {
         let unrelated = (0..size)
             .map(|index| {
                 equality(
                     Bitvector32Term::Variable(Variable(212_000 + index)),
-                    Bitvector32Term::UInt64Constant(index),
+                    Bitvector32Term::uint64_constant(index),
                 )
             })
             .collect::<Vec<_>>();
         let facts = ProofFacts::from_ordered(&unrelated)
             .with_kernel_checked_fact(equality(left.clone(), middle.clone()))
-            .with_kernel_checked_fact(equality(middle.clone(), Bitvector32Term::UInt64Constant(7)));
+            .with_kernel_checked_fact(equality(
+                middle.clone(),
+                Bitvector32Term::uint64_constant(7),
+            ));
         let (proved, measured) = crate::instrumentation::measure_deterministic_work(|| {
             facts.assumptions().proves_atomic_without_search(&required)
         });
@@ -61,7 +64,7 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
-            right: Box::new(Bitvector32Term::UInt64Constant(7)),
+            right: Box::new(Bitvector32Term::uint64_constant(7)),
         },
         true,
     );
@@ -80,7 +83,7 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(middle),
-                right: Box::new(Bitvector32Term::UInt64Constant(7)),
+                right: Box::new(Bitvector32Term::uint64_constant(7)),
             },
             true,
         ),
@@ -218,8 +221,8 @@ fn proper_conjunct_index_walks_deep_conjunction_iteratively() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Constant(0)),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            left: Box::new(Bitvector32Term::constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         true,
     );
@@ -270,7 +273,7 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(load(memory)),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                     true,
                 )
@@ -281,7 +284,7 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(memories.last().unwrap())),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );

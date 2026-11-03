@@ -193,7 +193,7 @@ mod tests {
     }
 
     fn int(value: u32) -> CValue {
-        CValue::Int32(super::super::Bitvector32Term::Constant(value))
+        CValue::Int32(super::super::Bitvector32Term::constant(value))
     }
 
     const INT: CAccessClass = CAccessClass::Scalar(CScalarClass::Int);

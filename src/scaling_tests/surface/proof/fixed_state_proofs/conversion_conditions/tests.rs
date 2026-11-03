@@ -6,13 +6,13 @@ fn loadability_explanation_ignores_unrelated_objects() {
     let missing = Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let covering = Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
-        bytes: Bitvector32Term::Constant(8),
+        bytes: Bitvector32Term::constant(8),
         wide: false,
     };
     let mut samples = Vec::new();
@@ -28,7 +28,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
                     block: PointerBlock::Heap(index),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                bytes: Bitvector32Term::Constant(8),
+                bytes: Bitvector32Term::constant(8),
                 wide: false,
             });
         }
@@ -82,7 +82,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: Box::new(Bitvector32Term::Variable(Variable(785_000 + i))),
-                        right: Box::new(Bitvector32Term::Constant(i as u32)),
+                        right: Box::new(Bitvector32Term::constant(i as u32)),
                     },
                     true,
                 );

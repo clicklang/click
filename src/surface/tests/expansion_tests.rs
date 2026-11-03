@@ -14644,7 +14644,7 @@ fn qualified_static_struct_startup_and_expansion() {
         state
             .memory()
             .load(&CMemory::global_pointer("state#file-static:counter.c")),
-        CExpressionOutcome::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(7)))
+        CExpressionOutcome::Value(CValue::UInt64(Bitvector32Term::uint64_constant(7)))
     );
     let verified_for_expansion = verify_c0_sources(source, &sources).unwrap();
     for (_, expanded) in expand_checked_grouped_claims(

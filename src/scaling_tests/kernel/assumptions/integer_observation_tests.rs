@@ -9,7 +9,7 @@ fn native_observation_queries_use_the_selected_fact_index() {
         let mut context = PureFactContext::new().assume_condition(native, truth);
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(word(890_000 + index), Bitvector32Term::Constant(7)),
+                ConditionTerm::equal(word(890_000 + index), Bitvector32Term::constant(7)),
                 true,
             );
         }
@@ -314,9 +314,9 @@ fn observation_alias_source_lookup_does_not_scan_supports() {
                 );
             }
             let hit =
-                ConditionTerm::unsigned_less_equal(word(991900), Bitvector32Term::Constant(100));
+                ConditionTerm::unsigned_less_equal(word(991900), Bitvector32Term::constant(100));
             let miss =
-                ConditionTerm::unsigned_less_equal(word(991900), Bitvector32Term::Constant(101));
+                ConditionTerm::unsigned_less_equal(word(991900), Bitvector32Term::constant(101));
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                 assert!(index.source(&hit, true).is_some());
                 assert!(index.source(&miss, true).is_none());
@@ -485,7 +485,7 @@ fn shared_bound_source_selection_uses_existing_index_across_branches() {
     let samples = [16u64, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let term = Bitvector32Term::add(word(189141), word(189142));
-        let zero = Bitvector32Term::Constant(0);
+        let zero = Bitvector32Term::constant(0);
         let source = Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(zero.clone(), term.clone()),
             true,

@@ -266,7 +266,7 @@ impl PureFactContext {
         } else {
             casted.each_ref().map(ComparisonOperand::operand_view)
         };
-        let zero = Bitvector32Term::Constant(0);
+        let zero = Bitvector32Term::constant(0);
         if self.decide(&condition_for_operand_views(
             Ty::Int32,
             CompareRelation::LessEqual,
@@ -302,11 +302,11 @@ mod tests {
     }
 
     fn signed_nonnegative(value: Bitvector32Term) -> ConditionTerm {
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value)
+        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), value)
     }
 
     fn signed_positive(value: Bitvector32Term) -> ConditionTerm {
-        ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), value)
+        ConditionTerm::signed_less_than(Bitvector32Term::constant(0), value)
     }
 
     #[test]
@@ -483,29 +483,29 @@ mod tests {
         for format in [Ty::Int32, Ty::UInt32] {
             for op in [Op::Divide, Op::Remainder] {
                 for (left, right) in [
-                    (var(189111), Bitvector32Term::Constant(1)),
+                    (var(189111), Bitvector32Term::constant(1)),
                     (
-                        Bitvector32Term::Constant(7),
-                        Bitvector32Term::UInt32Constant(2),
+                        Bitvector32Term::constant(7),
+                        Bitvector32Term::uint32_constant(2),
                     ),
-                    (Bitvector32Term::Constant(7), Bitvector32Term::Constant(0)),
+                    (Bitvector32Term::constant(7), Bitvector32Term::constant(0)),
                     (var(189111), var(189112)),
                     (
                         Bitvector32Term::Binary {
                             format,
                             op: Op::Add,
-                            left: Box::new(Bitvector32Term::Constant(1)),
-                            right: Box::new(Bitvector32Term::Constant(1)),
+                            left: Box::new(Bitvector32Term::constant(1)),
+                            right: Box::new(Bitvector32Term::constant(1)),
                         },
-                        Bitvector32Term::Constant(2),
+                        Bitvector32Term::constant(2),
                     ),
                     (
                         var(189111),
                         Bitvector32Term::Binary {
                             format,
                             op: Op::Add,
-                            left: Box::new(Bitvector32Term::Constant(0)),
-                            right: Box::new(Bitvector32Term::Constant(1)),
+                            left: Box::new(Bitvector32Term::constant(0)),
+                            right: Box::new(Bitvector32Term::constant(1)),
                         },
                     ),
                 ] {
@@ -534,14 +534,14 @@ mod tests {
         assert_eq!(
             context.decide(&ConditionTerm::uint32_equal(
                 d.clone(),
-                Bitvector32Term::UInt32Constant(0)
+                Bitvector32Term::uint32_constant(0)
             )),
             Some(false)
         );
         assert_eq!(
             context.decide(&ConditionTerm::unsigned_less_equal(
                 d,
-                Bitvector32Term::UInt32Constant(i32::MAX as u32)
+                Bitvector32Term::uint32_constant(i32::MAX as u32)
             )),
             Some(true)
         );

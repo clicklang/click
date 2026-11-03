@@ -28,7 +28,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
         block: PointerBlock::Heap(id),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let bytes = Bitvector32Term::Constant(4);
+    let bytes = Bitvector32Term::constant(4);
     let samples = [16, 64, 256]
         .into_iter()
         .map(|size| {
@@ -83,7 +83,7 @@ fn allocation_size_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let var = |id| Bitvector32Term::Variable(Variable(id));
-        let offset = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let offset = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let base = external_pointer(930_020);
         let input_size = offset(var(0));
         let mut context = PureFactContext::new();

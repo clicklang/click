@@ -9,7 +9,7 @@ use super::*;
 fn wide_order_chain_work_follows_the_chain_and_not_unrelated_facts() {
     let v = |n: u64| Bitvector32Term::Variable(Variable(996000 + n));
     let lt = ConditionTerm::uint64_less_than;
-    let u = Bitvector32Term::UInt64Constant;
+    let u = Bitvector32Term::uint64_constant;
     // A chain of fixed length beside a growing set of unrelated facts,
     // some sharing a literal endpoint with the question.
     let mut beside = Vec::new();
@@ -67,7 +67,7 @@ fn wide_order_chain_work_follows_the_chain_and_not_unrelated_facts() {
 #[test]
 fn uint64_constant_order_strengthening_is_sound_at_full_width_and_scales() {
     let n = Bitvector32Term::Variable(Variable(998001));
-    let c = Bitvector32Term::UInt64Constant;
+    let c = Bitvector32Term::uint64_constant;
     let mut work_counts = Vec::new();
     for size in [8, 32, 128] {
         let mut facts = PureFactContext::new();
@@ -150,7 +150,7 @@ fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
     let midpoint = Bitvector32Term::Variable(Variable(993002));
     let difference = Bitvector32Term::uint64_subtract(length.clone(), midpoint.clone());
     let positive =
-        ConditionTerm::uint64_less_than(Bitvector32Term::UInt64Constant(0), difference.clone());
+        ConditionTerm::uint64_less_than(Bitvector32Term::uint64_constant(0), difference.clone());
     let bounded = ConditionTerm::uint64_less_equal(difference, length.clone());
     let mut work = Vec::new();
     for size in [1, 4, 16, 64] {
@@ -159,7 +159,7 @@ fn uint64_slice_remainder_bounds_ignore_unrelated_facts() {
             context = context.assume_condition(
                 ConditionTerm::uint64_less_equal(
                     Bitvector32Term::Variable(Variable(994000 + n)),
-                    Bitvector32Term::UInt64Constant(100),
+                    Bitvector32Term::uint64_constant(100),
                 ),
                 true,
             );
@@ -223,7 +223,7 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
             context = context.assume_condition(
                 ConditionTerm::uint64_less_equal(
                     Bitvector32Term::Variable(Variable(992000 + n)),
-                    Bitvector32Term::UInt64Constant(100),
+                    Bitvector32Term::uint64_constant(100),
                 ),
                 true,
             );
@@ -236,7 +236,7 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     length.clone(),
-                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
+                    Bitvector32Term::uint64_constant(i32::MAX as u64),
                 ),
                 true,
             );
@@ -244,7 +244,7 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
             assert_eq!(context.decide_small_uint64_index_order(&goal), Some(true));
             assert_eq!(
                 context.decide_small_uint64_index_order(&ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                     index_word.clone()
                 )),
                 Some(true)
@@ -259,19 +259,19 @@ fn uint64_slice_index_transport_is_sound_and_ignores_unrelated_bounds() {
     );
     assert_eq!(unbounded.decide_small_uint64_index_order(&goal), None);
     let high = unbounded.assume_condition(
-        ConditionTerm::uint64_less_equal(length, Bitvector32Term::UInt64Constant(4294967296)),
+        ConditionTerm::uint64_less_equal(length, Bitvector32Term::uint64_constant(4294967296)),
         true,
     );
     assert_eq!(high.decide_small_uint64_index_order(&goal), None);
     let reversed = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::uint64_less_equal(index.clone(), Bitvector32Term::UInt64Constant(10)),
+            ConditionTerm::uint64_less_equal(index.clone(), Bitvector32Term::uint64_constant(10)),
             true,
         )
         .assume_condition(
             ConditionTerm::uint64_less_equal(
                 Bitvector32Term::Variable(Variable(991002)),
-                Bitvector32Term::UInt64Constant(10),
+                Bitvector32Term::uint64_constant(10),
             ),
             true,
         )
@@ -442,7 +442,7 @@ fn signed_order_rules_keep_growing_shared_prefixes() {
                 assert_eq!(
                     facts.decide_signed_order_views(
                         CompareRelation::LessEqual,
-                        MachineOperandView::Legacy(&Bitvector32Term::Constant(i32::MIN as u32)),
+                        MachineOperandView::Legacy(&Bitvector32Term::constant(i32::MIN as u32)),
                         operand.operand_view()
                     ),
                     Some(true)
@@ -477,7 +477,7 @@ fn unsigned_order_views_preserve_native_answers_and_polarity() {
             ConditionTerm::unsigned_greater_than(x.clone(), y.clone()),
             false,
         );
-    let values = [x, sum, y, 0.into(), Bitvector32Term::Constant(u32::MAX)];
+    let values = [x, sum, y, 0.into(), Bitvector32Term::constant(u32::MAX)];
     let shared: Vec<_> = values
         .iter()
         .map(|term| {

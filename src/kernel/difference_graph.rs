@@ -25,6 +25,10 @@ use crate::kernel::binary_term;
 use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, PointerOffsetTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
+    native_constant, uint64_constant,
+};
 use crate::persistent::PersistentMap;
 
 mod operand_views;
@@ -1333,14 +1337,14 @@ impl DifferenceGraph {
             // A word read as unsigned is its signed reading modulo 2^32:
             // the same value when that reading is non-negative, 2^32 more
             // when it is negative.
-            if matches!(term, T::Constant(_)) {
+            if matches!(term, int32_constant!(_)) {
                 return domain.range();
             }
             charge();
             let (low, high) = self.term_interval(Domain::Int32, term);
             return wrap_interval(domain, low, high);
         }
-        if matches!(term, T::Variable(_) | T::Constant(_)) {
+        if matches!(term, T::Variable(_) | int32_constant!(_)) {
             // No operands to read: nothing to charge.
             return domain.range();
         }
@@ -2105,7 +2109,7 @@ fn wrap_range((min, max): (i128, i128), low: i128, high: i128) -> (i128, i128) {
 fn word_domain(term: &Bitvector32Term) -> Domain {
     use Bitvector32Term as T;
     match term {
-        T::UInt64Constant(_)
+        uint64_constant!(_)
         | T::Binary {
             format: MachineIntegerType::UInt64,
             op:
@@ -2205,9 +2209,9 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
         ) if bytes.checked_rem(*byte_width) == Some(0) => {
             let count = bytes.checked_div(*byte_width)?;
             let count = if *unsigned {
-                Bitvector32Term::UInt64Constant(u64::try_from(count).ok()?)
+                Bitvector32Term::uint64_constant(u64::try_from(count).ok()?)
             } else {
-                Bitvector32Term::Int64Constant(count)
+                Bitvector32Term::int64_constant(count)
             };
             Some((value.as_ref().clone(), count))
         }
@@ -2225,7 +2229,7 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
             if bytes % width == 0 =>
         {
             let count = i32::try_from(bytes / width).ok()?;
-            (value.clone(), Bitvector32Term::Constant(count as u32))
+            (value.clone(), Bitvector32Term::constant(count as u32))
         }
         _ => return None,
     };
@@ -2329,8 +2333,8 @@ fn low_mask(bits: u32) -> u64 {
 /// A 64-bit constant's bits.
 fn constant64(term: &Bitvector32Term) -> Option<u64> {
     match term {
-        Bitvector32Term::UInt64Constant(value) => Some(*value),
-        Bitvector32Term::Int64Constant(value) => Some(*value as u64),
+        uint64_constant!(value) => Some(constant_u64(*value)),
+        int64_constant!(value) => Some(constant_i64(*value) as u64),
         _ => None,
     }
 }
@@ -2497,9 +2501,9 @@ fn offset_residue(offset: &PointerOffsetTerm) -> Option<Residue> {
     match offset {
         O::Constant(bytes) => Some(Residue::exact(*bytes as u64)),
         O::Int32Scaled { value, byte_width } => match value.as_ref() {
-            Bitvector32Term::Constant(index) | Bitvector32Term::UInt32Constant(index) => Some(
-                Residue::exact(i64::from(*index as i32).wrapping_mul(*byte_width) as u64),
-            ),
+            bits32_constant!(index) => Some(Residue::exact(
+                i64::from(constant_u32(*index) as i32).wrapping_mul(*byte_width) as u64,
+            )),
             _ => (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0)),
         },
         O::Int64Scaled { byte_width, .. } => {
@@ -2709,20 +2713,19 @@ fn wrap(domain: Domain, value: i128) -> i128 {
 
 /// `term`'s value in `domain` when it is a constant there.
 fn constant(domain: Domain, term: &Bitvector32Term) -> Option<i128> {
-    use Bitvector32Term as T;
     match (domain, term) {
         // A `uint32` constant's word is the `Constant` of its bits (K1).
-        (Domain::Int32, T::Constant(value) | T::UInt32Constant(value)) => {
-            Some(i128::from(*value as i32))
+        (Domain::Int32, bits32_constant!(value)) => Some(i128::from(constant_u32(*value) as i32)),
+        (Domain::Int64, int64_constant!(value)) => Some(i128::from(constant_i64(*value))),
+        (Domain::UInt64, uint64_constant!(value)) => Some(i128::from(constant_u64(*value))),
+        (Domain::UInt64, int64_constant!(value)) if constant_i64(*value) >= 0 => {
+            Some(i128::from(constant_i64(*value)))
         }
-        (Domain::Int64, T::Int64Constant(value)) => Some(i128::from(*value)),
-        (Domain::UInt64, T::UInt64Constant(value)) => Some(i128::from(*value)),
-        (Domain::UInt64, T::Int64Constant(value)) if *value >= 0 => Some(i128::from(*value)),
-        (Domain::UInt32, T::Constant(value) | T::UInt32Constant(value)) => Some(i128::from(*value)),
-        (Domain::Narrow(format), T::MachineIntegerConstant(value))
-            if value.format() == format.format() =>
+        (Domain::UInt32, bits32_constant!(value)) => Some(i128::from(constant_u32(*value))),
+        (Domain::Narrow(format), native_constant!(constant_format, bits))
+            if *constant_format == format =>
         {
-            value.to_i128()
+            crate::kernel::MachineIntegerConstant::from_term_bits(format.format(), *bits).to_i128()
         }
         _ => None,
     }

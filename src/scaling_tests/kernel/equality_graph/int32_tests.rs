@@ -41,7 +41,7 @@ fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
         for index in 0..size {
             context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
         }
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let source = ConditionTerm::signed_less_than(sum(var(0)), var(size + 2));
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
@@ -64,7 +64,7 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
             block: "resolved-int32-scale".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let memory = intern_c_memory(
             CMemory::new()
                 .with_block("resolved-int32-scale", 4)
@@ -101,7 +101,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
             block: "two-resolved-int32-scale".into(),
             offset: PointerOffsetTerm::Constant(offset),
         };
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let memory = intern_c_memory(
             CMemory::new()
                 .with_block("two-resolved-int32-scale", 8)
@@ -138,7 +138,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
 fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let resource = |value| CResource::Composite {
             name: "indexed-value-scale".into(),
             arguments: vec![CValue::Int32(sum(value)).into()].into(),
@@ -173,7 +173,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
         let schema =
             ResourceFieldSchema::new(vec![("stamp".into(), ResourceFieldType::C(CType::Int32))])
                 .unwrap();
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let instance = |value| {
             CResource::Instance(
                 ResourceInstance::new(
@@ -181,7 +181,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
                     "instance-value-scale".into(),
                     vec![CValue::Int32(sum(value)).into()].into(),
                     schema.clone(),
-                    vec![CValue::Int32(Bitvector32Term::Constant(3)).into()].into(),
+                    vec![CValue::Int32(Bitvector32Term::constant(3)).into()].into(),
                 )
                 .unwrap(),
             )
@@ -213,7 +213,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
 fn typed_int32_value_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let left = CValue::Int32(sum(var(0)));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -238,7 +238,7 @@ fn typed_int32_value_graph_queries_scale_without_fact_index() {
 fn certified_int32_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let left = sum(var(0));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -345,7 +345,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
                 memory = memory.with_block(format!("unrelated-{i}"), 4);
             }
             let memory = intern_c_memory(
-                memory.store(address.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+                memory.store(address.clone(), CValue::Int32(Bitvector32Term::constant(7))),
             );
             let load = Bitvector32Term::MemoryLoad(
                 memory,
@@ -354,7 +354,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
             );
             crate::instrumentation::measure_deterministic_work(|| {
                 PureFactContext::new()
-                    .assume_condition(eq(&load, &Bitvector32Term::Constant(7)), true)
+                    .assume_condition(eq(&load, &Bitvector32Term::constant(7)), true)
             })
         })
         .join()
@@ -379,7 +379,7 @@ fn offset_premise_shallow_decision_and_forks_scale() {
             Int32,
             Add,
             Box::new(v),
-            Box::new(Bitvector32Term::Constant(1))
+            Box::new(Bitvector32Term::constant(1))
         )
     };
     for size in [16u64, 64, 256, 512] {
@@ -439,7 +439,7 @@ fn shared_constant_discovery_scales_with_the_admitted_chain() {
             }
             context = context
                 .clone()
-                .assume_condition(eq(&var(size), &Bitvector32Term::Constant(37)), true);
+                .assume_condition(eq(&var(size), &Bitvector32Term::constant(37)), true);
             assert_eq!(
                 context.known_signed_constant_after_normalization(&var(0)),
                 Some(37)
@@ -626,7 +626,7 @@ fn constant_queries_ignore_other_snapshot_candidates() {
                     unknown_reads.push(load);
                 } else {
                     context = context.assume_condition(
-                        eq(&load, &Bitvector32Term::Constant((index - size + 1) as u32)),
+                        eq(&load, &Bitvector32Term::constant((index - size + 1) as u32)),
                         true,
                     );
                 }

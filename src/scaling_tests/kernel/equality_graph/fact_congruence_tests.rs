@@ -197,7 +197,7 @@ fn full_pointer_alias_queries_do_not_walk_unrelated_conditions() {
             context = context.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(9_000_000 + index)),
-                    Bitvector32Term::Constant(index as u32),
+                    Bitvector32Term::constant(index as u32),
                 ),
                 true,
             );
@@ -224,7 +224,7 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
             selected.push(Proposition::ConditionIs(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(9_100_000 + index)),
-                    Bitvector32Term::Constant(index as u32),
+                    Bitvector32Term::constant(index as u32),
                 ),
                 true,
             ));

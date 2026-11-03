@@ -101,10 +101,10 @@ fn framing_is_linear_in_applications_and_ignores_unrelated_facts_and_interval_le
         register_unmarked();
         let v = parameter_base(V);
         let before = CMemory::new();
-        let end = Bitvector32Term::Constant(length);
+        let end = Bitvector32Term::constant(length);
         let after = before.clone().store(element(&v, end.clone()), one());
-        let old = application(&before, &v, Bitvector32Term::Constant(0), end.clone());
-        let new = application(&after, &v, Bitvector32Term::Constant(0), end);
+        let old = application(&before, &v, Bitvector32Term::constant(0), end.clone());
+        let new = application(&after, &v, Bitvector32Term::constant(0), end);
         let (result, work) =
             crate::instrumentation::measure_deterministic_work(|| frame(&old, &new, &[]));
         assert_eq!(result, Ok(1));
@@ -143,7 +143,7 @@ fn repeated_framing_along_a_store_sequence_is_linear() {
         let facts = context(&facts);
         let applications = memories
             .iter()
-            .map(|memory| application(memory, &v, Bitvector32Term::Constant(0), bv(HI)))
+            .map(|memory| application(memory, &v, Bitvector32Term::constant(0), bv(HI)))
             .collect::<Vec<_>>();
         let (crossed, work) = crate::instrumentation::measure_deterministic_work(|| {
             applications

@@ -202,8 +202,8 @@ fn resource_transition_retains_borrow_role_for_owned_entry_fact() {
     };
     let range = CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     );
     let requirement = CResourceSpec::owned_memory(CMemorySegment::new(
         CExpression::Variable("p".into()),
@@ -259,8 +259,8 @@ fn call_site_and_function_boundary_transitions_agree_on_the_callee_entry() {
     let range = |pointer: &Pointer| {
         CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )
     };
     let segment = |name: &str| {
@@ -704,8 +704,8 @@ fn direct_and_named_callback_resource_interfaces_agree_across_families() {
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_memory(CMemoryRange::new(
                 memory_pointer,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )),
         ));
     let memory_contract = CFunctionContract::new("ParityMemory", memory_function.clone()).unwrap();
@@ -1220,8 +1220,8 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
         .expect("a declared frame is installed at loop entry");
     assert_eq!(ranges.len(), 1);
     assert_eq!(ranges[0].base(), &pointer);
-    assert_eq!(ranges[0].start(), &Bitvector32Term::Constant(0));
-    assert_eq!(ranges[0].end(), &Bitvector32Term::Constant(1));
+    assert_eq!(ranges[0].start(), &Bitvector32Term::constant(0));
+    assert_eq!(ranges[0].end(), &Bitvector32Term::constant(1));
 
     // When the kernel cannot read the spec (no definition to expand it
     // through), the frame stays uninstalled and the back edge refuses it;

@@ -16,6 +16,9 @@ use crate::kernel::{
     SpecCaptureRefusal, Term, Variable,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
+};
 use crate::surface::ParameterBinding;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -1850,10 +1853,8 @@ impl Renderer<'_> {
         self.push(")");
     }
     fn comparison_bitvector(&mut self, value: &Bitvector32Term, signed: bool) {
-        if signed
-            && let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) = value
-        {
-            self.fmt(format_args!("{}", *value as i32));
+        if signed && let bits32_constant!(value) = value {
+            self.fmt(format_args!("{}", constant_u32(*value) as i32));
         } else {
             self.bitvector(value);
         }
@@ -2073,11 +2074,11 @@ impl Renderer<'_> {
             return;
         }
         match v {
-            Bitvector32Term::Constant(v) | Bitvector32Term::UInt32Constant(v) => {
-                self.fmt(format_args!("{v}"))
-            }
-            Bitvector32Term::Int64Constant(v) => self.fmt(format_args!("{v}i64")),
-            Bitvector32Term::MachineIntegerConstant(constant) => {
+            bits32_constant!(v) => self.fmt(format_args!("{v}", v = constant_u32(*v))),
+            int64_constant!(v) => self.fmt(format_args!("{v}i64", v = constant_i64(*v))),
+            crate::kernel::native_constant!(format, bits) => {
+                let constant =
+                    crate::kernel::MachineIntegerConstant::from_term_bits(format.format(), *bits);
                 let format = constant.format();
                 let sign = if format.is_signed() { 'i' } else { 'u' };
                 match constant.to_i128() {
@@ -2085,7 +2086,7 @@ impl Renderer<'_> {
                     None => self.fmt(format_args!("{}{sign}{}", constant.bits(), format.bits())),
                 }
             }
-            Bitvector32Term::UInt64Constant(v) => self.fmt(format_args!("{v}u64")),
+            uint64_constant!(v) => self.fmt(format_args!("{v}u64", v = constant_u64(*v))),
             // A model-field variable is a name for one field of one instance,
             // and the field is the part a reader compares. The id is kept
             // beside it here, as a load variable's is, because this renderer
@@ -2619,7 +2620,7 @@ mod tests {
                     Int32,
                     Add,
                     Box::new(Bitvector32Term::Variable(Variable(988001))),
-                    Box::new(Bitvector32Term::Constant(1)),
+                    Box::new(Bitvector32Term::constant(1)),
                 )),
             },
             true,
@@ -2682,7 +2683,7 @@ mod tests {
                 .with_block(format!("local:{local}"), 4)
                 .store(
                     pointer,
-                    crate::kernel::CValue::Int32(Bitvector32Term::Constant(7)),
+                    crate::kernel::CValue::Int32(Bitvector32Term::constant(7)),
                 );
             assert_eq!(SnapshotLabels::default().describe_state(&memory), expected);
         }
@@ -2745,7 +2746,7 @@ mod tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(Bitvector32Term::Variable(variable)),
-                    right: Box::new(Bitvector32Term::Constant(0)),
+                    right: Box::new(Bitvector32Term::constant(0)),
                 },
                 false,
             )
@@ -2787,16 +2788,16 @@ mod tests {
     #[test]
     fn range_fold_keeps_bounds_and_body_variables() {
         let fold = Bitvector32Term::RangeFold {
-            start: Box::new(Bitvector32Term::Constant(1)),
-            end: Box::new(Bitvector32Term::Constant(4)),
-            initial: Box::new(Bitvector32Term::Constant(0)),
+            start: Box::new(Bitvector32Term::constant(1)),
+            end: Box::new(Bitvector32Term::constant(4)),
+            initial: Box::new(Bitvector32Term::constant(0)),
             accumulator: crate::kernel::Variable(8),
             item: crate::kernel::Variable(9),
             body: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(10))),
         };
         let rendered = render_proposition(&Proposition::Equal(
             Term::Bitvector32(fold),
-            Term::Bitvector32(Bitvector32Term::Constant(0)),
+            Term::Bitvector32(Bitvector32Term::constant(0)),
         ));
         assert!(rendered.contains("fold("));
         assert!(rendered.contains("acc=acc, item=item"), "{rendered}");
@@ -2810,7 +2811,7 @@ mod tests {
                 block: crate::kernel::PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             },
-            bytes: Bitvector32Term::Constant(1),
+            bytes: Bitvector32Term::constant(1),
             wide: false,
         }
     }
@@ -2893,18 +2894,18 @@ mod tests {
 
     #[test]
     fn deep_bitvector_tree_is_bounded() {
-        let mut value = Bitvector32Term::Constant(1);
+        let mut value = Bitvector32Term::constant(1);
         for _ in 0..128 {
             value = binary_node!(
                 Int32,
                 Add,
                 Box::new(value),
-                Box::new(Bitvector32Term::Constant(1))
+                Box::new(Bitvector32Term::constant(1))
             );
         }
         let rendered = render_proposition(&Proposition::Equal(
             Term::Bitvector32(value),
-            Term::Bitvector32(Bitvector32Term::Constant(0)),
+            Term::Bitvector32(Bitvector32Term::constant(0)),
         ));
         assert!(rendered.contains("truncated"));
     }
@@ -2937,8 +2938,8 @@ mod tests {
     #[test]
     fn machine_and_c_value_types_remain_visible() {
         let int32 = render_proposition(&Proposition::Equal(
-            Term::CValue(crate::kernel::CValue::Int32(Bitvector32Term::Constant(1))),
-            Term::CValue(crate::kernel::CValue::UInt32(Bitvector32Term::Constant(1))),
+            Term::CValue(crate::kernel::CValue::Int32(Bitvector32Term::constant(1))),
+            Term::CValue(crate::kernel::CValue::UInt32(Bitvector32Term::constant(1))),
         ));
         assert!(int32.contains("int32(1)"));
         assert!(int32.contains("uint32(1)"));
@@ -2949,7 +2950,7 @@ mod tests {
         let resource = CResourceFact::View(CResource::Token {
             name: "child_ref".into(),
             arguments: std::sync::Arc::from([AlgebraicValue::C(crate::kernel::CValue::Int32(
-                Bitvector32Term::Constant(7),
+                Bitvector32Term::constant(7),
             ))]),
         });
         assert_eq!(render_resource_fact(&resource), "views child_ref(int32(7))");
@@ -2965,8 +2966,8 @@ mod wide_range_reader_tests {
     fn wide_resource_diagnostics_keep_the_high_bits_of_bounds() {
         let wide = CMemoryRange::new_wide(
             Pointer::symbolic(Variable(985_500)),
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(1 << 33),
             4,
         );
         let fact = Proposition::CResourceContains {
@@ -2998,7 +2999,7 @@ mod resource_detail_tests {
                 flag.clone(),
                 ResourceDescription::new(
                     "payload".into(),
-                    vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Constant(
+                    vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::constant(
                         value,
                     )))]
                     .into(),
@@ -3030,14 +3031,14 @@ mod resource_detail_tests {
             2,
             0,
             1,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(8),
-            CIteratedGuard::new(guard, CType::Int32, 4, true, Bitvector32Term::Constant(1)),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(8),
+            CIteratedGuard::new(guard, CType::Int32, 4, true, Bitvector32Term::constant(1)),
         )
         .unwrap();
         let render = |hole| {
             let fact = CResourceFact::own(CResource::Iterated(std::sync::Arc::new(
-                iterated.with_hole(Bitvector32Term::Constant(hole)),
+                iterated.with_hole(Bitvector32Term::constant(hole)),
             )));
             let mut labels = SnapshotLabels::default();
             let mut text = render_resource_fact_labeled(&fact, &mut labels);

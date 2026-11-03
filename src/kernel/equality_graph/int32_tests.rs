@@ -68,9 +68,9 @@ fn unsigned_congruence_propagates_late_aliases_without_injectivity_or_signed_coe
         UInt32,
         Divide,
         Box::new(a),
-        Box::new(Bitvector32Term::Constant(0))
+        Box::new(Bitvector32Term::constant(0))
     );
-    assert!(!graph.are_int32_equal(&undefined, &Bitvector32Term::Constant(0)));
+    assert!(!graph.are_int32_equal(&undefined, &Bitvector32Term::constant(0)));
 }
 
 #[test]
@@ -100,7 +100,7 @@ fn unsigned_congruence_keeps_load_snapshots_and_widths_distinct() {
     };
     let after = intern_c_memory(before.memory().clone().store(
         pointer.clone(),
-        CValue::UInt32(Bitvector32Term::Constant(9)),
+        CValue::UInt32(Bitvector32Term::constant(9)),
     ));
     let load = |memory, kind| Bitvector32Term::MemoryLoad(memory, Box::new(pointer.clone()), kind);
     let old = load(before.clone(), LoadKind::Int32);
@@ -145,7 +145,7 @@ fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
             Int32,
             Add,
             Box::new(value),
-            Box::new(Bitvector32Term::Constant(1))
+            Box::new(Bitvector32Term::constant(1))
         )
     };
     let premise = eq(&a, &b);
@@ -177,7 +177,7 @@ fn shallow_scalar_decision_uses_graph_congruence_and_keeps_branch_scope() {
 #[test]
 fn fact_transport_uses_graph_int32_congruence_without_the_legacy_index() {
     let (a, b, limit) = (var(1), var(2), var(3));
-    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
     let source = ConditionTerm::signed_less_than(sum(a.clone()), limit.clone());
     let target = ConditionTerm::signed_less_than(sum(b.clone()), limit);
     let premise = eq(&a, &b);
@@ -212,14 +212,14 @@ fn fact_transport_uses_registered_load_congruence_only_in_one_snapshot() {
     let (a, b) = (var(11), var(12));
     let after = intern_c_memory(before.memory().clone().store(
         pointer(b.clone()),
-        CValue::Int32(Bitvector32Term::Constant(9)),
+        CValue::Int32(Bitvector32Term::constant(9)),
     ));
     let left = load(&before, a.clone());
     let right = load(&before, b.clone());
     let later = load(&after, b.clone());
-    let fact = ConditionTerm::signed_less_than(left, Bitvector32Term::Constant(20));
-    let target = ConditionTerm::signed_less_than(right, Bitvector32Term::Constant(20));
-    let later_target = ConditionTerm::signed_less_than(later, Bitvector32Term::Constant(20));
+    let fact = ConditionTerm::signed_less_than(left, Bitvector32Term::constant(20));
+    let target = ConditionTerm::signed_less_than(right, Bitvector32Term::constant(20));
+    let later_target = ConditionTerm::signed_less_than(later, Bitvector32Term::constant(20));
     let context = PureFactContext::new().assume_condition(eq(&a, &b), true);
     assert!(context.condition_matches(&fact, &target));
     assert!(!context.condition_matches(&fact, &later_target));
@@ -233,7 +233,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
         offset: PointerOffsetTerm::Constant(0),
     };
     let (a, b) = (var(31), var(32));
-    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
     // A stored byte is a canonical `uint8` carrier: the conversion of the sum.
     let byte = |value| {
         Bitvector32Term::machine_integer_cast(
@@ -251,7 +251,7 @@ fn resolved_four_byte_load_uses_graph_value_equality_but_keeps_snapshot_scope() 
         before
             .memory()
             .clone()
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(9))),
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(9))),
     );
     let byte_memory = intern_c_memory(
         CMemory::new()
@@ -308,7 +308,7 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
         offset: PointerOffsetTerm::Constant(offset),
     };
     let (a, b) = (var(41), var(42));
-    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
     // A stored byte is a canonical `uint8` carrier: the conversion of the sum.
     let byte = |value| {
         Bitvector32Term::machine_integer_cast(
@@ -327,7 +327,7 @@ fn two_resolved_four_byte_loads_compare_values_with_snapshot_scope() {
     );
     let after = intern_c_memory(before.memory().clone().store(
         right_pointer.clone(),
-        CValue::Int32(Bitvector32Term::Constant(9)),
+        CValue::Int32(Bitvector32Term::constant(9)),
     ));
     let byte_memory = intern_c_memory(
         CMemory::new()
@@ -386,7 +386,7 @@ fn direct_composite_int32_argument_uses_graph_with_snapshot_scope() {
     let (a, b) = (var(51), var(52));
     let after = intern_c_memory(before.memory().clone().store(
         pointer(b.clone()),
-        CValue::Int32(Bitvector32Term::Constant(9)),
+        CValue::Int32(Bitvector32Term::constant(9)),
     ));
     let resource = |value| CResource::Composite {
         name: "indexed-value".into(),
@@ -430,7 +430,7 @@ fn resource_instance_int32_field_uses_graph_with_snapshot_scope() {
     let (a, b) = (var(61), var(62));
     let after = intern_c_memory(before.memory().clone().store(
         pointer(b.clone()),
-        CValue::Int32(Bitvector32Term::Constant(9)),
+        CValue::Int32(Bitvector32Term::constant(9)),
     ));
     let schema =
         ResourceFieldSchema::new(vec![("value".into(), ResourceFieldType::C(CType::Int32))])
@@ -440,7 +440,7 @@ fn resource_instance_int32_field_uses_graph_with_snapshot_scope() {
             ResourceInstance::new(
                 Variable(6100),
                 "instance-value".into(),
-                vec![CValue::Int32(Bitvector32Term::Constant(3)).into()].into(),
+                vec![CValue::Int32(Bitvector32Term::constant(3)).into()].into(),
                 schema.clone(),
                 vec![CValue::Int32(value).into()].into(),
             )
@@ -485,9 +485,9 @@ fn certification_uses_graph_int32_equality_with_snapshot_scope() {
     let (a, b) = (var(81), var(82));
     let after = intern_c_memory(before.memory().clone().store(
         pointer(b.clone()),
-        CValue::Int32(Bitvector32Term::Constant(9)),
+        CValue::Int32(Bitvector32Term::constant(9)),
     ));
-    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
     let left = sum(load(&before, a.clone()));
     let right = sum(load(&before, b.clone()));
     let later = sum(load(&after, b.clone()));
@@ -528,7 +528,7 @@ fn reordered_sum_matches_graph_equal_load_addends_in_one_snapshot() {
     let (a, b) = (var(21), var(22));
     let after = intern_c_memory(before.memory().clone().store(
         pointer(b.clone()),
-        CValue::Int32(Bitvector32Term::Constant(9)),
+        CValue::Int32(Bitvector32Term::constant(9)),
     ));
     let sum = |value, other| Bitvector32Term::add(value, other);
     let fixed = var(23);
@@ -569,7 +569,7 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
             Int32,
             Add,
             Box::new(value),
-            Box::new(Bitvector32Term::Constant(1))
+            Box::new(Bitvector32Term::constant(1))
         )
     };
     assert!(graph.are_int32_equal(&plus_one(a.clone()), &plus_one(b.clone())));
@@ -578,7 +578,7 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
             Int32,
             Subtract,
             Box::new(value),
-            Box::new(Bitvector32Term::Constant(1))
+            Box::new(Bitvector32Term::constant(1))
         )
     };
     assert!(graph.are_int32_equal(&minus_one(a.clone()), &minus_one(b.clone())));
@@ -588,7 +588,7 @@ fn int32_classes_are_typed_and_integer_operators_have_congruence() {
         &PointerOffsetTerm::Variable(Variable(4)),
     );
     assert!(!graph.are_int32_equal(&var(3), &var(4)));
-    assert!(!graph.are_int32_equal(&Bitvector32Term::Constant(0), &Bitvector32Term::Constant(1)));
+    assert!(!graph.are_int32_equal(&Bitvector32Term::constant(0), &Bitvector32Term::constant(1)));
 }
 
 #[test]
@@ -647,7 +647,7 @@ fn int32_load_identity_keeps_snapshots_and_exact_support_separate() {
         before
             .memory()
             .clone()
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(9))),
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(9))),
     );
     let load = |memory: &SharedCMemory| {
         Bitvector32Term::MemoryLoad(

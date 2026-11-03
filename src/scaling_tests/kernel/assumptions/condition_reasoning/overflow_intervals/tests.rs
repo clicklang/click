@@ -16,11 +16,11 @@ fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
     );
     let goal = ConditionTerm::int64_signed_less_equal(
         sum.clone(),
-        Bitvector32Term::Int64Constant(u32::MAX as i64),
+        Bitvector32Term::int64_constant(u32::MAX as i64),
     );
     let too_small = ConditionTerm::int64_signed_less_equal(
         sum,
-        Bitvector32Term::Int64Constant(u32::MAX as i64 - 1),
+        Bitvector32Term::int64_constant(u32::MAX as i64 - 1),
     );
     let mut works = Vec::new();
     for size in [8, 32, 128] {
@@ -29,7 +29,7 @@ fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
             facts = facts.assume_condition(
                 ConditionTerm::unsigned_less_equal(
                     Bitvector32Term::Variable(Variable(98000 + index)),
-                    Bitvector32Term::Constant(123),
+                    Bitvector32Term::constant(123),
                 ),
                 true,
             );
@@ -38,16 +38,16 @@ fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
             .assume_condition(
                 ConditionTerm::unsigned_less_equal(
                     a.clone(),
-                    Bitvector32Term::Constant(u32::MAX - 255),
+                    Bitvector32Term::constant(u32::MAX - 255),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_greater_equal(b.clone(), Bitvector32Term::Constant(0)),
+                ConditionTerm::signed_greater_equal(b.clone(), Bitvector32Term::constant(0)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(b.clone(), Bitvector32Term::Constant(255)),
+                ConditionTerm::signed_less_equal(b.clone(), Bitvector32Term::constant(255)),
                 true,
             );
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -91,10 +91,10 @@ fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
                 .is_err()
         );
         let invalid =
-            ConditionTerm::unsigned_greater_equal(b.clone(), Bitvector32Term::Constant(256));
+            ConditionTerm::unsigned_greater_equal(b.clone(), Bitvector32Term::constant(256));
         // Query the native unsigned order using its indexed unsigned bound.
         let facts = facts.assume_condition(
-            ConditionTerm::unsigned_less_than(b.clone(), Bitvector32Term::Constant(8)),
+            ConditionTerm::unsigned_less_than(b.clone(), Bitvector32Term::constant(8)),
             true,
         );
         let (answer, order_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -119,8 +119,8 @@ fn signed_constant_bound_selection_is_flat_in_unrelated_bounds() {
     };
     for width in [SignedDefinedWidth::Int32, SignedDefinedWidth::Int64] {
         let constant = |value: i64| match width {
-            SignedDefinedWidth::Int32 => Bitvector32Term::Constant(value as i32 as u32),
-            SignedDefinedWidth::Int64 => Bitvector32Term::Int64Constant(value),
+            SignedDefinedWidth::Int32 => Bitvector32Term::constant(value as i32 as u32),
+            SignedDefinedWidth::Int64 => Bitvector32Term::int64_constant(value),
         };
         let less = |left, right| match width {
             SignedDefinedWidth::Int32 => ConditionTerm::signed_less_than(left, right),
@@ -243,13 +243,13 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
             assumptions = assumptions
                 .assume_condition(ConditionTerm::signed_less_equal(a, b.clone()), true)
                 .assume_condition(
-                    ConditionTerm::signed_less_than(b, Bitvector32Term::Constant(50)),
+                    ConditionTerm::signed_less_than(b, Bitvector32Term::constant(50)),
                     true,
                 );
         }
         let link = |index: u64| Bitvector32Term::Variable(Variable(98_000 + index));
         assumptions = assumptions.assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), link(0)),
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), link(0)),
             true,
         );
         for index in 0..length {
@@ -259,7 +259,7 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
             );
         }
         assumptions = assumptions.assume_condition(
-            ConditionTerm::signed_less_than(link(length), Bitvector32Term::Constant(1000)),
+            ConditionTerm::signed_less_than(link(length), Bitvector32Term::constant(1000)),
             true,
         );
         (assumptions, link(0))
@@ -271,7 +271,7 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
         });
         assert_eq!(bound, Some((0, i64::from(i32::MAX))));
         let explicit = assumptions.assume_condition(
-            ConditionTerm::signed_less_than(start.clone(), Bitvector32Term::Constant(1000)),
+            ConditionTerm::signed_less_than(start.clone(), Bitvector32Term::constant(1000)),
             true,
         );
         let (bound, explicit_work) =
@@ -292,7 +292,7 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
 fn int64_guard_work_is_independent_of_unrelated_facts() {
     let n = Bitvector32Term::Variable(Variable(95_111));
     let d = Bitvector32Term::Variable(Variable(95_112));
-    let constant = Bitvector32Term::Int64Constant;
+    let constant = Bitvector32Term::int64_constant;
     let mut work_counts = Vec::new();
     for size in [8, 32, 128, 512] {
         let mut facts = PureFactContext::new();
@@ -341,7 +341,7 @@ fn int64_guard_work_is_independent_of_unrelated_facts() {
 fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
     let x = Bitvector32Term::Variable(Variable(96_001));
     let zero = Bitvector32Term::Variable(Variable(96_002));
-    let constant = Bitvector32Term::Int64Constant;
+    let constant = Bitvector32Term::int64_constant;
     let mut baseline_work = None;
     for population in [8u64, 32, 128, 512] {
         let mut facts = PureFactContext::new()
@@ -450,7 +450,7 @@ fn int64_zero_identity_chains_scale_with_the_queried_term() {
     let x = Bitvector32Term::Variable(Variable(98_001));
     let zero = Bitvector32Term::Variable(Variable(98_002));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::int64_equal(zero.clone(), Bitvector32Term::Int64Constant(0)),
+        ConditionTerm::int64_equal(zero.clone(), Bitvector32Term::int64_constant(0)),
         true,
     );
     let mut previous = None;
@@ -484,7 +484,7 @@ fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_equal(
                     Bitvector32Term::Variable(Variable(100_000 + index)),
-                    Bitvector32Term::UInt64Constant(0),
+                    Bitvector32Term::uint64_constant(0),
                 ),
                 true,
             );
@@ -533,7 +533,7 @@ fn signed_wide_interval_queries_ignore_bound_bucket_size() {
         for offset in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
-                    Bitvector32Term::Int64Constant(-1000 - offset),
+                    Bitvector32Term::int64_constant(-1000 - offset),
                     x.clone(),
                 ),
                 true,
@@ -541,7 +541,7 @@ fn signed_wide_interval_queries_ignore_bound_bucket_size() {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
                     x.clone(),
-                    Bitvector32Term::Int64Constant(1000 + offset),
+                    Bitvector32Term::int64_constant(1000 + offset),
                 ),
                 true,
             );
@@ -568,7 +568,7 @@ fn shared_masked_order_queries_do_not_export_growing_operands() {
         let ty = MachineIntegerType::Int32;
         let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(985302));
         let mask = KernelTermImport::default()
-            .machine_arithmetic(ty, &Bitvector32Term::Constant(127))
+            .machine_arithmetic(ty, &Bitvector32Term::constant(127))
             .unwrap();
         let context = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -707,7 +707,7 @@ fn widened_source_selection_is_bounded_in_related_bounds() {
             Bitvector32Term::int64_from_uint32(value),
         );
         let query =
-            ConditionTerm::int64_signed_less_equal(sum, Bitvector32Term::Int64Constant(200));
+            ConditionTerm::int64_signed_less_equal(sum, Bitvector32Term::int64_constant(200));
         let (sources, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.widened_unsigned_sum_bound_premises(&query).unwrap()
         });
@@ -785,18 +785,18 @@ fn signed_ranges_keep_shared_prefixes_and_memoize_refusals() {
             let x = Bitvector32Term::Variable(Variable(994601));
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), x.clone()),
+                    ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), x.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::Constant(1)),
+                    ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::constant(1)),
                     true,
                 );
             for i in 0..ambient {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
                         Bitvector32Term::Variable(Variable(995600 + i)),
-                        Bitvector32Term::Constant(3),
+                        Bitvector32Term::constant(3),
                     ),
                     true,
                 );
@@ -886,7 +886,7 @@ fn shared_overflow_queries_keep_prefixes_across_context_changes() {
                 context = context.clone().assume_condition(
                     ConditionTerm::equal(
                         Bitvector32Term::Variable(Variable(996800 + index)),
-                        Bitvector32Term::Constant(3),
+                        Bitvector32Term::constant(3),
                     ),
                     true,
                 );
@@ -925,7 +925,7 @@ fn retained_overflow_source_lookup_ignores_unrelated_guards() {
                 format,
                 op: OverflowOperation::Multiply,
                 left: written.into(),
-                right: Bitvector32Term::Constant(2).into(),
+                right: Bitvector32Term::constant(2).into(),
             },
             false,
         );
@@ -936,7 +936,7 @@ fn retained_overflow_source_lookup_ignores_unrelated_guards() {
                     format,
                     op: OverflowOperation::Multiply,
                     left: Bitvector32Term::Variable(Variable(997800 + i)).into(),
-                    right: Bitvector32Term::Constant(2).into(),
+                    right: Bitvector32Term::constant(2).into(),
                 },
                 false,
             );

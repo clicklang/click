@@ -44,7 +44,7 @@ fn machine_term_bridge_is_linear_in_explicit_tree_size() {
                         _ => MachineBinaryOp::ShiftRight,
                     },
                     left: Box::new(bits),
-                    right: Box::new(Bitvector32Term::Constant(1)),
+                    right: Box::new(Bitvector32Term::constant(1)),
                 };
             }
             let source = PureFunctionArgument::Value(CValue::Int32(bits));
@@ -103,7 +103,7 @@ fn machine_observation_bridge_scales_with_its_explicit_operand() {
                     format: MachineIntegerType::Int32,
                     op: MachineBinaryOp::Add,
                     left: Box::new(bits),
-                    right: Box::new(Bitvector32Term::Constant(1)),
+                    right: Box::new(Bitvector32Term::constant(1)),
                 };
             }
             let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, bits);
@@ -307,7 +307,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
                             arguments: [
                                 term.clone(),
                                 KernelTermImport::default()
-                                    .machine(format, &Bitvector32Term::Int64Constant(2)),
+                                    .machine(format, &Bitvector32Term::int64_constant(2)),
                             ],
                         },
                     );

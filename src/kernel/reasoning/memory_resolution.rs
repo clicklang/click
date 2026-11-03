@@ -395,7 +395,7 @@ fn expired_nested_reasoning_does_not_poison_resolution_memo() {
         7_490_001,
         false,
         Bitvector32Term::Variable(Variable(7_490_002)),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(1),
     );
     // Expiry occurs inside the memo boundary, including at a helper which
     // formerly called the raw deadline checkpoint without recording a cut.
@@ -1073,7 +1073,7 @@ fn wide_element_offsets_proven_distinct(
             },
         ) if *byte_width >= 1 && *bytes >= 0 && bytes % byte_width == 0 => (
             value.as_ref().clone(),
-            Bitvector32Term::UInt64Constant((bytes / byte_width) as u64),
+            Bitvector32Term::uint64_constant((bytes / byte_width) as u64),
             *byte_width,
         ),
         _ => return None,
@@ -1334,7 +1334,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             if let Some(pinned) = assumptions.wide_constant_from_equalities(value) {
                 return Some(pinned == (bytes / byte_width) as u64);
             }
-            let index = Bitvector32Term::UInt64Constant((bytes / byte_width) as u64);
+            let index = Bitvector32Term::uint64_constant((bytes / byte_width) as u64);
             let stated = [
                 ConditionTerm::uint64_equal(value.as_ref().clone(), index.clone()),
                 ConditionTerm::uint64_equal(index, value.as_ref().clone()),
@@ -1385,7 +1385,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
         let elements = (bytes / *byte_width) as u64;
         let advanced = Bitvector32Term::uint64_add(
             index.as_ref().clone(),
-            Bitvector32Term::UInt64Constant(elements),
+            Bitvector32Term::uint64_constant(elements),
         );
         let same = advanced == **whole_index
             || assumptions.decide(&ConditionTerm::uint64_equal(
@@ -1395,7 +1395,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
         if same
             && assumptions.decide(&ConditionTerm::uint64_less_equal(
                 index.as_ref().clone(),
-                Bitvector32Term::UInt64Constant(u64::MAX - elements),
+                Bitvector32Term::uint64_constant(u64::MAX - elements),
             )) == Some(true)
         {
             return Some(true);
@@ -1482,7 +1482,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             let Ok(expected) = i32::try_from(expected) else {
                 return Some(false);
             };
-            let expected = Bitvector32Term::Constant(expected as u32);
+            let expected = Bitvector32Term::constant(expected as u32);
             if delta.index == expected {
                 return Some(true);
             }
@@ -1583,7 +1583,7 @@ fn indexed_field_offsets_use_exact_displacements() {
         PointerOffsetTerm::scale_int32(index.clone(), 4),
     );
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(index.clone(), Bitvector32Term::Constant(1)),
+        ConditionTerm::equal(index.clone(), Bitvector32Term::constant(1)),
         true,
     );
     let concrete = PointerOffsetTerm::Constant(8);
@@ -1596,7 +1596,7 @@ fn indexed_field_offsets_use_exact_displacements() {
         Some(true)
     );
     let boundary = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(index, Bitvector32Term::Constant(i32::MAX as u32)),
+        ConditionTerm::equal(index, Bitvector32Term::constant(i32::MAX as u32)),
         true,
     );
     // Adding the field offset happens after sign extension: it must not
@@ -1625,7 +1625,7 @@ fn a_constant_index_outside_the_recorded_bounds_is_a_different_offset() {
     let index = Bitvector32Term::Variable(Variable(851));
     let scaled = PointerOffsetTerm::scale_int32(index.clone(), 4);
     let at_least_one = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_equal(Bitvector32Term::Constant(1), index.clone()),
+        ConditionTerm::signed_less_equal(Bitvector32Term::constant(1), index.clone()),
         true,
     );
     for constant in [0, -4] {
@@ -1768,7 +1768,7 @@ fn memory_resolution_graph_offsets_keep_load_snapshots_distinct() {
     };
     let after = crate::kernel::intern_c_memory(before.memory().clone().store(
         address(scalar(1)),
-        CValue::Int32(Bitvector32Term::Constant(9)),
+        CValue::Int32(Bitvector32Term::constant(9)),
     ));
     let left = PointerOffsetTerm::scale_int32(loaded(&before, scalar(1)), 4);
     let right = PointerOffsetTerm::scale_int32(loaded(&before, scalar(2)), 4);
@@ -2092,7 +2092,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     if let Some((left, right)) = bitvector_equality_after_additive_cancellation(left, right) {
         return bitvector_terms_proven_equal_for_memory_resolution(&left, &right, assumptions);
     }
-    let zero = Bitvector32Term::Constant(0);
+    let zero = Bitvector32Term::constant(0);
     if let binary_term!(Int32, Add, base, addend) = left
         && ((bitvector_terms_proven_equal_for_memory_resolution(base, right, assumptions)
             && bitvector_terms_proven_equal_for_memory_resolution(addend, &zero, assumptions))
@@ -3061,12 +3061,12 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
     let left_source = crate::kernel::intern_c_memory_ref(
         &shell
             .clone()
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(1))),
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(1))),
     );
     let right_source = crate::kernel::intern_c_memory_ref(
         &shell
             .clone()
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(2))),
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(2))),
     );
     let mut left = shell.clone();
     left.mark_forgotten_from(&left_source);
@@ -3137,14 +3137,14 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
     let mut uninitialized = heap_shell.clone();
     std::sync::Arc::make_mut(&mut uninitialized.heap)
         .live_allocations
-        .insert(heap_pointer.clone(), Bitvector32Term::Constant(4));
+        .insert(heap_pointer.clone(), Bitvector32Term::constant(4));
     std::sync::Arc::make_mut(&mut uninitialized.heap)
         .uninitialized_allocations
         .insert(heap_pointer.clone());
     let mut zeroed = heap_shell;
     std::sync::Arc::make_mut(&mut zeroed.heap)
         .live_allocations
-        .insert(heap_pointer.clone(), Bitvector32Term::Constant(4));
+        .insert(heap_pointer.clone(), Bitvector32Term::constant(4));
     std::sync::Arc::make_mut(&mut zeroed.heap)
         .zeroed_allocations
         .insert(heap_pointer.clone());
@@ -3172,7 +3172,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
                 block: PointerBlock::Heap(7_620_003),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::Constant(4),
+            Bitvector32Term::constant(4),
         );
     assert!(
         memories_match_for_pointer_load(&concrete_memory, &with_unrelated_heap, &concrete),
@@ -3203,7 +3203,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
     };
     let with_pending = concrete_memory.clone().with_pending_heap_allocation(
         pending_base,
-        Bitvector32Term::Constant(4),
+        Bitvector32Term::constant(4),
         false,
     );
     assert!(
@@ -4845,15 +4845,15 @@ fn offset_resolution_does_not_promote_wrapped_index_equality() {
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(index_sum.clone(), k.clone()), true)
         .assume_condition(
-            ConditionTerm::equal(i.clone(), Bitvector32Term::Constant(i32::MAX as u32)),
+            ConditionTerm::equal(i.clone(), Bitvector32Term::constant(i32::MAX as u32)),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(j.clone(), Bitvector32Term::Constant(1)),
+            ConditionTerm::equal(j.clone(), Bitvector32Term::constant(1)),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(i32::MIN as u32)),
+            ConditionTerm::equal(k.clone(), Bitvector32Term::constant(i32::MIN as u32)),
             true,
         );
     assert_eq!(
@@ -4882,15 +4882,15 @@ fn offset_resolution_accepts_exact_index_equalities_at_each_width() {
     let exact = symbolic
         .clone()
         .assume_condition(
-            ConditionTerm::equal(i.clone(), Bitvector32Term::Constant(2)),
+            ConditionTerm::equal(i.clone(), Bitvector32Term::constant(2)),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(j.clone(), Bitvector32Term::Constant(3)),
+            ConditionTerm::equal(j.clone(), Bitvector32Term::constant(3)),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(5)),
+            ConditionTerm::equal(k.clone(), Bitvector32Term::constant(5)),
             true,
         );
     for width in [1, 4, 8] {

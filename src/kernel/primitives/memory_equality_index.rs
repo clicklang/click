@@ -2411,21 +2411,21 @@ mod tests {
             )
             .assume_condition(ConditionTerm::pointer_equal(narrow, wide.clone()), true);
         let facts = aliases.clone().assume_condition(
-            ConditionTerm::uint64_less_than(index.clone(), Bitvector32Term::UInt64Constant(5552)),
+            ConditionTerm::uint64_less_than(index.clone(), Bitvector32Term::uint64_constant(5552)),
             true,
         );
         let facts = facts.assume_condition(
             ConditionTerm::uint64_less_than(
-                Bitvector32Term::uint64_add(index.clone(), Bitvector32Term::UInt64Constant(1)),
-                Bitvector32Term::UInt64Constant(5552),
+                Bitvector32Term::uint64_add(index.clone(), Bitvector32Term::uint64_constant(1)),
+                Bitvector32Term::uint64_constant(5552),
             ),
             true,
         );
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
             CMemoryRange::new_wide(
                 base.clone(),
-                Bitvector32Term::UInt64Constant(0),
-                Bitvector32Term::UInt64Constant(5552),
+                Bitvector32Term::uint64_constant(0),
+                Bitvector32Term::uint64_constant(5552),
                 1,
             ),
         ));
@@ -2452,7 +2452,7 @@ mod tests {
         assert!(!resources.permits_memory_read(&query, 2, &facts));
         assert!(!ResourceContext::new().permits_memory_read(&query, 1, &facts));
         let boundary = aliases.assume_condition(
-            ConditionTerm::uint64_equal(index, Bitvector32Term::UInt64Constant(5552)),
+            ConditionTerm::uint64_equal(index, Bitvector32Term::uint64_constant(5552)),
             true,
         );
         assert!(!resources.permits_memory_read(&query, 1, &boundary));
@@ -2471,7 +2471,7 @@ mod tests {
         let remaining = Bitvector32Term::Variable(Variable(983_712));
         let available = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_constant(0),
             whole.clone(),
             1,
         );
@@ -2484,8 +2484,8 @@ mod tests {
         let temporary = Pointer::symbolic(Variable(983_713));
         let required = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
             temporary.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
             1,
         ));
         let bounded = PureFactContext::new()
@@ -2493,7 +2493,7 @@ mod tests {
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     whole.clone(),
-                    Bitvector32Term::UInt64Constant(5551),
+                    Bitvector32Term::uint64_constant(5551),
                 ),
                 true,
             );
@@ -2502,7 +2502,10 @@ mod tests {
             true,
         );
         let facts = suffix.clone().assume_condition(
-            ConditionTerm::uint64_less_equal(Bitvector32Term::UInt64Constant(1), remaining.clone()),
+            ConditionTerm::uint64_less_equal(
+                Bitvector32Term::uint64_constant(1),
+                remaining.clone(),
+            ),
             true,
         );
         let held =
@@ -2526,7 +2529,7 @@ mod tests {
                 true,
             )
             .assume_condition(
-                ConditionTerm::uint64_less_equal(Bitvector32Term::UInt64Constant(1), remaining),
+                ConditionTerm::uint64_less_equal(Bitvector32Term::uint64_constant(1), remaining),
                 true,
             );
         assert!(

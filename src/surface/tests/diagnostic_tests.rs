@@ -593,7 +593,7 @@ fn click_addition_cancels_a_negated_pointer_base() {
     let negative_base = binary_node!(
         Int32,
         Subtract,
-        Box::new(Bitvector32Term::Constant(0)),
+        Box::new(Bitvector32Term::constant(0)),
         Box::new(base.clone()),
     );
 
@@ -796,7 +796,7 @@ fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
         super::checking::pointer_element_index_from_base(&field, &base, &PureFactContext::new())
     });
 
-    assert_eq!(index, Some(Bitvector32Term::Constant(1)));
+    assert_eq!(index, Some(Bitvector32Term::constant(1)));
 }
 
 #[test]
@@ -838,15 +838,15 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
             after: after.clone(),
             mutable_ranges: vec![CMemoryRange::new(
                 pointer.clone(),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )],
         }),
         ExecutionPureFact::new(Proposition::CHeapAllocationFreed {
             before,
             after,
             allocation_base: pointer,
-            bytes: Bitvector32Term::Constant(4),
+            bytes: Bitvector32Term::constant(4),
         }),
     ];
 
@@ -880,7 +880,7 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(term.clone()),
-                right: Box::new(Bitvector32Term::Constant(bound)),
+                right: Box::new(Bitvector32Term::constant(bound)),
             },
             true,
         )
@@ -922,8 +922,8 @@ fn verifier_diagnostics_bound_fact_items() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::Constant(index)),
-                    right: Box::new(Bitvector32Term::Constant(index)),
+                    left: Box::new(Bitvector32Term::constant(index)),
+                    right: Box::new(Bitvector32Term::constant(index)),
                 },
                 true,
             )
@@ -1276,8 +1276,8 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
     };
     let selected = CResourceFact::own_memory(CMemoryRange::new(
         pointer,
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(4),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(4),
     ));
     let diagnostic = LoanRefusal::ActiveDependency.diagnostic_with_subject(
         LoanRefusalOperation::MemoryAccess,
@@ -1304,8 +1304,8 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
             block: PointerBlock::Concrete("selected_range".to_string()),
             offset: PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::Constant(1),
-        Bitvector32Term::Constant(3),
+        Bitvector32Term::constant(1),
+        Bitvector32Term::constant(3),
     );
     let diagnostic = LoanRefusal::UnsupportedPartition.diagnostic_with_subject(
         LoanRefusalOperation::Plan,
@@ -1478,7 +1478,7 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(i.clone()),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         false,
     );
@@ -1526,8 +1526,8 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
             after,
             mutable_ranges: vec![CMemoryRange::new(
                 alias,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )],
         }),
     ];
@@ -1564,10 +1564,10 @@ fn a_conditional_term_spells_its_unsigned_guard() {
     let term = Bitvector32Term::If {
         condition: Box::new(ConditionTerm::unsigned_less_than(
             x.clone(),
-            Bitvector32Term::Constant(4),
+            Bitvector32Term::constant(4),
         )),
         then_term: Box::new(x),
-        else_term: Box::new(Bitvector32Term::Constant(5)),
+        else_term: Box::new(Bitvector32Term::constant(5)),
     };
     let rendered = super::diagnostics::describe_bitvector(&term);
     assert!(rendered.contains(" < 4 (unsigned)"), "{rendered}");
@@ -2032,8 +2032,8 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
     let range = CMemoryRange::new(
         base,
-        Bitvector32Term::Constant(1),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(1),
+        Bitvector32Term::constant(2),
     );
     assert_eq!(
         super::diagnostics::describe_memory_range(
@@ -2703,7 +2703,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     let before = CMemory::new();
     let blocked = before.clone().store(
         written.clone(),
-        CValue::UInt64(Bitvector32Term::UInt64Constant(42)),
+        CValue::UInt64(Bitvector32Term::uint64_constant(42)),
     );
     let after = blocked.clone().store(
         Pointer {
@@ -2906,8 +2906,8 @@ fn call_resource_diagnostic_read_shows_snapshot_and_access() {
     };
     let required = CResourceFact::View(crate::kernel::CResource::Memory(CMemoryRange::new(
         address,
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     )));
     let error = crate::kernel::CRuntimeError::ContractResourceDiagnostic {
         reason: "resource `child` argument 1 could not be evaluated: required access authority is unavailable".into(),
@@ -3285,7 +3285,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(Bitvector32Term::Constant(7)),
+            right: Box::new(Bitvector32Term::constant(7)),
         },
         true,
     );
@@ -4128,8 +4128,8 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
     for (start, end) in [(0, 4), (1, 3)] {
         let range = CMemoryRange::from_pointer_value(
             &pointer,
-            Bitvector32Term::Constant(start),
-            Bitvector32Term::Constant(end),
+            Bitvector32Term::constant(start),
+            Bitvector32Term::constant(end),
             8,
         );
         assert_eq!(

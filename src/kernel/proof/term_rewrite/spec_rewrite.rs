@@ -1996,7 +1996,7 @@ mod tests {
                 destination: MachineIntegerType::Int32,
             },
             operator: CComparisonOperator::Equal,
-            right: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(7))),
+            right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(7))),
         };
         let rewritten =
             rewrite_with_integer_replacement(source, IntegerTerm::constant_i64(7), &proposition)
@@ -2246,10 +2246,10 @@ mod tests {
             left: SpecIntegerExpression::RangeFold {
                 index: SpecIntegerRangeFoldIndex::Int32 {
                     start: Box::new(SpecExpression::Value(CValue::Int32(
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                     ))),
                     end: Box::new(SpecExpression::Value(CValue::Int32(
-                        Bitvector32Term::Constant(1),
+                        Bitvector32Term::constant(1),
                     ))),
                 },
                 initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::var(source))),

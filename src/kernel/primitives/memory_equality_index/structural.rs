@@ -3,6 +3,7 @@
 //! matches select occurrences; the existing judgments check every occurrence.
 use super::super::resource_algebra::{insert_resource_index_entry, remove_resource_index_entry};
 use super::*;
+use crate::kernel::{bits32_constant, int64_constant};
 
 type Key = (PointerBlock, u64);
 
@@ -95,10 +96,7 @@ fn plain_origin(mut offset: &PointerOffsetTerm) -> bool {
             | PointerOffsetTerm::Int64Scaled { value, .. } => {
                 return matches!(
                     value.as_ref(),
-                    Bitvector32Term::Variable(_)
-                        | Bitvector32Term::Constant(_)
-                        | Bitvector32Term::UInt32Constant(_)
-                        | Bitvector32Term::Int64Constant(_)
+                    Bitvector32Term::Variable(_) | bits32_constant!(_) | int64_constant!(_)
                 );
             }
             PointerOffsetTerm::Add(left, right) => {

@@ -629,19 +629,20 @@ application, and the `uint32` read is σ of it; an `int32` read of a cell
 storing a `uint32` value is σ of that value. Kernel-internal reads (index
 arithmetic, pointer words) are `Int32`.
 
-A 32-bit constant has a format too: `Bitvector32Term::Constant(v)` is
-`int32`, the format of every kernel-internal constant, and
-`Bitvector32Term::UInt32Constant(v)` is `uint32`. A C, C++ or Rust value at
-`uint32` takes `UInt32Constant`: literals, `MachineIntegerType::constant_term`
-and every conversion that folds to `uint32`, `kernel::uint32` and
-`value_from_term` (`Bitvector32Term::in_format32`). Inside an `int32`
-operator, comparison or overflow test a `uint32` constant is read as its
-bits' `Constant` (`into_word32`, `constant_word32`), and the e-graph
-interns both spellings as one atom (`MachineAtom::int32`), until constants
-carry their format (decision G9). The difference graph reads its value,
-and the kernel's matches on a 32-bit constant's bits read either format
-(`constant32`, `as_const`, or a `UInt32Constant` alternative beside the
-`Constant` pattern). A formatted constant prints in its own type
+A constant has a format: `Bitvector32Term::Constant { format, bits }` is
+one node for every format (decision G9), built by
+`Bitvector32Term::constant(v)` at `int32`, the format of every
+kernel-internal constant, `uint32_constant`, `int64_constant`,
+`uint64_constant` and `machine_constant`. A C, C++ or Rust value at
+`uint32` takes the `uint32` format: literals,
+`MachineIntegerType::constant_term` and every conversion that folds to
+`uint32`, `kernel::uint32` and `value_from_term`
+(`Bitvector32Term::in_format32`). Inside an `int32` operator, comparison or
+overflow test a `uint32` constant is read as the `int32` constant of its
+bits (`into_word32`, `constant_word32`), and the e-graph interns both as
+one atom (`MachineAtom::int32`). The difference graph reads its value, and
+the kernel's matches on a 32-bit constant's bits read either format
+(`constant32`, `as_const`, or `bits32_constant!`). A formatted constant prints in its own type
 (`4000000000u32`, not `-294967296`) wherever a renderer reaches it
 (`mdtests/a_uint32_constant_above_int32_max_is_stated_stored_and_read_as_itself.md`,
 `mdtests/cpp_a_uint32_constant_above_int32_max_is_stored_and_read_as_itself.md`,

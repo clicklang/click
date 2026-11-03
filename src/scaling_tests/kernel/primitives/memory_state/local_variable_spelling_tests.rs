@@ -14,7 +14,7 @@ fn local_variable_spelling_work_does_not_grow_with_declared_slots() {
             scalar(
                 state,
                 &format!("noise_{index:04}"),
-                CValue::Int32(Bitvector32Term::Constant(0)),
+                CValue::Int32(Bitvector32Term::constant(0)),
             )
         });
         let (name, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -36,7 +36,7 @@ fn local_variable_spelling_does_not_traverse_unrelated_symbolic_values_or_heap_r
             binary_node!(
                 Int32,
                 Add,
-                Box::new(Bitvector32Term::Constant(0)),
+                Box::new(Bitvector32Term::constant(0)),
                 Box::new(term)
             )
         });

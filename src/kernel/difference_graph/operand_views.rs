@@ -1,6 +1,7 @@
 //! Borrowed arithmetic queries over the existing difference graph.
 use super::*;
 use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+use crate::kernel::uint64_constant;
 use crate::kernel::{KernelMachineCastEncoding as E, MachineOperandView as V};
 
 fn format(domain: Domain) -> MachineIntegerType {
@@ -554,7 +555,7 @@ fn word_domain_view(term: V<'_>) -> Domain {
     if let V::Legacy(term) = term {
         return word_domain(term);
     }
-    if matches!(term.literal(), Some(Bitvector32Term::UInt64Constant(_)))
+    if matches!(term.literal(), Some(uint64_constant!(_)))
         || matches!(
             term.binary(),
             Some((
@@ -602,9 +603,9 @@ mod tests {
         for ty in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
             let word = |value: i64| {
                 if ty == MachineIntegerType::Int32 {
-                    Bitvector32Term::Constant(value as u32)
+                    Bitvector32Term::constant(value as u32)
                 } else {
-                    Bitvector32Term::Int64Constant(value)
+                    Bitvector32Term::int64_constant(value)
                 }
             };
             let x = Bitvector32Term::Variable(Variable(997801));
@@ -695,7 +696,7 @@ mod tests {
                         format: ty,
                         op,
                         left: Box::new(x.clone()),
-                        right: Box::new(Bitvector32Term::Constant(3)),
+                        right: Box::new(Bitvector32Term::constant(3)),
                     },
                 ));
             }
@@ -779,9 +780,9 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let two = match ty {
-                MachineIntegerType::Int64 => Bitvector32Term::Int64Constant(2),
-                MachineIntegerType::UInt64 => Bitvector32Term::UInt64Constant(2),
-                _ => Bitvector32Term::Constant(2),
+                MachineIntegerType::Int64 => Bitvector32Term::int64_constant(2),
+                MachineIntegerType::UInt64 => Bitvector32Term::uint64_constant(2),
+                _ => Bitvector32Term::constant(2),
             };
             let left = Bitvector32Term::Binary {
                 format: ty,

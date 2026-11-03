@@ -47,23 +47,23 @@ fn int32_addition_folds_literal_classes_using_bitvector_semantics() {
         for early in [false, true] {
             let mut graph = EqualityGraph::default();
             if early {
-                graph.add_int32_equality(&var(1), &Bitvector32Term::Constant(a));
-                graph.add_int32_equality(&var(2), &Bitvector32Term::Constant(b));
+                graph.add_int32_equality(&var(1), &Bitvector32Term::constant(a));
+                graph.add_int32_equality(&var(2), &Bitvector32Term::constant(b));
             }
             graph.add_int32_equality(&add(var(1), var(2)), &var(10));
             if !early {
-                graph.add_int32_equality(&Bitvector32Term::Constant(a), &var(1));
-                graph.add_int32_equality(&Bitvector32Term::Constant(b), &var(2));
+                graph.add_int32_equality(&Bitvector32Term::constant(a), &var(1));
+                graph.add_int32_equality(&Bitvector32Term::constant(b), &var(2));
             }
-            let result = Bitvector32Term::Constant(a.wrapping_add(b));
+            let result = Bitvector32Term::constant(a.wrapping_add(b));
             assert!(graph.are_int32_equal(&var(10), &result));
             assert!(graph.are_int32_equal(
-                &add(Bitvector32Term::Constant(a), Bitvector32Term::Constant(b)),
+                &add(Bitvector32Term::constant(a), Bitvector32Term::constant(b)),
                 &result
             ));
             assert!(!graph.are_int32_equal(
                 &var(10),
-                &Bitvector32Term::Constant(a.wrapping_add(b).wrapping_add(1))
+                &Bitvector32Term::constant(a.wrapping_add(b).wrapping_add(1))
             ));
         }
     }

@@ -2,6 +2,10 @@ use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
+    uint32_constant, uint64_constant,
+};
 use crate::surface::proof_diagnostics::render::{
     render_resource_diagnostic, render_resource_fact_diagnostic, render_resource_facts_diagnostic,
 };
@@ -2358,13 +2362,13 @@ fn struct_byte_bounds(
 fn pointer_offset_bytes(offset: &PointerOffsetTerm) -> Option<Bitvector32Term> {
     match offset {
         PointerOffsetTerm::Constant(bytes) => {
-            Some(Bitvector32Term::Constant(i32::try_from(*bytes).ok()? as u32))
+            Some(Bitvector32Term::constant(i32::try_from(*bytes).ok()? as u32))
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => Some(match byte_width {
             1 => value.as_ref().clone(),
             width => super::lowering::bitvector32_multiply(
                 value.as_ref().clone(),
-                Bitvector32Term::Constant(i32::try_from(*width).ok()? as u32),
+                Bitvector32Term::constant(i32::try_from(*width).ok()? as u32),
             ),
         }),
         PointerOffsetTerm::Add(left, right) => Some(bitvector32_add(
@@ -2420,9 +2424,7 @@ fn constant_addend(term: &Bitvector32Term) -> Option<i64> {
         return Some(i64::from(value as i32));
     }
     match term {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            Some(i64::from(*value as i32))
-        }
+        bits32_constant!(value) => Some(i64::from(constant_u32(*value) as i32)),
         binary_term!(Int32, Add, left, right) => {
             Some(constant_addend(left)? + constant_addend(right)?)
         }
@@ -2445,20 +2447,20 @@ fn subtract_constant(term: &Bitvector32Term, amount: u32) -> Option<Bitvector32T
         return Some(term.clone());
     }
     match term {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            Some(Bitvector32Term::Constant(value.wrapping_sub(amount)))
-        }
+        bits32_constant!(value) => Some(Bitvector32Term::constant(
+            constant_u32(*value).wrapping_sub(amount),
+        )),
         binary_term!(Int32, Add, left, right) => {
             if let Some(left) = left.as_const() {
                 return Some(bitvector32_add(
-                    Bitvector32Term::Constant(left.wrapping_sub(amount)),
+                    Bitvector32Term::constant(left.wrapping_sub(amount)),
                     right.as_ref().clone(),
                 ));
             }
             if let Some(right) = right.as_const() {
                 return Some(bitvector32_add(
                     left.as_ref().clone(),
-                    Bitvector32Term::Constant(right.wrapping_sub(amount)),
+                    Bitvector32Term::constant(right.wrapping_sub(amount)),
                 ));
             }
             None
@@ -2475,10 +2477,10 @@ fn exact_quotient(term: &Bitvector32Term, width: u32) -> Option<Bitvector32Term>
         return Some(term.clone());
     }
     match term {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            let value = *value as i32;
+        bits32_constant!(value) => {
+            let value = constant_u32(*value) as i32;
             (value % width as i32 == 0)
-                .then(|| Bitvector32Term::Constant((value / width as i32) as u32))
+                .then(|| Bitvector32Term::constant((value / width as i32) as u32))
         }
         binary_term!(Int32, Multiply, left, right) => {
             let (factor, constant) = match (left.as_const(), right.as_const()) {
@@ -2493,7 +2495,7 @@ fn exact_quotient(term: &Bitvector32Term, width: u32) -> Option<Bitvector32Term>
                 1 => factor.clone(),
                 multiple => super::lowering::bitvector32_multiply(
                     factor.clone(),
-                    Bitvector32Term::Constant(multiple),
+                    Bitvector32Term::constant(multiple),
                 ),
             })
         }
@@ -2801,11 +2803,11 @@ fn rescale_range_index(index: &Bitvector32Term, from: u32, to: u32) -> Option<Bi
     if from.is_multiple_of(to) {
         return Some(super::lowering::bitvector32_multiply(
             index.clone(),
-            Bitvector32Term::Constant(from / to),
+            Bitvector32Term::constant(from / to),
         ));
     }
     let bytes = i64::from(index.as_const()? as i32) * i64::from(from);
-    (bytes % i64::from(to) == 0).then(|| Bitvector32Term::Constant((bytes / i64::from(to)) as u32))
+    (bytes % i64::from(to) == 0).then(|| Bitvector32Term::constant((bytes / i64::from(to)) as u32))
 }
 
 fn parameter_relative_endpoints(
@@ -4913,7 +4915,7 @@ pub(in crate::surface) fn describe_pointer(
             base,
             diagnostic_parameter_element_width(parameter),
         ) {
-            let spelled = if index == Bitvector32Term::Constant(0) {
+            let spelled = if index == Bitvector32Term::constant(0) {
                 parameter.name().to_string()
             } else {
                 format!(
@@ -5049,7 +5051,7 @@ fn describe_parameter_struct_field_pointer(
             return None;
         }
         let field_offset = diagnostic_pointer_element_index_from_base(&loaded_at, base, 1)?;
-        (field_offset == Bitvector32Term::Constant(field.offset_bytes()))
+        (field_offset == Bitvector32Term::constant(field.offset_bytes()))
             .then(|| describe_field_place(parameter.name(), name))
     })
 }
@@ -5246,7 +5248,7 @@ pub(super) fn diagnostic_pointer_element_index_from_base(
     }
 
     if pointer.offset == base.offset {
-        return Some(Bitvector32Term::Constant(0));
+        return Some(Bitvector32Term::constant(0));
     }
 
     if base.offset == PointerOffsetTerm::Constant(0) {
@@ -5290,7 +5292,7 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
             let index = offset / byte_width;
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
-                .then_some(Bitvector32Term::Constant((index as i32) as u32))
+                .then_some(Bitvector32Term::constant((index as i32) as u32))
         }
         PointerOffsetTerm::Int32Scaled {
             value,
@@ -5374,10 +5376,8 @@ pub(super) fn describe_c_value(value: &CValue, parameter_binding: ParameterBindi
             describe_bitvector_with_context(value, parameter_binding),
             "u8",
         ),
-        CValue::UInt32(
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-        ) => {
-            format!("{value}u32")
+        CValue::UInt32(bits32_constant!(value)) => {
+            format!("{value}u32", value = constant_u32(*value))
         }
         CValue::UInt32(value) => typed_literal_spelling(
             describe_bitvector_with_context(value, parameter_binding),
@@ -5672,7 +5672,7 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             if target_type.is_pointer()
                 && matches!(
                     expression.as_ref(),
-                    CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0)))
+                    CExpression::Value(CValue::Int32(int32_constant!(0)))
                 )
             {
                 return "0".into();
@@ -6061,7 +6061,7 @@ fn loaded_pointer_split(address: &Pointer) -> Option<(Pointer, Bitvector32Term)>
     let (Some(variable), None) = (variables.next(), variables.next()) else {
         return None;
     };
-    let mut bytes = Bitvector32Term::Constant(0);
+    let mut bytes = Bitvector32Term::constant(0);
     for summand in summands.iter().filter(|summand| loaded(summand).is_none()) {
         bytes = bitvector32_add(bytes, pointer_offset_bytes(summand)?);
     }
@@ -7250,17 +7250,24 @@ pub(super) fn describe_bitvector_with_context(
             )
         ),
 
-        Bitvector32Term::Constant(value) => format!("{}", *value as i32),
-        Bitvector32Term::UInt32Constant(value) => format!("{value}u32"),
-        Bitvector32Term::Int64Constant(value) => format!("{value}i64"),
-        Bitvector32Term::UInt64Constant(value) => format!("{value}u64"),
-        Bitvector32Term::MachineIntegerConstant(value) if value.format().bits() < 32 => {
-            value.to_integer().to_string()
+        int32_constant!(value) => format!("{}", constant_u32(*value) as i32),
+        uint32_constant!(value) => format!("{value}u32", value = constant_u32(*value)),
+        int64_constant!(value) => format!("{value}i64", value = constant_i64(*value)),
+        uint64_constant!(value) => format!("{value}u64", value = constant_u64(*value)),
+        crate::kernel::native_constant!(format, bits) if format.format().bits() < 32 => {
+            crate::kernel::MachineIntegerConstant::from_term_bits(format.format(), *bits)
+                .to_integer()
+                .to_string()
         }
-        Bitvector32Term::MachineIntegerConstant(value) => format!(
+        crate::kernel::native_constant!(format, bits) => format!(
             "{}{}128",
-            value.to_integer(),
-            if value.format().is_signed() { "i" } else { "u" }
+            crate::kernel::MachineIntegerConstant::from_term_bits(format.format(), *bits)
+                .to_integer(),
+            if format.format().is_signed() {
+                "i"
+            } else {
+                "u"
+            }
         ),
         // A diagnostic prints the load represented by a load variable,
         // never the kernel variable's id.
@@ -7916,8 +7923,8 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(985_400));
         let wide = CMemoryRange::new_wide(
             base,
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(1 << 33),
             1,
         );
         assert!(describe_source_range(&wide, ParameterBinding::default()).is_none());

@@ -487,7 +487,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
                     .with_block(symbolic(70_000 + index), 16)
                     .store(
                         at(symbolic(70_000 + index), 0),
-                        CValue::Int32(Bitvector32Term::Constant(index as u32)),
+                        CValue::Int32(Bitvector32Term::constant(index as u32)),
                     ),
             );
             let loaded = name(&memory, at(symbolic(70_000 + index), 0));
@@ -741,7 +741,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         };
         let source = read(&raw.pointer().offset_by_bytes(24));
         let target = read(&model.offset_by_bytes(24));
-        let expected = Bitvector32Term::Constant(7);
+        let expected = Bitvector32Term::constant(7);
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_int32_equality(&source, &expected);
             graph.are_int32_equal(&target, &expected)
@@ -770,8 +770,8 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
                 domain
                     .opaque_coverage_fact(&crate::kernel::CMemoryRange::new(
                         at(symbolic(987_100 + id), 0),
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(1),
+                        Bitvector32Term::constant(0),
+                        Bitvector32Term::constant(1),
                     ))
                     .expect("coverage names the opaque domain"),
             ));

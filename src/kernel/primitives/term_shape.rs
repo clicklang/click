@@ -76,11 +76,7 @@ impl Bitvector32Term {
                 left,
                 right,
             } => Some((BitvectorBinaryOp::Float64(*operator), left, right)),
-            Self::Constant(_)
-            | Self::UInt32Constant(_)
-            | Self::Int64Constant(_)
-            | Self::UInt64Constant(_)
-            | Self::MachineIntegerConstant(_)
+            Bitvector32Term::Constant { .. }
             | Self::Variable(_)
             | Self::If { .. }
             | Self::RangeFold { .. }
@@ -133,11 +129,7 @@ impl Bitvector32Term {
                 },
                 value,
             )),
-            Self::Constant(_)
-            | Self::UInt32Constant(_)
-            | Self::Int64Constant(_)
-            | Self::UInt64Constant(_)
-            | Self::MachineIntegerConstant(_)
+            Bitvector32Term::Constant { .. }
             | Self::Variable(_)
             | Self::If { .. }
             | Self::RangeFold { .. }
@@ -667,9 +659,9 @@ mod tests {
     #[test]
     fn the_split_covers_exactly_the_arithmetic_variants() {
         let others = [
-            Bitvector32Term::Constant(1),
-            Bitvector32Term::Int64Constant(1),
-            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::constant(1),
+            Bitvector32Term::int64_constant(1),
+            Bitvector32Term::uint64_constant(1),
             variable(1),
             Bitvector32Term::If {
                 condition: Box::new(ConditionTerm::Constant(true)),

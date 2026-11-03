@@ -153,7 +153,7 @@ fn scaling_cell(block: &str, index: usize) -> Pointer {
 }
 
 fn scaling_value(index: usize) -> CValue {
-    CValue::UInt32(Bitvector32Term::Constant(index as u32))
+    CValue::UInt32(Bitvector32Term::constant(index as u32))
 }
 
 /// A memory holding one cell in each of `count` unrelated blocks.
@@ -401,11 +401,11 @@ fn with_initialized_allocation(memory: CMemory, identity: u64, value: u32) -> CM
         offset: PointerOffsetTerm::Constant(0),
     };
     let (memory, _, base) = memory
-        .with_pending_heap_allocation(pending.clone(), Bitvector32Term::Constant(16), false)
+        .with_pending_heap_allocation(pending.clone(), Bitvector32Term::constant(16), false)
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     assert_eq!(base, heap_cell(identity, 0));
-    memory.store(base, CValue::UInt32(Bitvector32Term::Constant(value)))
+    memory.store(base, CValue::UInt32(Bitvector32Term::constant(value)))
 }
 
 /// `unrelated` live allocations, each holding one initialized cell, and the
@@ -441,8 +441,8 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
             CMemoryRange::new(
                 heap_cell(TARGET_HEAP, 0),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(4),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(4),
             ),
         ));
         let state = CState::new()
@@ -454,7 +454,7 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
                 heap_cell(TARGET_HEAP, 4),
                 CType::UInt32Pointer,
             )),
-            value: CExpression::Value(CValue::UInt32(Bitvector32Term::Constant(9))),
+            value: CExpression::Value(CValue::UInt32(Bitvector32Term::constant(9))),
             value_type: CType::UInt32,
             volatile: false,
             pointee_constant: false,
@@ -494,14 +494,14 @@ fn one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types()
         let mut memory = memory_with_unrelated_allocations(size);
         for index in 0..size {
             let cell = heap_cell(index as u64 + 1, 0);
-            let value = CValue::UInt32(Bitvector32Term::Constant(index as u32));
+            let value = CValue::UInt32(Bitvector32Term::constant(index as u32));
             memory = memory.with_heap_effective_type(&cell, 4, Some(INT), &value);
         }
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(
             CMemoryRange::new(
                 heap_cell(TARGET_HEAP, 0),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(8),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(8),
             ),
         ));
         let state = CState::new()
@@ -514,7 +514,7 @@ fn one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types()
         let store = CStatement::TypedStore {
             access_class: Some(INT),
             pointer: pointer.clone(),
-            value: CExpression::Value(CValue::UInt32(Bitvector32Term::Constant(9))),
+            value: CExpression::Value(CValue::UInt32(Bitvector32Term::constant(9))),
             value_type: CType::UInt32,
             volatile: false,
             pointee_constant: false,
@@ -567,8 +567,8 @@ fn one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types()
 fn target_range() -> CMemoryRange {
     CMemoryRange::new_with_element_width(
         heap_cell(TARGET_HEAP, 0),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(16),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(16),
         1,
     )
 }
@@ -652,7 +652,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
                 .expect("the claim registers")
                 .store(
                     heap_cell(TARGET_HEAP, 0),
-                    CValue::UInt32(Bitvector32Term::Constant(7)),
+                    CValue::UInt32(Bitvector32Term::constant(7)),
                 )
         };
         let _session = crate::kernel::VerificationSession::enter();
@@ -677,7 +677,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
         assert_eq!(paths.len(), 1);
         assert_eq!(
             paths[0].outcome,
-            CExpressionOutcome::Value(CValue::UInt32(Bitvector32Term::Constant(7)))
+            CExpressionOutcome::Value(CValue::UInt32(Bitvector32Term::constant(7)))
         );
         known.push((size, work));
         let (paths, work) = load(8);
@@ -714,7 +714,7 @@ fn owned_parameter_objects_and_a_region_store(
     let data = parameter(97_901);
     let length = Bitvector32Term::Variable(Variable(97_902));
     let index = Bitvector32Term::Variable(Variable(97_903));
-    let field = |object: &Pointer| object.offset_by_elements(Bitvector32Term::Constant(1), 4);
+    let field = |object: &Pointer| object.offset_by_elements(Bitvector32Term::constant(1), 4);
     let mut cells = objects.iter().map(field).collect::<Vec<_>>();
     cells.push(field(&region));
     let memory = cells
@@ -726,8 +726,8 @@ fn owned_parameter_objects_and_a_region_store(
     let object_range = |base: &Pointer, elements: u32| {
         CMemoryRange::new(
             base.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(elements),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(elements),
         )
     };
     let composition = objects
@@ -737,14 +737,14 @@ fn owned_parameter_objects_and_a_region_store(
             CResourceFact::own_memory(object_range(&region, 3)),
             CResourceFact::own_memory(CMemoryRange::new(
                 data.clone(),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
                 length.clone(),
             )),
         ])
         .fold(ResourceContext::new(), ResourceContext::unchecked_with_fact);
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), index.clone()),
             true,
         )
         .assume_condition(ConditionTerm::signed_less_than(index.clone(), length), true)
@@ -859,12 +859,12 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
     let int32_range = |base: &Pointer, end: u32| {
         CMemoryRange::new_with_element_width(
             base.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(end),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(end),
             4,
         )
     };
-    let bytes = Bitvector32Term::Constant(4);
+    let bytes = Bitvector32Term::constant(4);
     let assumptions = PureFactContext::new();
     let mut last_call_samples = Vec::new();
     let mut total_samples = Vec::new();
@@ -981,14 +981,14 @@ fn retirement_admits_a_view_of_a_kept_owned_range() {
     let int32_range = |base: &Pointer, end: u32| {
         CMemoryRange::new_with_element_width(
             base.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(end),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(end),
             4,
         )
     };
     let data = external(5_300_000);
     let descriptor = external(5_300_001);
-    let bytes = Bitvector32Term::Constant(8);
+    let bytes = Bitvector32Term::constant(8);
     let assumptions = PureFactContext::new();
     let lent = ResourceContext::new()
         .unchecked_with_fact(CResourceFact::own_memory(int32_range(&data, 2)));
@@ -1046,7 +1046,7 @@ fn unrelated_condition_facts(count: usize) -> PureFactContext {
             |offset: u64| Bitvector32Term::Variable(Variable(96_000 + 3 * index + offset));
         facts
             .assume_condition(
-                ConditionTerm::signed_less_equal(variable(0), Bitvector32Term::Constant(1_000)),
+                ConditionTerm::signed_less_equal(variable(0), Bitvector32Term::constant(1_000)),
                 true,
             )
             .assume_condition(ConditionTerm::equal(variable(1), variable(2)), true)
@@ -1134,8 +1134,8 @@ fn condition_fact_queries_ignore_unrelated_facts() {
                 facts.pointer_in_range_with_width(
                     &symbolic,
                     &argument,
-                    &Bitvector32Term::Constant(0),
-                    &Bitvector32Term::Constant(1),
+                    &Bitvector32Term::constant(0),
+                    &Bitvector32Term::constant(1),
                     4,
                 )
             },
@@ -1175,8 +1175,8 @@ fn external_field(identity: u64, bytes: i64) -> Pointer {
 fn external_range(identity: u64, start: u32, end: u32) -> CMemoryRange {
     CMemoryRange::new(
         external_object(identity),
-        Bitvector32Term::Constant(start),
-        Bitvector32Term::Constant(end),
+        Bitvector32Term::constant(start),
+        Bitvector32Term::constant(end),
     )
 }
 
@@ -1194,7 +1194,7 @@ fn kept_call_havoc_work(residual: ResourceContext) -> (usize, usize) {
     );
     let memory = CMemory::new().store(
         external_field(KEPT_MEMBER, 8),
-        CValue::Int32(Bitvector32Term::Constant(5)),
+        CValue::Int32(Bitvector32Term::constant(5)),
     );
     // The callee's footprint shares the parameters' block, so the
     // separation rule cannot keep the cell on its own.
@@ -1264,8 +1264,8 @@ fn a_call_records_kept_members_without_visiting_unrelated_residual_resources() {
                     [
                         CResourceFact::own_memory(CMemoryRange::new(
                             heap_cell(index as u64 + 1, 0),
-                            Bitvector32Term::Constant(0),
-                            Bitvector32Term::Constant(4),
+                            Bitvector32Term::constant(0),
+                            Bitvector32Term::constant(4),
                         )),
                         CResourceFact::view_memory(external_range(index as u64 + 1, 0, 4)),
                     ]
@@ -1320,7 +1320,7 @@ fn a_call_rechecks_cached_members_after_ownership_withdrawal_or_width_change() {
     let writes = [external_range(3_000_000, 0, 16)];
     let changed = memory.clone().store(
         pointer.clone(),
-        CValue::Int64(Bitvector32Term::Int64Constant(9)),
+        CValue::Int64(Bitvector32Term::int64_constant(9)),
     );
     for (before, residual, retained) in
         [
@@ -1383,7 +1383,7 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
             Bitvector32Term::Variable(Variable(START_FIELD)),
             Bitvector32Term::add(
                 Bitvector32Term::Variable(Variable(START_FIELD)),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(1),
             ),
         );
         // The body facts: `region->start == start` and `size` unrelated ones.
@@ -1399,7 +1399,7 @@ fn a_call_kept_instance_range_is_placed_in_work_linear_in_its_body() {
         .chain((0..size).map(|index| {
             (
                 ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                     Bitvector32Term::Variable(Variable(REGION + 1 + index as u64)),
                 ),
                 true,
@@ -1508,7 +1508,7 @@ fn wide_range_membership_ignores_unrelated_index_bounds() {
         let end = Bitvector32Term::Variable(Variable(96_102));
         let range = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_constant(0),
             end.clone(),
             4,
         );
@@ -1521,7 +1521,7 @@ fn wide_range_membership_ignores_unrelated_index_bounds() {
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     end.clone(),
-                    Bitvector32Term::UInt64Constant(i64::MAX as u64 / 4),
+                    Bitvector32Term::uint64_constant(i64::MAX as u64 / 4),
                 ),
                 true,
             );
@@ -1663,7 +1663,7 @@ fn extending_a_cloned_context_leaves_the_original_propositions() {
 fn wide_order_walk_ignores_uint64_bounds_of_other_indices() {
     let variable = |id: u64| Bitvector32Term::Variable(Variable(97_600 + id));
     let (x, n) = (variable(0), variable(1));
-    let four = Bitvector32Term::UInt64Constant(4);
+    let four = Bitvector32Term::uint64_constant(4);
     let bounded = |facts: PureFactContext, index: &Bitvector32Term| {
         facts.assume_condition(
             ConditionTerm::uint64_less_than(index.clone(), n.clone()),
@@ -1762,7 +1762,7 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
         let count = Bitvector32Term::Variable(Variable(983_302));
         let available = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_constant(0),
             n.clone(),
             4,
         );
@@ -1773,7 +1773,7 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
                 true,
                 true,
             ),
-            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_constant(0),
             count.clone(),
             4,
         );
@@ -1781,7 +1781,7 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
             .assume_condition(
                 ConditionTerm::uint64_less_equal(
                     n.clone(),
-                    Bitvector32Term::UInt64Constant(i64::MAX as u64 / 4),
+                    Bitvector32Term::uint64_constant(i64::MAX as u64 / 4),
                 ),
                 true,
             )
@@ -1791,7 +1791,7 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
             );
         let offset_suffix = CMemoryRange::new_wide(
             base.offset_by_typed_elements(count.clone(), 4, true, true),
-            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_constant(0),
             Bitvector32Term::uint64_subtract(n.clone(), count),
             4,
         );
@@ -1838,7 +1838,7 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
         let pointer = scaling_cell("global:wide-observer", 0);
         let memory = CMemory::new().store(
             pointer.clone(),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(3)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(3)),
         );
         let load = |memory| {
             Bitvector32Term::MemoryLoad(
@@ -1850,7 +1850,7 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
         let before = load(memory.clone());
         let after = load(memory.store(
             scaling_cell("global:beside-wide-observer", 0),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(9)),
         ));
         let observer = Bitvector32Term::Variable(Variable(985_002));
         let mut facts = PureFactContext::new()
@@ -1859,7 +1859,7 @@ fn wide_range_observer_transport_ignores_unrelated_equalities() {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_equal(
                     Bitvector32Term::Variable(Variable(986_000 + index)),
-                    Bitvector32Term::UInt64Constant(index),
+                    Bitvector32Term::uint64_constant(index),
                 ),
                 true,
             );
@@ -2032,7 +2032,7 @@ fn a_symbolic_store_skips_locals_whose_address_is_never_taken() {
 fn open_sided_condition_queries_read_only_their_variables_facts() {
     let variable = |id: u64| Bitvector32Term::Variable(Variable(96_000 + id));
     let successor =
-        |term: Bitvector32Term| Bitvector32Term::add(term, Bitvector32Term::Constant(1));
+        |term: Bitvector32Term| Bitvector32Term::add(term, Bitvector32Term::constant(1));
     let (a, x, y) = (variable(0), variable(1), variable(2));
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {

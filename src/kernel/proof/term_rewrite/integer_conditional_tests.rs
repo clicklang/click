@@ -14,7 +14,7 @@ fn is_zero(id: u64) -> ConditionTerm {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(Bitvector32Term::Variable(Variable(id))),
-        right: Box::new(Bitvector32Term::Constant(0)),
+        right: Box::new(Bitvector32Term::constant(0)),
     }
 }
 
@@ -67,7 +67,7 @@ fn integer_conditional_is_built_only_when_undecided_with_distinct_arms() {
 fn integer_conditional_is_one_arm_once_a_rewrite_decides_its_condition() {
     let conditional = IntegerTerm::if_then_else(is_zero(7), successor(1), integer(2));
     let variable = Bitvector32Term::Variable(Variable(7));
-    let (zero, one) = (Bitvector32Term::Constant(0), Bitvector32Term::Constant(1));
+    let (zero, one) = (Bitvector32Term::constant(0), Bitvector32Term::constant(1));
     assert_eq!(
         TermRewrite::for_bits(&variable, &zero).integer(&conditional),
         successor(1)

@@ -182,7 +182,7 @@ mod tests {
     fn an_operator_keeps_its_sign_cast_and_an_index_records_its_peel() {
         let x = Bitvector32Term::Variable(Variable(1));
         let plain = capture(|| {
-            let _ = Bitvector32Term::add(x.clone(), Bitvector32Term::Constant(1));
+            let _ = Bitvector32Term::add(x.clone(), Bitvector32Term::constant(1));
         });
         assert!(plain.is_empty(), "{plain:?}");
         let sigma = Bitvector32Term::sign_cast32(
@@ -194,7 +194,7 @@ mod tests {
         let lines = capture(|| {
             sum = Some(Bitvector32Term::add(
                 sigma.clone(),
-                Bitvector32Term::UInt32Constant(1),
+                Bitvector32Term::uint32_constant(1),
             ));
         });
         assert_eq!(kinds(&lines), vec!["uint32-constant-peeled"], "{lines:?}");
@@ -247,7 +247,7 @@ mod tests {
         let lines = capture(|| {
             let _ = IntegerTerm::from_machine(
                 MachineIntegerType::UInt8,
-                Bitvector32Term::add(a.clone(), Bitvector32Term::Constant(1)),
+                Bitvector32Term::add(a.clone(), Bitvector32Term::constant(1)),
             );
         });
         assert_eq!(kinds(&lines), vec!["narrow-value-as-word"], "{lines:?}");
@@ -265,7 +265,7 @@ mod tests {
             );
             crate::kernel::uint32(Bitvector32Term::multiply(
                 sigma,
-                Bitvector32Term::UInt32Constant(7),
+                Bitvector32Term::uint32_constant(7),
             ))
         };
         let (off, off_work) = crate::instrumentation::measure_deterministic_work(build);

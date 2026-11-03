@@ -63,7 +63,7 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(terms.pop().unwrap()),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         };
         let ((context, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {

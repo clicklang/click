@@ -19,7 +19,7 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         )
@@ -117,7 +117,7 @@ fn same_block_offset_rewrite_work(
                 value: Box::new(binary_node!(
                     Int32,
                     Subtract,
-                    Box::new(Bitvector32Term::Constant(4)),
+                    Box::new(Bitvector32Term::constant(4)),
                     Box::new(k.clone()),
                 )),
                 byte_width: 4,
@@ -145,7 +145,7 @@ fn same_block_offset_rewrite_work(
                                     value: Box::new(binary_node!(
                                         Int32,
                                         Subtract,
-                                        Box::new(Bitvector32Term::Constant(4)),
+                                        Box::new(Bitvector32Term::constant(4)),
                                         Box::new(old.clone()),
                                     )),
                                     byte_width: 4,
@@ -161,7 +161,7 @@ fn same_block_offset_rewrite_work(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(old),
-                        right: Box::new(Bitvector32Term::Constant(4)),
+                        right: Box::new(Bitvector32Term::constant(4)),
                     },
                     true,
                 ),
@@ -173,7 +173,7 @@ fn same_block_offset_rewrite_work(
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(k),
-            right: Box::new(Bitvector32Term::Constant(4)),
+            right: Box::new(Bitvector32Term::constant(4)),
         },
         true,
     );
@@ -309,8 +309,8 @@ fn both_and_scopes_are_isolated_check_provenance_and_scale() {
     let context = pure_identity_fixture();
     let truth = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     let other = Proposition::Equal(
-        Term::Bitvector32(Bitvector32Term::Constant(7)),
-        Term::Bitvector32(Bitvector32Term::Constant(7)),
+        Term::Bitvector32(Bitvector32Term::constant(7)),
+        Term::Bitvector32(Bitvector32Term::constant(7)),
     );
     let goal = Proposition::And(Box::new(truth.clone()), Box::new(other.clone()));
     let samples = [16, 32, 64, 128].map(|size| {
@@ -403,7 +403,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_less_than(
             Bitvector32Term::Variable(crate::kernel::Variable(1_000_000)),
-            Bitvector32Term::UInt64Constant(22208),
+            Bitvector32Term::uint64_constant(22208),
         ),
         true,
     );
@@ -415,7 +415,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
                 Proposition::ConditionIs(
                     ConditionTerm::uint64_less_than(
                         Bitvector32Term::Variable(crate::kernel::Variable(1_000_000)),
-                        Bitvector32Term::UInt64Constant(22209 + u64::from(index)),
+                        Bitvector32Term::uint64_constant(22209 + u64::from(index)),
                     ),
                     true,
                 )
@@ -531,7 +531,7 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
                             left: Box::new(Bitvector32Term::Variable(chosen_variable)),
-                            right: Box::new(Bitvector32Term::Constant(index)),
+                            right: Box::new(Bitvector32Term::constant(index)),
                         },
                         true,
                     )
@@ -947,8 +947,8 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
     let state = CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
         CResourceFact::own_memory(CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
     ));
     let arguments = vec![
@@ -1145,7 +1145,7 @@ fn snapshot_premise_synthesis_seeks_near_anchor_without_scanning_history() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(value),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         true,
     );
@@ -1222,7 +1222,7 @@ fn missing_snapshot_premise_spelling_has_bounded_history_search() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(Variable(8_178_903))),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         true,
     );
@@ -1273,7 +1273,7 @@ fn snapshot_premise_candidates_stop_on_deterministic_work_exhaustion() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(value),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         true,
     );
@@ -1354,7 +1354,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
     let theorem_environment = TheoremEnvironment::new(&[]);
     let x = Bitvector32Term::Variable(Variable(9_920_000));
     let y = Bitvector32Term::Variable(Variable(9_920_001));
-    let bound = Bitvector32Term::UInt64Constant(22208);
+    let bound = Bitvector32Term::uint64_constant(22208);
     let equality = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
@@ -1463,25 +1463,25 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
     let pointer = Pointer::symbolic(Variable(812_000));
     let original = Bitvector32Term::Variable(Variable(812_001));
     let remaining =
-        Bitvector32Term::uint64_subtract(original.clone(), Bitvector32Term::UInt64Constant(16));
+        Bitvector32Term::uint64_subtract(original.clone(), Bitvector32Term::uint64_constant(16));
     // The source retains `16 + len`, including when len stores `original - 16`.
     // Algebraic cancellation is a comparison rule, not the source's term.
     let extent = Bitvector32Term::logical_machine_binary(
         crate::kernel::MachineIntegerType::UInt64,
         crate::kernel::MachineBinaryOp::Add,
-        Bitvector32Term::UInt64Constant(16),
+        Bitvector32Term::uint64_constant(16),
         remaining.clone(),
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::uint64_less_equal(extent, Bitvector32Term::UInt64Constant(i64::MAX as u64)),
+        ConditionTerm::uint64_less_equal(extent, Bitvector32Term::uint64_constant(i64::MAX as u64)),
         true,
     );
     let obligation = crate::kernel::ProofObligation::new(goal.clone());
     let base = CExpression::Variable("buf".into());
-    let start = CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(0)));
+    let start = CExpression::Value(CValue::UInt64(Bitvector32Term::uint64_constant(0)));
     let end = CExpression::Add(
         Box::new(CExpression::Value(CValue::UInt64(
-            Bitvector32Term::UInt64Constant(16),
+            Bitvector32Term::uint64_constant(16),
         ))),
         Box::new(CExpression::Variable("len".into())),
     );
@@ -1559,8 +1559,8 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
     let theorems = TheoremEnvironment::new(&[]);
     let entry_len = Bitvector32Term::Variable(Variable(813_000));
     let current_len =
-        Bitvector32Term::uint64_subtract(entry_len.clone(), Bitvector32Term::UInt64Constant(16));
-    let limit = Bitvector32Term::UInt64Constant(22208);
+        Bitvector32Term::uint64_subtract(entry_len.clone(), Bitvector32Term::uint64_constant(16));
+    let limit = Bitvector32Term::uint64_constant(22208);
     let bound = |length| {
         Proposition::ConditionIs(
             ConditionTerm::uint64_less_equal(length, limit.clone()),
@@ -1708,7 +1708,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         let sum = reads
             .iter()
             .cloned()
-            .fold(Bitvector32Term::Constant(0), |sum, read| {
+            .fold(Bitvector32Term::constant(0), |sum, read| {
                 binary_node!(Int32, Add, Box::new(sum), Box::new(read))
             });
         let goal = Proposition::ConditionIs(
@@ -1716,7 +1716,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(sum),
-                right: Box::new(Bitvector32Term::Constant(7)),
+                right: Box::new(Bitvector32Term::constant(7)),
             },
             true,
         );
@@ -1818,7 +1818,7 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_snapshots() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(value),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         )
@@ -1916,7 +1916,7 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_snapshots() {
             entry
                 .memory()
                 .clone()
-                .store(pointer, CValue::UInt32(Bitvector32Term::Constant(5))),
+                .store(pointer, CValue::UInt32(Bitvector32Term::constant(5))),
         )
         .with_local(
             "now",
@@ -2015,7 +2015,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 Box::new(Bitvector32Term::Variable(Variable(
                     8_179_600 + index as u64,
                 ))),
-                Box::new(Bitvector32Term::Constant(7)),
+                Box::new(Bitvector32Term::constant(7)),
             );
             memory = memory.store(pointer.clone(), CValue::UInt32(stored.clone()));
             let load = Bitvector32Term::MemoryLoad(
@@ -2078,7 +2078,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                     Int32,
                     Add,
                     right.clone(),
-                    Box::new(Bitvector32Term::Constant(1))
+                    Box::new(Bitvector32Term::constant(1))
                 ))
             },
             true
@@ -2122,7 +2122,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         let sum = reads
             .iter()
             .cloned()
-            .fold(Bitvector32Term::Constant(0), |sum, read| {
+            .fold(Bitvector32Term::constant(0), |sum, read| {
                 binary_node!(Int32, Add, Box::new(sum), Box::new(read))
             });
         let goal = Proposition::ConditionIs(
@@ -2130,7 +2130,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(sum),
-                right: Box::new(Bitvector32Term::Constant(7)),
+                right: Box::new(Bitvector32Term::constant(7)),
             },
             true,
         );
@@ -2342,7 +2342,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
                         Int32,
                         Add,
                         Box::new(words[base].clone()),
-                        Box::new(Bitvector32Term::Constant(1)),
+                        Box::new(Bitvector32Term::constant(1)),
                     )),
                 }
             } else {
@@ -2554,7 +2554,7 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: Box::new(term.clone()),
-            right: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(Bitvector32Term::constant(1)),
         },
         true,
     );

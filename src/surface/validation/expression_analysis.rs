@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::PredicateEnvironment;
 use std::collections::BTreeSet;
 
@@ -1109,13 +1110,12 @@ fn contract_expression_variable(expression: &ContractExpression) -> Option<&str>
 }
 
 fn contract_expression_int32_constant(expression: &ContractExpression) -> Option<i64> {
-    let CExpression::Value(CValue::Int32(
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-    )) = contract_expression_as_c_fragment(expression)?
+    let CExpression::Value(CValue::Int32(bits32_constant!(value))) =
+        contract_expression_as_c_fragment(expression)?
     else {
         return None;
     };
-    Some(i64::from(value as i32))
+    Some(i64::from(constant_u32(value) as i32))
 }
 
 fn component_internal_call(

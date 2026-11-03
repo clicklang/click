@@ -238,15 +238,14 @@ impl crate::kernel::Bitvector32Term {
     /// 1 (rule C1). `None` for every other term. One match on the root.
     pub(crate) fn bool_constant_value(&self) -> Option<bool> {
         match self {
-            Self::MachineIntegerConstant(constant)
-                if constant.format() == crate::kernel::MachineIntegerType::UInt8.format() =>
-            {
-                match constant.to_i128()? {
-                    0 => Some(false),
-                    1 => Some(true),
-                    _ => None,
-                }
-            }
+            Self::Constant {
+                format: crate::kernel::MachineIntegerType::UInt8,
+                bits,
+            } => match bits {
+                0 => Some(false),
+                1 => Some(true),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -361,13 +360,13 @@ impl ConditionTerm {
                 )
             }
             CValue::Int32(word) | CValue::UInt32(word) => {
-                Self::equal(word.clone(), Bitvector32Term::Constant(0))
+                Self::equal(word.clone(), Bitvector32Term::constant(0))
             }
             CValue::Int64(word) => {
-                Self::int64_equal(word.clone(), Bitvector32Term::Int64Constant(0))
+                Self::int64_equal(word.clone(), Bitvector32Term::int64_constant(0))
             }
             CValue::UInt64(word) => {
-                Self::uint64_equal(word.clone(), Bitvector32Term::UInt64Constant(0))
+                Self::uint64_equal(word.clone(), Bitvector32Term::uint64_constant(0))
             }
             value @ (CValue::Int128(word) | CValue::UInt128(word)) => {
                 let source = MachineIntegerType::from_c_type(value.c_type())?;

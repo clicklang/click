@@ -16,7 +16,7 @@ fn graph_overflow_queries_visit_shared_dag_nodes_once() {
             );
         }
         let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
-        let zero = Bitvector32Term::Constant(0);
+        let zero = Bitvector32Term::constant(0);
         let query = OverflowQueryView::from_operands(
             ty,
             Op::Add,

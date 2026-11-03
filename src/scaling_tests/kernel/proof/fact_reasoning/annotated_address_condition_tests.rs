@@ -14,7 +14,7 @@ fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() 
             Proposition::ConditionIs(
                 ConditionTerm::uint64_equal(
                     Bitvector32Term::Variable(Variable(982_000 + index)),
-                    Bitvector32Term::UInt64Constant(index),
+                    Bitvector32Term::uint64_constant(index),
                 ),
                 true,
             )

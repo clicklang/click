@@ -129,11 +129,11 @@ fn pointer_read_rewrite_preserves_value_snapshot_and_scales() {
         for i in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(220_000 + i)),
-                CValue::Int32(Bitvector32Term::Constant(7)),
+                CValue::Int32(Bitvector32Term::constant(7)),
             );
             facts = facts.with_fact(equality(
                 Bitvector32Term::Variable(Variable(230_000 + i)),
-                Bitvector32Term::Constant(i as u32),
+                Bitvector32Term::constant(i as u32),
             ));
         }
         let context = PureFactContext::new();
@@ -251,7 +251,7 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
             for i in 0..ambient {
                 facts = facts.with_fact(equality(
                     Bitvector32Term::Variable(Variable(194_000 + i)),
-                    Bitvector32Term::Constant(i as u32),
+                    Bitvector32Term::constant(i as u32),
                 ));
             }
             facts
@@ -277,8 +277,8 @@ fn native_equality_rewrite_preserves_wide_order_and_truth_value() {
         });
     for make in comparisons {
         for bound in [
-            Bitvector32Term::Int64Constant(i64::MIN),
-            Bitvector32Term::UInt64Constant(u64::MAX),
+            Bitvector32Term::int64_constant(i64::MIN),
+            Bitvector32Term::uint64_constant(u64::MAX),
         ] {
             for truth in [false, true] {
                 let goal = Proposition::ConditionIs(
@@ -350,7 +350,7 @@ fn native_integer_bound_rewrite_is_dag_linear_and_budget_checked() {
             for i in 0..ambient {
                 facts = facts.with_fact(equality(
                     Bitvector32Term::Variable(Variable(195_000 + i)),
-                    Bitvector32Term::Constant(i as u32),
+                    Bitvector32Term::constant(i as u32),
                 ));
             }
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -437,7 +437,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
     let after = before.clone().with_block("local:rewrite-unrelated", 4);
     let changed = after.clone().store(
         pointer.clone(),
-        CValue::Int32(Bitvector32Term::Constant(43)),
+        CValue::Int32(Bitvector32Term::constant(43)),
     );
     let load = |memory: &CMemory| {
         Bitvector32Term::MemoryLoad(
@@ -446,15 +446,15 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
             crate::kernel::LoadKind::Int32,
         )
     };
-    let premise = equality(load(&before), Bitvector32Term::Constant(42));
-    let goal = equality(load(&after), Bitvector32Term::Constant(42));
+    let premise = equality(load(&before), Bitvector32Term::constant(42));
+    let goal = equality(load(&after), Bitvector32Term::constant(42));
     let mut costs = vec![];
     for size in [16u64, 64, 256, 1024] {
         let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&premise));
         for index in 0..size {
             facts = facts.with_fact(equality(
                 Bitvector32Term::Variable(Variable(80_000 + index)),
-                Bitvector32Term::Constant(index as u32),
+                Bitvector32Term::constant(index as u32),
             ));
         }
         crate::kernel::eval::clear_load_canonicalization_caches();
@@ -468,7 +468,7 @@ fn cited_read_rewrite_requires_unchanged_cells_and_its_named_premise() {
         assert!(
             facts
                 .check_equality_rewrite(
-                    &equality(load(&changed), Bitvector32Term::Constant(42)),
+                    &equality(load(&changed), Bitvector32Term::constant(42)),
                     &premise
                 )
                 .is_err()
@@ -523,7 +523,7 @@ fn same_block_pointer_view_rewrite_preserves_extent_and_selected_work() {
         for index in 0..size {
             facts = facts.with_fact(equality(
                 Bitvector32Term::Variable(Variable(210_000 + index)),
-                Bitvector32Term::Constant(index as u32),
+                Bitvector32Term::constant(index as u32),
             ));
         }
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -578,7 +578,7 @@ fn pointer_view_rewrite_preserves_snapshot_extent_and_ambient_scaling() {
         for index in 0..size {
             facts = facts.with_fact(equality(
                 Bitvector32Term::Variable(Variable(200_000 + index)),
-                Bitvector32Term::Constant(index as u32),
+                Bitvector32Term::constant(index as u32),
             ));
         }
         let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -627,7 +627,7 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_snapshots() {
                     count
                 ],
             },
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(1),
         )
     };
     let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
@@ -691,15 +691,15 @@ fn pointer_rewrite_enters_scalar_calls_and_preserves_scope_and_snapshots() {
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn checked_rewrite_does_not_scan_or_rebuild_ambient_facts() {
     let x = Bitvector32Term::Variable(Variable(921));
-    let cited = equality(x.clone(), Bitvector32Term::Constant(7));
-    let goal = equality(x, Bitvector32Term::Constant(9));
+    let cited = equality(x.clone(), Bitvector32Term::constant(7));
+    let goal = equality(x, Bitvector32Term::constant(9));
     let mut costs = Vec::new();
     for size in [16u64, 64, 256, 1024] {
         let mut facts = ProofFacts::default();
         for index in 0..size {
             facts = facts.with_fact(equality(
                 Bitvector32Term::Variable(Variable(10_000 + index)),
-                Bitvector32Term::Constant(index as u32),
+                Bitvector32Term::constant(index as u32),
             ));
         }
         facts = facts.with_fact(cited.clone());
@@ -752,7 +752,7 @@ fn rewrite_capture_collection_does_not_visit_snapshot_contents() {
 #[test]
 fn rewrite_integer_application_endpoint_keeps_byte_snapshot_and_ignores_its_contents() {
     let index = Bitvector32Term::Variable(Variable(47));
-    let replacement = Bitvector32Term::Constant(9);
+    let replacement = Bitvector32Term::constant(9);
     let equality = Proposition::ConditionIs(
         ConditionTerm::equal(index.clone(), replacement.clone()),
         true,
@@ -763,7 +763,7 @@ fn rewrite_integer_application_endpoint_keeps_byte_snapshot_and_ignores_its_cont
         for i in 0..size {
             memory = memory.store(
                 Pointer::symbolic(Variable(300000 + i)),
-                CValue::Int32(Bitvector32Term::Constant(i as u32)),
+                CValue::Int32(Bitvector32Term::constant(i as u32)),
             );
         }
         let array = PureFunctionArgument::ArrayRef {

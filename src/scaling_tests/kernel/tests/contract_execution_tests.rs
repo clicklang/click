@@ -131,7 +131,7 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(961_000 + index)),
-                    Bitvector32Term::Constant(index as u32),
+                    Bitvector32Term::constant(index as u32),
                 ),
                 true,
             );
@@ -152,9 +152,9 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
     );
     // The sequential total can be in range while the regrouped inner sum
     // overflows: MIN + MAX + 1 == 0 is not a license to evaluate MAX + 1.
-    let a = Bitvector32Term::Constant(i32::MIN as u32);
-    let b = Bitvector32Term::Constant(i32::MAX as u32);
-    let c = Bitvector32Term::Constant(1);
+    let a = Bitvector32Term::constant(i32::MIN as u32);
+    let b = Bitvector32Term::constant(i32::MAX as u32);
+    let c = Bitvector32Term::constant(1);
     let goal = Proposition::ConditionIs(
         ConditionTerm::signed_add_overflows(a, Bitvector32Term::add(b, c)),
         false,

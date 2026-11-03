@@ -3,6 +3,7 @@ use super::loans::{
     empty_checked_loan_evidence_sequence,
 };
 use super::prelude::*;
+use crate::kernel::int32_constant;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[cfg(test)]
@@ -866,7 +867,7 @@ fn execute_modeled_pthread_mutex_paths(
         } else if initializing
             && !matches!(&path.values[1],
                 CValue::Pointer(pointer) if pointer.is_null())
-            && !matches!(&path.values[1], CValue::Int32(Bitvector32Term::Constant(0)))
+            && !matches!(&path.values[1], CValue::Int32(int32_constant!(0)))
         {
             refusal("modeled-pthread mutex init requires null attributes")
         } else {
@@ -1159,7 +1160,7 @@ fn execute_modeled_pthread_mutex_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            CValue::Int32(Bitvector32Term::Constant(0)),
+                            CValue::Int32(Bitvector32Term::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -1176,7 +1177,7 @@ fn execute_modeled_pthread_mutex_paths(
         paths.push(CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             call_result: matches!(outcome, CStatementOutcome::Normal(_))
-                .then(|| CValue::Int32(Bitvector32Term::Constant(0))),
+                .then(|| CValue::Int32(Bitvector32Term::constant(0))),
             outcome,
             facts: path.facts,
             obligations: path.obligations,
@@ -1228,8 +1229,8 @@ fn modeled_pthread_indeterminate_handle(
 ) -> ExecutionResult<CState> {
     let range = CMemoryRange::new_with_element_width(
         slot.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
         8,
     );
     let marker = budget.allocate_kernel_variable()?;
@@ -1370,7 +1371,7 @@ fn execute_modeled_pthread_create_paths(
                             let failure = prepared.failure();
                             let (success, handle, _) = prepared.success();
                             let checked_failure_value =
-                                CValue::UInt64(Bitvector32Term::UInt64Constant(0));
+                                CValue::UInt64(Bitvector32Term::uint64_constant(0));
                             let slot = &path.values[0];
                             let checked_success = modeled_pthread_handle_store(
                                 success.parent(),
@@ -1540,7 +1541,7 @@ fn execute_modeled_pthread_join_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            CValue::Int32(Bitvector32Term::Constant(0)),
+                            CValue::Int32(Bitvector32Term::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -1558,7 +1559,7 @@ fn execute_modeled_pthread_join_paths(
         };
         paths.push(
             CStatementExecutionPath::new(outcome, path.facts, path.obligations)
-                .with_call_result(Some(CValue::Int32(Bitvector32Term::Constant(0)))),
+                .with_call_result(Some(CValue::Int32(Bitvector32Term::constant(0)))),
         );
     }
     budget.check_path_width(paths.len())?;
@@ -3939,8 +3940,8 @@ fn abstract_loop_exit_memory(
             }
             let range = CMemoryRange::new_with_element_width(
                 pointer.clone(),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(byte_width),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(byte_width),
                 1,
             );
             if ledger
@@ -9441,16 +9442,16 @@ fn range_extent_refusal(
                     offset.clone(),
                     Bitvector32Term::int64_multiply(
                         index,
-                        Bitvector32Term::Int64Constant(element_width),
+                        Bitvector32Term::int64_constant(element_width),
                     ),
                 )
             };
             let inside = proves(ConditionTerm::int64_signed_less_equal(
-                Bitvector32Term::Int64Constant(0),
+                Bitvector32Term::int64_constant(0),
                 byte(start),
             )) && proves(ConditionTerm::int64_signed_less_equal(
                 byte(end),
-                Bitvector32Term::Int64Constant(width),
+                Bitvector32Term::int64_constant(width),
             ));
             (!inside).then(refusal).flatten()
         }
@@ -9461,7 +9462,7 @@ fn range_extent_refusal(
             let room = u64::try_from((width - offset) / element_width.max(1)).ok()?;
             let inside = proves(ConditionTerm::uint64_less_equal(
                 end.clone(),
-                Bitvector32Term::UInt64Constant(room),
+                Bitvector32Term::uint64_constant(room),
             ));
             (!inside).then(refusal).flatten()
         }

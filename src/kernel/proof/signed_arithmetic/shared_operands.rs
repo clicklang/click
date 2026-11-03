@@ -5,6 +5,7 @@ use super::*;
 use crate::kernel::{
     KernelTerm, KernelTermImport, KernelTermNode, KernelType, MachineOperandView, MachineUnaryOp,
 };
+use crate::kernel::{bits32_constant, constant_u32};
 
 thread_local! {
     static KEYS: std::cell::RefCell<HashMap<u64, Option<KernelTerm>>> = Default::default();
@@ -42,66 +43,63 @@ fn shared_key(
         if keys.contains_key(&term.id()) {
             continue;
         }
-        let normalized =
-            match term.node() {
-                KernelTermNode::Variable(variable) => Some(KernelTerm::variable(
-                    KernelType::C(crate::kernel::CType::Int32),
-                    *variable,
-                )),
-                KernelTermNode::MachineLiteral(_) => MachineOperandView::Shared(term)
-                    .literal()
-                    .and_then(|literal| match literal {
-                        Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {
-                            Some(KernelTermImport::default().machine(
-                                MachineIntegerType::Int32,
-                                &Bitvector32Term::Constant(bits),
-                            ))
-                        }
-                        _ => None,
-                    }),
-                KernelTermNode::MachineUnary {
-                    format: MachineIntegerType::Int32,
-                    operator: MachineUnaryOp::BitwiseNot,
-                    operand,
-                } => {
-                    if !finish {
-                        pending.push((term, true));
-                        pending.push((operand, false));
-                        continue;
-                    }
-                    keys[&operand.id()].as_ref().map(|operand| {
-                        KernelTerm::machine_unary_shared(
-                            MachineIntegerType::Int32,
-                            MachineUnaryOp::BitwiseNot,
-                            operand.clone(),
-                        )
-                    })
+        let normalized = match term.node() {
+            KernelTermNode::Variable(variable) => Some(KernelTerm::variable(
+                KernelType::C(crate::kernel::CType::Int32),
+                *variable,
+            )),
+            KernelTermNode::MachineLiteral(_) => MachineOperandView::Shared(term)
+                .literal()
+                .and_then(|literal| match literal {
+                    bits32_constant!(bits) => Some(KernelTermImport::default().machine(
+                        MachineIntegerType::Int32,
+                        &Bitvector32Term::constant(constant_u32(bits)),
+                    )),
+                    _ => None,
+                }),
+            KernelTermNode::MachineUnary {
+                format: MachineIntegerType::Int32,
+                operator: MachineUnaryOp::BitwiseNot,
+                operand,
+            } => {
+                if !finish {
+                    pending.push((term, true));
+                    pending.push((operand, false));
+                    continue;
                 }
-                KernelTermNode::MachineBinary {
-                    format,
-                    operator,
-                    arguments,
-                } if *format == MachineIntegerType::Int32
-                    || (*format == MachineIntegerType::UInt32
-                        && *operator == MachineBinaryOp::ShiftRight) =>
-                {
-                    if !finish {
-                        pending.push((term, true));
-                        pending.push((&arguments[1], false));
-                        pending.push((&arguments[0], false));
-                        continue;
-                    }
-                    match (&keys[&arguments[0].id()], &keys[&arguments[1].id()]) {
-                        (Some(left), Some(right)) => Some(KernelTerm::machine_binary_shared(
-                            *format,
-                            *operator,
-                            [left.clone(), right.clone()],
-                        )),
-                        _ => None,
-                    }
+                keys[&operand.id()].as_ref().map(|operand| {
+                    KernelTerm::machine_unary_shared(
+                        MachineIntegerType::Int32,
+                        MachineUnaryOp::BitwiseNot,
+                        operand.clone(),
+                    )
+                })
+            }
+            KernelTermNode::MachineBinary {
+                format,
+                operator,
+                arguments,
+            } if *format == MachineIntegerType::Int32
+                || (*format == MachineIntegerType::UInt32
+                    && *operator == MachineBinaryOp::ShiftRight) =>
+            {
+                if !finish {
+                    pending.push((term, true));
+                    pending.push((&arguments[1], false));
+                    pending.push((&arguments[0], false));
+                    continue;
                 }
-                _ => None,
-            };
+                match (&keys[&arguments[0].id()], &keys[&arguments[1].id()]) {
+                    (Some(left), Some(right)) => Some(KernelTerm::machine_binary_shared(
+                        *format,
+                        *operator,
+                        [left.clone(), right.clone()],
+                    )),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
         keys.insert(term.id(), normalized);
     }
     keys[&root.id()].clone()

@@ -70,7 +70,7 @@ impl C {
             return Some(compare(
                 R::LessEqual,
                 a,
-                V::Legacy(&B::UInt64Constant(u64::MAX - 1)),
+                V::Legacy(&B::uint64_constant(u64::MAX - 1)),
             ));
         }
         if view.relation == Relation::LessEqual {
@@ -109,7 +109,7 @@ impl C {
         let [n, d] = binary(a, Op::Remainder)?;
         ((view.relation == Relation::LessEqual && same(n, b))
             || (view.relation == Relation::Less && same(d, b)))
-        .then(|| compare(R::LessThan, V::Legacy(&B::UInt64Constant(0)), d))
+        .then(|| compare(R::LessThan, V::Legacy(&B::uint64_constant(0)), d))
     }
 
     /// `(n - k) <= upper` follows from `k <= n <= upper`.
@@ -177,16 +177,16 @@ mod tests {
         let n = B::uint64_add(B::Variable(Variable(998121)), B::Variable(Variable(998124)));
         let k = B::uint64_add(B::Variable(Variable(998122)), B::Variable(Variable(998125)));
         let r = B::Variable(Variable(998123));
-        let next = B::uint64_add(k.clone(), B::UInt64Constant(1));
+        let next = B::uint64_add(k.clone(), B::uint64_constant(1));
         let difference = B::uint64_subtract(n.clone(), k.clone());
         let cases = [
             (k.clone(), next.clone(), 0),
             (next.clone(), n.clone(), 0),
             (B::uint64_subtract(n.clone(), next), difference.clone(), 0),
-            (B::UInt64Constant(0), difference.clone(), 1),
+            (B::uint64_constant(0), difference.clone(), 1),
             (difference.clone(), n.clone(), 1),
             (
-                B::uint64_subtract(n.clone(), B::UInt64Constant(2)),
+                B::uint64_subtract(n.clone(), B::uint64_constant(2)),
                 n.clone(),
                 1,
             ),

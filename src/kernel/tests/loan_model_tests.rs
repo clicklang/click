@@ -1232,8 +1232,8 @@ fn production_memory_fact(start: u32, end: u32, own: bool) -> CResourceFact {
             block: "v14-buffer".into(),
             offset: PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::Constant(start),
-        Bitvector32Term::Constant(end),
+        Bitvector32Term::constant(start),
+        Bitvector32Term::constant(end),
     );
     if own {
         CResourceFact::own_memory(range)

@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{bits32_constant, constant_u32};
 
 /// Only these operand families are compared up to memory resolution.
 /// Every other condition is matched by its exact fact identity. The index
@@ -59,7 +60,7 @@ impl PureFactContext {
         // checked cost stays distinct from the search that may invoke it.
         // Compound terms and offsets need their own input-size measure.
         let scalar_atom = |term: &Bitvector32Term| match term {
-            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => true,
+            bits32_constant!(_) => true,
             Bitvector32Term::Variable(variable) => {
                 crate::kernel::eval::registered_load_for_variable(variable).is_none()
             }
@@ -530,9 +531,7 @@ impl SelectedFacts<'_> {
                     Bitvector32Term::UInt32From64(wide) => self
                         .wide_constant_from_equalities(wide)
                         .map(|bits| bits as u32),
-                    Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {
-                        Some(*bits)
-                    }
+                    bits32_constant!(bits) => Some(constant_u32(*bits)),
                     _ => None,
                 };
                 if let (Some(left), Some(right)) =
@@ -581,7 +580,7 @@ impl SelectedFacts<'_> {
                     Int32,
                     Add,
                     Box::new(right.as_ref().clone()),
-                    Box::new(Bitvector32Term::Constant(1)),
+                    Box::new(Bitvector32Term::constant(1)),
                 ),
             )) == Some(true)
                 && self.has_exact_bitvector_inequality_after_cancellation(left, right) =>
@@ -599,11 +598,11 @@ impl SelectedFacts<'_> {
                 relation: CompareRelation::GreaterEqual,
                 left,
                 right,
-            } if right.as_ref() == &Bitvector32Term::Constant(0)
+            } if right.as_ref() == &Bitvector32Term::constant(0)
                 && left.as_ref().subtract_one_base().is_some_and(|base| {
                     self.exact_condition_value(&ConditionTerm::signed_greater_than(
                         base,
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                     )) == Some(true)
                 }) =>
             {
@@ -614,11 +613,11 @@ impl SelectedFacts<'_> {
                 relation: CompareRelation::LessEqual,
                 left,
                 right,
-            } if left.as_ref() == &Bitvector32Term::Constant(0)
+            } if left.as_ref() == &Bitvector32Term::constant(0)
                 && right.as_ref().subtract_one_base().is_some_and(|base| {
                     self.exact_condition_value(&ConditionTerm::signed_greater_than(
                         base,
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                     )) == Some(true)
                 }) =>
             {
@@ -633,7 +632,7 @@ impl SelectedFacts<'_> {
                 &base == right.as_ref()
                     && self.exact_condition_value(&ConditionTerm::signed_greater_than(
                         base,
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                     )) == Some(true)
             }) =>
             {
@@ -676,9 +675,9 @@ impl SelectedFacts<'_> {
         let order_facts = self.condition_order_facts();
         order_facts.iter().any(|(lower, value, strict)| {
             if *strict
-                || Bitvector32Term::add(lower.clone(), Bitvector32Term::Constant(1))
+                || Bitvector32Term::add(lower.clone(), Bitvector32Term::constant(1))
                     != *incremented_lower
-                || Bitvector32Term::add(value.clone(), Bitvector32Term::Constant(1))
+                || Bitvector32Term::add(value.clone(), Bitvector32Term::constant(1))
                     != *incremented_value
             {
                 return false;
@@ -755,7 +754,7 @@ impl SelectedFacts<'_> {
                     Int32,
                     Add,
                     Box::new(right.as_ref().clone()),
-                    Box::new(Bitvector32Term::Constant(1)),
+                    Box::new(Bitvector32Term::constant(1)),
                 ),
             )) == Some(true)
             && self.has_exact_bitvector_inequality_after_cancellation(left, right)

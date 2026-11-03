@@ -116,7 +116,7 @@ fn active_is_zero(value: bool) -> PureFactContext {
     PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::equal(
             Bitvector32Term::Variable(Variable(980_001)),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         ),
         value,
     ))

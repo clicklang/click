@@ -151,14 +151,14 @@ mod tests {
         );
         let field = CResource::Memory(CMemoryRange::new_with_element_width(
             p.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
             8,
         ));
         let composite = CResource::Composite {
             name: "rb_child_links".into(),
             arguments: std::sync::Arc::from([AlgebraicValue::C(CValue::Int32(
-                Bitvector32Term::Constant(7),
+                Bitvector32Term::constant(7),
             ))]),
         };
         let model = AlgebraicTerm {
@@ -167,7 +167,7 @@ mod tests {
         };
         let context = ResourceContext::new().unchecked_with_fact(CResourceFact::Own(
             field.clone(),
-            Box::new(Bitvector32Term::Constant(1)),
+            Box::new(Bitvector32Term::constant(1)),
         ));
         let facts = [
             (
@@ -179,9 +179,9 @@ mod tests {
                             format: MachineIntegerType::UInt64,
                             op: MachineBinaryOp::BitwiseAnd,
                             left: Box::new(word),
-                            right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                            right: Box::new(Bitvector32Term::uint64_constant(1)),
                         }),
-                        right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                        right: Box::new(Bitvector32Term::uint64_constant(0)),
                     },
                     true,
                 ),
@@ -196,7 +196,7 @@ mod tests {
                             name: "rb_root_black".into(),
                             arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
                         }),
-                        right: Box::new(Bitvector32Term::Constant(1)),
+                        right: Box::new(Bitvector32Term::constant(1)),
                     },
                     true,
                 ),
@@ -227,7 +227,7 @@ mod tests {
                 Proposition::CMemoryLoadable {
                     memory,
                     base: p,
-                    bytes: Bitvector32Term::Constant(8),
+                    bytes: Bitvector32Term::constant(8),
                     wide: false,
                 },
                 "bytes:uint32=8",
@@ -244,7 +244,7 @@ mod tests {
                 Proposition::Predicate {
                     name: "__click_volatile_write_123".into(),
                     arguments: vec![Term::CValue(CValue::UInt64(
-                        Bitvector32Term::UInt64Constant(1),
+                        Bitvector32Term::uint64_constant(1),
                     ))],
                 },
                 "volatile-write-event#123(uint64(1u64))",
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn machine_operations_keep_width_signedness_and_casts() {
         let a = Box::new(Bitvector32Term::Variable(Variable(986_703)));
-        let b = Box::new(Bitvector32Term::Constant(2));
+        let b = Box::new(Bitvector32Term::constant(2));
         for (value, expected) in [
             (
                 Bitvector32Term::Binary {
@@ -338,7 +338,7 @@ mod tests {
         ] {
             let text = render(&Proposition::Equal(
                 Term::Bitvector32(value),
-                Term::Bitvector32(Bitvector32Term::Constant(0)),
+                Term::Bitvector32(Bitvector32Term::constant(0)),
             ));
             assert!(text.contains(expected), "{text}");
         }

@@ -1242,9 +1242,9 @@ fn cell_value_is_exactly_load(value: &CValue, load: &Bitvector32Term) -> bool {
         | CValue::Float64(term) => term == load,
         CValue::Bool(term) => {
             term == &Bitvector32Term::if_then_else(
-                crate::kernel::ConditionTerm::equal(load.clone(), Bitvector32Term::Constant(0)),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                crate::kernel::ConditionTerm::equal(load.clone(), Bitvector32Term::constant(0)),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )
         }
         CValue::Pointer(pointer) => {
@@ -1551,7 +1551,7 @@ impl CheckedResourceRewrite {
                     imported
                         .entry_symbolic_members
                         .clone()
-                        .unwrap_or(Bitvector32Term::Constant(imported.entry_owned_members)),
+                        .unwrap_or(Bitvector32Term::constant(imported.entry_owned_members)),
                 ),
                 true,
             );
@@ -2705,7 +2705,7 @@ impl CheckedResourceObservation {
                 .ok_or("count observation requires owned member quantity")?;
             let nonnegative = Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                     quantity.clone(),
                 ),
                 true,
@@ -4614,8 +4614,8 @@ fn memory_diff_is_covered_by_writes(
                     &diff_pointer,
                     value.byte_width(),
                     changed_pointer,
-                    &Bitvector32Term::Constant(0),
-                    &Bitvector32Term::Constant(1),
+                    &Bitvector32Term::constant(0),
+                    &Bitvector32Term::constant(1),
                     *bytes,
                 )
             })
@@ -4924,8 +4924,8 @@ fn checked_interface_effect_facts_along(
         for (pointer, bytes) in writes {
             let range = CMemoryRange::new_with_element_width(
                 pointer,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
                 bytes,
             );
             if !ranges.contains(&range) {

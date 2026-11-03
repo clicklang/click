@@ -1400,7 +1400,7 @@ mod path_condition_tests {
         let source = Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: Bitvector32Term::Constant(1),
+            bytes: Bitvector32Term::constant(1),
             wide: false,
         };
         let guard = Proposition::ConditionIs(
@@ -1408,7 +1408,7 @@ mod path_condition_tests {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
                 left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                right: Box::new(Bitvector32Term::Constant(1)),
+                right: Box::new(Bitvector32Term::constant(1)),
             },
             false,
         );
@@ -1424,7 +1424,7 @@ mod path_condition_tests {
         let wider = Proposition::CMemoryLoadable {
             memory,
             base,
-            bytes: Bitvector32Term::Constant(2),
+            bytes: Bitvector32Term::constant(2),
             wide: false,
         };
         let invalid = Proposition::And(Box::new(guard), Box::new(wider));

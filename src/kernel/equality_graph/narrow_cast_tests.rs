@@ -103,7 +103,7 @@ fn a_narrow_cast_meets_the_mask_of_an_equal_operand() {
     let (x, y) = (var(173_011), var(173_012));
     let cast = Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, x.clone());
     let [_, widened] = widenings(Ty::UInt8, &cast);
-    let mask = Bitvector32Term::bitwise_and(y.clone(), Bitvector32Term::UInt32Constant(255));
+    let mask = Bitvector32Term::bitwise_and(y.clone(), Bitvector32Term::uint32_constant(255));
     let mut graph = EqualityGraph::default();
     assert!(!graph.are_int32_equal(&widened, &mask));
     graph.add_int32_equality(&x, &y);

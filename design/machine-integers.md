@@ -558,6 +558,29 @@ Progress:
   interned node kinds (`Int32Add`, `Int32Binary`, `UInt64Binary`), which are
   signatures, not terms. Scaling regression:
   `machine_operator_chains_cost_the_same_per_node_at_every_format`.
+- One formatted constant (decision G9) is done (2026-11-03).
+  `Constant { format, bits }` replaces `Constant(u32)`, `UInt32Constant`,
+  `Int64Constant`, `UInt64Constant` and `MachineIntegerConstant`: one node
+  for every format, its bits masked to the format. The builders keep the
+  old names (`Bitvector32Term::constant` at `int32`, `uint32_constant`,
+  `int64_constant`, `uint64_constant`, `machine_constant`), and patterns
+  name a format (`int32_constant!`, `uint32_constant!`, `bits32_constant!`,
+  `int64_constant!`, `uint64_constant!`, `native_constant!` for 8, 16 and
+  128 bits). A pattern binds the `u128` bits, and every use reads them
+  through `constant_u32`, `constant_i64` or `constant_u64`, the value type
+  the old variant held, so each site computes what it did (checked by a
+  build in which the bits are an opaque type). Hashes that read a node's
+  discriminant also read a constant's format. The derived order sorts
+  constants by format, then bits: negative `int64` constants now sort
+  after nonnegative ones, and narrow and 128-bit constants sit among the
+  32- and 64-bit ones. `Debug` prints a constant as the variant it
+  replaced (`UInt32Constant(3)`), because one refusal in the corpus
+  prints a term with `{:?}`. Every `click verify` output over the integer
+  mdtests and the examples is byte-identical, and every `click audit
+  --verbose` verdict is unchanged; work moved deterministically through the
+  derived order and hashes: session preparation by +0.16% in total (at most
+  +1.3%, `bounded-pool`), claim verification by -0.10% (at most -8.7%, one
+  `cpp-stack` claim), expansion by 4 units.
 
 
 - Every format its own nodes (planned 2026-10-29, [Decisions](#decisions)).

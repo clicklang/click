@@ -161,7 +161,10 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
     let p = pointer(930_450);
     let state = CState::new()
         .with_local("data", CValue::Pointer(p.clone()))
-        .with_local("length", CValue::UInt64(Bitvector32Term::UInt64Constant(2)));
+        .with_local(
+            "length",
+            CValue::UInt64(Bitvector32Term::uint64_constant(2)),
+        );
     let function = c_function(
         CType::Void,
         "slice_metadata",
@@ -177,7 +180,7 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
         &[
             CExpression::Value(CValue::Pointer(p.clone())),
             CExpression::Value(
-                CValue::UInt64(Bitvector32Term::UInt64Constant(2))
+                CValue::UInt64(Bitvector32Term::uint64_constant(2))
                     .complete_word(Pointer::symbolic(Variable(930_451))),
             ),
         ],
@@ -252,15 +255,15 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
     let start = 1u64 << 32;
     let range = CMemoryRange::from_pointer_value_wide(
         &p,
-        Bitvector32Term::UInt64Constant(start),
-        Bitvector32Term::UInt64Constant(start + 2),
+        Bitvector32Term::uint64_constant(start),
+        Bitvector32Term::uint64_constant(start + 2),
         4,
     );
     let coverage = p.opaque_coverage_fact(&range).unwrap();
     let context = PureFactContext::new().assume_proposition(coverage.clone());
     let position = |index| {
         p.pointer()
-            .offset_by_typed_elements(Bitvector32Term::UInt64Constant(index), 4, true, true)
+            .offset_by_typed_elements(Bitvector32Term::uint64_constant(index), 4, true, true)
     };
     assert!(context.opaque_pointer_covers(&p, &position(start + 1), 4));
     assert!(context.opaque_pointer_covers(&p, &position(start + 2), 0));
@@ -277,8 +280,8 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
     );
     let record = CMemoryRange::from_pointer_value_wide(
         &p,
-        Bitvector32Term::UInt64Constant(0),
-        Bitvector32Term::UInt64Constant(2),
+        Bitvector32Term::uint64_constant(0),
+        Bitvector32Term::uint64_constant(2),
         16,
     );
     let context =
@@ -365,9 +368,9 @@ fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
         let offset = Bitvector32Term::Variable(Variable(933_000));
         let alias = Bitvector32Term::Variable(Variable(933_001));
         let constant = |n| match (wide, unsigned) {
-            (true, true) => Bitvector32Term::UInt64Constant(n),
-            (true, false) => Bitvector32Term::Int64Constant(n as i64),
-            (false, _) => Bitvector32Term::Constant(n as u32),
+            (true, true) => Bitvector32Term::uint64_constant(n),
+            (true, false) => Bitvector32Term::int64_constant(n as i64),
+            (false, _) => Bitvector32Term::constant(n as u32),
         };
         let equal = |a, b| {
             Proposition::ConditionIs(

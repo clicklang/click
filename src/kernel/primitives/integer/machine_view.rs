@@ -1,6 +1,9 @@
 //! Borrowed root views of machine operands. Inspecting a shared root never
 //! requests its boxed expansion; child observations retain child handles.
 use super::*;
+use crate::kernel::constant_u32;
+use crate::kernel::int32_constant;
+use crate::kernel::{constant_i64, int64_constant};
 
 // Only written machine variables are cached. Registered-load dependencies are
 // resolved by each collector against its current registry, never cached here.
@@ -355,9 +358,9 @@ impl<'a> MachineOperandView<'a> {
         else {
             return None;
         };
-        if right.literal() == Some(Bitvector32Term::Constant(value)) {
+        if right.literal() == Some(Bitvector32Term::constant(value)) {
             Some(left)
-        } else if left.literal() == Some(Bitvector32Term::Constant(value)) {
+        } else if left.literal() == Some(Bitvector32Term::constant(value)) {
             Some(right)
         } else {
             None
@@ -370,10 +373,10 @@ impl<'a> MachineOperandView<'a> {
         else {
             return None;
         };
-        if let Some(Bitvector32Term::Constant(value)) = right.literal() {
-            Some((left, value))
-        } else if let Some(Bitvector32Term::Constant(value)) = left.literal() {
-            Some((right, value))
+        if let Some(int32_constant!(value)) = right.literal() {
+            Some((left, constant_u32(value)))
+        } else if let Some(int32_constant!(value)) = left.literal() {
+            Some((right, constant_u32(value)))
         } else {
             None
         }
@@ -385,10 +388,10 @@ impl<'a> MachineOperandView<'a> {
         else {
             return None;
         };
-        let Some(Bitvector32Term::Constant(value)) = right.literal() else {
+        let Some(int32_constant!(value)) = right.literal() else {
             return None;
         };
-        Some((left, value))
+        Some((left, constant_u32(value)))
     }
 
     /// Literal payload only, without descending through an operation.
@@ -437,8 +440,8 @@ impl<'a> MachineOperandView<'a> {
     /// arithmetic operand. Generic casts deliberately retain their old refusal.
     pub(crate) fn int64_width_interval(self) -> Option<(i64, i64)> {
         use crate::kernel::KernelMachineCastEncoding as E;
-        if let Some(Bitvector32Term::Int64Constant(value)) = self.literal() {
-            return Some((value, value));
+        if let Some(int64_constant!(value)) = self.literal() {
+            return Some((constant_i64(value), constant_i64(value)));
         }
         match self.cast() {
             Some((E::Int64From32, _, _, _)) => {
@@ -751,7 +754,7 @@ mod tests {
             format: ty,
             op: MachineBinaryOp::Add,
             left: Box::new(Bitvector32Term::Variable(Variable(956101))),
-            right: Box::new(Bitvector32Term::UInt32Constant(0)),
+            right: Box::new(Bitvector32Term::uint32_constant(0)),
         };
         let shared = KernelTermImport::default().machine(ty, &boxed);
         for observed_ty in [
@@ -819,7 +822,7 @@ mod cast_tests {
                     Int32,
                     MachineBinaryOp::Add,
                     &twice,
-                    &Bitvector32Term::Constant(0),
+                    &Bitvector32Term::constant(0),
                 );
             }
         }

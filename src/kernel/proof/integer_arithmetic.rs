@@ -1414,9 +1414,9 @@ mod tests {
         IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Int32 {
                 start: SharedIntegerRangeEndpoint::intern(
-                    crate::kernel::Bitvector32Term::Constant(start),
+                    crate::kernel::Bitvector32Term::constant(start),
                 ),
-                end: SharedIntegerRangeEndpoint::intern(crate::kernel::Bitvector32Term::Constant(
+                end: SharedIntegerRangeEndpoint::intern(crate::kernel::Bitvector32Term::constant(
                     end,
                 )),
             },
@@ -1545,14 +1545,14 @@ mod tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(7))),
         );
         let load_fold =
             |memory: &crate::kernel::SharedCMemory, accumulator: u64, item: u64| -> IntegerTerm {
                 IntegerTerm::range_fold(
                     IntegerRangeFoldIndex::Int32 {
-                        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-                        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(2)),
+                        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+                        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
                     },
                     IntegerTerm::constant_i64(0),
                     Variable(accumulator),
@@ -1886,7 +1886,7 @@ mod tests {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Divide,
                 left: x(),
-                right: Box::new(Bitvector32Term::UInt64Constant(1000)),
+                right: Box::new(Bitvector32Term::uint64_constant(1000)),
             },
         );
         let observed = IntegerTerm::Machine(quotient.clone());
@@ -1915,7 +1915,7 @@ mod tests {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::ShiftRight,
                 left: x(),
-                right: Box::new(Bitvector32Term::Int64Constant(32)),
+                right: Box::new(Bitvector32Term::int64_constant(32)),
             },
         );
         let two_to_32 = IntegerTerm::Multiply(
@@ -1933,7 +1933,7 @@ mod tests {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Remainder,
                 left: x(),
-                right: Box::new(Bitvector32Term::UInt64Constant(10)),
+                right: Box::new(Bitvector32Term::uint64_constant(10)),
             },
         );
         assert_eq!(
@@ -1955,7 +1955,7 @@ mod tests {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Divide,
                     left: x(),
-                    right: Box::new(Bitvector32Term::UInt64Constant(0)),
+                    right: Box::new(Bitvector32Term::uint64_constant(0)),
                 },
             ),
             machine(
@@ -1964,7 +1964,7 @@ mod tests {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::ShiftRight,
                     left: x(),
-                    right: Box::new(Bitvector32Term::Int64Constant(64)),
+                    right: Box::new(Bitvector32Term::int64_constant(64)),
                 },
             ),
             machine(
@@ -1982,7 +1982,7 @@ mod tests {
                     Int32,
                     Divide,
                     x(),
-                    Box::new(Bitvector32Term::Constant(-1000i32 as u32))
+                    Box::new(Bitvector32Term::constant(-1000i32 as u32))
                 ),
             ),
             machine(
@@ -1991,7 +1991,7 @@ mod tests {
                     Int32,
                     Divide,
                     x(),
-                    Box::new(Bitvector32Term::Constant(1000))
+                    Box::new(Bitvector32Term::constant(1000))
                 ),
             ),
         ] {

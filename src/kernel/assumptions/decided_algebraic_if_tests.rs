@@ -53,7 +53,7 @@ pub(super) fn tag(variable: u64) -> ConditionTerm {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-        right: Box::new(Bitvector32Term::Constant(0)),
+        right: Box::new(Bitvector32Term::constant(0)),
     }
 }
 /// `if tag == 0 { None } else { Some(payload) }`, a Rust option's view.

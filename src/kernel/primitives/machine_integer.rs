@@ -7,6 +7,10 @@
 
 use super::{Bitvector32Term, CValue, MachineIntegerType};
 use crate::kernel::machine_integer::format_audit::{self, WordIdentity};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
+    native_constant, uint32_constant, uint64_constant,
+};
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 
@@ -178,6 +182,14 @@ impl MachineIntegerConstant {
         self.format
     }
 
+    /// The constant a term's [`Bitvector32Term::Constant`] node names,
+    /// whose bits its builders already checked. Charges no work: reading the
+    /// node's fields does not.
+    pub(crate) const fn from_term_bits(format: MachineIntegerFormat, bits: u128) -> Self {
+        debug_assert!(bits <= format.mask());
+        Self { format, bits }
+    }
+
     pub const fn bits(self) -> u128 {
         self.bits
     }
@@ -310,6 +322,23 @@ impl MachineIntegerType {
         }
     }
 
+    /// The type of `format`, the inverse of [`Self::format`].
+    pub const fn of_format(format: MachineIntegerFormat) -> Self {
+        use MachineIntegerWidth::*;
+        match (format.width(), format.is_signed()) {
+            (Bits8, true) => Self::Int8,
+            (Bits8, false) => Self::UInt8,
+            (Bits16, true) => Self::Int16,
+            (Bits16, false) => Self::UInt16,
+            (Bits32, true) => Self::Int32,
+            (Bits32, false) => Self::UInt32,
+            (Bits64, true) => Self::Int64,
+            (Bits64, false) => Self::UInt64,
+            (Bits128, true) => Self::Int128,
+            (Bits128, false) => Self::UInt128,
+        }
+    }
+
     pub const fn format(self) -> MachineIntegerFormat {
         use MachineIntegerWidth::*;
         let (width, signed) = match self {
@@ -335,13 +364,13 @@ impl MachineIntegerType {
         }
         Some(match self {
             Self::Int8 | Self::UInt8 | Self::Int16 | Self::UInt16 => {
-                Bitvector32Term::MachineIntegerConstant(value)
+                Bitvector32Term::machine_constant(value)
             }
-            Self::Int32 => Bitvector32Term::Constant(value.to_i128()? as u32),
-            Self::UInt32 => Bitvector32Term::UInt32Constant(value.to_u128()? as u32),
-            Self::Int64 => Bitvector32Term::Int64Constant(value.to_i128()? as i64),
-            Self::UInt64 => Bitvector32Term::UInt64Constant(value.to_u128()? as u64),
-            Self::Int128 | Self::UInt128 => Bitvector32Term::MachineIntegerConstant(value),
+            Self::Int32 => Bitvector32Term::constant(value.to_i128()? as u32),
+            Self::UInt32 => Bitvector32Term::uint32_constant(value.to_u128()? as u32),
+            Self::Int64 => Bitvector32Term::int64_constant(value.to_i128()? as i64),
+            Self::UInt64 => Bitvector32Term::uint64_constant(value.to_u128()? as u64),
+            Self::Int128 | Self::UInt128 => Bitvector32Term::machine_constant(value),
         })
     }
 
@@ -354,7 +383,7 @@ impl MachineIntegerType {
             return false;
         }
         match value {
-            Bitvector32Term::MachineIntegerConstant(value) => value.format() == self.format(),
+            Bitvector32Term::Constant { format, .. } => *format == self,
             Bitvector32Term::Variable(_) => true,
             Bitvector32Term::MemoryLoad(_, _, kind) => {
                 crate::kernel::LoadKind::of_type(self.c_type()) == Some(*kind)
@@ -374,11 +403,7 @@ impl MachineIntegerType {
         loop {
             crate::instrumentation::record_deterministic_work(1);
             match value {
-                Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_)
-                | Bitvector32Term::Int64Constant(_)
-                | Bitvector32Term::UInt64Constant(_)
-                | Bitvector32Term::MachineIntegerConstant(_) => {
+                Bitvector32Term::Constant { .. } => {
                     return ty.constant_from_term(value).is_some();
                 }
                 Bitvector32Term::Variable(_) => return true,
@@ -443,22 +468,25 @@ impl MachineIntegerType {
                 | Self::UInt16
                 | Self::Int128
                 | Self::UInt128,
-                Bitvector32Term::MachineIntegerConstant(value),
-            ) if value.format() == self.format() => Some(*value),
-            (
-                Self::Int32,
-                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-            ) => MachineIntegerConstant::from_signed(self.format(), i128::from(*value as i32)),
-            (
-                Self::UInt32,
-                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-            ) => MachineIntegerConstant::from_unsigned(self.format(), u128::from(*value)),
-            (Self::Int64, Bitvector32Term::Int64Constant(value)) => {
-                MachineIntegerConstant::from_signed(self.format(), i128::from(*value))
+                native_constant!(format, bits),
+            ) if *format == self => {
+                Some(MachineIntegerConstant::from_term_bits(self.format(), *bits))
             }
-            (Self::UInt64, Bitvector32Term::UInt64Constant(value)) => {
-                MachineIntegerConstant::from_unsigned(self.format(), u128::from(*value))
+            (Self::Int32, bits32_constant!(value)) => MachineIntegerConstant::from_signed(
+                self.format(),
+                i128::from(constant_u32(*value) as i32),
+            ),
+            (Self::UInt32, bits32_constant!(value)) => MachineIntegerConstant::from_unsigned(
+                self.format(),
+                u128::from(constant_u32(*value)),
+            ),
+            (Self::Int64, int64_constant!(value)) => {
+                MachineIntegerConstant::from_signed(self.format(), i128::from(constant_i64(*value)))
             }
+            (Self::UInt64, uint64_constant!(value)) => MachineIntegerConstant::from_unsigned(
+                self.format(),
+                u128::from(constant_u64(*value)),
+            ),
             _ => None,
         }
     }
@@ -569,7 +597,7 @@ impl Bitvector32Term {
     /// The bits of a root 32-bit constant of either format.
     pub(crate) fn constant32(&self) -> Option<u32> {
         match self {
-            Self::Constant(value) | Self::UInt32Constant(value) => Some(*value),
+            bits32_constant!(value) => Some(constant_u32(*value)),
             _ => None,
         }
     }
@@ -580,26 +608,28 @@ impl Bitvector32Term {
     #[track_caller]
     pub(crate) fn constant_word32(self) -> Self {
         match self {
-            Self::UInt32Constant(value) => {
+            uint32_constant!(value) => {
                 format_audit::record(
                     WordIdentity::UInt32ConstantPeeled,
                     std::panic::Location::caller(),
                 );
-                Self::Constant(value)
+                Self::constant(constant_u32(value))
             }
             term => term,
         }
     }
 
     /// `self` as a value of `ty`: a root 32-bit constant takes `ty`'s
-    /// format, `UInt32Constant` at `uint32` and `Constant` at every other
+    /// format, `uint32` at `uint32` and `int32` at every other
     /// format. Both name one word (rule K1), so this changes no meaning;
     /// it lets a `uint32` constant print as itself. One match on the root.
     pub(crate) fn in_format32(self, ty: MachineIntegerType) -> Self {
         match (ty, self) {
-            (MachineIntegerType::UInt32, Self::Constant(value)) => Self::UInt32Constant(value),
+            (MachineIntegerType::UInt32, int32_constant!(value)) => {
+                Self::uint32_constant(constant_u32(value))
+            }
             (MachineIntegerType::UInt32, term) => term,
-            (_, Self::UInt32Constant(value)) => Self::Constant(value),
+            (_, uint32_constant!(value)) => Self::constant(constant_u32(value)),
             (_, term) => term,
         }
     }
@@ -610,21 +640,25 @@ impl Bitvector32Term {
     /// match on the root.
     pub(crate) fn in_narrow_format(self, ty: MachineIntegerType) -> Self {
         match self {
-            Self::Constant(word) | Self::UInt32Constant(word) if ty.format().bits() < 32 => {
+            bits32_constant!(word) if ty.format().bits() < 32 => {
                 debug_assert!(
-                    ty.constant_from_term(&Self::narrow_constant(ty, u128::from(word)))
-                        .is_some_and(|value| {
-                            value.to_i128().is_some_and(|value| {
-                                if ty.format().is_signed() {
-                                    value == i128::from(word as i32)
-                                } else {
-                                    value == i128::from(word)
-                                }
-                            })
-                        }),
-                    "{word:#x} is not the word of a {ty:?} value"
+                    ty.constant_from_term(&Self::narrow_constant(
+                        ty,
+                        u128::from(constant_u32(word))
+                    ))
+                    .is_some_and(|value| {
+                        value.to_i128().is_some_and(|value| {
+                            if ty.format().is_signed() {
+                                value == i128::from(constant_u32(word) as i32)
+                            } else {
+                                value == i128::from(constant_u32(word))
+                            }
+                        })
+                    }),
+                    "{word:#x} is not the word of a {ty:?} value",
+                    word = constant_u32(word)
                 );
-                Self::narrow_constant(ty, u128::from(word))
+                Self::narrow_constant(ty, u128::from(constant_u32(word)))
             }
             term => term,
         }
@@ -760,16 +794,52 @@ mod tests {
 
     use super::*;
 
+    /// A constant is one node at every format (decision G9) and debug-prints
+    /// as the per-format variant it replaced, so diagnostics that print a
+    /// term with `{:?}` are unchanged.
+    #[test]
+    fn a_formatted_constant_debug_prints_its_former_variant() {
+        use MachineIntegerType as M;
+        let wide = MachineIntegerConstant::from_signed(M::Int8.format(), -56).unwrap();
+        for (term, spelling) in [
+            (Bitvector32Term::constant(u32::MAX), "Constant(4294967295)"),
+            (Bitvector32Term::uint32_constant(3), "UInt32Constant(3)"),
+            (Bitvector32Term::int64_constant(-1), "Int64Constant(-1)"),
+            (
+                Bitvector32Term::uint64_constant(u64::MAX),
+                "UInt64Constant(18446744073709551615)",
+            ),
+            (
+                Bitvector32Term::machine_constant(wide),
+                "MachineIntegerConstant(MachineIntegerConstant { format: MachineIntegerFormat { width: Bits8, signed: true }, bits: 200 })",
+            ),
+        ] {
+            assert_eq!(format!("{term:?}"), spelling);
+        }
+        assert_eq!(
+            Bitvector32Term::int64_constant(-1),
+            Bitvector32Term::Constant {
+                format: M::Int64,
+                bits: u128::from(u64::MAX)
+            }
+        );
+        assert_eq!(
+            Bitvector32Term::machine_constant(wide).as_machine_constant(),
+            Some(wide)
+        );
+    }
+
     /// Per format: a 32-bit constant at rest takes the `uint32` format at
-    /// `uint32` and `Constant` everywhere else (`in_format32`,
+    /// `uint32` and `int32` everywhere else (`in_format32`,
     /// `constant_term`), conversions between `int32` and `uint32` fold a
-    /// constant to the other format, and the word of either is `Constant`.
+    /// constant to the other format, and the word of either is the `int32`
+    /// constant.
     #[test]
     fn a_32_bit_constant_takes_its_value_s_format() {
         use MachineIntegerType as M;
         for bits in [0u32, 1, 0x7FFF_FFFF, 0x8000_0000, 4_000_000_000, u32::MAX] {
-            let word = Bitvector32Term::Constant(bits);
-            let formatted = Bitvector32Term::UInt32Constant(bits);
+            let word = Bitvector32Term::constant(bits);
+            let formatted = Bitvector32Term::uint32_constant(bits);
             assert_eq!(word.clone().in_format32(M::UInt32), formatted);
             assert_eq!(formatted.clone().in_format32(M::UInt32), formatted);
             for ty in [M::Int8, M::Int16, M::Int32, M::UInt8, M::UInt16, M::Int64] {
@@ -793,8 +863,8 @@ mod tests {
                 word
             );
             assert_eq!(
-                Bitvector32Term::add(formatted.clone(), Bitvector32Term::Constant(1)),
-                Bitvector32Term::Constant(bits.wrapping_add(1))
+                Bitvector32Term::add(formatted.clone(), Bitvector32Term::constant(1)),
+                Bitvector32Term::constant(bits.wrapping_add(1))
             );
             assert_eq!(
                 M::UInt32.value_from_term(word.clone()),
@@ -811,7 +881,7 @@ mod tests {
         let byte = M::UInt8.constant_from_term(&native).unwrap();
         assert_eq!(M::UInt8.constant_term(byte), Some(native));
         assert_eq!(
-            M::UInt8.constant_from_term(&Bitvector32Term::Constant(200)),
+            M::UInt8.constant_from_term(&Bitvector32Term::constant(200)),
             None
         );
     }
@@ -1333,11 +1403,11 @@ mod tests {
         // A narrow signed constant is its own 8 bits; no 32-bit word is
         // one, whether or not its low bits are the value's.
         assert!(
-            ty.constant_from_term(&Bitvector32Term::Constant(255))
+            ty.constant_from_term(&Bitvector32Term::constant(255))
                 .is_none()
         );
         assert!(
-            ty.constant_from_term(&Bitvector32Term::Constant(u32::MAX))
+            ty.constant_from_term(&Bitvector32Term::constant(u32::MAX))
                 .is_none()
         );
         assert_eq!(
@@ -1348,7 +1418,7 @@ mod tests {
         );
         assert!(
             MachineIntegerType::Int64
-                .constant_from_term(&Bitvector32Term::UInt64Constant(u64::MAX))
+                .constant_from_term(&Bitvector32Term::uint64_constant(u64::MAX))
                 .is_none()
         );
         for format in formats().filter(|format| format.bits() == 128) {
@@ -1396,7 +1466,7 @@ mod tests {
     #[test]
     fn bit_readers_read_a_32_bit_operator_at_either_format() {
         use crate::kernel::{binary_node, unary_node};
-        let constant = |value| Box::new(Bitvector32Term::Constant(value));
+        let constant = |value| Box::new(Bitvector32Term::constant(value));
         for (signed, unsigned) in [
             (
                 binary_node!(Int32, Add, constant(7), constant(u32::MAX)),

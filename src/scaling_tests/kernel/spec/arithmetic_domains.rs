@@ -1,7 +1,7 @@
 fn division_paths(context: &PureFactContext) -> Vec<CExpressionPath> {
     apply_spec_arithmetic(
         crate::kernel::MachineBinaryOp::Divide,
-        CValue::UInt32(Bitvector32Term::UInt32Constant(7)),
+        CValue::UInt32(Bitvector32Term::uint32_constant(7)),
         CValue::UInt32(Bitvector32Term::Variable(Variable(690_000))),
         ExecutionFacts::default(),
         Vec::new(),
@@ -20,7 +20,7 @@ fn value_path(paths: Vec<CExpressionPath>) -> Option<CExpressionPath> {
 fn impossible_arithmetic_keeps_its_term_without_scanning_the_parent() {
     let zero = ConditionTerm::uint32_equal(
         Bitvector32Term::Variable(Variable(690_000)),
-        Bitvector32Term::UInt32Constant(0),
+        Bitvector32Term::uint32_constant(0),
     );
     let mut samples = Vec::new();
     for size in [32u64, 128, 512] {
@@ -33,7 +33,7 @@ fn impossible_arithmetic_keeps_its_term_without_scanning_the_parent() {
             base = base.assume_condition(
                 ConditionTerm::signed_less_than(
                     Bitvector32Term::Variable(Variable(691_000 + index)),
-                    Bitvector32Term::Constant(1000),
+                    Bitvector32Term::constant(1000),
                 ),
                 true,
             );
@@ -189,7 +189,7 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
                         crate::kernel::MachineIntegerType::Int32,
                         crate::kernel::MachineBinaryOp::Add,
                         &variable,
-                        &Bitvector32Term::Constant(1),
+                        &Bitvector32Term::constant(1),
                     )
                 );
             }
@@ -208,7 +208,7 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
 fn logical_shift_shape_and_work_ignore_ambient_count_facts() {
     let count = Bitvector32Term::Variable(Variable(696_000));
     let invalid =
-        ConditionTerm::uint64_greater_equal(count.clone(), Bitvector32Term::UInt64Constant(32));
+        ConditionTerm::uint64_greater_equal(count.clone(), Bitvector32Term::uint64_constant(32));
     let lower = |context: &PureFactContext| {
         apply_spec_arithmetic(
             crate::kernel::MachineBinaryOp::ShiftRight,
@@ -230,7 +230,7 @@ fn logical_shift_shape_and_work_ignore_ambient_count_facts() {
             base = base.assume_condition(
                 ConditionTerm::signed_less_than(
                     Bitvector32Term::Variable(Variable(697_000 + i)),
-                    Bitvector32Term::Constant(1000),
+                    Bitvector32Term::constant(1000),
                 ),
                 true,
             );
@@ -283,13 +283,13 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
             context = context.assume_condition(
                 ConditionTerm::int64_equal(
                     Bitvector32Term::Variable(Variable(699_000 + i)),
-                    Bitvector32Term::Int64Constant(i as i64),
+                    Bitvector32Term::int64_constant(i as i64),
                 ),
                 true,
             );
         }
         context = context.assume_condition(
-            ConditionTerm::int64_equal(operand.clone(), Bitvector32Term::Int64Constant(0)),
+            ConditionTerm::int64_equal(operand.clone(), Bitvector32Term::int64_constant(0)),
             true,
         );
         let (actual, work) = crate::instrumentation::measure_deterministic_work(|| lower(&context));
@@ -326,7 +326,7 @@ fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
                 context = context.assume_condition(
                     ConditionTerm::signed_less_than(
                         value.clone(),
-                        Bitvector32Term::Constant(i32::MAX as u32),
+                        Bitvector32Term::constant(i32::MAX as u32),
                     ),
                     true,
                 );
@@ -335,7 +335,7 @@ fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
                 crate::kernel::MachineIntegerType::Int32,
                 crate::kernel::MachineBinaryOp::Add,
                 &value,
-                &Bitvector32Term::Constant(1),
+                &Bitvector32Term::constant(1),
             );
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 context.settles_exactly(&domain)

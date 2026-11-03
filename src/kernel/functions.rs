@@ -12,6 +12,7 @@ use super::thread_confinement::confined_resource_name;
 use crate::kernel::ResourceDescription;
 use crate::kernel::unary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -3935,10 +3936,10 @@ fn execute_verified_function_applications_with_suspension(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: quantity.clone(),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                 ) {
-                Bitvector32Term::Constant(0)
+                Bitvector32Term::constant(0)
             } else {
                 *quantity
             };
@@ -5004,9 +5005,9 @@ fn source_load_snapshot_for_proposition(
             Work::Condition(ConditionTerm::Constant(_))
             | Work::Condition(ConditionTerm::Variable(_)) => {}
             Work::Condition(_) => return Ok(None),
-            Work::Bitvector(Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_))
-            | Work::Bitvector(Bitvector32Term::Int64Constant(_))
-            | Work::Bitvector(Bitvector32Term::UInt64Constant(_)) => {}
+            Work::Bitvector(bits32_constant!(_))
+            | Work::Bitvector(int64_constant!(_))
+            | Work::Bitvector(uint64_constant!(_)) => {}
             Work::Bitvector(Bitvector32Term::Variable(variable)) => {
                 if crate::kernel::is_load_variable(variable) {
                     let Some((origin, _)) =
@@ -5549,7 +5550,7 @@ fn prepare_verified_function_call<'a>(
                             caller_events,
                             description,
                             false,
-                            &Bitvector32Term::Constant(owned),
+                            &Bitvector32Term::constant(owned),
                             &path_assumptions,
                         )
                     }
@@ -7123,8 +7124,8 @@ fn storage_write_within_owned_footprint(
 ) -> bool {
     let write = CMemoryRange::new_with_element_width(
         pointer.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(write_bytes),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(write_bytes),
         1,
     );
     owned.iter().any(|range| {
@@ -7135,7 +7136,7 @@ fn storage_write_within_owned_footprint(
         }
         let (base, bytes) = range.byte_footprint();
         let owned_bytes =
-            CMemoryRange::new_with_element_width(base, Bitvector32Term::Constant(0), bytes, 1);
+            CMemoryRange::new_with_element_width(base, Bitvector32Term::constant(0), bytes, 1);
         super::assumptions::memory_range_shallowly_contained_with_facts(
             &write,
             &owned_bytes,
@@ -7188,12 +7189,12 @@ fn storage_write_within_owned_elements(
             let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
             if (start == 0
                 || holds(ConditionTerm::uint64_less_equal(
-                    Bitvector32Term::UInt64Constant(start),
+                    Bitvector32Term::uint64_constant(start),
                     index.clone(),
                 )))
                 && holds(ConditionTerm::uint64_less_than(
                     index,
-                    Bitvector32Term::UInt64Constant(end),
+                    Bitvector32Term::uint64_constant(end),
                 ))
             {
                 return true;
@@ -7215,7 +7216,7 @@ fn storage_write_within_owned_elements(
     // decided by the range itself.
     let index_at_least = |bound: i64| match i32::try_from(bound) {
         Ok(bound) => holds(ConditionTerm::signed_less_equal(
-            Bitvector32Term::Constant(bound as u32),
+            Bitvector32Term::constant(bound as u32),
             index.clone(),
         )),
         Err(_) => bound < i64::from(i32::MIN),
@@ -7223,7 +7224,7 @@ fn storage_write_within_owned_elements(
     let index_below = |bound: i64| match i32::try_from(bound) {
         Ok(bound) => holds(ConditionTerm::signed_less_than(
             index.clone(),
-            Bitvector32Term::Constant(bound as u32),
+            Bitvector32Term::constant(bound as u32),
         )),
         Err(_) => bound > i64::from(i32::MAX),
     };
@@ -7255,7 +7256,7 @@ fn storage_write_within_owned_elements(
             range.end().clone(),
         )),
         None if delta.constant == 0 => {
-            let last = Bitvector32Term::Constant((elements - 1) as u32);
+            let last = Bitvector32Term::constant((elements - 1) as u32);
             assumptions.decide(&ConditionTerm::signed_add_overflows(
                 index.clone(),
                 last.clone(),
@@ -9307,7 +9308,7 @@ fn add_normalized_verified_ensure_facts(
         (Bitvector32Term::narrow_constant(*format, bits), *format)
     } else {
         (
-            Bitvector32Term::Constant(value as i32 as u32),
+            Bitvector32Term::constant(value as i32 as u32),
             MachineIntegerType::Int32,
         )
     };
@@ -9399,7 +9400,7 @@ fn refuse_retiring_a_lent_allocation(
     };
     let whole_allocation = CMemoryRange::new_with_element_width(
         base.clone(),
-        Bitvector32Term::Constant(0),
+        Bitvector32Term::constant(0),
         bytes.clone(),
         1,
     );
@@ -9491,7 +9492,7 @@ fn lent_owned_memory_covers_allocation(
     }
     let allocation = CMemoryRange::new_with_element_width(
         base.clone(),
-        Bitvector32Term::Constant(0),
+        Bitvector32Term::constant(0),
         bytes.clone(),
         1,
     );
@@ -9976,8 +9977,8 @@ fn initial_static_resources(
                     block: identity.clone(),
                     offset: PointerOffsetTerm::Constant(i64::from(start)),
                 },
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant((end - start) / width),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant((end - start) / width),
                 width,
             );
             resources = resources.unchecked_with_fact(if block.is_read_only() {
@@ -10611,10 +10612,10 @@ fn string_literal_instance_values(
 fn string_literal_instance_constant(c_type: CType, value: usize) -> Option<CValue> {
     let value = u32::try_from(value).ok()?;
     Some(match c_type {
-        CType::UInt64 => CValue::UInt64(Bitvector32Term::UInt64Constant(u64::from(value))),
-        CType::Int64 => CValue::Int64(Bitvector32Term::UInt64Constant(u64::from(value))),
-        CType::UInt32 => CValue::UInt32(Bitvector32Term::UInt32Constant(value)),
-        CType::Int32 => CValue::Int32(Bitvector32Term::Constant(value)),
+        CType::UInt64 => CValue::UInt64(Bitvector32Term::uint64_constant(u64::from(value))),
+        CType::Int64 => CValue::Int64(Bitvector32Term::uint64_constant(u64::from(value))),
+        CType::UInt32 => CValue::UInt32(Bitvector32Term::uint32_constant(value)),
+        CType::Int32 => CValue::Int32(Bitvector32Term::constant(value)),
         _ => return None,
     })
 }
@@ -11002,8 +11003,8 @@ pub(crate) fn guard_contract_refusal(
 fn private_aggregate_storage_owner(slot: Pointer, layout: &CAggregateLayout) -> CResourceFact {
     CResourceFact::own_memory(CMemoryRange::new_with_element_width(
         slot,
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(layout.size_bytes()),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(layout.size_bytes()),
         1,
     ))
 }
@@ -13230,7 +13231,7 @@ fn evaluate_contract_return_resources(
         // reading rather than an escaping loan.
         let is_population = match support.resource() {
             CResource::Composite { name, .. } => {
-                support.owned_quantity_term() != Some(&Bitvector32Term::Constant(1))
+                support.owned_quantity_term() != Some(&Bitvector32Term::constant(1))
                     || post_state.observes_population_family(name)
                     || entry_state.observes_population_family(name)
             }
@@ -13437,7 +13438,7 @@ fn requirement_is_population_quantity(requirement: &CCheckedResourceFact) -> boo
         requirement.fact.resource(),
         CResource::Composite { .. } | CResource::Token { .. }
     ) && requirement.fact.is_own()
-        && requirement.fact.owned_quantity_term() != Some(&Bitvector32Term::Constant(1))
+        && requirement.fact.owned_quantity_term() != Some(&Bitvector32Term::constant(1))
 }
 
 fn resource_fact_composite_head(fact: &CResourceFact) -> Option<(bool, &str)> {
@@ -14667,7 +14668,7 @@ fn rewrite_resource_instance_selecting_children_unspelled(
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
                     left: Box::new(quantity),
-                    right: Box::new(Bitvector32Term::Constant(0)),
+                    right: Box::new(Bitvector32Term::constant(0)),
                 },
                 true,
             );
@@ -16229,7 +16230,7 @@ pub(super) fn jointly_consume_returned_resource_units(
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: quantity.clone(),
-                right: Box::new(Bitvector32Term::Constant(1)),
+                right: Box::new(Bitvector32Term::constant(1)),
             },
         );
         if !active.insert(required.clone()) {
@@ -16483,7 +16484,7 @@ fn view_range_concretely_loadable(memory: &CMemory, range: &CMemoryRange) -> boo
             block: range.base().block.clone(),
             offset: PointerOffsetTerm::add(
                 range.base().offset.clone(),
-                PointerOffsetTerm::scale_int32(Bitvector32Term::Constant(index), i64::from(width)),
+                PointerOffsetTerm::scale_int32(Bitvector32Term::constant(index), i64::from(width)),
             ),
         };
         memory.is_loadable_concretely(&pointer, width)
@@ -19122,7 +19123,7 @@ fn evaluate_function_resource_spec_with_entry_and_selected_loads(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(quantity.clone()),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                 ) {
                     return Ok(Err(CRuntimeError::FunctionContract(
@@ -19330,7 +19331,7 @@ pub(crate) fn quantified_resource_requirement_assumptions(
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(quantity),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         ));
@@ -19451,7 +19452,7 @@ fn evaluate_function_declared_resource_spec(
             };
             int32(Bitvector32Term::multiply(
                 count,
-                Bitvector32Term::Constant(CType::Int32.byte_width()),
+                Bitvector32Term::constant(CType::Int32.byte_width()),
             ))
         } else {
             let mut diagnostic = None;
@@ -20991,7 +20992,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                                                         format: MachineIntegerType::Int32,
                                                         relation: CompareRelation::Equal,
                                                         left: Box::new(actual.clone()),
-                                                        right: Box::new(Bitvector32Term::Constant(
+                                                        right: Box::new(Bitvector32Term::constant(
                                                             0,
                                                         )),
                                                     },
@@ -21023,7 +21024,7 @@ fn contract_exit_outcome_with_boundary_transfer(
                                             format: MachineIntegerType::Int32,
                                             relation: CompareRelation::Equal,
                                             left: Box::new(actual_quantity.clone()),
-                                            right: Box::new(Bitvector32Term::Constant(0)),
+                                            right: Box::new(Bitvector32Term::constant(0)),
                                         },
                                     ))
                                     && crate::kernel::quantity_condition_holds(
@@ -21592,7 +21593,7 @@ fn exceptional_outcome_declaration_error(
 
 impl From<u32> for Bitvector32Term {
     fn from(value: u32) -> Self {
-        Self::Constant(value)
+        Self::constant(value)
     }
 }
 

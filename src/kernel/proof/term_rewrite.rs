@@ -4,6 +4,7 @@
 use crate::kernel::CompareRelation;
 #[cfg(test)]
 use crate::kernel::binary_node;
+use crate::kernel::int32_constant;
 use crate::kernel::*;
 use crate::kernel::{
     AlgebraicBitvectorMatchArm, AlgebraicResultMatchArm, AlgebraicTerm, AlgebraicTermNode,
@@ -275,7 +276,7 @@ fn bool_operand(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
     else {
         return None;
     };
-    matches!(zero.as_ref(), Bitvector32Term::Constant(0)).then_some(operand.as_ref())
+    matches!(zero.as_ref(), int32_constant!(0)).then_some(operand.as_ref())
 }
 
 /// The variable of a `bool` match binder: a `Bool` binder carried as its
@@ -311,7 +312,7 @@ fn typed_field_replacement(binding: &AlgebraicValue, field: &CValue) -> Option<T
             return Some(TypedCReplacement::Bitvector(term.clone()));
         }
         let operand = match term {
-            Bitvector32Term::Constant(0 | 1) => term,
+            int32_constant!(0 | 1) => term,
             _ => bool_operand(term)?,
         };
         return Some(TypedCReplacement::Bitvector(operand.clone()));
@@ -831,11 +832,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
         return;
     }
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_) => {}
+        Bitvector32Term::Constant { .. } => {}
         Bitvector32Term::Variable(variable) => {
             variables.c.insert(*variable);
             collect_registered_load_carriers(*variable, variables);
@@ -1321,10 +1318,10 @@ fn exhausted_c_value(value: &CValue) -> CValue {
         CValue::Int16(_) => crate::kernel::int16(0),
         CValue::UInt8(_) => crate::kernel::uint8(0),
         CValue::UInt16(_) => crate::kernel::uint16(0),
-        CValue::Int32(_) => CValue::Int32(Bitvector32Term::Constant(0)),
-        CValue::UInt32(_) => CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
-        CValue::Int64(_) => CValue::Int64(Bitvector32Term::Int64Constant(0)),
-        CValue::UInt64(_) => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+        CValue::Int32(_) => CValue::Int32(Bitvector32Term::constant(0)),
+        CValue::UInt32(_) => CValue::UInt32(Bitvector32Term::uint32_constant(0)),
+        CValue::Int64(_) => CValue::Int64(Bitvector32Term::int64_constant(0)),
+        CValue::UInt64(_) => CValue::UInt64(Bitvector32Term::uint64_constant(0)),
         CValue::Int128(_) => MachineIntegerType::Int128
             .constant_value(
                 crate::kernel::MachineIntegerConstant::from_signed(
@@ -1343,8 +1340,8 @@ fn exhausted_c_value(value: &CValue) -> CValue {
                 .unwrap(),
             )
             .unwrap(),
-        CValue::Float32(_) => CValue::Float32(Bitvector32Term::Constant(0)),
-        CValue::Float64(_) => CValue::Float64(Bitvector32Term::UInt64Constant(0)),
+        CValue::Float32(_) => CValue::Float32(Bitvector32Term::constant(0)),
+        CValue::Float64(_) => CValue::Float64(Bitvector32Term::uint64_constant(0)),
         CValue::Pointer(pointer) => CValue::Pointer(
             CPointerValue::new(exhausted_pointer(), pointer.c_type())
                 .with_pointee_volatile(pointer.pointee_volatile())
@@ -1384,7 +1381,7 @@ fn exhausted_argument(argument: &PureFunctionArgument) -> PureFunctionArgument {
 fn exhausted_term(term: &Term) -> Term {
     match term {
         Term::Condition(_) => Term::Condition(ConditionTerm::Constant(false)),
-        Term::Bitvector32(_) => Term::Bitvector32(Bitvector32Term::Constant(0)),
+        Term::Bitvector32(_) => Term::Bitvector32(Bitvector32Term::constant(0)),
         Term::Integer(value) => Term::Integer(exhausted_integer(value)),
         Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset()),
         Term::CValue(value) => Term::CValue(exhausted_c_value(value)),
@@ -5217,11 +5214,11 @@ impl<'a> TermRewrite<'a> {
     pub(crate) fn bits(&mut self, v: &Bitvector32Term) -> Bitvector32Term {
         self.reserve_bitvector_variables_once(v);
         if self.checked_work_exhausted() {
-            return Bitvector32Term::Constant(0);
+            return Bitvector32Term::constant(0);
         }
         self.visit();
         if self.checked_work_exhausted() {
-            return Bitvector32Term::Constant(0);
+            return Bitvector32Term::constant(0);
         }
         if let Bitvector32Term::Variable(variable) = v
             && let Some(mapped) = self.scope.c.get(variable)
@@ -5266,7 +5263,7 @@ impl<'a> TermRewrite<'a> {
                 return Bitvector32Term::Variable(rewritten);
             }
             if self.checked_work_exhausted() {
-                return Bitvector32Term::Constant(0);
+                return Bitvector32Term::constant(0);
             }
             if self.unsupported_integer_scope {
                 return Bitvector32Term::Variable(*variable);
@@ -5297,12 +5294,7 @@ impl<'a> TermRewrite<'a> {
                 }
             }
 
-            Bitvector32Term::Constant(_)
-            | Bitvector32Term::UInt32Constant(_)
-            | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_)
-            | Bitvector32Term::MachineIntegerConstant(_)
-            | Bitvector32Term::Variable(_) => v.clone(),
+            Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => v.clone(),
             Bitvector32Term::UInt32From64(v) => {
                 let value = self.bits(v);
                 if self.integer_exact.is_some() {
@@ -5359,30 +5351,30 @@ impl<'a> TermRewrite<'a> {
             } => {
                 self.reserve_bitvector_scope_variables(v);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::Constant(0);
+                    return Bitvector32Term::constant(0);
                 }
                 let start = self.bits(start);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::Constant(0);
+                    return Bitvector32Term::constant(0);
                 }
                 let end = self.bits(end);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::Constant(0);
+                    return Bitvector32Term::constant(0);
                 }
                 let initial = self.bits(initial);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::Constant(0);
+                    return Bitvector32Term::constant(0);
                 }
                 let saved_scope_id = self.scope_id;
                 let saved_shadowed = self.integer_shadowed;
                 let mut changes = Vec::new();
                 let Some(accumulator) = self.rewrite_c_binder(*accumulator, &mut changes) else {
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                    return Bitvector32Term::Constant(0);
+                    return Bitvector32Term::constant(0);
                 };
                 let Some(item) = self.rewrite_c_binder(*item, &mut changes) else {
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                    return Bitvector32Term::Constant(0);
+                    return Bitvector32Term::constant(0);
                 };
                 let body = if self.conditions.is_some() {
                     body.clone()
@@ -5391,7 +5383,7 @@ impl<'a> TermRewrite<'a> {
                 };
                 self.restore_scope(&changes, saved_scope_id, saved_shadowed);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::Constant(0);
+                    return Bitvector32Term::constant(0);
                 }
                 Bitvector32Term::RangeFold {
                     start: Box::new(start),
@@ -5407,7 +5399,7 @@ impl<'a> TermRewrite<'a> {
                 for argument in arguments {
                     rewritten.push(self.bits(argument));
                     if self.checked_work_exhausted() {
-                        return Bitvector32Term::Constant(0);
+                        return Bitvector32Term::constant(0);
                     }
                 }
                 Bitvector32Term::PureFunctionApplication {
@@ -5420,7 +5412,7 @@ impl<'a> TermRewrite<'a> {
                 for argument in arguments {
                     rewritten.push(self.argument(argument));
                     if self.checked_work_exhausted() {
-                        return Bitvector32Term::Constant(0);
+                        return Bitvector32Term::constant(0);
                     }
                 }
                 Bitvector32Term::ClickFunctionApplication {
@@ -5431,11 +5423,11 @@ impl<'a> TermRewrite<'a> {
             Bitvector32Term::AlgebraicMatch { scrutinee, arms } => {
                 self.reserve_bitvector_scope_variables(v);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::Constant(0);
+                    return Bitvector32Term::constant(0);
                 }
                 let scrutinee = self.algebraic(scrutinee);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::Constant(0);
+                    return Bitvector32Term::constant(0);
                 }
                 let mut rewritten_arms = Vec::with_capacity(arms.len());
                 for arm in arms {
@@ -5445,7 +5437,7 @@ impl<'a> TermRewrite<'a> {
                     let mut bindings = arm.bindings.clone();
                     if !self.rewrite_match_bindings(&mut bindings, &mut changes) {
                         self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                        return Bitvector32Term::Constant(0);
+                        return Bitvector32Term::constant(0);
                     }
                     let body = if self.conditions.is_some() {
                         arm.body.clone()
@@ -5454,7 +5446,7 @@ impl<'a> TermRewrite<'a> {
                     };
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
                     if self.checked_work_exhausted() {
-                        return Bitvector32Term::Constant(0);
+                        return Bitvector32Term::constant(0);
                     }
                     rewritten_arms.push(AlgebraicBitvectorMatchArm {
                         binding_names: arm.binding_names.clone(),
@@ -5557,7 +5549,7 @@ impl<'a> TermRewrite<'a> {
             }
         }
         if self.checked_work_exhausted() {
-            Bitvector32Term::Constant(0)
+            Bitvector32Term::constant(0)
         } else {
             result
         }
@@ -5643,8 +5635,8 @@ mod tests {
                 arguments: vec![
                     PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::If {
                         condition: Box::new(condition.clone()),
-                        then_term: Box::new(Bitvector32Term::Constant(7)),
-                        else_term: Box::new(Bitvector32Term::Constant(0)),
+                        then_term: Box::new(Bitvector32Term::constant(7)),
+                        else_term: Box::new(Bitvector32Term::constant(0)),
                     },));
                     size
                 ],
@@ -5653,7 +5645,7 @@ mod tests {
                 name: "many".into(),
                 arguments: vec![
                     PureFunctionArgument::Value(CValue::Int32(
-                        Bitvector32Term::Constant(7),
+                        Bitvector32Term::constant(7),
                     ));
                     size
                 ],
@@ -5671,19 +5663,19 @@ mod tests {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(variable)),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         };
         let conditions = HashMap::from([(condition.clone(), true)]);
         let input = Bitvector32Term::RangeFold {
-            start: Box::new(Bitvector32Term::Constant(0)),
-            end: Box::new(Bitvector32Term::Constant(2)),
-            initial: Box::new(Bitvector32Term::Constant(0)),
+            start: Box::new(Bitvector32Term::constant(0)),
+            end: Box::new(Bitvector32Term::constant(2)),
+            initial: Box::new(Bitvector32Term::constant(0)),
             accumulator: Variable(52),
             item: variable,
             body: Box::new(Bitvector32Term::If {
                 condition: Box::new(condition),
-                then_term: Box::new(Bitvector32Term::Constant(7)),
-                else_term: Box::new(Bitvector32Term::Constant(0)),
+                then_term: Box::new(Bitvector32Term::constant(7)),
+                else_term: Box::new(Bitvector32Term::constant(0)),
             }),
         };
         assert_eq!(TermRewrite::for_conditions(&conditions).bits(&input), input);
@@ -6149,7 +6141,7 @@ mod tests {
                 let mut arguments = Vec::with_capacity(fanout + 1);
                 arguments.push(PureFunctionArgument::Value(CValue::Int32(right)));
                 arguments.extend((0..fanout).map(|_| {
-                    PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Constant(0)))
+                    PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::constant(0)))
                 }));
                 let fanout = Bitvector32Term::ClickFunctionApplication {
                     name: "wide_condition".into(),
@@ -6160,10 +6152,10 @@ mod tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(Bitvector32Term::Variable(Variable(20_000 + index))),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     }),
                     then_term: Box::new(fanout),
-                    else_term: Box::new(Bitvector32Term::Constant(0)),
+                    else_term: Box::new(Bitvector32Term::constant(0)),
                 };
             }
             ConditionTerm::Compare {
@@ -6375,7 +6367,7 @@ mod tests {
             Int32,
             Add,
             Box::new(Bitvector32Term::Variable(bound_c)),
-            Box::new(Bitvector32Term::Constant(1)),
+            Box::new(Bitvector32Term::constant(1)),
         )));
         let mut malformed_binding_rewrite = TermRewrite::for_typed_variables(
             &c_replacements,
@@ -6419,7 +6411,7 @@ mod tests {
             algebraic_type,
             node: AlgebraicTermNode::Constructor {
                 variant: "Wrapped".into(),
-                fields: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Constant(
+                fields: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::constant(
                     7,
                 )))],
             },
@@ -6436,14 +6428,14 @@ mod tests {
             }],
         };
         let mut rewrite = TermRewrite::new(&scrutinee, &constructor);
-        assert_eq!(rewrite.bits(&goal), Bitvector32Term::Constant(7));
+        assert_eq!(rewrite.bits(&goal), Bitvector32Term::constant(7));
         assert!(rewrite.changed);
 
         let malformed = AlgebraicTerm {
             algebraic_type: constructor.algebraic_type.clone(),
             node: AlgebraicTermNode::Constructor {
                 variant: "Wrapped".into(),
-                fields: vec![AlgebraicValue::C(CValue::Int64(Bitvector32Term::Constant(
+                fields: vec![AlgebraicValue::C(CValue::Int64(Bitvector32Term::constant(
                     7,
                 )))],
             },
@@ -6617,7 +6609,7 @@ mod tests {
                 Int32,
                 Add,
                 Box::new(payload),
-                Box::new(Bitvector32Term::Constant(1))
+                Box::new(Bitvector32Term::constant(1))
             );
         }
         let input = Term::Integer(IntegerTerm::Machine(
@@ -6647,7 +6639,7 @@ mod tests {
                         crate::instrumentation::VerificationEvent::TacticStarted(tactic.clone()),
                     );
                     let source_term = Bitvector32Term::Variable(source);
-                    let replacement = Bitvector32Term::Constant(7);
+                    let replacement = Bitvector32Term::constant(7);
                     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement);
                     let output = rewrite.term(&input);
                     let visits = rewrite.visits;
@@ -6676,7 +6668,7 @@ mod tests {
                 Int32,
                 Add,
                 Box::new(replacement),
-                Box::new(Bitvector32Term::Constant(1)),
+                Box::new(Bitvector32Term::constant(1)),
             );
         }
         let (output, visits, exhausted) = with_checked_simple_budget(4, || {
@@ -6692,16 +6684,13 @@ mod tests {
             visits <= 1,
             "rewrite traversed after collection exhaustion: {visits}"
         );
-        assert!(matches!(
-            output,
-            Term::Bitvector32(Bitvector32Term::Constant(0))
-        ));
+        assert!(matches!(output, Term::Bitvector32(int32_constant!(0))));
     }
 
     #[test]
     fn checked_rewrite_stops_before_wide_sibling_payloads() {
         let source = Bitvector32Term::Variable(Variable(3_020_000));
-        let replacement = Bitvector32Term::Constant(7);
+        let replacement = Bitvector32Term::constant(7);
         let input = Term::Bitvector32(Bitvector32Term::PureFunctionApplication {
             name: "wide_checked_payload".into(),
             arguments: vec![source.clone(); 256],
@@ -6713,10 +6702,7 @@ mod tests {
         });
         assert!(exhausted);
         assert!(visits <= 8, "rewrite kept visiting siblings: {visits}");
-        assert!(matches!(
-            output,
-            Term::Bitvector32(Bitvector32Term::Constant(0))
-        ));
+        assert!(matches!(output, Term::Bitvector32(int32_constant!(0))));
     }
 
     #[test]
@@ -6737,7 +6723,7 @@ mod tests {
             body,
         );
         let from = Bitvector32Term::Variable(binder);
-        let to = Bitvector32Term::Constant(7);
+        let to = Bitvector32Term::constant(7);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let output = rewrite.term(&Term::Integer(fold));
         let Term::Integer(IntegerTerm::RangeFold { body, .. }) = output else {
@@ -6759,9 +6745,9 @@ mod tests {
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
                 start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
                     2,
                 )),
             },
@@ -6771,7 +6757,7 @@ mod tests {
             body,
         );
         let from = Bitvector32Term::Variable(binder);
-        let to = Bitvector32Term::Constant(7);
+        let to = Bitvector32Term::constant(7);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let output = rewrite.term(&Term::Integer(fold));
         let Term::Integer(IntegerTerm::RangeFold { item, body, .. }) = output else {
@@ -6830,9 +6816,9 @@ mod tests {
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
                 start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
                     1,
                 )),
             },
@@ -6872,9 +6858,9 @@ mod tests {
         let nested = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
                 start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
                     1,
                 )),
             },
@@ -6886,9 +6872,9 @@ mod tests {
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
                 start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
                     1,
                 )),
             },
@@ -7108,9 +7094,9 @@ mod tests {
         let fold_with_match = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
                 start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
                     1,
                 )),
             },
@@ -7155,10 +7141,10 @@ mod tests {
             &IntegerTerm::RangeFold {
                 index: crate::kernel::IntegerRangeFoldIndex::Int32 {
                     start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                     ),
                     end: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        Bitvector32Term::Constant(1),
+                        Bitvector32Term::constant(1),
                     ),
                 },
                 initial: IntegerTerm::constant_i64(0).into(),
@@ -7174,10 +7160,10 @@ mod tests {
             &IntegerTerm::RangeFold {
                 index: crate::kernel::IntegerRangeFoldIndex::Int32 {
                     start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                     ),
                     end: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        Bitvector32Term::Constant(1),
+                        Bitvector32Term::constant(1),
                     ),
                 },
                 initial: IntegerTerm::constant_i64(0).into(),
@@ -7354,7 +7340,7 @@ mod tests {
         let c_replacements = BTreeMap::from([
             (
                 c_x,
-                TypedCReplacement::Bitvector(Bitvector32Term::Constant(0)),
+                TypedCReplacement::Bitvector(Bitvector32Term::constant(0)),
             ),
             (
                 c_y,
@@ -7423,15 +7409,15 @@ mod tests {
             Int32,
             Add,
             Box::new(Bitvector32Term::Variable(source_variable)),
-            Box::new(Bitvector32Term::Constant(1)),
+            Box::new(Bitvector32Term::constant(1)),
         );
         let replacement = Bitvector32Term::Variable(Variable(3_104_001));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
                 start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
                     1,
                 )),
             },
@@ -7454,15 +7440,15 @@ mod tests {
             Int32,
             Add,
             Box::new(Bitvector32Term::Variable(source_variable)),
-            Box::new(Bitvector32Term::Constant(1)),
+            Box::new(Bitvector32Term::constant(1)),
         );
         let replacement = Bitvector32Term::Variable(Variable(3_103_001));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
                 start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
                     1,
                 )),
             },
@@ -7495,7 +7481,7 @@ mod tests {
                     byte_width: 4,
                 },
             },
-            bytes: Bitvector32Term::Constant(4),
+            bytes: Bitvector32Term::constant(4),
             wide: false,
         };
         let mut proposition = atom.clone();

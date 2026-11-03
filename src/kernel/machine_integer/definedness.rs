@@ -6,7 +6,9 @@
 //! representability. Unsigned overflow remains wrapping arithmetic.
 
 use super::{FORMATS, Operation, comparison::ComparisonOperand, range, representation};
-use crate::kernel::{Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
+#[cfg(test)]
+use crate::kernel::Bitvector32Term;
+use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
 
 /// The formats whose definedness facts the kernel files, narrowest first:
 /// those where C arithmetic's overflow is undefined behavior

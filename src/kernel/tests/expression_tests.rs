@@ -3,6 +3,7 @@
 // calls it, so the tests import the planner explicitly.
 use super::*;
 use crate::kernel::binary_node;
+use crate::kernel::{constant_u32, int32_constant};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
@@ -52,10 +53,10 @@ fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
 fn a_specification_condition_folds_only_when_it_is_constant() {
     let flag = Bitvector32Term::Variable(Variable(4241));
     let constant_true =
-        ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), Bitvector32Term::Constant(2));
+        ConditionTerm::signed_less_than(Bitvector32Term::constant(1), Bitvector32Term::constant(2));
     let constant_false =
-        ConditionTerm::signed_less_than(Bitvector32Term::Constant(2), Bitvector32Term::Constant(1));
-    let ambient = ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), flag.clone());
+        ConditionTerm::signed_less_than(Bitvector32Term::constant(2), Bitvector32Term::constant(1));
+    let ambient = ConditionTerm::signed_less_than(Bitvector32Term::constant(0), flag.clone());
 
     for (condition, expected) in [(constant_true, true), (constant_false, false)] {
         assert_eq!(
@@ -87,15 +88,15 @@ fn checked_wide_to_int_narrowing_requires_each_representability_bound() {
     let value = Bitvector32Term::Variable(Variable(912));
     let lower = ConditionTerm::int64_signed_greater_equal(
         value.clone(),
-        Bitvector32Term::Int64Constant(i64::from(i32::MIN)),
+        Bitvector32Term::int64_constant(i64::from(i32::MIN)),
     );
     let signed_upper = ConditionTerm::int64_signed_less_equal(
         value.clone(),
-        Bitvector32Term::Int64Constant(i64::from(i32::MAX)),
+        Bitvector32Term::int64_constant(i64::from(i32::MAX)),
     );
     let unsigned_upper = ConditionTerm::uint64_less_equal(
         value.clone(),
-        Bitvector32Term::UInt64Constant(i32::MAX as u64),
+        Bitvector32Term::uint64_constant(i32::MAX as u64),
     );
     for (input, bounds) in [
         (CValue::Int64(value.clone()), vec![lower, signed_upper]),
@@ -162,7 +163,7 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
         i64::MAX,
     ] {
         let mut obligations = Vec::new();
-        let input = CValue::Int64(Bitvector32Term::Int64Constant(value));
+        let input = CValue::Int64(Bitvector32Term::int64_constant(value));
         // C's conversion keeps the low word, read as signed.
         assert_eq!(
             convert(input.clone(), IntegerConversion::Modular, &mut obligations),
@@ -191,7 +192,7 @@ fn wide_to_int_narrowing_checks_signed_and_unsigned_boundaries() {
         u64::MAX,
     ] {
         let mut obligations = Vec::new();
-        let input = CValue::UInt64(Bitvector32Term::UInt64Constant(value));
+        let input = CValue::UInt64(Bitvector32Term::uint64_constant(value));
         assert_eq!(
             convert(input.clone(), IntegerConversion::Modular, &mut obligations),
             Some(int32(value as u32))
@@ -218,13 +219,13 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
     let x = Bitvector32Term::Variable(Variable(950));
     let y = Bitvector32Term::Variable(Variable(951));
     let signed_bound =
-        ConditionTerm::int64_signed_less_equal(x.clone(), Bitvector32Term::Int64Constant(0));
+        ConditionTerm::int64_signed_less_equal(x.clone(), Bitvector32Term::int64_constant(0));
     let unsigned_bound =
-        ConditionTerm::uint64_less_equal(x.clone(), Bitvector32Term::UInt64Constant(0));
+        ConditionTerm::uint64_less_equal(x.clone(), Bitvector32Term::uint64_constant(0));
     let facts = PureFactContext::new()
         .assume_condition(ConditionTerm::uint64_equal(x.clone(), y.clone()), true)
         .assume_condition(
-            ConditionTerm::uint64_equal(y, Bitvector32Term::UInt64Constant(u64::MAX)),
+            ConditionTerm::uint64_equal(y, Bitvector32Term::uint64_constant(u64::MAX)),
             true,
         );
     assert_eq!(facts.decide(&signed_bound), Some(true));
@@ -232,7 +233,7 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
     let narrowed = Proposition::ConditionIs(
         ConditionTerm::equal(
             Bitvector32Term::uint32_from_64(x.clone()),
-            Bitvector32Term::Constant(u32::MAX),
+            Bitvector32Term::constant(u32::MAX),
         ),
         true,
     );
@@ -241,7 +242,7 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
     assert!(facts.derive_solve_atomic_proposition(&narrowed).is_some());
     // A 32-bit equality is not evidence about all 64 bits of a wide term.
     let narrow_facts = PureFactContext::new()
-        .assume_condition(ConditionTerm::equal(x, Bitvector32Term::Constant(0)), true);
+        .assume_condition(ConditionTerm::equal(x, Bitvector32Term::constant(0)), true);
     assert_eq!(narrow_facts.decide(&unsigned_bound), None);
     let proposition = Proposition::ConditionIs(signed_bound, true);
     let derivation = facts.derive_atomic_proposition(&proposition).unwrap();
@@ -252,14 +253,14 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
 #[test]
 fn unsigned_64_to_32_narrowing_preserves_only_low_bits() {
     for (input, expected) in [
-        (Bitvector32Term::UInt64Constant(u64::MAX), u32::MAX),
-        (Bitvector32Term::UInt64Constant((1u64 << 32) + 7), 7),
-        (Bitvector32Term::Int64Constant(-1), u32::MAX),
-        (Bitvector32Term::Int64Constant(i64::MIN), 0),
+        (Bitvector32Term::uint64_constant(u64::MAX), u32::MAX),
+        (Bitvector32Term::uint64_constant((1u64 << 32) + 7), 7),
+        (Bitvector32Term::int64_constant(-1), u32::MAX),
+        (Bitvector32Term::int64_constant(i64::MIN), 0),
     ] {
         assert_eq!(
             Bitvector32Term::uint32_from_64(input),
-            Bitvector32Term::Constant(expected)
+            Bitvector32Term::constant(expected)
         );
     }
     let x = Bitvector32Term::Variable(Variable(1));
@@ -283,11 +284,11 @@ fn narrowed_shift_bounds_do_not_discard_possible_high_counts() {
         let narrowed =
             Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_logical_shift_right(
                 x.clone(),
-                Bitvector32Term::Constant(count),
+                Bitvector32Term::constant(count),
             ));
         let below =
-            ConditionTerm::unsigned_less_than(narrowed.clone(), Bitvector32Term::Constant(32));
-        let above = ConditionTerm::unsigned_greater_equal(narrowed, Bitvector32Term::Constant(32));
+            ConditionTerm::unsigned_less_than(narrowed.clone(), Bitvector32Term::constant(32));
+        let above = ConditionTerm::unsigned_greater_equal(narrowed, Bitvector32Term::constant(32));
         if (59..64).contains(&count) {
             assert_eq!(below, ConditionTerm::Constant(true));
             assert_eq!(above, ConditionTerm::Constant(false));
@@ -297,8 +298,8 @@ fn narrowed_shift_bounds_do_not_discard_possible_high_counts() {
         }
     }
     for mask in [0, 31, 32, u32::MAX] {
-        let masked = Bitvector32Term::bitwise_and(x.clone(), Bitvector32Term::Constant(mask));
-        let below = ConditionTerm::unsigned_less_than(masked, Bitvector32Term::Constant(32));
+        let masked = Bitvector32Term::bitwise_and(x.clone(), Bitvector32Term::constant(mask));
+        let below = ConditionTerm::unsigned_less_than(masked, Bitvector32Term::constant(32));
         assert_eq!(below == ConditionTerm::Constant(true), mask < 32);
     }
 }
@@ -321,23 +322,23 @@ fn floating_point_constant_conversions_round_in_integer_space() {
     let cases = [
         (
             c_cast(c_uint64_literal(16_777_217), CType::Float32),
-            CValue::Float32(Bitvector32Term::Constant(0x4b80_0000)),
+            CValue::Float32(Bitvector32Term::constant(0x4b80_0000)),
         ),
         (
             c_cast(c_uint64_literal(9_007_199_254_740_993), CType::Float64),
-            CValue::Float64(Bitvector32Term::UInt64Constant(0x4340_0000_0000_0000)),
+            CValue::Float64(Bitvector32Term::uint64_constant(0x4340_0000_0000_0000)),
         ),
         (
             c_cast(c_float64_literal(0x3ff0_0000_1000_0000), CType::Float32),
-            CValue::Float32(Bitvector32Term::Constant(0x3f80_0000)),
+            CValue::Float32(Bitvector32Term::constant(0x3f80_0000)),
         ),
         (
             c_cast(c_float32_literal(0x3fc0_0000), CType::Float64),
-            CValue::Float64(Bitvector32Term::UInt64Constant(0x3ff8_0000_0000_0000)),
+            CValue::Float64(Bitvector32Term::uint64_constant(0x3ff8_0000_0000_0000)),
         ),
         (
             c_cast(c_int64_literal(-16_777_217), CType::Float32),
-            CValue::Float32(Bitvector32Term::Constant(0xcb80_0000)),
+            CValue::Float32(Bitvector32Term::constant(0xcb80_0000)),
         ),
     ];
 
@@ -361,15 +362,15 @@ fn floating_point_to_integer_conversion_truncates_and_rejects_invalid_values() {
     let valid = [
         (
             c_cast(c_float32_literal(0x4070_0000), CType::Int32),
-            CValue::Int32(Bitvector32Term::Constant(3)),
+            CValue::Int32(Bitvector32Term::constant(3)),
         ),
         (
             c_cast(c_float64_literal(0xc00e_0000_0000_0000), CType::Int64),
-            CValue::Int64(Bitvector32Term::Int64Constant(-3)),
+            CValue::Int64(Bitvector32Term::int64_constant(-3)),
         ),
         (
             c_cast(c_float64_literal(0x8000_0000_0000_0000), CType::UInt32),
-            CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
+            CValue::UInt32(Bitvector32Term::uint32_constant(0)),
         ),
     ];
     for (expression, expected) in valid {
@@ -576,7 +577,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float32_literal(2.0f32.to_bits()),
         )),
         CExpressionOutcome::Value(CValue::Float32(
-            Bitvector32Term::Constant(3.0f32.to_bits(),)
+            Bitvector32Term::constant(3.0f32.to_bits(),)
         ))
     );
     assert_eq!(
@@ -584,7 +585,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float32_literal(1.0f32.to_bits()),
             c_float32_literal(2.0f32.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float32(Bitvector32Term::Constant(
+        CExpressionOutcome::Value(CValue::Float32(Bitvector32Term::constant(
             (-1.0f32).to_bits(),
         )))
     );
@@ -594,7 +595,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float32_literal(2.0f32.to_bits()),
         )),
         CExpressionOutcome::Value(CValue::Float32(
-            Bitvector32Term::Constant(3.0f32.to_bits(),)
+            Bitvector32Term::constant(3.0f32.to_bits(),)
         ))
     );
     assert_eq!(
@@ -603,7 +604,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float32_literal(2.0f32.to_bits()),
         )),
         CExpressionOutcome::Value(CValue::Float32(
-            Bitvector32Term::Constant(1.5f32.to_bits(),)
+            Bitvector32Term::constant(1.5f32.to_bits(),)
         ))
     );
 
@@ -612,7 +613,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float64_literal(1.0f64.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::UInt64Constant(
+        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::uint64_constant(
             3.0f64.to_bits(),
         )))
     );
@@ -621,7 +622,7 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float64_literal(1.5f64.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::UInt64Constant(
+        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::uint64_constant(
             3.0f64.to_bits(),
         )))
     );
@@ -630,17 +631,17 @@ fn floating_point_arithmetic_rounds_both_widths_in_integer_space() {
             c_float64_literal(3.0f64.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::UInt64Constant(
+        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::uint64_constant(
             1.5f64.to_bits(),
         )))
     );
     assert_eq!(
         evaluate(c_float_negate(c_float32_literal(0x8000_0000))),
-        CExpressionOutcome::Value(CValue::Float32(Bitvector32Term::Constant(0)))
+        CExpressionOutcome::Value(CValue::Float32(Bitvector32Term::constant(0)))
     );
     assert_eq!(
         evaluate(c_float_negate(c_float64_literal(0))),
-        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::UInt64Constant(
+        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::uint64_constant(
             0x8000_0000_0000_0000,
         )))
     );
@@ -658,9 +659,9 @@ fn floating_point_arithmetic_preserves_ieee_exceptions_and_ties() {
         }
     };
     let f32_value =
-        |bits| CExpressionOutcome::Value(CValue::Float32(Bitvector32Term::Constant(bits)));
+        |bits| CExpressionOutcome::Value(CValue::Float32(Bitvector32Term::constant(bits)));
     let f64_value =
-        |bits| CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::UInt64Constant(bits)));
+        |bits| CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::uint64_constant(bits)));
 
     // The halfway case rounds to the even significand; an exact ulp reaches
     // the next representable value.
@@ -809,7 +810,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
             c_float32_literal(1.5f32.to_bits()),
             c_float64_literal(2.0f64.to_bits()),
         )),
-        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::UInt64Constant(
+        CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::uint64_constant(
             3.5f64.to_bits(),
         )))
     );
@@ -819,7 +820,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
             c_int32_literal(2)
         )),
         CExpressionOutcome::Value(CValue::Float32(
-            Bitvector32Term::Constant(3.5f32.to_bits(),)
+            Bitvector32Term::constant(3.5f32.to_bits(),)
         ))
     );
     assert_eq!(
@@ -827,7 +828,7 @@ fn mixed_floating_arithmetic_promotes_to_the_wider_or_present_float_type() {
             c_float64_literal(1.0f64.to_bits()),
             c_int32_literal(2),
         )),
-        CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Constant(1)))
+        CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::constant(1)))
     );
 }
 
@@ -930,7 +931,7 @@ fn wide_shift_counts_are_checked_before_narrowing() {
                             CType::UInt64,
                             ConditionTerm::uint64_equal(
                                 count_term.clone(),
-                                Bitvector32Term::UInt64Constant(count_value_bits),
+                                Bitvector32Term::uint64_constant(count_value_bits),
                             ),
                         )
                     } else {
@@ -939,17 +940,17 @@ fn wide_shift_counts_are_checked_before_narrowing() {
                             CType::Int64,
                             ConditionTerm::int64_equal(
                                 count_term.clone(),
-                                Bitvector32Term::Int64Constant(count_value_bits as i64),
+                                Bitvector32Term::int64_constant(count_value_bits as i64),
                             ),
                         )
                     };
                     let (left_value, left_type) = if left_is_64_bit {
                         (
-                            CValue::Int64(Bitvector32Term::Int64Constant(1)),
+                            CValue::Int64(Bitvector32Term::int64_constant(1)),
                             CType::Int64,
                         )
                     } else {
-                        (CValue::Int32(Bitvector32Term::Constant(1)), CType::Int32)
+                        (CValue::Int32(Bitvector32Term::constant(1)), CType::Int32)
                     };
                     let mut state = CState::new()
                         .with_local("left", left_value.clone())
@@ -1163,7 +1164,7 @@ fn nonnegative_ordered_subtraction_does_not_overflow() {
     let length = Bitvector32Term::Variable(Variable(25));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(position.clone(), Bitvector32Term::Constant(0)),
+            ConditionTerm::signed_greater_equal(position.clone(), Bitvector32Term::constant(0)),
             true,
         )
         .assume_condition(
@@ -1302,7 +1303,7 @@ fn explicit_wide_integer_pointer_cast_accepts_only_proven_null_without_origin() 
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::uint64_equal(
                         word.clone(),
-                        Bitvector32Term::UInt64Constant(known),
+                        Bitvector32Term::uint64_constant(known),
                     ),
                     true,
                 );
@@ -1435,7 +1436,7 @@ fn spec_pointer_equality_lowers_to_a_pure_fact() {
         c_value_comparison_proposition(
             &CValue::pointer(left),
             CComparisonOperator::LessThan,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
+            &CValue::Int32(Bitvector32Term::constant(0)),
         ),
         None,
     );
@@ -2127,7 +2128,7 @@ fn uint64_pointer_index_bounds_use_the_full_value() {
         .set_typed("index", CValue::UInt64(index.clone()), CType::UInt64);
     let expression = c_add(c_variable("array"), c_variable("index"));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::uint64_equal(index, Bitvector32Term::UInt64Constant(0x1_0000_0003)),
+        ConditionTerm::uint64_equal(index, Bitvector32Term::uint64_constant(0x1_0000_0003)),
         true,
     );
     let mut budget = ExecutionBudget::for_c_expression(&expression);
@@ -2609,7 +2610,7 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
     let loadable = |bytes| Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base: pointer.clone(),
-        bytes: Bitvector32Term::Constant(bytes),
+        bytes: Bitvector32Term::constant(bytes),
         wide: false,
     };
 
@@ -2657,7 +2658,7 @@ fn pointer_arithmetic_preserves_external_object_identity() {
         },
     };
     let derived_left = left.offset_by_int32_elements(Bitvector32Term::Variable(Variable(31_102)));
-    let derived_right = right.offset_by_int32_elements(Bitvector32Term::Constant(1));
+    let derived_right = right.offset_by_int32_elements(Bitvector32Term::constant(1));
 
     assert_eq!(
         pointer_object_identity_condition(&derived_left, &derived_right),
@@ -2812,12 +2813,12 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
                 Int32,
                 Multiply,
                 Box::new(n_bits.clone()),
-                Box::new(Bitvector32Term::Constant(4)),
+                Box::new(Bitvector32Term::constant(4)),
             ),
             wide: false,
         })
         .assume_condition(
-            ConditionTerm::signed_greater_equal(i_bits.clone(), Bitvector32Term::Constant(0)),
+            ConditionTerm::signed_greater_equal(i_bits.clone(), Bitvector32Term::constant(0)),
             true,
         )
         .assume_condition(
@@ -2836,8 +2837,8 @@ fn symbolic_loadable_discharges_pointer_access_obligation() {
 #[test]
 fn signed_order_solver_knows_int32_universal_bounds() {
     let x = Bitvector32Term::Variable(Variable(71));
-    let int_min = Bitvector32Term::Constant(i32::MIN as u32);
-    let int_max = Bitvector32Term::Constant(i32::MAX as u32);
+    let int_min = Bitvector32Term::constant(i32::MIN as u32);
+    let int_max = Bitvector32Term::constant(i32::MAX as u32);
     let assumptions = PureFactContext::new();
 
     assert_eq!(
@@ -2868,14 +2869,14 @@ fn signed_order_solver_knows_int32_universal_bounds() {
 fn strict_positive_bound_rules_out_decrement_overflow() {
     let value = Bitvector32Term::Variable(Variable(72_001));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), value.clone()),
+        ConditionTerm::signed_less_than(Bitvector32Term::constant(1), value.clone()),
         true,
     );
 
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_subtract_overflows(
             value,
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(1),
         )),
         Some(false)
     );
@@ -2885,14 +2886,14 @@ fn strict_positive_bound_rules_out_decrement_overflow() {
 fn nonnegative_bound_rules_out_decrement_overflow() {
     let value = Bitvector32Term::Variable(Variable(72_002));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_greater_equal(value.clone(), Bitvector32Term::Constant(0)),
+        ConditionTerm::signed_greater_equal(value.clone(), Bitvector32Term::constant(0)),
         true,
     );
 
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_subtract_overflows(
             value,
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(1),
         )),
         Some(false)
     );
@@ -2906,31 +2907,31 @@ fn interval_arithmetic_uses_lower_bound_for_incremented_values() {
         Int32,
         Add,
         Box::new(i_bits.clone()),
-        Box::new(Bitvector32Term::Constant(1)),
+        Box::new(Bitvector32Term::constant(1)),
     );
     // A lower bound alone is not enough: `i + 1` wraps at INT_MAX, so
     // `i >= 1` does not entail `i + 1 >= 1` (false at i = INT_MAX).
     let lower_only = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_greater_equal(i_bits.clone(), Bitvector32Term::Constant(1)),
+        ConditionTerm::signed_greater_equal(i_bits.clone(), Bitvector32Term::constant(1)),
         true,
     );
     assert!(!lower_only.proves(&Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(incremented.clone(), Bitvector32Term::Constant(1),),
+        ConditionTerm::signed_greater_equal(incremented.clone(), Bitvector32Term::constant(1),),
         true,
     )));
 
     // Knowing `i < INT_MAX` rules out signed overflow of `i + 1`, so the
     // lower bound carries to the incremented value.
     let assumptions = lower_only.assume_condition(
-        ConditionTerm::signed_less_than(i_bits, Bitvector32Term::Constant(i32::MAX as u32)),
+        ConditionTerm::signed_less_than(i_bits, Bitvector32Term::constant(i32::MAX as u32)),
         true,
     );
     assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(incremented.clone(), Bitvector32Term::Constant(1),),
+        ConditionTerm::signed_greater_equal(incremented.clone(), Bitvector32Term::constant(1),),
         true,
     )));
     assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(incremented, Bitvector32Term::Constant(0)),
+        ConditionTerm::signed_greater_than(incremented, Bitvector32Term::constant(0)),
         true,
     )));
 }
@@ -2938,23 +2939,23 @@ fn interval_arithmetic_uses_lower_bound_for_incremented_values() {
 #[test]
 fn nonnegative_successor_requires_no_overflow_evidence() {
     let x = Bitvector32Term::Variable(Variable(74_001));
-    let successor = Bitvector32Term::add(x.clone(), Bitvector32Term::Constant(1));
+    let successor = Bitvector32Term::add(x.clone(), Bitvector32Term::constant(1));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::Constant(0)),
+        ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::constant(0)),
         true,
     );
 
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_greater_equal(
             successor.clone(),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         )),
         None,
     );
     assert!(
         assumptions
             .derive_solve_proposition(&Proposition::ConditionIs(
-                ConditionTerm::signed_greater_equal(successor, Bitvector32Term::Constant(0),),
+                ConditionTerm::signed_greater_equal(successor, Bitvector32Term::constant(0),),
                 true,
             ))
             .is_none()
@@ -2965,7 +2966,7 @@ fn nonnegative_successor_requires_no_overflow_evidence() {
 fn additive_upper_bound_covers_incremented_pointer_access() {
     let j = Variable(74);
     let j_bits = Bitvector32Term::Variable(j);
-    let incremented = Bitvector32Term::add(j_bits.clone(), Bitvector32Term::Constant(1));
+    let incremented = Bitvector32Term::add(j_bits.clone(), Bitvector32Term::constant(1));
     let base = Pointer {
         block: "p".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -2973,18 +2974,18 @@ fn additive_upper_bound_covers_incremented_pointer_access() {
     let pointer = base.offset_by_int32_elements(incremented.clone());
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(j_bits.clone(), Bitvector32Term::Constant(0)),
+            ConditionTerm::signed_greater_equal(j_bits.clone(), Bitvector32Term::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(j_bits, Bitvector32Term::Constant(2)),
+            ConditionTerm::signed_less_than(j_bits, Bitvector32Term::constant(2)),
             true,
         );
 
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_less_than(
             incremented,
-            Bitvector32Term::Constant(3),
+            Bitvector32Term::constant(3),
         )),
         Some(true)
     );
@@ -2992,8 +2993,8 @@ fn additive_upper_bound_covers_incremented_pointer_access() {
         &pointer,
         4,
         &base,
-        &Bitvector32Term::Constant(0),
-        &Bitvector32Term::Constant(3),
+        &Bitvector32Term::constant(0),
+        &Bitvector32Term::constant(3),
         4,
     ));
 }
@@ -3020,11 +3021,11 @@ fn relative_dependent_range_is_covered_by_owned_range() {
     let required = CResourceFact::own_memory(CMemoryRange::new(
         base,
         indexed_start.clone(),
-        Bitvector32Term::add(indexed_start, Bitvector32Term::Constant(1)),
+        Bitvector32Term::add(indexed_start, Bitvector32Term::constant(1)),
     ));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(index.clone(), Bitvector32Term::Constant(0)),
+            ConditionTerm::signed_greater_equal(index.clone(), Bitvector32Term::constant(0)),
             true,
         )
         .assume_condition(ConditionTerm::signed_less_than(index, length.clone()), true)
@@ -3041,7 +3042,7 @@ fn relative_dependent_range_is_covered_by_owned_range() {
 fn addition_cancels_a_negated_pointer_base() {
     let base = Bitvector32Term::Variable(Variable(90));
     let index = Bitvector32Term::Variable(Variable(91));
-    let negative_base = Bitvector32Term::subtract(Bitvector32Term::Constant(0), base.clone());
+    let negative_base = Bitvector32Term::subtract(Bitvector32Term::constant(0), base.clone());
 
     assert_eq!(
         Bitvector32Term::add(negative_base, Bitvector32Term::add(base, index.clone()),),
@@ -3053,12 +3054,12 @@ fn addition_cancels_a_negated_pointer_base() {
 fn negative_equality_fact_decides_equality_false() {
     let x = Bitvector32Term::Variable(Variable(79));
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(x.clone(), Bitvector32Term::Constant(0)),
+        ConditionTerm::equal(x.clone(), Bitvector32Term::constant(0)),
         false,
     );
 
     assert_eq!(
-        assumptions.decide(&ConditionTerm::equal(Bitvector32Term::Constant(0), x,)),
+        assumptions.decide(&ConditionTerm::equal(Bitvector32Term::constant(0), x,)),
         Some(false)
     );
 }
@@ -3069,10 +3070,10 @@ fn equality_facts_are_transitive() {
     let k = Bitvector32Term::Variable(Variable(85));
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(k.clone(), i.clone()), true)
-        .assume_condition(ConditionTerm::equal(i, Bitvector32Term::Constant(1)), true);
+        .assume_condition(ConditionTerm::equal(i, Bitvector32Term::constant(1)), true);
 
     assert_eq!(
-        assumptions.decide(&ConditionTerm::equal(k, Bitvector32Term::Constant(1))),
+        assumptions.decide(&ConditionTerm::equal(k, Bitvector32Term::constant(1))),
         Some(true)
     );
 }
@@ -3084,24 +3085,24 @@ fn equality_transports_signed_order_facts_in_both_directions() {
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(selected.clone(), key.clone()), true)
         .assume_condition(
-            ConditionTerm::signed_greater_equal(key.clone(), Bitvector32Term::Constant(0)),
+            ConditionTerm::signed_greater_equal(key.clone(), Bitvector32Term::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(10), selected.clone()),
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(10), selected.clone()),
             true,
         );
 
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_greater_equal(
             selected,
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         )),
         Some(true)
     );
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_less_equal(
-            Bitvector32Term::Constant(10),
+            Bitvector32Term::constant(10),
             key,
         )),
         Some(true)
@@ -3114,14 +3115,14 @@ fn solve_combines_equality_with_discrete_integer_bounds() {
     let owner_length = Bitvector32Term::Variable(Variable(87_101));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(2), length.clone()),
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(2), length.clone()),
             true,
         )
         .assume_condition(ConditionTerm::equal(owner_length.clone(), length), true);
 
     assert_eq!(
         assumptions.selected_for_test().decide_selected_condition(
-            &ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), owner_length,)
+            &ConditionTerm::signed_less_than(Bitvector32Term::constant(1), owner_length,)
         ),
         Some(true)
     );
@@ -3133,20 +3134,20 @@ fn solve_evaluates_equality_arithmetic_chains() {
     let split = Bitvector32Term::Variable(Variable(87_103));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::equal(old_split.clone(), Bitvector32Term::Constant(1)),
+            ConditionTerm::equal(old_split.clone(), Bitvector32Term::constant(1)),
             true,
         )
         .assume_condition(
             ConditionTerm::equal(
                 split.clone(),
-                Bitvector32Term::add(old_split, Bitvector32Term::Constant(1)),
+                Bitvector32Term::add(old_split, Bitvector32Term::constant(1)),
             ),
             true,
         );
 
     assert_eq!(
         assumptions.selected_for_test().decide_selected_condition(
-            &ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), split,)
+            &ConditionTerm::signed_less_than(Bitvector32Term::constant(1), split,)
         ),
         Some(true)
     );
@@ -3162,8 +3163,8 @@ fn equality_transport_reaches_chains_and_arithmetic_terms() {
         .assume_condition(ConditionTerm::equal(z.clone(), x), true)
         .assume_condition(
             ConditionTerm::signed_less_than(
-                Bitvector32Term::add(z, Bitvector32Term::Constant(1)),
-                Bitvector32Term::Constant(8),
+                Bitvector32Term::add(z, Bitvector32Term::constant(1)),
+                Bitvector32Term::constant(8),
             ),
             true,
         );
@@ -3172,9 +3173,9 @@ fn equality_transport_reaches_chains_and_arithmetic_terms() {
         assumptions.decide(&ConditionTerm::signed_less_than(
             Bitvector32Term::add(
                 Bitvector32Term::Variable(Variable(89)),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(1),
             ),
-            Bitvector32Term::Constant(8),
+            Bitvector32Term::constant(8),
         )),
         Some(true)
     );
@@ -3185,22 +3186,22 @@ fn excluded_small_integer_range_is_inconsistent() {
     let k = Bitvector32Term::Variable(Variable(80));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), k.clone()),
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), k.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::Constant(3)),
+            ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::constant(3)),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(0)),
+            ConditionTerm::equal(k.clone(), Bitvector32Term::constant(0)),
             false,
         )
         .assume_condition(
-            ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(1)),
+            ConditionTerm::equal(k.clone(), Bitvector32Term::constant(1)),
             false,
         )
-        .assume_condition(ConditionTerm::equal(k, Bitvector32Term::Constant(2)), false);
+        .assume_condition(ConditionTerm::equal(k, Bitvector32Term::constant(2)), false);
 
     assert!(assumptions.proves(&false_equals_true_proposition()));
 }
@@ -3212,20 +3213,20 @@ fn excluded_range_endpoints_force_the_remaining_value() {
     let k = Bitvector32Term::Variable(Variable(87));
     let bounded = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), k.clone()),
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), k.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::Constant(4)),
+            ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::constant(4)),
             true,
         );
     let exclude = |assumptions: PureFactContext, value: u32| {
         assumptions.assume_condition(
-            ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(value)),
+            ConditionTerm::equal(k.clone(), Bitvector32Term::constant(value)),
             false,
         )
     };
-    let is_two = ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(2));
+    let is_two = ConditionTerm::equal(k.clone(), Bitvector32Term::constant(2));
     let all = exclude(exclude(exclude(bounded.clone(), 0), 1), 3);
     assert_eq!(all.decide(&is_two), Some(true));
     let low_only = exclude(exclude(bounded.clone(), 0), 1);
@@ -3240,16 +3241,16 @@ fn a_signed_interval_moves_past_excluded_endpoints() {
     let assumptions = [1, 2, 3, 5].into_iter().fold(
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), k.clone()),
+                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), k.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::Constant(4)),
+                ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::constant(4)),
                 true,
             ),
         |assumptions, value| {
             assumptions.assume_condition(
-                ConditionTerm::equal(k.clone(), Bitvector32Term::Constant(value)),
+                ConditionTerm::equal(k.clone(), Bitvector32Term::constant(value)),
                 false,
             )
         },
@@ -3267,16 +3268,16 @@ fn singleton_integer_range_forces_equality() {
     let k = Bitvector32Term::Variable(Variable(86));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), k.clone()),
+            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), k.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::Constant(1)),
+            ConditionTerm::signed_less_than(k.clone(), Bitvector32Term::constant(1)),
             true,
         );
 
     assert_eq!(
-        assumptions.decide(&ConditionTerm::equal(k, Bitvector32Term::Constant(0))),
+        assumptions.decide(&ConditionTerm::equal(k, Bitvector32Term::constant(0))),
         Some(true)
     );
 }
@@ -3310,7 +3311,7 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
         let mut obligations = Vec::new();
         // C's conversion is the low byte, read as signed, owing nothing.
         let word = match &input {
-            CValue::Int32(Bitvector32Term::Constant(word)) => *word,
+            CValue::Int32(int32_constant!(word)) => constant_u32(*word),
             narrow @ (CValue::Int16(_) | CValue::UInt8(_)) => {
                 MachineIntegerType::from_c_type(narrow.c_type())
                     .and_then(|ty| ty.constant_from_value(narrow))
@@ -3353,9 +3354,9 @@ fn signed_byte_narrowing_checks_each_bound_and_unsigned_inputs() {
     let bounds = [
         ConditionTerm::signed_greater_equal(
             value.clone(),
-            Bitvector32Term::Constant((-128i32) as u32),
+            Bitvector32Term::constant((-128i32) as u32),
         ),
-        ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(127)),
+        ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::constant(127)),
     ];
     for mask in 0u32..4 {
         let mut assumptions = PureFactContext::new();
@@ -3477,25 +3478,25 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
         crate::kernel::LoadKind::Int32,
     );
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_greater_equal(load.clone(), Bitvector32Term::Constant(2)),
+        ConditionTerm::signed_greater_equal(load.clone(), Bitvector32Term::constant(2)),
         true,
     );
     assert_eq!(
         assumptions.selected_for_test().decide_selected_condition(
-            &ConditionTerm::signed_greater_than(load.clone(), Bitvector32Term::Constant(1))
+            &ConditionTerm::signed_greater_than(load.clone(), Bitvector32Term::constant(1))
         ),
         Some(true)
     );
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_greater_than(
             load,
-            Bitvector32Term::Constant(1)
+            Bitvector32Term::constant(1)
         )),
         Some(true)
     );
     let changed = memory
         .clone()
-        .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(0)));
+        .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(0)));
     let changed_load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(changed),
         Box::new(pointer.clone()),
@@ -3512,7 +3513,7 @@ fn exact_signed_constant_bounds_preserve_frozen_load_identity() {
     for unrelated in [changed_load, other_load] {
         assert_ne!(
             assumptions.selected_for_test().decide_selected_condition(
-                &ConditionTerm::signed_greater_than(unrelated, Bitvector32Term::Constant(1))
+                &ConditionTerm::signed_greater_than(unrelated, Bitvector32Term::constant(1))
             ),
             Some(true)
         );
@@ -3527,10 +3528,10 @@ fn exact_signed_constant_bounds_check_signed_endpoints() {
         let condition = if greater {
             ConditionTerm::signed_greater_than(
                 value.clone(),
-                Bitvector32Term::Constant(bound as u32),
+                Bitvector32Term::constant(bound as u32),
             )
         } else {
-            ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::Constant(bound as u32))
+            ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::constant(bound as u32))
         };
         assert_eq!(
             empty
@@ -3542,7 +3543,7 @@ fn exact_signed_constant_bounds_check_signed_endpoints() {
     let at_max = PureFactContext::new().assume_condition(
         ConditionTerm::signed_greater_equal(
             value.clone(),
-            Bitvector32Term::Constant(i32::MAX as u32),
+            Bitvector32Term::constant(i32::MAX as u32),
         ),
         true,
     );
@@ -3551,12 +3552,12 @@ fn exact_signed_constant_bounds_check_signed_endpoints() {
             .selected_for_test()
             .decide_selected_condition(&ConditionTerm::signed_greater_than(
                 value.clone(),
-                Bitvector32Term::Constant((i32::MAX - 1) as u32)
+                Bitvector32Term::constant((i32::MAX - 1) as u32)
             )),
         Some(true)
     );
     let at_min = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::Constant(i32::MIN as u32)),
+        ConditionTerm::signed_less_equal(value.clone(), Bitvector32Term::constant(i32::MIN as u32)),
         true,
     );
     assert_eq!(
@@ -3564,7 +3565,7 @@ fn exact_signed_constant_bounds_check_signed_endpoints() {
             .selected_for_test()
             .decide_selected_condition(&ConditionTerm::signed_less_than(
                 value,
-                Bitvector32Term::Constant((i32::MIN + 1) as u32)
+                Bitvector32Term::constant((i32::MIN + 1) as u32)
             )),
         Some(true)
     );
@@ -3583,11 +3584,11 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
         crate::kernel::LoadKind::Int32,
     );
     let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(Bitvector32Term::Constant(1), load.clone()),
+        ConditionTerm::signed_less_than(Bitvector32Term::constant(1), load.clone()),
         true,
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(load, Bitvector32Term::Constant(1)),
+        ConditionTerm::signed_greater_than(load, Bitvector32Term::constant(1)),
         true,
     );
     let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&premise));
@@ -3601,7 +3602,7 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
     );
     let changed = memory
         .clone()
-        .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(0)));
+        .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(0)));
     for (snapshot, address) in [
         (changed, pointer.clone()),
         (
@@ -3618,7 +3619,7 @@ fn exact_signed_mirror_normalization_checks_snapshot_address_and_selected_premis
             crate::kernel::LoadKind::Int32,
         );
         let bad = Proposition::ConditionIs(
-            ConditionTerm::signed_greater_than(unrelated, Bitvector32Term::Constant(1)),
+            ConditionTerm::signed_greater_than(unrelated, Bitvector32Term::constant(1)),
             true,
         );
         assert!(
@@ -3693,26 +3694,26 @@ fn uint64_bit_reinterpretation_has_a_distinct_checked_cast_boundary() {
 fn reinterpreted_unsigned_arithmetic_keeps_signed_operators_and_definedness() {
     let source = Bitvector32Term::uint64_subtract(
         Bitvector32Term::Variable(Variable(139_001)),
-        Bitvector32Term::UInt64Constant(1),
+        Bitvector32Term::uint64_constant(1),
     );
     let converted = Bitvector32Term::int64_from_uint64_bits(source.clone());
     assert_eq!(converted, source); // Preserve the symbolic 64-bit expression.
     let wrapped = Bitvector32Term::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Add,
-        left: Box::new(Bitvector32Term::UInt64Constant(u64::MAX)),
-        right: Box::new(Bitvector32Term::UInt64Constant(1)),
+        left: Box::new(Bitvector32Term::uint64_constant(u64::MAX)),
+        right: Box::new(Bitvector32Term::uint64_constant(1)),
     };
     assert_eq!(wrapped.int64_as_const(), Some(0));
-    let high = Bitvector32Term::UInt64Constant(1u64 << 63);
+    let high = Bitvector32Term::uint64_constant(1u64 << 63);
     assert_eq!(
-        Bitvector32Term::int64_divide(high, Bitvector32Term::Int64Constant(-1)).int64_as_const(),
+        Bitvector32Term::int64_divide(high, Bitvector32Term::int64_constant(-1)).int64_as_const(),
         None
     );
     assert_eq!(
         Bitvector32Term::int64_divide(
-            Bitvector32Term::Int64Constant(1),
-            Bitvector32Term::Int64Constant(0)
+            Bitvector32Term::int64_constant(1),
+            Bitvector32Term::int64_constant(0)
         )
         .int64_as_const(),
         None
@@ -3757,7 +3758,7 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
         c_integer_cast_modulo(c_int32_literal(1), CType::Float64),
         c_integer_cast_modulo(c_int32_literal(1), CType::Int32Pointer),
         c_integer_cast_modulo(
-            CExpression::Value(CValue::Float32(Bitvector32Term::Constant(0))),
+            CExpression::Value(CValue::Float32(Bitvector32Term::constant(0))),
             CType::Int32,
         ),
         c_integer_cast_modulo(
@@ -3781,7 +3782,7 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
             c_int64_literal(i64::MAX),
             CType::Int32
         )),
-        CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Constant(u32::MAX)))
+        CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::constant(u32::MAX)))
     );
     assert!(
         prove_c_expression_evaluation(
@@ -3848,20 +3849,20 @@ fn unsigned_narrowing_distributes_constant_subtraction_modulo_the_low_word() {
         assert_eq!(
             Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_subtract(
                 value.clone(),
-                Bitvector32Term::UInt64Constant(decrement)
+                Bitvector32Term::uint64_constant(decrement)
             )),
             Bitvector32Term::subtract(
                 Bitvector32Term::uint32_from_64(value.clone()),
-                Bitvector32Term::Constant(decrement as u32)
+                Bitvector32Term::constant(decrement as u32)
             ),
         );
         for input in [0, 1, (1u64 << 32) + 7, u64::MAX] {
             assert_eq!(
                 Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_subtract(
-                    Bitvector32Term::UInt64Constant(input),
-                    Bitvector32Term::UInt64Constant(decrement)
+                    Bitvector32Term::uint64_constant(input),
+                    Bitvector32Term::uint64_constant(decrement)
                 )),
-                Bitvector32Term::Constant(input.wrapping_sub(decrement) as u32),
+                Bitvector32Term::constant(input.wrapping_sub(decrement) as u32),
             );
         }
     }
@@ -3882,7 +3883,7 @@ fn subobject_pointer(offset: i64, start: i64, width: u32) -> CPointerValue {
             block: "pair".into(),
             offset: PointerOffsetTerm::Constant(start),
         },
-        width: Bitvector32Term::Constant(width),
+        width: Bitvector32Term::constant(width),
     }))
 }
 
@@ -3949,7 +3950,7 @@ fn substitution_maps_the_extent_start_with_the_address() {
     let value = CValue::Pointer(
         CPointerValue::new(address(4), CType::Int32Pointer).with_extent(Some(SubobjectExtent {
             start: address(0),
-            width: Bitvector32Term::Constant(4),
+            width: Bitvector32Term::constant(4),
         })),
     );
     let replacement = Bitvector32Term::Variable(Variable(98_102));
@@ -3965,7 +3966,7 @@ fn substitution_maps_the_extent_start_with_the_address() {
         substituted.extent(),
         Some(&SubobjectExtent {
             start: expected(0),
-            width: Bitvector32Term::Constant(4),
+            width: Bitvector32Term::constant(4),
         })
     );
 }
@@ -4159,7 +4160,7 @@ fn array_index_conversion_is_independent_of_bounds() {
     let i = Bitvector32Term::Variable(Variable(989_970));
     let empty = PureFactContext::new();
     let bounded = empty.clone().assume_condition(
-        ConditionTerm::unsigned_less_than(i.clone(), Bitvector32Term::UInt32Constant(4)),
+        ConditionTerm::unsigned_less_than(i.clone(), Bitvector32Term::uint32_constant(4)),
         true,
     );
     let base = CValue::typed_pointer(Pointer::symbolic(Variable(989_972)), CType::Int32Pointer);
@@ -4199,7 +4200,7 @@ fn widened_index_bounds_use_the_full_unsigned_value() {
     let x = Bitvector32Term::Variable(Variable(989_973));
     let wide = Bitvector32Term::uint64_from_32(x.clone());
     let bounded = PureFactContext::new().assume_condition(
-        ConditionTerm::unsigned_less_than(x.clone(), Bitvector32Term::UInt32Constant(4)),
+        ConditionTerm::unsigned_less_than(x.clone(), Bitvector32Term::uint32_constant(4)),
         true,
     );
     assert!(bounded.uint64_index_fits_int32(&wide));
@@ -4207,7 +4208,7 @@ fn widened_index_bounds_use_the_full_unsigned_value() {
     assert!(!bounded.uint64_index_fits_int32(&x));
     let high = PureFactContext::new().assume_condition(
         ConditionTerm::unsigned_less_than(
-            Bitvector32Term::UInt32Constant(i32::MAX as u32),
+            Bitvector32Term::uint32_constant(i32::MAX as u32),
             x.clone(),
         ),
         true,
@@ -4216,7 +4217,7 @@ fn widened_index_bounds_use_the_full_unsigned_value() {
     assert_eq!(
         high.decide(&ConditionTerm::uint64_greater_than(
             wide,
-            Bitvector32Term::UInt64Constant(i32::MAX as u64)
+            Bitvector32Term::uint64_constant(i32::MAX as u64)
         )),
         Some(true)
     );
@@ -4227,17 +4228,17 @@ fn index_observation_follows_machine_arithmetic() {
     let base = Pointer::symbolic(Variable(989_974));
     let leaf = |value| SpecExpression::CExpression(CExpression::Value(value));
     for (index, bytes) in [
-        (leaf(CValue::Int32(Bitvector32Term::Constant(u32::MAX))), -4),
+        (leaf(CValue::Int32(Bitvector32Term::constant(u32::MAX))), -4),
         (
-            leaf(CValue::UInt32(Bitvector32Term::UInt32Constant(u32::MAX))),
+            leaf(CValue::UInt32(Bitvector32Term::uint32_constant(u32::MAX))),
             4 * i64::from(u32::MAX),
         ),
         (
             SpecExpression::Add(
-                Box::new(leaf(CValue::UInt32(Bitvector32Term::UInt32Constant(
+                Box::new(leaf(CValue::UInt32(Bitvector32Term::uint32_constant(
                     u32::MAX,
                 )))),
-                Box::new(leaf(CValue::UInt32(Bitvector32Term::UInt32Constant(1)))),
+                Box::new(leaf(CValue::UInt32(Bitvector32Term::uint32_constant(1)))),
             ),
             0,
         ),
@@ -4270,7 +4271,7 @@ fn index_observation_follows_machine_arithmetic() {
 fn tag_clearing_lowering_keeps_the_written_word_under_bounds() {
     let word = Bitvector32Term::Variable(Variable(989_990));
     let tag = Bitvector32Term::Variable(Variable(989_991));
-    let mask = Bitvector32Term::UInt64Constant(!3);
+    let mask = Bitvector32Term::uint64_constant(!3);
     let bounded = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_equal(0u32.into(), tag.clone()),
@@ -4284,15 +4285,15 @@ fn tag_clearing_lowering_keeps_the_written_word_under_bounds() {
             ConditionTerm::uint64_equal(
                 Bitvector32Term::uint64_bitwise_and(
                     word.clone(),
-                    Bitvector32Term::UInt64Constant(1),
+                    Bitvector32Term::uint64_constant(1),
                 ),
-                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::uint64_constant(0),
             ),
             true,
         );
     for inner in [
         Bitvector32Term::uint64_bitwise_or(word.clone(), Bitvector32Term::uint64_from_int32(tag)),
-        Bitvector32Term::uint64_add(word, Bitvector32Term::UInt64Constant(1)),
+        Bitvector32Term::uint64_add(word, Bitvector32Term::uint64_constant(1)),
     ] {
         let leaf = |term| SpecExpression::CExpression(CExpression::Value(CValue::UInt64(term)));
         let expression =

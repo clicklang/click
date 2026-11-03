@@ -427,7 +427,7 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Subtract,
         left: Box::new(remaining.clone()),
-        right: Box::new(Bitvector32Term::UInt64Constant(5552)),
+        right: Box::new(Bitvector32Term::uint64_constant(5552)),
     };
     let prefix = |remaining: Bitvector32Term| Bitvector32Term::ClickFunctionApplication {
         name: "prefix".into(),
@@ -442,7 +442,7 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
         Int32,
         Add,
         Box::new(first.clone()),
-        Box::new(Bitvector32Term::Constant(5552)),
+        Box::new(Bitvector32Term::constant(5552)),
     );
     let difference = Bitvector32Term::Binary {
         format: MachineIntegerType::UInt64,

@@ -2,6 +2,9 @@
 
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{
+    constant_u64, int32_constant, int64_constant, uint32_constant, uint64_constant,
+};
 
 pub(in crate::surface::proof) struct CheckedBothSurfaceChild {
     surface: Option<ClickProposition>,
@@ -1117,17 +1120,17 @@ impl<'a> Proof<'a> {
                 },
                 true,
             ) = kernel
-            && let Bitvector32Term::UInt64Constant(limit) = limit.as_ref()
+            && let uint64_constant!(limit) = limit.as_ref()
         {
             // A zero-based extent is stored as its end. Its spelling must
             // name that term, rather than introduce a new subtraction node.
             let starts_at_zero = matches!(
                 start,
                 ContractExpression::CFragment(CExpression::Value(
-                    CValue::Int32(Bitvector32Term::Constant(0))
-                        | CValue::UInt32(Bitvector32Term::UInt32Constant(0))
-                        | CValue::Int64(Bitvector32Term::Int64Constant(0))
-                        | CValue::UInt64(Bitvector32Term::UInt64Constant(0))
+                    CValue::Int32(int32_constant!(0))
+                        | CValue::UInt32(uint32_constant!(0))
+                        | CValue::Int64(int64_constant!(0))
+                        | CValue::UInt64(uint64_constant!(0))
                 ))
             ) || matches!(start, ContractExpression::IntegerLiteral(value) if value == "0");
             let candidate = ClickProposition::Comparison {
@@ -1138,7 +1141,7 @@ impl<'a> Proof<'a> {
                 },
                 operator: ComparisonOperator::LessEqual,
                 right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
-                    Bitvector32Term::UInt64Constant(*limit),
+                    Bitvector32Term::uint64_constant(constant_u64(*limit)),
                 ))),
             };
             if self

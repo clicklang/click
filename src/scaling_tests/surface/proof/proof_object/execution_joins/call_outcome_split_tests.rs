@@ -116,7 +116,7 @@ fn call_outcome_split_does_not_copy_the_proofs_facts() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: Box::new(Bitvector32Term::Variable(Variable(81_000 + index))),
-                        right: Box::new(Bitvector32Term::Constant(index as u32)),
+                        right: Box::new(Bitvector32Term::constant(index as u32)),
                     },
                     true,
                 )

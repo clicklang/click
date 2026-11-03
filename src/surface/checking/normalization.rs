@@ -3,6 +3,9 @@ use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{
+    bits32_constant, constant_u32, int64_constant, native_constant, uint64_constant,
+};
 #[cfg(test)]
 use crate::surface::planning::solve::{
     SolveEvidence, plan_explicit_equality_rewrites_from, plan_solve_certificate,
@@ -483,11 +486,11 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
             Some(u32::from(normalize_condition_without_assumptions(value)?))
         }
 
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => Some(*value),
+        bits32_constant!(value) => Some(constant_u32(*value)),
         Bitvector32Term::Variable(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_)
+        | int64_constant!(_)
+        | uint64_constant!(_)
+        | native_constant!(_, _)
         | Bitvector32Term::Int64From32(_)
         | Bitvector32Term::UInt64From32(_)
         | Bitvector32Term::UInt32From64(_)
@@ -587,16 +590,11 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
 
 pub(in crate::surface) fn normalize_bitvector(term: &Bitvector32Term) -> Bitvector32Term {
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_)
-        | Bitvector32Term::Variable(_) => term.clone(),
+        Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => term.clone(),
         Bitvector32Term::IntegerToMachine { .. } => term.clone(),
         Bitvector32Term::BoolCast { value, .. } => {
             match normalize_condition_without_assumptions(value) {
-                Some(value) => Bitvector32Term::Constant(u32::from(value)),
+                Some(value) => Bitvector32Term::constant(u32::from(value)),
                 None => term.clone(),
             }
         }
@@ -718,7 +716,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(sum),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );
@@ -788,10 +786,10 @@ mod tests {
                 identity
                     .memory()
                     .clone()
-                    .store(target.clone(), CValue::Int32(Bitvector32Term::Constant(17)))
+                    .store(target.clone(), CValue::Int32(Bitvector32Term::constant(17)))
                     .store(
                         target.clone(),
-                        CValue::Int32(Bitvector32Term::Constant(stored)),
+                        CValue::Int32(Bitvector32Term::constant(stored)),
                     ),
             );
             let load = crate::kernel::load_variable_for_cell_with_origin(
@@ -806,7 +804,7 @@ mod tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(Bitvector32Term::Variable(load)),
-                    right: Box::new(Bitvector32Term::Constant(17)),
+                    right: Box::new(Bitvector32Term::constant(17)),
                 },
                 true,
             );
@@ -826,11 +824,11 @@ mod tests {
             else {
                 panic!("the rewrite keeps the comparison: {rewritten:?}");
             };
-            assert_eq!(right.as_ref(), &Bitvector32Term::Constant(17));
+            assert_eq!(right.as_ref(), &Bitvector32Term::constant(17));
             assert_ne!(left.as_ref(), &Bitvector32Term::Variable(load));
             assert_eq!(
                 crate::kernel::read_over_write_value(left),
-                Some(Bitvector32Term::Constant(stored))
+                Some(Bitvector32Term::constant(stored))
             );
         }
     }
@@ -877,7 +875,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(read_through(loaded)),
-                right: Box::new(Bitvector32Term::Constant(5)),
+                right: Box::new(Bitvector32Term::constant(5)),
             },
             true,
         );
@@ -895,7 +893,7 @@ mod tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(read_through(target_loaded)),
-                    right: Box::new(Bitvector32Term::Constant(5))
+                    right: Box::new(Bitvector32Term::constant(5))
                 },
                 true,
             )
@@ -1059,7 +1057,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(index),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );
@@ -1087,8 +1085,8 @@ mod tests {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(65)), 4),
             },
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(4),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(4),
         ));
         let range = |base: Bitvector32Term, end: Bitvector32Term| {
             CResource::Memory(CMemoryRange::new(
@@ -1096,7 +1094,7 @@ mod tests {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(base, 4),
                 },
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
                 end,
             ))
         };
@@ -1185,7 +1183,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );
@@ -1213,7 +1211,7 @@ mod tests {
         ));
         let fold = IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
+                start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
                 end: SharedIntegerRangeEndpoint::intern(from.clone()),
             },
             IntegerTerm::constant_i64(0),
@@ -1242,7 +1240,7 @@ mod tests {
         .expect("a checked endpoint equality should rewrite the Int32 fold bound");
         let expected = IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
+                start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
                 end: SharedIntegerRangeEndpoint::intern(to),
             },
             IntegerTerm::constant_i64(0),
@@ -1310,12 +1308,12 @@ mod tests {
         let first_memory = crate::kernel::intern_c_memory(
             CMemory::new()
                 .with_block("rewrite-cell", 4)
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(0))),
+                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(0))),
         );
         let second_memory = crate::kernel::intern_c_memory(
             CMemory::new()
                 .with_block("rewrite-cell", 4)
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(7))),
         );
         assert_ne!(first_memory, second_memory);
         let first_load = Bitvector32Term::MemoryLoad(
@@ -1339,7 +1337,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(first_load),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );
@@ -1381,8 +1379,8 @@ mod partial_arithmetic_tests {
                 let term = Bitvector32Term::machine_binary(
                     crate::kernel::MachineIntegerType::UInt32,
                     operator,
-                    Bitvector32Term::UInt32Constant(5),
-                    Bitvector32Term::UInt32Constant(divisor),
+                    Bitvector32Term::uint32_constant(5),
+                    Bitvector32Term::uint32_constant(divisor),
                 );
                 assert_eq!(evaluate_bitvector_constant(&term), expected);
             }

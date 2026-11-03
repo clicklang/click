@@ -10,6 +10,7 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{bits32_constant, constant_u32};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::{BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
@@ -63,7 +64,7 @@ mod disjunction_projection_tests {
         Proposition::ConditionIs(
             ConditionTerm::equal(
                 Bitvector32Term::Variable(Variable(id)),
-                Bitvector32Term::Constant(constant),
+                Bitvector32Term::constant(constant),
             ),
             true,
         )
@@ -112,7 +113,7 @@ mod disjunction_projection_tests {
         let wide = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 Bitvector32Term::Variable(Variable(1)),
-                Bitvector32Term::UInt64Constant(1),
+                Bitvector32Term::uint64_constant(1),
             ),
             true,
         );
@@ -152,7 +153,7 @@ mod disjunction_projection_tests {
                         Box::new(pointer.clone()),
                         LoadKind::Int32,
                     ),
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
                 true,
             )
@@ -706,8 +707,7 @@ impl ProofFacts {
                                 Bitvector32Term::Variable(variable) => {
                                     bound_variables.contains(variable)
                                 }
-                                Bitvector32Term::Constant(_)
-                                | Bitvector32Term::UInt32Constant(_) => false,
+                                bits32_constant!(_) => false,
                                 _ => true,
                             })
                         {
@@ -1315,12 +1315,10 @@ impl ProofFacts {
                 if forward || endpoint != *measure {
                     return false;
                 }
-                let (Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits)) =
-                    bound
-                else {
+                let bits32_constant!(bits) = bound else {
                     return false;
                 };
-                let lower = bits as i32;
+                let lower = constant_u32(bits) as i32;
                 lower >= 0 || (strict && lower == -1)
             },
         )
@@ -2525,9 +2523,7 @@ fn substituted_range_extent(
     };
     let (count, width) = match bytes {
         binary_term!(Int32, Multiply, count, width) => match width.as_ref() {
-            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
-                (count.as_ref(), Some(width.as_ref().clone()))
-            }
+            bits32_constant!(_) => (count.as_ref(), Some(width.as_ref().clone())),
             _ => return None,
         },
         count @ binary_term!(Int32, Subtract, _, _) => (count, None),
@@ -2988,9 +2984,7 @@ fn collect_algebraic_term_roots(term: &AlgebraicTerm, terms: &mut BTreeSet<Algeb
 fn bitvector_equality_atom_key(term: &Bitvector32Term) -> Option<BitvectorEqualityAtomKey> {
     match term {
         // A `uint32` constant is its word's `Constant` (rule K1).
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            Some(BitvectorEqualityAtomKey::Constant(*value))
-        }
+        bits32_constant!(value) => Some(BitvectorEqualityAtomKey::Constant(constant_u32(*value))),
         Bitvector32Term::Variable(variable) => Some(BitvectorEqualityAtomKey::Variable(*variable)),
         Bitvector32Term::ClickFunctionApplication { name, arguments } => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -3212,11 +3206,7 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
         // under `p->q == r`). Follow registered addresses a bounded number
         // of levels, so the selection stays proportional to the term.
         Bitvector32Term::Variable(variable) => collect_load_address_atoms(*variable, atoms, 0),
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_) => {}
+        Bitvector32Term::Constant { .. } => {}
         Bitvector32Term::IntegerToMachine { .. } => {}
     }
 }
@@ -3609,7 +3599,7 @@ mod integer_equality_fact_index_tests {
                     Box::new(read.offset_by_bytes(4)),
                     crate::kernel::LoadKind::Int32,
                 ),
-                Bitvector32Term::Constant(42),
+                Bitvector32Term::constant(42),
             ),
             true,
         );
@@ -3646,8 +3636,8 @@ mod integer_equality_fact_index_tests {
 
     fn int32_index() -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(2)),
+            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
         }
     }
 
@@ -3731,7 +3721,7 @@ mod integer_equality_fact_index_tests {
                     block: block.into(),
                     offset,
                 },
-                bytes: Bitvector32Term::Constant(bytes),
+                bytes: Bitvector32Term::constant(bytes),
                 wide: false,
             }),
         }
@@ -3768,7 +3758,7 @@ mod integer_equality_fact_index_tests {
                     block: block.into(),
                     offset,
                 },
-                bytes: Bitvector32Term::Constant(bytes),
+                bytes: Bitvector32Term::constant(bytes),
                 wide: false,
             }),
         }
@@ -3782,7 +3772,7 @@ mod integer_equality_fact_index_tests {
                     block: block.into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
                 Bitvector32Term::Variable(Variable(210_000)),
             ))
         };
@@ -3792,7 +3782,7 @@ mod integer_equality_fact_index_tests {
         };
         let bound = Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
                 Bitvector32Term::Variable(Variable(210_000)),
             ),
             true,
@@ -3833,7 +3823,7 @@ mod integer_equality_fact_index_tests {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::GreaterEqual,
                             left: Box::new(Bitvector32Term::Variable(Variable(index))),
-                            right: Box::new(Bitvector32Term::Constant(0)),
+                            right: Box::new(Bitvector32Term::constant(0)),
                         },
                         true,
                     )
@@ -3852,14 +3842,14 @@ mod integer_equality_fact_index_tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(measure.clone()),
-                        right: Box::new(Bitvector32Term::Constant(bound as u32)),
+                        right: Box::new(Bitvector32Term::constant(bound as u32)),
                     }
                 } else {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(measure.clone()),
-                        right: Box::new(Bitvector32Term::Constant(bound as u32)),
+                        right: Box::new(Bitvector32Term::constant(bound as u32)),
                     }
                 };
                 let facts =
@@ -3965,7 +3955,7 @@ mod integer_equality_fact_index_tests {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::Constant(7)),
+            CValue::Int32(Bitvector32Term::constant(7)),
         ));
         let source_fact = less_equal(
             IntegerTerm::constant_i64(9),
@@ -4006,7 +3996,7 @@ mod integer_equality_fact_index_tests {
                 block: "quantified-viewable".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::Constant(7)),
+            CValue::Int32(Bitvector32Term::constant(7)),
         );
         let source = loadable_forall(
             &memory,
@@ -4118,7 +4108,7 @@ mod integer_equality_fact_index_tests {
                 ],
             }),
         };
-        let state = CState::new().with_local("x", CValue::Int32(Bitvector32Term::Constant(7)));
+        let state = CState::new().with_local("x", CValue::Int32(Bitvector32Term::constant(7)));
         let available = predicate("first", Variable(300_001), state.clone());
         let renamed = predicate("second", Variable(300_002), state.clone());
         let independently_empty = predicate("second", Variable(300_002), CState::new());
@@ -4126,7 +4116,7 @@ mod integer_equality_fact_index_tests {
         let changed_state = predicate(
             "second",
             Variable(300_002),
-            state.with_local("x", CValue::Int32(Bitvector32Term::Constant(8))),
+            state.with_local("x", CValue::Int32(Bitvector32Term::constant(8))),
         );
         assert_eq!(
             quantified_equivalence_index_key(&available),
@@ -4154,7 +4144,7 @@ mod integer_equality_fact_index_tests {
                 block: block.into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::Constant(1)),
+            CValue::Int32(Bitvector32Term::constant(1)),
         );
         let consequent = loadable_exists(&memory, "callee", Variable(207_700), block, None, 4);
         let renamed = loadable_exists(&memory, "caller", Variable(207_800), block, None, 4);
@@ -4185,7 +4175,7 @@ mod integer_equality_fact_index_tests {
                         node: AlgebraicTermNode::Variable(binder),
                     })],
                 }),
-                Term::Bitvector32(Bitvector32Term::Constant(1)),
+                Term::Bitvector32(Bitvector32Term::constant(1)),
             )),
         };
         let source = path_reaches("callee_path", Variable(207_750));
@@ -4455,7 +4445,7 @@ mod integer_equality_fact_index_tests {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::Constant(7)),
+            CValue::Int32(Bitvector32Term::constant(7)),
         ));
         let source_fact = equality(
             IntegerTerm::constant_i64(9),
@@ -4547,7 +4537,7 @@ mod retained_root_context_tests {
                     Proposition::ConditionIs(
                         ConditionTerm::equal(
                             Bitvector32Term::Variable(Variable(970_000 + u64::from(index))),
-                            Bitvector32Term::Constant(index),
+                            Bitvector32Term::constant(index),
                         ),
                         true,
                     )
@@ -4579,8 +4569,8 @@ mod held_separation_tests {
                 block: "shared".into(),
                 offset: PointerOffsetTerm::Variable(Variable(980_000 + index)),
             },
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         ))
     }
 
@@ -4597,8 +4587,8 @@ mod held_separation_tests {
         };
         CResource::Memory(CMemoryRange::new_with_element_width(
             cell.base().clone(),
-            Bitvector32Term::Constant(start),
-            Bitvector32Term::Constant(end),
+            Bitvector32Term::constant(start),
+            Bitvector32Term::constant(end),
             width,
         ))
     }
@@ -4877,7 +4867,7 @@ mod integer_witness_freshness_tests {
             Proposition::ConditionIs(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(load),
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
                 true,
             ),
@@ -4908,7 +4898,7 @@ mod quantified_conjunct_projection_tests {
         Proposition::ConditionIs(
             ConditionTerm::equal(
                 Bitvector32Term::Variable(Variable(var)),
-                Bitvector32Term::Constant(constant),
+                Bitvector32Term::constant(constant),
             ),
             true,
         )
@@ -4917,7 +4907,7 @@ mod quantified_conjunct_projection_tests {
         Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(
                 Bitvector32Term::Variable(Variable(var)),
-                Bitvector32Term::Constant(bound),
+                Bitvector32Term::constant(bound),
             ),
             true,
         )

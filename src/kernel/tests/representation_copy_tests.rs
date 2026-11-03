@@ -14,7 +14,7 @@ fn copy_arguments(destination: &Pointer, source: &Pointer, bytes: u32) -> Vec<CV
     vec![
         CValue::typed_pointer(destination.clone(), CType::UInt8Pointer),
         CValue::typed_pointer(source.clone(), CType::UInt8Pointer),
-        CValue::Int32(Bitvector32Term::Constant(bytes)),
+        CValue::Int32(Bitvector32Term::constant(bytes)),
     ]
 }
 
@@ -30,7 +30,7 @@ fn effect() -> RepresentationCopyEffect {
 fn representation_copy_transfers_a_fully_covered_cell() {
     let source = heap_pointer("copy-source");
     let destination = heap_pointer("copy-destination");
-    let entry = CMemory::new().store(source.clone(), CValue::UInt32(Bitvector32Term::Constant(7)));
+    let entry = CMemory::new().store(source.clone(), CValue::UInt32(Bitvector32Term::constant(7)));
 
     let result = transfer_representation_copy_cells(
         &entry,
@@ -41,7 +41,7 @@ fn representation_copy_transfers_a_fully_covered_cell() {
 
     assert_eq!(
         result.known_value(&destination),
-        Some(CValue::UInt32(Bitvector32Term::Constant(7)))
+        Some(CValue::UInt32(Bitvector32Term::constant(7)))
     );
 }
 
@@ -49,7 +49,7 @@ fn representation_copy_transfers_a_fully_covered_cell() {
 fn representation_copy_leaves_a_split_cell_unestablished() {
     let source = heap_pointer("split-source");
     let destination = heap_pointer("split-destination");
-    let entry = CMemory::new().store(source.clone(), CValue::UInt32(Bitvector32Term::Constant(7)));
+    let entry = CMemory::new().store(source.clone(), CValue::UInt32(Bitvector32Term::constant(7)));
 
     let result = transfer_representation_copy_cells(
         &entry,
@@ -84,7 +84,7 @@ fn cell(block: &str, index: u32) -> Pointer {
 }
 
 fn cell_value(index: u32) -> CValue {
-    CValue::UInt32(Bitvector32Term::Constant(index))
+    CValue::UInt32(Bitvector32Term::constant(index))
 }
 
 fn source_with_cells(memory: CMemory, block: &str, cells: u32) -> CMemory {

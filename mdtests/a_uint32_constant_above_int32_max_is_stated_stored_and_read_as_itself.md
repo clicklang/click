@@ -1,7 +1,7 @@
 # a uint32 constant above INT32_MAX is stated, stored and read as itself
 
-A `uint32` constant carries the `uint32` format (`Bitvector32Term::UInt32Constant`)
-on a value at rest, so `4294967295u` is that number, not `-1`. It is stated
+A `uint32` constant carries the `uint32` format (`Bitvector32Term::Constant` at
+`uint32`) on a value at rest, so `4294967295u` is that number, not `-1`. It is stated
 in a contract, stored in a cell, read back, and returned; the refusal beside
 it (`a_uint32_constant_above_int32_max_prints_as_itself.md`) prints it.
 

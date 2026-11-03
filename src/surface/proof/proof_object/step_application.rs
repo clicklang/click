@@ -4,6 +4,10 @@ use super::*;
 use crate::kernel::LoweringIntroduction;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
+    uint64_constant,
+};
 use num_traits::ToPrimitive;
 
 fn signed_constant_expression(expression: &ContractExpression) -> Option<num_bigint::BigInt> {
@@ -27,8 +31,8 @@ fn lower_signed_constant_comparison(
     };
     let left = signed_constant_expression(left)?.to_i32()? as u32;
     let right = signed_constant_expression(right)?.to_i32()? as u32;
-    let left = crate::kernel::Bitvector32Term::Constant(left);
-    let right = crate::kernel::Bitvector32Term::Constant(right);
+    let left = crate::kernel::Bitvector32Term::constant(left);
+    let right = crate::kernel::Bitvector32Term::constant(right);
     let condition = match operator {
         ComparisonOperator::LessEqual => crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
@@ -95,12 +99,7 @@ fn is_positive_predecessor_goal(proposition: &crate::kernel::Proposition) -> boo
     let binary_term!(Int32, Subtract, value, amount) = left.as_ref() else {
         return false;
     };
-    signed_atom_matches(value, right)
-        && matches!(
-            amount.as_ref(),
-            crate::kernel::Bitvector32Term::Constant(1)
-                | crate::kernel::Bitvector32Term::UInt32Constant(1)
-        )
+    signed_atom_matches(value, right) && matches!(amount.as_ref(), bits32_constant!(1))
 }
 
 fn signed_atom_matches(
@@ -117,18 +116,12 @@ fn signed_atom_matches(
             return false;
         }
         match (left, right) {
-            (
-                crate::kernel::Bitvector32Term::Constant(left),
-                crate::kernel::Bitvector32Term::Constant(right),
-            ) if left == right => {}
-            (
-                crate::kernel::Bitvector32Term::Int64Constant(left),
-                crate::kernel::Bitvector32Term::Int64Constant(right),
-            ) if left == right => {}
-            (
-                crate::kernel::Bitvector32Term::UInt64Constant(left),
-                crate::kernel::Bitvector32Term::UInt64Constant(right),
-            ) if left == right => {}
+            (int32_constant!(left), int32_constant!(right))
+                if constant_u32(*left) == constant_u32(*right) => {}
+            (int64_constant!(left), int64_constant!(right))
+                if constant_i64(*left) == constant_i64(*right) => {}
+            (uint64_constant!(left), uint64_constant!(right))
+                if constant_u64(*left) == constant_u64(*right) => {}
             (
                 crate::kernel::Bitvector32Term::Variable(left),
                 crate::kernel::Bitvector32Term::Variable(right),
@@ -173,12 +166,10 @@ fn signed_scaled_term_matches(
     source: &crate::kernel::Bitvector32Term,
     coefficient: &num_bigint::BigInt,
 ) -> bool {
-    if let (
-        crate::kernel::Bitvector32Term::Constant(value),
-        crate::kernel::Bitvector32Term::Constant(source_value),
-        Some(coefficient),
-    ) = (target, source, coefficient.to_i32())
-        && (*source_value as i64).saturating_mul(i64::from(coefficient)) == i64::from(*value as i32)
+    if let (int32_constant!(value), int32_constant!(source_value), Some(coefficient)) =
+        (target, source, coefficient.to_i32())
+        && (constant_u32(*source_value) as i64).saturating_mul(i64::from(coefficient))
+            == i64::from(constant_u32(*value) as i32)
     {
         return true;
     }
@@ -187,22 +178,22 @@ fn signed_scaled_term_matches(
     };
     let coefficient_i32 = coefficient.to_i32();
     match (left.as_ref(), right.as_ref(), coefficient_i32) {
-        (crate::kernel::Bitvector32Term::Constant(value), term, Some(expected))
-            if *value as i32 == expected =>
+        (int32_constant!(value), term, Some(expected))
+            if constant_u32(*value) as i32 == expected =>
         {
             signed_atom_matches(term, source)
         }
-        (term, crate::kernel::Bitvector32Term::Constant(value), Some(expected))
-            if *value as i32 == expected =>
+        (term, int32_constant!(value), Some(expected))
+            if constant_u32(*value) as i32 == expected =>
         {
             signed_atom_matches(term, source)
         }
-        (crate::kernel::Bitvector32Term::Constant(value), _, Some(expected))
+        (int32_constant!(value), _, Some(expected))
             if matches!(
                 source,
-                crate::kernel::Bitvector32Term::Constant(source_value) | crate::kernel::Bitvector32Term::UInt32Constant(source_value)
-                    if (*source_value as i64).saturating_mul(i64::from(expected))
-                        == i64::from(*value as i32)
+                bits32_constant!(source_value)
+                    if (constant_u32(*source_value) as i64).saturating_mul(i64::from(expected))
+                        == i64::from(constant_u32(*value) as i32)
             ) =>
         {
             true
@@ -322,12 +313,11 @@ fn signed_add_surface_shape(
             // the emitted kernel node still uses the children's exact
             // mathematical claim, not the lowered machine-value claim.
             if let binary_term!(Int32, Add, base, trailing) = first
-                && let crate::kernel::Bitvector32Term::Constant(trailing)
-                | crate::kernel::Bitvector32Term::UInt32Constant(trailing) = trailing.as_ref()
-                && let crate::kernel::Bitvector32Term::Constant(second)
-                | crate::kernel::Bitvector32Term::UInt32Constant(second) = second
-                && let Some(offset) = (*trailing as i32).checked_add(*second as i32)
-                && matches!(target_second.as_ref(), crate::kernel::Bitvector32Term::Constant(value) | crate::kernel::Bitvector32Term::UInt32Constant(value) if *value == offset as u32)
+                && let bits32_constant!(trailing) = trailing.as_ref()
+                && let bits32_constant!(second) = second
+                && let Some(offset) =
+                    (constant_u32(*trailing) as i32).checked_add(constant_u32(*second) as i32)
+                && matches!(target_second.as_ref(), bits32_constant!(value) if constant_u32(*value) == offset as u32)
                 && signed_atom_matches(target_first, base)
             {
                 return true;
@@ -424,9 +414,8 @@ fn signed_term_constant_value(term: &crate::kernel::Bitvector32Term) -> Option<i
     while let Some(task) = pending.pop() {
         match task {
             Task::Visit(term) => match term {
-                crate::kernel::Bitvector32Term::Constant(value)
-                | crate::kernel::Bitvector32Term::UInt32Constant(value) => {
-                    values.push(Some(*value as i32 as i64));
+                bits32_constant!(value) => {
+                    values.push(Some(constant_u32(*value) as i32 as i64));
                 }
                 binary_term!(Int32, Add, left, right) => {
                     pending.push(Task::Combine(true));
@@ -2368,20 +2357,22 @@ impl<'a> Proof<'a> {
                 && let Ok(value) = literal.parse::<i64>()
                 && (i32::MIN as i64..=i32::MAX as i64).contains(&value)
             {
-                return Ok(crate::kernel::Bitvector32Term::Constant(
+                return Ok(crate::kernel::Bitvector32Term::constant(
                     value as i32 as u32,
                 ));
             }
             if let Some(value) =
                 signed_constant_expression(expression).and_then(|value| value.to_i32())
             {
-                return Ok(crate::kernel::Bitvector32Term::Constant(value as u32));
+                return Ok(crate::kernel::Bitvector32Term::constant(value as u32));
             }
             if let ContractExpression::CFragment(crate::kernel::CExpression::Value(
-                crate::kernel::CValue::Int32(crate::kernel::Bitvector32Term::Constant(value)),
+                crate::kernel::CValue::Int32(int32_constant!(value)),
             )) = expression
             {
-                return Ok(crate::kernel::Bitvector32Term::Constant(*value));
+                return Ok(crate::kernel::Bitvector32Term::constant(constant_u32(
+                    *value,
+                )));
             }
             let zero = ContractExpression::IntegerLiteral("0".into());
             let surface = ClickProposition::Comparison {
@@ -2403,14 +2394,7 @@ impl<'a> Proof<'a> {
                     relation: crate::kernel::CompareRelation::Equal,
                     left,
                     right,
-                } if matches!(
-                    right.as_ref(),
-                    crate::kernel::Bitvector32Term::Constant(0)
-                        | crate::kernel::Bitvector32Term::UInt32Constant(0)
-                ) =>
-                {
-                    left.as_ref().clone()
-                }
+                } if matches!(right.as_ref(), bits32_constant!(0)) => left.as_ref().clone(),
                 crate::kernel::ConditionTerm::Compare {
                     format:
                         crate::kernel::MachineIntegerType::Int32
@@ -2418,14 +2402,7 @@ impl<'a> Proof<'a> {
                     relation: crate::kernel::CompareRelation::Equal,
                     left,
                     right,
-                } if matches!(
-                    left.as_ref(),
-                    crate::kernel::Bitvector32Term::Constant(0)
-                        | crate::kernel::Bitvector32Term::UInt32Constant(0)
-                ) =>
-                {
-                    right.as_ref().clone()
-                }
+                } if matches!(left.as_ref(), bits32_constant!(0)) => right.as_ref().clone(),
                 _ => {
                     return Err(proof
                         .step_error("signed_int32 certificate term must be an int32 expression"));
@@ -3888,7 +3865,7 @@ impl<'a> Proof<'a> {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(current.clone()),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                     true,
                 );

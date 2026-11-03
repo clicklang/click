@@ -15,6 +15,7 @@ use crate::kernel::proof::signed_arithmetic::{
 use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
 use num_bigint::BigInt;
 use num_traits::{One, ToPrimitive, Zero};
 use std::collections::{BTreeMap, HashMap};
@@ -584,8 +585,8 @@ fn affine_difference(
     let mut pending = vec![(left, BigInt::one()), (right, -BigInt::one())];
     while let Some((term, coefficient)) = pending.pop() {
         charge_work(coefficient.bits() as usize + 1)?;
-        if let Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) = term {
-            let value = BigInt::from(*value as i32);
+        if let bits32_constant!(value) = term {
+            let value = BigInt::from(constant_u32(*value) as i32);
             charge_bigint_binary_work(&coefficient, &value)?;
             let product = &coefficient * &value;
             charge_bigint_binary_work(&constant, &product)?;
@@ -616,8 +617,8 @@ fn decomposed_affine_difference(
     while let Some((term, coefficient)) = pending.pop() {
         charge_work(coefficient.bits() as usize + 1)?;
         match term {
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-                let value = BigInt::from(*value as i32);
+            bits32_constant!(value) => {
+                let value = BigInt::from(constant_u32(*value) as i32);
                 charge_bigint_binary_work(&coefficient, &value)?;
                 let product = &coefficient * &value;
                 charge_bigint_binary_work(&constant, &product)?;
@@ -1894,10 +1895,9 @@ impl<'a> Planner<'a> {
                         continue;
                     }
                     match term {
-                        Bitvector32Term::Constant(_)
-                        | Bitvector32Term::UInt32Constant(_)
-                        | Bitvector32Term::Int64Constant(_)
-                        | Bitvector32Term::UInt64Constant(_)
+                        bits32_constant!(_)
+                        | int64_constant!(_)
+                        | uint64_constant!(_)
                         | Bitvector32Term::Variable(_) => {
                             let mut hasher = std::collections::hash_map::DefaultHasher::new();
                             std::mem::discriminant(term).hash(&mut hasher);
@@ -2390,9 +2390,7 @@ impl<'a> Planner<'a> {
         let mut pending = vec![term];
         while let Some(term) = pending.pop() {
             match term {
-                Bitvector32Term::Variable(_)
-                | Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_) => {}
+                Bitvector32Term::Variable(_) | bits32_constant!(_) => {}
                 Bitvector32Term::UInt32From64(_)
                     if SignedArithmeticAtom::from_term(term).is_some() => {}
                 Bitvector32Term::PureFunctionApplication { arguments, .. } => {
@@ -2434,9 +2432,7 @@ impl<'a> Planner<'a> {
             charge_work(1)?;
             match task {
                 Task::Visit(term, allow_direct) => match term {
-                    Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
-                        results.push(self.interval_atom(term)?)
-                    }
+                    bits32_constant!(_) => results.push(self.interval_atom(term)?),
                     binary_term!(Int32, Add, left, right)
                     | binary_term!(Int32, Subtract, left, right)
                     | binary_term!(Int32, Multiply, left, right) => {
@@ -2705,7 +2701,7 @@ impl<'a> Planner<'a> {
                         Int32,
                         Remainder,
                         base.clone(),
-                        Box::new(Bitvector32Term::Constant(divisor as u32)),
+                        Box::new(Bitvector32Term::constant(divisor as u32)),
                     );
                     if let Some(remainder) = self.interval_atom(&original)
                         && let Some(op) = self.interval_at(operand)
@@ -3400,7 +3396,7 @@ mod tests {
     }
 
     fn constant(value: i32) -> Bitvector32Term {
-        Bitvector32Term::Constant(value as u32)
+        Bitvector32Term::constant(value as u32)
     }
 
     fn proposition(condition: ConditionTerm, value: bool) -> Proposition {

@@ -219,9 +219,9 @@ impl TermClasses {
                             MachineBinaryOp::Subtract if left == right => {
                                 Some(self.intern_typed_machine(
                                     &if *format == MachineIntegerType::Int64 {
-                                        T::Int64Constant(0)
+                                        T::int64_constant(0)
                                     } else {
-                                        T::UInt64Constant(0)
+                                        T::uint64_constant(0)
                                     },
                                     width,
                                 ))
@@ -466,9 +466,9 @@ mod tests {
         for format in crate::kernel::machine_integer::FORMATS {
             let variable = T::Variable(Variable(982401));
             let literal = if format.format().bits() <= 32 {
-                T::Constant(1)
+                T::constant(1)
             } else {
-                T::UInt64Constant(1)
+                T::uint64_constant(1)
             };
             let child = T::Binary {
                 format: MachineIntegerType::UInt32,

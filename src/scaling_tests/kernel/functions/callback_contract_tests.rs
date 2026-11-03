@@ -80,8 +80,8 @@ fn authoritative_memory_projection_scales_with_used_members_not_unrelated_frames
     let checked_resources = [CCheckedResourceFact {
         fact: CResourceFact::own_memory(CMemoryRange::new(
             pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
         role: CResourceTransferRole::Consume,
         snapshot: CResourceSnapshot::Entry,
@@ -126,8 +126,8 @@ fn checked_transition_projection_ignores_unrelated_caller_frame() {
                 .map(|index| {
                     CResourceFact::own_memory(CMemoryRange::new(
                         pointer.clone(),
-                        Bitvector32Term::Constant(index as u32),
-                        Bitvector32Term::Constant(index as u32 + 1),
+                        Bitvector32Term::constant(index as u32),
+                        Bitvector32Term::constant(index as u32 + 1),
                     ))
                 })
                 .chain((0..unrelated).map(|index| {
@@ -363,9 +363,9 @@ fn callback_fact_lookup_scales_with_calls_not_unrelated_supported_facts() {
 #[test]
 fn contract_refinement_work_is_flat_in_unrelated_facts() {
     let variable = |index| Bitvector32Term::Variable(Variable(index));
-    let bound = ConditionTerm::signed_less_than(variable(70_001), Bitvector32Term::Constant(10));
+    let bound = ConditionTerm::signed_less_than(variable(70_001), Bitvector32Term::constant(10));
     let equality = ConditionTerm::equal(variable(70_002), variable(70_003));
-    let refuted = ConditionTerm::signed_less_than(variable(70_005), Bitvector32Term::Constant(0));
+    let refuted = ConditionTerm::signed_less_than(variable(70_005), Bitvector32Term::constant(0));
     let integer = |index| IntegerTerm::Variable(Variable(index));
     let size_invariant = ConditionTerm::integer_equal(integer(70_010), integer(70_011));
     let unrelated_size = ConditionTerm::integer_equal(integer(70_012), integer(70_013));
@@ -413,7 +413,7 @@ fn contract_refinement_work_is_flat_in_unrelated_facts() {
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::signed_less_than(
                         Bitvector32Term::Variable(Variable(71_000 + index as u64)),
-                        Bitvector32Term::Constant(index as u32 + 1),
+                        Bitvector32Term::constant(index as u32 + 1),
                     ),
                     true,
                 );

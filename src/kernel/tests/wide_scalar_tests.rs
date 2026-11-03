@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::binary_node;
+use crate::kernel::uint64_constant;
 use num_bigint::BigInt;
 
 fn evaluated(expression: CExpression) -> CExpressionOutcome {
@@ -144,15 +145,15 @@ fn wide_scalar_rejects_legacy_carriers_and_unsupported_arithmetic() {
             .constant_term(MachineIntegerConstant::from_unsigned(other.format(), 1).unwrap())
             .unwrap();
         for term in [
-            Bitvector32Term::Constant(1),
-            Bitvector32Term::Int64Constant(1),
-            Bitvector32Term::UInt64Constant(1),
+            Bitvector32Term::constant(1),
+            Bitvector32Term::int64_constant(1),
+            Bitvector32Term::uint64_constant(1),
             wrong,
             binary_node!(
                 Int32,
                 Add,
                 Box::new(Bitvector32Term::Variable(Variable(148_002))),
-                Box::new(Bitvector32Term::Constant(1)),
+                Box::new(Bitvector32Term::constant(1)),
             ),
         ] {
             assert!(IntegerTerm::from_machine(ty, term.clone()).is_none());
@@ -458,7 +459,7 @@ fn wide_cast_function_argument_widens_and_return_narrows_without_truncating_earl
         theorem.proposition(),
         Proposition::CFunctionExecutes {
             outcome: CFunctionOutcome::Return {
-                value: CValue::UInt64(Bitvector32Term::UInt64Constant(u64::MAX)),
+                value: CValue::UInt64(uint64_constant!(0xFFFF_FFFF_FFFF_FFFF)),
                 ..
             },
             ..
@@ -477,12 +478,12 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
         Bitvector32Term::MachineIntegerCast {
             source: MachineIntegerType::Int128,
             destination: MachineIntegerType::Int128,
-            value: Box::new(Bitvector32Term::Constant(1)),
+            value: Box::new(Bitvector32Term::constant(1)),
         },
         Bitvector32Term::MachineIntegerCast {
             source: MachineIntegerType::Int64,
             destination: MachineIntegerType::Int128,
-            value: Box::new(Bitvector32Term::UInt64Constant(1)),
+            value: Box::new(Bitvector32Term::uint64_constant(1)),
         },
         Bitvector32Term::MachineIntegerCast {
             source: MachineIntegerType::Int64,
@@ -490,7 +491,7 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
             value: Box::new(Bitvector32Term::MachineIntegerCast {
                 source: MachineIntegerType::Int32,
                 destination: MachineIntegerType::Int64,
-                value: Box::new(Bitvector32Term::Int64Constant(1)),
+                value: Box::new(Bitvector32Term::int64_constant(1)),
             }),
         },
     ] {
@@ -502,7 +503,7 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
     }
     assert!(
         crate::kernel::machine_integer::conversion::convert_value(
-            CValue::Int64(Bitvector32Term::MachineIntegerConstant(
+            CValue::Int64(Bitvector32Term::machine_constant(
                 MachineIntegerConstant::from_unsigned(
                     MachineIntegerType::UInt128.format(),
                     u128::MAX
@@ -523,7 +524,7 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
     };
     let memory = CMemory::new().with_block("wide-cast-source", 4).store(
         pointer.clone(),
-        CValue::Int32(Bitvector32Term::Constant((-1i32) as u32)),
+        CValue::Int32(Bitvector32Term::constant((-1i32) as u32)),
     );
     let load =
         Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Int32);
@@ -571,7 +572,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     let bound = Proposition::ConditionIs(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
-            Bitvector32Term::UInt64Constant(i64::MAX as u64),
+            Bitvector32Term::uint64_constant(i64::MAX as u64),
         ),
         true,
     );
@@ -605,7 +606,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     let weaker = Proposition::ConditionIs(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
-            Bitvector32Term::UInt64Constant((i64::MAX as u64) + 1),
+            Bitvector32Term::uint64_constant((i64::MAX as u64) + 1),
         ),
         true,
     );
@@ -648,9 +649,9 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let bits = if signed {
-            Bitvector32Term::Int64Constant(0x1_0000_0001)
+            Bitvector32Term::int64_constant(0x1_0000_0001)
         } else {
-            Bitvector32Term::UInt64Constant(0x1_0000_0001)
+            Bitvector32Term::uint64_constant(0x1_0000_0001)
         };
         let value = if signed {
             CValue::Int64(bits.clone())
@@ -683,7 +684,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
                 )
                 .store(
                     pointer.offset_by_bytes(4),
-                    CValue::Int32(Bitvector32Term::Constant(0)),
+                    CValue::Int32(Bitvector32Term::constant(0)),
                 ),
         );
         let changed =

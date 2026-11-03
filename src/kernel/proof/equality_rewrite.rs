@@ -6,6 +6,7 @@ use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
+use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -584,7 +585,7 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(byte.clone()),
-            right: Box::new(Bitvector32Term::Constant(u32::from(signed as u8))),
+            right: Box::new(Bitvector32Term::constant(u32::from(signed as u8))),
         },
         true,
     ))
@@ -1197,11 +1198,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 | Bitvector32Term::ClickFunctionApplication { .. }
                 | Bitvector32Term::AlgebraicMatch { .. }
                 | Bitvector32Term::IntegerToMachine { .. }
-                | Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_)
-                | Bitvector32Term::Int64Constant(_)
-                | Bitvector32Term::UInt64Constant(_)
-                | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
+                | Bitvector32Term::Constant { .. } => term.clone(),
                 term => match (term.as_binary(), term.as_unary()) {
                     // The 32-bit word operators are rebuilt as bare nodes, the rest
                     // through their smart constructors.
@@ -1832,13 +1829,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // matching, checked 32-to-64-bit cast of the cited constant; the
         // replacement keeps that cast, including its signedness. Never
         // identify a full-width literal by truncating it to 32 bits.
-        if let Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) = from {
+        if let bits32_constant!(_) = from {
             let casts: &[fn(Bitvector32Term) -> Bitvector32Term] = match term {
-                Bitvector32Term::Int64Constant(_) => &[
+                int64_constant!(_) => &[
                     Bitvector32Term::int64_from_32,
                     Bitvector32Term::int64_from_uint32,
                 ],
-                Bitvector32Term::UInt64Constant(_) => &[
+                uint64_constant!(_) => &[
                     Bitvector32Term::uint64_from_32,
                     Bitvector32Term::uint64_from_int32,
                 ],
@@ -1864,20 +1861,22 @@ fn rewrite_atomic_proposition_by_exact_equality(
             binary_term!(Int32, Add, left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
-                    (
-                        Bitvector32Term::Constant(first) | Bitvector32Term::UInt32Constant(first),
-                        Bitvector32Term::Constant(second) | Bitvector32Term::UInt32Constant(second),
-                    ) => Bitvector32Term::Constant(first.wrapping_add(*second)),
+                    (bits32_constant!(first), bits32_constant!(second)) => {
+                        Bitvector32Term::constant(
+                            constant_u32(*first).wrapping_add(constant_u32(*second)),
+                        )
+                    }
                     _ => binary_node!(Int32, Add, left, right),
                 }
             }
             binary_term!(Int32, Subtract, left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
-                    (
-                        Bitvector32Term::Constant(first) | Bitvector32Term::UInt32Constant(first),
-                        Bitvector32Term::Constant(second) | Bitvector32Term::UInt32Constant(second),
-                    ) => Bitvector32Term::Constant(first.wrapping_sub(*second)),
+                    (bits32_constant!(first), bits32_constant!(second)) => {
+                        Bitvector32Term::constant(
+                            constant_u32(*first).wrapping_sub(constant_u32(*second)),
+                        )
+                    }
                     _ => binary_node!(Int32, Subtract, left, right),
                 }
             }
@@ -1905,7 +1904,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 let (left, right) = binary(left, right);
                 match (left.constant32(), right.constant32()) {
                     (Some(first), Some(second)) => {
-                        Bitvector32Term::UInt32Constant(first.wrapping_add(second))
+                        Bitvector32Term::uint32_constant(first.wrapping_add(second))
                     }
                     _ => binary_node!(UInt32, Add, left, right),
                 }
@@ -1914,7 +1913,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 let (left, right) = binary(left, right);
                 match (left.constant32(), right.constant32()) {
                     (Some(first), Some(second)) => {
-                        Bitvector32Term::UInt32Constant(first.wrapping_sub(second))
+                        Bitvector32Term::uint32_constant(first.wrapping_sub(second))
                     }
                     _ => binary_node!(UInt32, Subtract, left, right),
                 }
@@ -1988,11 +1987,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     rewritten
                 }
             }
-            Bitvector32Term::Constant(_)
-            | Bitvector32Term::UInt32Constant(_)
-            | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_)
-            | Bitvector32Term::MachineIntegerConstant(_) => term.clone(),
+            Bitvector32Term::Constant { .. } => term.clone(),
             term => match (term.as_binary(), term.as_unary()) {
                 // The 32-bit word operators are rebuilt as bare nodes, the rest
                 // through their smart constructors.
@@ -2508,9 +2503,9 @@ mod tests {
 
     fn observed_native_bound(ty: MachineIntegerType) -> Bitvector32Term {
         match ty {
-            MachineIntegerType::Int64 => Bitvector32Term::Int64Constant(10),
-            MachineIntegerType::UInt64 => Bitvector32Term::UInt64Constant(10),
-            _ => Bitvector32Term::Constant(10),
+            MachineIntegerType::Int64 => Bitvector32Term::int64_constant(10),
+            MachineIntegerType::UInt64 => Bitvector32Term::uint64_constant(10),
+            _ => Bitvector32Term::constant(10),
         }
     }
 
@@ -2788,7 +2783,7 @@ mod tests {
         let goal = Proposition::ConditionIs(
             ConditionTerm::unsigned_less_equal(
                 Bitvector32Term::add_at(MachineIntegerType::UInt32, tag, sigma_x.clone()),
-                Bitvector32Term::UInt32Constant(2000),
+                Bitvector32Term::uint32_constant(2000),
             ),
             true,
         );
@@ -2841,7 +2836,7 @@ mod tests {
             ConditionTerm::IntegerLessEqual(value.clone().into(), rhs.into()),
             true,
         );
-        let cited = equality(index, Bitvector32Term::Constant(16));
+        let cited = equality(index, Bitvector32Term::constant(16));
         let facts = ProofFacts::default().with_fact(cited.clone());
         let mut rewrite = facts.check_equality_rewrite(&goal, &cited).unwrap();
         let raw = rewrite.proposition().clone();
@@ -2881,26 +2876,26 @@ mod tests {
 
     #[test]
     fn native_equality_rewrite_retains_folded_literal_widening() {
-        let source = Bitvector32Term::Constant(u32::MAX);
+        let source = Bitvector32Term::constant(u32::MAX);
         let replacement = Bitvector32Term::Variable(Variable(193_024));
         let value = Bitvector32Term::Variable(Variable(193_025));
         let cited = equality(source.clone(), replacement.clone());
         let facts = ProofFacts::default().with_fact(cited.clone());
         for (folded, lifted) in [
             (
-                Bitvector32Term::Int64Constant(-1),
+                Bitvector32Term::int64_constant(-1),
                 Bitvector32Term::int64_from_32(replacement.clone()),
             ),
             (
-                Bitvector32Term::Int64Constant(i64::from(u32::MAX)),
+                Bitvector32Term::int64_constant(i64::from(u32::MAX)),
                 Bitvector32Term::int64_from_uint32(replacement.clone()),
             ),
             (
-                Bitvector32Term::UInt64Constant(u64::MAX),
+                Bitvector32Term::uint64_constant(u64::MAX),
                 Bitvector32Term::uint64_from_int32(replacement.clone()),
             ),
             (
-                Bitvector32Term::UInt64Constant(u64::from(u32::MAX)),
+                Bitvector32Term::uint64_constant(u64::from(u32::MAX)),
                 Bitvector32Term::uint64_from_32(replacement.clone()),
             ),
         ] {
@@ -2926,9 +2921,9 @@ mod tests {
         // These full-width values have the same low bits as the source, but
         // no matching widening of it. The equality grants no substitution.
         for bound in [
-            Bitvector32Term::UInt64Constant(0x1_ffff_ffff),
-            Bitvector32Term::Int64Constant(0x1_ffff_ffff),
-            Bitvector32Term::Int64Constant(-0x1_0000_0001),
+            Bitvector32Term::uint64_constant(0x1_ffff_ffff),
+            Bitvector32Term::int64_constant(0x1_ffff_ffff),
+            Bitvector32Term::int64_constant(-0x1_0000_0001),
         ] {
             let goal = Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -2948,7 +2943,7 @@ mod tests {
         let value = Bitvector32Term::Variable(Variable(193_026));
         let divisor = Bitvector32Term::Variable(Variable(193_027));
         for source in [65521, 0x8000_0001, u32::MAX] {
-            let source = Bitvector32Term::Constant(source);
+            let source = Bitvector32Term::constant(source);
             let cited = equality(source.clone(), divisor.clone());
             let facts = ProofFacts::default().with_fact(cited.clone());
             for make in [
@@ -3240,7 +3235,7 @@ mod tests {
         let before = CMemory::new().with_block("integer-rewrite-snapshot", 8);
         let after = before.clone().store(
             pointer.clone(),
-            CValue::Int64(Bitvector32Term::Int64Constant(9)),
+            CValue::Int64(Bitvector32Term::int64_constant(9)),
         );
         let observe = |memory: CMemory| {
             IntegerTerm::from_machine(
@@ -3311,17 +3306,17 @@ mod tests {
         // Congruence must not fold them while rewriting an unrelated Integer.
         let terms = [
             Bitvector32Term::MachineIntegerCast {
-                value: Box::new(Bitvector32Term::Constant(1)),
+                value: Box::new(Bitvector32Term::constant(1)),
                 source: MachineIntegerType::Int32,
                 destination: MachineIntegerType::Int64,
             },
             Bitvector32Term::Int64FromUInt32(Box::new(Bitvector32Term::UInt32From64(Box::new(
-                Bitvector32Term::UInt64Constant(1),
+                Bitvector32Term::uint64_constant(1),
             )))),
             Bitvector32Term::If {
                 condition: Box::new(ConditionTerm::Constant(true)),
-                then_term: Box::new(Bitvector32Term::Int64Constant(1)),
-                else_term: Box::new(Bitvector32Term::Int64Constant(2)),
+                then_term: Box::new(Bitvector32Term::int64_constant(1)),
+                else_term: Box::new(Bitvector32Term::int64_constant(2)),
             },
         ];
         for term in terms {
@@ -3378,7 +3373,7 @@ mod tests {
     fn checked_rewrite_requires_the_cited_equality_in_its_own_context() {
         let x = Bitvector32Term::Variable(Variable(901));
         let y = Bitvector32Term::Variable(Variable(902));
-        let one = Bitvector32Term::Constant(1);
+        let one = Bitvector32Term::constant(1);
         let cited = equality(x.clone(), y.clone());
         let goal = equality(x.clone(), one.clone());
         let empty = ProofFacts::default();
@@ -3404,10 +3399,10 @@ mod tests {
         let y = Bitvector32Term::Variable(Variable(912));
         let cited = equality(x.clone(), y.clone());
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
-        let goal = equality(x, Bitvector32Term::Constant(3));
-        let expected = equality(y, Bitvector32Term::Constant(3));
+        let goal = equality(x, Bitvector32Term::constant(3));
+        let expected = equality(y, Bitvector32Term::constant(3));
         let mut result = facts.check_equality_rewrite(&goal, &cited).unwrap();
-        let forged = equality(Bitvector32Term::Constant(0), Bitvector32Term::Constant(0));
+        let forged = equality(Bitvector32Term::constant(0), Bitvector32Term::constant(0));
         assert!(!result.try_present_as(&forged));
         assert!(result.try_present_as(&expected));
         let (obligation, retained) = result.into_obligation("display", None::<()>);
@@ -3430,9 +3425,9 @@ mod tests {
             let changed = after.clone().store(
                 pointer.clone(),
                 if wide {
-                    CValue::UInt64(Bitvector32Term::UInt64Constant(7))
+                    CValue::UInt64(Bitvector32Term::uint64_constant(7))
                 } else {
-                    CValue::Int32(Bitvector32Term::Constant(7))
+                    CValue::Int32(Bitvector32Term::constant(7))
                 },
             );
             let kind = if wide {
@@ -3449,9 +3444,9 @@ mod tests {
                 )
             };
             let one = if wide {
-                Bitvector32Term::UInt64Constant(1)
+                Bitvector32Term::uint64_constant(1)
             } else {
-                Bitvector32Term::Constant(1)
+                Bitvector32Term::constant(1)
             };
             let mask = |value| {
                 if wide {
@@ -3592,16 +3587,19 @@ mod tests {
         for size in [8, 32, 128] {
             let cited = eq(
                 expression(&before, size),
-                Bitvector32Term::UInt64Constant(1),
+                Bitvector32Term::uint64_constant(1),
             );
-            let goal = eq(expression(&after, size), Bitvector32Term::UInt64Constant(1));
+            let goal = eq(
+                expression(&after, size),
+                Bitvector32Term::uint64_constant(1),
+            );
             let mut context_costs = Vec::new();
             for ambient in [0, 32, 128] {
                 let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
                 for i in 0..ambient {
                     facts = facts.with_fact(equality(
                         Bitvector32Term::Variable(Variable(930_000 + i)),
-                        Bitvector32Term::Constant(i as u32),
+                        Bitvector32Term::constant(i as u32),
                     ));
                 }
                 crate::kernel::eval::clear_load_canonicalization_caches();
@@ -3635,11 +3633,11 @@ mod tests {
         crate::kernel::eval::declare_load_access_width(&pointer, 4);
         let memory = CMemory::new().with_block("rewrite-presentation", 4).store(
             pointer.clone(),
-            CValue::Int32(Bitvector32Term::Constant(42)),
+            CValue::Int32(Bitvector32Term::constant(42)),
         );
         let changed = memory.clone().store(
             pointer.clone(),
-            CValue::Int32(Bitvector32Term::Constant(43)),
+            CValue::Int32(Bitvector32Term::constant(43)),
         );
         let load = |memory| {
             Bitvector32Term::MemoryLoad(
@@ -3656,11 +3654,11 @@ mod tests {
             .check_equality_rewrite(&equality(x, load(memory)), &cited)
             .unwrap();
         assert!(!result.try_present_as(&equality(y.clone(), load(changed))));
-        assert!(result.try_present_as(&equality(y.clone(), Bitvector32Term::Constant(42))));
+        assert!(result.try_present_as(&equality(y.clone(), Bitvector32Term::constant(42))));
         let (obligation, _) = result.into_obligation((), None::<()>);
         assert_eq!(
             obligation.proposition(),
-            &equality(y, Bitvector32Term::Constant(42))
+            &equality(y, Bitvector32Term::constant(42))
         );
     }
 
@@ -3696,15 +3694,15 @@ mod tests {
             body: Box::new(body),
         };
 
-        let shadowed = atom(variable(bound), Bitvector32Term::Constant(0));
-        let shadowed_goal = quantified(atom(variable(bound), Bitvector32Term::Constant(0)));
+        let shadowed = atom(variable(bound), Bitvector32Term::constant(0));
+        let shadowed_goal = quantified(atom(variable(bound), Bitvector32Term::constant(0)));
         assert!(
             checked_rewrite(&shadowed_goal, &shadowed, std::slice::from_ref(&shadowed),).is_err(),
             "an outer equality cannot replace the bound occurrence"
         );
 
         let capturing = atom(variable(free), variable(bound));
-        let capturing_goal = quantified(atom(variable(free), Bitvector32Term::Constant(0)));
+        let capturing_goal = quantified(atom(variable(free), Bitvector32Term::constant(0)));
         assert!(
             checked_rewrite(
                 &capturing_goal,
@@ -3718,7 +3716,7 @@ mod tests {
             name: "witness".to_string(),
             var: bound,
             sort: Sort::CInt32,
-            body: Box::new(atom(variable(free), Bitvector32Term::Constant(0))),
+            body: Box::new(atom(variable(free), Bitvector32Term::constant(0))),
         };
         assert!(
             checked_rewrite(&existential, &capturing, std::slice::from_ref(&capturing),).is_err(),
@@ -3742,7 +3740,7 @@ mod tests {
             "a variable inside a pure-function argument must not become bound"
         );
 
-        let safe = atom(variable(free), Bitvector32Term::Constant(0));
+        let safe = atom(variable(free), Bitvector32Term::constant(0));
         assert_eq!(
             checked_rewrite(&capturing_goal, &safe, std::slice::from_ref(&safe),)
                 .expect("an unrelated equality may still rewrite under the binder"),
@@ -3777,8 +3775,8 @@ mod wide_range_reader_tests {
         };
         let wide = CMemoryRange::new_wide(
             base,
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(1 << 33),
             4,
         );
         let goal = Proposition::CResourceContains {
@@ -3818,7 +3816,7 @@ mod wide_bound_equality_reader_tests {
         let end = Bitvector32Term::Variable(Variable(985_900));
         let wide = CMemoryRange::new_wide(
             Pointer::symbolic(Variable(985_901)),
-            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_constant(0),
             end.clone(),
             1,
         );
@@ -3837,7 +3835,7 @@ mod wide_bound_equality_reader_tests {
             true,
         );
         assert!(rewrite_atomic_proposition_by_exact_equality(&goal, &narrow).is_err());
-        let high = Bitvector32Term::UInt64Constant(1 << 33);
+        let high = Bitvector32Term::uint64_constant(1 << 33);
         let full = Proposition::ConditionIs(ConditionTerm::uint64_equal(end, high.clone()), true);
         let rewritten = rewrite_atomic_proposition_by_exact_equality(&goal, &full).unwrap();
         let (_, range) = rewritten.memory_containment().unwrap();
@@ -3866,9 +3864,9 @@ mod numeric_address_annotation_tests {
                 ConditionTerm::uint64_equal(
                     Bitvector32Term::uint64_bitwise_and(
                         observed(pointer),
-                        Bitvector32Term::UInt64Constant(1),
+                        Bitvector32Term::uint64_constant(1),
                     ),
-                    Bitvector32Term::UInt64Constant(0),
+                    Bitvector32Term::uint64_constant(0),
                 ),
                 true,
             )
@@ -3894,7 +3892,7 @@ mod numeric_address_annotation_tests {
                     observed(&q),
                     Bitvector32Term::uint64_bitwise_and(
                         observed(&p),
-                        Bitvector32Term::UInt64Constant(1),
+                        Bitvector32Term::uint64_constant(1),
                     ),
                 ),
             ),

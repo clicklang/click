@@ -527,10 +527,10 @@ fn native_divisor_equal(ty: MachineIntegerType, constant: i64) -> ConditionTerm 
     let divisor = Bitvector32Term::Variable(RIGHT);
     match ty {
         MachineIntegerType::Int32 => {
-            ConditionTerm::equal(divisor, Bitvector32Term::Constant(constant as i32 as u32))
+            ConditionTerm::equal(divisor, Bitvector32Term::constant(constant as i32 as u32))
         }
         MachineIntegerType::Int64 => {
-            ConditionTerm::int64_equal(divisor, Bitvector32Term::Int64Constant(constant))
+            ConditionTerm::int64_equal(divisor, Bitvector32Term::int64_constant(constant))
         }
         _ => unreachable!(),
     }

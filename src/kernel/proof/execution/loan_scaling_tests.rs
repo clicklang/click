@@ -88,8 +88,8 @@ fn parameter_view(variable: u64) -> CResourceFact {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Variable(Variable(variable)),
         },
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
         4,
     ))
 }

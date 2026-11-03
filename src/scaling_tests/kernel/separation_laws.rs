@@ -31,8 +31,8 @@ fn elements_law_does_not_walk_the_index_distance() {
             let costs = [4i32, 64, 4096, i32::MAX].map(|distance| {
                 let _session = crate::kernel::VerificationSession::enter();
                 let term = |n: i32| match format {
-                    MachineIntegerType::Int32 => Bitvector32Term::Constant(n as u32),
-                    _ => Bitvector32Term::Int64Constant(i64::from(n)),
+                    MachineIntegerType::Int32 => Bitvector32Term::constant(n as u32),
+                    _ => Bitvector32Term::int64_constant(i64::from(n)),
                 };
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     crate::kernel::prove_separation_elements(

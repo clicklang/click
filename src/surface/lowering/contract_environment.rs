@@ -5,6 +5,7 @@
 //! kernel's, through the elaborated spec form.
 
 use super::*;
+use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::diagnostics::describe_program_point_ref;
 
 pub(in crate::surface) fn array_refs_with_memory(
@@ -274,8 +275,8 @@ pub(in crate::surface) fn scale_int32_offset(
     byte_width: i64,
 ) -> PointerOffsetTerm {
     match value {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            PointerOffsetTerm::Constant((value as i32 as i64) * byte_width)
+        bits32_constant!(value) => {
+            PointerOffsetTerm::Constant((constant_u32(value) as i32 as i64) * byte_width)
         }
         value => PointerOffsetTerm::Int32Scaled {
             value: Box::new(value),

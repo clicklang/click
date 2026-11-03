@@ -153,8 +153,8 @@ impl CIteratedMemory {
     /// The element index expressed in the clause's range coordinates.
     fn scaled(&self, index: &Bitvector32Term, offset: i32) -> Bitvector32Term {
         Bitvector32Term::add(
-            Bitvector32Term::multiply(index.clone(), Bitvector32Term::Constant(self.stride)),
-            Bitvector32Term::Constant(offset as u32),
+            Bitvector32Term::multiply(index.clone(), Bitvector32Term::constant(self.stride)),
+            Bitvector32Term::constant(offset as u32),
         )
     }
 
@@ -190,7 +190,7 @@ impl CIteratedMemory {
     /// memory the fact can ever hold, whatever its guards and holes say.
     pub(crate) fn spanning_range(&self) -> CMemoryRange {
         self.covering_range().unwrap_or_else(|| {
-            let last = Bitvector32Term::subtract(self.upper.clone(), Bitvector32Term::Constant(1));
+            let last = Bitvector32Term::subtract(self.upper.clone(), Bitvector32Term::constant(1));
             CMemoryRange::new_with_element_width(
                 self.element_base.clone(),
                 self.scaled(&self.lower, self.start_offset),
