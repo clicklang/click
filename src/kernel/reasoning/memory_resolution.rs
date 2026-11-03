@@ -3625,7 +3625,7 @@ fn canonical_memory_for_pointer_load_uncached(memory: &CMemory, pointer: &Pointe
             havoc_marker_blocks(&canonical.blocks)
                 .map(|(block, size)| (block.clone(), size.clone())),
         )
-        .collect::<SnapshotMap<_, _>>();
+        .collect::<super::super::primitives::MemoryBlocks>();
     //
     // A jump keeps only the source cells this memory still holds: the
     // surviving cells are materializations of the source, but a source cell

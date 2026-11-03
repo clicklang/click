@@ -779,3 +779,11 @@ fn call_completion_rejects_frame_revalidation_and_normalization() {
         .is_err()
     );
 }
+
+#[test]
+fn explicit_loop_frames_reject_ambient_ownership_and_observation_scans() {
+    for name in ["owned_memory_facts", "memory_facts_in_block"] {
+        let source = format!("fn with_loop_frame_resources(c: C) {{ c.{name}(); }}");
+        assert!(boundary::check_source("src/kernel/loops.rs", &source).is_err());
+    }
+}

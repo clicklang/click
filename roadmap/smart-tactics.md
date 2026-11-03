@@ -49,19 +49,6 @@ facts do not establish flat cost as the queried class or bucket grows.
    explicit proof repair; do not restore implicit candidate search in loan
    planning or move it into another non-expandable tactic.
 
-2. **Loop retained-frame candidates: remaining measurement boundary.**
-   With an explicit view interface, `with_loop_frame_resources` visits the
-   owned-memory index to retain declared scalar owners. It still examines
-   heap-owned memory that the scalar predicate rejects. Without an explicit
-   view interface, it enumerates the withheld frame to build retained views.
-
-   Measure a fixed retained scalar frame beside growing rejected owned-memory
-   candidates, including the complete body constructor and persistent-map
-   work. Distinguish rejected candidates from output-sized frame construction.
-   The observation/binding-carryover regression does not establish bounded cost
-   for arbitrary owned frames. Frame visits must remain charged. Establish a
-   red test and discuss the design before changing this selection.
-
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 

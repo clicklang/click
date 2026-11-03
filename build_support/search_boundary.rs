@@ -94,6 +94,12 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if self.path == "src/kernel/loops.rs"
+            && self.function == "with_loop_frame_resources"
+            && matches!(name, "owned_memory_facts" | "memory_facts_in_block")
+        {
+            self.errors.push(format!("{}: {}: explicit loop frames must select scalar blocks and their owned occurrences ({name})", self.path, self.function));
+        }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && self.function == "has_no_explicit_memory_for_local_storage"
             && matches!(

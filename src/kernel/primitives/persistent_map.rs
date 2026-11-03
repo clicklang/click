@@ -290,14 +290,6 @@ impl<K: Ord + Clone + Hash, V: Clone + Hash> SnapshotMap<K, V> {
         Some(value)
     }
 
-    /// Inserts `value` unless `key` is present; returns the stored value.
-    pub(crate) fn get_or_insert(&mut self, key: K, value: V) -> &V {
-        if !self.map.contains_key(&key) {
-            self.insert(key.clone(), value);
-        }
-        self.map.get(&key).expect("entry was just ensured")
-    }
-
     /// Keeps only the entries `keep` accepts.
     ///
     /// O(n): it visits every entry, and charges one work unit per entry.
