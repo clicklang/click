@@ -1979,7 +1979,6 @@ fn charon_trial_live_refresh_and_compiler_rejections() {
             include_str!("../design/borrow-probes/charon-move-rejected.rs"),
             "E0382",
         ),
-        ("pub fn unsupported(x: u64) -> u64 { x }", "integer width"),
     ] {
         fs::remove_file(p.artifact("trial.rs")).unwrap();
         fs::write(p.root.join("trial.rs"), source).unwrap();
@@ -1989,6 +1988,14 @@ fn charon_trial_live_refresh_and_compiler_rejections() {
         fs::write(p.root.join("trial.rs"), CHARON_SOURCE).unwrap();
         p.refresh().unwrap();
     }
+    fs::write(p.root.join("trial.rs"), "pub fn wide(x: u64) -> u64 { x }").unwrap();
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(
+        "verifying \"trial.rs\"; fn wide(x: u64) -> u64 { ensures result == x; }",
+        &prepared,
+    )
+    .unwrap();
 }
 #[test]
 #[ignore = "nightly: 1.3s in the parallel gate; other gate tests reach the same code"]
@@ -2162,7 +2169,7 @@ fn rust_boolean_return_and_local_initialization_verify() {
     let p = Project::new("pub fn invert(x:bool)->bool { let answer = !x; answer }");
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let claim = "verifying \"borrow.rs\"; fn invert(x: bool) -> bool { ensures result == (if x != 0 { 0 } else { 1 }); } by { if x == 0 { step_until(function.exit); solve(); } else { step_until(function.exit); solve(); } }";
+    let claim = "verifying \"borrow.rs\"; fn invert(x: bool) -> bool { ensures result == (if x == true { false } else { true }); } by { if x == false { step_until(function.exit); solve(); } else { step_until(function.exit); solve(); } }";
     C0VerificationSession::new_program_prepared(claim, &prepared).unwrap();
 }
 
@@ -2828,7 +2835,7 @@ fn rust_unsigned_arithmetic_and_expansion_verify() {
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
     let (_, verified) = C0VerificationSession::new_program_prepared(&sidecar, &prepared).unwrap();
-    assert_eq!(verified.len(), 9);
+    assert_eq!(verified.len(), 8);
     let admits_overflow = sidecar.replace("4294967040u32", "4294967041u32");
     assert_ne!(admits_overflow, sidecar);
     let refusal = C0VerificationSession::new_program_prepared(&admits_overflow, &prepared)
@@ -4792,21 +4799,21 @@ fn rust_usize_boundaries_and_nested_checks() {
             "false && x + 1 > 0",
             "bool",
             "x == 18446744073709551615u64",
-            "0",
+            "false",
             true,
         ),
         (
             "true || x + 1 > 0",
             "bool",
             "x == 18446744073709551615u64",
-            "1",
+            "true",
             true,
         ),
         (
             "true && x + 1 > 0",
             "bool",
             "x == 18446744073709551615u64",
-            "1",
+            "true",
             false,
         ),
     ] {
