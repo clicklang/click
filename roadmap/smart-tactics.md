@@ -33,7 +33,7 @@ facts do not establish flat cost as the queried class or bucket grows.
 
 1. **Remaining fragment-selection routes.**
    `without_fact_incrementally_impl` still enumerates candidates for requests
-   outside constant, 32-bit-indexed, unit-owned memory. `satisfies_fact` also
+   outside constant unit-owned memory. `satisfies_fact` also
    retains a normalization-based memory-supplier fallback. Isolate real checking
    callers and red scaling curves before changing these remaining routes.
    Distinguish the relevant pieces consumed by explicit composition from
@@ -43,22 +43,9 @@ facts do not establish flat cost as the queried class or bucket grows.
    constant same-base neighbor index cannot represent the block (for example,
    symbolic bounds or native byte coordinates beyond its signed range).
 
-   Current red reproduction: `native_fold_rejection_ignores_fragments_beyond_a_gap`
-   in `src/scaling_tests/kernel/tests/resource_tests.rs`. An explicit fold asks
-   for `memory(p, 0u64, 1024u64)` with four-byte elements, holds the first element,
-   and lacks the next. Growing disjoint fragments farther inside that fixed
-   request from 4/16/64/256 raises repeated fold-rejection work to
-   853/1897/6073/22777 (persistent-map work 15461/44748/188315/895356).
-   A whole-owner success control stays at 263 work units. Fixture/index setup
-   is excluded; all three repeats match and the original branch is unchanged.
-   The fold calls `without_fact_incrementally_impl`; native requests bypass
-   constant 32-bit consumption and enumerate/normalize the fragment frontier.
-   Discuss extending selected-piece consumption to native requests, preserving
-   full-width coordinates and stopping at the first gap, before implementing.
-
    Keep complete-operation controls: a flat call query does not establish flat
    folding, and a flat constant-range fold does not establish bounded symbolic
-   or wide-range checking. Prefer indexed, selected-piece construction or an
+   range checking. Prefer indexed, selected-piece construction or an
    explicit proof repair; do not restore implicit candidate search in loan
    planning or move it into another non-expandable tactic.
 

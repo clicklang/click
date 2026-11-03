@@ -3391,7 +3391,8 @@ fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
 #[test]
 fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
     let mut curves = Vec::new();
-    for complete in [false, true] {
+    for case in ["gap", "owner", "joined"] {
+        let complete = case != "gap";
         let mut samples = Vec::new();
         for count in [4u32, 16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
@@ -3418,9 +3419,19 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
                 ))
             };
             let facts = PureFactContext::new();
-            let first = piece(0, if complete { 1024 } else { 1 });
+            let first = piece(
+                0,
+                match case {
+                    "owner" => 1024,
+                    "joined" => 512,
+                    _ => 1,
+                },
+            );
             let mut resources =
                 ResourceContext::new_with_equalities(&facts).unchecked_with_fact(first.clone());
+            if case == "joined" {
+                resources = resources.unchecked_with_fact(piece(512, 1024));
+            }
             for index in 0..count {
                 let start = if complete { 2048 } else { 100 } + 2 * u64::from(index);
                 resources = resources.unchecked_with_fact(piece(start, start + 1));
@@ -3435,13 +3446,16 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
                     })
                 });
                 assert_eq!(result.is_ok(), complete, "{complete}/{count}: {result:?}");
-                assert_eq!(state.resources().facts().len(), count as usize + 1);
+                assert_eq!(
+                    state.resources().facts().len(),
+                    count as usize + 1 + usize::from(case == "joined")
+                );
                 assert!(state.resources().contains_exact_representation(&first));
                 queries.push((work, maps));
             }
             samples.push((count, queries));
         }
-        eprintln!("native fold complete={complete}, count/work/maps: {samples:?}");
+        eprintln!("native fold case={case}, count/work/maps: {samples:?}");
         curves.push(samples);
     }
     for samples in curves {

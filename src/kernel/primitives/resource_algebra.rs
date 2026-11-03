@@ -3561,11 +3561,18 @@ impl ResourceContext {
             return None;
         }
         let range = required.memory_own_range()?;
-        range.int32_bounds()?;
-        let end = range
-            .signed_constant_end()?
-            .checked_sub(range.signed_constant_start()?)?
-            .checked_mul(i64::from(range.element_width()))?;
+        let end = match range.wide_bounds() {
+            Some((start, end)) => i64::try_from(
+                end.uint64_as_const()?
+                    .checked_sub(start.uint64_as_const()?)?
+                    .checked_mul(u64::from(range.element_width()))?,
+            )
+            .ok()?,
+            None => range
+                .signed_constant_end()?
+                .checked_sub(range.signed_constant_start()?)?
+                .checked_mul(i64::from(range.element_width()))?,
+        };
         if end <= 0 {
             return None;
         }
@@ -3591,6 +3598,11 @@ impl ResourceContext {
                 return None;
             }
             let available = candidate.memory_own_range()?;
+            if range.typed_carrier
+                && !assumptions.access_designations_match(range.access_designation(), available)
+            {
+                return None;
+            }
             let base = entries.address()?;
             let (bytes, piece) = if let Some((_, available_end)) = available.wide_bounds() {
                 // Keep native suppliers in their original coordinates. Only
@@ -3625,7 +3637,7 @@ impl ResourceContext {
                     )
                     .with_carrier_of(available),
                 );
-                (u32::try_from(bytes).ok()?, piece)
+                (i64::try_from(bytes).ok()?, piece)
             } else {
                 let point =
                     CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
@@ -3643,7 +3655,7 @@ impl ResourceContext {
                     bytes.into(),
                     1,
                 ));
-                (bytes, piece)
+                (i64::from(bytes), piece)
             };
             if !resource_fact_entails(candidate, &piece, assumptions) {
                 return None;
@@ -3652,13 +3664,13 @@ impl ResourceContext {
             if !self.consume_fact_from_candidates_with_origins(
                 &piece,
                 assumptions,
-                std::iter::once(entry),
+                [entry],
                 origins.as_deref_mut(),
             ) {
                 return None;
             }
             supports.push(support);
-            cursor = cursor.checked_add(i64::from(bytes))?;
+            cursor = cursor.checked_add(bytes)?;
         }
         Some((self, supports))
     }
@@ -6839,9 +6851,7 @@ impl ResourceContext {
             return Some(self);
         }
         if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1)
-            && range.int32_bounds().is_some()
-            && range.signed_constant_start().is_some()
-            && range.signed_constant_end().is_some()
+            && !range.has_symbolic_bounds()
         {
             return self.consume_constant_owned_memory(fact, assumptions, origins);
         }

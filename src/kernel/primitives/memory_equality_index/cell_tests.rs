@@ -1326,3 +1326,113 @@ fn a_different_owned_field_does_not_hide_the_selected_read_view() {
             .is_some()
     );
 }
+
+#[test]
+fn native_fragment_consumption_preserves_large_bounds_and_residuals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let p = Pointer::symbolic(Variable(976_190));
+    let own = |start, end| {
+        CResourceFact::own_memory(CMemoryRange::new_wide(
+            p.clone(),
+            Bitvector32Term::UInt64Constant(start),
+            Bitvector32Term::UInt64Constant(end),
+            4,
+        ))
+    };
+    // Both the absolute coordinate and one consumed piece exceed 32 bits.
+    let start = (1u64 << 32) + 8;
+    let middle = start + (1u64 << 31);
+    let end = middle + 8;
+    let first = own(start - 1, middle);
+    let second = own(middle, end + 1);
+    let context = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts([first.clone(), second.clone()]);
+    context.synchronize_memory_equalities(&facts);
+    let remaining = context
+        .clone()
+        .without_fact_incrementally(&own(start, end), &facts)
+        .unwrap();
+    assert!(remaining.satisfies_fact(&own(start - 1, start), &facts));
+    assert!(remaining.satisfies_fact(&own(end, end + 1), &facts));
+    assert!(!remaining.satisfies_fact(&own(start, start + 1), &facts));
+    assert!(context.contains_exact_representation(&first));
+    assert!(context.contains_exact_representation(&second));
+}
+
+#[test]
+fn native_fragment_consumption_refuses_gaps_views_and_nonpositive_ownership() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let facts = PureFactContext::new();
+    let p = Pointer::symbolic(Variable(976_191));
+    let range = |start, end| {
+        CMemoryRange::new_wide(
+            p.clone(),
+            Bitvector32Term::UInt64Constant(start),
+            Bitvector32Term::UInt64Constant(end),
+            4,
+        )
+    };
+    let own = |start, end| CResourceFact::own_memory(range(start, end));
+    let required = own(0, 8);
+    for bad in [
+        own(3, 8),
+        CResourceFact::view_memory(range(2, 8)),
+        CResourceFact::Own(CResource::Memory(range(2, 8)), Box::new(0u32.into())),
+        CResourceFact::Own(CResource::Memory(range(2, 8)), Box::new(u32::MAX.into())),
+    ] {
+        let context = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_facts([own(0, 2), bad.clone()]);
+        context.synchronize_memory_equalities(&facts);
+        assert!(
+            context
+                .clone()
+                .without_fact_incrementally(&required, &facts)
+                .is_none()
+        );
+        assert!(context.contains_exact_representation(&own(0, 2)));
+        assert!(context.contains_exact_representation(&bad));
+    }
+    // A native endpoint must not wrap to its 32-bit residue.
+    let context = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(own(0, 8));
+    assert!(
+        context
+            .without_fact_incrementally(&own(0, (1u64 << 32) + 8), &facts)
+            .is_none()
+    );
+}
+
+#[test]
+fn native_fragment_consumption_checks_each_typed_designation() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(976_192));
+    let other = Pointer::symbolic(Variable(976_193));
+    let range = |start, end| {
+        CMemoryRange::new_wide(
+            p.clone(),
+            Bitvector32Term::UInt64Constant(start),
+            Bitvector32Term::UInt64Constant(end),
+            4,
+        )
+    };
+    let facts = PureFactContext::new();
+    let required = CResourceFact::own_memory(range(0, 8).with_typed_carrier());
+    for wrong in [false, true] {
+        let second = CResourceFact::own_memory(range(2, 8).with_designation(std::sync::Arc::new(
+            if wrong { other.clone() } else { p.clone() },
+        )));
+        let first = CResourceFact::own_memory(range(0, 2));
+        let context = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_facts([first.clone(), second.clone()]);
+        context.synchronize_memory_equalities(&facts);
+        assert_eq!(
+            context
+                .clone()
+                .without_fact_incrementally(&required, &facts)
+                .is_some(),
+            !wrong
+        );
+        assert!(context.contains_exact_representation(&first));
+        assert!(context.contains_exact_representation(&second));
+    }
+}
