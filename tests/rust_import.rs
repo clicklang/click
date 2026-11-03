@@ -794,8 +794,6 @@ fn charon_array_fields_live_refresh_and_compiler_rejections() {
     }
 }
 
-const CHARON_ARITHMETIC_SOURCE: &str =
-    include_str!("../design/charon-trial/arithmetic/arithmetic.rs");
 const CHARON_ARITHMETIC_SIDECAR: &str =
     include_str!("../design/charon-trial/arithmetic/arithmetic.click");
 fn charon_arithmetic_project() -> Project {
