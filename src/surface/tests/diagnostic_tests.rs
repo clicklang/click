@@ -2550,6 +2550,11 @@ void f(struct node* p) {
             .message()
             .contains("argument 1 equality is not established")
     );
+    assert!(
+        ordinary.concise_report().contains("\ngoal: "),
+        "{}",
+        ordinary.concise_report()
+    );
     // The ordinary message spells its facts in source terms, with no
     // kernel snapshot or value labels to define.
     assert!(
@@ -2560,6 +2565,7 @@ void f(struct node* p) {
     with_proof_trace("f", || {
         let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
         let report = error.trace_context_report().unwrap();
+        assert_eq!(report.matches("\ngoal: ").count(), 1, "{report}");
         assert!(report.contains("child `right`, argument 1"), "{report}");
         assert!(report.contains("supplied: at("), "{report}");
         assert!(report.contains("required: 0"), "{report}");
@@ -4207,5 +4213,31 @@ fn failed_postcondition_after_branch_join_keeps_the_join_trace() {
             "{}",
             error.report()
         );
+    });
+}
+
+#[test]
+fn child_argument_goal_reports_scalar_indices() {
+    let source = r#"
+verifying "f.c";
+resource cell(p: int32*, index: int32) { field value: int32; owns *p; }
+resource holder(p: int32*) { field value: int32; owns child: cell(p, 1); fact child.value == value; }
+void f(int32* p) { consumes c: cell(p, 0); ensures true; } by {
+    let h = fold(holder(p), { value: c.value }, { child: c });
+}
+"#;
+    let c = "void f(int *p) {}";
+    let ordinary = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+    let report = ordinary.concise_report();
+    assert!(
+        report.contains("argument 2 equality is not established"),
+        "{report}"
+    );
+    assert!(report.contains("goal: 0 == 1"), "{report}");
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("f.c", c)]).unwrap_err();
+        let report = error.trace_context_report().unwrap();
+        assert_eq!(report.matches("\ngoal: ").count(), 1, "{report}");
+        assert!(report.contains("goal: 0 == 1"), "{report}");
     });
 }
