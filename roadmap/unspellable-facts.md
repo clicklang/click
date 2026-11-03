@@ -70,6 +70,9 @@ overflow premises retain their exact sources in an operand index, including
 withdrawal and branch scope. Operation-range authority checks and constant-offset
 upper/lower bound helpers also consume views. Atomic variable/literal queries
 keep their fixed-size native decision path; shared arithmetic is not exported.
+The built difference graph's ring-overflow route also reads shared operands,
+including chained bounds, modular source keys, and subtraction relationships.
+General difference-graph comparison/admission adapters remain to be migrated.
 Certificate premise adapters still need their across-effect availability routes
 migrated before their boxed compatibility forms can be removed.
 

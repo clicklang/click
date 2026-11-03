@@ -364,6 +364,16 @@ impl PureFactContext {
             )?;
             return self.decide_unrecorded(&condition);
         }
+        if let Some(value) = self
+            .difference_graph
+            .built()
+            .and_then(|graph| graph.decide_overflow_query(query))
+        {
+            if let Some(source) = self.stated_overflow_source(query, value) {
+                record_implicit_reasoning_provenance(self, source);
+            }
+            return Some(value);
+        }
         let bounds = query.bounds();
         if bounds.iter().all(|bound| {
             let Proposition::ConditionIs(condition, true) = bound else {
