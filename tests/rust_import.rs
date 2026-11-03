@@ -3291,6 +3291,43 @@ fn charon_option_references_read_and_write_through_borrows() {
     }
 }
 
+const HELD_VALUE_SIDECAR: &str = include_str!("../design/charon-trial/held-values/held.click");
+
+// A borrowed `Option` local's value after a call writes through the borrow
+// is known only through the callee's contract about the local's object. Each
+// claim closes by arithmetic that cites that fact, which a proof spells `o`
+// (and, for `returned`, the value `make` returned, `<region>.result`); a
+// claim the facts do not give fails.
+#[test]
+fn charon_held_value_locals_are_spelled_by_name() {
+    let p = Project::from_fixture("design/charon-trial/held-values");
+    fs::write(p.root.join("borrow.click"), HELD_VALUE_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(HELD_VALUE_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for function in ["constructed", "returned"] {
+        let before = format!(
+            "fn held_values::{function}(x: u32) -> u32 {{\n    requires x >= 1u32;\n    ensures result < x;"
+        );
+        let after = format!(
+            "fn held_values::{function}(x: u32) -> u32 {{\n    requires x >= 1u32;\n    ensures result + 1u32 < x;"
+        );
+        assert!(HELD_VALUE_SIDECAR.contains(&before), "{before}");
+        let invalid = HELD_VALUE_SIDECAR.replacen(&before, &after, 1);
+        let error =
+            verify_rust_proof_after(&invalid, &prepared, &format!("fn held_values::{function}"))
+                .err()
+                .expect("a claim the facts do not give must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(
+            rendered.contains(&format!("held_values::{function}.ensures_0")),
+            "{rendered}"
+        );
+    }
+}
+
 const OPTION_TAKE_SIDECAR: &str = include_str!("../design/charon-trial/option-take/take.click");
 
 // `o.take()` moves the option out and leaves `None`, for an option of a box,

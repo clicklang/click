@@ -593,6 +593,48 @@ fn recorded_point_of_load(
     })
 }
 
+/// The name of the local that keeps `term` in its object at `pointer`, in
+/// `state`: a borrowed Rust enum local `o` read there is spelled `o`. The
+/// local's name reads its object at the point it was last written
+/// ([`CState::held_local_value`]), so it spells exactly that read.
+fn synthesize_held_value_local(
+    term: &crate::kernel::AlgebraicTerm,
+    pointer: &Pointer,
+    state: &CState,
+) -> Option<ContractExpression> {
+    let (name, _, _) = state.locals().held_value_locals().find(|(_, _, slot)| {
+        crate::instrumentation::record_deterministic_work(1);
+        *slot == pointer
+    })?;
+    matches!(state.held_local_value(name), Some(CValue::Parameter(held)) if held.as_ref() == term)
+        .then(|| ContractExpression::CFragment(CExpression::Variable(name.to_string())))
+}
+
+/// `at(point, o)` for a read of a held-value local's object that no nearer
+/// state names: the recorded point whose memory reads that version.
+fn synthesize_recorded_held_value_local(
+    term: &crate::kernel::AlgebraicTerm,
+    pointer: &Pointer,
+) -> Option<ContractExpression> {
+    let crate::kernel::AlgebraicTermNode::MemoryLoad { memory, .. } = &term.node else {
+        return None;
+    };
+    SYNTHESIS_RECORDED_POINTS.with(|slot| {
+        let slot = slot.borrow();
+        let points = slot.as_ref()?;
+        points
+            .point_reading_memory(memory)
+            .into_iter()
+            .chain(points.points_near_memory(memory))
+            .find_map(|(selector, recorded)| {
+                Some(ContractExpression::At {
+                    selector: selector.clone(),
+                    expression: Box::new(synthesize_held_value_local(term, pointer, recorded)?),
+                })
+            })
+    })
+}
+
 /// `at(point, read)` for a load variable no nearer state names.
 fn synthesize_load_at_recorded_point(
     variable: &Variable,
@@ -5513,6 +5555,12 @@ fn synthesize_surface_algebraic(
                     parameter.name().to_string(),
                 )));
             }
+            // A value a call returned is spelled by its call.
+            if let Some(region) = SYNTHESIS_RECORDED_POINTS
+                .with(|slot| slot.borrow().as_ref()?.call_result_naming_algebraic(term))
+            {
+                return Some(ContractExpression::RegionResult(region));
+            }
             let origin = crate::kernel::model_fields::registered_model_field_origin(*variable)?;
             let owner = crate::kernel::model_fields::registered_instance_spelling(origin.identity)?;
             let field_at = |state: &CState| {
@@ -5571,7 +5619,9 @@ fn synthesize_surface_algebraic(
                 ContractExpression::CFragment(CExpression::Load(Box::new(CExpression::Variable(
                     parameter.name().to_string(),
                 ))))
-            }),
+            })
+            .or_else(|| synthesize_held_value_local(term, pointer, state))
+            .or_else(|| synthesize_recorded_held_value_local(term, pointer)),
         crate::kernel::AlgebraicTermNode::Constructor { variant, fields } => {
             let arguments = fields
                 .iter()

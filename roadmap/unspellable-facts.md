@@ -104,6 +104,28 @@ operands. Missing-premise and strictness controls preserve refusal behavior.
 The full `scripts/check.sh` gate remains with PR CI and the merge queue; no
 nightly suite ran.
 
+## Held-value locals and algebraic call results (2026-11-03)
+
+A borrowed Rust enum or type-parameter local keeps its value in its stack
+object. Its name had no lowering (`` `o` is not an algebraic binding ``) and a
+read of the object no spelling, so a fact a callee's contract gave about the
+local after a write through the borrow could not be cited: the closer and
+`solve` dropped it, and a claim chaining through it failed. The local's
+layout now records the value type (`CAggregateLayout::holding_value`); its
+name lowers to the read of its object at its version
+(`CState::held_local_value`), bound in fixed-state and snapshot lowering;
+and algebraic synthesis spells that read `o`, or `at(point, o)` at the
+recorded point reading it. An algebraic call result is spelled
+`<region>.result` through `RecordedSnapshots::algebraic_call_results`.
+Assigning a call result to such a local, which the importer lowered as a
+call into the object's address and the kernel refused as a type mismatch,
+now calls into a temporary stored to the object.
+
+`design/charon-trial/held-values` is the regression
+(`charon_held_value_locals_are_spelled_by_name`). Remaining misses in that
+fixture's census: `unfold` equations whose right side is a `match` over the
+value, and a call's precondition instance recorded before its result is.
+
 ## Shared range bridges and interval sources (2026-11-03)
 
 The follow-up on `codex/ordinary-admission` keeps operation-through-range
