@@ -2933,9 +2933,19 @@ pub(crate) fn memory_range_byte_count_extent(
         };
     }
     let forward = ConditionTerm::signed_less_equal(start.clone(), end.clone());
+    // The count is the `int32` difference of the endpoints; `fits` reads
+    // its bits as a `uint32` count, which is σ of it. Given `start <= end`
+    // the true difference lies in `[0, 2^32)`, and σ of the wrapped `int32`
+    // difference is exactly it, so the unsigned comparison is the condition;
+    // the count's own `int32` order is not (it wraps past `2^31 - 1`, which
+    // the one-byte limit exceeds).
     let element_count = canonical_subtract(end, start);
     let fits = ConditionTerm::unsigned_less_equal(
-        element_count,
+        Bitvector32Term::sign_cast32(
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            element_count,
+        ),
         Bitvector32Term::Constant(memory_range_element_count_limit(element_width)),
     );
     MemoryRangeExtent::Guards(vec![

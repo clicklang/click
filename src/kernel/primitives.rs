@@ -596,31 +596,30 @@ impl LoadKind {
     }
 
     /// Whether a read of this kind returns `value`'s term, where `value` is
-    /// what a cell holds. This is the one test every route that answers a
-    /// load term from a cell or a store applies. A 32-bit read of either
-    /// signedness reads a 32-bit cell's word: each is its own load, but a
-    /// term-level answer is the stored word whichever signedness stored it,
-    /// because σ is the word identity (rules K5 and K1). The value a read
-    /// returns, with its signedness, is [`CType::read_cell`].
+    /// what a cell holds: the read is exactly the stored value's kind. A
+    /// 32-bit read of the other signedness returns σ of the stored word
+    /// (R-mem, rule K5), which is another term; [`Self::read_cell`] builds
+    /// it. This is the one test every route that answers a load term from a
+    /// cell or a store with the stored term itself applies.
     pub fn reads_value(self, value: &CValue) -> bool {
-        Self::of_value(value).is_some_and(|stored| stored.reads_word_of(self))
+        Self::of_value(value) == Some(self)
     }
 
-    /// Whether a read of this kind reads the same word as a read of
-    /// `other`: the same kind, or either 32-bit signedness (σ is the word
-    /// identity, rule K1).
+    /// Whether a read of this kind reads the same bytes as a read of
+    /// `other`: the same kind, or either 32-bit signedness. The two 32-bit
+    /// reads are two loads related by σ (R-mem); this names the cell a read
+    /// observes, never a term.
     pub fn reads_word_of(self, other: Self) -> bool {
         self == other || (self.is_word32() && other.is_word32())
     }
 
     /// The value a read of this kind returns from a cell holding `value`:
-    /// the value itself when the read is of its kind, or, for a one- or
-    /// two-byte read of a cell of the same width and the other signedness,
-    /// the same bits reinterpreted ([`CType::read_cell`]). A 32- or 64-bit
-    /// kind reads a cell of either signedness as its word: this answers a
-    /// load *term*, whose word is the stored word (rules K5 and K1), and the
-    /// reader's tag gives it its signedness. A typed read that returns a
-    /// value of the other 32-bit signedness builds σ ([`CType::read_cell`]).
+    /// the value itself when the read is of its kind, or, for a read of a
+    /// cell of the same width and the other signedness, the same bits
+    /// reinterpreted ([`CType::read_cell`]): the modular conversion at one
+    /// or two bytes, and σ of the stored word at 32 bits (R-mem, rule K5).
+    /// The 64-bit kind reads a cell of either signedness, whose typed
+    /// carrier gives the reader its signedness.
     pub(crate) fn read_cell(self, value: &CValue) -> Option<CValue> {
         if self.reads_value(value) {
             return Some(value.clone());
@@ -630,6 +629,8 @@ impl LoadKind {
             Self::UInt8 => CType::UInt8.read_cell(value),
             Self::Int16 => CType::Int16.read_cell(value),
             Self::UInt16 => CType::UInt16.read_cell(value),
+            Self::Int32 => CType::Int32.read_cell(value),
+            Self::UInt32 => CType::UInt32.read_cell(value),
             _ => None,
         }
     }

@@ -6293,6 +6293,35 @@ mod stated_range_guard_derivation {
         );
     }
 
+    /// A symbolic range's `fits` guard compares the element count's bits as
+    /// a `uint32` count: σ of the `int32` difference, built as written, not
+    /// the bare `int32` word under an unsigned comparison.
+    #[test]
+    fn a_symbolic_range_fits_guard_compares_sigma_of_its_count() {
+        use crate::kernel::{ConditionTerm, MachineIntegerType, MemoryRangeExtent};
+        let start = Bitvector32Term::Variable(Variable(9_200_020));
+        let end = Bitvector32Term::Variable(Variable(9_200_021));
+        let MemoryRangeExtent::Guards(guards) =
+            crate::kernel::memory_range_byte_count_extent(start.clone(), end.clone(), 4)
+        else {
+            panic!("symbolic endpoints carry guards");
+        };
+        let count = binary_node!(Int32, Subtract, Box::new(end), Box::new(start));
+        let fits = ConditionTerm::unsigned_less_equal(
+            Bitvector32Term::sign_cast32(
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt32,
+                count,
+            ),
+            Bitvector32Term::Constant(1_073_741_823),
+        );
+        assert!(
+            matches!(&fits, ConditionTerm::Compare { left, .. } if left.sign_cast32_operand().is_some()),
+            "{fits:?}"
+        );
+        assert_eq!(guards[1], Proposition::ConditionIs(fits, true));
+    }
+
     /// A range of one-byte elements keeps its extent unscaled, `a[0..n]` over
     /// `uint8` being `n` bytes, and carries its count bound like a wider
     /// range. One-byte elements have no count limit below `i32::MAX`, so the

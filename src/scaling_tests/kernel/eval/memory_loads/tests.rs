@@ -1742,7 +1742,9 @@ fn naming_an_unsigned_32_bit_read_costs_what_naming_its_word_costs() {
             memory = memory.store(Pointer::symbolic(Variable(993_000 + i)), int32(7));
         }
         let memory = crate::kernel::intern_c_memory(memory);
-        let cell = Pointer::symbolic(Variable(994_000));
+        // Outside the stored cells at every size: at 1024 the stored range
+        // reaches `994_000`.
+        let cell = Pointer::symbolic(Variable(995_000));
         let load = |kind| Bitvector32Term::MemoryLoad(memory.clone(), Box::new(cell.clone()), kind);
         let ((signed, _), signed_units) =
             crate::instrumentation::measure_deterministic_work(|| {

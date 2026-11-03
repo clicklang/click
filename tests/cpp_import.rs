@@ -1355,11 +1355,10 @@ fn expression_observers_preserve_short_circuit_read_permissions() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let numeric = if condition == "false" { 0 } else { 1 };
         let source = format!(
             r#"verifying "observe.cpp";
-bool enabled() {{ ensures result == {numeric}; }}
-bool read(const struct Count& count) {{ views count.value; requires count.value == 0u64; ensures result == 1; }}
+bool enabled() {{ ensures result == {condition}; }}
+bool read(const struct Count& count) {{ views count.value; requires count.value == 0u64; ensures result == true; }}
 bool probe(const struct Count& count) {{ ensures result == result; }}
 "#
         );
@@ -1558,19 +1557,19 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
     for (cpp, expected) in [
         (
             "bool probe() noexcept { return __builtin_is_constant_evaluated(); }",
-            0,
+            false,
         ),
         (
             "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { return evaluated(); }",
-            0,
+            false,
         ),
         (
             "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { if constexpr (evaluated()) { return true; } else { return false; } }",
-            1,
+            true,
         ),
         (
             "bool probe() noexcept { if (__builtin_is_constant_evaluated()) { return true; } else { return false; } }",
-            0,
+            false,
         ),
     ] {
         let project = Project::with_fixture("evaluation.cpp", "probe", cpp);
@@ -1583,7 +1582,7 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
             .iter()
             .any(|function| function.name == "evaluated")
         {
-            "bool evaluated() { ensures result == 0; }\n"
+            "bool evaluated() { ensures result == false; }\n"
         } else {
             ""
         };
@@ -1593,7 +1592,7 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
             &format!("result == {expected}"),
-            &format!("result == {}", 1 - expected),
+            &format!("result == {}", !expected),
         );
         let path = project.directory.join("bad.click");
         fs::write(&path, &hostile).unwrap();
@@ -9109,8 +9108,8 @@ fn direct_return_calls_preserve_each_scalar_type_and_branch_result() {
     let source = r#"verifying "relay.cpp";
 int32 echo(int32 value) { ensures result == value; }
 int32 choose(bool first, int32 value) {
- ensures first != 0 implies result == value;
- ensures first == 0 implies result == 7;
+ ensures first == true implies result == value;
+ ensures first == false implies result == 7;
 }
 "#;
     check_selected_claim_certificate(&project, &import, source);
@@ -9244,11 +9243,11 @@ fn check_return_cleanup_cases(selected_type: &str) {
             "is_seven",
             "bool",
             "int32* slot",
-            "owns slot[0..1]; requires slot[0] == 7; ensures result == 1; ensures slot[0] == old(slot[0]);",
-            "1",
+            "owns slot[0..1]; requires slot[0] == 7; ensures result == true; ensures slot[0] == old(slot[0]);",
+            "true",
         ),
         ("ordinary_wide", "", "int64", "", "", "4294967303i64"),
-        ("ordinary_bool", "", "bool", "", "", "1"),
+        ("ordinary_bool", "", "bool", "", "", "true"),
     ] {
         if value_type != selected_type {
             continue;
@@ -9289,7 +9288,10 @@ Restore::~Restore() {{
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
             &format!("ensures result == {expected}; ensures value =="),
-            "ensures result == 0; ensures value ==",
+            &format!(
+                "ensures result == {}; ensures value ==",
+                if value_type == "bool" { "false" } else { "0" }
+            ),
         );
         fs::write(project.directory.join("bad.click"), &hostile).unwrap();
         let parsed = read_click_project(&project.directory.join("bad.click"), &hostile).unwrap();
@@ -14667,11 +14669,21 @@ fn condition_calls_preserve_inherited_receiver_and_sibling_frames() {
     refresh_import(&project.config()).unwrap();
     let import = load_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
-    for (value, expected) in [(0, 1), (3, 2)] {
+    for (value, empty, expected) in [(0, true, 1), (3, false, 2)] {
         let sidecar = format!(
             r#"verifying "condition.cpp";
-        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }}
-        int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }}
+        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ true }} else {{ false }}); }}
+        int32 observe(const struct State& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {expected}; ensures state.sibling == old(state.sibling); }} by {{
+            step();
+            let {{ result: empty }} = step(Base::Empty, {{}});
+            have empty == {empty} by {{
+                rewrite(empty == (if state.left.base.value == 0 {{ true }} else {{ false }}));
+                rewrite(state.left.base.value == {value});
+                normalize();
+            }}
+            step_until(function.exit);
+            solve();
+        }}
         "#
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
@@ -15641,14 +15653,14 @@ fn converted_return_calls_preserve_modulo_boolean_and_ordered_chains() {
             "bool",
             "static_cast<bool>(echo(value))",
             "value == 4294967296i64",
-            "1",
+            "true",
         ),
         (
             "bool",
             "bool",
             "uint64",
             "static_cast<unsigned long>(echo(value))",
-            "value == 1",
+            "value == true",
             "1u64",
         ),
         (
@@ -15684,7 +15696,10 @@ fn converted_return_calls_preserve_modulo_boolean_and_ordered_chains() {
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
             &format!("ensures result == {expected}"),
-            "ensures result == 0",
+            &format!(
+                "ensures result == {}",
+                if result_type == "bool" { "false" } else { "0" }
+            ),
         );
         let path = project.directory.join("hostile.click");
         fs::write(&path, &hostile).unwrap();
