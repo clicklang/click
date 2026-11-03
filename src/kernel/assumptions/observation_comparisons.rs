@@ -121,6 +121,13 @@ fn key(view: &NativeComparisonView<'_>) -> Key {
     Key::Comparison(format, relation, operands)
 }
 
+/// The intrinsic rules formerly reached through the native comparison
+/// constructors. Read shared roots and exact format ranges, never export.
+pub(super) fn constant_observation_value(condition: &ConditionTerm) -> Option<bool> {
+    let view = native_comparison_view(condition, true)?;
+    constant_reading(&view, &key(&view))
+}
+
 // A constant comparison view is still supported by its source. In particular,
 // `to_integer(count) <= UINT64_MAX` used to file `true`; retain that authority
 // without adding a tautology to the proof-state fact collection.

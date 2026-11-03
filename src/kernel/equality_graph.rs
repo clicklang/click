@@ -2092,6 +2092,30 @@ impl EqualityGraph {
         {
             return self.are_integer_equal(a, b);
         }
+        // Exact mathematical observations use the same native comparison
+        // classes without constructing a boxed native condition.
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+        {
+            let view = if matches!(
+                view.relation,
+                crate::kernel::machine_integer::Relation::Less
+                    | crate::kernel::machine_integer::Relation::LessEqual
+            ) {
+                view.widened().unwrap_or(view)
+            } else {
+                view
+            };
+            let mut state = self.state.lock().expect("equality graph");
+            if state.terms.may_know_observation_comparison(&view, value) {
+                self.prepare_condition(&mut state, condition);
+                let known = state.terms.knows_observation_comparison(&view, value);
+                state.close(Vec::new());
+                if known {
+                    return true;
+                }
+            }
+        }
         let mut state = self.state.lock().expect("equality graph");
         // A `Bool` value's truth can reach its class through a merge, which
         // the admitted-kind filter below does not see.

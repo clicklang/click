@@ -62,3 +62,77 @@ fn shared_bound_consumers_preserve_dag_operands() {
         );
     }
 }
+
+#[test]
+fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        // Both samples have order classes: an entirely empty graph can skip
+        // registration by kind, which is a different path from a keyed miss.
+        for ambient in [1, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let ty = MachineIntegerType::Int32;
+            let mut facts = PureFactContext::new();
+            for i in 0..ambient {
+                facts = facts.assume_condition(
+                    ConditionTerm::signed_less_equal(
+                        Bitvector32Term::Variable(Variable(997000 + i)),
+                        Bitvector32Term::Constant(7),
+                    ),
+                    true,
+                );
+            }
+            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994401));
+            let right = Bitvector32Term::Variable(Variable(994402));
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for level in 0..size {
+                    root = KernelTerm::machine_binary_shared(
+                        ty,
+                        MachineBinaryOp::Add,
+                        [root.clone(), root.clone()],
+                    );
+                    let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
+                    let query = ConditionTerm::integer_less_equal(
+                        IntegerTerm::Machine(operand.clone()),
+                        IntegerTerm::from_machine(ty, right.clone()).unwrap(),
+                    );
+                    assert!(!facts.equality_graph.knows_condition(&query, true));
+                    assert!(!facts.equality_graph.knows_condition(&query, false));
+                    assert!(!operand.has_boxed_operand());
+                    let alias = Bitvector32Term::Variable(Variable(998000 + level));
+                    let child = facts
+                        .clone()
+                        .assume_condition(
+                            ConditionTerm::integer_equal(
+                                IntegerTerm::Machine(operand.clone()),
+                                IntegerTerm::from_machine(ty, alias.clone()).unwrap(),
+                            ),
+                            true,
+                        )
+                        .assume_condition(
+                            ConditionTerm::signed_less_equal(alias, right.clone()),
+                            true,
+                        );
+                    // This is the full dispatcher, through an equality alias
+                    // rather than an exact observation-index hit.
+                    assert_eq!(child.decide(&query), Some(true));
+                    assert!(!operand.has_boxed_operand());
+                    assert!(!facts.equality_graph.knows_condition(&query, true));
+                    assert!(!operand.has_boxed_operand());
+                }
+            });
+            samples.push((size, ambient, work));
+        }
+    }
+    for pair in samples.chunks_exact(2) {
+        assert!(pair[1].2 <= pair[0].2 * 2 + 64, "{samples:?}");
+    }
+    for pair in samples.chunks_exact(2).collect::<Vec<_>>().windows(2) {
+        let (small, _, sw) = pair[0][0];
+        let (large, _, lw) = pair[1][0];
+        assert!(
+            lw * small as usize <= sw * large as usize * 2,
+            "{samples:?}"
+        );
+    }
+}

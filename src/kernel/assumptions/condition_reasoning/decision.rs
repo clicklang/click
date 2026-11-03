@@ -441,13 +441,22 @@ impl PureFactContext {
         if let Some(value) = self.decide_indexed_greater_equal(condition) {
             return Some(value);
         }
-        // An Integer comparison of exact observations of one machine type
-        // has the truth of its native comparison, which the machine
-        // reasoning below decides (`native_comparison_of_integer_observation`).
-        if let Some((native, truth)) =
-            crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
-                condition, true,
-            )
+        if let Some(value) =
+            super::super::observation_comparisons::constant_observation_value(condition)
+        {
+            return Some(value);
+        }
+        // Read native comparison classes through shared observations before
+        // the remaining arithmetic decision rules cross the boxed boundary.
+        if crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+            .is_some()
+            && let Some(value) = self.known_condition_value(condition)
+        {
+            return Some(value);
+        }
+        // Still required for arithmetic rules not yet migrated to operand
+        // views (for example, a positive offset with a no-overflow premise).
+        if let Some((native, truth)) = native_comparison_of_integer_observation(condition, true)
             && &native != condition
             && let Some(value) = self.decide(&native)
         {
