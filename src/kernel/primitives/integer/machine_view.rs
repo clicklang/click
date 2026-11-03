@@ -328,6 +328,16 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
+    pub(crate) fn uint64_constant(self) -> Option<u64> {
+        match self {
+            Self::Legacy(value) => value.uint64_as_const(),
+            Self::Shared(term) => term
+                .machine_constant_reading()?
+                .legacy_term()
+                .uint64_as_const(),
+        }
+    }
+
     pub(crate) fn int64_constant(self) -> Option<i64> {
         match self {
             Self::Legacy(value) => value.int64_as_const(),

@@ -785,44 +785,20 @@ impl PureFactContext {
             SignedDefinedWidth::Int64 => &self.int64_signed_order_bounds,
         };
         if let Some(bounds) = index.get(term) {
-            for (endpoint, other, strict, is_upper) in bounds.keys() {
+            use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+            let format = match width {
+                SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
+                SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
+            };
+            let queried = Key::for_format(format, MachineOperandView::Legacy(term));
+            for (endpoint, other, _, _, source) in bounds.sourced_operands() {
                 crate::instrumentation::record_deterministic_work(1);
-                if endpoint != term || signed_width_constant(width, other).is_none() {
-                    continue;
-                }
-                let (lower, upper) = if *is_upper {
-                    (endpoint.clone(), other.clone())
-                } else {
-                    (other.clone(), endpoint.clone())
+                let constant = match width {
+                    SignedDefinedWidth::Int32 => other.word32_constant().is_some(),
+                    SignedDefinedWidth::Int64 => other.int64_constant().is_some(),
                 };
-                let order = |operator: SignedOrder, reversed: bool| {
-                    let (left, right) = if reversed {
-                        (upper.clone(), lower.clone())
-                    } else {
-                        (lower.clone(), upper.clone())
-                    };
-                    signed_order_condition(width, operator, left, right)
-                };
-                let forms = if *strict {
-                    [
-                        (order(SignedOrder::LessThan, false), true),
-                        (order(SignedOrder::GreaterThan, true), true),
-                        (order(SignedOrder::LessEqual, true), false),
-                        (order(SignedOrder::GreaterEqual, false), false),
-                    ]
-                } else {
-                    [
-                        (order(SignedOrder::LessEqual, false), true),
-                        (order(SignedOrder::GreaterEqual, true), true),
-                        (order(SignedOrder::LessThan, true), false),
-                        (order(SignedOrder::GreaterThan, false), false),
-                    ]
-                };
-                if let Some((condition, value)) = forms
-                    .into_iter()
-                    .find(|(condition, value)| self.condition_facts.get(condition) == Some(value))
-                {
-                    facts.push(Proposition::ConditionIs(condition, value));
+                if constant && Key::for_format(format, endpoint) == queried {
+                    facts.push(source.clone());
                 }
             }
         }
@@ -1151,74 +1127,6 @@ impl PureFactContext {
             }
         };
         Some((lower, upper))
-    }
-}
-
-#[derive(Clone, Copy)]
-enum SignedOrder {
-    LessThan,
-    LessEqual,
-    GreaterThan,
-    GreaterEqual,
-}
-
-/// The signed comparison `left operator right` of `width`.
-fn signed_order_condition(
-    width: SignedDefinedWidth,
-    operator: SignedOrder,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> ConditionTerm {
-    let (left, right) = (Box::new(left), Box::new(right));
-    match (width, operator) {
-        (SignedDefinedWidth::Int32, SignedOrder::LessThan) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        },
-        (SignedDefinedWidth::Int32, SignedOrder::LessEqual) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        },
-        (SignedDefinedWidth::Int32, SignedOrder::GreaterThan) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        },
-        (SignedDefinedWidth::Int32, SignedOrder::GreaterEqual) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        },
-        (SignedDefinedWidth::Int64, SignedOrder::LessThan) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        },
-        (SignedDefinedWidth::Int64, SignedOrder::LessEqual) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        },
-        (SignedDefinedWidth::Int64, SignedOrder::GreaterThan) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::GreaterThan,
-            left,
-            right,
-        },
-        (SignedDefinedWidth::Int64, SignedOrder::GreaterEqual) => ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::GreaterEqual,
-            left,
-            right,
-        },
     }
 }
 

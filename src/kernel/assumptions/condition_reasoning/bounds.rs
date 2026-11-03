@@ -348,13 +348,13 @@ impl PureFactContext {
             let Some(entries) = self.signed_order_bounds.get(&key) else {
                 continue;
             };
-            for (_, other, strict, own_is_lower) in entries.keys() {
-                if *own_is_lower
-                    && let Some(upper) = other.as_const()
-                    && !upper_bounds.contains(&(upper, *strict))
+            for (_, other, strict, own_is_lower) in entries.operand_keys() {
+                if own_is_lower
+                    && let Some(upper) = other.word32_constant()
+                    && !upper_bounds.contains(&(upper, strict))
                 {
                     crate::instrumentation::record_deterministic_work(1);
-                    upper_bounds.push((upper, *strict));
+                    upper_bounds.push((upper, strict));
                 }
             }
         }
@@ -413,13 +413,13 @@ impl PureFactContext {
             let Some(entries) = self.signed_order_bounds.get(&key) else {
                 continue;
             };
-            for (_, other, strict, own_is_lower) in entries.keys() {
-                if !*own_is_lower
-                    && let Some(lower) = other.as_const()
-                    && !lower_bounds.contains(&(lower, *strict))
+            for (_, other, strict, own_is_lower) in entries.operand_keys() {
+                if !own_is_lower
+                    && let Some(lower) = other.word32_constant()
+                    && !lower_bounds.contains(&(lower, strict))
                 {
                     crate::instrumentation::record_deterministic_work(1);
-                    lower_bounds.push((lower, *strict));
+                    lower_bounds.push((lower, strict));
                 }
             }
         }
@@ -541,14 +541,21 @@ impl PureFactContext {
             let Some(entries) = index.get(&key) else {
                 continue;
             };
-            for (_, other, strict, own_is_lower) in entries.keys() {
+            for (_, other, strict, own_is_lower) in entries.operand_keys() {
                 crate::instrumentation::record_deterministic_work(1);
                 #[cfg(test)]
                 if !upper {
                     LOWER_BOUND_CANDIDATE_VISITS.with(|visits| visits.set(visits.get() + 1));
                 }
-                if *own_is_lower == upper && !bounds.contains(&(other.clone(), *strict)) {
-                    bounds.push((other.clone(), *strict));
+                if own_is_lower == upper {
+                    let format = match kind {
+                        OrderKind::Signed32 => MachineIntegerType::Int32,
+                        OrderKind::Unsigned32 => MachineIntegerType::UInt32,
+                    };
+                    let other = other.retain(format).value().clone();
+                    if !bounds.contains(&(other.clone(), strict)) {
+                        bounds.push((other, strict));
+                    }
                 }
             }
         }
