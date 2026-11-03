@@ -13,6 +13,7 @@ thread_local! {
 
 pub(crate) fn clear_shared_machine_variable_cache() {
     clear_shared_value_readings();
+    CHECKING_CASTS.with(|cache| cache.borrow_mut().clear());
     KernelTerm::clear_cast_checks();
     SHARED_MACHINE_CARRIERS.with(|cache| cache.borrow_mut().clear());
 }
@@ -173,7 +174,74 @@ pub(crate) enum MachineOperandView<'a> {
     Legacy(&'a Bitvector32Term),
 }
 
+// The legacy checking constructor composes selected narrow casts. Retain that
+// convention without rewalking shared cast prefixes or exporting their payload.
+thread_local! {
+    static CHECKING_CASTS: std::cell::RefCell<HashMap<(MachineIntegerType, MachineIntegerType, u64), SharedMachineIntegerTerm>> = Default::default();
+}
+
 impl SharedMachineIntegerTerm {
+    /// The existing machine-cast constructor used for a generated checking
+    /// premise. Stored terms use the structural `cast_operand` constructor.
+    pub(crate) fn checking_cast_operand(&self, destination: MachineIntegerType) -> Self {
+        let Some(root) = self.shared_operand() else {
+            return Self::intern(
+                destination,
+                Bitvector32Term::machine_integer_cast(self.ty(), destination, self.value().clone()),
+            );
+        };
+        CHECKING_CASTS.with(|cache| {
+            let mut cache = cache.borrow_mut();
+            let mut source = self.ty();
+            let mut root = root.clone();
+            let mut path = Vec::new();
+            let result = loop {
+                crate::instrumentation::record_deterministic_work(1);
+                let key = (source, destination, root.id());
+                if let Some(result) = cache.get(&key) {
+                    break result.clone();
+                }
+                path.push(key);
+                let operand = MachineOperandView::Shared(&root);
+                if source == destination {
+                    break operand.retain(destination);
+                }
+                if let Some(literal) = operand.literal() {
+                    break Self::intern(
+                        destination,
+                        Bitvector32Term::machine_integer_cast(source, destination, literal),
+                    );
+                }
+                if let Some((
+                    crate::kernel::KernelMachineCastEncoding::Generic,
+                    original,
+                    intermediate,
+                    child,
+                )) = operand.cast()
+                    && original.carrier_bytes() == 4
+                    && source.carrier_bytes() == 4
+                    && destination.carrier_bytes() == 4
+                    && intermediate == source
+                    && destination.format().bits() <= intermediate.format().bits()
+                    && !(original == destination
+                        && crate::kernel::is_sign_cast32(original, intermediate))
+                {
+                    source = original;
+                    let MachineOperandView::Shared(child) = child else {
+                        unreachable!()
+                    };
+                    root = child.clone();
+                    continue;
+                }
+                break operand.retain(source).cast_operand(destination);
+            };
+            for key in path {
+                cache.insert(key, result.clone());
+            }
+            result
+        })
+    }
+
     /// Add the written generic cast root without invoking a folding constructor.
     pub(crate) fn cast_operand(&self, destination: MachineIntegerType) -> Self {
         if let Some(root) = self.shared_operand() {
@@ -528,6 +596,57 @@ impl<'a> MachineOperandView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checking_casts_preserve_native_composition_without_exporting() {
+        use crate::kernel::{KernelTermExport, KernelTermImport, MachineBinaryOp};
+        let _session = crate::kernel::VerificationSession::enter();
+        let value = Bitvector32Term::Binary {
+            format: MachineIntegerType::Int32,
+            op: MachineBinaryOp::Add,
+            left: Box::new(Bitvector32Term::Variable(Variable(990301))),
+            right: Box::new(Bitvector32Term::Variable(Variable(990302))),
+        };
+        for original in [
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int32,
+            MachineIntegerType::Int64,
+        ] {
+            for source in [MachineIntegerType::UInt32, MachineIntegerType::Int32] {
+                for destination in [
+                    MachineIntegerType::UInt32,
+                    MachineIntegerType::Int32,
+                    MachineIntegerType::Int16,
+                ] {
+                    let child = if matches!(
+                        original,
+                        MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                    ) {
+                        value.clone()
+                    } else {
+                        Bitvector32Term::Variable(Variable(990303))
+                    };
+                    let value = Bitvector32Term::MachineIntegerCast {
+                        source: original,
+                        destination: source,
+                        value: Box::new(child),
+                    };
+                    let root = KernelTermImport::default()
+                        .machine_arithmetic(source, &value)
+                        .unwrap();
+                    let shared = SharedMachineIntegerTerm::from_shared(source, root).unwrap();
+                    let exports = KernelTermExport::machine_export_count();
+                    let result = shared.checking_cast_operand(destination);
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                    assert_eq!(
+                        *result.value(),
+                        Bitvector32Term::machine_integer_cast(source, destination, value)
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn cached_machine_constants_match_legacy_readings() {

@@ -3,6 +3,9 @@
 //! injective and order-preserving on every format, so the two comparisons
 //! have the same truth.
 
+mod fact_identity;
+pub(crate) use fact_identity::{FactOperand, fact_operand_identity};
+
 use super::{Relation, identity, range, representation};
 use crate::kernel::{
     Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition,

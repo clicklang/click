@@ -13,58 +13,127 @@ impl C {
     /// quotient/remainder results stay nonnegative and below the dividend.
     /// The divisor must be strictly positive; no zero/negative case is used.
     pub(crate) fn nonnegative_division_bound_guards(&self) -> Option<Vec<Self>> {
-        let (left, right) = match self {
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            } => (left, right),
-            C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            } => (right, left),
-            _ => return None,
-        };
-        let (result, upper) = if left.as_const() == Some(0) {
-            (right.as_ref(), None)
-        } else {
-            (left.as_ref(), Some(right.as_ref()))
-        };
-        let (n, d) = match result {
-            binary_term!(Int32, Divide, n, d)
-            | binary_term!(UInt32, Divide, n, d)
-            | binary_term!(Int32, Remainder, n, d)
-            | binary_term!(UInt32, Remainder, n, d) => (n.as_ref().clone(), d.as_ref().clone()),
-            // Rule C: σ of a `uint32` quotient or remainder is the `int32`
-            // one of its operands' σ when those are nonnegative and the
-            // divisor positive, which are the guards below.
-            result => match result.sign_cast_division_operands()? {
-                (MachineIntegerType::UInt32, _, n, d) => {
-                    let signed = |value: &B| {
-                        B::sign_cast32(
-                            MachineIntegerType::UInt32,
-                            MachineIntegerType::Int32,
-                            value.clone(),
-                        )
-                    };
-                    (signed(n), signed(d))
-                }
-                _ => return None,
+        use crate::kernel::MachineOperandView as V;
+        use crate::kernel::machine_integer::{
+            Relation,
+            comparison::{
+                comparison_view, condition_for_operand_views, structural_native_comparison_view,
             },
         };
+        let view = if matches!(self, C::Compare { .. }) {
+            comparison_view(self, true)?
+        } else {
+            structural_native_comparison_view(self, true)?
+        };
+        if view.format != MachineIntegerType::Int32 || view.relation != Relation::LessEqual {
+            return None;
+        }
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let (result, upper) = if left.word32_constant() == Some(0) {
+            (right, None)
+        } else {
+            (left, Some(right))
+        };
+        let cast_operands;
+        let [n, d] = if let Some((_, _, operands)) = division_operands(result) {
+            operands
+        } else {
+            use crate::kernel::KernelMachineCastEncoding as Encoding;
+            let (Encoding::Generic, source, destination, operand) = result.cast()? else {
+                return None;
+            };
+            if source != MachineIntegerType::UInt32 || destination != MachineIntegerType::Int32 {
+                return None;
+            }
+            let (format, _, operands) = division_operands(operand)?;
+            if format != source {
+                return None;
+            }
+            cast_operands = operands.map(|operand| signed_division_guard_operand(operand));
+            cast_operands.each_ref().map(DivisionGuardOperand::view)
+        };
+        let compare = |relation, a, b| {
+            condition_for_operand_views(MachineIntegerType::Int32, relation, [a, b])
+        };
+        let zero = B::constant(0);
         let mut guards = vec![
-            C::signed_less_equal(B::constant(0), n.clone()),
-            C::signed_less_than(B::constant(0), d),
+            compare(CompareRelation::LessEqual, V::Legacy(&zero), n),
+            compare(CompareRelation::LessThan, V::Legacy(&zero), d),
         ];
         if let Some(upper) = upper
-            && &n != upper
+            && !same_division_guard_operand(n, upper)
         {
-            guards.push(C::signed_less_equal(n, upper.clone()));
+            guards.push(compare(CompareRelation::LessEqual, n, upper));
         }
         Some(guards)
+    }
+}
+
+fn same_division_guard_operand(
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+) -> bool {
+    use crate::kernel::{KernelTermImport, MachineOperandView as V};
+    match (left, right) {
+        (V::Legacy(a), V::Legacy(b)) => a == b,
+        (V::Shared(a), V::Shared(b)) => {
+            a.with_machine_observation_type(MachineIntegerType::Int32)
+                == b.with_machine_observation_type(MachineIntegerType::Int32)
+        }
+        (V::Shared(shared), V::Legacy(native)) | (V::Legacy(native), V::Shared(shared)) => {
+            KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, native)
+                .as_ref()
+                == Some(&shared.with_machine_observation_type(MachineIntegerType::Int32))
+        }
+    }
+}
+
+fn division_operands(
+    value: crate::kernel::MachineOperandView<'_>,
+) -> Option<(
+    MachineIntegerType,
+    MachineBinaryOp,
+    [crate::kernel::MachineOperandView<'_>; 2],
+)> {
+    value.binary().filter(|(format, op, _)| {
+        matches!(
+            format,
+            MachineIntegerType::Int32 | MachineIntegerType::UInt32
+        ) && matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder)
+    })
+}
+
+enum DivisionGuardOperand {
+    Native(B),
+    Shared(crate::kernel::SharedMachineIntegerTerm),
+}
+impl DivisionGuardOperand {
+    fn view(&self) -> crate::kernel::MachineOperandView<'_> {
+        match self {
+            Self::Native(value) => crate::kernel::MachineOperandView::Legacy(value),
+            Self::Shared(value) => value.operand_view(),
+        }
+    }
+}
+
+// Preserve the native checking constructor's constant and cast-composition
+// conventions. This is a checking premise, not a rewrite of a stored term.
+fn signed_division_guard_operand(
+    operand: crate::kernel::MachineOperandView<'_>,
+) -> DivisionGuardOperand {
+    use crate::kernel::MachineOperandView as V;
+    use MachineIntegerType::{Int32, UInt32};
+    match operand {
+        V::Legacy(value) => {
+            DivisionGuardOperand::Native(B::sign_cast32(UInt32, Int32, value.clone()))
+        }
+        V::Shared(_) => {
+            DivisionGuardOperand::Shared(operand.retain(UInt32).checking_cast_operand(Int32))
+        }
     }
 }
 
@@ -205,6 +274,89 @@ mod tests {
     use crate::kernel::Variable;
     use crate::kernel::proof::term_rewrite::TermRewrite;
     use std::collections::HashMap;
+
+    #[test]
+    fn shared_division_bounds_keep_native_guard_shapes_without_exports() {
+        use crate::kernel::machine_integer::comparison::{
+            condition_for_operand_views, structural_native_comparison_of_integer_observation,
+        };
+        use crate::kernel::{KernelTermExport, KernelTermImport, MachineOperandView as V};
+        let _session = crate::kernel::VerificationSession::enter();
+        let n = B::add(B::Variable(Variable(990101)), B::Variable(Variable(990102)));
+        let d = B::add(B::Variable(Variable(990103)), B::constant(1));
+        let narrow = B::machine_integer_cast(
+            MachineIntegerType::UInt16,
+            MachineIntegerType::UInt32,
+            B::Variable(Variable(990104)),
+        );
+        for n in [n, narrow, B::constant(5)] {
+            for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+                for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
+                    let result = B::Binary {
+                        format,
+                        op,
+                        left: Box::new(n.clone()),
+                        right: Box::new(d.clone()),
+                    };
+                    let mut results = vec![result.clone()];
+                    if format == MachineIntegerType::UInt32 {
+                        results.push(B::sign_cast32(format, MachineIntegerType::Int32, result));
+                    }
+                    for result in results {
+                        for (left, right) in [
+                            (B::constant(0), result.clone()),
+                            (result.clone(), n.clone()),
+                            (result, B::constant(99)),
+                        ] {
+                            for relation in [
+                                CompareRelation::LessEqual,
+                                CompareRelation::GreaterEqual,
+                                CompareRelation::LessThan,
+                                CompareRelation::Equal,
+                            ] {
+                                let native = C::machine_compare(
+                                    MachineIntegerType::Int32,
+                                    relation,
+                                    left.clone(),
+                                    right.clone(),
+                                );
+                                let expected = native.nonnegative_division_bound_guards();
+                                let [a, b] = [&left, &right].map(|term| {
+                                    KernelTermImport::default()
+                                        .machine_arithmetic(MachineIntegerType::Int32, term)
+                                        .unwrap()
+                                });
+                                let shared = condition_for_operand_views(
+                                    MachineIntegerType::Int32,
+                                    relation,
+                                    [V::Shared(&a), V::Shared(&b)],
+                                );
+                                let exports = KernelTermExport::machine_export_count();
+                                let actual = shared.nonnegative_division_bound_guards();
+                                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                                let actual = actual.map(|guards| {
+                                    guards
+                                        .into_iter()
+                                        .map(|condition| {
+                                            structural_native_comparison_of_integer_observation(
+                                                &condition, true,
+                                            )
+                                            .map(|(native, truth)| {
+                                                assert!(truth);
+                                                native
+                                            })
+                                            .unwrap_or(condition)
+                                        })
+                                        .collect::<Vec<_>>()
+                                });
+                                assert_eq!(actual, expected, "{native:?}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn quotient_and_remainder_bounds_need_every_signed_range_guard() {

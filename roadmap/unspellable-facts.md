@@ -83,14 +83,22 @@ comparisons preserve native spelling; shared arithmetic stays in observations.
 Unsigned successor, subtraction, remainder and partial-restoration guards also
 read views. Low-word index comparisons retain their wide operands and literal
 offsets through the unsigned or signed range checks, preserving refusals when
-the ranges are absent. The signed equality dispatcher and nonnegative division
-bound adapter remain open.
+the ranges are absent. Nonnegative quotient/remainder bounds read retained
+operands, including the signed reading of unsigned results. Their generated casts
+reuse shared composition prefixes and preserve the native checking constructor;
+they do not change stored terms. The signed equality dispatcher remains open.
 
 Bounded arithmetic-certificate conclusion identity reads shared operands directly,
 preserving its accepted operators, cast encodings, narrow comparison identity,
 written directions, and payload bound. It retains the native 64-bit reflexive
 constructor rule. Growing shared prefixes are checked without boxed exports;
 ordinary and across-effect certificate premise adapters remain open.
+Snapshot-blind candidate keys now read shared arithmetic and reuse interned child
+identities across growing prefixes. Native and shared machine observations select
+the same load candidates; key equality still requires the existing checked memory
+bridge and is never proof authority. The load-registry lifetime invalidates the
+shared key memo. Migrating the checked matcher and certificate availability is
+still necessary before removing their native comparison adapters.
 
 The general comparison dispatcher still needs its compatibility bridge. Its
 migration must preserve the existing rule order as well as proof results;
