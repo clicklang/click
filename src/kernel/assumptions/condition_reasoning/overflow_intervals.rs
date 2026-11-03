@@ -745,20 +745,28 @@ impl PureFactContext {
     }
 
     pub(super) fn int64_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
-        if let Some(bits) = self.wide_constant_from_equalities(term) {
+        self.int64_interval_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(super) fn int64_interval_view(&self, term: MachineOperandView<'_>) -> Option<(i64, i64)> {
+        if let Some(bits) = self.wide_constant_from_equalities_view(term) {
             let value = bits as i64;
             return Some((value, value));
         }
         let (mut lower, mut upper) = term.int64_width_interval().unwrap_or((i64::MIN, i64::MAX));
-        let canonical = crate::kernel::eval::canonical_term(term);
-        let keys = if canonical == *term {
-            vec![term]
-        } else {
-            vec![term, &canonical]
+        let canonical = match term {
+            MachineOperandView::Legacy(term) => Some(crate::kernel::eval::canonical_term(term)),
+            _ => None,
         };
+        let mut keys = vec![term];
+        if let (MachineOperandView::Legacy(written), Some(canonical)) = (term, canonical.as_ref())
+            && written != canonical
+        {
+            keys.push(MachineOperandView::Legacy(canonical));
+        }
         for key in keys {
             if let Some((direct_lower, direct_upper)) =
-                self.checked_order_bounds.signed_wide_interval(key)
+                self.checked_order_bounds.signed_wide_interval_view(key)
             {
                 lower = lower.max(direct_lower);
                 upper = upper.min(direct_upper);

@@ -2080,6 +2080,20 @@ impl TermClasses {
         self.uint64_constants.get(&root).copied()
     }
 
+    pub(super) fn shared_uint64_class(&mut self, term: &crate::kernel::KernelTerm) -> u64 {
+        let id = self.intern_shared_machine(term, crate::kernel::CarrierWidth::Bits64);
+        self.register_pending_loads();
+        id
+    }
+
+    pub(super) fn uint64_constant_of_class(&self, id: u64) -> Option<u64> {
+        let root = self.root(id);
+        if self.scalar_conflicts.contains(&root) {
+            return None;
+        }
+        self.uint64_constants.get(&root).copied()
+    }
+
     pub(super) fn are_uint64_equal(
         &mut self,
         left: &crate::kernel::Bitvector32Term,

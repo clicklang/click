@@ -1267,6 +1267,11 @@ impl PureFactContext {
                 .admitted
                 .bitvector64_equality_facts
                 .shares_root_with(&other.equality_graph.admitted.bitvector64_equality_facts)
+            && self
+                .equality_graph
+                .admitted
+                .wide_constant_sources
+                .shares_root_with(&other.equality_graph.admitted.wide_constant_sources)
             && self.prop_facts.ptr_eq(&other.prop_facts)
             && self
                 .resource_compositions

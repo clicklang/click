@@ -82,6 +82,7 @@ mod scaled_int32_tests;
 mod storage_tests;
 #[cfg(test)]
 mod uint64_tests;
+mod wide_sources;
 pub(in crate::kernel) use evidence::scalar_evidence_pair;
 pub(in crate::kernel) use inputs::InputKey;
 pub(crate) use inputs::{ReadEqualityCheckpoint, ReadEqualityDelta};
@@ -129,6 +130,9 @@ impl MachineAtom {
     }
     pub(in crate::kernel) fn operand_view(&self) -> crate::kernel::MachineOperandView<'_> {
         self.0.operand_view()
+    }
+    pub(in crate::kernel) fn retains_written(&self, term: &Bitvector32Term) -> bool {
+        self.0.retained_written_operand() == Some(term)
     }
     pub(in crate::kernel) fn value(&self) -> &Bitvector32Term {
         self.0.value()
@@ -1832,6 +1836,21 @@ impl EqualityGraph {
         state.terms.uint64_constant(&term)
     }
 
+    pub(in crate::kernel) fn uint64_constant_view(
+        &self,
+        term: crate::kernel::MachineOperandView<'_>,
+    ) -> Option<u64> {
+        match term {
+            crate::kernel::MachineOperandView::Legacy(term) => self.uint64_constant(term),
+            crate::kernel::MachineOperandView::Shared(term) => {
+                let mut state = self.state.lock().expect("equality graph");
+                let node = state.terms.shared_uint64_class(term);
+                state.close(Vec::new());
+                state.terms.uint64_constant_of_class(node)
+            }
+        }
+    }
+
     /// Selected explicit spellings of two numeric addresses. The maintained
     /// class metadata costs one lookup per operand, never a class enumeration.
     /// These spellings authorize byte comparisons, not pointer conversions.
@@ -2859,6 +2878,24 @@ impl EqualityGraph {
             state.terms.scalar_class_root(node),
             state.terms.scalar_constant_of_class(node),
         ))
+    }
+
+    pub(in crate::kernel) fn scalar_normalization_class_view(
+        &self,
+        term: crate::kernel::MachineOperandView<'_>,
+    ) -> Option<(u64, crate::kernel::assumptions::SignedConstantResolution)> {
+        match term {
+            crate::kernel::MachineOperandView::Legacy(term) => self.scalar_constant_class(term),
+            crate::kernel::MachineOperandView::Shared(term) => {
+                let mut state = self.state.lock().expect("equality graph");
+                let node = state.terms.shared_int32_class(term);
+                state.close(Vec::new());
+                Some((
+                    state.terms.scalar_class_root(node),
+                    state.terms.scalar_constant_of_class(node),
+                ))
+            }
+        }
     }
 
     /// The constant an atom's class is known to equal, read without
