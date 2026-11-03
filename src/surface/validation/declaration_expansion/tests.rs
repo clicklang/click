@@ -80,7 +80,7 @@ fn inferred_constructor_type_arguments_are_written_into_the_declaration() {
         algebraic_type,
         arguments,
         ..
-    } = function.body()
+    } = function.body().unwrap()
     else {
         panic!("the body is a constructor");
     };
