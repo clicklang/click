@@ -12,6 +12,7 @@ void keep(struct S* p) { p->a = 1; lend(p); p->a = 2; unlend(p); }
 
 ```click
 verifying "lend.c";
+resource Whole(p: struct S*) { owns *p; }
 resource Lent(p: struct S*) { views *p; }
 extern void lend(const struct S* p) {
     views *p;
@@ -26,6 +27,9 @@ void keep(struct S* p) {
     owns p->a;
     owns p->b;
     ensures p->a == 2;
+} by {
+    fold(Whole(p));
+    unfold(Whole(p));
 }
 ```
 

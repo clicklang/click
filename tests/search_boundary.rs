@@ -645,6 +645,7 @@ fn single_memory_owner_selection_rejects_fragment_enumeration() {
 fn loan_origin_reconciliation_rejects_search_and_history() {
     for name in [
         "has_other_directly_supporting_owned_entry",
+        "with_coalesced_owned_memory",
         "view_occurrences_for_fact",
         "changed_facts_since",
         "descends_from",
@@ -704,5 +705,21 @@ fn loop_binding_handoff_rejects_view_rediscovery() {
             let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
             assert!(boundary::check_source(path, &source).is_err());
         }
+    }
+}
+
+#[test]
+fn constant_owned_consumption_rejects_candidate_search() {
+    for name in [
+        "iter",
+        "collect",
+        "find",
+        "normalized_memory_suppliers",
+        "with_coalesced_owned_memory",
+    ] {
+        let source = format!("fn consume_constant_owned_memory(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
     }
 }

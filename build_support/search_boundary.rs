@@ -55,6 +55,7 @@ impl Boundary<'_> {
         }
         if self.path == "src/kernel/loans.rs"
             && (name == "view_occurrences_for_fact"
+                || name == "with_coalesced_owned_memory"
                 || (matches!(
                     self.function.as_str(),
                     "bound_view_candidate" | "select_bound_view"
@@ -71,6 +72,22 @@ impl Boundary<'_> {
                 || (self.function == "attach_to_inserted_views" && name == "facts"))
         {
             self.errors.push(format!("{}: {}: loop binding handoff must retain producer occurrences, not rediscover views ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "consume_constant_owned_memory"
+            && matches!(
+                name,
+                "iter"
+                    | "collect"
+                    | "find"
+                    | "normalized_memory_suppliers"
+                    | "with_coalesced_owned_memory"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: explicit constant consumption must use indexed suppliers ({name})",
+                self.path, self.function
+            ));
         }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && matches!(

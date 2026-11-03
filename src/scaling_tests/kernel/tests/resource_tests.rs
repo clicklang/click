@@ -3289,3 +3289,99 @@ fn memory_split_origin_ignores_incident_bounds() {
         "split-origin lookup scans incident bounds: {curves:?}"
     );
 }
+
+#[test]
+fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
+    let mut curves = Vec::new();
+    for (complete, native) in [(false, false), (true, false), (false, true), (true, true)] {
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64, 256] {
+            let (instance, mut definition, _) = instance_memory_fixture();
+            definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
+                base: c_variable("p"),
+                start: c_int32_literal(0),
+                end: c_int32_literal(1024),
+                element_width: 4,
+                guard: None,
+                uninitialized: false,
+                value_runs: Default::default(),
+            })];
+            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+                unreachable!()
+            };
+            let piece = |start: u32, end: u32, width: u32| {
+                let range = if native && width == 4 {
+                    CMemoryRange::new_wide(
+                        value.pointer().clone(),
+                        Bitvector32Term::UInt64Constant(u64::from(start)),
+                        Bitvector32Term::UInt64Constant(u64::from(end)),
+                        width,
+                    )
+                } else {
+                    CMemoryRange::new_with_element_width(
+                        value.pointer().clone(),
+                        start.into(),
+                        end.into(),
+                        width,
+                    )
+                };
+                CResourceFact::own_memory(range)
+            };
+            let assumptions = PureFactContext::new();
+            let mut resources = ResourceContext::new_with_equalities(&assumptions)
+                .unchecked_with_fact(piece(0, if complete { 2048 } else { 4 }, 1));
+            if complete {
+                resources = resources.unchecked_with_fact(piece(512, 1024, 4));
+            }
+            for index in 0..count {
+                let start = if complete { 2048 } else { 100 } + 2 * index;
+                resources = resources.unchecked_with_fact(piece(start, start + 1, 4));
+            }
+            resources.synchronize_memory_equalities(&assumptions);
+            let state = CState::new().with_resource_context(resources);
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        rewrite_resource_instance(
+                            &state,
+                            &instance,
+                            &definition,
+                            &assumptions,
+                            false,
+                        )
+                        .and_then(|(closed, _)| {
+                            rewrite_resource_instance(
+                                &closed,
+                                &instance,
+                                &definition,
+                                &assumptions,
+                                true,
+                            )
+                        })
+                    })
+                });
+                assert_eq!(result.is_ok(), complete, "{complete}/{count}: {result:?}");
+                assert!(state.resources().contains_exact_representation(&piece(
+                    0,
+                    if complete { 2048 } else { 4 },
+                    1
+                )));
+                queries.push((work, maps));
+            }
+            samples.push((count, queries));
+        }
+        eprintln!("complete fold={complete}, native={native}, work/maps: {samples:?}");
+        curves.push(samples);
+    }
+    for samples in curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(big, small)| big.0 <= small.0 + 64 && big.1 <= small.1 * 3 + 512),
+            "{samples:?}"
+        );
+    }
+}
