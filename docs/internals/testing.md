@@ -1331,11 +1331,11 @@ metadata before any proof runs.
 
 Load names and snapshot content hashes derive from input names, and closers
 search facts and recorded snapshots in an order that follows them.
-The nightly `a_selected_unit_names_its_inputs_as_the_whole_file_run_does` checks exact
-input-name and per-tactic work equality. The nightly
-`a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions` checks
-that equality beside 1, 2, 4, and 8 unrelated earlier functions, including
-reversed declaration order. Both use the original eight-tactic reproduction.
+The nightly `a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions`
+checks exact input-name and per-tactic work equality between whole-file and
+selected-unit verification beside 1, 2, 4, and 8 unrelated earlier functions,
+including reversed declaration order. It uses the original eight-tactic
+reproduction, including the single-earlier-function case.
 Before return, signed-order automation selects indexed bounds before broad
 atomic premise spelling. Existing named rules get first choice over that
 compact context, followed by the checked arithmetic certificate. Terminal

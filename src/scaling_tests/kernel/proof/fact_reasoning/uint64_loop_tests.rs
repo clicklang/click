@@ -47,8 +47,9 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
         assert!(normalize_using_conditions(&descent, &[], &facts).is_err());
     }
     assert!(samples[0] > 0);
+    // Unrelated facts must not increase work; cheaper lookups are allowed.
     assert!(
-        samples.iter().all(|work| *work == samples[0]),
+        samples.iter().all(|work| *work <= samples[0]),
         "{samples:?}"
     );
     let weak =

@@ -2075,24 +2075,6 @@ pub(super) fn combine_names_and_work_in_order(
         .unwrap()
 }
 
-/// A selected unit and the same unit in a whole-file run name its inputs
-/// alike, so its tactics search in the same order and do comparable work.
-/// Input names were numbered as each proof started, so a whole-file run
-/// named `combine`'s inputs after every input of the functions verified
-/// before it. Load names and snapshot content hashes derive from those
-/// numbers, and the order a closer tries facts and recorded snapshots in
-/// follows them: `arena_pipeline`'s control `have` took 375,000 units
-/// selected and exhausted its 2,500,000-unit budget in the whole file.
-#[test]
-#[ignore = "nightly: checks the original eight-tactic input-name reproduction twice"]
-fn a_selected_unit_names_its_inputs_as_the_whole_file_run_does() {
-    let (whole_names, whole_work) = combine_names_and_work(1, false);
-    let (selected_names, selected_work) = combine_names_and_work(1, true);
-    assert_eq!(selected_names.len(), 3, "{selected_names:?}");
-    assert_eq!(selected_names, whole_names);
-    assert_eq!(selected_work, whole_work);
-}
-
 #[test]
 fn execute_until_assignment_checks_real_stores_and_rejects_bad_frontiers() {
     let source = "int32 f() {int32 x;int32 other;other=9;x=3;other=8;x=4;return x;}";
