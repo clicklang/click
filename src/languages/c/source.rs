@@ -1547,9 +1547,11 @@ fn parse_directive(
     {
         return Ok(Some(SourceDirective::ConditionalEnd));
     }
-    if directive == "pragma once"
-        || directive
-            .strip_prefix("pragma once")
+    if let Some(rest) = directive.strip_prefix("pragma")
+        && rest.chars().next().is_some_and(char::is_whitespace)
+        && rest
+            .trim_start()
+            .strip_prefix("once")
             .is_some_and(trailing_comments_only)
     {
         return Ok(Some(SourceDirective::PragmaOnce));
@@ -1700,13 +1702,14 @@ impl<'a> ConditionalParser<'a> {
             return Ok(Conditional::Macro(name));
         }
         self.skip_whitespace();
-        if !self.consume("(") {
-            return Err(());
-        }
-        let name = self.parse_identifier().ok_or(())?;
+        let parenthesized = self.consume("(");
         self.skip_whitespace();
-        if !self.consume(")") {
-            return Err(());
+        let name = self.parse_identifier().ok_or(())?;
+        if parenthesized {
+            self.skip_whitespace();
+            if !self.consume(")") {
+                return Err(());
+            }
         }
         Ok(Conditional::Defined(name))
     }
@@ -2650,17 +2653,42 @@ mod tests {
 
     #[test]
     fn pragma_once_headers_expand_only_once() {
-        let sources = BTreeMap::from([
-            ("main.c", "#include \"left.h\"\n#include \"right.h\"\n"),
-            ("left.h", "#include \"common.h\"\n"),
-            ("right.h", "#include \"common.h\"\n"),
-            ("common.h", "#pragma once\ntypedef int32 shared_t;\n"),
-        ]);
-        let expanded = expand_includes("main.c", &sources).unwrap();
-        assert_eq!(
-            expanded.source().matches("typedef int32 shared_t;").count(),
-            1
-        );
+        for separator in [" ", "\t", "  ", " \t ", "\x0b", "\x0c"] {
+            let header =
+                format!("#pragma{separator}once /* header guard */\ntypedef int32 shared_t;\n");
+            let sources = BTreeMap::from([
+                ("main.c", "#include \"left.h\"\n#include \"right.h\"\n"),
+                ("left.h", "#include \"common.h\"\n"),
+                ("right.h", "#include \"common.h\"\n"),
+                ("common.h", header.as_str()),
+            ]);
+            let expanded = expand_includes("main.c", &sources).expect(&header);
+            assert_eq!(
+                expanded.source().matches("typedef int32 shared_t;").count(),
+                1,
+                "{header}"
+            );
+        }
+    }
+
+    #[test]
+    fn pragma_once_requires_separate_words_and_no_extra_tokens() {
+        for directive in [
+            "pragmaonce",
+            "pragma onceX",
+            "pragma once more",
+            "pragma twice",
+        ] {
+            let source = format!("#{directive}\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let error = expand_includes("main.c", &sources).expect_err(&source);
+            assert!(
+                error
+                    .to_string()
+                    .contains("unsupported preprocessor directive"),
+                "{error}"
+            );
+        }
     }
 
     #[test]
@@ -3325,6 +3353,55 @@ int32 run(void) { return 3; }
         let expanded = expand_includes("main.c", &sources).unwrap();
         assert!(expanded.source().contains("int32 run(void) { return 3; }"));
         assert!(!expanded.source().contains("wrong(void)"));
+    }
+
+    #[test]
+    fn defined_operands_accept_both_c_forms_and_whitespace() {
+        for condition in [
+            "defined(FEATURE)",
+            "defined( FEATURE )",
+            "defined \t( \tFEATURE\t )",
+            "defined FEATURE",
+            "defined\tFEATURE",
+            "!defined MISSING",
+            "defined FEATURE && !defined MISSING",
+            "defined MISSING || defined FEATURE",
+            "(defined FEATURE)",
+            "defined FEATURE == 1",
+            "defined FEATURE != defined MISSING",
+        ] {
+            let source = format!(
+                "#define FEATURE 1\n#if {condition}\nint selected;\n#else\nint wrong;\n#endif\n"
+            );
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(condition);
+            assert!(expanded.source().contains("int selected;"), "{condition}");
+            assert!(!expanded.source().contains("int wrong;"), "{condition}");
+        }
+    }
+
+    #[test]
+    fn defined_operands_require_one_identifier_and_balanced_parentheses() {
+        for condition in [
+            "defined",
+            "defined()",
+            "defined( FEATURE",
+            "defined FEATURE)",
+            "defined 1",
+            "defined(1)",
+            "defined FEATURE EXTRA",
+            "defined(FEATURE EXTRA)",
+        ] {
+            let source = format!("#if {condition}\nint selected;\n#endif\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let error = expand_includes("main.c", &sources).expect_err(condition);
+            assert!(
+                error
+                    .to_string()
+                    .contains("unsupported conditional expression"),
+                "{condition}: {error}"
+            );
+        }
     }
 
     #[test]

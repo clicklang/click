@@ -1157,7 +1157,9 @@ Supported C surface includes:
   previously defined 0/1 literal macro, `#ifdef NAME`, `#ifndef NAME`,
   `#if defined(NAME)`, `#if !defined(NAME)`, and those atoms combined with
   `!`, `&&`, `||`, or parentheses; `#elif`, `#else`, and `#endif` are also
-  supported. Equality and inequality comparisons (`==` and `!=`) are supported
+  supported. The `defined` operand accepts both `defined NAME` and
+  `defined(NAME)`, with optional whitespace inside the parentheses.
+  Equality and inequality comparisons (`==` and `!=`) are supported
   between integer or character literals, literal-valued macros, and
   `defined(NAME)`, and can be combined with those boolean operators. Undefined
   identifiers evaluate to zero, including after `#undef`. Arithmetic,
