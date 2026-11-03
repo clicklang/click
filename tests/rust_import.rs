@@ -3485,24 +3485,35 @@ fn charon_recursive_drop_glue_needs_ownership_and_a_measure() {
 #[test]
 fn charon_stack_refuses_false_push_pop_and_round_trip_claims() {
     let prepared = recursive_drop_prepared();
-    for (before, after, expected) in [
+    for (head, before, after, expected) in [
         (
+            "fn push(",
             "ensures after.values == List::Cons(value, old(before.values));",
             "ensures after.values == old(before.values);",
             "recursive_drop::Stack::push",
         ),
         (
+            "fn pop(",
             "ensures result == first(old(before.values));",
             "ensures result == Option<u32>::None;",
             "recursive_drop::Stack::pop",
         ),
         (
+            "fn recursive_drop::round_trip(",
             "ensures result == Option<u32>::Some(x);",
             "ensures result == Option<u32>::None;",
             "recursive_drop::round_trip",
         ),
     ] {
-        assert_recursive_drop_refused(&prepared, before, after, expected);
+        assert!(RECURSIVE_DROP_SIDECAR.contains(before), "{before}");
+        let invalid = RECURSIVE_DROP_SIDECAR.replacen(before, after, 1);
+        // The separate positive test covers the complete recursive-drop fixture.
+        let error = verify_rust_proof_after(&invalid, &prepared, head)
+            .expect_err("the mutated stack claim must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+        let rendered = format!("{error:?} {error}");
+        let rendered = click::languages::rust::names::display_rust_names(&rendered);
+        assert!(rendered.contains(expected), "{rendered}");
     }
 }
 
