@@ -685,6 +685,9 @@ fn certified_transitions_from_execution(
             let mut loop_invariant_correspondence = loop_rule.as_ref()
                 .map(|rule| rule.loop_invariant_correspondence(path_index).to_vec())
                 .unwrap_or_default();
+            let loop_iterations = loop_rule
+                .as_ref()
+                .and_then(|rule| rule.loop_iterations(path_index).cloned());
             let mut successor_facts = pure_facts.clone();
             let statement_facts = path
                 .facts()
@@ -1124,6 +1127,7 @@ fn certified_transitions_from_execution(
                     pure_facts: successor_facts,
                     introduced_facts,
                     loop_invariant_correspondence,
+                    loop_iterations: loop_iterations.clone(),
                     prerequisite_derivations,
                     planning_premises: Vec::new(),
                     fact_transports: transported_facts,
@@ -1151,6 +1155,7 @@ fn certified_transitions_from_execution(
                 pure_facts: successor_facts,
                 introduced_facts,
                 loop_invariant_correspondence,
+                loop_iterations,
                 prerequisite_derivations,
                 planning_premises: Vec::new(),
                 fact_transports: Vec::new(),

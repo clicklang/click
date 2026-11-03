@@ -764,6 +764,9 @@ fn advance_execution_proof_statement(
                         kind: ProgramPointKind::Exit,
                     };
                     recorded_snapshots.insert(exit_point.clone(), *exit_state.clone());
+                    if let Some(iterations) = &transition.loop_iterations {
+                        recorded_snapshots.record_loop_iterations(loop_index, iterations);
+                    }
                     if let Some(loop_clause) = environment
                         .function_block
                         .structural_clauses()

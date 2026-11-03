@@ -7193,6 +7193,9 @@ pub enum ExecutionLimit {
     FunctionCalls,
     LoopUnrolls,
     Paths,
+    /// A loop invariant's pass count, `iterations`, read where no loop
+    /// phase binds it.
+    LoopIterationsUnbound,
     UnsupportedIntegerExistentialBody,
     UnsupportedPureFunctionResult(CType),
     /// Stage 5 (`design/machine-integers.md`, decision D2): a `Bool`
@@ -7282,6 +7285,9 @@ impl ExecutionLimit {
             // for. The phrase has to cover both without claiming a counter
             // ran out.
             Self::Paths => "no single evaluation path".to_string(),
+            Self::LoopIterationsUnbound => {
+                "`iterations` outside a loop phase that binds its pass count".to_string()
+            }
             Self::UnsupportedPureFunctionResult(result_type) => {
                 format!("unsupported pure-function result type {result_type:?}")
             }
@@ -14339,9 +14345,12 @@ pub(super) struct CLValuePath {
 /// semantically identical paths. The empty form allocates nothing, and cloning
 /// a loop path shares its output-sized mapping.
 #[derive(Clone, Debug, Default)]
-pub(super) struct LoopInvariantCorrespondence(
-    pub(super) Option<std::sync::Arc<[(usize, Proposition)]>>,
-);
+pub(super) struct LoopInvariantCorrespondence {
+    pub(super) invariants: Option<std::sync::Arc<[(usize, Proposition)]>>,
+    /// The loop head's pass count, `iterations`, which the path's facts
+    /// state over: spelled `loop(i).iterations` past the loop.
+    pub(super) iterations: Option<IntegerTerm>,
+}
 
 impl PartialEq for LoopInvariantCorrespondence {
     fn eq(&self, _other: &Self) -> bool {

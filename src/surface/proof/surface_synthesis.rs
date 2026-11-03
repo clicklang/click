@@ -2825,7 +2825,26 @@ fn raise_kernel_term(
         }
         Node::IntegerLiteral(value) => SurfaceTerm::IntegerLiteral(value.to_string()),
         Node::Variable(variable) if term.ty() == &KernelType::Integer => {
-            SurfaceTerm::Binding(bound_variables.get(variable)?.clone())
+            match bound_variables
+                .get(variable)
+                .cloned()
+                .or_else(|| proof_binder_name(*variable))
+                // A name the loop phase gives a variable it binds, such as
+                // the head's pass count `iterations`.
+                .or_else(|| {
+                    SYNTHESIS_BINDER_NAMES.with(|slot| {
+                        slot.borrow()
+                            .as_ref()
+                            .and_then(|names| names.get(variable).cloned())
+                    })
+                }) {
+                Some(name) => SurfaceTerm::Binding(name),
+                // A loop's pass count past the loop.
+                None => SurfaceTerm::Binding(crate::surface::loop_iterations_spelling(
+                    SYNTHESIS_RECORDED_POINTS
+                        .with(|slot| slot.borrow().as_ref()?.loop_naming_iterations(*variable))?,
+                )),
+            }
         }
         Node::IntegerOperation {
             operator,

@@ -2779,7 +2779,10 @@ fn retained_loop_invariant_correspondence(
     .into_iter()
     .map(|(index, proposition)| (index, proposition.clone()))
     .collect::<Vec<_>>();
-    LoopInvariantCorrespondence((!correspondence.is_empty()).then(|| correspondence.into()))
+    LoopInvariantCorrespondence {
+        invariants: (!correspondence.is_empty()).then(|| correspondence.into()),
+        iterations: None,
+    }
 }
 
 fn retained_loop_invariant_declarations<'a, T: Ord + 'a>(
@@ -4436,6 +4439,7 @@ fn execute_c_while_exit_paths(
             state,
             invariant_checks,
             InvariantPhase::Entry,
+            None,
             assumptions,
             budget,
         )?
@@ -4630,6 +4634,7 @@ fn execute_c_while_exit_paths(
         &guard_state,
         state,
         invariant_checks,
+        &head.iterations,
         assumptions,
         &whole_loop_effect_facts,
         &base_obligations,
@@ -4816,6 +4821,9 @@ fn execute_c_while_exit_paths(
         ));
     }
     budget.check_path_width(paths.len())?;
+    for path in &mut paths {
+        path.loop_invariant_correspondence.iterations = Some(head.iterations.clone());
+    }
     Ok(paths)
 }
 
@@ -4857,6 +4865,7 @@ pub(super) fn collect_invariant_check_obligations(
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
     phase: InvariantPhase,
+    head_iterations: Option<&IntegerTerm>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ProofObligation>> {
@@ -4865,6 +4874,7 @@ pub(super) fn collect_invariant_check_obligations(
         loop_entry_state,
         invariant_checks,
         phase,
+        head_iterations,
         assumptions,
         budget,
         false,
@@ -4877,6 +4887,7 @@ pub(super) fn collect_invariant_check_obligations_without_search(
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
     phase: InvariantPhase,
+    head_iterations: Option<&IntegerTerm>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ProofObligation>> {
@@ -4885,6 +4896,7 @@ pub(super) fn collect_invariant_check_obligations_without_search(
         loop_entry_state,
         invariant_checks,
         phase,
+        head_iterations,
         assumptions,
         budget,
         true,
@@ -4906,6 +4918,7 @@ pub(super) fn collect_loop_entry_goals(
         state,
         checks,
         InvariantPhase::Entry,
+        None,
         assumptions,
         budget,
         true,
@@ -4919,11 +4932,22 @@ fn collect_invariant_check_obligations_with_mode(
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
     phase: InvariantPhase,
+    head_iterations: Option<&IntegerTerm>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     without_search: bool,
     mut declarations: Option<&mut [Vec<ProofObligation>]>,
 ) -> ExecutionResult<Vec<ProofObligation>> {
+    // `iterations` counts the passes completed: none at entry, and at a back
+    // edge one more than the head the pass started from.
+    let iterations = match (phase, head_iterations) {
+        (InvariantPhase::Entry, None) => IntegerTerm::constant(0.into()),
+        (InvariantPhase::Preservation, Some(head)) => {
+            IntegerTerm::add(head.clone(), IntegerTerm::constant(1.into()))
+        }
+        _ => return Err(ExecutionLimit::LoopIterationsUnbound),
+    };
+    let _iterations = crate::kernel::spec::LoopIterationsScope::enter(iterations);
     // Each context carries, beside its facts and obligations, the guards a
     // later declaration is wrapped with: the same list position for position,
     // except that an earlier declaration's own entry is its lowered
@@ -5307,6 +5331,7 @@ pub(super) fn collect_loop_preservation_summary(
         top_state,
         loop_entry_state,
         invariant_checks,
+        &head.iterations,
         assumptions,
         &whole_loop_effect_facts,
         &[],
@@ -5451,6 +5476,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 loop_entry_state,
                                 invariant_checks,
                                 InvariantPhase::Preservation,
+                                Some(&head.iterations),
                                 &path_assumptions,
                                 budget,
                             )?
@@ -5845,6 +5871,11 @@ pub(super) struct CLoopHead {
     /// names. Entry invariant checks read binder fields from here, so a loop
     /// binder that renames an enclosing instance is available at entry too.
     pub(super) entry: CState,
+    /// The head's pass count `K`: a fresh Integer standing for the number of
+    /// passes the loop has completed when it reaches this head. Every
+    /// invariant this head assumes reads `iterations` as `K`, and every back
+    /// edge from it owes them at `K + 1`.
+    pub(super) iterations: IntegerTerm,
     pub(super) summaries: Vec<Proposition>,
     /// Why a declared loop resource could not be taken from the enclosing
     /// resource context. A non-empty list is a verification failure.
@@ -6067,6 +6098,7 @@ pub(super) fn prepare_loop_top_state(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<CLoopHead> {
+    let iterations = IntegerTerm::var(variables.next_in(budget)?);
     let (captured_resource_specs, capture_failures) =
         capture_loop_entry_memory_specs(entry_state, resource_specs, assumptions, budget)?;
     let resource_specs = captured_resource_specs.as_slice();
@@ -6467,6 +6499,7 @@ pub(super) fn prepare_loop_top_state(
         top_state.clone(),
         &top_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6475,6 +6508,7 @@ pub(super) fn prepare_loop_top_state(
         body_state,
         &top_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6483,6 +6517,7 @@ pub(super) fn prepare_loop_top_state(
         &guard_state,
         &top_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6491,6 +6526,7 @@ pub(super) fn prepare_loop_top_state(
         &body_state,
         &top_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6501,6 +6537,7 @@ pub(super) fn prepare_loop_top_state(
         top_state,
         &premise_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6510,6 +6547,7 @@ pub(super) fn prepare_loop_top_state(
         body: body_state,
         guard: guard_state,
         entry: entry_state,
+        iterations,
         summaries,
         resource_failures,
         effect_checks,
@@ -6528,6 +6566,7 @@ fn with_selected_arm_views_attached(
     state: CState,
     premise_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    iterations: &IntegerTerm,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -6539,6 +6578,7 @@ fn with_selected_arm_views_attached(
         premise_state,
         premise_state,
         invariant_checks,
+        iterations,
         assumptions,
         &[],
         &[],
@@ -6620,6 +6660,7 @@ fn with_selected_arm_views(
     state: &CState,
     premise_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    iterations: &IntegerTerm,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -6631,6 +6672,7 @@ fn with_selected_arm_views(
         premise_state,
         premise_state,
         invariant_checks,
+        iterations,
         assumptions,
         &[],
         &[],
@@ -8216,10 +8258,12 @@ pub(super) fn false_equals_true_proposition() -> Proposition {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn assume_invariant_checks(
     state: &CState,
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    iterations: &IntegerTerm,
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
@@ -8229,6 +8273,7 @@ pub(super) fn assume_invariant_checks(
         state,
         loop_entry_state,
         invariant_checks,
+        iterations,
         assumptions,
         prefix_facts,
         prefix_obligations,
@@ -8262,20 +8307,33 @@ impl HeadInvariantRefusal {
 
 /// [`assume_invariant_checks`], also saying which declaration left the head
 /// with no context when that happens.
+#[allow(clippy::too_many_arguments)]
 fn assume_invariant_checks_explained(
     state: &CState,
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    iterations: &IntegerTerm,
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<(HeadContexts, Option<HeadInvariantRefusal>)> {
+    // The head assumes the invariants at its own pass count, a fresh `K`
+    // that is never negative.
+    let _iterations = crate::kernel::spec::LoopIterationsScope::enter(iterations.clone());
+    let mut head_facts = prefix_facts.persistent_facts();
+    head_facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+        ConditionTerm::IntegerLessEqual(
+            IntegerTerm::constant(0.into()).into(),
+            iterations.clone().into(),
+        ),
+        true,
+    )));
     // Each lowering path forks this declaration history. Keep its prefix
     // persistent so a loop with many explicit invariants does not clone the
     // whole preceding clause vector at every declaration.
     let mut contexts = vec![(
-        prefix_facts.persistent_facts(),
+        head_facts,
         prefix_obligations.to_vec(),
         crate::kernel::proof::PersistentSequence::default(),
     )];

@@ -460,6 +460,7 @@ impl Parser {
             | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
                 self.names.contains_any(NameKind::INTEGERS, name)
+                    || crate::surface::is_loop_iterations_spelling(name)
                     || matches!(
                         self.names.arm_binding_types.get(name),
                         Some(AlgebraicFieldType::Integer)

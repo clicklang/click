@@ -729,6 +729,9 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
                 invariant_body_context: Some(Arc::new(InvariantBodyContext {
                     loop_index: 0,
                     checks: checks.clone(),
+                    iterations: Some(crate::kernel::IntegerTerm::var(crate::kernel::Variable(
+                        9_999,
+                    ))),
                     ..InvariantBodyContext::default()
                 })),
                 ..ExecutionProofConstants::default()
@@ -775,6 +778,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
             .prepare_loop_invariant_bundle(
                 &CState::new(),
                 &CState::new(),
+                &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                 &CExpression::Value(int32(1)),
                 &checks,
                 &[],
@@ -846,6 +850,9 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
                 invariant_body_context: Some(Arc::new(InvariantBodyContext {
                     loop_index: 0,
                     checks: checks.clone(),
+                    iterations: Some(crate::kernel::IntegerTerm::var(crate::kernel::Variable(
+                        9_999,
+                    ))),
                     ..InvariantBodyContext::default()
                 })),
                 ..Default::default()

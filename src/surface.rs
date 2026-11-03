@@ -450,6 +450,28 @@ fn library_module_path(identity: &str) -> String {
 /// module declares one, and only one listed here.
 pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec"];
 
+/// The name a loop's invariants and proof read its pass count by: the number
+/// of passes the loop has completed.
+pub(crate) const LOOP_ITERATIONS_NAME: &str = "iterations";
+
+/// The spelling of a loop's pass count past the loop: `loop(i).iterations`.
+pub(crate) fn loop_iterations_spelling(index: usize) -> String {
+    format!("loop({index}).{LOOP_ITERATIONS_NAME}")
+}
+
+/// Whether the function has a C object named `iterations`, which keeps its
+/// C meaning: the loop's pass count then has no bare spelling in its phases.
+pub(crate) fn loop_iterations_hidden_by(state: &CState) -> bool {
+    state.locals().contains_name(LOOP_ITERATIONS_NAME)
+}
+
+/// Whether `name` is a loop's pass count as the parser spells it.
+pub(crate) fn is_loop_iterations_spelling(name: &str) -> bool {
+    name.strip_prefix("loop(")
+        .and_then(|rest| rest.strip_suffix(").iterations"))
+        .is_some_and(|index| !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
 /// The Click library modules loaded implicitly with every sidecar, as
 /// `(identity, source)` pairs in declaration order. Each module is parsed
 /// with the declarations of the modules before it.
@@ -1842,6 +1864,9 @@ pub struct StructuralClauseData {
     /// It excludes a `decreases` clause and requires the enclosing function
     /// to be declared `diverges` too.
     diverges: bool,
+    /// Whether the clause's `iterations` names a C object of the function
+    /// rather than the loop's pass count, which then has no bare spelling.
+    iterations_is_c: bool,
     items: Vec<StructuralItem>,
     /// The proof locals in scope where a frontier loop clause was written: a
     /// proof `match` arm's bindings, `let { ... } = unfold(...)` names, call-result
@@ -3227,6 +3252,11 @@ struct RecordedSnapshots {
     /// The call that produced each algebraic value a call returned, a Rust
     /// enum's: the value is spelled `<region>.result`.
     algebraic_call_results: crate::persistent::PersistentMap<crate::kernel::AlgebraicTerm, usize>,
+    /// Each exited loop's pass count, the head's `iterations`, which the
+    /// facts past the loop state over: spelled `loop(i).iterations`.
+    loop_iterations: crate::persistent::PersistentMap<usize, crate::kernel::IntegerTerm>,
+    /// The loop whose pass count each variable is: one lookup spells it.
+    loop_iteration_variables: crate::persistent::PersistentMap<crate::kernel::Variable, usize>,
     /// The recorded point at which each scalar model-field value was first
     /// held by its resource instance, keyed by the value's variable: a field
     /// value no nearer state's instance holds is spelled at that point.
@@ -3287,6 +3317,8 @@ impl Default for RecordedSnapshots {
             call_results: crate::persistent::PersistentMap::default(),
             call_result_points: crate::persistent::PersistentMap::default(),
             algebraic_call_results: crate::persistent::PersistentMap::default(),
+            loop_iterations: crate::persistent::PersistentMap::default(),
+            loop_iteration_variables: crate::persistent::PersistentMap::default(),
             field_points: crate::persistent::PersistentMap::default(),
             last_locals: None,
             last_resources: None,
@@ -3680,6 +3712,43 @@ impl RecordedSnapshots {
             }
             self.call_results.insert(index, value);
         }
+    }
+
+    /// Records the pass count `iterations` of loop `loop_index`'s head,
+    /// which the facts of a path past the loop state over.
+    pub(crate) fn record_loop_iterations(
+        &mut self,
+        loop_index: usize,
+        iterations: &crate::kernel::IntegerTerm,
+    ) {
+        if let Some(crate::kernel::IntegerTerm::Variable(prior)) =
+            self.loop_iterations.get(&loop_index)
+        {
+            self.loop_iteration_variables.remove(prior);
+        }
+        if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
+            self.loop_iteration_variables.insert(*variable, loop_index);
+        }
+        self.loop_iterations.insert(loop_index, iterations.clone());
+    }
+
+    /// The loop whose pass count `variable` is: one lookup.
+    pub(crate) fn loop_naming_iterations(
+        &self,
+        variable: crate::kernel::Variable,
+    ) -> Option<usize> {
+        let index = *self.loop_iteration_variables.get(&variable)?;
+        matches!(self.loop_iterations.get(&index), Some(crate::kernel::IntegerTerm::Variable(held)) if *held == variable)
+            .then_some(index)
+    }
+
+    /// Each exited loop's pass count under its spelling, `loop(i).iterations`.
+    pub(crate) fn loop_iteration_bindings(
+        &self,
+    ) -> impl Iterator<Item = (String, &crate::kernel::IntegerTerm)> {
+        self.loop_iterations
+            .iter()
+            .map(|(index, term)| (loop_iterations_spelling(*index), term))
     }
 
     /// The call that produced the algebraic value `term`: one index lookup.
@@ -4253,6 +4322,12 @@ impl RecordedSnapshots {
         if self.loop_labels == other.loop_labels {
             common.loop_labels = self.loop_labels.clone();
         }
+        // A pass count both arms left the loop with stays.
+        for (index, iterations) in self.loop_iterations.iter() {
+            if other.loop_iterations.get(index) == Some(iterations) {
+                common.record_loop_iterations(*index, iterations);
+            }
+        }
         for selector in changed {
             match (self.get(&selector), other.get(&selector)) {
                 (Some(left), Some(right)) if left == right => {
@@ -4354,6 +4429,8 @@ impl RecordedSnapshots {
         let mut retained = Self::new();
         retained.loop_labels = self.loop_labels.clone();
         retained.source_layout = self.source_layout.clone();
+        retained.loop_iterations = self.loop_iterations.clone();
+        retained.loop_iteration_variables = self.loop_iteration_variables.clone();
         for (selector, state) in self.iter() {
             let mut state = state.clone();
             if keep(selector, &mut state) {
@@ -4666,9 +4743,22 @@ impl SpecElaborationContext {
         }
     }
 
-    fn for_loop_invariant(loop_index: usize) -> Self {
+    /// A loop clause's context. `iterations` is the loop's pass count, which
+    /// each loop phase binds where it lowers the invariant, unless the clause
+    /// (`iterations_is_c`) reads a C object of that name.
+    fn for_loop_invariant(loop_index: usize, iterations_is_c: bool) -> Self {
         Self {
             current_loop_entry: Some(loop_index),
+            integer_values: if iterations_is_c {
+                PersistentMap::default()
+            } else {
+                PersistentMap::default().with_inserted(
+                    LOOP_ITERATIONS_NAME.to_string(),
+                    crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::var(
+                        crate::kernel::LOOP_ITERATIONS_VARIABLE,
+                    )),
+                )
+            },
             ..Self::default()
         }
     }
@@ -4922,6 +5012,9 @@ pub struct CertifiedStatementTransition {
     /// Exact clause indices retained by the loop producer, with the same
     /// checked transports as the emitted facts. No positional inference.
     pub(crate) loop_invariant_correspondence: Vec<(usize, Proposition)>,
+    /// The loop head's pass count the facts state over, recorded so a proof
+    /// past the loop spells it `loop(i).iterations`.
+    pub(crate) loop_iterations: Option<crate::kernel::IntegerTerm>,
     pub(crate) prerequisite_derivations: Vec<PropositionDerivation>,
     /// Exact entry-state facts consumed while planning this
     /// transition. Kept outside the kernel theorem so collecting certificate
@@ -8965,6 +9058,11 @@ impl StructuralClause {
     /// Whether the loop head declares `diverges`.
     pub fn diverges(&self) -> bool {
         self.diverges
+    }
+
+    /// Whether the clause's `iterations` is a C object, not the pass count.
+    pub(crate) fn iterations_is_c(&self) -> bool {
+        self.iterations_is_c
     }
 
     pub fn items(&self) -> &[StructuralItem] {

@@ -732,7 +732,7 @@ impl<'a> Proof<'a> {
             self.facts(),
             view.parameter_binding,
             view.fixed_state,
-            self.local_integer_values(),
+            &self.local_integer_values(),
             &algebraic_values,
             view.surface_propositions,
             &unfolded_predicates,
@@ -791,7 +791,7 @@ impl<'a> Proof<'a> {
                 None,
                 &execution.presentation.recorded_snapshots,
             ),
-            self.local_integer_values(),
+            &self.local_integer_values(),
             &algebraic_values,
             &execution.presentation.surface_propositions,
             &execution.core.unfolded_predicates,
@@ -2519,7 +2519,7 @@ impl<'a> Proof<'a> {
             contract_environment_at_state(&parameter_values, &array_refs, view.fixed_state.state);
         capture_fixed_state_integer_expression(
             &argument,
-            self.local_integer_values(),
+            &self.local_integer_values(),
             self.facts().assumptions(),
             ContractEnvironment::new(&values, &array_refs),
             view.fixed_state,

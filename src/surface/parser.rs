@@ -5474,6 +5474,8 @@ impl Parser {
             // A loop's returning arm may close the function's postcondition.
             // Execution checking decides when this built-in value exists.
             && name != "result"
+            // A loop's pass count is built in.
+            && name != crate::surface::LOOP_ITERATIONS_NAME
             && !self.names.is_bound(name)
             && !self.quantifier_binders.iter().any(|bound| bound == name)
             && !self.loop_proof_value_names.contains(name)
@@ -9773,6 +9775,24 @@ impl Parser {
             let mut initialize_proof = None;
             let mut preserve_proof = None;
             let enclosing_name_context = self.loop_name_context.take();
+            // The loop's pass count, an Integer, is in scope in its clauses
+            // and proofs, so a comparison with it reads its other side as an
+            // Integer, as one with a population count does.
+            // A C object of that name keeps its C meaning.
+            let iterations_is_c = self
+                .names
+                .is_c_variable(crate::surface::LOOP_ITERATIONS_NAME);
+            let iterations_was_bound = iterations_is_c
+                || self.names.contains(
+                    NameKind::IntegerParameter,
+                    crate::surface::LOOP_ITERATIONS_NAME,
+                );
+            if !iterations_was_bound {
+                self.names.insert(
+                    NameKind::IntegerParameter,
+                    crate::surface::LOOP_ITERATIONS_NAME.to_string(),
+                );
+            }
             while self.peek() != Some(&Token::RBrace) {
                 self.loop_name_context = Some(format!(
                     "loop {} clause",
@@ -9877,6 +9897,12 @@ impl Parser {
                     .error("`loop` block must contain at least one item or a `decreases` clause"));
             }
             self.loop_name_context = enclosing_name_context;
+            if !iterations_was_bound {
+                self.names.remove(
+                    NameKind::IntegerParameter,
+                    crate::surface::LOOP_ITERATIONS_NAME,
+                );
+            }
             return Ok(ProofTactic::Loop(StructuralClause::from(
                 StructuralClauseData {
                     // The actual loop identity is bound from the execution
@@ -9885,6 +9911,7 @@ impl Parser {
                     label,
                     decreases,
                     diverges,
+                    iterations_is_c,
                     items,
                     resources,
                     initialize_proof,
@@ -14572,6 +14599,18 @@ impl Parser {
             return Ok(ContractExpression::Resource(Box::new(
                 ResourceSubject::Footprint(region),
             )));
+        }
+        self.position = start;
+        // A loop's pass count past the loop, `loop(i).iterations`: a proof
+        // Integer the path's recorded exit of that loop binds.
+        if let Ok(CodeRegionRef::Loop(index)) = self.parse_code_region_ref()
+            && self.peek() == Some(&Token::Dot)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == crate::surface::LOOP_ITERATIONS_NAME)
+        {
+            self.position += 2;
+            return Ok(ContractExpression::Binding(
+                crate::surface::loop_iterations_spelling(index),
+            ));
         }
         self.position = start;
         // A proof may need the previous binding of a name shadowed by an

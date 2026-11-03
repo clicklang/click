@@ -15,6 +15,7 @@ fn loop_return_closer_routing_scales_with_certificate_size() {
                 label: None,
                 decreases: None,
                 diverges: false,
+                iterations_is_c: false,
                 items: Vec::new(),
                 resources: Vec::new(),
                 initialize_proof: None,

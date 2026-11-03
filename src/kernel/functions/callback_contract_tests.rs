@@ -1196,7 +1196,7 @@ fn declared_loop_frame_is_installed_from_the_loop_specs_not_from_segments() {
     let assumptions = PureFactContext::new();
     let head = |definitions: &[CCompositeResourceDefinition]| {
         let mut budget = ExecutionBudget::default();
-        let mut variables = KernelVariableGenerator::fresh_for(1_000, BTreeSet::new());
+        let mut variables = KernelVariableGenerator::fresh_for_execution(BTreeSet::new());
         crate::kernel::loops::prepare_loop_top_state(
             &state,
             std::slice::from_ref(&declared),
