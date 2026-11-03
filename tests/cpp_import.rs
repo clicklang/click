@@ -11817,12 +11817,12 @@ fn wide_comparisons_control_branches_and_frame_modular_call_memory() {
     let proof = r#"verifying "wide.cpp";
 bool signed_less(int128 a, int128 b) {
     requires to_integer(a) < to_integer(b);
-    ensures result == 1;
+    ensures result == true;
 }
 bool relay(int128 a, int128 b, int32* untouched) {
     requires to_integer(a) < to_integer(b);
     owns untouched[0..1];
-    ensures result == 1;
+    ensures result == true;
     ensures untouched[0] == old(untouched[0]);
 }
 "#;
@@ -11867,7 +11867,7 @@ fn wide_comparisons_recognize_complementary_contract_premises() {
             refresh_import(&project.config()).unwrap();
             let import = load_import(&project.config()).unwrap();
             let proof = format!(
-                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ requires to_integer(a) {inverse} to_integer(b); ensures result == 0; }}"
+                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ requires to_integer(a) {inverse} to_integer(b); ensures result == false; }}"
             );
             check_arithmetic_sidecar(&project, &import, &proof);
         }
@@ -15204,7 +15204,7 @@ fn locked_header_graph_preserves_scalar_exception_contracts_offline() {
     );
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "header-exception.cpp";
-    bool predicate(bool fail) throws int32 { ensures result == 1; exceptional ensures exception == 7; }
+    bool predicate(bool fail) throws int32 { ensures result == true; exceptional ensures exception == 7; }
     int32 choose(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
     "#;
     check_selected_claim_certificate(&project, &import, sidecar);
