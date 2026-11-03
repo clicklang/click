@@ -441,13 +441,22 @@ impl PureFactContext {
         if let Some(value) = self.decide_indexed_greater_equal(condition) {
             return Some(value);
         }
-        // An Integer comparison of exact observations of one machine type
-        // has the truth of its native comparison, which the machine
-        // reasoning below decides (`native_comparison_of_integer_observation`).
-        if let Some((native, truth)) =
-            crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
-                condition, true,
-            )
+        if let Some(value) =
+            super::super::observation_comparisons::constant_observation_value(condition)
+        {
+            return Some(value);
+        }
+        // Read native comparison classes through shared observations before
+        // the remaining arithmetic decision rules cross the boxed boundary.
+        if crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+            .is_some()
+            && let Some(value) = self.known_condition_value(condition)
+        {
+            return Some(value);
+        }
+        // Still required for arithmetic rules not yet migrated to operand
+        // views (for example, a positive offset with a no-overflow premise).
+        if let Some((native, truth)) = native_comparison_of_integer_observation(condition, true)
             && &native != condition
             && let Some(value) = self.decide(&native)
         {
@@ -1445,6 +1454,14 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
+        if self.condition_facts.get(condition).is_none() {
+            for truth in [true, false] {
+                if let Some(source) = self.observation_comparisons.source(condition, truth) {
+                    record_implicit_reasoning_provenance(self, source);
+                    return Some(truth);
+                }
+            }
+        }
         let value = self.exact_condition_value_unrecorded(condition);
         if value == Some(false) && self.condition_facts.get(condition).is_none() {
             let bounds = crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(

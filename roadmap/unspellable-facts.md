@@ -12,6 +12,108 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Shared comparison class queries (2026-11-03)
+
+After merged #2325, `codex/shared-comparison-dispatch` lets Integer observations
+query native comparison classes directly. The query retains shared operand
+handles, checks a fixed set of equivalent directions/polarities, and uses the
+existing condition-kind index to skip absent kinds. Narrow orders use the same
+widening as admission. The general dispatcher consults these classes and the
+existing intrinsic observation rules before its compatibility conversion.
+Variable-chain endpoint matching also reads shared operand views, and the
+successor/low-word rules reject inapplicable roots before exporting endpoints.
+
+This is a prerequisite, not removal of the unresolved-comparison export.
+Deleting the general native bridge made `to_integer(x) < to_integer(x + 1)`
+undecidable even with `0 <= x` and `x < INT_MAX`, while the native comparison
+still succeeded. The bridge is retained, with a positive regression for this
+case and arithmetic whose operands are pinned by equalities. The next step is
+to migrate these arithmetic decision rules (including their definedness and
+constant-class consumers), then remove the bridge. Graph-only lookup is not a
+replacement for the ordinary dispatcher. Nested signed preparation stays off.
+
+The shared-DAG regression covers 8/32/96 prefixes with 1/64 unrelated facts:
+class-query misses and a successful full-dispatcher query through an equality
+alias retain the DAG; the parent context still lacks the child's fact. Both
+ambient samples contain order classes so the test compares indexed lookup
+costs, rather than an empty-kind shortcut against first registration. The
+format/polarity matrix covers all eight machine formats and four order
+directions.
+
+Validation: `scripts/check.sh --no-fail-fast` passes all 7,239 unit/API/import/
+scaling tests and four fixture aggregates, including 5,025 proof fixtures.
+The gate took 14m13s including compilation and emitted its ten-minute advisory;
+unit runtime was 324.2s and fixture runtime 330.0s, close to the preceding
+327.6s/323.1s baseline. No limits changed and no nightly suite ran.
+
+## Shared bound consumers (2026-11-03)
+
+Following merged #2309, `codex/shared-bound-consumers` keeps selected
+32-bit upper/lower bounds as shared machine operands through their comparison
+checks. Signed and unsigned bound checks construct Integer comparison views
+when an operand is shared; literal offset and successor checks inspect only
+roots. They no longer export every selected bound to a boxed arithmetic tree.
+The existing nested-bound-search guard, strictness, and overflow prerequisites
+remain in place. Exact successful comparisons and root-only rejections retain
+the DAG; unresolved comparisons still reach `decide_unrecorded`'s native
+compatibility conversion. A missing-premise control exposed that remaining
+export, so this is not yet a fully shared refusal path. This does not migrate the contextual 64-bit constant evaluator,
+wide order walks, or memory-matching endpoints, and nested signed preparation
+remains disabled.
+
+Validation: all 1,544 selected scaling, kernel bound, search-boundary, and
+documentation tests pass (82.8s test runtime), as do formatting and diff checks.
+The new regression checks 8/32/96 shared prefixes beside 0/64 unrelated facts;
+selected successful comparisons and root-only refusals never materialize their
+operands. Missing-premise and strictness controls preserve refusal behavior.
+The full `scripts/check.sh` gate remains with PR CI and the merge queue; no
+nightly suite ran.
+
+## Shared range bridges and interval sources (2026-11-03)
+
+The follow-up on `codex/ordinary-admission` keeps operation-through-range
+consequences as Integer comparisons over shared machine operands. Admission,
+selected-fact instantiation, and quantified antecedent conversion retain their
+existing range-premise checks. Compound/quantified comparison membership uses
+shared operand keys instead of exporting a second proposition tree. The binder
+capture collector reads the shared syntax-variable summary and still follows a
+registered load's pointer when checking capture.
+
+Retained order bounds now store original supporting propositions beside shared
+endpoint identities. Constant-bound selection and uint64 interval decisions
+cite that source, including its truth polarity, rather than reconstructing a
+native comparison. Source withdrawal preserves other supports and persistent
+branches. Signed-bound certificate spelling accepts both Integer and native
+comparison views. Order-bound and edge indexes no longer provide implicit
+boxed-term caches; direction, constant and identity checks inspect views.
+
+The integrated fixture gate exposed one additional boundary: C-string body
+assembly uses the alpha-identity index, whose native and Integer comparison
+keys differed. That common key now reads shared comparison views and locally
+interns machine arithmetic as a DAG, preserving the existing binder and load
+leaf identities without exporting repeated arithmetic. Written operands are
+traversed directly rather than imported into a cache: a failed strict work
+regression caught cold/warm import cost in query identity construction. The
+existing positive C-string fixture and its missing-range refusal are end-to-end regressions.
+Alpha identity preserves written operator direction and truth: `obtain` still
+refuses a mirrored existential body. The bridge retains the native comparison's
+false-equality representation when deriving a quantified disequality.
+
+Some downstream derivation, memory-matching and contextual constant-evaluation
+APIs still return or require written endpoints. Their conversions are explicit
+at those boundaries; this increment does not migrate those engines or enable
+nested signed preparation. No lowering semantics or search limits change.
+
+Validation on upstream `053ec754d`: `scripts/check.sh` passes all 7,214
+unit/API/import/scaling tests and four fixture aggregates, including 61 example
+projects and 5,007 proof fixtures. The gate took 11m07s (unit phase 327.6s,
+fixture phase 323.1s), emitting its ten-minute budget advisory; no limits changed.
+The arithmetic fact-stability audit passes 106 fixtures with zero differences.
+Shared-DAG regressions cover 8/32/96 levels through operation and quantified
+bridges, original-source indexing, alpha keys, and nonconstant bound rejection
+without export. Exact-body refusal, source polarity/withdrawal, and the strict
+cache-independence regression remain enforced. No nightly suite ran.
+
 ## Ordinary arithmetic domains (2026-11-01)
 
 The user approved representing definedness as conjunctions of ordinary
@@ -348,6 +450,53 @@ other legacy order/scalar consumers still require it. Index-only scaling tests
 explicitly isolate that boundary and cover source truth, removal, persistent
 branches, excluded runs, and shared DAGs. The full admission no-export acceptance
 criterion remains open.
+
+## Ordinary comparison sources without native copies (2026-11-03)
+
+Ordinary exact Integer observations are admitted under their written source.
+The source index retains shared comparison keys, truth and direction, including
+native and promoted narrow readings. A folded type-range reading retains its
+source authority without filing an independent `true` or `false` fact. Exact
+membership, source withdrawal and persistent branch isolation stay distinct
+from semantic availability.
+
+Carrier equalities and comparison truth enter the graph through operand views.
+Integer equality replay retains its original input and restores the carrier
+merge, including 64-bit equations; mixed native/Integer chains therefore keep
+their equality and order transport. Scalar, order-endpoint, variable-chain and
+contradiction admission no longer need the duplicate native condition.
+Additive cancellation retains both the original endpoint classes and each
+reduced equation, so an order conflict on the original sums remains visible.
+The excluded-type-bound certificate reads literal arithmetic in its selected
+premise, so `x != -2147483647 - 1` supports negation's definedness without
+relying on admission to file a folded constant copy.
+
+Order indexes retain shared endpoints. Their remaining boxed query adapters
+export only a visited entry. Contradiction endpoints keep context-local opaque
+keys and incremental shared sum keys: repeated children contribute modular
+coefficients, and a canonical binary trie updates the selected addend without
+rebuilding all earlier addends. These are checking keys, not lowered terms or
+independently assumed facts.
+
+Regressions cover all eight native integer formats, relation/polarity pairs,
+source withdrawal, duplicate supporting spellings, mixed equality chains,
+promoted narrow readings, contradiction detection and 8/32/96-level shared
+DAG admission without export. Deterministic tests separately grow equivalent
+supporting sources, repeated full admissions, and distinct addends in the
+contradiction index. Full admission still maintains each fact's mentioned-variable
+indexes; the distinct-addend test isolates sum-index maintenance from that
+existing cost.
+
+Validation on upstream `2bcb3e849`: `scripts/check.sh` passed 7,209
+unit/API/import/scaling checks and all four fixture aggregates (61 example
+projects). Total time was 14m51s including a 3m08s rebuild, with the ten-minute
+budget advisory. A focused run of 1,230 comparison/contradiction/scaling checks
+also passed before the final upstream integration. The 106-fixture arithmetic
+fact-stability audit reports zero differences. No nightly run.
+
+Operation-through-range and quantified-antecedent bridges still file their native
+readings. Compound comparison forms and older query/interval adapters also
+remain compatibility boundaries. Nested signed preparation stays disabled.
 
 ## Shared inverse-operation operands (2026-11-02)
 

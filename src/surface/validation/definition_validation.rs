@@ -202,14 +202,18 @@ pub(in crate::surface) fn validate_click_definitions(file: &ClickFile) -> Result
     let mut function_calls = BTreeMap::new();
     for definition in &click_function_definitions {
         crate::surface::enter_ambient_declaration(definition.name());
+        let Some(body) = definition.body() else {
+            function_calls.insert(definition.name().to_string(), BTreeSet::new());
+            continue;
+        };
         validate_click_function_expression(
-            definition.body(),
+            body,
             click_functions,
             &format!("function `{}`", definition.name()),
         )?;
         validate_c_valued_function_folds(definition, &click_function_types)?;
         let mut calls = BTreeSet::new();
-        collect_click_function_calls(definition.body(), &mut calls);
+        collect_click_function_calls(body, &mut calls);
         function_calls.insert(definition.name().to_string(), calls);
     }
     validate_well_founded_click_recursion(
@@ -2674,9 +2678,16 @@ fn collect_resource_fact_reads_from_contract_expression(
                 // substitution. Caller argument reads were collected above.
                 // This prevents f(f(x)) from being mistaken for recursion and
                 // avoids duplicating a read-free argument inside every body.
+                // A primitive operation's value is a pure function of its
+                // arguments: it reads no memory of its own.
+                let Some(definition_body) = definition.body() else {
+                    visited_functions.read_free.insert(name.clone());
+                    visited_functions.active.pop();
+                    return Ok(());
+                };
                 let mut body_reads = Vec::new();
                 let result = collect_resource_fact_reads_from_contract_expression(
-                    definition.body(),
+                    definition_body,
                     predicate_definitions,
                     click_function_definitions,
                     visited_predicates,
@@ -2701,7 +2712,10 @@ fn collect_resource_fact_reads_from_contract_expression(
                 .zip(arguments)
                 .map(|(parameter, argument)| (parameter.name().to_string(), argument.clone()))
                 .collect::<BTreeMap<_, _>>();
-            let body = substitute_contract_expression(definition.body(), &substitutions).map_err(
+            let Some(definition_body) = definition.body() else {
+                return Ok(());
+            };
+            let body = substitute_contract_expression(definition_body, &substitutions).map_err(
                 |message| {
                     ClickError::new(format!(
                         "resource `{resource_name}` fact could not inspect function `{name}`: {message}"

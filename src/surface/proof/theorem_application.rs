@@ -1042,7 +1042,10 @@ pub(super) fn theorem_application_bindings(
                     (
                         ClickType::Algebraic(expected),
                         crate::kernel::AlgebraicValueType::Parameter(name),
-                    ) => expected.rigid && expected.name == *name,
+                    ) => {
+                        (expected.rigid && expected.name == *name)
+                            || generics::is_primitive_instance(name, expected)
+                    }
                     (
                         expected @ ClickType::CObjectPointer { c_type, .. },
                         crate::kernel::AlgebraicValueType::ObjectPointer(actual, class),
@@ -1073,16 +1076,19 @@ pub(super) fn theorem_application_bindings(
                     _ => false,
                 }
             }
-            let type_matches = value.algebraic_type.rigid == expected_type.rigid
-                && value.algebraic_type.name == expected_type.name
-                && value.algebraic_type.arguments.len() == expected_type.arguments.len()
-                && expected_type
-                    .arguments
-                    .iter()
-                    .zip(&value.algebraic_type.arguments)
-                    .all(|(expected, actual)| {
-                        click_type_matches_algebraic_value_type(expected, actual)
-                    });
+            let primitive_matches = value.algebraic_type.rigid
+                && generics::is_primitive_instance(&value.algebraic_type.name, expected_type);
+            let type_matches = primitive_matches
+                || value.algebraic_type.rigid == expected_type.rigid
+                    && value.algebraic_type.name == expected_type.name
+                    && value.algebraic_type.arguments.len() == expected_type.arguments.len()
+                    && expected_type
+                        .arguments
+                        .iter()
+                        .zip(&value.algebraic_type.arguments)
+                        .all(|(expected, actual)| {
+                            click_type_matches_algebraic_value_type(expected, actual)
+                        });
             if !type_matches {
                 return Err(format!(
                     "theorem `{}` parameter `{}` expects algebraic type `{}`, got `{}`",

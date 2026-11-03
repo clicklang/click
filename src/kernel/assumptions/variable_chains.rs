@@ -125,14 +125,25 @@ impl ChainGraph {
 
 impl VariableChains {
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
-        let Some((Bitvector32Term::Variable(left), Bitvector32Term::Variable(right), true)) =
-            condition_as_order_fact(condition, value)
+        let Some(view) = retained_order_bounds::order_view(condition, value) else {
+            return;
+        };
+        if view.format != MachineIntegerType::Int32
+            || view.relation != super::super::machine_integer::Relation::Less
+        {
+            return;
+        }
+        let [Some(left), Some(right)] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view().variable())
         else {
             return;
         };
         if crate::kernel::is_load_variable(&left) || crate::kernel::is_load_variable(&right) {
             return;
         }
+        let (left, right) = (*left, *right);
         let edge = (left, right);
         let count = self.sources.get(&edge).copied().unwrap_or(0);
         if insert {
@@ -190,35 +201,60 @@ impl PureFactContext {
         if implicit_reasoning_provenance_capturing() {
             return None;
         }
-        let (lower, upper, strict) = condition_as_order_fact(condition, true)?;
-        let node = |term: &Bitvector32Term| match term {
-            Bitvector32Term::Variable(variable) => self.signed_variable_chains.span(*variable),
-            _ => None,
+        use crate::kernel::{
+            MachineOperandView as V,
+            machine_integer::{Relation, comparison::comparison_view},
         };
-        let lower_span = node(&lower);
-        let upper_span = node(&upper);
+        let view = comparison_view(condition, true)?;
+        if view.format != MachineIntegerType::Int32 {
+            return None;
+        }
+        let strict = match view.relation {
+            Relation::Less => true,
+            Relation::LessEqual => false,
+            _ => return None,
+        };
+        let [lower, upper] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let node = |term: V<'_>| {
+            term.variable()
+                .and_then(|variable| self.signed_variable_chains.span(*variable))
+        };
+        let lower_span = node(lower);
+        let upper_span = node(upper);
         if let (Some(left), Some(right)) = (&lower_span, &upper_span)
             && left.root == right.root
             && (left.rank < right.rank || (!strict && left.rank == right.rank))
         {
             return Some(true);
         }
-        let direct = |left: Bitvector32Term, right: Bitvector32Term| {
-            self.signed_order_bounds.get(&left).is_some_and(|bounds| {
-                bounds.iter().any(|((lower, upper, _, outgoing), _)| {
-                    *outgoing && lower == &left && upper == &right
+        let direct = |left: V<'_>, right: V<'_>| {
+            self.signed_order_bounds
+                .get_operand(left)
+                .is_some_and(|bounds| {
+                    use super::checked_scalar_facts::ScalarOperandKey as Key;
+                    let format = MachineIntegerType::Int32;
+                    let left = Key::for_format(format, left);
+                    let right = Key::for_format(format, right);
+                    bounds.operand_keys().any(|(lower, upper, _, outgoing)| {
+                        outgoing
+                            && Key::for_format(format, lower) == left
+                            && Key::for_format(format, upper) == right
+                    })
                 })
-            })
         };
         if let Some(span) = upper_span {
             let first = Bitvector32Term::Variable(*span.members.front()?);
-            if first != upper && direct(lower.clone(), first) {
+            if upper.variable() != V::Legacy(&first).variable() && direct(lower, V::Legacy(&first))
+            {
                 return Some(true);
             }
         }
         if let Some(span) = lower_span {
             let last = Bitvector32Term::Variable(*span.members.back()?);
-            if last != lower && direct(last, upper) {
+            if lower.variable() != V::Legacy(&last).variable() && direct(V::Legacy(&last), upper) {
                 return Some(true);
             }
         }

@@ -309,106 +309,43 @@ fn spell_signed_bound(
     let Proposition::ConditionIs(condition, value) = fact else {
         return None;
     };
-    let (left, right, operator) = match (width, condition) {
-        (
-            SignedDefinedWidth::Int32,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-        )
-        | (
-            SignedDefinedWidth::Int64,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left,
-                right,
-            },
-        ) => (left, right, ComparisonOperator::Equal),
-        (
-            SignedDefinedWidth::Int32,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-        )
-        | (
-            SignedDefinedWidth::Int64,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            },
-        ) => (left, right, ComparisonOperator::LessThan),
-        (
-            SignedDefinedWidth::Int32,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
-        )
-        | (
-            SignedDefinedWidth::Int64,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            },
-        ) => (left, right, ComparisonOperator::LessEqual),
-        (
-            SignedDefinedWidth::Int32,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            },
-        )
-        | (
-            SignedDefinedWidth::Int64,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            },
-        ) => (left, right, ComparisonOperator::GreaterThan),
-        (
-            SignedDefinedWidth::Int32,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            },
-        )
-        | (
-            SignedDefinedWidth::Int64,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            },
-        ) => (left, right, ComparisonOperator::GreaterEqual),
-        _ => return None,
+    use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+    let view = comparison_view(condition, true)?;
+    let format = match width {
+        SignedDefinedWidth::Int32 => MachineIntegerType::Int32,
+        SignedDefinedWidth::Int64 => MachineIntegerType::Int64,
     };
-    let side = |side: &Bitvector32Term| {
-        if side == term {
+    if view.format != format
+        && !(format == MachineIntegerType::Int32
+            && view.format == MachineIntegerType::UInt32
+            && matches!(view.relation, Relation::Equal | Relation::NotEqual))
+    {
+        return None;
+    }
+    let operator = match view.relation {
+        Relation::Equal => ComparisonOperator::Equal,
+        Relation::NotEqual => ComparisonOperator::NotEqual,
+        Relation::Less => ComparisonOperator::LessThan,
+        Relation::LessEqual => ComparisonOperator::LessEqual,
+    };
+    let expected = crate::kernel::SharedMachineIntegerTerm::intern(format, term.clone());
+    let side = |side: crate::kernel::MachineOperandView<'_>| {
+        if side.retain(format) == expected {
             Some(surface.clone())
         } else {
-            signed_width_constant(width, side).map(signed_literal)
+            let number = match width {
+                SignedDefinedWidth::Int32 => {
+                    side.word32_constant().map(|bits| i64::from(bits as i32))
+                }
+                SignedDefinedWidth::Int64 => side.int64_constant(),
+            };
+            number.map(signed_literal)
         }
     };
+    let [left, right] = view
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view());
     let comparison = ClickProposition::Comparison {
         left: side(left)?,
         operator,

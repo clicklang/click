@@ -1127,3 +1127,149 @@ fn saved_iterated_base_ignores_aliases_snapshots_and_unrelated_resources() {
     assert_eq!(work[0], work[1], "saved-base work: {work:?}");
     assert_eq!(work[1], work[2], "saved-base work: {work:?}");
 }
+
+#[test]
+fn named_unfold_beside_views_scales_with_the_opened_delta() {
+    let mut totals = Vec::new();
+    for count in [4, 8, 16] {
+        let parameters = lines(count, |i| format!("int32* p{i},"));
+        let owned = lines(count, |i| format!("consumes r{i}: owner(p{i});"));
+        let opens = lines(count, |i| format!("let {{ unused: m{i} }} = unfold(r{i});"));
+        let c = format!("void check({parameters} int32* q) {{}}");
+        let proof = format!(
+            r#"
+            resource owner(p: int32*) {{ field unused: int32; owns p[0..1]; }}
+            verifying "hunt.c";
+            void check({parameters} int32* q) {{ views q[0..1]; {owned} }} by {{
+                {opens}
+                have separate(memory(p0[0..1]), memory(q[0..1])) by {{ solve(); }}
+                step_until(function.exit);
+            }}
+        "#
+        );
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&proof, &[("hunt.c", c.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("count {count}: {}", error.message()));
+        let work = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "unfold")
+            .map(|sample| sample.work)
+            .collect::<Vec<_>>();
+        assert_eq!(work.len(), count);
+        totals.push(work.iter().sum::<usize>());
+    }
+    assert!(
+        totals.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{totals:?}"
+    );
+}
+
+/// Compare the same explicit observations and C parameters, with and without
+/// other same-shaped owners. Parameter/lowering cost is shared by the control;
+/// this regression isolates owner selection, also measured directly in the kernel.
+#[test]
+#[ignore = "nightly: same-shape observation scaling and parameter control"]
+fn observing_one_composite_ignores_same_shape_owners() {
+    let mut curves = Vec::new();
+    for count in [4usize, 16, 64] {
+        let parameters = (0..count)
+            .map(|i| format!("int32* p{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let last = count - 1;
+        let observations = lines(count, |_| format!("observe(cell(p{last}));"));
+        let c = format!("void check({parameters}) {{}}");
+        let mut runs = Vec::new();
+        for crowded in [false, true] {
+            let owners = if crowded {
+                lines(count, |i| format!("owns cell(p{i});"))
+            } else {
+                format!("owns cell(p{last});")
+            };
+            let proof = format!(
+                r#"
+                resource cell(p: int32*) {{ owns p[0..1]; }}
+                verifying "hunt.c";
+                void check({parameters}) {{ {owners} }} by {{ {observations} step(); }}
+            "#
+            );
+            let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+                verify_c0_sources(&proof, &[("hunt.c", c.as_str())])
+            });
+            result.unwrap_or_else(|error| {
+                panic!("count {count}, crowded {crowded}: {}", error.message())
+            });
+            let work = samples
+                .iter()
+                .filter(|sample| sample.tactic.tactic_name == "observe")
+                .map(|sample| sample.work)
+                .collect::<Vec<_>>();
+            assert_eq!(work.len(), count);
+            runs.push(work);
+        }
+        curves.push((
+            count,
+            runs[0][0],
+            runs[0][1],
+            runs[1][0],
+            runs[1][1],
+            runs[1].iter().sum::<usize>(),
+        ));
+        assert!(
+            runs[0]
+                .iter()
+                .zip(&runs[1])
+                .all(|(control, crowded)| *crowded <= *control + 64),
+            "same-shape owners add checking work: {curves:?}"
+        );
+    }
+    eprintln!("observe (N, control first/repeat, crowded first/repeat, crowded total): {curves:?}");
+}
+
+/// One held owner and a fixed proof: unused function parameters must not add
+/// work to each observation. Keep the selected parameter's spelling fixed.
+#[test]
+#[ignore = "nightly: observation parameter scaling"]
+fn observing_one_owner_ignores_unused_parameters() {
+    let mut curves = Vec::new();
+    for count in [4usize, 16, 64] {
+        let parameters = std::iter::once("int32* selected".to_string())
+            .chain((1..count).map(|i| format!("int32* unused{i}")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let c = format!("void check({parameters}) {{}}");
+        let proof = format!(
+            r#"
+            resource cell(p: int32*) {{ owns p[0..1]; }}
+            verifying "observe.c";
+            void check({parameters}) {{ owns cell(selected); }} by {{
+                observe(cell(selected));
+                observe(cell(selected));
+                observe(cell(selected));
+                step();
+            }}
+            "#
+        );
+        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&proof, &[("observe.c", c.as_str())])
+        });
+        result.unwrap_or_else(|error| panic!("{count} parameters: {}", error.message()));
+        let work = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "observe")
+            .map(|sample| sample.work)
+            .collect::<Vec<_>>();
+        assert_eq!(work.len(), 3);
+        curves.push((count, work));
+    }
+    eprintln!("one-owner observation (parameters, cold/repeated/repeated work): {curves:?}");
+    assert!(
+        curves.windows(2).all(|pair| pair[0]
+            .1
+            .iter()
+            .zip(&pair[1].1)
+            .all(|(small, large)| *large <= *small + 32)),
+        "observations walk unused parameters: {curves:?}"
+    );
+}

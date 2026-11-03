@@ -76,6 +76,7 @@ import click::rust::u16;
 import click::rust::u32;
 import click::rust::u64;
 import click::rust::usize;
+import click::rust::vec;
 
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
@@ -1819,6 +1820,35 @@ theorem use_separation_empty(A: Resource) {
         apply(separation::separate_symm(separation::emp, A)) using {
             separate(separation::emp, A);
         };
+    }
+}
+theorem use_vec(v: Vec<uint32>, w: Vec<uint32>, x: uint32, i: uint64, j: uint64) {
+    requires vec::len(v) < 18446744073709551615u64;
+    requires i < vec::len(v);
+    requires j < vec::len(v);
+    requires i != j;
+    requires vec::len(v) == vec::len(w);
+    requires forall (k: uint64) { k < vec::len(v) implies vec::get(v, k) == vec::get(w, k) };
+    ensures vec::len(vec::push(v, x)) == vec::len(v) + 1 by {
+        apply(vec::len_push(v, x));
+    }
+    ensures vec::get(vec::push(v, x), vec::len(v)) == x by {
+        apply(vec::get_push_last(v, x));
+    }
+    ensures vec::get(vec::push(v, x), i) == vec::get(v, i) by {
+        apply(vec::get_push_kept(v, x, i));
+    }
+    ensures vec::len(vec::set(v, i, x)) == vec::len(v) by {
+        apply(vec::len_set(v, i, x));
+    }
+    ensures vec::get(vec::set(v, i, x), i) == x by {
+        apply(vec::get_set_same(v, i, x));
+    }
+    ensures vec::get(vec::set(v, i, x), j) == vec::get(v, j) by {
+        apply(vec::get_set_other(v, i, j, x));
+    }
+    ensures v == w by {
+        apply(vec::extensionality(v, w));
     }
 }
 ```

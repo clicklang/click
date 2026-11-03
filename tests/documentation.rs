@@ -931,13 +931,27 @@ fn declare_library_inventory(
                 .expect("resource name");
             declarations.insert(format!("resource.{name}"));
         }
-        for kind in ["spec enum", "theorem", "function", "predicate", "resource"] {
+        for kind in [
+            "spec enum",
+            "type",
+            "theorem",
+            "axiom",
+            "function",
+            "predicate",
+            "resource",
+        ] {
             if let Some(rest) = line.strip_prefix(&format!("{kind} ")) {
                 let name = rest
-                    .split(|ch: char| ch == '(' || ch == '<' || ch.is_whitespace())
+                    .split(|ch: char| ch == '(' || ch == '<' || ch == ';' || ch.is_whitespace())
                     .next()
                     .expect("declaration name");
-                let kind = if kind == "spec enum" { "type" } else { kind };
+                // A library primitive `type` is a type as a `spec enum` is,
+                // and an `axiom` is cited as a theorem is.
+                let kind = match kind {
+                    "spec enum" => "type",
+                    "axiom" => "theorem",
+                    kind => kind,
+                };
                 match module {
                     Some(module) if matches!(kind, "theorem" | "function" | "predicate") => {
                         declarations.insert(format!("{kind}.{module}::{name}"));
@@ -1023,6 +1037,8 @@ fn standard_library_declarations_are_exact_source_includes() {
     let mut depth = 0usize;
     for line in source.lines() {
         let starts = line.starts_with("theorem ")
+            || line.starts_with("axiom ")
+            || line.starts_with("type ")
             || line.starts_with("spec enum ")
             || line.starts_with("function ")
             || line.starts_with("predicate ")

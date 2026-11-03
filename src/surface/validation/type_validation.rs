@@ -4276,8 +4276,11 @@ pub(super) fn validate_c_valued_function_folds(
     definition: &ClickFunctionDefinition,
     click_functions: &BTreeMap<String, ClickFunctionType>,
 ) -> Result<(), ClickError> {
+    let Some(body) = definition.body() else {
+        return Ok(());
+    };
     if !matches!(definition.return_type(), ClickType::C(_))
-        || !contains_scoped_expression_shape(definition.body(), ScopedExpressionShape::RangeFold)
+        || !contains_scoped_expression_shape(body, ScopedExpressionShape::RangeFold)
     {
         return Ok(());
     }
@@ -4298,7 +4301,7 @@ pub(super) fn validate_c_valued_function_folds(
         .map(|parameter| parameter.name().to_string())
         .collect();
     infer_scoped_spec_value_type(
-        definition.body(),
+        body,
         &variables,
         &integer_bindings,
         click_functions,

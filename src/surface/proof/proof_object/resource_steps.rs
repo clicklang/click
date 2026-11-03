@@ -1145,6 +1145,12 @@ impl<'a> Proof<'a> {
             &variable_types,
         )
         .map_err(|message| self.step_error(message))?;
+        let Some(definition_body) = definition.body() else {
+            return Err(self.step_error(format!(
+                "`unfold` cannot open `{}`: it is a library primitive operation with no definition; cite its axioms instead",
+                application.name
+            )));
+        };
         if application.arguments.len() != definition.parameters().len() {
             return Err(self.step_error(format!(
                 "function `{}` expects {} argument(s), got {}",
@@ -1169,15 +1175,13 @@ impl<'a> Proof<'a> {
                 )
             })
             .collect::<BTreeMap<_, _>>();
-        let checked_body =
-            substitute_contract_expression(definition.body(), &checked_substitutions).map_err(
-                |message| {
-                    self.step_error(format!(
-                        "could not instantiate function `{}` for `unfold`: {message}",
-                        application.name
-                    ))
-                },
-            )?;
+        let checked_body = substitute_contract_expression(definition_body, &checked_substitutions)
+            .map_err(|message| {
+                self.step_error(format!(
+                    "could not instantiate function `{}` for `unfold`: {message}",
+                    application.name
+                ))
+            })?;
         let checked_body =
             crate::surface::lowering::pure_function_result_value(&definition, checked_body);
         let checked_equality = ClickProposition::Comparison {
@@ -1384,15 +1388,13 @@ impl<'a> Proof<'a> {
                         )
                     })
                     .collect::<BTreeMap<_, _>>();
-                let surface_body =
-                    substitute_contract_expression(definition.body(), &substitutions).map_err(
-                        |message| {
-                            self.step_error(format!(
+                let surface_body = substitute_contract_expression(definition_body, &substitutions)
+                    .map_err(|message| {
+                        self.step_error(format!(
                             "could not instantiate surface function `{}` for `unfold`: {message}",
                             application.name
                         ))
-                        },
-                    )?;
+                    })?;
                 // Keep the retained goal aligned with the constructor-iota
                 // reduction performed by the kernel for this explicit unfold.
                 // Unknown scrutinees remain matches; no pure calls are evaluated.
@@ -1700,13 +1702,13 @@ impl<'a> Proof<'a> {
         whole: &SharedIntegerTerm,
     ) -> Result<IntegerTerm, ClickError> {
         let name = &application.name;
-        let ContractExpression::RangeFold {
+        let Some(ContractExpression::RangeFold {
             start,
             end,
             initial,
             body,
             ..
-        } = definition.body()
+        }) = definition.body()
         else {
             return Err(self.step_error(format!(
                 "`peel({name}(...)) using` requires the body of `{name}` to be exactly a range fold"
@@ -1765,14 +1767,14 @@ impl<'a> Proof<'a> {
         refreshed_kernel: &Proposition,
         lower: &dyn Fn(&ClickProposition) -> Option<Proposition>,
     ) -> Option<ClickProposition> {
-        let ContractExpression::RangeFold {
+        let Some(ContractExpression::RangeFold {
             end,
             initial,
             accumulator,
             item,
             body,
             ..
-        } = definition.body()
+        }) = definition.body()
         else {
             return None;
         };

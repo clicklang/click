@@ -9680,6 +9680,9 @@ pub(super) struct ResourceContextStorage {
     /// Derived view entries name the exact owned resource that supports them.
     /// Ordinary entries are explicit and therefore absent from this map.
     pub(super) supported_by: PersistentMap<ResourceEntryId, CResourceFact>,
+    /// Exact non-memory observations with live owned support. Separating this
+    /// from ordinary views avoids searching equal descriptions for an owner.
+    pub(super) nonmemory_projections_by_fact: PersistentMap<CResourceFact, ResourceEntryIds>,
     /// Exact owned-entry identity for each supported projection. The fact
     /// cache above is useful for diagnostics, but this occurrence index is
     /// authoritative when one of several equal owned entries is consumed.
@@ -13343,32 +13346,23 @@ pub struct PureFactContext {
     /// `has_pointer_offset_snapshot_fact` checks.
     pub(super) pointer_offset_equalities_by_shape:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<ConditionTerm>>,
+    pub(super) observation_comparisons:
+        super::assumptions::observation_comparisons::ObservationComparisons,
     pub(super) checked_scalar_facts: super::assumptions::checked_scalar_facts::CheckedScalarFacts,
     pub(super) checked_order_bounds: super::assumptions::checked_order_bounds::CheckedOrderBounds,
-    pub(super) signed_order_bounds: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
-    >,
+    pub(super) signed_order_bounds: super::assumptions::retained_order_bounds::OrderBoundIndex,
     /// The `int64` counterpart of `signed_order_bounds`, maintained by the
     /// same insert and remove path over `int64` order facts. It
     /// is kept separate so an `int64` bound is never read as an int32 one.
-    pub(super) int64_signed_order_bounds: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
-    >,
+    pub(super) int64_signed_order_bounds:
+        super::assumptions::retained_order_bounds::OrderBoundIndex,
     /// Unsigned 32-bit order facts indexed by either endpoint, as
     /// `signed_order_bounds` files signed ones; kept separate so a `uint32`
     /// bound is never read as an `int32` one.
-    pub(super) uint32_order_bounds: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
-    >,
+    pub(super) uint32_order_bounds: super::assumptions::retained_order_bounds::OrderBoundIndex,
     /// Unsigned 64-bit order facts indexed by either endpoint. This keeps
     /// slice-index range transport proportional to the queried order chain.
-    pub(super) uint64_order_bounds: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, Bitvector32Term, bool, bool), usize>,
-    >,
+    pub(super) uint64_order_bounds: super::assumptions::retained_order_bounds::OrderBoundIndex,
     /// The 64-bit order facts again, split by direction for the chain walk:
     /// for each kind (`[unsigned, signed]`) and each direction (`[upward,
     /// downward]`), the canonical far ends of the facts leaving a canonical
@@ -13377,10 +13371,8 @@ pub struct PureFactContext {
     /// `c0 < n`, `c1 < n`, ..., costs an upward walk through it nothing for
     /// the facts below it. Derived from the two indexes above by the same
     /// insert and remove path.
-    pub(super) wide_order_edges: [[crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<(Bitvector32Term, bool), usize>,
-    >; 2]; 2],
+    pub(super) wide_order_edges:
+        [[super::assumptions::retained_order_bounds::OrderEdgeIndex; 2]; 2],
     /// Condition facts containing a memory-load atom, indexed by the loaded
     /// pointer's snapshot-blind structural fingerprint. This is derived from
     /// `condition_facts`; it narrows snapshot-aware load-form checks
@@ -13395,8 +13387,10 @@ pub struct PureFactContext {
     /// only a search path, not the whole set.
     pub(super) prop_facts: super::fact_collections::FactSet<Proposition>,
     /// Numeric comparison views retain their exact source for withdrawal.
-    pub(super) comparison_sources: PersistentMap<Proposition, Proposition>,
-    pub(super) comparison_counts: PersistentMap<Proposition, usize>,
+    pub(super) comparison_sources:
+        PersistentMap<Proposition, super::assumptions::observation_comparisons::PropositionKey>,
+    pub(super) comparison_counts:
+        PersistentMap<super::assumptions::observation_comparisons::PropositionKey, usize>,
     /// Alpha/load identity index for propositions that may be stated as a
     /// call requirement.  The key retains memory versions and canonicalizes
     /// only binders; the persistent buckets keep updates local to one key.

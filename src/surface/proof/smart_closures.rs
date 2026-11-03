@@ -2669,8 +2669,9 @@ impl<'a> Proof<'a> {
     /// available, such as a call guarantee `left_result == 0 implies X`
     /// inside the branch whose path condition is `left_result == 0`. The
     /// indexed consequent lookup that the checked `extract` rule performs
-    /// decides it; nothing is searched, and a goal no available implication
-    /// concludes costs one index probe. Expansion prints `extract(goal)`.
+    /// decides it. For an order comparison, search also tries its mirrored
+    /// spelling with one additional probe. Expansion prints the selected
+    /// `extract` and, if needed, `assumption`.
     fn try_discharged_consequent_closure(&self) -> Result<Option<Self>, ClickError> {
         let (Some(goal), Some(surface)) = (self.goal(), self.surface_goal()) else {
             return Ok(None);
@@ -2679,6 +2680,47 @@ impl<'a> Proof<'a> {
             .facts()
             .contains_discharged_implication_consequent(goal)
         {
+            // Implication extraction deliberately requires the consequent as
+            // written. Select its mirrored order spelling in search, then
+            // let the checked extraction and ordinary assumption close it.
+            if let ClickProposition::Comparison {
+                left,
+                operator,
+                right,
+            } = surface
+            {
+                let mirrored_operator = match operator {
+                    ComparisonOperator::LessThan => Some(ComparisonOperator::GreaterThan),
+                    ComparisonOperator::LessEqual => Some(ComparisonOperator::GreaterEqual),
+                    ComparisonOperator::GreaterThan => Some(ComparisonOperator::LessThan),
+                    ComparisonOperator::GreaterEqual => Some(ComparisonOperator::LessEqual),
+                    _ => None,
+                };
+                if let Some(operator) = mirrored_operator
+                    && let Some(kernel) = mirrored_order_goal(goal)
+                {
+                    let mirrored = ClickProposition::Comparison {
+                        left: right.clone(),
+                        operator,
+                        right: left.clone(),
+                    };
+                    if self
+                        .facts()
+                        .contains_discharged_implication_consequent(&kernel)
+                        && let Some(extracted) = attempt::candidate_outcome(
+                            self.apply_step(ProofStep::Extract(mirrored)),
+                        )?
+                    {
+                        if extracted.focused_discharged() {
+                            return Ok(Some(extracted));
+                        }
+                        return Ok(attempt::candidate_outcome(
+                            extracted.apply_step(ProofStep::Assumption),
+                        )?
+                        .filter(Self::focused_discharged));
+                    }
+                }
+            }
             return self.try_discharged_consequent_conjunct_closure(goal, surface);
         }
         Ok(
@@ -6681,6 +6723,14 @@ impl<'a> Proof<'a> {
                 if introduced.is_complete() {
                     return Ok(Some(introduced));
                 }
+                // Each conjunct is probed as a curried antecedent would be:
+                // `a and b implies c` closes where `a implies b implies c`
+                // does, when the facts hold a conjunct's exact opposite.
+                if let Some(closed) =
+                    introduced.try_introduced_antecedent_contradiction(conjunct)?
+                {
+                    return Ok(Some(closed));
+                }
             }
             available_surfaces.push(antecedent.clone());
             available_surfaces.extend(conjuncts.iter().cloned());
@@ -7205,9 +7255,14 @@ impl<'a> Proof<'a> {
             Proposition::Not(body) => body.as_ref().clone(),
             proposition => Proposition::Not(Box::new(proposition.clone())),
         };
-        if !self.facts().contains(&opposite) {
+        // The facts may hold the opposite in another of its spellings,
+        // `x > 100` for `x <= 100` false.
+        let Some(opposite) = std::iter::once(opposite.clone())
+            .chain(crate::kernel::proof::fact_reasoning::condition_polarity_forms(&opposite))
+            .find(|form| self.facts().contains(form))
+        else {
             return Ok(None);
-        }
+        };
         if let Some(closed) = attempt::candidate_outcome(
             self.apply_step(ProofStep::Contradiction(surface_antecedent.clone())),
         )? {
@@ -13236,6 +13291,51 @@ fn checked_fact_spells_the_goal(proof: &Proof<'_>) -> bool {
             fact != goal && crate::kernel::proof::fact_reasoning::order_claim_equivalent(fact, goal)
         })
     })
+}
+
+// Probe with the already-lowered goal: its bound variables retain their
+// identities even when the surface goal uses an internal alpha-renamed binder.
+// Re-lowering that surface spelling outside its binder scope is not valid.
+fn mirrored_order_goal(goal: &Proposition) -> Option<Proposition> {
+    let Proposition::ConditionIs(condition, value) = goal else {
+        return None;
+    };
+    let mirrored = match condition {
+        ConditionTerm::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } => {
+            let relation = match relation {
+                CompareRelation::LessThan => CompareRelation::GreaterThan,
+                CompareRelation::LessEqual => CompareRelation::GreaterEqual,
+                CompareRelation::GreaterThan => CompareRelation::LessThan,
+                CompareRelation::GreaterEqual => CompareRelation::LessEqual,
+                CompareRelation::Equal => return None,
+            };
+            ConditionTerm::Compare {
+                format: *format,
+                relation,
+                left: right.clone(),
+                right: left.clone(),
+            }
+        }
+        ConditionTerm::IntegerLessThan(left, right) => {
+            ConditionTerm::IntegerGreaterThan(right.clone(), left.clone())
+        }
+        ConditionTerm::IntegerLessEqual(left, right) => {
+            ConditionTerm::IntegerGreaterEqual(right.clone(), left.clone())
+        }
+        ConditionTerm::IntegerGreaterThan(left, right) => {
+            ConditionTerm::IntegerLessThan(right.clone(), left.clone())
+        }
+        ConditionTerm::IntegerGreaterEqual(left, right) => {
+            ConditionTerm::IntegerLessEqual(right.clone(), left.clone())
+        }
+        _ => return None,
+    };
+    Some(Proposition::ConditionIs(mirrored, *value))
 }
 
 /// `b == a` for the fact `a == b`.

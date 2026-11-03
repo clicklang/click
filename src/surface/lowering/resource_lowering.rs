@@ -3958,9 +3958,9 @@ pub(in crate::surface) fn array_refs_for_values(
         .collect()
 }
 
-/// The parameters a memory clause's segments name, or `None` for a clause
-/// whose lowering may read any parameter.
-fn memory_clause_referenced_names(resource: &ResourceClause) -> Option<BTreeSet<String>> {
+/// The parameter names explicitly read by a resource clause. Iterated clauses
+/// retain their existing environment construction until their binders are handled.
+fn resource_clause_referenced_names(resource: &ResourceClause) -> Option<BTreeSet<String>> {
     match resource {
         ResourceClause::ViewMemory(segment) | ResourceClause::OwnMemory(segment) => Some(
             super::source_layout::contract_segment_referenced_names(segment),
@@ -3971,7 +3971,27 @@ fn memory_clause_referenced_names(resource: &ResourceClause) -> Option<BTreeSet<
                 .flat_map(super::source_layout::contract_segment_referenced_names)
                 .collect(),
         ),
-        _ => None,
+        ResourceClause::Declared {
+            arguments,
+            resource_type_arguments,
+            ..
+        } => {
+            let mut names = BTreeSet::new();
+            for argument in arguments {
+                collect_contract_expression_referenced_names(argument, &mut names);
+            }
+            for resource_type in resource_type_arguments {
+                names.extend(resource_clause_referenced_names(resource_type)?);
+            }
+            Some(names)
+        }
+        ResourceClause::Named { resource, .. } => resource_clause_referenced_names(resource),
+        ResourceClause::Quantified { quantity, resource } => {
+            let mut names = resource_clause_referenced_names(resource)?;
+            collect_contract_expression_referenced_names(quantity, &mut names);
+            Some(names)
+        }
+        ResourceClause::Conditional { .. } | ResourceClause::Iterated(_) => None,
     }
 }
 
@@ -3980,7 +4000,7 @@ fn resource_clause_parameter_values(
     resource: &ResourceClause,
     parameter_binding: ParameterBinding<'_>,
 ) -> Result<BTreeMap<String, CValue>, ClickError> {
-    match memory_clause_referenced_names(resource) {
+    match resource_clause_referenced_names(resource) {
         Some(names) => parameter_values_named(parameter_binding, &names),
         None => parameter_values(parameter_binding),
     }

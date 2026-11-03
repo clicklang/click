@@ -8,7 +8,7 @@
 //! - **R-dist.** For a conversion `C` to a format no wider than its source,
 //!   `C(a op b) == C(a) op C(b)` for the sign-free operators `+ - * & | ^`,
 //!   `C(~a) == ~C(a)`, and `C(a << k) == C(a) << k` for a constant count `k`
-//!   below the destination's width. Sign-free operators compute modulo
+//!   below the destination's width, or any count when `C` is σ. Sign-free operators compute modulo
 //!   `2^w`, and reduction to fewer bits is a ring homomorphism that commutes
 //!   with the bitwise operators bit by bit, so the destination's operator
 //!   over the converted operands has the converted value.
@@ -23,7 +23,9 @@
 //!   width is a bijection: the conversion back of its result is in its
 //!   operand's class, so equality carries across it by congruence. An 8- or
 //!   16-bit value is native, a value of its own width, so R0 and R-comp
-//!   apply at every width.
+//!   apply at every width. The two 32-bit widenings of one narrow class
+//!   are two nodes; where both exist, the later is σ of the earlier
+//!   (`relate_siblings`, R-comp read backwards).
 //!
 //! Each rule fires where a conversion node and an operator or conversion
 //! node meet in one class: when either is interned, and when a union brings
@@ -164,6 +166,23 @@ impl CastKey {
             && self.destination.format().bits() == 32
     }
 
+    /// The other 32-bit widening of the same narrow source, if this
+    /// conversion is a 32-bit widening of an 8- or 16-bit value.
+    fn widening_sibling(self) -> Option<Self> {
+        if !self.widens_narrow() {
+            return None;
+        }
+        let destination = if self.destination.format().is_signed() {
+            MachineIntegerType::UInt32
+        } else {
+            MachineIntegerType::Int32
+        };
+        Some(Self {
+            source: self.source,
+            destination,
+        })
+    }
+
     /// Whether the conversion keeps its operand's value: a widening into a
     /// format that contains the source.
     fn preserves_value(self) -> bool {
@@ -193,6 +212,7 @@ pub(super) enum Relation {
     Compose,
     Invert,
     Promote,
+    Sibling,
 }
 
 /// A machine application, read structurally: its operand IDs are the ones
@@ -376,7 +396,13 @@ impl TermClasses {
                     .unwrap_or_default();
                 if !casts.contains_key(&key) {
                     casts.insert(key, id);
-                    self.casts_of_class.insert(operand, casts);
+                    self.casts_of_class.insert(operand, casts.clone());
+                }
+                // Both 32-bit widenings of one narrow class: σ relates them.
+                if let Some(sibling) = key.widening_sibling().and_then(|other| casts.get(&other))
+                    && *sibling != id
+                {
+                    self.queue_machine_relation(Relation::Sibling, id, *sibling);
                 }
                 for (_, operator) in self
                     .class_operators
@@ -501,6 +527,7 @@ impl TermClasses {
             Relation::Compose => self.compose(first, second, pending),
             Relation::Invert => self.invert(first, second, pending),
             Relation::Promote => self.promote(first, pending),
+            Relation::Sibling => self.relate_siblings(first, second, pending),
         }
         self.relating_machine_terms = false;
     }
@@ -631,25 +658,6 @@ impl TermClasses {
         let CastSource::Format(source) = key.source else {
             return;
         };
-        // The `int32` and `uint32` widenings of one narrow value are one
-        // word (rule K1), so each is in the other's class.
-        if crate::kernel::is_narrow_widening32(source, key.destination)
-            && !self.fired_machine_relations.contains(&(cast, cast))
-        {
-            self.fired_machine_relations = self.fired_machine_relations.with_value((cast, cast));
-            crate::instrumentation::record_deterministic_work(1);
-            let other = if key.destination.format().is_signed() {
-                MachineIntegerType::UInt32
-            } else {
-                MachineIntegerType::Int32
-            };
-            let sibling = self.intern_node(Node::Int32Unary(
-                Int32Unary::Cast(source, other),
-                self.root(operand),
-            ));
-            pending.push((cast, sibling));
-            return;
-        }
         // A narrow value is native, a value of its own width, so the two
         // signednesses of 8 or 16 bits are a bijection as at 32 and 64.
         if source.format().bits() != key.destination.format().bits()
@@ -666,6 +674,32 @@ impl TermClasses {
         {
             pending.push((back, operand));
         }
+    }
+
+    /// The two 32-bit widenings of one narrow class, `widening` interned
+    /// after `sibling`: `widening` is σ of `sibling` (R-comp read
+    /// backwards, `σ(widen_S(v)) == widen_D(v)`). σ is interned only where
+    /// both widenings are, so a class widened at one format pays nothing;
+    /// where both are, σ distributes over the sibling's operators (R-dist)
+    /// and relates their words. One node and one union per pair.
+    fn relate_siblings(&mut self, widening: u64, sibling: u64, pending: &mut PendingUnions) {
+        if self.fired_machine_relations.contains(&(widening, sibling))
+            || self.fired_machine_relations.contains(&(sibling, widening))
+        {
+            return;
+        }
+        let (Some(Decoded::Cast { key, .. }), Some(Decoded::Cast { key: other, .. })) =
+            (self.decode_machine(widening), self.decode_machine(sibling))
+        else {
+            return;
+        };
+        self.fired_machine_relations = self.fired_machine_relations.with_value((widening, sibling));
+        crate::instrumentation::record_deterministic_work(1);
+        let sigma = self.intern_node(Node::Int32Unary(
+            Int32Unary::Cast(other.destination, key.destination),
+            self.root(sibling),
+        ));
+        pending.push((sigma, widening));
     }
 
     /// Rule N for the native 8- or 16-bit operator `operator`: it is the

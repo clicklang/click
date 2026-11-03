@@ -67,9 +67,15 @@ pub(in crate::surface) fn lower_outcome_proposition_with_assumptions(
     proposition: &ClickProposition,
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, String> {
-    let values = parameter_values(parameter_binding).map_err(|error| error.message)?;
-    let array_refs =
-        array_refs_for_parameters(parameter_binding.parameters, &values, post_state.memory());
+    let mut names = BTreeSet::new();
+    crate::surface::lowering::collect_click_proposition_referenced_names(proposition, &mut names);
+    let values = crate::surface::lowering::parameter_values_named(parameter_binding, &names)
+        .map_err(|error| error.message)?;
+    let array_refs = crate::surface::lowering::array_refs_for_values(
+        parameter_binding,
+        &values,
+        post_state.memory(),
+    );
     crate::surface::proof::lower_fixed_state_proposition_through_kernel(
         proposition,
         assumptions,

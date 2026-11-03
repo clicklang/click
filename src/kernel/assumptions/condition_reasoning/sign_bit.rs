@@ -10,9 +10,10 @@
 //!   and `(uintN)x <= 2^(N-1) - 1` exactly when `x >= 0`.
 //!
 //! At 32 bits the conversion is σ, a node of its own: the equivalent reads
-//! the operand through σ, which the constructor folds against a σ the
-//! operand already is, so `u as int32 < 0` and `u > 2^31 - 1` are each
-//! other's equivalents. At 64 bits a conversion reuses the word (a 64-bit
+//! the operand through σ, and reads σ of a σ the operand already is as that
+//! σ's operand (a reading of the rule; the constructor keeps σ of σ as
+//! written), so `u as int32 < 0` and `u > 2^31 - 1` are each other's
+//! equivalents. At 64 bits a conversion reuses the word (a 64-bit
 //! unsigned reading of a signed value wraps it in `UInt64FromInt64`). At 32
 //! and 64 bits the rule holds for every word. At 8
 //! and 16 bits the conversion is a `MachineIntegerCast` of a canonical
@@ -68,10 +69,12 @@ fn constant(term: &Bitvector32Term) -> Option<i64> {
     }
 }
 
-/// σ of `operand` as `Bitvector32Term::sign_cast32` builds it (a constant
-/// in the destination's spelling, σ of σ undone), read off the root with
-/// no charge: the rule's equivalent is a reading of the condition, and a
-/// decision memoized after its first use must cost the same as before it.
+/// σ of `operand` as the rule reads it: a constant in the destination's
+/// spelling, σ of a σ as that σ's operand (the bijection R0 states; the
+/// constructor `Bitvector32Term::sign_cast32` keeps σ of σ as written),
+/// otherwise σ of `operand`. Read off the root with no charge: the rule's
+/// equivalent is a reading of the condition, and a decision memoized after
+/// its first use must cost the same as before it.
 fn sign_cast(source: Ty, destination: Ty, operand: Bitvector32Term) -> Bitvector32Term {
     match operand {
         Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {

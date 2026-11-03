@@ -911,6 +911,14 @@ fn check_pure_structural_induction(
         spec_definitions,
     )
     .map_err(|message| ClickError::new(format!("`{claim_label}`: {message}")))?;
+    // A Click library primitive type, `Vec<T>`, is rigid in the kernel: it
+    // has no constructors, so no set of arms covers its values.
+    if parameter_value.algebraic_type.rigid {
+        return Err(ClickError::new(format!(
+            "`{claim_label}`: structural induction requires a datatype; `{}` is a Click library primitive type with no constructors",
+            parameter_type.name
+        )));
+    }
     let root_value_type = AlgebraicValueType::Algebraic {
         name: parameter_value.algebraic_type.name.clone(),
         arguments: parameter_value.algebraic_type.arguments.clone(),
@@ -1890,6 +1898,33 @@ fn verify_theorem_ensure(
         });
 
     entry_check.map_err(ClickError::new)?;
+
+    if theorem.is_axiom() {
+        // A Click library axiom is trusted: it states what the library's
+        // primitive operations mean, as the kernel's integer laws do for its
+        // integers. Its domains are still checked, as an ordinary theorem's.
+        let root = Proof::for_pure_surface_goal(
+            claim_label,
+            &context.requires,
+            goal.clone(),
+            surface_goal.clone(),
+            context,
+            spec_definitions,
+            theorem_environment,
+        );
+        root.discharge_entry_requirements(surface_goal, &entry_requirements)?;
+        return Ok(VerifiedPureTheorem {
+            theorem_definition: theorem.clone(),
+            ensure_index,
+            ensure_clause: ensure_clause.clone(),
+            proof_kind: ProofKind::Axiom,
+            proof: None,
+            requires: context.requires.clone(),
+            conclusion: goal,
+            kernel_authority: None,
+            checked_completion: None,
+        });
+    }
 
     if is_kernel_standard_theorem_name(theorem.name()) {
         // A registered axiom supplies the conclusion, not permission to

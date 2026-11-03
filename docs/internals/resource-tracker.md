@@ -1611,6 +1611,13 @@ permitted stores or a transition that drops the fact:
   The input memory's variable-count index is prepared once during lowering;
   subsequent memory transitions advance an established index by their map
   differences, so a call does not reconstruct every preceding store.
+  A copied resource context carries a copy of its memory index, so a query
+  through the copy does not advance the original's. A proof step therefore
+  synchronizes its execution state's index with its facts, and the contract's
+  return-resource transition synchronizes the retained outcome's index before
+  reading copies of it: a transition retried before each post-execution
+  `have` then pairs only the facts added since the previous attempt
+  (`post_execution_haves_before_a_fold_cost_the_same_at_every_position`).
 
 ### Queries
 
