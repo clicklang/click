@@ -519,7 +519,8 @@ coordinates fit that index. Native request lengths use checked unsigned
 subtraction and multiplication, then exact conversion to the indexed byte
 cursor; native pieces are never narrowed to 32 bits. An unrepresentable length
 or coordinate refuses composition without entering the candidate fallback.
-Each selected supplier must satisfy the requested typed access designation.
+For a native request, each selected supplier must satisfy its typed access
+designation, as the previous whole-range entailment route required.
 Symbolic requests remain a separate audit target. A build guard forbids
 candidate enumeration in this constant-consumption path.
 

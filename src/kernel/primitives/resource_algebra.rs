@@ -3598,7 +3598,11 @@ impl ResourceContext {
                 return None;
             }
             let available = candidate.memory_own_range()?;
-            if range.typed_carrier
+            // Native requests previously used whole-range entailment, including
+            // its typed designation check. Keep that check on this new route;
+            // narrow fragment transfer retains its existing carrier semantics.
+            if range.wide_bounds().is_some()
+                && range.typed_carrier
                 && !assumptions.access_designations_match(range.access_designation(), available)
             {
                 return None;
