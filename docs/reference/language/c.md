@@ -1153,7 +1153,8 @@ Supported C surface includes:
   arguments, and rescan the
   replacement for other supported macros. Parameter substitution replaces whole
   identifier tokens; numeric literal prefixes, suffixes, and exponents are not
-  parameter occurrences. Substituted arguments retain token boundaries, so
+  parameter occurrences. Character and string literal encoding prefixes are
+  also preserved. Substituted arguments retain token boundaries, so
   adjacent operators such as `+` and `+` do not become `++`.
   Macro recursion, more than three
   parameters, empty arguments, stringification, and token pasting remain

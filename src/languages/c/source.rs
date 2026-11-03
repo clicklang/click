@@ -2415,6 +2415,12 @@ fn substitute_macro_parameters(
                 index += 1;
             }
             let name = chars[start..index].iter().collect::<String>();
+            if matches!(name.as_str(), "L" | "u" | "u8" | "U")
+                && matches!(chars.get(index), Some('\'' | '"'))
+            {
+                expanded.push_str(&name);
+                continue;
+            }
             if let Some(parameter_index) =
                 parameters.iter().position(|parameter| parameter == &name)
             {
@@ -2955,6 +2961,42 @@ int32 run(int32 value) {
             let error = local_include_paths("main.c", source).unwrap_err();
             assert!(error.to_string().contains(expected));
         }
+    }
+
+    #[test]
+    fn macro_parameters_do_not_replace_literal_encoding_prefixes() {
+        for (prefix, literal) in [
+            ("L", "'a'"),
+            ("u", "'a'"),
+            ("U", "'a'"),
+            ("L", "\"text\""),
+            ("u", "\"text\""),
+            ("U", "\"text\""),
+            ("u8", "\"text\""),
+        ] {
+            let source =
+                format!("#define APPLY({prefix}) ({prefix}{literal} + {prefix})\nAPPLY(7)\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(&source);
+            assert_eq!(expanded.source().trim(), format!("({prefix}{literal} + 7)"));
+        }
+    }
+
+    #[test]
+    fn macro_literal_prefix_requires_adjacency_to_quote() {
+        let sources = BTreeMap::from([("main.c", "#define VALUE(L) L 'a'\nVALUE(-)\n")]);
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        assert_eq!(expanded.source().trim(), "- 'a'");
+    }
+
+    #[test]
+    fn macro_wide_character_literal_does_not_become_negation() {
+        let sources = BTreeMap::from([(
+            "main.c",
+            "#define VALUE(L) L'a'\nint value(void) { return VALUE(-); }\n",
+        )]);
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        assert_eq!(expanded.source().trim(), "int value(void) { return L'a'; }");
     }
 
     #[test]
