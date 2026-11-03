@@ -3158,9 +3158,13 @@ fn charon_result_values_read_as_click_results() {
     ] {
         assert!(RESULT_VALUE_SIDECAR.contains(before), "{before}");
         let invalid = RESULT_VALUE_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the mutated function and its dependencies, without proving
+        // the fixture's unrelated functions again for every negative case.
+        let function = expected.split('.').next().unwrap();
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
             .err()
             .expect("a claim the result program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
