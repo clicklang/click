@@ -421,9 +421,9 @@ fn a_one_byte_cell_is_read_as_its_own_access() {
 /// Rule K5: a typed 32-bit read of a cell of the other signedness is the
 /// sign cast σ of the stored word, which folds a constant (`4294967295u`
 /// reads as `-1`) and keeps an explicit σ of a symbolic word; a read at the
-/// stored signedness is the stored value. A load term reads the word, so
-/// both 32-bit kinds read either cell's term (rules K5 and K1), though each
-/// read is its own load.
+/// stored signedness is the stored value. A load term answered from the
+/// cell is that same value (`LoadKind::read_cell`, R-mem through σ): only
+/// the stored kind reads the stored term itself.
 #[test]
 fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
     use MachineIntegerType::{Int32, UInt32};
@@ -448,12 +448,19 @@ fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
                 Some(read.value_from_term(expected.clone())),
                 "{stored:?} cell read at {read:?}"
             );
+            // A load term answered from the cell is the same value: σ of
+            // the stored word at the other signedness (R-mem), never the
+            // stored word itself.
             let kind = LoadKind::of_type(read.c_type()).unwrap();
-            assert!(
+            assert_eq!(
                 kind.reads_value(&cell),
+                cast.is_none(),
                 "{stored:?} cell, {read:?} load term"
             );
-            assert_eq!(kind.read_cell(&cell), Some(cell.clone()));
+            assert_eq!(
+                kind.read_cell(&cell),
+                Some(read.value_from_term(expected.clone()))
+            );
             if matches!(term, Bitvector32Term::Constant(_)) && cast.is_some() {
                 assert_eq!(expected.constant32(), Some(u32::MAX));
             }

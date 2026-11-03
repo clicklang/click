@@ -669,17 +669,18 @@ Progress:
      one match at a side's root: a 32-bit equality `σ(x) == x` is vacuous
      as a rewrite and is not a rewrite candidate (`Bitvector32Term::is_sign_cast32_of`), and a
      `uint32` bound below the sign bit, `σ(y) <=u c`, files and decides its
-     signed range on `y` (`unsigned_upper_bound_below_sign_bit`). Known
-     remaining items, for a separate follow-up PR: two word identities at
-     32 bits remain. The e-graph joins the `int32` and `uint32` widenings
-     of one narrow value as one word (`join_widening_sibling`, beside K7'),
-     and a load-term answer from a cell reads the stored word at either
-     signedness (`LoadKind::reads_value` and `LoadKind::read_cell`, K5's
-     naming). The second still leaves a `uint32` comparison of an `int32`
-     cell's bare word in the facts where the source spelling lowers to σ
-     of the read, so a smart search spells that premise by a longer route
-     (the residual audit work of `owned-vector`). The constructor still
-     folds σ(σ(x)) to `x`: without the fold,
+     signed range on `y` (`unsigned_upper_bound_below_sign_bit`). The
+     follow-up PR (2026-11-02, [Decisions](#decisions)) removes two of the
+     three 32-bit word identities 4b left: a load-term answer from a cell
+     reads the stored word through σ at the other signedness
+     (`LoadKind::read_cell`; `LoadKind::reads_value` holds only at the
+     stored kind), and the range extent guard compares σ of the `int32`
+     element count (`memory_range_byte_count_extent`). Known remaining
+     items: the e-graph still joins the `int32` and `uint32` widenings of
+     one narrow value as one word (`join_widening_sibling`, and R0's
+     sibling union in `machine_relations::invert`), beside K7'; removing
+     the union costs two gate proofs (see the Decisions entry). The
+     constructor still folds σ(σ(x)) to `x`: without the fold,
      `a_bounded_wrapped_difference_does_not_define_the_signed_one` stops
      at a lowering error instead of its signed-overflow refusal, so its
      removal waits on that.
@@ -1476,3 +1477,40 @@ Maintainer direction, 2026-11-02 (σ a node of its own, step 4b):
 - **The sign-bit rule reads σ.** The equivalent of `u as int32 < 0` is
   `u > 2^31 - 1`, built through σ, whose constructor folds σ of σ; a test
   of σ files its equivalent when assumed, as an 8- or 16-bit one does.
+
+Follow-up to step 4b, 2026-11-02 (the word identities it left), under the
+maintainer's rule that equivalences live in reasoning, not in terms:
+
+- **A cell read at the other 32-bit signedness is σ of the stored word**
+  wherever a load term is answered from a cell or a store
+  (`LoadKind::read_cell`, the same value `CType::read_cell` gives), and
+  `LoadKind::reads_value` holds only at the stored kind; the 64-bit kind
+  stays one kind whose typed carrier gives the signedness. The checked
+  stored-value evidence compares the read's value of the store, so its
+  derivation and its check agree. R-mem through σ, K5's naming deleted.
+- **The range extent guard is `σ(end - start) <=u limit`.** The guard
+  asks whether the byte extent fits a `uint32` count, and `start <= end`
+  puts the true difference in `[0, 2^32)`, which σ of the wrapped `int32`
+  difference is exactly; the count's own `int32` order is not the
+  condition, since the one-byte limit exceeds `2^31 - 1`. So σ, which the
+  printed spelling `(end - start) as uint32 <= limit` already showed, is
+  the faithful structure.
+- **The two 32-bit widenings of a narrow value stay joined, for now.**
+  Removing the union (`join_widening_sibling` and R0's sibling union)
+  fails two gate proofs. `mdtests/an_out_of_range_integer_constant_converts_modulo_its_destination_width.md`'s
+  `uint32 widen(uint8 c) { ensures result == c; }` lowers the specification
+  side through `promoted_int32_term`, which widens `c` to `int32` inside a
+  `uint32` equality, so the goal is `c as uint32 == c as int32`: a fourth
+  word identity, in lowering. `examples/rust-unsigned`'s `shifted_byte`
+  needs `(value as u32) << count` and the promoted `(value as int32) <<
+  count` of rule N to be one word, and R-dist does not move σ across a
+  shift by a symbolic count. Interning σ of every widening eagerly (so
+  R-comp relates the two) proves the Rust example but not the mdtest, and
+  raises the per-cast work of
+  `narrow_cast_words_intern_in_work_linear_in_the_casts` about tenfold
+  (σ distributes over every operator in the widening's class, K7's masked
+  word included) and times out the rule-N scaling tests. Options: lower a
+  specification comparison's operands at its own format (a narrow operand
+  widened to `uint32`, an `int32` one through σ) and let σ distribute over
+  a same-width shift by any count; or keep the join until the 32-bit
+  sign-free operators stop being word operators.

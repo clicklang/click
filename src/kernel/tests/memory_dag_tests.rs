@@ -64,7 +64,17 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
     let pointer = arc_pointer(4);
     crate::kernel::eval::declare_load_access_width(&pointer, 4);
     let value = Bitvector32Term::Variable(Variable(989_001));
-    for stored in [CValue::Int32(value.clone()), CValue::UInt32(value.clone())] {
+    // The `int32` read of a cell returns the stored word, or σ of it when the
+    // cell stores a `uint32` value (R-mem through σ).
+    let signed_read = Bitvector32Term::sign_cast32(
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int32,
+        value.clone(),
+    );
+    for (stored, read) in [
+        (CValue::Int32(value.clone()), value.clone()),
+        (CValue::UInt32(value.clone()), signed_read),
+    ] {
         let memory = CMemory::new()
             .with_block("arg-memory", 16)
             .store(pointer.clone(), stored);
@@ -87,7 +97,7 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
         let facts = ProofFacts::default();
         for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             let original = goal(ty, load(&memory, pointer.clone()));
-            let presented = goal(ty, value.clone());
+            let presented = goal(ty, read.clone());
             assert!(
                 facts
                     .with_checked_rewritten_loads(&original, &presented)
@@ -96,7 +106,7 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
             );
             let source = Bitvector32Term::Variable(Variable(989_003));
             let cited =
-                Proposition::ConditionIs(ConditionTerm::equal(source.clone(), value.clone()), true);
+                Proposition::ConditionIs(ConditionTerm::equal(source.clone(), read.clone()), true);
             let mut rewrite = facts
                 .clone()
                 .with_fact(cited.clone())
@@ -110,7 +120,7 @@ fn rewritten_integer_word_observations_retain_checked_store_evidence() {
             };
             assert!(
                 facts
-                    .with_checked_rewritten_loads(&original, &goal(other, value.clone()))
+                    .with_checked_rewritten_loads(&original, &goal(other, read.clone()))
                     .is_none(),
                 "equal bits do not equate signed and unsigned mathematical values"
             );

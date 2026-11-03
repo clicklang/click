@@ -3723,12 +3723,10 @@ pub(crate) fn is_store_fact(condition: &ConditionTerm, value: bool) -> bool {
     let Some(value) = load.0.known_value(load.1) else {
         return false;
     };
-    load.2.reads_value(&value)
-        && matches!(
-            value,
-            crate::kernel::integer32_c_value!(recorded)
-                if &recorded == stored
-        )
+    matches!(
+        load.2.read_cell(&value),
+        Some(crate::kernel::integer32_c_value!(recorded)) if &recorded == stored
+    )
 }
 
 /// The canonical form for a condition: every operand takes its

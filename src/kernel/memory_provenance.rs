@@ -1287,21 +1287,27 @@ impl CheckedLoadEquality {
                 else {
                     return false;
                 };
-                let (CValue::Int32(stored) | CValue::UInt32(stored)) = &written else {
-                    unreachable!("matched as a 32-bit word store")
+                // The read returns the stored word at its own kind and σ of
+                // it at the other signedness (R-mem); the address half is
+                // `offset` below.
+                let Some(CValue::Int32(stored) | CValue::UInt32(stored)) =
+                    endpoint.kind.read_cell(&written)
+                else {
+                    return false;
                 };
                 let pointer = &pointer;
                 endpoint.matches_term(load)
                     && cell.has_only_typed_hops()
-                    // The stored value is the read's only when the store is
-                    // exactly the read's kind; the address half is `offset`
-                    // below.
-                    && endpoint.kind.reads_value(&written)
                     && written.byte_width() == bytes
-                    && cell.checks_walk_from(&endpoint.memory, &endpoint.pointer, bytes, assumptions)
+                    && cell.checks_walk_from(
+                        &endpoint.memory,
+                        &endpoint.pointer,
+                        bytes,
+                        assumptions,
+                    )
                     && pointer.block == endpoint.pointer.block
                     && offset.checks(&pointer.offset, &endpoint.pointer.offset, assumptions)
-                    && stored == value
+                    && &stored == value
             }
             CheckedLoadEqualityEvidence::Canonical => {
                 crate::kernel::eval::canonical_term(&self.left)
@@ -1610,17 +1616,19 @@ pub(crate) fn checked_stored_origin_equality(
         let Some((pointer, written @ (CValue::Int32(_) | CValue::UInt32(_)))) = written else {
             continue;
         };
-        let (CValue::Int32(stored) | CValue::UInt32(stored)) = &written else {
-            unreachable!("matched as a 32-bit word store")
+        // The read's value of the store, σ of the stored word at the other
+        // signedness (R-mem), as wide as the walk, as `write_supplies_read`
+        // asks of every stored value; the address half is the offset
+        // congruence below.
+        let Some(CValue::Int32(stored) | CValue::UInt32(stored)) =
+            endpoint.kind.read_cell(&written)
+        else {
+            continue;
         };
         let pointer = &pointer;
-        // Exactly the read's kind and as wide as the walk, as
-        // `write_supplies_read` asks of every stored value; the address half
-        // is the offset congruence below.
         let bytes = endpoint.bytes();
-        if stored != value
+        if &stored != value
             || pointer.block != endpoint.pointer.block
-            || !endpoint.kind.reads_value(&written)
             || written.byte_width() != bytes
         {
             continue;
