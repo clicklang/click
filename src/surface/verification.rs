@@ -5276,11 +5276,11 @@ fn reject_pure_bodies_reading_c_objects(
         .with_kind(ClickErrorKind::Type)
     }
     for definition in spec_definitions.functions.definitions.values() {
+        let Some(body) = definition.body() else {
+            continue;
+        };
         let mut referenced = BTreeSet::new();
-        super::lowering::collect_contract_expression_referenced_names(
-            definition.body(),
-            &mut referenced,
-        );
+        super::lowering::collect_contract_expression_referenced_names(body, &mut referenced);
         if let Some(object) = read_object(definition.parameters(), referenced, file_scope_objects) {
             return Err(refusal(
                 "pure function",

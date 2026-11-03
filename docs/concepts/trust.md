@@ -123,6 +123,17 @@ gate proves every one of them with `verify_standard_library`. Ordinary
 verification then applies them as dependencies without re-checking them, so a
 library theorem is trusted to the extent that the gate that checked it is.
 
+The library also declares seven `axiom`s, which are trusted, not proved: the
+laws of the primitive type `Vec<T>` in `library/rust/vec.click`, which relate
+its bodyless operations `vec::len`, `vec::get`, `vec::push` and `vec::set`
+([Rust vectors](../reference/library/index.md#rust-vectors)). Finite
+sequences of fewer than 2^64 values satisfy them all, so they are consistent.
+Only the built-in library modules may declare a primitive `type`, a bodyless
+`function` or an `axiom`; the parser refuses each in any other file. The
+kernel reads each instance of a primitive type as a rigid type, so no
+constructor case, `match` or induction follows from its having no written
+constructors.
+
 The library also declares five `extern` contracts that are assumed, not
 proved: `memcpy`, `memcmp`, `memset` and `strlen` in `library/c/string.click`,
 and the internal `__click_constant_p_unknown` in `library/c/builtins.click`.

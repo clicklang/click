@@ -815,6 +815,11 @@ struct Parser {
     /// Whether this parser reads a Click library module, which never looks
     /// up the library's own declarations while the library is loading.
     library_module: bool,
+    /// Whether this parser reads one of the Click library modules built into
+    /// the verifier, by identity and text. Only these declare a primitive
+    /// `type`, a bodyless `function` or an `axiom`: each is trusted, so a
+    /// sidecar or a file that merely lives under `library/` cannot.
+    library_primitives: bool,
     /// The theorems the file declares, which a citation by bare name names
     /// before any library theorem of that name. Empty in a library module.
     symbols: names::SymbolTable,
@@ -1471,6 +1476,11 @@ impl Parser {
         // library theorem that way, its own included.
         let library_module =
             container.is_some_and(|container| container.filename.starts_with("library/"));
+        let library_primitives = container.is_some_and(|container| {
+            super::CLICK_LIBRARY_MODULES
+                .iter()
+                .any(|(identity, text)| *identity == &*container.filename && *text == source)
+        });
         // Specification arithmetic is over Integer in every file, library
         // modules included. A library statement that means the C operation
         // observes it exactly, as `to_integer(value + 1) <= to_integer(upper)`.
@@ -1575,6 +1585,7 @@ impl Parser {
             recursion_peers_by_function: BTreeMap::new(),
             implied_library_modules: path_library_modules,
             library_module,
+            library_primitives,
             symbols,
             aggregate_objects_by_function,
             aggregate_array_objects_by_function,
@@ -1877,11 +1888,18 @@ impl Parser {
                 thread_runtime = Some(runtime);
             } else if self.peek_ident() == Some("spec") {
                 algebraic_type_definitions.push(self.parse_algebraic_type_definition()?);
+            } else if self.peek_ident() == Some("type")
+                && matches!(self.peek_next(), Some(Token::Ident(_)))
+            {
+                algebraic_type_definitions.push(self.parse_primitive_type_definition()?);
             } else if self.peek_ident() == Some("predicate") {
                 predicate_definitions.push(self.parse_predicate_definition()?);
             } else if self.peek_ident() == Some("function") {
                 click_function_definitions.push(self.parse_click_function_definition()?);
-            } else if self.peek_ident() == Some("theorem") {
+            } else if self.peek_ident() == Some("theorem")
+                || (self.peek_ident() == Some("axiom")
+                    && matches!(self.peek_next(), Some(Token::Ident(_))))
+            {
                 // An executes conclusion's `as` map is checked against the
                 // target contract's proof parameters, including when that
                 // contract is declared later. Visit each declaration's tokens
@@ -2389,30 +2407,11 @@ impl Parser {
     fn parse_algebraic_type_definition(&mut self) -> Result<AlgebraicTypeDefinition, ClickError> {
         self.expect_ident_spelling("spec")?;
         self.expect_ident_spelling("enum")?;
-        let name = self.expect_ident("algebraic datatype name")?;
-        if name == "Integer" {
-            return Err(self.error("`Integer` is reserved for the mathematical specification type"));
-        }
-        let mut type_parameters = Vec::new();
-        if self.peek() == Some(&Token::LessThan) {
-            self.position += 1;
-            loop {
-                type_parameters.push(self.expect_ident("type parameter")?);
-                match self.peek() {
-                    Some(Token::Comma) => self.position += 1,
-                    Some(Token::GreaterThan) => {
-                        self.position += 1;
-                        break;
-                    }
-                    Some(token) => {
-                        return Err(self.error(format!(
-                            "expected `,` or `>` after type parameter, got {}",
-                            token.describe()
-                        )));
-                    }
-                    None => return Err(self.error("expected `>` after type parameter")),
-                }
-            }
+        let (name, type_parameters) = self.parse_algebraic_type_head()?;
+        if super::LIBRARY_PRIMITIVE_TYPES.contains(&name.as_str()) {
+            return Err(self.error(format!(
+                "`{name}` is a Click library primitive type; a `spec enum` cannot redeclare it"
+            )));
         }
         self.expect(Token::LBrace)?;
         let mut variants = Vec::new();
@@ -2454,7 +2453,62 @@ impl Parser {
             name,
             type_parameters,
             variants,
+            primitive: false,
         })
+    }
+
+    /// `type Vec<T>;` in a Click library module: a primitive type with no
+    /// definition, like `uint32`. Its meaning is the library's bodyless
+    /// functions over it and the axioms that relate them.
+    fn parse_primitive_type_definition(&mut self) -> Result<AlgebraicTypeDefinition, ClickError> {
+        if !self.library_primitives {
+            return Err(self.error(
+                "a primitive `type` declaration is reserved for the Click library; declare a `spec enum` instead",
+            ));
+        }
+        self.expect_ident_spelling("type")?;
+        let (name, type_parameters) = self.parse_algebraic_type_head()?;
+        if !super::LIBRARY_PRIMITIVE_TYPES.contains(&name.as_str()) {
+            return Err(self.error(format!(
+                "`{name}` is not a Click library primitive type; list it in `LIBRARY_PRIMITIVE_TYPES`"
+            )));
+        }
+        self.expect(Token::Semicolon)?;
+        Ok(AlgebraicTypeDefinition {
+            name,
+            type_parameters,
+            variants: Vec::new(),
+            primitive: true,
+        })
+    }
+
+    fn parse_algebraic_type_head(&mut self) -> Result<(String, Vec<String>), ClickError> {
+        let name = self.expect_ident("algebraic datatype name")?;
+        if name == "Integer" {
+            return Err(self.error("`Integer` is reserved for the mathematical specification type"));
+        }
+        let mut type_parameters = Vec::new();
+        if self.peek() == Some(&Token::LessThan) {
+            self.position += 1;
+            loop {
+                type_parameters.push(self.expect_ident("type parameter")?);
+                match self.peek() {
+                    Some(Token::Comma) => self.position += 1,
+                    Some(Token::GreaterThan) => {
+                        self.position += 1;
+                        break;
+                    }
+                    Some(token) => {
+                        return Err(self.error(format!(
+                            "expected `,` or `>` after type parameter, got {}",
+                            token.describe()
+                        )));
+                    }
+                    None => return Err(self.error("expected `>` after type parameter")),
+                }
+            }
+        }
+        Ok((name, type_parameters))
     }
 
     fn parse_algebraic_field_type(
@@ -2835,6 +2889,33 @@ impl Parser {
         } else {
             None
         };
+        // A primitive operation of the Click library, `function len<T>(v:
+        // Vec<T>) -> uint64;`, has no definition: its axioms say what it is.
+        if self.peek() == Some(&Token::Semicolon) {
+            if !self.library_primitives {
+                return Err(self.error(format!(
+                    "function `{name}` needs a body; only the Click library declares a function without one"
+                )));
+            }
+            if decreases.is_some() {
+                return Err(self.error(format!(
+                    "function `{name}` has no body, so it has no recursion to measure"
+                )));
+            }
+            self.position += 1;
+            self.names
+                .replace(NameKind::TypeParameter, previous_type_parameters);
+            self.rust_slice_params = previous_slice_params;
+            return Ok(ClickFunctionDefinition {
+                name,
+                type_parameters,
+                parameters: parsed_parameters.parameters,
+                return_type,
+                return_object_class,
+                decreases: None,
+                body: None,
+            });
+        }
         self.expect(Token::LBrace)?;
         let previous_struct_params = std::mem::replace(
             &mut self.names.struct_params,
@@ -2882,7 +2963,7 @@ impl Parser {
             return_type,
             return_object_class,
             decreases,
-            body,
+            body: Some(body),
         })
     }
 
@@ -3689,7 +3770,19 @@ impl Parser {
     }
 
     fn parse_theorem_definition(&mut self) -> Result<TheoremDefinition, ClickError> {
-        self.expect_ident_spelling("theorem")?;
+        // `axiom` states a trusted fact about the library's primitive
+        // operations; it has the shape of a theorem without proofs.
+        let axiom = self.peek_ident() == Some("axiom");
+        if axiom {
+            if !self.library_primitives {
+                return Err(self.error(
+                    "an `axiom` is reserved for the Click library; state a `theorem` and prove it",
+                ));
+            }
+            self.position += 1;
+        } else {
+            self.expect_ident_spelling("theorem")?;
+        }
         let name = self.expect_ident("theorem name")?;
         let type_parameters = self.parse_click_type_parameters()?;
         let previous_type_parameters = self.names.replace(
@@ -3744,6 +3837,11 @@ impl Parser {
         } else {
             None
         };
+        if axiom && executes.is_some() {
+            return Err(self.error(format!(
+                "axiom `{name}` relates pure values; it cannot state an execution"
+            )));
+        }
         let mut target_instances = Vec::new();
         let body_open = self.here();
         let first_implicit_proof = self.implicit_proof_spans.len();
@@ -4013,7 +4111,29 @@ impl Parser {
             })
             .collect();
         let ensure_claim_ids = flattened_claim_ids(&ensure_kinds, &ensure_source_clauses);
+        if axiom {
+            if ensure_kinds
+                .iter()
+                .any(|kind| *kind != ClaimClauseKind::Ensures)
+                || requires
+                    .iter()
+                    .any(|requirement| !matches!(requirement, Requirement::Proposition(_)))
+            {
+                return Err(self.error(format!(
+                    "axiom `{name}` states only `requires` and `ensures` propositions"
+                )));
+            }
+            if ensures
+                .iter()
+                .any(|ensure| !matches!(ensure.proof, SourceProof::Default))
+            {
+                return Err(self.error(format!(
+                    "axiom `{name}` is trusted, so its clauses carry no proof"
+                )));
+            }
+        }
         Ok(TheoremDefinition {
+            axiom,
             generic_pointer_parameters: parsed_parameters
                 .parameters
                 .iter()
