@@ -3583,9 +3583,9 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
             .iter()
             .map(|site| site.tactic_name.as_str())
             .collect::<Vec<_>>(),
-        vec!["execute", "solve"]
+        vec!["implicit tail"]
     );
-    let execute = project_tactic_source_position(
+    let implicit = project_tactic_source_position(
         &click_project,
         &ProgramInputs::program(&import),
         "choose.contract",
@@ -3595,8 +3595,8 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     let expanded = expand_project_tactic_source_at(
         &click_project,
         &ProgramInputs::program(&import),
-        execute.line,
-        execute.column,
+        implicit.line,
+        implicit.column,
     )
     .expect("expand the branch execution into a checkable source proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
@@ -7435,7 +7435,7 @@ fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
             "int64 n",
             "requires n == 4294967296i64;",
             "bool",
-            "1",
+            "true",
         ),
         (
             "truth",
@@ -7443,7 +7443,7 @@ fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
             "int64 n",
             "requires n == 0i64;",
             "bool",
-            "0",
+            "false",
         ),
         (
             "negate",
@@ -12052,7 +12052,7 @@ fn scalar_brace_initialization_preserves_resolved_conversions_offline() {
             "to_integer(result) == to_integer(n)",
         ),
         ("widen", "int64", "int32 n", "result == n"),
-        ("truth", "bool", "", "result == 1"),
+        ("truth", "bool", "", "result == true"),
         ("constant", "int64", "", "result == 2147483648i64"),
     ] {
         let project = Project::with_fixture("braces.cpp", name, SCALAR_BRACES_SOURCE);
