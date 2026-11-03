@@ -165,10 +165,11 @@ fn charon_trait_methods_tools_recheck_expanded_certificates() {
         assert_cli(&p, &[command]);
     }
     for claim in [
-        "__rust_q_I13_trait_methods_I5_total.contract",
-        "__rust_q_I13_trait_methods_I7_dynamic.contract",
+        "__rust_q_I13_trait_methods_I5_total.ensures_0",
+        "__rust_q_I13_trait_methods_I7_dynamic.ensures_0",
         "<trait_methods::Circle as trait_methods::Shape>::area.contract",
-        "trait_methods::Shape::twice.contract",
+        // The default method interface has no standalone proof site; expand its caller.
+        "trait_methods::direct_default.ensures_0",
         "<trait_methods::Circle as trait_methods::Shape>::twice.contract",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);

@@ -122,11 +122,12 @@ fn charon_trait_objects_tools_recheck_expanded_certificates() {
     }
     for claim in [
         "__rust_q_I13_trait_objects_I5_total.contract",
-        "__rust_q_I13_trait_objects_I11_through_dyn.contract",
+        "__rust_q_I13_trait_objects_I11_through_dyn.ensures_0",
         "<trait_objects::Circle as trait_objects::Shape>::area.contract",
         "<trait_objects::Square as trait_objects::Shape>::set.contract",
-        "__rust_q_I13_trait_objects_I12_reset_square.contract",
-        "trait_objects::Shape::area_twice.contract",
+        "__rust_q_I13_trait_objects_I12_reset_square.ensures_0",
+        // The default method interface has no standalone proof site; expand its caller.
+        "trait_objects::default_square.ensures_0",
     ] {
         assert_cli(&p, &["expand", "--claim", claim, "--in-place"]);
     }

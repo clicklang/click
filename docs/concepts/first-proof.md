@@ -79,7 +79,7 @@ tactic: step
   --> increment.click:4:5
   4 |     ensures result == x + 1;
     |     ^^^^^^^
-goal: x <= 2147483646
+goal: to_integer(x) + 1 <= 2147483647 and to_integer(x) + 1 >= -2147483648
 help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`
 refused by: the implicit closer that proves this statement's requirements (smart: it may miss; if the goal holds, prove it through smaller steps)
 see: click docs tracing
@@ -91,8 +91,8 @@ To get a trace:
 The report names each step of the omitted proof's implicit tail `step()`,
 and the closer that proves a statement's requirements is named the implicit
 closer. In C, signed overflow is undefined behavior, and `x + 1` overflows when `x` is
-the largest `int`: the goal `x <= 2147483646` is false there, so no proof can
-close it. Click proves the absence of undefined behavior along with
+the largest `int`: the upper bound in the displayed goal is false there,
+so no proof can close it. Click proves the absence of undefined behavior along with
 every claim, so the call is safe only when `x + 1` fits. The contract needs a
 requirement:
 
