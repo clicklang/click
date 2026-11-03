@@ -1,8 +1,10 @@
 //! Borrowed arithmetic queries over the existing difference graph.
 use super::*;
+pub(super) mod cache;
 use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
 use crate::kernel::uint64_constant;
 use crate::kernel::{KernelMachineCastEncoding as E, MachineOperandView as V};
+use cache::{Answer, Kind, QueryKey, Read};
 
 fn format(domain: Domain) -> MachineIntegerType {
     match domain {
@@ -86,9 +88,10 @@ fn sign_flip_view(domain: Domain, term: V<'_>) -> Option<V<'_>> {
 
 struct Query<'a> {
     graph: &'a DifferenceGraph,
-    intervals: std::collections::BTreeMap<(Domain, u64), (i128, i128)>,
-    resolved: std::collections::BTreeMap<(Domain, u64), Option<Affine>>,
+    cache: std::sync::MutexGuard<'a, cache::Cache>,
+    frames: Vec<(Vec<Read>, bool)>,
 }
+
 impl DifferenceGraph {
     pub(super) fn index_operand_node(
         &mut self,
@@ -97,6 +100,10 @@ impl DifferenceGraph {
         node: NodeId,
     ) {
         if matches!(term, Bitvector32Term::Variable(_)) || V::Legacy(term).literal().is_some() {
+            self.shared_queries.invalidate(Read::Operand(
+                domain,
+                Key::for_format(format(domain), V::Legacy(term)),
+            ));
             return;
         }
         // Index only arithmetic admitted by a written fact. Opaque legacy
@@ -125,10 +132,10 @@ impl DifferenceGraph {
                 crate::kernel::KernelTermImport::default().machine_arithmetic(interpretation, term)
             });
         if let Some(root) = root {
-            self.operand_nodes.insert(
-                (domain, Key::for_format(format(domain), V::Shared(&root))),
-                node,
-            );
+            let key = Key::for_format(format(domain), V::Shared(&root));
+            self.shared_queries
+                .invalidate(Read::Operand(domain, key.clone()));
+            self.operand_nodes.insert((domain, key), node);
         }
     }
 
@@ -154,11 +161,7 @@ impl DifferenceGraph {
             _ => return None,
         };
         let [lower, upper] = view.operands.each_ref().map(|p| p.operand_view());
-        let mut query = Query {
-            graph: self,
-            intervals: Default::default(),
-            resolved: Default::default(),
-        };
+        let mut query = Query::new(self);
         if domain == Domain::UInt64
             && let Some((MachineIntegerType::UInt64, op, [a, b])) = lower.binary()
             && Key::for_format(view.format, a) == Key::for_format(view.format, upper)
@@ -224,11 +227,7 @@ impl DifferenceGraph {
             return Some(false);
         }
         let [a, b] = query.operands.each_ref().map(|p| p.operand_view());
-        let mut read = Query {
-            graph: self,
-            intervals: Default::default(),
-            resolved: Default::default(),
-        };
+        let mut read = Query::new(self);
         let tag = match query.operation {
             Op::Add => 0,
             Op::Subtract => 1,
@@ -257,80 +256,165 @@ impl DifferenceGraph {
         (lo >= min && hi <= max).then_some(false)
     }
 }
-impl Query<'_> {
+impl<'a> Query<'a> {
+    fn new(graph: &'a DifferenceGraph) -> Self {
+        Self {
+            graph,
+            cache: graph.shared_queries.lock(),
+            frames: Vec::new(),
+        }
+    }
+    fn depend(&mut self, input: Read) {
+        if let Some((reads, _)) = self.frames.last_mut() {
+            reads.push(input);
+        }
+    }
+    fn uncacheable(&mut self) {
+        if let Some((_, cacheable)) = self.frames.last_mut() {
+            *cacheable = false;
+        }
+    }
+    fn begin(&mut self, key: QueryKey) -> Option<Answer> {
+        self.depend(Read::Query(key));
+        let hit = self.cache.get(&key);
+        if hit.is_none() {
+            self.frames.push((Vec::new(), true));
+        }
+        hit
+    }
+    fn finish(&mut self, key: QueryKey, root: &crate::kernel::KernelTerm, answer: Answer) {
+        let (reads, cacheable) = self.frames.pop().expect("range query frame");
+        if cacheable {
+            self.cache.insert(key, root, answer, reads);
+        } else {
+            self.uncacheable();
+        }
+    }
+    fn affine_interval(&mut self, (node, offset): Affine) -> (i128, i128) {
+        let Some(node) = node else {
+            return (offset, offset);
+        };
+        self.depend(Read::Truncation);
+        let graph = self.graph;
+        let (low, high) = graph.read_interval_observed(node, |node| self.depend(Read::Node(node)));
+        (low + offset, high + offset)
+    }
+    fn difference_bound(&mut self, from: Affine, to: Affine) -> i128 {
+        let by_intervals = self.affine_interval(to).1 - self.affine_interval(from).0;
+        let graph = self.graph;
+        let by_path = match (from.0, to.0) {
+            (Some(from_node), Some(to_node)) => graph
+                .shortest_from_observed(from_node, |node| self.depend(Read::Node(node)))
+                .get(&to_node)
+                .map(|distance| distance + to.1 - from.1),
+            _ => None,
+        };
+        by_path.map_or(by_intervals, |path| path.min(by_intervals))
+    }
+    fn known_reading(&mut self, signed: Affine) -> Option<Affine> {
+        DifferenceGraph::unsigned_reading(signed, |base| self.affine_interval(base))
+    }
+    fn known_flip(&mut self, domain: Domain, base: Affine) -> Option<Affine> {
+        DifferenceGraph::flip_reading(domain, base, |base| self.affine_interval(base))
+    }
+    fn resolve_atom(&mut self, domain: Domain, atom: &Bitvector32Term) -> Option<Affine> {
+        if let Some(value) = constant(domain, atom) {
+            return Some((None, value));
+        }
+        self.depend(Read::Operand(
+            domain,
+            Key::for_format(format(domain), V::Legacy(atom)),
+        ));
+        if let Some(node) = self.graph.nodes.get(&(domain, atom.clone())) {
+            return Some((Some(*node), 0));
+        }
+        if domain == Domain::UInt32 {
+            let signed = self.resolve_atom(Domain::Int32, atom)?;
+            return self.known_reading(signed);
+        }
+        None
+    }
     fn resolve(&mut self, domain: Domain, term: V<'_>) -> Option<Affine> {
         if let V::Legacy(term) = term {
+            self.uncacheable();
             return self.graph.resolve(domain, term);
-        }
-        if let Some(atom) = atom(term) {
-            return self.graph.resolve(domain, &atom);
         }
         let V::Shared(root) = term else {
             unreachable!()
         };
-        let key = (domain, root.id());
-        if let Some(hit) = self.resolved.get(&key) {
-            return *hit;
+        let key = (Kind::Resolve, domain, root.id());
+        if let Some(Answer::Resolve(hit)) = self.begin(key) {
+            return hit;
         }
-        let result = self.resolve_uncached(domain, term);
-        self.resolved.insert(key, result);
+        let result = if let Some(atom) = atom(term) {
+            self.resolve_atom(domain, &atom)
+        } else {
+            self.resolve_uncached(domain, term)
+        };
+        self.finish(key, root, Answer::Resolve(result));
         result
     }
     fn resolve_uncached(&mut self, domain: Domain, term: V<'_>) -> Option<Affine> {
-        if let Some(node) = self
-            .graph
-            .operand_nodes
-            .get(&(domain, Key::for_format(format(domain), term)))
-        {
+        let key = Key::for_format(format(domain), term);
+        self.depend(Read::Operand(domain, key.clone()));
+        if let Some(node) = self.graph.operand_nodes.get(&(domain, key)) {
             return Some((Some(*node), 0));
         }
         if let Some(base) = sign_flip_view(domain, term) {
             let base = self.resolve(domain, base)?;
-            return self.graph.known_flip(domain, base);
+            return self.known_flip(domain, base);
         }
         if domain == Domain::UInt32 {
             let base = self.resolve(Domain::Int32, term)?;
-            return self.graph.known_reading(base);
+            return self.known_reading(base);
         }
         let (base_domain, base, offset, nonnegative) = link_parts_view(domain, term)?;
         let base = self.resolve(base_domain, base)?;
-        link_fits(
-            self.graph.affine_interval(base),
-            offset,
-            domain,
-            nonnegative,
-        )
-        .then_some((base.0, base.1 + offset))
+        link_fits(self.affine_interval(base), offset, domain, nonnegative)
+            .then_some((base.0, base.1 + offset))
     }
     fn modular_resolve(&mut self, domain: Domain, term: V<'_>) -> Option<Affine> {
         if let V::Legacy(term) = term {
+            self.uncacheable();
             return self.graph.modular_resolve(domain, term);
-        }
-        if let Some((base, k)) = modular_parts_view(domain, term) {
-            let (node, offset) = self.modular_resolve(domain, base)?;
-            Some((node, wrap(domain, offset + k)))
-        } else {
-            let (node, offset) = self.resolve(domain, term)?;
-            Some((node, wrap(domain, offset)))
-        }
-    }
-    fn interval(&mut self, domain: Domain, term: V<'_>) -> (i128, i128) {
-        if let V::Legacy(term) = term {
-            return self.graph.term_interval(domain, term);
-        }
-        if let Some(atom) = atom(term) {
-            return self.graph.term_interval(domain, &atom);
         }
         let V::Shared(root) = term else {
             unreachable!()
         };
-        let key = (domain, root.id());
-        if let Some(hit) = self.intervals.get(&key) {
-            return *hit;
+        let key = (Kind::ModularResolve, domain, root.id());
+        if let Some(Answer::Resolve(hit)) = self.begin(key) {
+            return hit;
         }
+        let result = if let Some((base, k)) = modular_parts_view(domain, term) {
+            self.modular_resolve(domain, base)
+                .map(|(node, offset)| (node, wrap(domain, offset + k)))
+        } else {
+            self.resolve(domain, term)
+                .map(|(node, offset)| (node, wrap(domain, offset)))
+        };
+        self.finish(key, root, Answer::Resolve(result));
+        result
+    }
+    fn interval(&mut self, domain: Domain, term: V<'_>) -> (i128, i128) {
+        if let V::Legacy(term) = term {
+            self.uncacheable();
+            return self.graph.term_interval(domain, term);
+        }
+        let V::Shared(root) = term else {
+            unreachable!()
+        };
+        let key = (Kind::Interval, domain, root.id());
+        if let Some(Answer::Interval(hit)) = self.begin(key) {
+            return hit;
+        }
+        let result = self.interval_uncached(domain, term);
+        self.finish(key, root, Answer::Interval(result));
+        result
+    }
+    fn interval_uncached(&mut self, domain: Domain, term: V<'_>) -> (i128, i128) {
         let (n0, n1) = self
             .resolve(domain, term)
-            .map_or_else(|| domain.range(), |a| self.graph.affine_interval(a));
+            .map_or_else(|| domain.range(), |a| self.affine_interval(a));
         let (s0, s1) = self.structural(domain, term);
         let other = match domain {
             Domain::Int64 => Some(Domain::UInt64),
@@ -340,13 +424,11 @@ impl Query<'_> {
         let (o0, o1) = other.and_then(|d| self.resolve(d, term)).map_or_else(
             || domain.range(),
             |a| {
-                let (lo, hi) = self.graph.affine_interval(a);
+                let (lo, hi) = self.affine_interval(a);
                 wrap_interval(domain, lo, hi)
             },
         );
-        let result = (n0.max(s0).max(o0), n1.min(s1).min(o1));
-        self.intervals.insert(key, result);
-        result
+        (n0.max(s0).max(o0), n1.min(s1).min(o1))
     }
     fn difference(&mut self, domain: Domain, a: V<'_>, b: V<'_>) -> (i128, i128) {
         if Key::for_format(format(domain), a) == Key::for_format(format(domain), b) {
@@ -356,8 +438,8 @@ impl Query<'_> {
         let (b0, b1) = self.interval(domain, b);
         let (mut lo, mut hi) = (a0 - b1, a1 - b0);
         if let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b)) {
-            hi = hi.min(self.graph.difference_bound(b, a));
-            lo = lo.max(-self.graph.difference_bound(a, b));
+            hi = hi.min(self.difference_bound(b, a));
+            lo = lo.max(-self.difference_bound(a, b));
         }
         (lo, hi)
     }
@@ -723,11 +805,7 @@ mod tests {
                 .machine_arithmetic(ty, &term)
                 .unwrap();
             let before = KernelTermExport::machine_export_count();
-            let mut query = Query {
-                graph: &graph,
-                intervals: Default::default(),
-                resolved: Default::default(),
-            };
+            let mut query = Query::new(&graph);
             assert_eq!(
                 query.interval(domain, V::Shared(&root)),
                 graph.term_interval(domain, &term),

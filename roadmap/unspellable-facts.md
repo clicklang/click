@@ -114,6 +114,14 @@ variable-edge propagation; arithmetic endpoints outside that rule's fragment
 are refused without exporting their shared trees. The general order-fact and
 certificate bridges remain separate migration work.
 
+The shared difference-graph adapter retains range and affine-query results
+across unrelated fact additions. Each cached result records the operand keys,
+node bounds or edges, and child queries it read. Updates invalidate only those
+readers and their parents; cloned contexts keep separate persistent caches.
+Growing-prefix tests cover unresolved comparisons as well as successful range
+queries. This removes a repeated-prefix walk; it does not finish comparison
+normalization or remove the dispatcher's compatibility bridge.
+
 The general comparison dispatcher still needs its compatibility bridge. Its
 migration must preserve the existing rule order as well as proof results;
 moving endpoint queries ahead of cheaper rules can multiply nested bound visits.
