@@ -4,6 +4,155 @@
 
 use super::*;
 
+/// One fixed view requirement, with independently varied irrelevant observations.
+/// Measure both the planner's current selection expression and the real call.
+/// Index preparation, resource insertion and loan construction are outside both.
+#[test]
+#[ignore = "red regression: parent loan-binding selection enumerates observations"]
+fn parent_loan_binding_selection_ignores_unbound_observations() {
+    let mut curves = Vec::new();
+    for case in ["early", "late", "two_bindings", "unbound", "owner", "stale"] {
+        let mut samples = Vec::new();
+        for count in [4usize, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = PureFactContext::new();
+            let owned = memory(0, 8, true);
+            let view = memory(0, 8, false);
+            let (mut ledger, caller, callee) = participants();
+            let support = backing(&owned);
+            let opening = ledger.lend(caller, caller, support, owned.clone()).unwrap();
+            if case != "owner" {
+                ledger = ledger.apply(&opening.transition).unwrap();
+            }
+            let mut binding = LoanViewBinding {
+                loan: opening.loan,
+                scope: opening.scope,
+                share: opening.root_share,
+                support,
+                viewed: view.clone(),
+                hold: None,
+            };
+            let mut second_binding = None;
+            if case == "two_bindings" {
+                let (split, left, right) = ledger
+                    .split(opening.root_share, caller, caller, caller)
+                    .unwrap();
+                ledger = ledger.apply(&split).unwrap();
+                binding.share = left;
+                second_binding = Some(LoanViewBinding {
+                    share: right,
+                    ..binding.clone()
+                });
+            }
+            if case == "stale" {
+                ledger = ledger
+                    .apply(&ledger.end(opening.scope, caller).unwrap())
+                    .unwrap();
+                let (recovery, _, _) = ledger.recover(opening.loan, caller).unwrap();
+                ledger = ledger.apply(&recovery).unwrap();
+            }
+            let (mut resources, occurrences) = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_facts_and_occurrences(std::iter::repeat_n(view.clone(), count + 1));
+            let first = occurrences[0].1;
+            let last = occurrences[count].1;
+            let mut bindings = LoanViewBindings::default();
+            let expected = match case {
+                "early" | "two_bindings" => Some(first),
+                "late" | "stale" => Some(last),
+                _ => None,
+            };
+            if let Some(occurrence) = expected {
+                bindings = bindings.with_inserted(occurrence, binding);
+            }
+            if let Some(binding) = second_binding {
+                bindings = bindings.with_inserted(last, binding);
+            }
+            if case == "owner" {
+                resources = resources.unchecked_with_fact(owned);
+            }
+            resources = resources.with_loan_dependency_state(bindings.state());
+            resources.synchronize_memory_equalities(&facts);
+            let requirements = [checked(view.clone())];
+            let select = |bindings: &LoanViewBindings| {
+                resources
+                    .view_occurrences_for_fact(&view, &facts)
+                    .into_iter()
+                    .find_map(|occurrence| bindings.get(&occurrence).map(|_| occurrence))
+            };
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((selected, work), map_work) =
+                    crate::persistent::measure_persistent_work(|| {
+                        crate::instrumentation::measure_deterministic_work(|| select(&bindings))
+                    });
+                assert_eq!(selected, expected, "{case}, {count}");
+                let ((plan, call_work), call_maps) =
+                    crate::persistent::measure_persistent_work(|| {
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            plan_stable_view_transfer_with_bindings(
+                                &resources,
+                                &requirements,
+                                &facts,
+                                &ledger,
+                                caller,
+                                callee,
+                                &bindings,
+                            )
+                        })
+                    });
+                if matches!(case, "unbound" | "stale") {
+                    assert_eq!(
+                        plan,
+                        Err(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding)),
+                        "{case}, {count}"
+                    );
+                } else {
+                    assert!(plan.is_ok(), "{case}, {count}: {plan:?}");
+                }
+                queries.push((work, map_work, call_work, call_maps));
+            }
+            if case == "late" {
+                let child = bindings.without(last);
+                assert_eq!(select(&child), None);
+                assert_eq!(select(&bindings), Some(last));
+                assert!(
+                    plan_stable_view_transfer_with_bindings(
+                        &resources,
+                        &requirements,
+                        &facts,
+                        &ledger,
+                        caller,
+                        callee,
+                        &child,
+                    )
+                    .is_err(),
+                    "removing the binding cannot promote an observation"
+                );
+            }
+            samples.push((count, queries));
+        }
+        eprintln!(
+            "parent binding {case} (count; selection work/maps, call work/maps): {samples:?}"
+        );
+        curves.push((case, samples));
+    }
+    for (case, samples) in &curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(large, small)| {
+                    large.0 <= small.0 + 64
+                        && large.1 <= small.1 * 3 + 256
+                        && large.2 <= small.2 + 64
+                        && large.3 <= small.3 * 3 + 256
+                }),
+            "parent binding selection scans observations ({case}): {samples:?}"
+        );
+    }
+}
+
 #[test]
 fn memory_split_origin_lookup_does_not_follow_successive_splits() {
     let mut samples = Vec::new();
