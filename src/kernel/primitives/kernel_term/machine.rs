@@ -10,8 +10,20 @@ impl KernelTerm {
         operator: MachineBinaryOp,
         arguments: [Self; 2],
     ) -> Self {
+        Self::machine_binary_shared_as(format, format, operator, arguments)
+    }
+
+    /// A checking word reading can have a different result interpretation from
+    /// its operator format. Build that root directly, without an intermediate
+    /// node followed by `with_machine_observation_type`.
+    pub(crate) fn machine_binary_shared_as(
+        result: MachineIntegerType,
+        format: MachineIntegerType,
+        operator: MachineBinaryOp,
+        arguments: [Self; 2],
+    ) -> Self {
         Self::intern(
-            KernelType::C(format.c_type()),
+            KernelType::C(result.c_type()),
             KernelTermNode::MachineBinary {
                 format,
                 operator,

@@ -14,14 +14,18 @@ impl PureFactContext {
         left: &Bitvector32Term,
         right: &Bitvector32Term,
     ) -> bool {
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        let key = |view| Key::for_format(MachineIntegerType::Int32, view);
+        let left_key = key(MachineOperandView::Legacy(left));
+        let right_key = key(MachineOperandView::Legacy(right));
         let separated = |endpoint: &Bitvector32Term| {
             self.signed_order_bounds
                 .get(endpoint)
                 .is_some_and(|bounds| {
-                    bounds.iter().any(|((lower, upper, strict, _), _)| {
-                        *strict
-                            && ((lower == left && upper == right)
-                                || (lower == right && upper == left))
+                    bounds.operand_keys().any(|(lower, upper, strict, _)| {
+                        strict
+                            && ((key(lower) == left_key && key(upper) == right_key)
+                                || (key(lower) == right_key && key(upper) == left_key))
                     })
                 })
         };
@@ -113,7 +117,7 @@ impl PureFactContext {
         let has_unsigned_bound = self
             .uint32_order_bounds
             .get(&crate::kernel::eval::canonical_term(term))
-            .is_some_and(|bounds| bounds.iter().any(|((_, _, _, below), _)| *below));
+            .is_some_and(|bounds| bounds.operand_keys().any(|(_, _, _, below)| below));
         let target = Bitvector32Term::Constant(target);
         has_unsigned_bound
             && self.difference_graph_proves(&if walk_strict {
@@ -953,12 +957,24 @@ impl PureFactContext {
             let Some(bounds) = self.signed_order_bounds.get(&current) else {
                 continue;
             };
-            for ((lower, upper, edge_strict, outgoing), _) in bounds.iter() {
+            for (lower, upper, edge_strict, outgoing) in bounds.operand_keys() {
                 crate::instrumentation::record_deterministic_work(1);
                 // Entries filed under a canonical alias carry the written
                 // lower end, which an exact walk does not match.
-                if *outgoing && *lower == current {
-                    stack.push((upper.clone(), strict_so_far || *edge_strict));
+                use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+                if outgoing
+                    && Key::for_format(MachineIntegerType::Int32, lower)
+                        == Key::for_format(
+                            MachineIntegerType::Int32,
+                            MachineOperandView::Legacy(&current),
+                        )
+                {
+                    // This walk's memory-matching engine still takes a written
+                    // endpoint. Export only the selected outgoing endpoint.
+                    stack.push((
+                        upper.retain(MachineIntegerType::Int32).value().clone(),
+                        strict_so_far || edge_strict,
+                    ));
                 }
             }
         }
@@ -1818,17 +1834,7 @@ pub(in crate::kernel) fn condition_as_uint64_order_fact(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    held_order_at(MachineIntegerType::UInt64, condition, value)
-        .map(|(lower, upper, strict)| (lower.clone(), upper.clone(), strict))
-}
-
-/// The `uint32` counterpart of [`condition_as_uint64_order_fact`].
-pub(in crate::kernel) fn condition_as_uint32_order_fact(
-    condition: &ConditionTerm,
-    value: bool,
-) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    held_order_at(MachineIntegerType::UInt32, condition, value)
-        .map(|(lower, upper, strict)| (lower.clone(), upper.clone(), strict))
+    wide_order_fact(condition, value, MachineIntegerType::UInt64)
 }
 
 /// The formats whose order facts the format-indexed order walk
@@ -1848,8 +1854,19 @@ pub(in crate::kernel) fn wide_order_fact(
     value: bool,
     format: MachineIntegerType,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    held_order_at(format, condition, value)
-        .map(|(lower, upper, strict)| (lower.clone(), upper.clone(), strict))
+    let view = super::super::retained_order_bounds::order_view(condition, value)?;
+    if view.format != format {
+        return None;
+    }
+    let [lower, upper] = view
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view().retain(format).value().clone());
+    Some((
+        lower,
+        upper,
+        view.relation == crate::kernel::machine_integer::Relation::Less,
+    ))
 }
 
 impl PureFactContext {
@@ -2009,18 +2026,18 @@ impl PureFactContext {
             (right.as_ref(), limit)
         };
         let bounds = self.uint64_order_bounds.get(term)?;
-        for (endpoint, other, strict, upper) in bounds.keys() {
+        for (_, other, strict, upper, source) in bounds.sourced_operands() {
             crate::instrumentation::record_deterministic_work(1);
             let bound = if literal_only {
-                other.uint64_as_const()
+                other.uint64_constant()
             } else {
-                self.wide_constant_from_equalities(other)
+                self.wide_constant_from_equalities(other.retain(MachineIntegerType::UInt64).value())
             };
             let Some(bound) = bound else {
                 continue;
             };
-            let bound = if *strict {
-                if *upper {
+            let bound = if strict {
+                if upper {
                     bound.checked_sub(1)
                 } else {
                     bound.checked_add(1)
@@ -2031,7 +2048,7 @@ impl PureFactContext {
             let Some(bound) = bound else {
                 continue;
             };
-            let answer = match (operator, *upper) {
+            let answer = match (operator, upper) {
                 (0, true) if bound < limit => Some(true),
                 (1, true) if bound <= limit => Some(true),
                 (2, true) if bound <= limit => Some(false),
@@ -2047,47 +2064,8 @@ impl PureFactContext {
             let Some(answer) = answer else {
                 continue;
             };
-            let (a, b) = if *upper {
-                (endpoint.clone(), other.clone())
-            } else {
-                (other.clone(), endpoint.clone())
-            };
-            // The index normalizes negated/reversed comparisons. Recover an
-            // actual source fact through four exact lookups so expansion cites
-            // the premise that was held, including its original truth value.
-            let candidates = if *strict {
-                [
-                    (ConditionTerm::uint64_less_than(a.clone(), b.clone()), true),
-                    (
-                        ConditionTerm::uint64_greater_than(b.clone(), a.clone()),
-                        true,
-                    ),
-                    (
-                        ConditionTerm::uint64_greater_equal(a.clone(), b.clone()),
-                        false,
-                    ),
-                    (ConditionTerm::uint64_less_equal(b, a), false),
-                ]
-            } else {
-                [
-                    (ConditionTerm::uint64_less_equal(a.clone(), b.clone()), true),
-                    (
-                        ConditionTerm::uint64_greater_equal(b.clone(), a.clone()),
-                        true,
-                    ),
-                    (
-                        ConditionTerm::uint64_greater_than(a.clone(), b.clone()),
-                        false,
-                    ),
-                    (ConditionTerm::uint64_less_than(b, a), false),
-                ]
-            };
-            if candidates
-                .iter()
-                .any(|(fact, value)| self.exact_condition_value(fact) == Some(*value))
-            {
-                return Some(answer);
-            }
+            record_implicit_reasoning_provenance(self, source);
+            return Some(answer);
         }
         None
     }
@@ -2108,13 +2086,15 @@ impl PureFactContext {
                 continue;
             }
             if let Some(edges) = self.uint64_order_bounds.get(&term) {
-                for (_, upper, strict, forward) in edges.keys() {
+                for (_, upper, strict, forward) in edges.operand_keys() {
                     crate::instrumentation::record_deterministic_work(1);
                     if !forward {
                         continue;
                     }
+                    let upper = upper.retain(MachineIntegerType::UInt64);
+                    let upper = upper.value();
                     if let Some(value) = self.wide_constant_from_equalities(upper) {
-                        if let Some(value) = if *strict {
+                        if let Some(value) = if strict {
                             value.checked_sub(1)
                         } else {
                             Some(value)
@@ -2203,9 +2183,17 @@ impl PureFactContext {
             let Some(edges) = index.get(&term) else {
                 continue;
             };
-            for (other, strict) in edges.keys() {
+            for (other, strict) in edges.operand_keys() {
                 crate::instrumentation::record_deterministic_work(1);
-                stack.push((other.clone(), strict_so_far || *strict));
+                let format = if unsigned {
+                    MachineIntegerType::UInt64
+                } else {
+                    MachineIntegerType::Int64
+                };
+                stack.push((
+                    other.retain(format).value().clone(),
+                    strict_so_far || strict,
+                ));
             }
         }
         chained
@@ -2272,15 +2260,20 @@ impl PureFactContext {
             let left = crate::kernel::eval::canonical_term(&left);
             let right = crate::kernel::eval::canonical_term(&right);
             if let Some(bounds) = self.uint64_order_bounds.get(&left) {
-                for (_, other, held_strict, forward) in bounds.keys() {
+                use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+                let right = Key::canonical(
+                    MachineIntegerType::UInt64,
+                    MachineOperandView::Legacy(&right),
+                );
+                for (_, other, held_strict, forward) in bounds.operand_keys() {
                     crate::instrumentation::record_deterministic_work(1);
-                    if crate::kernel::eval::canonical_term(other) != right {
+                    if Key::canonical(MachineIntegerType::UInt64, other) != right {
                         continue;
                     }
-                    if *forward && (!strict || *held_strict) {
+                    if forward && (!strict || held_strict) {
                         return Some(true);
                     }
-                    if !*forward && (strict || *held_strict) {
+                    if !forward && (strict || held_strict) {
                         return Some(false);
                     }
                 }

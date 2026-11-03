@@ -1183,6 +1183,7 @@ enum AlphaConditionKey {
     PointerOffsetEqual(AlphaPointerOffsetKey, AlphaPointerOffsetKey),
     PointerEqual(AlphaPointerKey, AlphaPointerKey),
     IntegerComparison(IntegerComparisonOperator, AlphaIntegerKey, AlphaIntegerKey),
+    MachineComparison(MachineIntegerType, u8, AlphaMachineKey, AlphaMachineKey),
     /// The `Bool` value forms (Stage 5).
     BoolApplication {
         name: String,
@@ -1190,6 +1191,124 @@ enum AlphaConditionKey {
     },
     BoolIf(Box<Self>, Box<Self>, Box<Self>),
     BoolEqual(Box<Self>, Box<Self>),
+}
+
+/// A locally interned DAG: equal repeated children are visited once and never
+/// copied into a tree. Leaf keys preserve the existing binder/load authority.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+struct AlphaMachineKey {
+    nodes: Vec<AlphaMachineNode>,
+    root: usize,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+enum AlphaMachineNode {
+    Leaf(AlphaBitvectorKey),
+    Binary(
+        MachineIntegerType,
+        crate::kernel::MachineBinaryOp,
+        [usize; 2],
+    ),
+    Unary(MachineIntegerType, MachineUnaryOp, usize),
+    Cast(u8, MachineIntegerType, MachineIntegerType, usize),
+}
+
+fn alpha_machine_key<const ALLOW_LOADS: bool>(
+    view: crate::kernel::MachineOperandView<'_>,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+) -> Option<AlphaMachineKey> {
+    use crate::kernel::{KernelTermNode as N, MachineOperandView as V};
+    fn node<const ALLOW_LOADS: bool>(
+        view: V<'_>,
+        bindings: &mut AlphaBindings,
+        next_binder: &mut usize,
+        memo: &mut HashMap<u64, usize>,
+        intern: &mut HashMap<AlphaMachineNode, usize>,
+        nodes: &mut Vec<AlphaMachineNode>,
+    ) -> Option<usize> {
+        let shared_id = match view {
+            V::Shared(term) => Some(term.id()),
+            V::Legacy(_) => None,
+        };
+        if let Some(id) = shared_id.and_then(|id| memo.get(&id)) {
+            return Some(*id);
+        }
+        alpha_work_checkpoint(bindings, 1)?;
+        let mut child =
+            |view| node::<ALLOW_LOADS>(view, bindings, next_binder, memo, intern, nodes);
+        let value = if let Some((format, operator, arguments)) = view.binary() {
+            AlphaMachineNode::Binary(
+                format,
+                operator,
+                [child(arguments[0])?, child(arguments[1])?],
+            )
+        } else if let Some((encoding, source, destination, operand)) = view.cast() {
+            AlphaMachineNode::Cast(encoding as u8, source, destination, child(operand)?)
+        } else {
+            let unary = match view {
+                V::Shared(term) => match term.node() {
+                    N::MachineUnary {
+                        format,
+                        operator,
+                        operand,
+                    } => Some((*format, *operator, V::Shared(operand))),
+                    _ => None,
+                },
+                V::Legacy(Bitvector32Term::Unary {
+                    format,
+                    op,
+                    operand,
+                }) => Some((*format, *op, V::Legacy(operand))),
+                _ => None,
+            };
+            if let Some((format, operator, operand)) = unary {
+                AlphaMachineNode::Unary(format, operator, child(operand)?)
+            } else {
+                let leaf = match view {
+                    V::Legacy(term) => alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                        term,
+                        bindings,
+                        next_binder,
+                    )?,
+                    V::Shared(_) => {
+                        let term = if let Some(variable) = view.variable() {
+                            Bitvector32Term::Variable(*variable)
+                        } else {
+                            view.literal()?
+                        };
+                        alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                            &term,
+                            bindings,
+                            next_binder,
+                        )?
+                    }
+                };
+                AlphaMachineNode::Leaf(leaf)
+            }
+        };
+        let id = if let Some(id) = intern.get(&value) {
+            *id
+        } else {
+            let id = nodes.len();
+            intern.insert(value.clone(), id);
+            nodes.push(value);
+            id
+        };
+        if let Some(shared_id) = shared_id {
+            memo.insert(shared_id, id);
+        }
+        Some(id)
+    }
+    let mut nodes = Vec::new();
+    let root = node::<ALLOW_LOADS>(
+        view,
+        bindings,
+        next_binder,
+        &mut HashMap::new(),
+        &mut HashMap::new(),
+        &mut nodes,
+    )?;
+    Some(AlphaMachineKey { nodes, root })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -1270,7 +1389,7 @@ impl IntegerFoldAlphaKey {
 enum AlphaIntegerNode {
     Constant(BigInt),
     Variable(AlphaVariableKey),
-    Machine(MachineIntegerType, AlphaBitvectorKey),
+    Machine(MachineIntegerType, AlphaMachineKey),
     Negate(usize),
     Binary {
         operator: IntegerTermBinaryOp,
@@ -1526,7 +1645,7 @@ fn alpha_integer_node(
         }
         IntegerTerm::Machine(value) => AlphaIntegerNode::Machine(
             value.ty(),
-            alpha_bitvector_key_with_bindings::<false>(value.value(), bindings, next_binder)?,
+            alpha_machine_key::<false>(value.operand_view(), bindings, next_binder)?,
         ),
         IntegerTerm::Negate(value) => AlphaIntegerNode::Negate(alpha_integer_node(
             value,
@@ -2457,11 +2576,79 @@ fn alpha_bitvector_key<const ALLOW_LOADS: bool>(
     result
 }
 
+// Alpha identity preserves the written relation and truth. In particular,
+// `obtain` must not silently mirror a named existential's body.
+fn alpha_comparison_view(
+    condition: &ConditionTerm,
+) -> Option<(
+    crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+    u8,
+)> {
+    use crate::kernel::machine_integer::comparison::{
+        comparison_view, structural_native_comparison_view,
+    };
+    let relation = match condition {
+        ConditionTerm::Compare { relation, .. } => match relation {
+            crate::kernel::CompareRelation::Equal => 0,
+            crate::kernel::CompareRelation::LessThan => 2,
+            crate::kernel::CompareRelation::LessEqual => 3,
+            crate::kernel::CompareRelation::GreaterThan => 4,
+            crate::kernel::CompareRelation::GreaterEqual => 5,
+        },
+        ConditionTerm::IntegerEqual(..) => 0,
+        ConditionTerm::IntegerNotEqual(..) => 1,
+        ConditionTerm::IntegerLessThan(..) => 2,
+        ConditionTerm::IntegerLessEqual(..) => 3,
+        ConditionTerm::IntegerGreaterThan(..) => 4,
+        ConditionTerm::IntegerGreaterEqual(..) => 5,
+        _ => return None,
+    };
+    let view = if matches!(condition, ConditionTerm::Compare { .. }) {
+        comparison_view(condition, true)?
+    } else {
+        structural_native_comparison_view(condition, true)?
+    };
+    let mut view = view.widened().unwrap_or(view);
+    if relation >= 4 {
+        view.operands.swap(0, 1);
+    }
+    Some((view, relation))
+}
+
+fn alpha_comparison_key<const ALLOW_LOADS: bool>(
+    view: crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+    relation: u8,
+    bindings: &mut AlphaBindings,
+    next_binder: &mut usize,
+) -> Option<AlphaConditionKey> {
+    alpha_work_checkpoint(bindings, 1)?;
+    let format = if relation <= 1 {
+        match view.format {
+            MachineIntegerType::UInt8 => MachineIntegerType::Int8,
+            MachineIntegerType::UInt16 => MachineIntegerType::Int16,
+            MachineIntegerType::UInt32 => MachineIntegerType::Int32,
+            MachineIntegerType::UInt64 => MachineIntegerType::Int64,
+            other => other,
+        }
+    } else {
+        view.format
+    };
+    Some(AlphaConditionKey::MachineComparison(
+        format,
+        relation,
+        alpha_machine_key::<ALLOW_LOADS>(view.operands[0].operand_view(), bindings, next_binder)?,
+        alpha_machine_key::<ALLOW_LOADS>(view.operands[1].operand_view(), bindings, next_binder)?,
+    ))
+}
+
 fn alpha_condition_key_with_bindings<const ALLOW_LOADS: bool>(
     condition: &ConditionTerm,
     bindings: &mut AlphaBindings,
     next_binder: &mut usize,
 ) -> Option<AlphaConditionKey> {
+    if let Some((view, relation)) = alpha_comparison_view(condition) {
+        return alpha_comparison_key::<ALLOW_LOADS>(view, relation, bindings, next_binder);
+    }
     alpha_work_checkpoint(bindings, 1)?;
     // Keyed at the fact identity: a native 8- or 16-bit comparison and the
     // `int32` comparison of its widenings are one fact.
@@ -4555,6 +4742,76 @@ mod snapshot_alpha_tests {
 #[cfg(test)]
 mod machine_quantifier_identity_tests {
     use super::*;
+
+    #[test]
+    fn quantified_machine_comparisons_share_native_and_integer_identity() {
+        for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for relation in [
+                CompareRelation::Equal,
+                CompareRelation::LessThan,
+                CompareRelation::LessEqual,
+                CompareRelation::GreaterThan,
+                CompareRelation::GreaterEqual,
+            ] {
+                for truth in [false, true] {
+                    let native = ConditionTerm::Compare {
+                        format,
+                        relation,
+                        left: Box::new(Bitvector32Term::Variable(Variable(981))),
+                        right: Box::new(Bitvector32Term::Variable(Variable(982))),
+                    };
+                    let left =
+                        IntegerTerm::from_machine(format, Bitvector32Term::Variable(Variable(981)))
+                            .unwrap()
+                            .into();
+                    let right =
+                        IntegerTerm::from_machine(format, Bitvector32Term::Variable(Variable(982)))
+                            .unwrap()
+                            .into();
+                    let shared = match relation {
+                        CompareRelation::Equal => ConditionTerm::IntegerEqual(left, right),
+                        CompareRelation::LessThan => ConditionTerm::IntegerLessThan(left, right),
+                        CompareRelation::LessEqual => ConditionTerm::IntegerLessEqual(left, right),
+                        CompareRelation::GreaterThan => {
+                            ConditionTerm::IntegerGreaterThan(left, right)
+                        }
+                        CompareRelation::GreaterEqual => {
+                            ConditionTerm::IntegerGreaterEqual(left, right)
+                        }
+                    };
+                    let quantified = |condition, truth| Proposition::ForAll {
+                        var: Variable(981),
+                        name: crate::kernel::BinderName::written("i"),
+                        sort: Sort::CMachineInteger(format),
+                        body: Box::new(Proposition::ConditionIs(condition, truth)),
+                    };
+                    assert!(
+                        propositions_are_alpha_equal(
+                            &quantified(native.clone(), truth),
+                            &quantified(shared.clone(), truth)
+                        ),
+                        "{format:?} {relation:?} {truth}"
+                    );
+                    assert!(
+                        !propositions_are_alpha_equal(
+                            &quantified(native, !truth),
+                            &quantified(shared, truth)
+                        ),
+                        "opposite polarity"
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn wide_quantified_keys_rename_binders_without_erasing_width_or_high_bits() {
