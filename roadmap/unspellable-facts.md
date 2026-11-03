@@ -83,8 +83,10 @@ comparisons preserve native spelling; shared arithmetic stays in observations.
 Unsigned successor, subtraction, remainder and partial-restoration guards also
 read views. Low-word index comparisons retain their wide operands and literal
 offsets through the unsigned or signed range checks, preserving refusals when
-the ranges are absent. The signed equality dispatcher and nonnegative division
-bound adapter remain open.
+the ranges are absent. Nonnegative quotient/remainder bounds read retained
+operands, including the signed reading of unsigned results. Their generated casts
+reuse shared composition prefixes and preserve the native checking constructor;
+they do not change stored terms. The signed equality dispatcher remains open.
 
 Bounded arithmetic-certificate conclusion identity reads shared operands directly,
 preserving its accepted operators, cast encodings, narrow comparison identity,
