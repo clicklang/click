@@ -107,8 +107,10 @@ pub(super) fn shared_value_reading(
                 break result.clone();
             }
             path.push(key);
-            // Rule W peels one 32-bit sign conversion before checking the
-            // resulting root, exactly as machine_value_reading does.
+            // Rule W reads through a 32-bit sign conversion before checking
+            // the resulting root, exactly as machine_value_reading does. σ
+            // of σ is kept as written, so the operand is read again at the
+            // same format: one cached step per σ node.
             if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32)
                 && let KernelTermNode::MachineCast {
                     encoding: Generic,
@@ -121,6 +123,7 @@ pub(super) fn shared_value_reading(
                 && source != destination
             {
                 term = operand.clone();
+                continue;
             }
             if let KernelTermNode::MachineCast {
                 encoding: Generic,

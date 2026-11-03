@@ -1354,15 +1354,16 @@ pub(crate) fn machine_value_reading(
     ty: MachineIntegerType,
     value: &Bitvector32Term,
 ) -> Option<ValueReading<'_>> {
-    let value = if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
+    let mut value = value;
+    if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
         // Rule W: σ keeps its operand's 32 bits, so σ(x) observed at
-        // either 32-bit format is `x` read there.
-        value
-            .sign_cast32_operand()
-            .map_or(value, |(_, operand)| operand)
-    } else {
-        value
-    };
+        // either 32-bit format is `x` read there. σ of σ is kept as
+        // written, so each σ is read through in turn: the walk is the
+        // written chain.
+        while let Some((_, operand)) = value.sign_cast32_operand() {
+            value = operand;
+        }
+    }
     match value {
         Bitvector32Term::MachineIntegerCast { destination, .. }
             if *destination != ty
