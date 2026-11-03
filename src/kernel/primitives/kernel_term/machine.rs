@@ -427,10 +427,22 @@ impl KernelTermImport {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static MACHINE_EXPORT_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl KernelTermExport {
+    #[cfg(test)]
+    pub(crate) fn machine_export_count() -> usize {
+        MACHINE_EXPORT_COUNT.with(std::cell::Cell::get)
+    }
+
     pub(crate) fn machine(term: &KernelTerm) -> Result<Bitvector32Term, &'static str> {
         use Bitvector32Term as Old;
         use KernelTermNode as Node;
+        #[cfg(test)]
+        MACHINE_EXPORT_COUNT.with(|count| count.set(count.get() + 1));
         crate::instrumentation::record_deterministic_work(1);
         Ok(match term.node() {
             Node::MachineLiteral(value) => value.legacy_term(),

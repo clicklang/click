@@ -2089,6 +2089,33 @@ impl EqualityGraph {
         supported
     }
 
+    pub(in crate::kernel) fn knows_int32_add_overflow_views(
+        &self,
+        operands: [crate::kernel::MachineOperandView<'_>; 2],
+        value: bool,
+    ) -> bool {
+        use crate::kernel::MachineOperandView as V;
+        let mut state = self.state.lock().expect("equality graph");
+        if !state.terms.may_know_int32_add_overflow(value) {
+            return false;
+        }
+        match operands {
+            [V::Legacy(left), V::Legacy(right)] => {
+                self.register_machine_operands(&mut state, left, right)
+            }
+            _ => {
+                for operand in operands {
+                    if let V::Legacy(term) = operand {
+                        self.register_machine_operands(&mut state, term, term);
+                    }
+                }
+            }
+        }
+        let result = state.terms.knows_int32_add_overflow_views(operands, value);
+        state.close(Vec::new());
+        result
+    }
+
     pub(in crate::kernel) fn knows_condition(
         &self,
         condition: &ConditionTerm,

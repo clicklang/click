@@ -365,10 +365,9 @@ impl TermClasses {
                 }
                 // Leaves retain load-name registration and literal normalization.
                 N::Variable(variable) => self.intern_typed_machine(&T::Variable(*variable), width),
-                N::MachineLiteral(_) => {
-                    let literal =
-                        crate::kernel::KernelTermExport::machine(term).expect("literal leaf");
-                    self.intern_typed_machine(&literal, width)
+                N::MachineLiteral(value) => {
+                    crate::instrumentation::record_deterministic_work(1);
+                    self.intern_typed_machine(&value.legacy_term(), width)
                 }
                 _ => unreachable!("cached shared native fragment"),
             };

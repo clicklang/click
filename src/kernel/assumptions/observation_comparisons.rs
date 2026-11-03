@@ -18,6 +18,12 @@ pub(in crate::kernel) enum OperandKey {
 pub(in crate::kernel) enum Key {
     Truth(bool),
     Comparison(MachineIntegerType, u8, [OperandKey; 2]),
+    Overflow(
+        MachineIntegerType,
+        OverflowOperation,
+        [ScalarOperandKey; 2],
+        bool,
+    ),
 }
 
 /// Comparison identity for compound and quantified facts. Numeric leaves use
@@ -221,24 +227,43 @@ impl ObservationComparisons {
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, truth: bool, insert: bool) {
         let source = Proposition::ConditionIs(condition.clone(), truth);
         let keys = if insert {
-            let Some(view) = native_comparison_view(condition, truth) else {
-                return;
-            };
-            let comparison = key(&view);
-            let mut keys = vec![comparison.clone()];
-            let cancelled_view = view.clone().cancelled_form();
-            let cancelled = key(&cancelled_view);
-            if cancelled != comparison {
-                keys.push(cancelled.clone());
-            }
-            if let Some(widened) = view.widened() {
-                keys.push(key(&widened));
-            }
-            if let Some(value) = constant_reading(&view, &comparison)
-                .or_else(|| constant_reading(&cancelled_view, &cancelled))
+            let keys = if let ConditionTerm::Overflows {
+                format,
+                op,
+                left,
+                right,
+            } = condition
             {
-                keys.push(Key::Truth(value));
-            }
+                vec![Self::overflow_key(
+                    *format,
+                    *op,
+                    [
+                        MachineOperandView::Legacy(left),
+                        MachineOperandView::Legacy(right),
+                    ],
+                    truth,
+                )]
+            } else {
+                let Some(view) = native_comparison_view(condition, truth) else {
+                    return;
+                };
+                let comparison = key(&view);
+                let mut keys = vec![comparison.clone()];
+                let cancelled_view = view.clone().cancelled_form();
+                let cancelled = key(&cancelled_view);
+                if cancelled != comparison {
+                    keys.push(cancelled.clone());
+                }
+                if let Some(widened) = view.widened() {
+                    keys.push(key(&widened));
+                }
+                if let Some(value) = constant_reading(&view, &comparison)
+                    .or_else(|| constant_reading(&cancelled_view, &cancelled))
+                {
+                    keys.push(Key::Truth(value));
+                }
+                keys
+            };
             self.keys_by_source = self
                 .keys_by_source
                 .with_inserted(source.clone(), keys.clone());
@@ -264,6 +289,34 @@ impl ObservationComparisons {
                 self.sources.with_inserted(key, sources)
             };
         }
+    }
+
+    fn overflow_key(
+        format: MachineIntegerType,
+        op: OverflowOperation,
+        operands: [MachineOperandView<'_>; 2],
+        truth: bool,
+    ) -> Key {
+        Key::Overflow(
+            format,
+            op,
+            operands.map(|operand| ScalarOperandKey::for_format(format, operand)),
+            truth,
+        )
+    }
+
+    pub(super) fn overflow_source(
+        &self,
+        format: MachineIntegerType,
+        op: OverflowOperation,
+        operands: [MachineOperandView<'_>; 2],
+        truth: bool,
+    ) -> Option<&Proposition> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.sources
+            .get(&Self::overflow_key(format, op, operands, truth))?
+            .iter()
+            .next()
     }
 
     pub(super) fn false_source(&self) -> Option<&Proposition> {

@@ -151,7 +151,7 @@ impl PureFactContext {
         self.indexed_exact_int32_constant_view(crate::kernel::MachineOperandView::Legacy(term))
     }
 
-    fn indexed_exact_int32_constant_view(
+    pub(super) fn indexed_exact_int32_constant_view(
         &self,
         term: crate::kernel::MachineOperandView<'_>,
     ) -> Option<(i64, Box<Proposition>)> {
@@ -277,7 +277,7 @@ impl PureFactContext {
         result
     }
 
-    fn decide_unrecorded(&self, condition: &ConditionTerm) -> Option<bool> {
+    pub(super) fn decide_unrecorded(&self, condition: &ConditionTerm) -> Option<bool> {
         if solve_reasoning_interrupted() {
             return None;
         }
@@ -421,11 +421,12 @@ impl PureFactContext {
         // Ordinary arithmetic range bounds can use the same bounded interval
         // calculation as execution. A nonoverflow result proves each bound;
         // an overflow result alone does not select which bound failed.
-        if let Some(Proposition::ConditionIs(overflow, false)) =
-            crate::kernel::machine_integer::definedness::definedness_of_integer_bound(
+        if let Some(query) =
+            crate::kernel::machine_integer::definedness::overflow_query_of_integer_bound(
                 &Proposition::ConditionIs(condition.clone(), true),
+                crate::kernel::machine_integer::definedness::defined_formats(),
             )
-            && self.decide_unrecorded(&overflow) == Some(false)
+            && self.decide_overflow_query(&query) == Some(false)
         {
             return Some(true);
         }
@@ -1691,6 +1692,37 @@ impl PureFactContext {
                 }
                 .integer_condition(),
             )
+        }
+    }
+
+    pub(super) fn has_operand_comparison(
+        &self,
+        format: MachineIntegerType,
+        relation: crate::kernel::machine_integer::Relation,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> bool {
+        use crate::kernel::machine_integer::comparison::{ComparisonOperand, NativeComparisonView};
+        if let (MachineOperandView::Legacy(left), MachineOperandView::Legacy(right)) = (left, right)
+        {
+            crate::kernel::machine_integer::representation::comparison(
+                format,
+                relation,
+                left.clone(),
+                right.clone(),
+            )
+            .is_some_and(|(condition, truth)| self.has_condition_fact(condition, truth))
+        } else {
+            let view = NativeComparisonView {
+                format,
+                relation,
+                operands: [left, right]
+                    .map(|operand| ComparisonOperand::Observation(operand.retain(format))),
+            };
+            let Proposition::ConditionIs(condition, truth) = view.integer_proposition() else {
+                unreachable!()
+            };
+            self.has_condition_fact(condition, truth)
         }
     }
 

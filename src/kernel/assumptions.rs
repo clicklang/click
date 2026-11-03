@@ -7437,12 +7437,9 @@ impl PureFactContext {
                 )
             })
             .flatten()
-            && bounds.iter().all(|bound| {
-                bound
-                    .stating_facts()
-                    .iter()
-                    .any(|fact| self.contains_known(fact))
-            })
+            && bounds
+                .iter()
+                .all(|bound| self.knows_operation_range_bound(bound))
         {
             self = self.assume_condition_uncharged(view.integer_condition(), true);
         }
@@ -7690,7 +7687,7 @@ impl PureFactContext {
                                 &mut variables,
                             );
                         }
-                        !variables.contains(&var) && facts.iter().any(|fact| self.contains_known(fact))
+                        !variables.contains(&var) && self.knows_operation_range_bound(bound)
                     }))
                 .then(|| view.integer_proposition())
             }
