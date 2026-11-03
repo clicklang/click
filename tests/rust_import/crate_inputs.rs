@@ -458,7 +458,7 @@ fn rust_crate_scalar_constants_execute_checked_initializers() {
         } else if function.name.contains("_I5_small") {
             ("u8", "20u8")
         } else if function.name.contains("_I4_flag") {
-            ("bool", "1")
+            ("bool", "true")
         } else {
             panic!("unexpected imported function {}", function.name);
         };

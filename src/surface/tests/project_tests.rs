@@ -759,7 +759,7 @@ int32 pipeline(struct counter* owner) {
     verify_c0_sources(&have_expanded, &sources)
         .expect("the mixed-snapshot frontier-local expansion should check");
 
-    let selected = click_source.find("step_until").unwrap();
+    let selected = click_source.find("step_until(region(3));").unwrap();
     let position = expansion::position_at_offset(click_source, selected);
     let expanded =
         expand_c0_tactic_source_at(click_source, &sources, position.line, position.column)

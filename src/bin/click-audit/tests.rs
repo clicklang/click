@@ -1690,7 +1690,7 @@ fn ranked_loops_without_invariants_audit_every_site() {
     ] {
         let path = root.join(relative);
         let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
-        assert_eq!(sites.len(), 3, "{relative}: {sites:?}");
+        assert_eq!(sites.len(), 1, "{relative}: {sites:?}");
         assert!(sites.iter().any(|site| site.tactic_name == "loop"));
         let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
         let deadline = Instant::now() + Duration::from_secs(120);

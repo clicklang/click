@@ -3477,16 +3477,29 @@ fn check_generic_span_cases(cases: Vec<GenericSpanCase>) {
         let parsed = read_click_project(&sidecar, &source).unwrap();
         verify_program_prepared_project(&parsed, &import)
             .unwrap_or_else(|error| panic!("{}: {}\n{source}", case.name, error.message()));
-        let expanded = expand_project_claim_source_by_label(
-            &parsed,
-            &ProgramInputs::program(&import),
-            "probe.contract",
-        )
-        .unwrap_or_else(|error| panic!("{}: {}", case.name, error.message()));
-        assert!(!expanded.contains("extern"), "{expanded}");
-        assert!(!expanded.contains("_M_"), "{expanded}");
-        verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
-            .unwrap_or_else(|error| panic!("{}: {}\n{expanded}", case.name, error.message()));
+        let claims = project_smart_tactic_source_sites(&parsed, &ProgramInputs::program(&import))
+            .unwrap()
+            .into_iter()
+            .filter(|site| site.claim_label.starts_with("probe."))
+            .map(|site| site.claim_label)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert!(
+            !claims.is_empty(),
+            "{}: probe has no proof sites",
+            case.name
+        );
+        for claim in claims {
+            let expanded = expand_project_claim_source_by_label(
+                &parsed,
+                &ProgramInputs::program(&import),
+                &claim,
+            )
+            .unwrap_or_else(|error| panic!("{}: {}", case.name, error.message()));
+            assert!(!expanded.contains("extern"), "{expanded}");
+            assert!(!expanded.contains("_M_"), "{expanded}");
+            verify_program_prepared_project(&parsed.with_entry_source(expanded.clone()), &import)
+                .unwrap_or_else(|error| panic!("{}: {}\n{expanded}", case.name, error.message()));
+        }
         for (edited, expected) in case.refusals {
             assert_ne!(
                 edited, case.sidecar,
