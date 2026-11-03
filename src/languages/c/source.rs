@@ -2398,7 +2398,11 @@ fn substitute_macro_parameters(
             if let Some(parameter_index) =
                 parameters.iter().position(|parameter| parameter == &name)
             {
-                expanded.push_str(&arguments[parameter_index]);
+                append_macro_tokens(
+                    &mut expanded,
+                    &arguments[parameter_index],
+                    chars.get(index).copied(),
+                );
             } else {
                 expanded.extend(chars[start..index].iter().copied());
             }
@@ -2931,6 +2935,37 @@ int32 run(int32 value) {
             let error = local_include_paths("main.c", source).unwrap_err();
             assert!(error.to_string().contains(expected));
         }
+    }
+
+    #[test]
+    fn function_macro_arguments_preserve_adjacent_token_boundaries() {
+        for (replacement, argument, expected) in [
+            ("+x", "+n", "+ +n"),
+            ("-x", "-n", "- -n"),
+            ("x+2", "n+", "n+ +2"),
+            ("x-2", "n-", "n- -2"),
+            ("8/x", "*p", "8/ *p"),
+            ("x/2", "n/", "n/ /2"),
+            ("x.0", "1", "1 .0"),
+        ] {
+            let source = format!("#define APPLY(x) {replacement}\nAPPLY({argument})\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(&source);
+            assert_eq!(expanded.source().trim(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn macro_argument_does_not_turn_unary_plus_into_increment() {
+        let sources = BTreeMap::from([(
+            "main.c",
+            "#define PLUS(x) +x\nint value(void) { int n = 1; return PLUS(+n); }\n",
+        )]);
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        assert_eq!(
+            expanded.source().trim(),
+            "int value(void) { int n = 1; return + +n; }"
+        );
     }
 
     #[test]
