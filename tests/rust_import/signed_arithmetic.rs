@@ -12,9 +12,10 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
+    for (function, before, after, expected) in [
         // `i64` remainder by a possible zero.
         (
+            "modulo",
             "    requires 0i64 <= x and 0i64 < y;\n",
             "    requires 0i64 <= x;\n",
             "division by zero",
@@ -22,25 +23,34 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
         // `i8` and `i16` are computed in `int`, where `MIN / -1` fits, so
         // they owe an explicit check.
         (
+            "quotient8",
             "    requires 0i8 <= x and 0i8 < y;\n",
             "    requires y == -1i8;\n",
             "Rust div panic check",
         ),
         (
+            "remainder16",
             "    requires 0i16 <= x and 0i16 < y;\n",
             "    requires y == -1i16;\n",
             "Rust rem panic check",
         ),
         // Negation is a subtraction from zero, with its checks.
         (
+            "negate",
             "    requires -100i16 <= x and x <= 100i16;\n",
             "",
             "Rust sub panic check",
         ),
-        ("    requires x != -2147483648i32;\n", "", "signed overflow"),
+        (
+            "negate32",
+            "    requires x != -2147483648i32;\n",
+            "",
+            "signed overflow",
+        ),
         // `isize` division through a reference: `MIN / -1` overflows the
         // kernel's signed 64-bit word.
         (
+            "split",
             "    requires 0isize <= *total and 0isize < parts;\n",
             "    requires parts != 0isize;\n",
             "signed overflow",
@@ -48,18 +58,21 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
         // A shift's count is below the operand's width: 8 for `i8`, not
         // the 32 C allows for its promoted word.
         (
+            "shift_narrow",
             "    requires n < 8u32;\n",
             "    requires n < 9u32;\n",
             "Rust shl panic check",
         ),
         // A negative count is as out of range as a large one.
         (
+            "shift_right",
             "    requires 0i32 <= n and n < 64i32;\n",
             "    requires n < 64i32;\n",
             "Rust shr panic check",
         ),
         // A bitwise result is the operation it lowers from.
         (
+            "mask",
             "    ensures result == (x & y);\n",
             "    ensures result == (x | y);\n",
             "mask",
@@ -67,9 +80,11 @@ fn charon_signed_arithmetic_verifies_with_its_panic_checks() {
     ] {
         assert!(SIDECAR.contains(before), "{before}");
         let invalid = SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // The positive run covers the whole fixture; each mutation only needs its function.
+        let error = verify_rust_function(&invalid, &prepared, function)
             .err()
             .unwrap_or_else(|| panic!("`{before}` -> `{after}` must fail"));
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         assert!(rendered.contains(expected), "{expected}: {rendered}");
         // A panic check's refusal states its condition over the source
