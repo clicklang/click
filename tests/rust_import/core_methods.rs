@@ -15,18 +15,38 @@ fn charon_core_methods_verify_against_their_library_contracts() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
+    // Reject `min` returning `max` on distinct concrete inputs, rather than
+    // searching for the false equality over arbitrary integers. The successful
+    // companion checks both the actual return and the expected maximum, so a
+    // broken call or library definition cannot satisfy the rejection check.
+    let witness = r#"import click::rust::u32;
+verifying "methods.rs";
+fn smaller(a: u32, b: u32) -> u32 {
+    requires a == 1u32 and b == 2u32;
+    ensures result == 1u32;
+    ensures u32::max(a, b) == 2u32;
+} by {
+    step_until(function.exit);
+    unfold(u32::min(a, b));
+    unfold(u32::max(a, b));
+}"#;
+    C0VerificationSession::new_program_prepared(witness, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let invalid = witness.replace("ensures result == 1u32;", "ensures result == 2u32;");
+    assert_ne!(witness, invalid);
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("`smaller(1, 2)` returning 2 must fail");
+    assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+    let rendered = format!("{error:?} {error}");
+    assert!(rendered.contains("smaller"), "{rendered}");
+
     let imports = SIDECAR
         .lines()
         .take_while(|line| line.starts_with("import "))
         .collect::<Vec<_>>()
         .join("\n");
     for (before, after, expected) in [
-        // `min` is not `max`.
-        (
-            "    ensures result == u32::min(a, b);\n",
-            "    ensures result == u32::max(a, b);\n",
-            "smaller",
-        ),
         // A sum that fits is `Some`, never `None`.
         (
             "    have u32::checked_add(a, b) == Option<u32>::Some(a + b) by {\n",

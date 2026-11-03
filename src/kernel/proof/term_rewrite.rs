@@ -2752,6 +2752,10 @@ impl<'a> TermRewrite<'a> {
             return resource.clone();
         }
         match resource {
+            CResource::Star(pair) => {
+                CResource::star(self.resource(&pair.0), self.resource(&pair.1))
+            }
+
             CResource::Memory(range) => {
                 let carrier = range.pointer_carrier();
                 let CValue::Pointer(mut mapped) = self.value(&CValue::Pointer(carrier)) else {

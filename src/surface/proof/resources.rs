@@ -594,7 +594,10 @@ fn materialize_folded_composite_resource_memory(
     let mut memory = state.memory().clone();
     for resource in state.resources().facts() {
         let (name, resource_arguments) = match resource.resource() {
-            CResource::Footprint(_) | CResource::Parameter(_) => continue,
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => continue,
             CResource::Composite { name, arguments } => (name, arguments),
             CResource::Memory(_)
             | CResource::Token { .. }
@@ -2285,7 +2288,9 @@ fn project_held_resource_observable_facts(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<CMemory, String> {
     let (name, resource_arguments) = match resource.resource() {
-        CResource::Footprint(_) | CResource::Parameter(_) => return Ok(state.memory().clone()),
+        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_) => {
+            return Ok(state.memory().clone());
+        }
         CResource::Composite { name, arguments } => (name, arguments),
         CResource::Memory(_)
         | CResource::Token { .. }
@@ -3319,29 +3324,30 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             })?
             .filter(|binding| binding.hold.is_some())
     };
-    let (requested_population_name, requested_population_arguments) =
-        match abstract_resource.resource() {
-            CResource::Footprint(_) | CResource::Parameter(_) => {
-                return Err(ClickError::new(
-                    "a resource descriptor does not grant ownership",
-                ));
-            }
-            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
-                (name.clone(), arguments.clone())
-            }
-            CResource::Memory(_) => unreachable!("a declared resource lowered to memory"),
-            CResource::Instance(_)
-            | CResource::MutexGuard(_)
-            | CResource::MutexLive(_)
-            | CResource::MutexUse(_)
-            | CResource::Publication(_)
-            | CResource::PopulationAuthority(_)
-            | CResource::Iterated(_) => {
-                return Err(ClickError::new(
-                    "instance unfolding is not a population operation",
-                ));
-            }
-        };
+    let (requested_population_name, requested_population_arguments) = match abstract_resource
+        .resource()
+    {
+        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_) => {
+            return Err(ClickError::new(
+                "a resource descriptor does not grant ownership",
+            ));
+        }
+        CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+            (name.clone(), arguments.clone())
+        }
+        CResource::Memory(_) => unreachable!("a declared resource lowered to memory"),
+        CResource::Instance(_)
+        | CResource::MutexGuard(_)
+        | CResource::MutexLive(_)
+        | CResource::MutexUse(_)
+        | CResource::Publication(_)
+        | CResource::PopulationAuthority(_)
+        | CResource::Iterated(_) => {
+            return Err(ClickError::new(
+                "instance unfolding is not a population operation",
+            ));
+        }
+    };
     let body_reads_counts = composite_body
         .facts()
         .iter()
@@ -4097,7 +4103,10 @@ fn fold_composite_resources_on_outcome_with_facts(
                 .expect("fold requires owned composite authority")
                 .clone();
             let name = match population.resource() {
-                CResource::Footprint(_) | CResource::Parameter(_) => {
+                CResource::Footprint(_)
+                | CResource::Parameter(_)
+                | CResource::Emp
+                | CResource::Star(_) => {
                     return Err(ClickError::new(
                         "a resource descriptor does not grant ownership",
                     ));
@@ -4183,7 +4192,10 @@ fn fold_composite_resources_on_outcome_with_facts(
                 opened_owner = Some(*occurrence);
             }
             let (name, _) = match population.resource() {
-                CResource::Footprint(_) | CResource::Parameter(_) => {
+                CResource::Footprint(_)
+                | CResource::Parameter(_)
+                | CResource::Emp
+                | CResource::Star(_) => {
                     return Err(ClickError::new(
                         "a resource descriptor does not grant ownership",
                     ));

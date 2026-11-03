@@ -2771,3 +2771,87 @@ fn exact_read_initialization_queries_have_near_linear_total_work() {
         assert!(pair[1].1 <= pair[0].1 * 3, "exact control: {samples:?}");
     }
 }
+
+/// Exercise the typed pointer-read constructor used by symbolic loads. All
+/// stores are in the same object as the reads, but beyond their eight-byte
+/// slots: the block memo cannot skip the history for every fresh cell at once.
+/// Setup and exact read identities are outside the measurement; no cache is
+/// cleared between reads. Each size starts a normal fresh verification session.
+fn pointer_read_naming_samples(with_history: bool, same_cell: bool) -> Vec<(u32, usize)> {
+    let mut samples = Vec::new();
+    for size in [16u32, 32, 64, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer {
+            block: PointerBlock::Heap(998_960),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let initial = crate::kernel::intern_c_memory(CMemory::new());
+        let mut memory = initial.memory().clone();
+        if with_history {
+            for index in 0..size {
+                memory = memory.store_classed_with_context(
+                    base.offset_by_bytes(size * 8),
+                    int32(index),
+                    &PureFactContext::new(),
+                    None,
+                );
+            }
+        }
+        let current = crate::kernel::intern_c_memory(memory);
+        let reads = (0..size)
+            .map(|index| {
+                let address = base.offset_by_bytes(if same_cell { 0 } else { index * 8 });
+                let read = Pointer::loaded_value(&current, &address);
+                (address, read)
+            })
+            .collect::<Vec<_>>();
+        let (values, work) = crate::instrumentation::measure_deterministic_work(|| {
+            reads
+                .iter()
+                .map(|(address, read)| {
+                    crate::kernel::CPointerValue::from_read(
+                        read.clone(),
+                        CType::Int32Pointer,
+                        &current,
+                        address,
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
+        // Construction keeps the exact supplied source even when an earlier
+        // read would have the same bytes. No historical identity is inferred.
+        for ((address, read), value) in reads.iter().zip(values.iter()) {
+            assert_eq!(value.pointer(), read);
+            let exact = Pointer::loaded_value(&current, address);
+            assert_eq!(value.designation(), &exact);
+            assert_eq!(value.opaque_extent(), Some(&exact));
+        }
+        samples.push((size, work));
+    }
+    samples
+}
+
+fn assert_pointer_read_naming_is_near_linear(samples: &[(u32, usize)]) {
+    eprintln!("pointer-read naming (reads, work): {samples:?}");
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 <= pair[0].1 * 3,
+            "pointer-read naming exceeds the near-linear doubling envelope: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn fresh_pointer_read_naming_across_store_history_has_near_linear_total_work() {
+    assert_pointer_read_naming_is_near_linear(&pointer_read_naming_samples(true, false));
+}
+
+#[test]
+fn repeated_pointer_read_naming_of_one_cell_has_near_linear_total_work() {
+    assert_pointer_read_naming_is_near_linear(&pointer_read_naming_samples(true, true));
+}
+
+#[test]
+fn fresh_pointer_read_naming_without_store_history_has_near_linear_total_work() {
+    assert_pointer_read_naming_is_near_linear(&pointer_read_naming_samples(false, false));
+}

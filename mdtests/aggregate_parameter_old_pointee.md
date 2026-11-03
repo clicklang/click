@@ -28,7 +28,6 @@ void dispose(struct packet input) {
     step_until(function.exit);
     have old(input.data) == at(copied_entry, input.data);
     have old(input.data[0]) == at(copied_entry, input.data[0]) by {
-        rewrite(old(input.data) == at(copied_entry, input.data));
         normalize();
     }
     have old(input.data[0]) == 7;

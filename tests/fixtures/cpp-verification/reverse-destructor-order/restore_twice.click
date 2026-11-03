@@ -21,7 +21,7 @@ Restore::~Restore() {
 
 int32 restore_twice(bool early, int32& value) {
     owns value;
-    ensures early != 0 implies result == 7;
-    ensures early == 0 implies result == 9;
+    ensures early == true implies result == 7;
+    ensures early == false implies result == 9;
     ensures value == old(value);
 }

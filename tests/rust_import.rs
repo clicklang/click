@@ -2882,31 +2882,41 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(BOX_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
+    for (function, before, after, expected) in [
         (
+            "boxed::boxed",
             "    ensures result == x + 1;",
             "    ensures result == x;",
             "boxed::boxed.ensures_0",
         ),
-        ("    requires x < 100;\n", "", "Rust add panic check"),
+        (
+            "boxed::boxed",
+            "    requires x < 100;\n",
+            "",
+            "Rust add panic check",
+        ),
         // `read` frees the box it is passed, so it cannot hand it back.
         (
+            "boxed::read",
             "    consumes allocation(b, sizeof(boxed::Cell));\n    consumes *b;",
             "    owns allocation(b, sizeof(boxed::Cell));\n    owns *b;",
             "boxed::read.owns_0",
         ),
         // `make` returns the allocation it made.
         (
+            "boxed::make",
             "    produces allocation(result, sizeof(boxed::Cell));\n",
             "",
             "live allocation obligation was neither returned nor freed",
         ),
         (
+            "boxed::value_or",
             "    consumes cell: cell_box(o);",
             "    owns cell: cell_box(o);",
             "boxed::value_or.owns_0",
         ),
         (
+            "boxed::maybe_through",
             "    ensures make == false implies result == 0;",
             "    ensures make == false implies result == x;",
             "boxed::maybe_through.ensures_1",
@@ -2914,9 +2924,12 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
     ] {
         assert!(BOX_SIDECAR.contains(before), "{before}");
         let invalid = BOX_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the complete mutated function and its dependencies, while
+        // the initial successful run covers every body in the fixture.
+        let error = verify_rust_function(&invalid, &prepared, function)
             .err()
             .expect("a claim the box program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
@@ -3055,9 +3068,13 @@ fn charon_option_values_read_as_click_options() {
     ] {
         assert!(OPTION_VALUE_SIDECAR.contains(before), "{before}");
         let invalid = OPTION_VALUE_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the mutated function and its dependencies, without proving
+        // the fixture's unrelated functions again for every negative case.
+        let function = expected.split('.').next().unwrap();
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
             .err()
             .expect("a claim the option program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
@@ -3158,9 +3175,13 @@ fn charon_result_values_read_as_click_results() {
     ] {
         assert!(RESULT_VALUE_SIDECAR.contains(before), "{before}");
         let invalid = RESULT_VALUE_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the mutated function and its dependencies, without proving
+        // the fixture's unrelated functions again for every negative case.
+        let function = expected.split('.').next().unwrap();
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
             .err()
             .expect("a claim the result program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
@@ -3286,9 +3307,13 @@ fn charon_option_references_read_and_write_through_borrows() {
     ] {
         assert!(OPTION_REF_SIDECAR.contains(before), "{before}");
         let invalid = OPTION_REF_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the mutated function and its dependencies, without proving
+        // the fixture's unrelated functions again for every negative case.
+        let function = expected.split('.').next().unwrap();
+        let error = verify_rust_proof_after(&invalid, &prepared, &format!("fn {function}"))
             .err()
             .expect("a claim the reference program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
@@ -3574,7 +3599,10 @@ fn charon_generic_container_refuses_a_stronger_put_and_a_false_caller() {
     ] {
         assert!(GENERIC_CONTAINER_SIDECAR.contains(before), "{before}");
         let invalid = GENERIC_CONTAINER_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // The positive test checks every implementation body. Here the
+        // interface-refinement check and the mutated caller are the targets;
+        // do not replay the unrelated stack transport proofs for each case.
+        let error = verify_rust_function(&invalid, &prepared, "generic_container::round_trip_dyn")
             .err()
             .unwrap_or_else(|| panic!("`{after}` must fail"));
         let rendered = format!("{error:?} {error}");
@@ -6065,4 +6093,62 @@ fn rust_recursive_countdown_expansion_checks_without_search() {
             .map_err(|error| error.to_string())
     })
     .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
+#[ignore = "nightly: selected stack transport expansion and cold replay"]
+fn charon_stack_transport_repairs_expand_and_replay() {
+    for (directory, sidecar, function) in [
+        (
+            "recursive-drop",
+            "list.click",
+            "__rust_q_I14_recursive_drop_T36___rust_q_I14_recursive_drop_I5_Stack_I3_pop",
+        ),
+        (
+            "generic-stack",
+            "stack.click",
+            "__rust_q_I13_generic_stack_T40___rust_q_I13_generic_stack_I5_Stack_A1_T_I3_pop",
+        ),
+        (
+            "generic-container",
+            "container.click",
+            "__rust_q_I17_generic_container_T44___rust_q_I17_generic_container_I5_Stack_A1_T_I3_pop",
+        ),
+    ] {
+        if std::env::var("CLICK_STACK_REPAIR_CASE").is_ok_and(|selected| selected != directory) {
+            continue;
+        }
+        let fixture = format!("design/charon-trial/{directory}");
+        let source = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join(&fixture)
+                .join(sidecar),
+        )
+        .unwrap();
+        let p = Project::from_fixture(&fixture);
+        fs::write(p.root.join("borrow.click"), &source).unwrap();
+        let prepared = p.prepared().unwrap();
+        click::surface::with_proof_trace(function, || {
+            C0VerificationSession::new_program_prepared(&source, &prepared).unwrap_or_else(
+                |error| {
+                    panic!(
+                        "{directory}: {}\n{}",
+                        error.report(),
+                        error.trace_context_report().unwrap_or_default()
+                    )
+                },
+            );
+        });
+        let claim = format!("{function}.contract");
+        let expanded = click::surface::expand_program_prepared_claim_source_by_label(
+            &source, &prepared, &claim,
+        )
+        .unwrap_or_else(|error| panic!("{directory}: {}", error.report()));
+        click::surface::without_implicit_auto_for_claim(&claim, || {
+            C0VerificationSession::new_program_prepared(&expanded, &prepared)
+                .map(|_| ())
+                .map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{directory}: {error}\n{expanded}"));
+    }
 }

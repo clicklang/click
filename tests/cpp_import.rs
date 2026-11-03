@@ -1355,11 +1355,10 @@ fn expression_observers_preserve_short_circuit_read_permissions() {
         refresh_import(&project.config()).unwrap();
         fs::remove_file(&project.exporter).unwrap();
         let import = load_import(&project.config()).unwrap();
-        let numeric = if condition == "false" { 0 } else { 1 };
         let source = format!(
             r#"verifying "observe.cpp";
-bool enabled() {{ ensures result == {numeric}; }}
-bool read(const struct Count& count) {{ views count.value; requires count.value == 0u64; ensures result == 1; }}
+bool enabled() {{ ensures result == {condition}; }}
+bool read(const struct Count& count) {{ views count.value; requires count.value == 0u64; ensures result == true; }}
 bool probe(const struct Count& count) {{ ensures result == result; }}
 "#
         );
@@ -1558,19 +1557,19 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
     for (cpp, expected) in [
         (
             "bool probe() noexcept { return __builtin_is_constant_evaluated(); }",
-            0,
+            false,
         ),
         (
             "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { return evaluated(); }",
-            0,
+            false,
         ),
         (
             "constexpr bool evaluated() noexcept { return __builtin_is_constant_evaluated(); } bool probe() noexcept { if constexpr (evaluated()) { return true; } else { return false; } }",
-            1,
+            true,
         ),
         (
             "bool probe() noexcept { if (__builtin_is_constant_evaluated()) { return true; } else { return false; } }",
-            0,
+            false,
         ),
     ] {
         let project = Project::with_fixture("evaluation.cpp", "probe", cpp);
@@ -1583,7 +1582,7 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
             .iter()
             .any(|function| function.name == "evaluated")
         {
-            "bool evaluated() { ensures result == 0; }\n"
+            "bool evaluated() { ensures result == false; }\n"
         } else {
             ""
         };
@@ -1593,7 +1592,7 @@ fn runtime_constant_evaluation_keeps_manifest_branch_selection_distinct_offline(
         check_selected_claim_certificate(&project, &import, &source);
         let hostile = source.replace(
             &format!("result == {expected}"),
-            &format!("result == {}", 1 - expected),
+            &format!("result == {}", !expected),
         );
         let path = project.directory.join("bad.click");
         fs::write(&path, &hostile).unwrap();
@@ -3584,9 +3583,9 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
             .iter()
             .map(|site| site.tactic_name.as_str())
             .collect::<Vec<_>>(),
-        vec!["execute", "solve"]
+        vec!["implicit tail"]
     );
-    let execute = project_tactic_source_position(
+    let implicit = project_tactic_source_position(
         &click_project,
         &ProgramInputs::program(&import),
         "choose.contract",
@@ -3596,8 +3595,8 @@ fn locked_cpp_branch_and_early_return_verify_through_the_shared_sidecar_path() {
     let expanded = expand_project_tactic_source_at(
         &click_project,
         &ProgramInputs::program(&import),
-        execute.line,
-        execute.column,
+        implicit.line,
+        implicit.column,
     )
     .expect("expand the branch execution into a checkable source proof");
     let rewritten = click_project.with_entry_source(expanded.clone());
@@ -5182,8 +5181,8 @@ fn nested_scope_destroys_its_object_on_return_and_fallthrough() {
         .expect("the expanded nested-scope proof must reverify");
 
     let wrong_fallthrough = NESTED_SCOPE_DESTRUCTOR_SIDECAR.replace(
-        "ensures early == 0 implies result == old(value);",
-        "ensures early == 0 implies result == 9;",
+        "ensures early == false implies result == old(value);",
+        "ensures early == false implies result == 9;",
     );
     fs::write(&sidecar, &wrong_fallthrough).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_fallthrough).unwrap();
@@ -5310,8 +5309,8 @@ fn sibling_scopes_reuse_a_local_name_with_independent_cleanup() {
         .expect("the expanded sibling-scope proof must reverify");
 
     let wrong_final = SIBLING_SCOPE_DESTRUCTORS_SIDECAR.replace(
-        "second_early == 0 implies result == old(value)",
-        "second_early == 0 implies result == 11",
+        "second_early == false implies result == old(value)",
+        "second_early == false implies result == 11",
     );
     fs::write(&sidecar, &wrong_final).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_final).unwrap();
@@ -5341,22 +5340,7 @@ fn third_sibling_scope_preserves_independent_cleanup_and_frames() {
             .count(),
         3
     );
-    let (contracts, _) = SIBLING_SCOPE_DESTRUCTORS_SIDECAR
-        .rsplit_once("} by {")
-        .unwrap();
-    let proof = r#"step(); step();
-    branch { step_until(function.exit); solve(); } else { }
-    step(); step();
-    have value == old(value) by { solve(); }
-    step(); step();
-    branch { step_until(function.exit); solve(); } else { }
-    step(); step();
-    have value == old(value) by { solve(); }
-    step(); step(); step(); step();
-    have value == old(value) by { solve(); }
-    step_until(function.exit); solve();"#;
-    let source = format!("{contracts}}} by {{\n{proof}\n}}\n");
-    check_selected_claim_certificate(&growing, &growing_import, &source);
+    check_selected_claim_certificate(&growing, &growing_import, SIBLING_SCOPE_DESTRUCTORS_SIDECAR);
 }
 
 #[test]
@@ -5598,8 +5582,8 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
         .expect_err("the caller cannot claim a different restored value");
 
     let wrong_skipped_result = CONDITIONAL_CONSTRUCTION_SIDECAR.replace(
-        "ensures construct == 0 implies result == 41;",
-        "ensures construct == 0 implies result == 7;",
+        "ensures construct == false implies result == 41;",
+        "ensures construct == false implies result == 7;",
     );
     fs::write(&sidecar, &wrong_skipped_result).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_skipped_result).unwrap();
@@ -7451,7 +7435,7 @@ fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
             "int64 n",
             "requires n == 4294967296i64;",
             "bool",
-            "1",
+            "true",
         ),
         (
             "truth",
@@ -7459,7 +7443,7 @@ fn signed_scalar_casts_preserve_cpp20_boolean_and_narrowing_semantics() {
             "int64 n",
             "requires n == 0i64;",
             "bool",
-            "0",
+            "false",
         ),
         (
             "negate",
@@ -9109,8 +9093,8 @@ fn direct_return_calls_preserve_each_scalar_type_and_branch_result() {
     let source = r#"verifying "relay.cpp";
 int32 echo(int32 value) { ensures result == value; }
 int32 choose(bool first, int32 value) {
- ensures first != 0 implies result == value;
- ensures first == 0 implies result == 7;
+ ensures first == true implies result == value;
+ ensures first == false implies result == 7;
 }
 "#;
     check_selected_claim_certificate(&project, &import, source);
@@ -10241,8 +10225,8 @@ fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
     let source = REVERSE_DESTRUCTOR_SIDECAR.replace("restore_twice(", "construction_prefix(");
     check_selected_claim_certificate(&project, &import, &source);
     let false_claim = source.replace(
-        "early != 0 implies result == 7",
-        "early != 0 implies result == 9",
+        "early == true implies result == 7",
+        "early == true implies result == 9",
     );
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, &false_claim).unwrap();
@@ -10278,12 +10262,12 @@ fn lifetime_return_before_any_construction_has_no_cleanup() {
     let source = REVERSE_DESTRUCTOR_SIDECAR
         .replace("restore_twice(", "before_construction(")
         .replace(
-            "early != 0 implies result == 7",
-            "early != 0 implies result == old(value)",
+            "early == true implies result == 7",
+            "early == true implies result == old(value)",
         )
         .replace(
-            "early == 0 implies result == 9",
-            "early == 0 implies result == 7",
+            "early == false implies result == 9",
+            "early == false implies result == 7",
         );
     check_selected_claim_certificate(&project, &import, &source);
 }
@@ -11818,12 +11802,12 @@ fn wide_comparisons_control_branches_and_frame_modular_call_memory() {
     let proof = r#"verifying "wide.cpp";
 bool signed_less(int128 a, int128 b) {
     requires to_integer(a) < to_integer(b);
-    ensures result == 1;
+    ensures result == true;
 }
 bool relay(int128 a, int128 b, int32* untouched) {
     requires to_integer(a) < to_integer(b);
     owns untouched[0..1];
-    ensures result == 1;
+    ensures result == true;
     ensures untouched[0] == old(untouched[0]);
 }
 "#;
@@ -11868,7 +11852,7 @@ fn wide_comparisons_recognize_complementary_contract_premises() {
             refresh_import(&project.config()).unwrap();
             let import = load_import(&project.config()).unwrap();
             let proof = format!(
-                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ requires to_integer(a) {inverse} to_integer(b); ensures result == 0; }}"
+                "verifying \"wide.cpp\"; bool {name}({ty} a, {ty} b) {{ requires to_integer(a) {inverse} to_integer(b); ensures result == false; }}"
             );
             check_arithmetic_sidecar(&project, &import, &proof);
         }
@@ -12068,7 +12052,7 @@ fn scalar_brace_initialization_preserves_resolved_conversions_offline() {
             "to_integer(result) == to_integer(n)",
         ),
         ("widen", "int64", "int32 n", "result == n"),
-        ("truth", "bool", "", "result == 1"),
+        ("truth", "bool", "", "result == true"),
         ("constant", "int64", "", "result == 2147483648i64"),
     ] {
         let project = Project::with_fixture("braces.cpp", name, SCALAR_BRACES_SOURCE);
@@ -15205,7 +15189,7 @@ fn locked_header_graph_preserves_scalar_exception_contracts_offline() {
     );
     fs::remove_file(&project.exporter).unwrap();
     let sidecar = r#"verifying "header-exception.cpp";
-    bool predicate(bool fail) throws int32 { ensures result == 1; exceptional ensures exception == 7; }
+    bool predicate(bool fail) throws int32 { ensures result == true; exceptional ensures exception == 7; }
     int32 choose(bool fail) throws int32 { ensures result == 5; exceptional ensures exception == 7; }
     "#;
     check_selected_claim_certificate(&project, &import, sidecar);

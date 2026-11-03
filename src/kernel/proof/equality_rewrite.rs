@@ -1227,7 +1227,13 @@ fn rewrite_atomic_proposition_by_exact_equality(
             right: &PointerOffsetTerm,
         ) -> CResource {
             match resource {
-                CResource::Footprint(_) | CResource::Parameter(_) => resource.clone(),
+                CResource::Star(pair) => CResource::star(
+                    rewrite_resource_offset(&pair.0, left, right),
+                    rewrite_resource_offset(&pair.1, left, right),
+                ),
+                CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp => {
+                    resource.clone()
+                }
                 CResource::Memory(range) => CResource::Memory(range.with_bounds(
                     Pointer {
                         block: range.base().block.clone(),
@@ -2143,8 +2149,10 @@ fn rewrite_atomic_proposition_by_exact_equality(
             rewrite_term(bound, left, right)
         }
     };
-    let rewrite_resource_term = |resource: &CResource| match resource {
-        CResource::Footprint(_) | CResource::Parameter(_) => resource.clone(),
+    let rewrite_resource_leaf = |resource: &CResource| match resource {
+        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_) => {
+            resource.clone()
+        }
         CResource::Memory(range) => CResource::Memory(range.with_bounds(
             Pointer {
                 block: range.base().block.clone(),
@@ -2163,6 +2171,16 @@ fn rewrite_atomic_proposition_by_exact_equality(
         | CResource::Publication(_)
         | CResource::Iterated(_) => resource.clone(),
     };
+    fn map_resource(resource: &CResource, leaf: &impl Fn(&CResource) -> CResource) -> CResource {
+        match resource {
+            CResource::Star(pair) => {
+                CResource::star(map_resource(&pair.0, leaf), map_resource(&pair.1, leaf))
+            }
+            other => leaf(other),
+        }
+    }
+    let rewrite_resource_term =
+        |resource: &CResource| map_resource(resource, &rewrite_resource_leaf);
     let rewritten = match goal {
         Proposition::ConditionIs(condition, expected) => {
             let rewritten_condition = if let Some((operator, goal_left, goal_right)) =

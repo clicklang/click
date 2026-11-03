@@ -298,3 +298,68 @@ fn elements_separation_does_not_widen_byte_cells() {
     "#;
     assert!(without_implicit_auto(|| verify_click_theorems(source)).is_err());
 }
+
+#[test]
+fn separating_conjunction_laws_expand_without_implicit_search() {
+    let (source, inputs) = mdtest_sources("mdtests/separation_conjunction.md");
+    let inputs = inputs
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    without_implicit_auto(|| verify_c0_sources(&source, &inputs)).unwrap();
+    for claim in ["frame.ensures_0", "components.ensures_0", "empty.ensures_0"] {
+        let expanded = expand_c0_claim_source_by_label(&source, &inputs, claim).unwrap();
+        without_implicit_auto(|| verify_c0_sources(&expanded, &inputs)).unwrap();
+    }
+}
+
+#[test]
+fn conjunction_nodes_keep_multiplicity_and_session_identity() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let a = crate::kernel::CResource::Parameter(Variable(987));
+    let repeated = crate::kernel::CResource::star(a.clone(), a.clone());
+    assert_ne!(repeated, a);
+    assert_eq!(
+        repeated,
+        crate::kernel::CResource::star(a.clone(), a.clone())
+    );
+    let snapshot = crate::kernel::VerificationSession::capture_state();
+    let entry_count = crate::kernel::VerificationSession::state_entry_count();
+    let other = crate::kernel::CResource::star(repeated.clone(), a.clone());
+    assert_ne!(repeated, other);
+    assert!(crate::kernel::VerificationSession::state_entry_count() > entry_count);
+    assert!(crate::kernel::VerificationSession::restore_state(&snapshot));
+    assert_eq!(
+        entry_count,
+        crate::kernel::VerificationSession::state_entry_count()
+    );
+    assert_eq!(repeated, crate::kernel::CResource::star(a.clone(), a));
+}
+
+#[test]
+fn recursive_call_resource_bound_is_explicit_and_replays() {
+    for fixture in [
+        "recursive_call_footprint_containment",
+        "recursive_call_pair_footprint_containment",
+        "recursive_call_result_footprint_containment",
+    ] {
+        let (source, inputs) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let inputs = inputs
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        with_proof_trace("caller", || {
+            let verified = verify_c0_sources(&source, &inputs).unwrap_or_else(|error| {
+                panic!(
+                    "{fixture}: {}\n{}",
+                    error.report(),
+                    error.trace_context_report().unwrap_or_default()
+                )
+            });
+            let expanded =
+                super::expand_checked_grouped_claim(&source, &verified, "caller").unwrap();
+            verify_c0_sources(&expanded, &inputs)
+                .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
+        });
+    }
+}

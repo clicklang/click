@@ -119,3 +119,44 @@ pub(crate) fn prove_separation_subrange(
 mod scaling_tests {
     include!("../scaling_tests/kernel/separation_laws.rs");
 }
+
+/// Resource laws construct only the explicitly supplied proposition tree.
+/// They neither inspect ownership nor discover containment paths.
+pub(crate) fn prove_resource_law(name: &str, args: &[CResource]) -> Option<Theorem> {
+    let contains = |a: &CResource, b: &CResource| Proposition::CResourceContains {
+        parent: Box::new(a.clone()),
+        child: Box::new(b.clone()),
+    };
+    let separate = |a: &CResource, b: &CResource| Proposition::CResourceSeparate {
+        left: Box::new(a.clone()),
+        right: Box::new(b.clone()),
+    };
+    crate::instrumentation::record_deterministic_work(1);
+    let (premises, conclusion) = match (name, args) {
+        ("click::separation::contains_refl", [a]) => (vec![], contains(a, a)),
+        ("click::separation::contains_trans", [a, b, c]) => {
+            (vec![contains(a, b), contains(b, c)], contains(a, c))
+        }
+        ("click::separation::contains_left", [a, b]) => {
+            (vec![], contains(&CResource::star(a.clone(), b.clone()), a))
+        }
+        ("click::separation::contains_right", [a, b]) => {
+            (vec![], contains(&CResource::star(a.clone(), b.clone()), b))
+        }
+        ("click::separation::separate_symm", [a, b]) => (vec![separate(a, b)], separate(b, a)),
+        ("click::separation::separate_star", [a, b, c]) => (
+            vec![separate(a, c), separate(b, c)],
+            separate(&CResource::star(a.clone(), b.clone()), c),
+        ),
+        ("click::separation::separate_emp", [a]) => (vec![], separate(&CResource::Emp, a)),
+        _ => return None,
+    };
+    Some(Theorem::new(
+        premises
+            .into_iter()
+            .rev()
+            .fold(conclusion, |body, premise| {
+                Proposition::Implies(Box::new(premise), Box::new(body))
+            }),
+    ))
+}

@@ -205,6 +205,7 @@ struct CFunctionResourceTransfer {
     /// dependent addresses have been checked.  It is the sole memory-effect
     /// projection used by modular call havoc and its effect fact.
     memory_effects: Vec<CMemoryRange>,
+    resource_effect_bound: Option<CResource>,
     post_outputs: Option<ResourceContext>,
     /// Every evaluated ensured view, kept beside the composed return
     /// resources so the provenance routes see each one exactly once even
@@ -3353,7 +3354,7 @@ fn execute_verified_function_applications_with_suspension(
             )
         };
         let mut worker_effects = transfer.memory_effects.clone();
-        worker_effects.extend(mutex_storage_effects);
+        worker_effects.extend(mutex_storage_effects.iter().cloned());
         let result = if interface.aggregate_return_mode() == CAggregateReturnMode::Construction {
             let Some(result) = construction_return::summary_result(&entry_state, interface) else {
                 paths.push(CFunctionPath::new(
@@ -3396,14 +3397,19 @@ fn execute_verified_function_applications_with_suspension(
         // Construction initialization is part of this checked call effect,
         // so its endpoint must include the initialized value fields.
         if !worker_effects.is_empty() {
-            facts.push(
-                ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
-                    before: entry_state.memory.clone(),
-                    after: post_state.memory.clone(),
-                    mutable_ranges: worker_effects.clone(),
-                })
-                .into_certified(),
-            );
+            let mut effect = ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
+                before: entry_state.memory.clone(),
+                after: post_state.memory.clone(),
+                mutable_ranges: worker_effects.clone(),
+            })
+            .into_certified();
+            if mutex_storage_effects.is_empty()
+                && interface.aggregate_return_mode() != CAggregateReturnMode::Construction
+                && interface.construction_parameter().is_none()
+            {
+                effect.resource_effect_bound = transfer.resource_effect_bound.clone().map(Arc::new);
+            }
+            facts.push(effect);
         }
         // Protocol effects remain in the caller scope. The ordinary summary
         // partition below is recovered before this checked successor is
@@ -6388,6 +6394,39 @@ fn prepare_verified_function_call<'a>(
     // no later call path reconstructs the footprint from source clauses.
     let mut transfer = transfer;
     transfer.memory_effects = mutable_ranges.clone();
+    // The preserving resource-derived call is authorized by exactly these
+    // checked inputs. Keep them opaque; do not enumerate a recursive body.
+    if contract_interface.resource_derived_mutable_frame()
+        && !contract_interface.resource_derived_frame_mixed()
+        && contract_interface.resource_requires() == contract_interface.resource_ensures()
+        && transfer.consumed_inputs.is_empty()
+    {
+        // The transfer already selected the caller's equivalent owner. Use
+        // that recorded spelling, rather than retaining a callee parameter or
+        // a read expression whose value can change across this call.
+        let canonical: BTreeMap<_, _> = transfer
+            .canonical_borrowed_owners
+            .iter()
+            .map(|(checked, caller)| (checked, caller))
+            .collect();
+        let mut bound = None;
+        for input in &checked_transition_inputs {
+            let selected = canonical.get(&input.fact).copied().unwrap_or(&input.fact);
+            if let CResourceFact::Own(resource, quantity) = selected {
+                if quantity.as_const() != Some(1) {
+                    bound = None;
+                    break;
+                }
+                crate::instrumentation::record_deterministic_work(1);
+                bound = Some(match bound {
+                    None => resource.clone(),
+                    Some(previous) => CResource::star(previous, resource.clone()),
+                });
+            }
+        }
+        transfer.resource_effect_bound = bound;
+    }
+
     // A direct store into read-only storage is rejected where it is
     // executed, but a modular call performs its writes abstractly through
     // this footprint. Without the same check, passing read-only storage to
@@ -8076,7 +8115,10 @@ impl<'a> OwnedFootprintDerivation<'a> {
             return;
         }
         match fact.resource() {
-            CResource::Footprint(_) | CResource::Parameter(_) => {
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => {
                 self.reaches_unnamed = true;
             }
             CResource::Memory(range) => {
@@ -9974,7 +10016,10 @@ fn evaluate_resource_population_body_resources(
         .prefer_symbolic_external_loads();
     for required in required_resources.facts() {
         let (name, arguments) = match required.resource() {
-            CResource::Footprint(_) | CResource::Parameter(_) => continue,
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => continue,
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 (name, arguments)
             }
@@ -11073,6 +11118,7 @@ fn prepare_contract_resource_transfer_unexplained(
             ),
             caller_resources_after_requirements: caller_state.resources().clone(),
             memory_effects: Vec::new(),
+            resource_effect_bound: None,
             post_outputs: None,
             candidate_output_views: Vec::new(),
             produced_borrowing_pieces: Vec::new(),
@@ -12290,6 +12336,7 @@ fn prepare_contract_resource_transfer_unexplained(
         ),
         caller_resources_after_requirements: return_resources,
         memory_effects: Vec::new(),
+        resource_effect_bound: None,
         post_outputs: None,
         candidate_output_views: Vec::new(),
         produced_borrowing_pieces: Vec::new(),
@@ -18171,7 +18218,10 @@ fn resource_clause_supply_with_fact(
         };
         for child in children {
             match child.resource() {
-                CResource::Footprint(_) | CResource::Parameter(_) => {}
+                CResource::Footprint(_)
+                | CResource::Parameter(_)
+                | CResource::Emp
+                | CResource::Star(_) => {}
                 CResource::Memory(range) => {
                     let view = CResourceFact::view_memory(range.clone());
                     if !supply.facts().contains(&view) {
@@ -19512,7 +19562,10 @@ fn evaluate_function_declared_resource_spec(
 
 fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
     match resource {
-        CResourceFact::Own(CResource::Footprint(_) | CResource::Parameter(_), _) => 2,
+        CResourceFact::Own(
+            CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp | CResource::Star(_),
+            _,
+        ) => 2,
         CResourceFact::View(_) => 0,
         CResourceFact::Own(CResource::Memory(_), _) => 1,
         CResourceFact::Own(

@@ -1,0 +1,73 @@
+{
+  "schema": 1,
+  "units": {
+    "fixture": {
+      "language": "c++",
+      "lock": {
+        "c++": {
+          "sources": {
+            "cleanup.cpp": {
+              "compilation_database_sha256": "1954648021410040346751554f58540211b50c6161c07309b5e1f682a6bfe494",
+              "dependencies": {},
+              "logical_source_sha256": "a0de3d8a152c64b9f2a2b4dbe7d21b47cafe7a0f005900ff765d4197b9847d03",
+              "prepared_roots": [
+                "$unit",
+                "$project"
+              ],
+              "profile": {
+                "compilation_command": [
+                  "clang++",
+                  "-x",
+                  "c++",
+                  "-std=c++20",
+                  "--target=x86_64-unknown-linux-gnu",
+                  "-fno-exceptions",
+                  "-fno-rtti",
+                  "-O2",
+                  "-fno-strict-aliasing",
+                  "-funsigned-char",
+                  "-ffreestanding",
+                  "-nostdinc",
+                  "-nostdinc++",
+                  "-c",
+                  "cleanup.cpp",
+                  "-o",
+                  "cleanup.cpp.o"
+                ],
+                "compilation_directory": "$unit",
+                "compilation_file": "cleanup.cpp",
+                "exceptions": false,
+                "frontend": "clang",
+                "frontend_version": "Debian clang version 19.1.7 (3+b1)",
+                "rtti": false,
+                "standard": "c++20",
+                "target": "x86_64-unknown-linux-gnu"
+              },
+              "schema": 6,
+              "source_sha256": "a0de3d8a152c64b9f2a2b4dbe7d21b47cafe7a0f005900ff765d4197b9847d03"
+            }
+          }
+        },
+        "envelope": 1,
+        "frontend": {
+          "identity": "d5798ad72d5be2758f916f4c8ca13887b936a29653d1562e67ed89deeaa7c1c7",
+          "name": "clang"
+        },
+        "sources": {
+          "cleanup.cpp": {
+            "artifact": {
+              "bytes": 15128,
+              "path": ".click/fixture/cleanup.cpp.click-cpp.json",
+              "sha256": "670c63341e0ad7b886220d12b9c20886412cff43b2f526a7d0b8f159666b5456"
+            },
+            "identity": "b1a545178babd66fd8c05fab86845926016114dd4969756fa9ce4b7f13773681",
+            "inputs": {
+              "$unit/cleanup.cpp": "a0de3d8a152c64b9f2a2b4dbe7d21b47cafe7a0f005900ff765d4197b9847d03"
+            }
+          }
+        },
+        "unit": "f5246371ef410d50013c899d291142d9828287c11046f4498187999918943df4"
+      }
+    }
+  }
+}

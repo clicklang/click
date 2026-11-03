@@ -2245,6 +2245,27 @@ fn collect_resource_fact_reads_from_resource_subject(
     resource_name: &str,
 ) -> Result<(), ClickError> {
     match resource {
+        ResourceSubject::Emp => Ok(()),
+        ResourceSubject::Star(left, right) => {
+            collect_resource_fact_reads_from_resource_subject(
+                left,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )?;
+            collect_resource_fact_reads_from_resource_subject(
+                right,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
         ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
         | ResourceSubject::Instance { .. }

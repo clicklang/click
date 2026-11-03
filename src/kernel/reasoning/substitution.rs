@@ -660,7 +660,10 @@ fn walk_c_ranking_component<S: VariableSubstitution + ?Sized>(
 
 fn walk_c_resource<S: VariableSubstitution + ?Sized>(resource: &CResource, s: &S) -> CResource {
     match resource {
-        CResource::Footprint(_) | CResource::Parameter(_) => resource.clone(),
+        CResource::Star(pair) => {
+            CResource::star(walk_c_resource(&pair.0, s), walk_c_resource(&pair.1, s))
+        }
+        CResource::Footprint(_) | CResource::Parameter(_) | CResource::Emp => resource.clone(),
         CResource::PopulationAuthority(description) => CResource::PopulationAuthority(
             description.map_values(|value| walk_algebraic_value(value, s)),
         ),
@@ -3074,7 +3077,11 @@ fn collect_memory_bound_variables_entering(
 
 fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeSet<Variable>) {
     match resource {
-        CResource::Footprint(_) => {}
+        CResource::Star(pair) => {
+            collect_resource_bound_variables(&pair.0, variables);
+            collect_resource_bound_variables(&pair.1, variables);
+        }
+        CResource::Emp | CResource::Footprint(_) => {}
         CResource::Parameter(v) => {
             variables.insert(*v);
         }
@@ -7398,6 +7405,10 @@ fn substitute_pointer_variable_in_spec_resource(
     to: &Pointer,
 ) -> SpecResource {
     match resource {
+        SpecResource::Star(a, b) => SpecResource::Star(
+            Box::new(substitute_pointer_variable_in_spec_resource(a, from, to)),
+            Box::new(substitute_pointer_variable_in_spec_resource(b, from, to)),
+        ),
         SpecResource::Instance { .. } | SpecResource::Value(_) => resource.clone(),
         SpecResource::Memory {
             base,

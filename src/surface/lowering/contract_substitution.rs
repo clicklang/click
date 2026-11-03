@@ -927,6 +927,11 @@ fn collect_resource_subject_binding_names(
     names: &mut BTreeSet<String>,
 ) {
     match resource {
+        ResourceSubject::Emp => (),
+        ResourceSubject::Star(left, right) => {
+            collect_resource_subject_binding_names(left, names);
+            collect_resource_subject_binding_names(right, names);
+        }
         ResourceSubject::Footprint(_) => {}
         ResourceSubject::Parameter { name, .. } | ResourceSubject::Instance { name, .. } => {
             names.insert(name.clone());
@@ -1312,6 +1317,12 @@ fn rewrite_resource_subject_exact(
     preserve_snapshots: bool,
 ) -> (ResourceSubject, bool) {
     match subject {
+        ResourceSubject::Emp => (ResourceSubject::Emp, false),
+        ResourceSubject::Star(left, right) => {
+            let (a, x) = rewrite_resource_subject_exact(left, source, target, preserve_snapshots);
+            let (b, y) = rewrite_resource_subject_exact(right, source, target, preserve_snapshots);
+            (ResourceSubject::Star(Box::new(a), Box::new(b)), x || y)
+        }
         ResourceSubject::Instance { .. }
         | ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
@@ -1924,6 +1935,11 @@ fn substitute_resource_subject(
     substitutions: &ContractSubstitutions<'_>,
 ) -> Result<ResourceSubject, String> {
     match resource {
+        ResourceSubject::Emp => Ok(ResourceSubject::Emp),
+        ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
+            Box::new(substitute_resource_subject(left, substitutions)?),
+            Box::new(substitute_resource_subject(right, substitutions)?),
+        )),
         ResourceSubject::Instance { .. } | ResourceSubject::Footprint(_) => Ok(resource.clone()),
         ResourceSubject::Parameter { name, .. } => match substitutions.values.get(name) {
             Some(ContractExpression::Resource(subject)) => Ok(subject.as_ref().clone()),
@@ -2090,6 +2106,11 @@ fn apply_contract_lets_to_resource_subject(
     bindings: &[ContractLetBinding],
 ) -> Result<ResourceSubject, String> {
     match resource {
+        ResourceSubject::Emp => Ok(ResourceSubject::Emp),
+        ResourceSubject::Star(left, right) => Ok(ResourceSubject::Star(
+            Box::new(apply_contract_lets_to_resource_subject(*left, bindings)?),
+            Box::new(apply_contract_lets_to_resource_subject(*right, bindings)?),
+        )),
         ResourceSubject::Instance { .. }
         | ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }
@@ -2749,6 +2770,11 @@ fn collect_resource_subject_referenced_names(
     names: &mut BTreeSet<String>,
 ) {
     match subject {
+        ResourceSubject::Emp => (),
+        ResourceSubject::Star(left, right) => {
+            collect_resource_subject_referenced_names(left, names);
+            collect_resource_subject_referenced_names(right, names);
+        }
         ResourceSubject::Instance { .. }
         | ResourceSubject::Footprint(_)
         | ResourceSubject::Parameter { .. }

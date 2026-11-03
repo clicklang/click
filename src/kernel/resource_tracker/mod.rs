@@ -1053,27 +1053,6 @@ pub(crate) fn block_version_memo_len() -> usize {
     BLOCK_VERSION_MEMO.with(|memo| memo.borrow().len())
 }
 
-/// The point one cell's load variable is named by: the snapshot at which the
-/// loaded cell was last written or entered the world, walked assumption-free
-/// over recorded edges. Snapshots that differ only by effects the recorded
-/// history proves disjoint from the cell share a point, so load variables
-/// stay stable across them.
-/// [`cell_last_same_point`] when it is already memoized, without walking:
-/// `None` when no answer is cached for this query.
-pub(super) fn memoized_cell_last_same_point(
-    memory: &SharedCMemory,
-    pointer: &Pointer,
-    bytes: u32,
-) -> Option<Option<SharedCMemory>> {
-    let key = (memory.unchanged_bytes_source(), pointer.clone(), bytes);
-    CELL_VERSION_MEMO.with(|memo| {
-        memo.borrow()
-            .get(&key)
-            .cloned()
-            .map(|version| version.map(|version| version.memory))
-    })
-}
-
 #[derive(Clone)]
 struct NamedCellVersion {
     memory: SharedCMemory,

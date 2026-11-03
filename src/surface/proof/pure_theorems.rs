@@ -2566,8 +2566,19 @@ fn is_nat_integer_law_name(name: &str) -> bool {
     )
 }
 
+fn resource_law_shape(name: &str) -> Option<(usize, usize)> {
+    Some(match name {
+        "click::separation::contains_refl" | "click::separation::separate_emp" => (1, 0),
+        "click::separation::contains_left" | "click::separation::contains_right" => (2, 0),
+        "click::separation::contains_trans" | "click::separation::separate_star" => (3, 2),
+        "click::separation::separate_symm" => (2, 1),
+        _ => return None,
+    })
+}
+
 pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
-    name == "click::integer::uint32_from_le_bytes"
+    resource_law_shape(name).is_some()
+        || name == "click::integer::uint32_from_le_bytes"
         || name == "click::separation::restrict"
         || matches!(
             name.split("::<").next(),
@@ -2654,6 +2665,7 @@ fn verify_kernel_standard_theorem_axiom(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let (parameter_count, requirement_count) = match theorem.name() {
+        name if resource_law_shape(name).is_some() => resource_law_shape(name).unwrap(),
         "click::integer::uint32_from_le_bytes" => (1, 3),
         "click::separation::restrict" => (4, 3),
         name if name.split("::<").next() == Some("click::separation::subrange") => (5, 3),
@@ -2800,6 +2812,20 @@ fn verify_kernel_standard_theorem_axiom(
             parameter(3)?,
             parameter(4)?,
         )
+    } else if resource_law_shape(theorem.name()).is_some() {
+        if theorem
+            .parameters()
+            .iter()
+            .any(|p| p.click_type() != &ClickType::Resource)
+        {
+            return Err(ClickError::new(
+                "separation law parameters must be Resource",
+            ));
+        }
+        let args = (0..theorem.parameters().len())
+            .map(|i| crate::kernel::CResource::Parameter(Variable(i as u64)))
+            .collect::<Vec<_>>();
+        crate::kernel::prove_resource_law(theorem.name(), &args).expect("registered resource law")
     } else if theorem.name() == "click::separation::restrict" {
         if theorem
             .parameters()

@@ -1225,6 +1225,15 @@ limited to theorem parameters; it is not a C type or an ownership clause.
 See [`separation::restrict`](../library/index.md#separationrestrict) for an
 explicit separation axiom and its checked field-separation example.
 
+Resource expressions also include separating conjunction `A * B` and the empty
+resource `separation::emp`. The operator associates to the left; parentheses
+select grouping. It combines resource requirements and retains repeated
+components, rather than deduplicating them as a set union. These expressions
+are descriptors used in theorem arguments, `contains`, and `separate`; they
+neither grant ownership nor open resource instances. Use the named laws in
+`click::separation` to reason about components explicitly.
+
+
 Theorems are intentionally pure. They do not support `owns`, `consumes`,
 `produces`, region proof blocks, `old(...)`, `at(...)`, or
 `result`: applying a theorem lends, consumes, creates and separates nothing.

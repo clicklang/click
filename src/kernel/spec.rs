@@ -4716,7 +4716,77 @@ fn evaluate_spec_resource_at_state_in(
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<EvaluatedSpecResource>> {
+    if matches!(resource, SpecResource::Star(..)) {
+        // Traverse the written descriptor once. Keep each path's fact and
+        // obligation accumulators outside the tree: recursive concatenation
+        // would repeatedly copy the prefix of a long conjunction.
+        let mut pending = vec![Some(resource)];
+        let mut paths = vec![(
+            Vec::<CResource>::new(),
+            ExecutionFacts::new(),
+            Vec::<ProofObligation>::new(),
+            assumptions.clone(),
+        )];
+        while let Some(node) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            match node {
+                Some(SpecResource::Star(left, right)) => {
+                    pending.push(None);
+                    pending.push(Some(right));
+                    pending.push(Some(left));
+                }
+                None => {
+                    for (stack, _, _, _) in &mut paths {
+                        let right = stack.pop().expect("right conjunction operand");
+                        let left = stack.pop().expect("left conjunction operand");
+                        stack.push(CResource::star(left, right));
+                    }
+                }
+                Some(leaf) => {
+                    let mut next = Vec::new();
+                    for path in paths {
+                        let mut prefix = Some(path);
+                        let mut leaves = evaluate_spec_resource_at_state_in(
+                            scope,
+                            leaf,
+                            &prefix.as_ref().expect("path prefix").3,
+                            budget,
+                        )?
+                        .into_iter()
+                        .peekable();
+                        while let Some((value, leaf_facts, leaf_obligations)) = leaves.next() {
+                            let (mut stack, mut facts, mut obligations, context) =
+                                if leaves.peek().is_none() {
+                                    prefix.take().expect("final successor moves its prefix")
+                                } else {
+                                    prefix.as_ref().expect("branch prefix").clone()
+                                };
+                            let context = assumptions_with_path_context(
+                                &context,
+                                &leaf_facts,
+                                &leaf_obligations,
+                            );
+                            stack.push(value);
+                            facts.extend_shared(&leaf_facts);
+                            obligations.extend(leaf_obligations);
+                            next.push((stack, facts, obligations, context));
+                        }
+                    }
+                    paths = next;
+                }
+            }
+        }
+        return Ok(paths
+            .into_iter()
+            .map(|(mut stack, facts, obligations, _)| {
+                let resource = stack.pop().expect("complete resource expression");
+                debug_assert!(stack.is_empty());
+                (resource, facts, obligations)
+            })
+            .collect());
+    }
     let (expressions, build): (Vec<SpecExpression>, SpecResourceBuilder) = match resource {
+        SpecResource::Star(..) => unreachable!(),
         SpecResource::Instance { identity, at_entry } => {
             let state = if *at_entry {
                 scope.loop_entry_state.ok_or(ExecutionLimit::Paths)?

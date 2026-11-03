@@ -1,0 +1,579 @@
+{
+  "constants": [],
+  "dependencies": [],
+  "exception_behavior": "normal_only",
+  "functions": [
+    {
+      "body": [
+        {
+          "initializer": {
+            "fields": [
+              {
+                "field": {
+                  "declaration_id": "c:@S@Guard@FI@value",
+                  "name": "value",
+                  "record_declaration_id": "c:@S@Guard",
+                  "span": {
+                    "end_column": 29,
+                    "end_line": 2,
+                    "file": "cleanup.cpp",
+                    "start_column": 16,
+                    "start_line": 2
+                  }
+                },
+                "span": {
+                  "end_column": 29,
+                  "end_line": 2,
+                  "file": "cleanup.cpp",
+                  "start_column": 28,
+                  "start_line": 2
+                },
+                "value": {
+                  "kind": "integer_literal",
+                  "span": {
+                    "end_column": 29,
+                    "end_line": 2,
+                    "file": "cleanup.cpp",
+                    "start_column": 28,
+                    "start_line": 2
+                  },
+                  "value": "0",
+                  "value_type": {
+                    "bits": 32,
+                    "is_const": false,
+                    "kind": "integer",
+                    "signed": true,
+                    "source_aliases": []
+                  }
+                }
+              }
+            ],
+            "kind": "aggregate",
+            "span": {
+              "end_column": 46,
+              "end_line": 4,
+              "file": "cleanup.cpp",
+              "start_column": 41,
+              "start_line": 4
+            }
+          },
+          "kind": "declare",
+          "local": {
+            "declaration_id": "c:cleanup.cpp@179@F@caller#*$@S@Cell#@guard",
+            "name": "guard",
+            "span": {
+              "end_column": 46,
+              "end_line": 4,
+              "file": "cleanup.cpp",
+              "start_column": 35,
+              "start_line": 4
+            },
+            "value_type": {
+              "declaration_id": "c:@S@Guard",
+              "is_const": false,
+              "kind": "record",
+              "name": "Guard"
+            }
+          },
+          "span": {
+            "end_column": 47,
+            "end_line": 4,
+            "file": "cleanup.cpp",
+            "start_column": 35,
+            "start_line": 4
+          }
+        },
+        {
+          "arguments": [
+            {
+              "kind": "value",
+              "value": {
+                "kind": "load",
+                "place": {
+                  "declaration_id": "c:cleanup.cpp@156@F@caller#*$@S@Cell#@cell",
+                  "name": "cell",
+                  "span": {
+                    "end_column": 56,
+                    "end_line": 4,
+                    "file": "cleanup.cpp",
+                    "start_column": 52,
+                    "start_line": 4
+                  }
+                },
+                "span": {
+                  "end_column": 56,
+                  "end_line": 4,
+                  "file": "cleanup.cpp",
+                  "start_column": 52,
+                  "start_line": 4
+                },
+                "value_type": {
+                  "kind": "pointer",
+                  "pointee": {
+                    "declaration_id": "c:@S@Cell",
+                    "is_const": false,
+                    "kind": "record",
+                    "name": "Cell"
+                  }
+                }
+              }
+            }
+          ],
+          "callee": {
+            "declaration_id": "c:@F@set#*$@S@Cell#",
+            "name": "set",
+            "span": {
+              "end_column": 51,
+              "end_line": 4,
+              "file": "cleanup.cpp",
+              "start_column": 48,
+              "start_line": 4
+            }
+          },
+          "kind": "call",
+          "span": {
+            "end_column": 57,
+            "end_line": 4,
+            "file": "cleanup.cpp",
+            "start_column": 48,
+            "start_line": 4
+          }
+        },
+        {
+          "cleanups": [
+            {
+              "callee": {
+                "declaration_id": "c:@S@Guard@F@~Guard#",
+                "name": "Guard_destructor",
+                "span": {
+                  "end_column": 37,
+                  "end_line": 2,
+                  "file": "cleanup.cpp",
+                  "start_column": 31,
+                  "start_line": 2
+                }
+              },
+              "kind": "destructor",
+              "object": {
+                "declaration_id": "c:cleanup.cpp@179@F@caller#*$@S@Cell#@guard",
+                "name": "guard",
+                "span": {
+                  "end_column": 46,
+                  "end_line": 4,
+                  "file": "cleanup.cpp",
+                  "start_column": 35,
+                  "start_line": 4
+                }
+              },
+              "span": {
+                "end_column": 67,
+                "end_line": 4,
+                "file": "cleanup.cpp",
+                "start_column": 59,
+                "start_line": 4
+              }
+            }
+          ],
+          "kind": "return",
+          "span": {
+            "end_column": 67,
+            "end_line": 4,
+            "file": "cleanup.cpp",
+            "start_column": 59,
+            "start_line": 4
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 67,
+              "end_line": 4,
+              "file": "cleanup.cpp",
+              "start_column": 66,
+              "start_line": 4
+            },
+            "value": "1",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@caller#*$@S@Cell#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "caller",
+      "parameters": [
+        {
+          "declaration_id": "c:cleanup.cpp@156@F@caller#*$@S@Cell#@cell",
+          "name": "cell",
+          "span": {
+            "end_column": 22,
+            "end_line": 4,
+            "file": "cleanup.cpp",
+            "start_column": 12,
+            "start_line": 4
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "declaration_id": "c:@S@Cell",
+              "is_const": false,
+              "kind": "record",
+              "name": "Cell"
+            }
+          }
+        }
+      ],
+      "path": [
+        "caller"
+      ],
+      "return_type": {
+        "bits": 32,
+        "is_const": false,
+        "kind": "integer",
+        "signed": true,
+        "source_aliases": []
+      },
+      "span": {
+        "end_column": 70,
+        "end_line": 4,
+        "file": "cleanup.cpp",
+        "start_column": 1,
+        "start_line": 4
+      }
+    }
+  ],
+  "language": "c++",
+  "logical_source": "cleanup.cpp",
+  "preprocessor_files": [
+    {
+      "accessed_path": "$unit/cleanup.cpp",
+      "canonical_path": "$unit/cleanup.cpp"
+    }
+  ],
+  "profile": {
+    "compilation_command": [
+      "clang++",
+      "-x",
+      "c++",
+      "-std=c++20",
+      "--target=x86_64-unknown-linux-gnu",
+      "-fno-exceptions",
+      "-fno-rtti",
+      "-O2",
+      "-fno-strict-aliasing",
+      "-funsigned-char",
+      "-ffreestanding",
+      "-nostdinc",
+      "-nostdinc++",
+      "-c",
+      "cleanup.cpp",
+      "-o",
+      "cleanup.cpp.o"
+    ],
+    "compilation_directory": "$unit",
+    "compilation_file": "cleanup.cpp",
+    "exceptions": false,
+    "frontend": "clang",
+    "frontend_version": "Debian clang version 19.1.7 (3+b1)",
+    "rtti": false,
+    "standard": "c++20",
+    "target": "x86_64-unknown-linux-gnu"
+  },
+  "reachable_functions": [
+    {
+      "body": [
+        {
+          "field": {
+            "declaration_id": "c:@S@Guard@FI@value",
+            "name": "value",
+            "record_declaration_id": "c:@S@Guard",
+            "span": {
+              "end_column": 56,
+              "end_line": 2,
+              "file": "cleanup.cpp",
+              "start_column": 51,
+              "start_line": 2
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:@S@Guard@F@~Guard#@this",
+            "name": "self",
+            "span": {
+              "end_column": 37,
+              "end_line": 2,
+              "file": "cleanup.cpp",
+              "start_column": 31,
+              "start_line": 2
+            }
+          },
+          "span": {
+            "end_column": 60,
+            "end_line": 2,
+            "file": "cleanup.cpp",
+            "start_column": 51,
+            "start_line": 2
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 60,
+              "end_line": 2,
+              "file": "cleanup.cpp",
+              "start_column": 59,
+              "start_line": 2
+            },
+            "value": "0",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@S@Guard@F@~Guard#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "destructor",
+        "record_declaration_id": "c:@S@Guard",
+        "record_name": "Guard"
+      },
+      "name": "Guard_destructor",
+      "parameters": [
+        {
+          "declaration_id": "c:@S@Guard@F@~Guard#@this",
+          "name": "self",
+          "span": {
+            "end_column": 37,
+            "end_line": 2,
+            "file": "cleanup.cpp",
+            "start_column": 31,
+            "start_line": 2
+          },
+          "value_type": {
+            "kind": "lvalue_reference",
+            "pointee": {
+              "declaration_id": "c:@S@Guard",
+              "is_const": false,
+              "kind": "record",
+              "name": "Guard"
+            }
+          }
+        }
+      ],
+      "path": [
+        "Guard",
+        "~Guard"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 63,
+        "end_line": 2,
+        "file": "cleanup.cpp",
+        "start_column": 31,
+        "start_line": 2
+      }
+    },
+    {
+      "body": [
+        {
+          "field": {
+            "declaration_id": "c:@S@Cell@FI@value",
+            "name": "value",
+            "record_declaration_id": "c:@S@Cell",
+            "span": {
+              "end_column": 44,
+              "end_line": 3,
+              "file": "cleanup.cpp",
+              "start_column": 39,
+              "start_line": 3
+            }
+          },
+          "kind": "member_store",
+          "object": {
+            "declaration_id": "c:cleanup.cpp@103@F@set#*$@S@Cell#@cell",
+            "name": "cell",
+            "span": {
+              "end_column": 37,
+              "end_line": 3,
+              "file": "cleanup.cpp",
+              "start_column": 33,
+              "start_line": 3
+            }
+          },
+          "span": {
+            "end_column": 48,
+            "end_line": 3,
+            "file": "cleanup.cpp",
+            "start_column": 33,
+            "start_line": 3
+          },
+          "value": {
+            "kind": "integer_literal",
+            "span": {
+              "end_column": 48,
+              "end_line": 3,
+              "file": "cleanup.cpp",
+              "start_column": 47,
+              "start_line": 3
+            },
+            "value": "1",
+            "value_type": {
+              "bits": 32,
+              "is_const": false,
+              "kind": "integer",
+              "signed": true,
+              "source_aliases": []
+            }
+          }
+        }
+      ],
+      "declaration_id": "c:@F@set#*$@S@Cell#",
+      "declared_noexcept": true,
+      "function_kind": {
+        "kind": "free"
+      },
+      "name": "set",
+      "parameters": [
+        {
+          "declaration_id": "c:cleanup.cpp@103@F@set#*$@S@Cell#@cell",
+          "name": "cell",
+          "span": {
+            "end_column": 20,
+            "end_line": 3,
+            "file": "cleanup.cpp",
+            "start_column": 10,
+            "start_line": 3
+          },
+          "value_type": {
+            "kind": "pointer",
+            "pointee": {
+              "declaration_id": "c:@S@Cell",
+              "is_const": false,
+              "kind": "record",
+              "name": "Cell"
+            }
+          }
+        }
+      ],
+      "path": [
+        "set"
+      ],
+      "return_type": {
+        "kind": "void"
+      },
+      "span": {
+        "end_column": 51,
+        "end_line": 3,
+        "file": "cleanup.cpp",
+        "start_column": 1,
+        "start_line": 3
+      }
+    }
+  ],
+  "records": [
+    {
+      "alignment_bytes": 4,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Cell",
+      "destructor": null,
+      "fields": [
+        {
+          "declaration_id": "c:@S@Cell@FI@value",
+          "name": "value",
+          "offset_bytes": 0,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 24,
+            "end_line": 1,
+            "file": "cleanup.cpp",
+            "start_column": 15,
+            "start_line": 1
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Cell",
+      "path": [
+        "Cell"
+      ],
+      "size_bytes": 4,
+      "span": {
+        "end_column": 27,
+        "end_line": 1,
+        "file": "cleanup.cpp",
+        "start_column": 1,
+        "start_line": 1
+      }
+    },
+    {
+      "alignment_bytes": 4,
+      "byte_template_arguments": [],
+      "declaration_id": "c:@S@Guard",
+      "destructor": {
+        "declaration_id": "c:@S@Guard@F@~Guard#",
+        "name": "Guard_destructor",
+        "span": {
+          "end_column": 37,
+          "end_line": 2,
+          "file": "cleanup.cpp",
+          "start_column": 31,
+          "start_line": 2
+        }
+      },
+      "fields": [
+        {
+          "declaration_id": "c:@S@Guard@FI@value",
+          "name": "value",
+          "offset_bytes": 0,
+          "size_bytes": 4,
+          "span": {
+            "end_column": 29,
+            "end_line": 2,
+            "file": "cleanup.cpp",
+            "start_column": 16,
+            "start_line": 2
+          },
+          "value_type": {
+            "bits": 32,
+            "is_const": false,
+            "kind": "integer",
+            "signed": true,
+            "source_aliases": []
+          }
+        }
+      ],
+      "name": "Guard",
+      "path": [
+        "Guard"
+      ],
+      "size_bytes": 4,
+      "span": {
+        "end_column": 65,
+        "end_line": 2,
+        "file": "cleanup.cpp",
+        "start_column": 1,
+        "start_line": 2
+      }
+    }
+  ],
+  "schema": 60
+}

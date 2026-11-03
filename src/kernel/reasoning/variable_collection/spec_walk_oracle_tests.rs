@@ -567,6 +567,10 @@ fn old_collect_spec_resource_bound_identities(
     integer_seen: &mut SeenTerms,
 ) {
     match resource {
+        SpecResource::Star(a, b) => {
+            old_collect_spec_resource_bound_identities(a, variables, integer_seen);
+            old_collect_spec_resource_bound_identities(b, variables, integer_seen);
+        }
         SpecResource::Instance { .. } => {}
         SpecResource::Value(resource) => {
             collect_c_resource_bitvector_variables(resource, variables)
@@ -777,6 +781,10 @@ fn old_collect_spec_resource_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match resource {
+        SpecResource::Star(a, b) => {
+            old_collect_spec_resource_bitvector_variables(a, variables);
+            old_collect_spec_resource_bitvector_variables(b, variables);
+        }
         SpecResource::Instance { .. } => {}
         SpecResource::Value(resource) => {
             collect_c_resource_bitvector_variables(resource, variables)
