@@ -3574,7 +3574,10 @@ fn charon_generic_container_refuses_a_stronger_put_and_a_false_caller() {
     ] {
         assert!(GENERIC_CONTAINER_SIDECAR.contains(before), "{before}");
         let invalid = GENERIC_CONTAINER_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // The positive test checks every implementation body. Here the
+        // interface-refinement check and the mutated caller are the targets;
+        // do not replay the unrelated stack transport proofs for each case.
+        let error = verify_rust_function(&invalid, &prepared, "generic_container::round_trip_dyn")
             .err()
             .unwrap_or_else(|| panic!("`{after}` must fail"));
         let rendered = format!("{error:?} {error}");
