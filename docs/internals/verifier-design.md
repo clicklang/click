@@ -475,10 +475,14 @@ attaches the bounded source selection before normalization; bound views retain
 their identities. The final binding overlay visits only the produced bindings,
 sharing the inherited persistent map. It never searches the completed body or
 entry context. With an explicit view interface, retained-frame construction
-uses the owned-memory index and does not visit discarded observations or
-nonmemory resources. It still visits owned-memory candidates; this is not a
-claim of bounded cost for arbitrary ambient owners. Frame visits are charged
-so the complete-constructor regression cannot hide that cost.
+selects the snapshot's declared scalar blocks and queries owned occurrences
+by block. `MemoryBlocks` maintains that persistent subset on declaration,
+replacement, removal, and branch joins; the index is excluded from semantic
+memory identity. No heap-owner or observation enumeration is involved. The
+complete-constructor regression grows both withheld heap ownership and heap
+block declarations, checks fixed output, and measures repeated work and
+persistent-map operations. The route without an explicit view interface still
+retains the withheld frame's views, with work charged to that output.
 
 Call preparation classifies implicit local storage with
 `has_no_explicit_memory_for_local_storage`: a block-index absence check and a

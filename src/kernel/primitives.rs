@@ -106,6 +106,8 @@ mod initialized_bytes;
 mod observed_population_families;
 pub(crate) use heap_effective_types::HeapEffectiveTypes;
 pub(crate) use initialized_bytes::InitializedBytes;
+mod memory_blocks;
+pub(crate) use memory_blocks::MemoryBlocks;
 mod memory_state;
 pub(crate) use observed_population_families::ObservedPopulationFamilies;
 mod persistent_map;
@@ -7713,7 +7715,7 @@ pub struct CForgottenKnowledge {
 #[derive(Clone, Debug, Default)]
 pub struct CMemory {
     pub(super) construction: Option<Arc<CMemoryConstruction>>,
-    pub(super) blocks: std::sync::Arc<SnapshotMap<PointerBlock, CBlock>>,
+    pub(super) blocks: std::sync::Arc<MemoryBlocks>,
     pub(super) cells: std::sync::Arc<CellStore>,
     /// Typed views of address-overlapping union storage. A union member is
     /// keyed by its address and type rather than placed in `cells`, because

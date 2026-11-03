@@ -6817,16 +6817,21 @@ fn with_loop_frame_resources(
     let candidates: Box<dyn Iterator<Item = &CResourceFact> + '_> = if allow_frame_views {
         Box::new(withheld.iter())
     } else {
-        Box::new(withheld.owned_memory_facts())
+        Box::new(
+            top_state
+                .memory()
+                .blocks
+                .scalar_blocks()
+                .flat_map(|block| withheld.owned_memory_facts_in_block(block)),
+        )
     };
     for fact in candidates {
         crate::instrumentation::record_deterministic_work(1);
-        let allocation_owner = fact.is_own()
-            && matches!(fact.resource(),
-            CResource::Memory(range) if top_state.memory().requires_explicit_scalar_ownership(range.base()));
-        if !allocation_owner && !allow_frame_views {
-            continue;
-        }
+        // The explicit-interface iterator already selects scalar owners.
+        let allocation_owner = !allow_frame_views
+            || (fact.is_own()
+                && matches!(fact.resource(),
+            CResource::Memory(range) if top_state.memory().requires_explicit_scalar_ownership(range.base())));
         let Some(viewed) = viewed_form_of_resource_fact(fact) else {
             continue;
         };
