@@ -384,6 +384,30 @@ impl LoanViewBindings {
         bound_view_covers_requirement(held, None, required, assumptions).then_some(occurrence)
     }
 
+    /// Attach inherited authority to the occurrences just constructed by a
+    /// resource producer. Neither context is enumerated to rediscover them.
+    pub(crate) fn attach_to_inserted_views(
+        &self,
+        source: &ResourceContext,
+        mut destination: ResourceContext,
+        inserted: &[(CResourceFact, ResourceOccurrenceId)],
+        assumptions: &PureFactContext,
+    ) -> ResourceContext {
+        if self.state.map.is_empty() {
+            return destination;
+        }
+        for (fact, occurrence) in inserted {
+            crate::instrumentation::record_deterministic_work(1);
+            if fact.is_view()
+                && let Some(source_occurrence) = self.select_bound_view(fact, source, assumptions)
+                && let Some(binding) = self.get(&source_occurrence)
+            {
+                destination = destination.with_loan_dependency(*occurrence, binding.clone());
+            }
+        }
+        destination
+    }
+
     pub(crate) fn with_inserted(
         &self,
         occurrence: ResourceOccurrenceId,

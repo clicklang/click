@@ -469,6 +469,17 @@ fragments on failure. Scaling controls measure both selection and complete
 calls beside increasing unbound observations, plus exact lookup and branch
 isolation beside increasing bound occurrences.
 
+Loop-body construction carries bindings at the producers of declared, framed,
+and owner-derived views. Each producer retains the inserted occurrence and
+attaches the bounded source selection before normalization; bound views retain
+their identities. The final binding overlay visits only the produced bindings,
+sharing the inherited persistent map. It never searches the completed body or
+entry context. With an explicit view interface, retained-frame construction
+uses the owned-memory index and does not visit discarded observations or
+nonmemory resources. It still visits owned-memory candidates; this is not a
+claim of bounded cost for arbitrary ambient owners. Frame visits are charged
+so the complete-constructor regression cannot hide that cost.
+
 Declared-resource lowering selects parameter values from the names in its
 explicit arguments, including quantities and nested resource-type arguments.
 Outcome-proposition lowering against an indexed assumption context likewise

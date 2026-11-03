@@ -53,15 +53,18 @@ facts do not establish flat cost as the queried class or bucket grows.
    preserve ownership and loan refusals, and investigate proof failures for
    missing explicit steps before proposing new primitives.
 
-2. **Loop-body binding carryover: next measurement candidate.**
-   `loop_body_resource_context` in `src/kernel/loops.rs` enumerates body views,
-   then searches matching entry and body occurrences to copy their bindings.
-   Its map can retain earlier metadata beside newly allocated live occurrences.
-   Measure a fixed loop interface beside increasing observations and retained
-   bindings before choosing a fix. Investigate whether body construction can
-   return the selected source and new occurrence directly. Do not replace the
-   lookup with a scan that prunes old metadata; preserve branch-local snapshots
-   and discuss the producer change before implementing it.
+2. **Loop retained-frame candidates: remaining measurement boundary.**
+   With an explicit view interface, `with_loop_frame_resources` visits the
+   owned-memory index to retain declared scalar owners. It still examines
+   heap-owned memory that the scalar predicate rejects. Without an explicit
+   view interface, it enumerates the withheld frame to build retained views.
+
+   Measure a fixed retained scalar frame beside growing rejected owned-memory
+   candidates, including the complete body constructor and persistent-map
+   work. Distinguish rejected candidates from output-sized frame construction.
+   The observation/binding-carryover regression does not establish bounded cost
+   for arbitrary owned frames. Frame visits must remain charged. Establish a
+   red test and discuss the design before changing this selection.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).

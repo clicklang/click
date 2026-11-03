@@ -6116,9 +6116,15 @@ pub(super) fn prepare_loop_top_state(
     let withheld = if resource_specs.is_empty() || effect_ranges.is_empty() {
         None
     } else {
-        loop_declared_and_withheld_resources(entry_state, resource_specs, assumptions, budget)?
-            .ok()
-            .map(|(_, withheld)| withheld)
+        loop_declared_and_withheld_resources(
+            entry_state,
+            resource_specs,
+            assumptions,
+            budget,
+            false,
+        )?
+        .ok()
+        .map(|(_, withheld)| withheld)
     };
     let mut top_state = havoc_loop_modified_locals(
         entry_state,
@@ -6394,15 +6400,20 @@ pub(super) fn prepare_loop_top_state(
     // The loop's declarations are evaluated where the loop starts, over the
     // head's models: the clause arguments are the ones at loop entry, and the
     // models are the fresh ones an arbitrary visit carries.
-    if let Ok((declared, _)) =
-        loop_declared_and_withheld_resources(&head_state, &ordinary_specs, assumptions, budget)?
-    {
+    if let Ok((declared, _)) = loop_declared_and_withheld_resources(
+        &head_state,
+        &ordinary_specs,
+        assumptions,
+        budget,
+        false,
+    )? {
         let refreshed = with_owner_read_authority_rederived(
             top_state.resources().clone(),
             declared.facts(),
             definitions,
             &top_state,
             assumptions,
+            None,
         );
         top_state = top_state.with_resource_context(refreshed);
     }
@@ -6682,17 +6693,19 @@ fn loop_declared_and_withheld_resources(
     resource_specs: &[CResourceSpec],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
+    inherit_view_bindings: bool,
 ) -> ExecutionResult<Result<(ResourceContext, ResourceContext), CLoopResourceFailure>> {
-    let declared = match evaluate_function_resource_context(
-        entry_state,
-        resource_specs,
-        // A loop head has no composite-definition environment in scope,
-        // so its clauses see each other's declared cells but not the
-        // cells inside a folded composite.
-        &[],
-        assumptions,
-        budget,
-    )? {
+    let evaluated = if inherit_view_bindings {
+        super::functions::evaluate_loop_resource_context(
+            entry_state,
+            resource_specs,
+            assumptions,
+            budget,
+        )
+    } else {
+        evaluate_function_resource_context(entry_state, resource_specs, &[], assumptions, budget)
+    };
+    let declared = match evaluated? {
         Ok(declared) => declared,
         Err(error) => {
             return Ok(Err(CLoopResourceFailure::Message(format!(
@@ -6735,6 +6748,7 @@ fn with_owner_read_authority_rederived(
     definitions: &[CCompositeResourceDefinition],
     head: &CState,
     assumptions: &PureFactContext,
+    binding_source: Option<&CState>,
 ) -> ResourceContext {
     for owner in declared.iter().filter(|fact| fact.is_own()) {
         if matches!(owner.resource(), CResource::Instance(_)) {
@@ -6769,12 +6783,22 @@ fn with_owner_read_authority_rederived(
         if views.is_empty() {
             continue;
         }
-        resources = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
-            occurrence,
-            owner,
-            views,
-            head.memory(),
-        );
+        let (next, inserted) = resources
+            .unchecked_with_supported_facts_from_occurrence_with_memory_and_occurrences(
+                occurrence,
+                owner,
+                views,
+                head.memory(),
+            );
+        resources = match binding_source {
+            Some(source) => source.loan_view_bindings().attach_to_inserted_views(
+                source.resources(),
+                next,
+                &inserted,
+                assumptions,
+            ),
+            None => next,
+        };
     }
     resources
 }
@@ -6788,8 +6812,15 @@ fn with_loop_frame_resources(
     allow_frame_views: bool,
     top_state: &CState,
     assumptions: &PureFactContext,
+    binding_source: &CState,
 ) -> ResourceContext {
-    for fact in withheld.facts() {
+    let candidates: Box<dyn Iterator<Item = &CResourceFact> + '_> = if allow_frame_views {
+        Box::new(withheld.iter())
+    } else {
+        Box::new(withheld.owned_memory_facts())
+    };
+    for fact in candidates {
+        crate::instrumentation::record_deterministic_work(1);
         let allocation_owner = fact.is_own()
             && matches!(fact.resource(),
             CResource::Memory(range) if top_state.memory().requires_explicit_scalar_ownership(range.base()));
@@ -6809,9 +6840,20 @@ fn with_loop_frame_resources(
         };
         match body_resources
             .clone()
-            .try_compose_with_facts_delaying_normalization(std::iter::once(supplied), assumptions)
-        {
-            Ok(composed) => body_resources = composed,
+            .try_compose_with_facts_delaying_normalization_with_occurrences(
+                std::iter::once(supplied),
+                assumptions,
+            ) {
+            Ok((composed, inserted)) => {
+                body_resources = binding_source
+                    .loan_view_bindings()
+                    .attach_to_inserted_views(
+                        binding_source.resources(),
+                        composed,
+                        &inserted,
+                        assumptions,
+                    );
+            }
             Err(_) => continue,
         }
     }
@@ -6834,6 +6876,7 @@ fn loop_body_resource_context(
         resource_specs,
         assumptions,
         budget,
+        true,
     )? {
         Ok(split) => split,
         Err(failure) => return Ok((top_state.clone(), vec![failure])),
@@ -6844,6 +6887,7 @@ fn loop_body_resource_context(
         !resource_specs.iter().any(resource_spec_is_view),
         top_state,
         assumptions,
+        entry_state,
     );
     body_resources = with_owner_read_authority_rederived(
         body_resources,
@@ -6851,28 +6895,15 @@ fn loop_body_resource_context(
         definitions,
         top_state,
         assumptions,
+        Some(entry_state),
     );
-    // Rebuilding a loop body context can allocate fresh resource occurrences.
-    // If one denotes an inherited stable view, carry its exact checked
-    // binding to the new occurrence instead of rediscovering it from the
-    // ambient ledger at a later call boundary.
+    // Only bindings attached to newly produced views are listed here. The
+    // inherited map is shared, not scanned or reconstructed from contexts.
     let mut body_bindings = top_state.loan_view_bindings().clone();
-    for fact in body_resources.facts().iter().filter(|fact| fact.is_view()) {
-        let Some(binding) = entry_state
-            .resources()
-            .view_occurrences_for_fact(fact, assumptions)
-            .into_iter()
-            .find_map(|occurrence| entry_state.loan_view_bindings().get(&occurrence).cloned())
-        else {
-            continue;
-        };
-        if let Some(occurrence) = body_resources
-            .view_occurrences_for_fact(fact, assumptions)
-            .into_iter()
-            .find(|occurrence| body_bindings.get(occurrence).is_none())
-        {
-            body_bindings = body_bindings.with_inserted(occurrence, binding);
-        }
+    let produced =
+        super::loans::LoanViewBindings::from_state(body_resources.loan_dependency_state());
+    for (occurrence, binding) in produced.iter() {
+        body_bindings = body_bindings.with_inserted(*occurrence, binding.clone());
     }
     Ok((
         top_state

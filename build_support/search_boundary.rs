@@ -65,6 +65,13 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: {}: loan binding selection must nominate an indexed identity, not scan observations ({name})", self.path, self.function));
         }
+        if ((self.path == "src/kernel/loops.rs" && self.function == "loop_body_resource_context")
+            || (self.path == "src/kernel/loans.rs" && self.function == "attach_to_inserted_views"))
+            && (matches!(name, "view_occurrences_for_fact" | "find" | "find_map")
+                || (self.function == "attach_to_inserted_views" && name == "facts"))
+        {
+            self.errors.push(format!("{}: {}: loop binding handoff must retain producer occurrences, not rediscover views ({name})", self.path, self.function));
+        }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && matches!(
                 self.function.as_str(),
