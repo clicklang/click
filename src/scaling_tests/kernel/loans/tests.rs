@@ -1178,3 +1178,87 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
         "ambient index scan: {samples:?}"
     );
 }
+
+/// The call needs a fixed range. A gap immediately after its first byte cannot
+/// be filled by any of the growing, disjoint fragments farther into the range.
+#[test]
+#[ignore = "red regression: call coalescing materializes the rejected fragment frontier"]
+fn call_fragment_composition_stops_at_a_fixed_gap() {
+    let mut curves = Vec::new();
+    for case in ["gap", "joined", "observations"] {
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = PureFactContext::new();
+            let required = memory(0, 1024, false);
+            let mut resources = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_fact(memory(0, if case == "joined" { 512 } else { 1 }, true));
+            if case == "joined" {
+                resources = resources.unchecked_with_fact(memory(512, 1024, true));
+            }
+            for index in 0..count {
+                let start = if case == "joined" { 2048 } else { 100 } + 2 * index;
+                resources =
+                    resources.unchecked_with_fact(memory(start, start + 1, case != "observations"));
+            }
+            resources.synchronize_memory_equalities(&facts);
+            let (ledger, caller, callee) = participants();
+            let requirements = [checked(required.clone())];
+            let bindings = LoanViewBindings::default();
+            let original_len = resources.facts().len();
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((joined, work), maps) = crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        resources.with_coalesced_owned_memory(&required, &facts)
+                    })
+                });
+                assert_eq!(joined.is_some(), case == "joined", "{case}/{count}");
+                let ((plan, call_work), call_maps) =
+                    crate::persistent::measure_persistent_work(|| {
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            plan_stable_view_transfer_with_bindings(
+                                &resources,
+                                &requirements,
+                                &facts,
+                                &ledger,
+                                caller,
+                                callee,
+                                &bindings,
+                            )
+                        })
+                    });
+                assert_eq!(plan.is_ok(), case == "joined", "{case}/{count}: {plan:?}");
+                if let Ok(plan) = plan {
+                    assert!(plan.callee_resources.satisfies_fact(&required, &facts));
+                }
+                assert_eq!(resources.facts().len(), original_len);
+                assert!(resources.contains_exact_representation(&memory(
+                    0,
+                    if case == "joined" { 512 } else { 1 },
+                    true
+                )));
+                queries.push((work, maps, call_work, call_maps));
+            }
+            samples.push((count, queries));
+        }
+        eprintln!("fragment {case} (count; coalescing work/maps, call work/maps): {samples:?}");
+        curves.push((case, samples));
+    }
+    // Check semantics for every size and control before reporting the red curve.
+    for (case, samples) in &curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(large, small)| {
+                    large.0 <= small.0 + 64
+                        && large.1 <= small.1 * 3 + 256
+                        && large.2 <= small.2 + 64
+                        && large.3 <= small.3 * 3 + 512
+                }),
+            "fragment composition walks rejected candidates ({case}): {samples:?}"
+        );
+    }
+}

@@ -31,27 +31,39 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Call-side fragment composition: next measurement candidate.**
+1. **Call-side fragment composition: red test and design checkpoint.**
    The loan planner's coalescing prepass calls
    `ResourceContext::with_coalesced_owned_memory` when no nominated owner or
-   bound view supplies a memory requirement. That helper materializes the
-   candidate frontier before trying to join owned pieces. Owned requirement
-   reservation also uses `reserve_owned_memory_fragments_with_origins` and
-   the unselected `without_fact_incrementally_with_origins` route.
+   bound view supplies a memory requirement. It materializes the candidate
+   frontier and normalizes it before discovering missing coverage.
 
-   Isolate a fixed call requirement while varying rejected observations and
-   irrelevant fragments in the selected bucket. Measure both deterministic
-   work and persistent-map work, including misses and repeated queries.
-   Distinguish a scan of rejected candidates from work proportional to the
-   pieces actually consumed or produced; explicit composition may legitimately
-   touch its selected pieces. The existing complete-call observation tests do
-   not establish bounded cost for arbitrary fragment composition.
+   `call_fragment_composition_stops_at_a_fixed_gap` in
+   `src/scaling_tests/kernel/loans/tests.rs` holds a view request for
+   `buffer[0..1024]` fixed, with ownership of `[0..1]` and a gap at byte 1.
+   Add 4/16/64/256 disjoint one-byte owned fragments starting at byte 100;
+   none can fill that gap. Index preparation is outside measurement. Repeated
+   coalescing work is 259/655/2239/8575; complete-call work is
+   315/711/2295/8631, with 5722/22006/105598/524218 persistent-map visits.
+   Each query correctly refuses without changing the source branch. The same
+   test checks successful two-piece composition beside out-of-range owners,
+   and refusal beside observation-only additions: their ordinary work stays
+   flat, with only indexing growth in map work. All semantic controls run
+   before the intended scaling assertion fails. The red test is ignored;
+   run its exact name with `--run-ignored all --no-capture`.
 
-   Start with a red scaling test, then discuss the design before removal.
-   Prefer retaining an explicitly selected supplier or explicit composition
-   over adding automatic candidate searches. Keep the C and contracts fixed,
-   preserve ownership and loan refusals, and investigate proof failures for
-   missing explicit steps before proposing new primitives.
+   Proposed next experiment, for design review: remove the implicit coalescing
+   prepass and identify actual proof dependencies. Try explicit composition
+   for affected proofs, preserving C, contracts, ownership and loan refusals.
+   Check that a repair selects its pieces rather than merely moving this scan
+   to another tactic. Do not add a replacement search or a new primitive before
+   reducing a concrete missing explicit step. The existing indexed fragment
+   reservation route is a separate possible implementation to assess, not
+   evidence that the automatic coalescing prepass is necessary.
+
+   Owned requirement reservation also uses
+   `reserve_owned_memory_fragments_with_origins` and the unselected
+   `without_fact_incrementally_with_origins` route; this reproduction isolates
+   the viewed-requirement prepass, not every composition path.
 
 2. **Loop retained-frame candidates: remaining measurement boundary.**
    With an explicit view interface, `with_loop_frame_resources` visits the
