@@ -4126,6 +4126,36 @@ fn c0_syntax_reports_unterminated_block_comments() {
 }
 
 #[test]
+fn c0_syntax_rejects_unescaped_character_literal_delimiters() {
+    for (literal, message) in [
+        ("'''", "character literals must contain exactly one byte"),
+        ("''", "character literals must contain exactly one byte"),
+        (
+            "'\n'",
+            "character literals may not contain an unescaped newline",
+        ),
+        (
+            "'\r'",
+            "character literals may not contain an unescaped newline",
+        ),
+    ] {
+        let source = format!("int32 value(void) {{ return {literal}; }}");
+        let error = syntax::parse_function(&source).expect_err(&source);
+        assert_eq!(error.message(), message, "{source:?}");
+        assert_eq!(
+            error.position(),
+            Some(crate::source::SourcePosition::new(1, 28)),
+            "{source:?}"
+        );
+    }
+
+    for literal in [r"'\''", r"'\n'", r"'\r'", "'a'"] {
+        let source = format!("int32 value(void) {{ return {literal}; }}");
+        syntax::parse_function(&source).expect(&source);
+    }
+}
+
+#[test]
 fn c0_syntax_errors_carry_source_positions() {
     let error = syntax::parse_function("int32 broken(int32 x) {\n    return x\n}\n")
         .expect_err("a missing semicolon should be rejected");
