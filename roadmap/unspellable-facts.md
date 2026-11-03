@@ -91,6 +91,12 @@ preserving its accepted operators, cast encodings, narrow comparison identity,
 written directions, and payload bound. It retains the native 64-bit reflexive
 constructor rule. Growing shared prefixes are checked without boxed exports;
 ordinary and across-effect certificate premise adapters remain open.
+Snapshot-blind candidate keys now read shared arithmetic and reuse interned child
+identities across growing prefixes. Native and shared machine observations select
+the same load candidates; key equality still requires the existing checked memory
+bridge and is never proof authority. The load-registry lifetime invalidates the
+shared key memo. Migrating the checked matcher and certificate availability is
+still necessary before removing their native comparison adapters.
 
 The general comparison dispatcher still needs its compatibility bridge. Its
 migration must preserve the existing rule order as well as proof results;

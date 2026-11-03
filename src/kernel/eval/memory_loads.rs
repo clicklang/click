@@ -2464,6 +2464,7 @@ pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
 }
 
 pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
+    crate::kernel::proof::fact_keys::clear_snapshot_operand_keys();
     STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
     POINTER_READ_OBSERVATIONS
         .with(|registry| *registry.borrow_mut() = state.pointer_observations.clone());
@@ -2481,6 +2482,7 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
 }
 
 pub(crate) fn clear_load_variable_registry() {
+    crate::kernel::proof::fact_keys::clear_snapshot_operand_keys();
     crate::kernel::proof::term_rewrite::clear_arithmetic_comparison_cache();
     COMPARISON_FORMS.with(|cache| cache.borrow_mut().clear());
     STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());

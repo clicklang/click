@@ -241,76 +241,9 @@ impl<'a> ConditionRead<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
-enum Side<'a> {
-    Term(View<'a>),
-    Value(i128),
-}
-fn narrow_identity<'a>(
-    format: MachineIntegerType,
-    relation: CompareRelation,
-    [mut left, mut right]: [View<'a>; 2],
-) -> (MachineIntegerType, [Side<'a>; 2]) {
-    let format = ConditionTerm::fact_format(format, relation);
-    if relation == CompareRelation::Equal && format.format().bits() == 32 {
-        let peel = |term: View<'a>| match term.cast() {
-            Some((Encoding::Generic, source, destination, operand))
-                if crate::kernel::is_sign_cast32(source, destination) =>
-            {
-                operand
-            }
-            _ => term,
-        };
-        left = peel(left);
-        right = peel(right);
-    }
-    let narrow_value = |term: View<'a>| match term.literal() {
-        Some(Bitvector32Term::MachineIntegerConstant(c)) if c.format() == format.format() => {
-            c.to_i128().map(Side::Value).unwrap_or(Side::Term(term))
-        }
-        _ => Side::Term(term),
-    };
-    if format.format().bits() < 32 {
-        return (format, [narrow_value(left), narrow_value(right)]);
-    }
-    let widening = |term: View<'a>| match term.cast() {
-        Some((Encoding::Generic, source, destination, operand))
-            if crate::kernel::is_narrow_widening32(source, destination) =>
-        {
-            Some((source, operand))
-        }
-        _ => None,
-    };
-    if format == MachineIntegerType::Int32
-        && let Some((source, _)) = widening(left).or_else(|| widening(right))
-    {
-        let bits = source.format().bits();
-        let (low, high) = if source.format().is_signed() {
-            (-(1i128 << (bits - 1)), (1i128 << (bits - 1)) - 1)
-        } else {
-            (0, (1i128 << bits) - 1)
-        };
-        let side = |term: View<'a>| -> Option<Side<'a>> {
-            let value = match term.literal() {
-                Some(Bitvector32Term::Constant(v)) => Some(i128::from(v as i32)),
-                Some(Bitvector32Term::UInt32Constant(v)) if relation == CompareRelation::Equal => {
-                    Some(i128::from(v as i32))
-                }
-                _ => None,
-            };
-            if let Some(value) = value {
-                return (low <= value && value <= high).then_some(Side::Value(value));
-            }
-            widening(term)
-                .filter(|(found, _)| *found == source)
-                .map(|(_, operand)| Side::Term(operand))
-        };
-        if let (Some(left), Some(right)) = (side(left), side(right)) {
-            return (source, [left, right]);
-        }
-    }
-    (format, [Side::Term(left), Side::Term(right)])
-}
+use crate::kernel::machine_integer::comparison::{
+    FactOperand as Side, fact_operand_identity as narrow_identity,
+};
 
 pub(super) fn condition_equal(left: &ConditionTerm, right: &ConditionTerm) -> bool {
     let (left, right) = (ConditionRead::read(left), ConditionRead::read(right));
