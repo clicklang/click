@@ -2157,8 +2157,8 @@ fn expand_macro_text(
                     parameters: _,
                     primitive: Some(primitive),
                     ..
-                } if chars.get(index) == Some(&'(') => {
-                    let (arguments, end) = parse_macro_arguments(&chars, index, &name)?;
+                } if let Some(open) = macro_invocation_open(&chars, index) => {
+                    let (arguments, end) = parse_macro_arguments(&chars, open, &name)?;
                     let arguments = arguments
                         .iter()
                         .map(|argument| {
@@ -2183,8 +2183,8 @@ fn expand_macro_text(
                     parameters,
                     replacement,
                     ..
-                } if chars.get(index) == Some(&'(') => {
-                    let (arguments, end) = parse_macro_arguments(&chars, index, &name)?;
+                } if let Some(open) = macro_invocation_open(&chars, index) => {
+                    let (arguments, end) = parse_macro_arguments(&chars, open, &name)?;
                     let replacement = expand_function_macro(
                         &name,
                         &parameters,
@@ -2296,6 +2296,26 @@ fn enter_macro(name: &str, state: &mut MacroExpansionState) -> Result<(), String
     }
     state.active.push(name.to_string());
     Ok(())
+}
+
+fn macro_invocation_open(chars: &[char], mut index: usize) -> Option<usize> {
+    loop {
+        while chars.get(index).is_some_and(char::is_ascii_whitespace) {
+            index += 1;
+        }
+        if chars.get(index) == Some(&'/') && chars.get(index + 1) == Some(&'*') {
+            index += 2;
+            while index + 1 < chars.len() && !(chars[index] == '*' && chars[index + 1] == '/') {
+                index += 1;
+            }
+            if index + 1 >= chars.len() {
+                return None;
+            }
+            index += 2;
+            continue;
+        }
+        return (chars.get(index) == Some(&'(')).then_some(index);
+    }
 }
 
 fn parse_macro_arguments(
@@ -2934,6 +2954,35 @@ int32 run(int32 value) {
         for (source, expected) in cases {
             let error = local_include_paths("main.c", source).unwrap_err();
             assert!(error.to_string().contains(expected));
+        }
+    }
+
+    #[test]
+    fn function_macro_invocations_allow_whitespace_and_comments() {
+        for separator in [
+            "",
+            " ",
+            "\t",
+            " \t ",
+            "/**/",
+            " /* (ignored) */ ",
+            "/**//**/",
+        ] {
+            let source =
+                format!("#define ID(x) (x)\nint value(void) {{ return ID{separator}(1); }}\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(&source);
+            assert_eq!(expanded.source().trim(), "int value(void) { return (1); }");
+        }
+    }
+
+    #[test]
+    fn function_macro_names_without_an_open_parenthesis_are_preserved() {
+        for usage in ["ID", "ID + 1", "ID /* comment */ + 1", "ID // (1)"] {
+            let source = format!("#define ID(x) (x)\n{usage}\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(&source);
+            assert_eq!(expanded.source().trim(), usage);
         }
     }
 
