@@ -143,19 +143,30 @@ fn charon_inline_match_over_a_held_resource_field_refines_itself() {
     let p = Project::from_fixture("design/charon-trial/resource-state");
     fs::write(p.root.join("borrow.click"), RESOURCE_SIDECAR).unwrap();
     let prepared = p.prepared().unwrap();
-    for (before, after) in [
+    for (method, before, after) in [
         (
+            "take_or",
             "        ensures result == value_or(old(item(self)), fallback);",
             "        ensures result == (match old(item(self)) { Option::Some(v) => v, Option::None => fallback });",
         ),
         (
+            "put",
             "        ensures item(self) == Option<T>::Some(x);",
             "        ensures item(self) == Option<T>::Some(x);\n        ensures x == (match item(self) { Option::Some(v) => v, Option::None => x });",
         ),
     ] {
         assert!(RESOURCE_SIDECAR.contains(before), "{before}");
         let sidecar = RESOURCE_SIDECAR.replacen(before, after, 1);
-        C0VerificationSession::new_program_prepared(&sidecar, &prepared)
+        // The separate positive resource-state test checks the complete fixture.
+        // This regression checks the implementation inheriting the rewritten clause.
+        let implementation = sidecar
+            .find("impl resource_state::Store<u32> for resource_state::Slot {")
+            .unwrap();
+        let method_head = format!("fn {method}(");
+        let end = implementation
+            + sidecar[implementation..].find(&method_head).unwrap()
+            + method_head.len();
+        verify_rust_proof_after(&sidecar, &prepared, &sidecar[implementation..end])
             .unwrap_or_else(|error| panic!("{after}: {error:?}"));
     }
 }
