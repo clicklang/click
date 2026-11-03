@@ -2,14 +2,11 @@
 
 The program of
 [`a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md`](a_parent_cast_fact_is_not_carried_across_a_store_through_another_node.md),
-with the cast fact restated after the store through `o`:
-`have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by solve();`.
-`solve` carries the unfolded fact across the store, which `o`'s separately
-held cell does not overlap, and the restated fact names the read the C cast
-makes next. The cast result then designates `xid`, whose cells are held, and
-`p->rb_left` is formed and read. Where a branch join lies between the unfold
-and the cast, carry the fact through the join's `ensuring` clause, as
-`examples/rbtree/rbtree-insert/rbtree_insert.click` does before each rotation.
+with explicit complete-word preservation across the store through `o` and the
+local declaration. Each certificate cites the selected statement footprint and
+its separation from `g->__rb_parent_color`. The pointer-typed observation
+preserves provenance as well as the numeric word. The cast then denotes `xid`,
+whose cells are held, so the final `p->rb_left` access is justified.
 
 ```c filename=rbtree.h
 #ifndef RBTREE_H
@@ -114,10 +111,37 @@ struct rb_node* peek(struct rb_node* g, struct rb_node* o) {
                     }
                     unfold(n);
                     unfold(u);
+                    have separate(memory(o->__rb_parent_color), memory(g->__rb_parent_color)) by { assumption(); }
+                    mark before_store;
                     step();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by solve();
+                    have separate(statement(0).footprint, memory(g->__rb_parent_color)) by {
+                        normalize() using { separate(memory(o->__rb_parent_color), memory(g->__rb_parent_color)); };
+                    }
+                    have *((&g->__rb_parent_color) as (int32 **)) == at(before_store, *((&g->__rb_parent_color) as (int32 **))) by {
+                        transport_certificate {
+                            premise 0: separate(statement(0).footprint, memory(g->__rb_parent_color))
+                                => separate(statement(0).footprint, memory(g->__rb_parent_color));
+                            preserve 0 => *((&g->__rb_parent_color) as (int32 **)) == at(before_store, *((&g->__rb_parent_color) as (int32 **)));
+                            conclusion 1;
+                        }
+                    }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { assumption(); }
+                    mark before_local;
                     step();
+                    have separate(statement(1).region(0).footprint, memory(g->__rb_parent_color)) by {
+                        normalize() using {  };
+                    }
+                    have *((&g->__rb_parent_color) as (int32 **)) == at(before_local, *((&g->__rb_parent_color) as (int32 **))) by {
+                        transport_certificate {
+                            premise 0: separate(statement(1).region(0).footprint, memory(g->__rb_parent_color))
+                                => separate(statement(1).region(0).footprint, memory(g->__rb_parent_color));
+                            preserve 0 => *((&g->__rb_parent_color) as (int32 **)) == at(before_local, *((&g->__rb_parent_color) as (int32 **)));
+                            conclusion 1;
+                        }
+                    }
+                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == xid by { assumption(); }
                     step();
+                    have p == xid by { assumption(); }
                     step();
                     solve();
                 },

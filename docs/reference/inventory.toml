@@ -4086,3 +4086,31 @@ path = "reference/library/index.md#integeruint32_from_le_bytes"
 [[item]]
 id = "language.word.little_endian"
 path = "reference/language/index.md#target-byte-order"
+
+[[item]]
+id = "library.theorem.separation::contains_refl"
+path = "reference/library/index.md#separationcontains_refl"
+
+[[item]]
+id = "library.theorem.separation::contains_trans"
+path = "reference/library/index.md#separationcontains_trans"
+
+[[item]]
+id = "library.theorem.separation::contains_left"
+path = "reference/library/index.md#separationcontains_left"
+
+[[item]]
+id = "library.theorem.separation::contains_right"
+path = "reference/library/index.md#separationcontains_right"
+
+[[item]]
+id = "library.theorem.separation::separate_symm"
+path = "reference/library/index.md#separationseparate_symm"
+
+[[item]]
+id = "library.theorem.separation::separate_star"
+path = "reference/library/index.md#separationseparate_star"
+
+[[item]]
+id = "library.theorem.separation::separate_emp"
+path = "reference/library/index.md#separationseparate_emp"

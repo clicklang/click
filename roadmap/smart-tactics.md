@@ -58,8 +58,7 @@ facts do not establish flat cost as the queried class or bucket grows.
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 
-Pointer read naming still reaches a cell-version history walk; isolate and
-design that removal separately, as described in
+For subsequent history removals, follow
 [Fact-aware frame walks](fact-aware-frame-walks.md). Retain repeated-query,
 adjacent-state, exact, explicit-composition, cold-refusal and partial-overwrite
 controls in `src/scaling_tests/kernel/tests/memory_scaling_tests.rs`.

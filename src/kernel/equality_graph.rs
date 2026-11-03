@@ -3640,8 +3640,15 @@ mod tests {
                 crate::kernel::registered_load_origin_for_variable(variable).unwrap();
             Bitvector32Term::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32)
         };
-        assert!(crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
+        assert!(!crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
             &load(&left), &load(&right), &separated,
+        ));
+        // Separation alone is not an implicit request to reconstruct a frame.
+        // An explicit preservation proof supplies the read equality itself.
+        let supplied =
+            separated.assume_condition(ConditionTerm::equal(load(&left), load(&right)), true);
+        assert!(crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
+            &load(&left), &load(&right), &supplied,
         ));
         assert!(!classes.are_equal(&left, &right));
         // A checked caller can contribute that conclusion explicitly.

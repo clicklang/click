@@ -268,9 +268,45 @@ template<class T> Stack<T>::~Stack() {
                         length(List::Cons(value, rest)) == length(rest) + 1;
                         tail.items == rest;
                     };
+                    mark before_node;
                     step();
+                    have separate(region(1).footprint, memory(this->head)) by { normalize() using {}; }
+                    have this->head == at(before_node, this->head) by {
+                        transport_certificate {
+                            premise 0: separate(region(1).footprint, memory(this->head))
+                                => separate(region(1).footprint, memory(this->head));
+                            preserve 0 => this->head == at(before_node, this->head);
+                            conclusion 1;
+                        }
+                    }
+                    have separate(region(1).footprint, memory(this->head->next)) by { normalize() using {}; }
+                    have this->head->next == at(before_node, this->head->next) by {
+                        transport_certificate {
+                            premise 0: separate(region(1).footprint, memory(this->head->next))
+                                => separate(region(1).footprint, memory(this->head->next));
+                            preserve 0 => this->head->next == at(before_node, this->head->next);
+                            conclusion 1;
+                        }
+                    }
+                    have node == this->head by { assumption(); }
                     step();
+                    have this->head == at(before_node, this->head->next) by { assumption(); }
+                    // Delete affects the whole typed node, not just its first scalar cell.
+                    have at(region(1).exit, separate(memory(*this->head), memory(this->head))) by { assumption(); }
+                    mark before_delete;
                     step();
+                    have separate(region(3).footprint, memory(this->head)) by {
+                        normalize() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
+                    }
+                    have this->head == at(before_delete, this->head) by {
+                        transport_certificate {
+                            premise 0: separate(region(3).footprint, memory(this->head))
+                                => separate(region(3).footprint, memory(this->head));
+                            preserve 0 => this->head == at(before_delete, this->head);
+                            conclusion 1;
+                        }
+                    }
+                    have this->head == at(before_node, this->head->next) by { assumption(); }
                 },
             }
         }

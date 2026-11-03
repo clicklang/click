@@ -85,8 +85,11 @@ pub use loans::{
 };
 mod byte_representation_laws;
 mod integer_truncation_laws;
+mod resource_conjunction;
 pub(crate) use byte_representation_laws::prove_uint32_from_le_bytes;
 mod separation_laws;
+pub use resource_conjunction::ResourceConjunction;
+pub(crate) use separation_laws::prove_resource_law;
 pub(crate) use separation_laws::{
     prove_separation_elements, prove_separation_restrict, prove_separation_subrange,
 };
@@ -334,6 +337,7 @@ pub struct VerificationSessionState {
     model_fields: model_fields::ModelFieldRegistryState,
     blocks: primitives::BlockRegistriesState,
     fold_reads: fold_read_summary::FoldReadSummariesState,
+    conjunctions: resource_conjunction::Registry,
 }
 
 /// One verification's worth of kernel thread-local state.
@@ -369,6 +373,7 @@ impl VerificationSession {
             VERIFICATION_SESSION_GENERATION
                 .with(|generation| generation.set(generation.get().wrapping_add(1)));
 
+            resource_conjunction::clear();
             primitives::start_fresh_c_memory_arena();
             eval::clear_load_variable_registry();
             model_fields::clear_model_field_registry();
@@ -414,6 +419,7 @@ impl VerificationSession {
             model_fields: model_fields::capture_model_field_registry(),
             blocks: primitives::capture_block_registries(),
             fold_reads: fold_read_summary::capture_fold_read_summaries(),
+            conjunctions: resource_conjunction::capture(),
         }
     }
 
@@ -421,7 +427,9 @@ impl VerificationSession {
     /// for regressions that a reusable session's checks leave nothing behind.
     #[cfg(test)]
     pub fn state_entry_count() -> usize {
-        primitives::c_memory_arena_entry_count() + eval::load_registry_entry_count()
+        primitives::c_memory_arena_entry_count()
+            + eval::load_registry_entry_count()
+            + resource_conjunction::len()
     }
 
     /// Returns this thread's tables to a captured state and drops every memo
@@ -441,6 +449,7 @@ impl VerificationSession {
             return false;
         }
 
+        resource_conjunction::restore(&state.conjunctions);
         primitives::restore_c_memory_arena(&state.arena);
         eval::restore_load_variable_registry(&state.loads);
         model_fields::restore_model_field_registry(&state.model_fields);

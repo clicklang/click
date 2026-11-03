@@ -1095,6 +1095,13 @@ impl CContractEntry {
         self.assumptions
     }
 
+    /// Whether this is an actual output of the entry producer. Selecting the
+    /// proof's input premises must not promote alternate, derivable spellings
+    /// into additional assumptions whose consequences need re-authorization.
+    pub(crate) fn explicitly_states(&self, proposition: &Proposition) -> bool {
+        self.stated.contains(proposition)
+    }
+
     /// Whether the entry states `proposition`: it is one of the entry facts,
     /// a conjunction or resource composition of them, or one of them up to
     /// the names of its bound variables. A lookup, never a search.
@@ -1705,6 +1712,8 @@ fn c_function_contract_entry_facts(
             .into_iter()
             .map(|(index, required)| {
                 let kind = match required.resource() {
+                    CResource::Emp => "separation::emp".into(),
+                    CResource::Star(_) => "separating conjunction".into(),
                     CResource::Footprint(fp) => fp.source.clone(),
                     CResource::Parameter(v) => format!("resource parameter {v:?}"),
                     CResource::Memory(range) => {
@@ -1750,7 +1759,10 @@ fn c_function_contract_entry_facts(
             continue;
         }
         let (name, arguments) = match required.resource() {
-            CResource::Footprint(_) | CResource::Parameter(_) => continue,
+            CResource::Footprint(_)
+            | CResource::Parameter(_)
+            | CResource::Emp
+            | CResource::Star(_) => continue,
             CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
                 (name.as_str(), arguments.as_ref())
             }

@@ -174,12 +174,6 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     /// and a constant shift whose bytes meet no store of the run: each store
     /// is at an unequal constant shift with a gap its bytes clear.
     SeededStoresMissedByShift,
-    /// Every step from `derived` back to `oldest` is one the memoized
-    /// version walk crosses by memory alone
-    /// (`resource_tracker::last_same_point`): one hop for that whole prefix.
-    SameVersion {
-        oldest: SharedCMemory,
-    },
     AssumptionDependent(MemoryDagAssumptionKind),
 }
 
@@ -829,10 +823,6 @@ impl MemoryDagHopJustification {
                         )
                     })
             }
-            // The version walk that produced the hop is its proof: it is valid
-            // by construction and not walked again
-            // (`docs/internals/verification-efficiency.md`).
-            Self::SameVersion { .. } => true,
             Self::AssumptionDependent(_) => false,
         }
     }
@@ -976,10 +966,7 @@ impl MemoryDagCell {
             {
                 return false;
             }
-            current = match &hop.justification {
-                MemoryDagHopJustification::SameVersion { oldest } => oldest.clone(),
-                _ => hop.derivation.base().clone(),
-            };
+            current = hop.derivation.base().clone();
         }
         &current == self.node()
     }
@@ -1568,7 +1555,6 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_stop(
         assumptions,
         cross_loop_havoc,
         1,
-        None,
     ))
 }
 
@@ -1593,9 +1579,6 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
     assumptions: &PureFactContext,
     max_hops: usize,
 ) -> Option<(MemoryDagCell, CellWalkStop)> {
-    let first = resumes_version_walk()
-        .then(|| super::memoized_cell_last_same_point(memory, pointer, bytes).flatten())
-        .flatten();
     let _lookup = CellLookupGuard::enter(memory, pointer)?;
     Some(memory_dag_cell_source_walk(
         memory,
@@ -1604,7 +1587,6 @@ pub(in crate::kernel) fn memory_dag_cell_source_with_hop_limit_and_stop(
         assumptions,
         true,
         max_hops,
-        first,
     ))
 }
 
@@ -1615,7 +1597,6 @@ fn memory_dag_cell_source_walk(
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
     max_hops: usize,
-    first: Option<SharedCMemory>,
 ) -> (MemoryDagCell, CellWalkStop) {
     let result = memory_dag_cell_source_walk_inner(
         memory,
@@ -1624,17 +1605,9 @@ fn memory_dag_cell_source_walk(
         assumptions,
         cross_loop_havoc,
         max_hops,
-        first,
     );
     record_transport_cell_walk(memory, pointer, bytes, &result.0, result.1, Some(max_hops));
     result
-}
-
-/// Whole-pointer recovery inspects the selected edge itself, including cached
-/// pointer values that a memoized version summary may skip. Other bounded
-/// queries may reuse an already recorded summary; neither starts a cold walk.
-fn resumes_version_walk() -> bool {
-    !crate::kernel::memory_provenance::explicit_dag_check_active()
 }
 
 fn memory_dag_cell_source_walk_inner(
@@ -1644,7 +1617,6 @@ fn memory_dag_cell_source_walk_inner(
     assumptions: &PureFactContext,
     cross_loop_havoc: bool,
     max_hops: usize,
-    mut first: Option<SharedCMemory>,
 ) -> (MemoryDagCell, CellWalkStop) {
     let evidence = super::step_effect::Evidence {
         assumptions,
@@ -1680,28 +1652,8 @@ fn memory_dag_cell_source_walk_inner(
                 CellWalkStop::RetainedValue,
             );
         }
-        // Reuse an existing version summary without calculating one. A cold
-        // query may only inspect its explicitly bounded adjacent transitions.
-        let oldest = if let Some(first) = first.take() {
-            Some(first)
-        } else if !resumes_version_walk() {
-            None
-        } else {
-            super::memoized_cell_last_same_point(&current, pointer, bytes).flatten()
-        };
-        if let Some(oldest) = oldest
-            && oldest != current
-            && let Some(derivation) = current.derivation()
-        {
-            path.push(MemoryDagHop {
-                derived: current.clone(),
-                derivation,
-                justification: MemoryDagHopJustification::SameVersion {
-                    oldest: oldest.clone(),
-                },
-            });
-            current = oldest;
-        }
+        // The bound counts actual transitions, independently of whether a
+        // search previously cached a longer preservation result.
         if path.len() >= max_hops {
             return (
                 MemoryDagCell::Unwritten {
@@ -2246,5 +2198,52 @@ mod empty_range_frame_tests {
         include!(
             "../../scaling_tests/kernel/resource_tracker/cell_source/empty_range_frame_tests.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod cache_independence_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_cell_source_is_independent_of_history_cache() {
+        for stores in [2, 8, 32] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let address = Pointer {
+                block: "bounded-cache-independence".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let before = crate::kernel::intern_c_memory(
+                CMemory::new().store(address.clone(), crate::kernel::int32(7)),
+            );
+            let mut memory = before.memory().clone();
+            for index in 0..stores {
+                memory = memory.store(
+                    address.offset_by_bytes(16 + index * 4),
+                    crate::kernel::int32(9),
+                );
+            }
+            let after = crate::kernel::intern_c_memory(memory);
+            let context = PureFactContext::new();
+            let query =
+                || memory_dag_cell_source_with_stop(&after, &address, 4, &context, false).unwrap();
+            let (cold, cold_stop) = query();
+            assert_ne!(
+                cold.node(),
+                &before,
+                "one transition must not cross the whole history"
+            );
+            assert_eq!(
+                super::super::cell_last_same_point(&after, &address, 4),
+                Some(before.clone())
+            );
+            let (warm, warm_stop) = query();
+            assert_eq!(
+                warm.node(),
+                cold.node(),
+                "warming history changed a bounded check at size {stores}"
+            );
+            assert_eq!(warm_stop, cold_stop);
+        }
     }
 }

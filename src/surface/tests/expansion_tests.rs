@@ -18930,7 +18930,7 @@ fn packed_pointer_cast_contracts_survive_expansion_and_retained_verification() {
         ),
         (
             "mdtests/tagged_pointer_from_field_fact.md",
-            "parent_value.ensures_0",
+            "parent_value.contract",
             "ensures result == next->value;",
         ),
         (
@@ -19974,6 +19974,109 @@ fn atomic_store_scalar_framing_expands_and_replays() {
         let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
         without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
             .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    }
+}
+
+#[test]
+#[ignore = "nightly: explicit pointer aliases across full expansion and cold replay"]
+fn explicit_pointer_alias_repairs_expand_and_cold_replay() {
+    let mut failures = Vec::new();
+    for (fixture, function) in [
+        (
+            "a_cast_contract_a_saved_word_keeps_its_historical_relationship",
+            "read_packed",
+        ),
+        (
+            "a_parent_cast_restated_after_a_store_lets_the_parent_be_dereferenced",
+            "peek",
+        ),
+        (
+            "rewrite_of_a_full_pointer_alias_keeps_constructor_type_evidence",
+            "parent",
+        ),
+        ("tagged_pointer_from_field_fact", "parent_value"),
+        ("preserved_word_equality_rewrites_integer_address", "caller"),
+        (
+            "an_interface_resource_argument_reads_through_a_model_pointer",
+            "peek",
+        ),
+    ] {
+        let (source, inputs) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let inputs = inputs
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = with_proof_trace(function, || {
+            verify_c0_sources(&source, &inputs).unwrap_or_else(|error| {
+                panic!(
+                    "{fixture}: {}\n{}",
+                    error.report(),
+                    error.trace_context_report().unwrap_or_default()
+                )
+            })
+        });
+        let expanded = expand_checked_grouped_claim(&source, &verified, function)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.message()));
+        if let Err(error) = verify_c0_sources(&expanded, &inputs) {
+            failures.push(format!("{fixture}: {}\n{expanded}", error.report()));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+// Explicit call containment and preservation must survive fresh expansion replay.
+#[test]
+fn recursive_witness_pointer_preservation_expands_and_cold_replays() {
+    let (source, inputs) = mdtest_sources("mdtests/c_decreases_resource_witness_child.md");
+    let inputs = inputs
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &inputs).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "count_nodes").unwrap();
+    verify_c0_sources(&expanded, &inputs)
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
+
+#[test]
+fn saved_word_equality_expansion_cold_replay() {
+    let source = r#"
+verifying "saved.c";
+void copy(unsigned long* slot, int32* p) {
+    views *slot;
+    requires ((*slot & ~1) as (int32 *)) == p;
+} by {
+    step(); step();
+    have ((saved & ~1) as (int32 *)) == p by { solve(); }
+}
+"#;
+    let inputs = [(
+        "saved.c",
+        "void copy(unsigned long* slot, int32* p) { unsigned long saved = *slot; }",
+    )];
+    // The producer's direct read equation now proves this short case. Its
+    // expansion must also replay cold, without warming a history cache.
+    let verified = verify_c0_sources(source, &inputs).unwrap();
+    let expanded = expand_checked_grouped_claim(source, &verified, "copy").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &inputs))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+    for (fixture, function) in [
+        ("saved_word_explicit_transport", "copy"),
+        (
+            "a_cast_contract_a_saved_word_keeps_its_historical_relationship",
+            "read_packed",
+        ),
+    ] {
+        let (source, inputs) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let inputs = inputs
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let verified = verify_c0_sources(&source, &inputs)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        let expanded = expand_checked_grouped_claim(&source, &verified, function).unwrap();
+        verify_c0_sources(&expanded, &inputs)
+            .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
     }
 }
 

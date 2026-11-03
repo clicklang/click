@@ -93,6 +93,60 @@ fn automatic_lifetime_event_rejects_forged_mutex_storage_retirement() {
     assert_eq!(event.advance_checked(&destroyed), Some(after));
 }
 
+#[test]
+fn automatic_lifetime_end_records_the_retired_storage_footprint() {
+    let state = CState::new()
+        .with_local("selected", int32(5))
+        .with_memory(CMemory::new().with_block("local:selected", 4));
+    let slot = state.locals().slot("selected").unwrap().clone();
+    let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
+    let after = core
+        .record_automatic_lifetime_end(&state, &["selected".into()])
+        .unwrap();
+    let footprint = core
+        .last_footprint
+        .as_ref()
+        .expect("scope cleanup has a footprint");
+    assert_eq!(footprint.before, *state.memory());
+    assert_eq!(footprint.after, *after.memory());
+    let retired = CResource::Memory(CMemoryRange::new_with_element_width(
+        slot,
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    assert!(footprint.complete);
+    assert!(footprint.members.contains(&retired));
+    let statement = crate::kernel::RegionFootprint::transition(
+        "region(0).footprint".into(),
+        &state,
+        &state,
+        &ExecutionFacts::new(),
+    );
+    let whole_statement = crate::kernel::RegionFootprint::with_scope_cleanup(&statement, footprint);
+    let outside = CResource::Memory(CMemoryRange::new_with_element_width(
+        CMemory::frame_local_pointer(0, "outside"),
+        0u32.into(),
+        4u32.into(),
+        1,
+    ));
+    assert!(crate::kernel::region_footprint::separate_using(
+        &CResource::Footprint(whole_statement),
+        &outside,
+        &PureFactContext::new(),
+    ));
+    assert!(!crate::kernel::region_footprint::separate_using(
+        &CResource::Footprint(footprint.clone()),
+        &retired,
+        &PureFactContext::new(),
+    ));
+    core.record_automatic_lifetime_end(&after, &[]).unwrap();
+    assert!(
+        core.last_footprint.is_none(),
+        "no-op cleanup must not repeat the previous effect"
+    );
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/proof/execution/automatic_lifetime_tests.rs");

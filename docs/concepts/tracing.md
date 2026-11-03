@@ -133,7 +133,12 @@ The explicit `transport_certificate` uses `premise`, `preserve`, `transitive`,
 and `conclusion`. Cite `separate(region.footprint, B)` as a premise;
 `preserve` establishes the after-to-before read equality. The execution-produced
 footprint includes writes, call effects and allocation release. Establish its
-separation with `normalize() using` and explicitly listed separations and bounds.
+separation with explicitly supplied evidence. When a checked call publishes
+`contains(R, region.footprint)`, select it with `assumption()` and apply the
+named `separation::restrict` law; `contains_refl` supplies reflexivity and
+`separate_star` combines separation of several input resources. This route
+does not unfold recursive resources or normalize a footprint. The older
+memory-range route uses `normalize() using` with listed separations and bounds.
 For a region containing several transitions, spell the individual preservation
 nodes and compose their equalities: simple normalization does not walk a region.
 The observation rule covers complete pointer, byte, 32/64-bit integer and abstract

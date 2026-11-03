@@ -172,9 +172,45 @@ Stack<int>::~Stack() {
                         length(List::Cons(value, rest)) == length(rest) + 1;
                         tail.items == rest;
                     };
+                    mark before_node;
                     step();
+                    have separate(region(1).footprint, memory(this->head)) by { normalize() using {}; }
+                    have this->head == at(before_node, this->head) by {
+                        transport_certificate {
+                            premise 0: separate(region(1).footprint, memory(this->head))
+                                => separate(region(1).footprint, memory(this->head));
+                            preserve 0 => this->head == at(before_node, this->head);
+                            conclusion 1;
+                        }
+                    }
+                    have separate(region(1).footprint, memory(this->head->next)) by { normalize() using {}; }
+                    have this->head->next == at(before_node, this->head->next) by {
+                        transport_certificate {
+                            premise 0: separate(region(1).footprint, memory(this->head->next))
+                                => separate(region(1).footprint, memory(this->head->next));
+                            preserve 0 => this->head->next == at(before_node, this->head->next);
+                            conclusion 1;
+                        }
+                    }
+                    have node == this->head by { assumption(); }
                     step();
+                    have this->head == at(before_node, this->head->next) by { assumption(); }
+                    // Delete affects the whole typed node, not just its first scalar cell.
+                    have at(region(1).exit, separate(memory(*this->head), memory(this->head))) by { assumption(); }
+                    mark before_delete;
                     step();
+                    have separate(region(3).footprint, memory(this->head)) by {
+                        normalize() using { at(region(1).exit, separate(memory(*this->head), memory(this->head))); };
+                    }
+                    have this->head == at(before_delete, this->head) by {
+                        transport_certificate {
+                            premise 0: separate(region(3).footprint, memory(this->head))
+                                => separate(region(3).footprint, memory(this->head));
+                            preserve 0 => this->head == at(before_delete, this->head);
+                            conclusion 1;
+                        }
+                    }
+                    have this->head == at(before_node, this->head->next) by { assumption(); }
                 },
             }
         }
@@ -209,6 +245,83 @@ unsigned long pushed_size(int x) {
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;
         length(List<int32>::Nil) == 0;
     };
+    let { after: one } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: empty });
+    let { after: pushed } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: one });
+    step();
+    have separate(region(13).footprint, memory(stack.head)) by { normalize() using {}; }
+    have stack.head == at(region(13).entry, stack.head) by {
+        transport_certificate {
+            premise 0: separate(region(13).footprint, memory(stack.head)) => separate(region(13).footprint, memory(stack.head));
+            preserve 0 => stack.head == at(region(13).entry, stack.head);
+            conclusion 1;
+        }
+    }
+    step();
+    have separate(region(14).footprint, memory(stack.head)) by { normalize() using {}; }
+    have stack.head == at(region(14).entry, stack.head) by {
+        transport_certificate {
+            premise 0: separate(region(14).footprint, memory(stack.head)) => separate(region(14).footprint, memory(stack.head));
+            preserve 0 => stack.head == at(region(14).entry, stack.head);
+            conclusion 1;
+        }
+    }
+    mark before_size;
+    let { tail: first_tail } = unfold(pushed);
+    let { tail: empty_tail } = unfold(first_tail);
+    unfold(empty_tail);
+    step();
+    have separate(region(15).footprint, memory(stack.head)) by { normalize() using {}; }
+    have stack.head == at(region(15).entry, stack.head) by {
+        transport_certificate {
+            premise 0: separate(region(15).footprint, memory(stack.head)) => separate(region(15).footprint, memory(stack.head));
+            preserve 0 => stack.head == at(region(15).entry, stack.head);
+            conclusion 1;
+        }
+    }
+    have separate(region(15).footprint, memory(stack.head->next)) by { normalize() using {}; }
+    have stack.head->next == at(region(15).entry, stack.head->next) by {
+        transport_certificate {
+            premise 0: separate(region(15).footprint, memory(stack.head->next)) => separate(region(15).footprint, memory(stack.head->next));
+            preserve 0 => stack.head->next == at(region(15).entry, stack.head->next);
+            conclusion 1;
+        }
+    }
+    have separate(region(15).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
+    have stack.head->next->next == at(region(15).entry, stack.head->next->next) by {
+        transport_certificate {
+            premise 0: separate(region(15).footprint, memory(stack.head->next->next)) => separate(region(15).footprint, memory(stack.head->next->next));
+            preserve 0 => stack.head->next->next == at(region(15).entry, stack.head->next->next);
+            conclusion 1;
+        }
+    }
+    step();
+    have separate(region(16).footprint, memory(stack.head)) by { normalize() using {}; }
+    have stack.head == at(region(16).entry, stack.head) by {
+        transport_certificate {
+            premise 0: separate(region(16).footprint, memory(stack.head)) => separate(region(16).footprint, memory(stack.head));
+            preserve 0 => stack.head == at(region(16).entry, stack.head);
+            conclusion 1;
+        }
+    }
+    have separate(region(16).footprint, memory(stack.head->next)) by { normalize() using {}; }
+    have stack.head->next == at(region(16).entry, stack.head->next) by {
+        transport_certificate {
+            premise 0: separate(region(16).footprint, memory(stack.head->next)) => separate(region(16).footprint, memory(stack.head->next));
+            preserve 0 => stack.head->next == at(region(16).entry, stack.head->next);
+            conclusion 1;
+        }
+    }
+    have separate(region(16).footprint, memory(stack.head->next->next)) by { normalize() using {}; }
+    have stack.head->next->next == at(region(16).entry, stack.head->next->next) by {
+        transport_certificate {
+            premise 0: separate(region(16).footprint, memory(stack.head->next->next)) => separate(region(16).footprint, memory(stack.head->next->next));
+            preserve 0 => stack.head->next->next == at(region(16).entry, stack.head->next->next);
+            conclusion 1;
+        }
+    }
+    let empty_tail = fold(nodes(stack.head->next->next), { items: List<int32>::Nil });
+    let first_tail = fold(nodes(stack.head->next), { items: List::Cons(x, List<int32>::Nil) }, { tail: empty_tail });
+    let pushed = fold(nodes(stack.head), { items: List::Cons(x, List::Cons(x, List<int32>::Nil)) }, { tail: first_tail });
     step_until(function.exit);
     unfold(length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))));
     have length(List<int32>::Cons(x, List<int32>::Cons(x, List<int32>::Nil))) == 2 by solve() using {

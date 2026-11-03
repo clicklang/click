@@ -366,3 +366,65 @@ fn transport_certificate_named_resource_is_a_theorem_argument() {
     let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
     without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
+
+#[test]
+#[ignore = "nightly: focused full destructor expansion"]
+fn destructor_footprint_cleanup_expands_and_replays() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("mdtests/cpp_generic_class_state_in_a_resource.md");
+    let fixture = crate::cli::read_mdtest(&path).unwrap();
+    let source = fixture.click_source.as_deref().unwrap();
+    let inputs = crate::cli::prepare_mdtest_inputs(&fixture).unwrap();
+    let expanded = expand_claim_by_label(
+        None,
+        source,
+        &inputs.program_inputs(),
+        "__cpp_q_X8_537461636b3c543e_X6_7e537461636b.contract",
+        None,
+    )
+    .unwrap_or_else(|error| panic!("{}", error.report()));
+    assert!(expanded.source.contains("transport_certificate"));
+    let line = expanded
+        .source
+        .lines()
+        .position(|line| line.contains("template<class T> Stack<T>::~Stack()"))
+        .expect("destructor declaration")
+        + 5;
+    without_implicit_auto(|| {
+        verify_sources_at(&expanded.source, &inputs.program_inputs(), line, 1)
+    })
+    .unwrap_or_else(|error| panic!("{}\n{}", error.report(), expanded.source));
+}
+
+#[test]
+#[ignore = "nightly: full positive prefixes of pointer rejection fixtures"]
+fn pointer_rejection_prefixes_expand_and_replay() {
+    for (fixture, claim, from, to) in [
+        (
+            "joined_pointer_field_read_rejects_different_field",
+            "inspect",
+            "have model->right == leaf by {\n                                normalize() using { sibling == model; sibling->left == child; child == leaf; };\n                            }",
+            "have child == leaf by { assumption(); }",
+        ),
+        (
+            "mutex_protected_pointer_footprint_stale_read_rejected",
+            "read_twice",
+            "ensures result == 1;",
+            "ensures result == 0 or result == 1;",
+        ),
+    ] {
+        let (source, inputs) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        // The ordinary fixtures still reject their original false claims.
+        // Replay the otherwise identical proofs with their valid conclusions.
+        let repaired = source.replace(from, to);
+        assert_ne!(source, repaired);
+        let inputs = inputs
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_c0_claim_source(&repaired, &inputs, claim, CProofClaim::Grouped)
+            .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
+        without_implicit_auto(|| verify_c0_sources(&expanded, &inputs))
+            .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
+    }
+}
