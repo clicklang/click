@@ -58,7 +58,7 @@ pub(crate) enum SnapshotBlindPropositionKey {
     Exact(Proposition),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct SnapshotBlindMemoryRangeKey {
     block: PointerBlock,
     offset: SnapshotBlindPointerOffsetKey,
@@ -67,7 +67,7 @@ pub(crate) struct SnapshotBlindMemoryRangeKey {
     wide: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum SnapshotBlindConditionKey {
     PointerValueEqual(SnapshotBlindPointerValueKey, SnapshotBlindPointerValueKey),
     AlgebraicEqual(Box<AlgebraicTerm>, Box<AlgebraicTerm>),
@@ -84,7 +84,7 @@ pub(crate) enum SnapshotBlindConditionKey {
     PointerEqual(SnapshotBlindPointerKey, SnapshotBlindPointerKey),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum SnapshotBlindFloatConditionKey {
     Comparison {
         operator: CComparisonOperator,
@@ -97,17 +97,14 @@ pub(crate) enum SnapshotBlindFloatConditionKey {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub(crate) enum SnapshotBlindBitvectorKey {
-    Load(Box<SnapshotBlindPointerKey>, LoadKind),
-    Address(Box<SnapshotBlindPointerKey>),
-    Binary(BitvectorBinaryOp, Box<Self>, Box<Self>),
-    Unary(BitvectorUnaryOp, Box<Self>),
-    If(Box<SnapshotBlindConditionKey>, Box<Self>, Box<Self>),
-    Exact(Bitvector32Term),
+mod snapshot_operands;
+use snapshot_operands::SnapshotBlindBitvectorKey;
+
+pub(crate) fn clear_snapshot_operand_keys() {
+    snapshot_operands::clear();
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct SnapshotBlindPointerValueKey {
     c_type: CType,
     address: SnapshotBlindPointerKey,
@@ -151,19 +148,19 @@ fn snapshot_blind_pointer_value_key(pointer: &CPointerValue) -> SnapshotBlindPoi
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct SnapshotBlindPointerKey {
     block: SnapshotBlindPointerBlockKey,
     offset: Box<SnapshotBlindPointerOffsetKey>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum SnapshotBlindPointerBlockKey {
     Exact(PointerBlock),
     Read(Box<SnapshotBlindPointerKey>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum SnapshotBlindPointerOffsetKey {
     Add(Box<Self>, Box<Self>),
     Int32Scaled {
@@ -233,25 +230,6 @@ impl SnapshotBlindFloatConditionKey {
                 left.requires_checked_match() || right.requires_checked_match()
             }
             Self::Classification { value, .. } => value.requires_checked_match(),
-        }
-    }
-}
-
-impl SnapshotBlindBitvectorKey {
-    fn requires_checked_match(&self) -> bool {
-        match self {
-            Self::Load(_, _) => true,
-            Self::Address(_) => true,
-            Self::Binary(_, left, right) => {
-                left.requires_checked_match() || right.requires_checked_match()
-            }
-            Self::Unary(_, value) => value.requires_checked_match(),
-            Self::If(condition, then_key, else_key) => {
-                condition.requires_checked_match()
-                    || then_key.requires_checked_match()
-                    || else_key.requires_checked_match()
-            }
-            Self::Exact(_) => false,
         }
     }
 }
@@ -359,11 +337,14 @@ pub(crate) fn snapshot_blind_proposition_key(
 
 fn snapshot_blind_proposition_key_one(proposition: &Proposition) -> SnapshotBlindPropositionKey {
     match proposition {
-        Proposition::ConditionIs(crate::kernel::integer_comparison_condition!(_, _), _) => {
-            SnapshotBlindPropositionKey::Exact(proposition.clone())
-        }
+        Proposition::ConditionIs(
+            condition @ crate::kernel::integer_comparison_condition!(_, _),
+            value,
+        ) => snapshot_observation_key(condition, *value)
+            .map(|(key, value)| SnapshotBlindPropositionKey::Condition(key, value))
+            .unwrap_or_else(|| SnapshotBlindPropositionKey::Exact(proposition.clone())),
         // `Bool` values have no snapshot-blind key yet: they are filed
-        // exactly, as integer comparisons are.
+        // exactly until their checked memory bridge has a structural view.
         Proposition::ConditionIs(condition, _) if condition.is_bool_value_form() => {
             SnapshotBlindPropositionKey::Exact(proposition.clone())
         }
@@ -408,6 +389,45 @@ fn snapshot_blind_memory_range_key(range: &CMemoryRange) -> Box<SnapshotBlindMem
         // are different ranges.
         wide: range.wide_bounds().is_some(),
     })
+}
+
+fn snapshot_observation_key(
+    condition: &ConditionTerm,
+    value: bool,
+) -> Option<(SnapshotBlindConditionKey, bool)> {
+    use crate::kernel::CompareRelation as R;
+    use crate::kernel::machine_integer::{
+        Relation,
+        comparison::{FactOperand, fact_operand_identity, native_comparison_view},
+    };
+    let view = native_comparison_view(condition, value)?;
+    let (relation, truth) = match view.relation {
+        Relation::Equal => (R::Equal, true),
+        Relation::NotEqual => (R::Equal, false),
+        Relation::Less => (R::LessThan, true),
+        Relation::LessEqual => (R::LessEqual, true),
+    };
+    let (format, sides) = fact_operand_identity(
+        view.format,
+        relation,
+        view.operands
+            .each_ref()
+            .map(|operand| operand.operand_view()),
+    );
+    let [left, right] = sides.map(|side| match side {
+        FactOperand::Term(view) => snapshot_operands::operand(view),
+        FactOperand::Value(value) => {
+            snapshot_blind_bitvector_key(&Bitvector32Term::narrow_constant(format, value as u128))
+        }
+    });
+    Some((
+        SnapshotBlindConditionKey::Comparison(
+            BitvectorComparisonOp::Compare(format, relation),
+            left,
+            right,
+        ),
+        truth,
+    ))
 }
 
 fn snapshot_blind_condition_key(condition: &ConditionTerm) -> SnapshotBlindConditionKey {
@@ -489,59 +509,7 @@ fn snapshot_blind_float_condition_key(
 }
 
 fn snapshot_blind_bitvector_key(term: &Bitvector32Term) -> SnapshotBlindBitvectorKey {
-    match term {
-        Bitvector32Term::PointerAddress(pointer, _) => {
-            SnapshotBlindBitvectorKey::Address(Box::new(snapshot_blind_pointer_key(pointer)))
-        }
-        Bitvector32Term::MemoryLoad(_, pointer, kind) => {
-            SnapshotBlindBitvectorKey::Load(Box::new(snapshot_blind_pointer_key(pointer)), *kind)
-        }
-        Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
-            match (
-                crate::kernel::registered_load_for_variable(variable),
-                crate::kernel::registered_load_kind_for_variable(variable),
-            ) {
-                (Some((_, pointer)), Some(kind)) => SnapshotBlindBitvectorKey::Load(
-                    Box::new(snapshot_blind_pointer_key(&pointer)),
-                    kind,
-                ),
-                _ => SnapshotBlindBitvectorKey::Exact(term.clone()),
-            }
-        }
-        // An integer comparison has no snapshot-blind key: the condition
-        // index files it exactly.
-        Bitvector32Term::If {
-            condition,
-            then_term,
-            else_term,
-        } if !matches!(
-            condition.as_ref(),
-            crate::kernel::integer_comparison_condition!(_, _)
-        ) && !condition.is_bool_value_form() =>
-        {
-            SnapshotBlindBitvectorKey::If(
-                Box::new(snapshot_blind_condition_key(condition)),
-                Box::new(snapshot_blind_bitvector_key(then_term)),
-                Box::new(snapshot_blind_bitvector_key(else_term)),
-            )
-        }
-        term => {
-            if let Some((operator, left, right)) = term.as_binary() {
-                SnapshotBlindBitvectorKey::Binary(
-                    operator,
-                    Box::new(snapshot_blind_bitvector_key(left)),
-                    Box::new(snapshot_blind_bitvector_key(right)),
-                )
-            } else if let Some((operator, value)) = term.as_unary() {
-                SnapshotBlindBitvectorKey::Unary(
-                    operator,
-                    Box::new(snapshot_blind_bitvector_key(value)),
-                )
-            } else {
-                SnapshotBlindBitvectorKey::Exact(term.clone())
-            }
-        }
-    }
+    snapshot_operands::written(term)
 }
 
 thread_local! {
@@ -610,7 +578,7 @@ fn snapshot_blind_pointer_offset_key(offset: &PointerOffsetTerm) -> SnapshotBlin
 /// loadability atom remain snapshot-blind on this selection path, while a
 /// `CMemoryLoadable` atom retains the exact snapshot that is part of its
 /// checked premise.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) struct QuantifiedEquivalenceKey(AlphaPropositionKey);
 
 /// Structural identity for a stated proposition.  Unlike the older
