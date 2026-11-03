@@ -1615,6 +1615,14 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
     let observation_support = state
         .resources()
         .directly_supporting_owned_entry(&abstract_resource, &assumptions);
+    if abstract_resource.is_own()
+        && !abstract_resource.has_proven_zero_quantity(&assumptions)
+        && observation_support.is_none()
+    {
+        return Err(ClickError::new(
+            "`observe` requires a directly selected live owner",
+        ));
+    }
     let (observed_quantity, counted_resource, explicit_quantity) = match resource {
         ResourceClause::Conditional { .. } => {
             return Err(ClickError::new(

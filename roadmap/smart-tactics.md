@@ -34,11 +34,15 @@ facts do not establish flat cost as the queried class or bucket grows.
 1. **Direct resource support selection.**
    `directly_supporting_owned_entry_with_separation` and
    `has_other_directly_supporting_owned_entry` in
-   `src/kernel/primitives/resource_algebra.rs` examine candidate resources.
+   `src/kernel/primitives/resource_algebra.rs` still examine memory candidates.
    Execution, call-resource checking and loan handling reach these helpers.
-   Audit both memory and non-memory candidates; distinguish an explicitly
-   selected resource or footprint from an implicit candidate bucket.
+   Audit the memory paths and remaining alternative-support queries; distinguish
+   an explicitly selected resource or footprint from an implicit candidate bucket.
    Measure ambiguous buckets and refusals as well as exact hits.
+   The observation scaling control also shows work growing with the function's
+   parameter count even with only one held owner (`observing_one_composite_ignores_same_shape_owners`).
+   Isolate that separate checking cost before selecting its fix; the control
+   deliberately keeps it distinct from the number of same-shaped owners.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).

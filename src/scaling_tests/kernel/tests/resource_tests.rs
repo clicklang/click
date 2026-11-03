@@ -3034,3 +3034,81 @@ fn owned_support_lookup_ignores_same_shape_candidates() {
         "owner selection scans same-shape resources: {curves:?}"
     );
 }
+
+#[test]
+fn exact_projection_support_ignores_duplicate_unbound_views() {
+    let mut samples = Vec::new();
+    for count in [4, 16, 64] {
+        let owner = CResourceFact::own_composite("owner".into(), vec![]);
+        let view = CResourceFact::view_composite("child".into(), vec![int32(7)]);
+        let context = ResourceContext::new()
+            .unchecked_with_facts((0..count).map(|_| view.clone()))
+            .unchecked_with_fact(owner.clone())
+            .unchecked_with_supported_facts(&owner, [view.clone()]);
+        let facts = PureFactContext::new();
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.directly_supporting_owned_entry(&view, &facts)
+        });
+        assert_eq!(selected.map(|(_, fact)| fact), Some(&owner));
+        samples.push(work);
+        let child = context
+            .clone()
+            .without_exact_representation(&owner)
+            .unwrap();
+        assert!(
+            child
+                .directly_supporting_owned_entry(&view, &facts)
+                .is_none()
+        );
+        assert!(
+            context
+                .directly_supporting_owned_entry(&view, &facts)
+                .is_some()
+        );
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn nonexact_owner_selection_declines_crowded_quantity_buckets() {
+    let resource = CResource::Token {
+        name: "token".into(),
+        arguments: vec![int32(7).into()].into(),
+    };
+    let required = CResourceFact::own(resource.clone());
+    let facts = PureFactContext::new();
+    let mut samples = Vec::new();
+    for count in [4u32, 16, 64] {
+        let context =
+            ResourceContext::new()
+                .unchecked_with_facts((2..count + 2).map(|quantity| {
+                    CResourceFact::own_quantity(resource.clone(), quantity.into())
+                }));
+        let (selected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            context.directly_supporting_owned_entry(&required, &facts)
+        });
+        assert!(selected.is_none());
+        samples.push(work);
+        let exact = context.unchecked_with_fact(required.clone());
+        assert_eq!(
+            exact
+                .directly_supporting_owned_entry(&required, &facts)
+                .map(|(_, fact)| fact),
+            Some(&required)
+        );
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+    let empty_owner = ResourceContext::new()
+        .unchecked_with_fact(CResourceFact::own_quantity(resource, 0u32.into()));
+    assert!(
+        empty_owner
+            .directly_supporting_owned_entry(&required, &facts)
+            .is_none()
+    );
+}

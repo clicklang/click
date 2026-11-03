@@ -410,6 +410,19 @@ frame. Incoming loans remain distinct from ordinary read observations, and a
 caller cannot lend the owner it transfers. The named-unfold alias-call and
 two-view refusal fixtures pin these restrictions.
 
+Non-memory owned-support selection nominates one indexed witness. Exact facts
+and exact owner-backed projections use their fact keys; non-exact queries
+require a singleton resource, prepared address-class/shape, or shape bucket.
+A selected candidate must entail the requested quantity and resource; failure
+never searches another candidate. The projection index is persistent and updated
+only for inserted or removed non-memory projections. Its support occurrence
+still names a live owner, so equal unbound views cannot erase that association.
+An owned observation without selected live support is refused; zero-quantity
+observations still establish no body authority. Scaling tests cover exact hits,
+misses, crowded quantity buckets, duplicate unbound views, and parent/child
+isolation after owner removal. The build boundary forbids candidate search in
+`direct_nonmemory_support_entry`.
+
 An explicit loop read frame can select a flat range withheld from the loop
 body by the checked ownership partition. The loop history retains that
 persistent frame even when a conditional collection's conservative mutable

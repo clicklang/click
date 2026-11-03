@@ -1165,9 +1165,11 @@ fn named_unfold_beside_views_scales_with_the_opened_delta() {
     );
 }
 
-/// Investigation: one explicit observation must not search all owners sharing
-/// the selected resource's name and arity. Setup is outside the tactic sample.
+/// Compare the same explicit observations and C parameters, with and without
+/// other same-shaped owners. Parameter/lowering cost is shared by the control;
+/// this regression isolates owner selection, also measured directly in the kernel.
 #[test]
+#[ignore = "nightly: same-shape observation scaling and parameter control"]
 fn observing_one_composite_ignores_same_shape_owners() {
     let mut curves = Vec::new();
     for count in [4usize, 16, 64] {
@@ -1175,37 +1177,52 @@ fn observing_one_composite_ignores_same_shape_owners() {
             .map(|i| format!("int32* p{i}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let owners = lines(count, |i| format!("owns cell(p{i});"));
         let last = count - 1;
         let observations = lines(count, |_| format!("observe(cell(p{last}));"));
         let c = format!("void check({parameters}) {{}}");
-        let proof = format!(
-            r#"
-            resource cell(p: int32*) {{ owns p[0..1]; }}
-            verifying "hunt.c";
-            void check({parameters}) {{ {owners} }} by {{
-                {observations}
-                step();
-            }}
-        "#
+        let mut runs = Vec::new();
+        for crowded in [false, true] {
+            let owners = if crowded {
+                lines(count, |i| format!("owns cell(p{i});"))
+            } else {
+                format!("owns cell(p{last});")
+            };
+            let proof = format!(
+                r#"
+                resource cell(p: int32*) {{ owns p[0..1]; }}
+                verifying "hunt.c";
+                void check({parameters}) {{ {owners} }} by {{ {observations} step(); }}
+            "#
+            );
+            let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
+                verify_c0_sources(&proof, &[("hunt.c", c.as_str())])
+            });
+            result.unwrap_or_else(|error| {
+                panic!("count {count}, crowded {crowded}: {}", error.message())
+            });
+            let work = samples
+                .iter()
+                .filter(|sample| sample.tactic.tactic_name == "observe")
+                .map(|sample| sample.work)
+                .collect::<Vec<_>>();
+            assert_eq!(work.len(), count);
+            runs.push(work);
+        }
+        curves.push((
+            count,
+            runs[0][0],
+            runs[0][1],
+            runs[1][0],
+            runs[1][1],
+            runs[1].iter().sum::<usize>(),
+        ));
+        assert!(
+            runs[0]
+                .iter()
+                .zip(&runs[1])
+                .all(|(control, crowded)| *crowded <= *control + 64),
+            "same-shape owners add checking work: {curves:?}"
         );
-        let (result, samples) = crate::instrumentation::collect_tactic_work(|| {
-            verify_c0_sources(&proof, &[("hunt.c", c.as_str())])
-        });
-        result.unwrap_or_else(|error| panic!("count {count}: {}", error.message()));
-        let work = samples
-            .iter()
-            .filter(|sample| sample.tactic.tactic_name == "observe")
-            .map(|sample| sample.work)
-            .collect::<Vec<_>>();
-        assert_eq!(work.len(), count);
-        curves.push((count, work[0], work[1], work.iter().sum::<usize>()));
     }
-    eprintln!(
-        "same-shape observe (owners/observations, first work, repeated work, total): {curves:?}"
-    );
-    assert!(
-        curves.windows(2).all(|pair| { pair[1].3 <= pair[0].3 * 6 }),
-        "one selected observation scans same-shape owners: {curves:?}"
-    );
+    eprintln!("observe (N, control first/repeat, crowded first/repeat, crowded total): {curves:?}");
 }

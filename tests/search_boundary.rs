@@ -580,3 +580,29 @@ fn automatic_store_geometry_rejects_order_and_slot_search() {
         .is_ok()
     );
 }
+
+#[test]
+fn direct_nonmemory_support_rejects_candidate_search() {
+    for name in [
+        "find",
+        "find_map",
+        "filter",
+        "filter_map",
+        "flat_map",
+        "collect",
+        "direct_match_candidates_for",
+        "related_pointer_roots",
+    ] {
+        let source = format!("fn direct_nonmemory_support_entry(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/primitives/resource_algebra.rs",
+            "fn direct_nonmemory_support_entry(c: C) { c.get().iter().next(); }"
+        )
+        .is_ok()
+    );
+}

@@ -2391,6 +2391,15 @@ impl ResourceContext {
                 _ => self.storage.symbolic_memory_support.clone(),
             },
         );
+        let nonmemory_projections_by_fact = if support.is_some() && fact.memory_range().is_none() {
+            insert_resource_index_entry(
+                &self.storage.nonmemory_projections_by_fact,
+                fact.clone(),
+                entry,
+            )
+        } else {
+            self.storage.nonmemory_projections_by_fact.clone()
+        };
         self.storage = std::sync::Arc::new(ResourceContextStorage {
             facts: self.storage.facts.with_inserted(entry, fact.clone()),
             next_entry_id,
@@ -2404,6 +2413,7 @@ impl ResourceContext {
                 .with_inserted(occurrence, entry),
             index: self.storage.index.with_inserted(entry, &fact),
             supported_by,
+            nonmemory_projections_by_fact,
             support_occurrence_by_projection,
             projections_by_support,
             projections_by_support_occurrence,
@@ -2593,6 +2603,11 @@ impl ResourceContext {
                 _ => self.storage.symbolic_memory_support.clone(),
             },
         );
+        let nonmemory_projections_by_fact = if support.is_some() && fact.memory_range().is_none() {
+            remove_resource_index_entry(&self.storage.nonmemory_projections_by_fact, &fact, entry)
+        } else {
+            self.storage.nonmemory_projections_by_fact.clone()
+        };
         self.storage = std::sync::Arc::new(ResourceContextStorage {
             facts: self.storage.facts.without_key(&entry),
             next_entry_id: self.storage.next_entry_id,
@@ -2600,6 +2615,7 @@ impl ResourceContext {
             entry_by_occurrence: self.storage.entry_by_occurrence.without_key(&occurrence),
             index: self.storage.index.without_entry(entry, &fact),
             supported_by,
+            nonmemory_projections_by_fact,
             support_occurrence_by_projection,
             projections_by_support,
             projections_by_support_occurrence,
@@ -2684,6 +2700,7 @@ impl ResourceContext {
             entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
             index: self.storage.index.clone(),
             supported_by: self.storage.supported_by.clone(),
+            nonmemory_projections_by_fact: self.storage.nonmemory_projections_by_fact.clone(),
             support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
             projections_by_support: self.storage.projections_by_support.clone(),
             projections_by_support_occurrence: self
@@ -2755,6 +2772,7 @@ impl ResourceContext {
             entry_by_occurrence: replacement_entries,
             index: replacement_index,
             supported_by: PersistentMap::default(),
+            nonmemory_projections_by_fact: PersistentMap::default(),
             support_occurrence_by_projection: PersistentMap::default(),
             projections_by_support: PersistentMap::default(),
             projections_by_support_occurrence: PersistentMap::default(),
@@ -3352,33 +3370,55 @@ impl ResourceContext {
             }
             return None;
         }
-        self.direct_match_candidate_positions(required)
-            .into_iter()
-            .flat_map(ResourceEntryIds::iter)
-            .filter_map(|entry| {
-                let candidate = self.fact(*entry);
-                if !resource_fact_entails(candidate, required, assumptions) {
-                    return None;
-                }
-                if candidate.is_own() {
-                    return Some((self.occurrence(*entry), candidate));
-                }
-                self.storage.supported_by.get(entry).and_then(|support| {
-                    self.storage
-                        .support_occurrence_by_projection
-                        .get(entry)
-                        .copied()
-                        .filter(|support_occurrence| {
-                            self.storage
-                                .entry_by_occurrence
-                                .get(support_occurrence)
-                                .is_some_and(|entry| self.storage.facts.get(entry) == Some(support))
-                                && support.is_own()
-                        })
-                        .map(|support_occurrence| (support_occurrence, support))
-                })
-            })
-            .next()
+        self.direct_nonmemory_support_entry(required, assumptions)
+    }
+
+    /// Exact facts nominate one occurrence directly. Otherwise only a
+    /// singleton resource/address/shape bucket may nominate an occurrence;
+    /// a failed candidate never starts a search through alternative owners.
+    fn direct_nonmemory_support_entry(
+        &self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<(ResourceOccurrenceId, &CResourceFact)> {
+        crate::instrumentation::record_deterministic_work(1);
+        let singleton = |entries: &ResourceEntryIds| {
+            (entries.len() == 1).then(|| *entries.iter().next().expect("singleton entry"))
+        };
+        let unit_owner = required
+            .is_view()
+            .then(|| CResourceFact::own(required.resource().clone()));
+        let unit_owner_entries = unit_owner
+            .as_ref()
+            .and_then(|owner| self.storage.index.exact.get(owner));
+        let entry = if let Some(entries) = self.storage.nonmemory_projections_by_fact.get(required)
+        {
+            *entries.iter().next()?
+        } else if let Some(entries) = unit_owner_entries {
+            // An exact unit owner supplies this exact resource's view.
+            *entries.iter().next()?
+        } else if let Some(entries) = self.storage.index.exact.get(required) {
+            // Equal facts are indexed witnesses. Choosing one retains that
+            // occurrence's own support, rather than merging their authority.
+            *entries.iter().next()?
+        } else if let Some(entries) = self.storage.index.by_resource.get(required.resource()) {
+            singleton(entries)?
+        } else if let Some(entries) = self.class_shape_candidates(required, assumptions) {
+            singleton(&entries)?
+        } else {
+            singleton(self.direct_match_candidate_positions(required)?)?
+        };
+        let candidate = self.fact(entry);
+        if !resource_fact_entails(candidate, required, assumptions) {
+            return None;
+        }
+        if candidate.is_own() {
+            return Some((self.occurrence(entry), candidate));
+        }
+        let support = self.storage.supported_by.get(&entry)?;
+        let occurrence = *self.storage.support_occurrence_by_projection.get(&entry)?;
+        (support.is_own() && self.owned_fact_for_occurrence(occurrence) == Some(support))
+            .then_some((occurrence, support))
     }
 
     fn memory_support_entails(
@@ -5345,6 +5385,7 @@ impl ResourceContext {
             entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
             index: self.storage.index.clone(),
             supported_by: self.storage.supported_by.clone(),
+            nonmemory_projections_by_fact: self.storage.nonmemory_projections_by_fact.clone(),
             support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
             projections_by_support: self.storage.projections_by_support.clone(),
             projections_by_support_occurrence: self
@@ -5463,6 +5504,7 @@ impl ResourceContext {
             entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
             index: self.storage.index.clone(),
             supported_by: self.storage.supported_by.clone(),
+            nonmemory_projections_by_fact: self.storage.nonmemory_projections_by_fact.clone(),
             support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
             projections_by_support: self.storage.projections_by_support.clone(),
             projections_by_support_occurrence: self
@@ -7503,6 +7545,7 @@ impl ResourceContext {
             entry_by_occurrence: self.storage.entry_by_occurrence.clone(),
             index: self.storage.index.clone(),
             supported_by: self.storage.supported_by.clone(),
+            nonmemory_projections_by_fact: self.storage.nonmemory_projections_by_fact.clone(),
             support_occurrence_by_projection: self.storage.support_occurrence_by_projection.clone(),
             projections_by_support: self.storage.projections_by_support.clone(),
             projections_by_support_occurrence: self

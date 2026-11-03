@@ -43,6 +43,22 @@ struct Boundary<'a> {
 impl Boundary<'_> {
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "direct_nonmemory_support_entry"
+            && matches!(
+                name,
+                "find"
+                    | "find_map"
+                    | "filter"
+                    | "filter_map"
+                    | "flat_map"
+                    | "collect"
+                    | "direct_match_candidates_for"
+                    | "related_pointer_roots"
+            )
+        {
+            self.errors.push(format!("{}: {}: owned support must select an indexed witness, not search a candidate bucket ({name})", self.path, self.function));
+        }
         if self.path.starts_with("src/kernel/") && name == "PropositionSearch" {
             self.errors.push(format!(
                 "{}: {}: checking must not depend on Surface planning ({name})",
