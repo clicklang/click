@@ -1382,7 +1382,10 @@ fn parse_directive(
     };
     let directive = directive.trim_start();
     if let Some(rest) = directive.strip_prefix("include")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let rest = rest.trim_start();
         let Some(rest) = rest.strip_prefix('"') else {
@@ -1430,7 +1433,10 @@ fn parse_directive(
         return Ok(Some(SourceDirective::Include(include.to_string())));
     }
     if let Some(rest) = directive.strip_prefix("ifndef")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let (name, trailing) = split_identifier(rest.trim_start());
         if let Some(name) = name.filter(|_| trailing_comments_only(trailing)) {
@@ -1445,7 +1451,10 @@ fn parse_directive(
         ));
     }
     if let Some(rest) = directive.strip_prefix("ifdef")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let (name, trailing) = split_identifier(rest.trim_start());
         if let Some(name) = name.filter(|_| trailing_comments_only(trailing)) {
@@ -1460,21 +1469,30 @@ fn parse_directive(
         ));
     }
     if let Some(rest) = directive.strip_prefix("if")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         return Ok(Some(SourceDirective::ConditionalStart(parse_condition(
             "if", rest,
         ))));
     }
     if let Some(rest) = directive.strip_prefix("elif")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         return Ok(Some(SourceDirective::ConditionalElif(parse_condition(
             "elif", rest,
         ))));
     }
     if let Some(rest) = directive.strip_prefix("define")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let (name, trailing) = split_identifier(rest.trim_start());
         let Some(name) = name else {
@@ -1503,7 +1521,10 @@ fn parse_directive(
         }));
     }
     if let Some(rest) = directive.strip_prefix("undef")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let (name, trailing) = split_identifier(rest.trim_start());
         if let Some(name) = name.filter(|_| trailing_comments_only(trailing)) {
@@ -3304,6 +3325,60 @@ int32 run(void) { return 3; }
         let expanded = expand_includes("main.c", &sources).unwrap();
         assert!(expanded.source().contains("int32 run(void) { return 3; }"));
         assert!(!expanded.source().contains("wrong(void)"));
+    }
+
+    #[test]
+    fn directives_accept_adjacent_punctuation() {
+        let sources = BTreeMap::from([
+            (
+                "main.c",
+                r##"#include"config.h"
+#include<stdint.h>
+#if(0)
+int wrong_if;
+#elif(1)
+int selected_elif;
+#else
+int wrong_else;
+#endif
+#if!defined(MISSING)
+int selected_not;
+#endif
+#if(1)
+int selected_if;
+#endif
+"##,
+            ),
+            ("config.h", "int included;\n"),
+        ]);
+        assert_eq!(
+            local_include_paths("main.c", sources["main.c"]).unwrap(),
+            ["config.h"]
+        );
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        for declaration in ["included", "selected_elif", "selected_not", "selected_if"] {
+            assert!(expanded.source().contains(&format!("int {declaration};")));
+        }
+        assert!(!expanded.source().contains("wrong_"));
+    }
+
+    #[test]
+    fn directive_keywords_require_identifier_boundaries() {
+        for keyword in [
+            "include", "ifndef", "ifdef", "if", "elif", "define", "undef",
+        ] {
+            for suffix in ["X", "1", "_"] {
+                let source = format!("#{keyword}{suffix} 1\n");
+                let sources = BTreeMap::from([("main.c", source.as_str())]);
+                let error = expand_includes("main.c", &sources).expect_err(&source);
+                assert!(
+                    error
+                        .to_string()
+                        .contains("unsupported preprocessor directive"),
+                    "{source}: {error}"
+                );
+            }
+        }
     }
 
     #[test]
