@@ -304,9 +304,7 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
             continue;
         }
         leaf_variables.push(bounded.clone());
-        let mut order_facts = Vec::new();
-        collect_order_facts_from_assumed_proposition(antecedent, &mut order_facts);
-        let mut ranges = antecedent_ranges(&variable_set, &order_facts)?;
+        let mut ranges = antecedent_ranges(&variable_set, antecedent)?;
         // A variable the antecedent bounds by unsigned 64-bit comparisons
         // with constants ranges over those values, from zero where it
         // states no lower bound.
@@ -369,6 +367,47 @@ pub(in crate::kernel) fn finite_forall_ranges_allowing_empty(
         .collect()
 }
 
+/// Visit only the comparisons explicitly written in a conjunctive guard.
+/// The comparison view normalizes direction and truth while retaining shared
+/// operands; consumers select variables and constants without exporting trees.
+fn visit_antecedent_order(
+    proposition: &Proposition,
+    format: MachineIntegerType,
+    visit: &mut impl FnMut(
+        crate::kernel::MachineOperandView<'_>,
+        crate::kernel::MachineOperandView<'_>,
+        bool,
+    ),
+) {
+    use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+    crate::instrumentation::record_deterministic_work(1);
+    match proposition {
+        Proposition::ConditionIs(condition, truth) => {
+            let Some(view) = comparison_view(condition, *truth) else {
+                return;
+            };
+            if view.format != format {
+                return;
+            }
+            let strict = match view.relation {
+                Relation::Less => true,
+                Relation::LessEqual => false,
+                _ => return,
+            };
+            visit(
+                view.operands[0].operand_view(),
+                view.operands[1].operand_view(),
+                strict,
+            );
+        }
+        Proposition::And(left, right) => {
+            visit_antecedent_order(left, format, visit);
+            visit_antecedent_order(right, format, visit);
+        }
+        _ => {}
+    }
+}
+
 /// The ranges an antecedent's unsigned 64-bit comparisons with constants
 /// impose on the quantified variables: `(lower, upper)`, with the lower
 /// bound zero where none is stated and no upper bound where none is. Only
@@ -378,92 +417,37 @@ fn uint64_antecedent_ranges(
     variable_set: &BTreeSet<Variable>,
     antecedent: &Proposition,
 ) -> BTreeMap<Variable, (i64, Option<i64>)> {
-    fn collect(
-        proposition: &Proposition,
-        facts: &mut Vec<(Bitvector32Term, Bitvector32Term, bool)>,
-    ) {
-        match proposition {
-            // `(lower, upper, strict)` for a held comparison; a comparison
-            // held false is the reversed one with the other strictness.
-            Proposition::ConditionIs(condition, value) => {
-                let native = crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(condition, *value);
-                let (condition, value) = native
-                    .as_ref()
-                    .map_or((condition, value), |(condition, value)| (condition, value));
-                let (left, right, lower_first, strict) = match condition {
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::UInt64,
-                        relation: CompareRelation::LessThan,
-                        left: a,
-                        right: b,
-                    } => (a, b, true, true),
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::UInt64,
-                        relation: CompareRelation::LessEqual,
-                        left: a,
-                        right: b,
-                    } => (a, b, true, false),
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::UInt64,
-                        relation: CompareRelation::GreaterThan,
-                        left: a,
-                        right: b,
-                    } => (a, b, false, true),
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::UInt64,
-                        relation: CompareRelation::GreaterEqual,
-                        left: a,
-                        right: b,
-                    } => (a, b, false, false),
-                    _ => return,
-                };
-                let (lower, upper) = if lower_first {
-                    (left, right)
-                } else {
-                    (right, left)
-                };
-                facts.push(if *value {
-                    (lower.as_ref().clone(), upper.as_ref().clone(), strict)
-                } else {
-                    (upper.as_ref().clone(), lower.as_ref().clone(), !strict)
-                });
-            }
-            Proposition::And(left, right) => {
-                collect(left, facts);
-                collect(right, facts);
-            }
-            _ => {}
-        }
-    }
-    let mut facts = Vec::new();
-    collect(antecedent, &mut facts);
     let mut ranges = BTreeMap::<Variable, (i64, Option<i64>)>::new();
-    let constant = |term: &Bitvector32Term| {
-        term.uint64_as_const()
+    let constant = |term: crate::kernel::MachineOperandView<'_>| {
+        term.uint64_constant()
             .and_then(|value| i64::try_from(value).ok())
     };
-    for (lower, upper, strict) in facts {
-        if let (Some(variable), Some(bound)) = (bitvector_variable(&lower), constant(&upper))
-            && variable_set.contains(&variable)
-        {
-            // `k < 0` has no member: its upper bound is below zero.
-            let bound = if strict { bound - 1 } else { bound };
-            let range = ranges.entry(variable).or_insert((0, None));
-            range.1 = Some(range.1.map_or(bound, |current| current.min(bound)));
-        } else if let (Some(bound), Some(variable)) = (constant(&lower), bitvector_variable(&upper))
-            && variable_set.contains(&variable)
-        {
-            let Some(bound) = (if strict {
-                bound.checked_add(1)
-            } else {
-                Some(bound)
-            }) else {
-                continue;
-            };
-            let range = ranges.entry(variable).or_insert((0, None));
-            range.0 = range.0.max(bound);
-        }
-    }
+    visit_antecedent_order(
+        antecedent,
+        MachineIntegerType::UInt64,
+        &mut |lower, upper, strict| {
+            if let (Some(&variable), Some(bound)) = (lower.variable(), constant(upper))
+                && variable_set.contains(&variable)
+            {
+                // `k < 0` has no member: its upper bound is below zero.
+                let bound = if strict { bound - 1 } else { bound };
+                let range = ranges.entry(variable).or_insert((0, None));
+                range.1 = Some(range.1.map_or(bound, |current| current.min(bound)));
+            } else if let (Some(bound), Some(&variable)) = (constant(lower), upper.variable())
+                && variable_set.contains(&variable)
+            {
+                let Some(bound) = (if strict {
+                    bound.checked_add(1)
+                } else {
+                    Some(bound)
+                }) else {
+                    return;
+                };
+                let range = ranges.entry(variable).or_insert((0, None));
+                range.0 = range.0.max(bound);
+            }
+        },
+    );
     ranges
 }
 
@@ -491,7 +475,7 @@ fn collect_guarded_leaves<'a>(
 /// variables, after propagating variable-to-variable order edges.
 fn antecedent_ranges(
     variable_set: &BTreeSet<Variable>,
-    order_facts: &[(Bitvector32Term, Bitvector32Term, bool)],
+    antecedent: &Proposition,
 ) -> Option<BTreeMap<Variable, IntegerRangeFacts>> {
     let mut ranges = variable_set
         .iter()
@@ -499,44 +483,38 @@ fn antecedent_ranges(
         .map(|variable| (variable, IntegerRangeFacts::default()))
         .collect::<BTreeMap<_, _>>();
     let mut edges = Vec::new();
-    for (left, right, strict) in order_facts {
-        match (bitvector_variable(left), signed_bitvector_constant(right)) {
-            (Some(variable), Some(bound)) if variable_set.contains(&variable) => {
-                let upper = if *strict {
-                    bound.checked_sub(1)?
-                } else {
-                    bound
-                };
-                tighten_upper_bound(&mut ranges, variable, upper);
-                continue;
+    let constant = |term: crate::kernel::MachineOperandView<'_>| {
+        term.word32_constant().map(|bits| i64::from(bits as i32))
+    };
+    visit_antecedent_order(
+        antecedent,
+        MachineIntegerType::Int32,
+        &mut |left, right, strict| {
+            if let (Some(&variable), Some(bound)) = (left.variable(), constant(right))
+                && variable_set.contains(&variable)
+            {
+                // The endpoint is int32; shifting it by one fits this i64 table.
+                tighten_upper_bound(&mut ranges, variable, bound - i64::from(strict));
+                return;
             }
-            _ => {}
-        }
-        match (signed_bitvector_constant(left), bitvector_variable(right)) {
-            (Some(bound), Some(variable)) if variable_set.contains(&variable) => {
-                let lower = if *strict {
-                    bound.checked_add(1)?
-                } else {
-                    bound
-                };
-                tighten_lower_bound(&mut ranges, variable, lower);
-                continue;
+            if let (Some(bound), Some(&variable)) = (constant(left), right.variable())
+                && variable_set.contains(&variable)
+            {
+                tighten_lower_bound(&mut ranges, variable, bound + i64::from(strict));
+                return;
             }
-            _ => {}
-        }
-        match (bitvector_variable(left), bitvector_variable(right)) {
-            (Some(lower), Some(upper))
-                if variable_set.contains(&lower) && variable_set.contains(&upper) =>
+            if let (Some(&lower), Some(&upper)) = (left.variable(), right.variable())
+                && variable_set.contains(&lower)
+                && variable_set.contains(&upper)
             {
                 edges.push(VariableOrderEdge {
                     lower,
                     upper,
-                    strict: *strict,
+                    strict,
                 });
             }
-            _ => {}
-        }
-    }
+        },
+    );
     propagate_variable_order_bounds(&mut ranges, &edges)?;
     Some(ranges)
 }
@@ -1368,4 +1346,87 @@ fn affine_atom_multisets_equal<T: PartialEq>(
         right.remove(index);
     }
     right.is_empty()
+}
+
+#[cfg(test)]
+mod shared_antecedent_tests {
+    use super::*;
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, SharedMachineIntegerTerm,
+    };
+
+    fn observed(format: MachineIntegerType, root: KernelTerm) -> IntegerTerm {
+        IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, root).unwrap())
+    }
+
+    fn bound(
+        format: MachineIntegerType,
+        root: KernelTerm,
+        endpoint: i128,
+        truth: bool,
+    ) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::integer_less_equal(
+                observed(format, root),
+                IntegerTerm::constant(endpoint.into()),
+            ),
+            truth,
+        )
+    }
+
+    #[test]
+    fn shared_antecedents_preserve_polarity_width_and_refusals() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = Variable(997701);
+        let variables = BTreeSet::from([variable]);
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let root = KernelTerm::variable(KernelType::C(format.c_type()), variable);
+            let arithmetic = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root.clone()],
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let guard = Proposition::And(
+                Box::new(bound(format, root.clone(), 2, false)),
+                Box::new(Proposition::And(
+                    Box::new(bound(format, root.clone(), 7, true)),
+                    Box::new(bound(format, arithmetic, 1, true)),
+                )),
+            );
+            if format == MachineIntegerType::Int32 {
+                let ranges = antecedent_ranges(&variables, &guard).unwrap();
+                assert_eq!(
+                    (ranges[&variable].lower, ranges[&variable].upper),
+                    (Some(3), Some(7))
+                );
+                assert!(uint64_antecedent_ranges(&variables, &guard).is_empty());
+            } else {
+                assert_eq!(
+                    uint64_antecedent_ranges(&variables, &guard)[&variable],
+                    (3, Some(7))
+                );
+                let ranges = antecedent_ranges(&variables, &guard).unwrap();
+                assert_eq!(
+                    (ranges[&variable].lower, ranges[&variable].upper),
+                    (None, None)
+                );
+            }
+            let disjunction = Proposition::Or(
+                Box::new(bound(format, root.clone(), 2, false)),
+                Box::new(bound(format, root, 7, true)),
+            );
+            assert!(uint64_antecedent_ranges(&variables, &disjunction).is_empty());
+            let ranges = antecedent_ranges(&variables, &disjunction).unwrap();
+            assert_eq!(
+                (ranges[&variable].lower, ranges[&variable].upper),
+                (None, None)
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/reasoning/order_reasoning/shared_antecedent_tests.rs");
+    }
 }

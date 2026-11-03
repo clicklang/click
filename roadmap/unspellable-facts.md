@@ -108,6 +108,12 @@ bridge and is never proof authority. The load-registry lifetime invalidates the
 shared key memo. Migrating the checked matcher and certificate availability is
 still necessary before removing their native comparison adapters.
 
+Finite-quantifier guard ranges read signed 32-bit and unsigned 64-bit operand
+views directly. They retain direction, truth, endpoint handling and signed
+variable-edge propagation; arithmetic endpoints outside that rule's fragment
+are refused without exporting their shared trees. The general order-fact and
+certificate bridges remain separate migration work.
+
 The general comparison dispatcher still needs its compatibility bridge. Its
 migration must preserve the existing rule order as well as proof results;
 moving endpoint queries ahead of cheaper rules can multiply nested bound visits.
