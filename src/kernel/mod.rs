@@ -248,6 +248,7 @@ pub(crate) use reasoning::{
 pub(crate) use reasoning::{
     substitute_pointer_value_in_proposition, substitute_pointer_variable_in_proposition,
 };
+pub(crate) use spec::c_value_word32_term;
 pub(crate) use spec::is_verified_load_variable_defining_fact;
 pub use termination::{
     CTerminationRefusal, CTerminationVerdicts, CUnsuitableCallback, c_termination_height_plan,
