@@ -1861,13 +1861,6 @@ pub(in crate::kernel) fn held_order_at(
     })
 }
 
-pub(in crate::kernel) fn condition_as_uint64_order_fact(
-    condition: &ConditionTerm,
-    value: bool,
-) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    wide_order_fact(condition, value, MachineIntegerType::UInt64)
-}
-
 /// The formats whose order facts the format-indexed order walk
 /// ([`PureFactContext::exact_wide_order_path_evidence`]) follows: the 64-bit
 /// orders and the `uint32` order. The `int32` order has its own walk
