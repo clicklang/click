@@ -3237,6 +3237,97 @@ fn ordinary_view_refuses_equal_looking_replacement_after_ownership_reservation()
     );
 }
 
+#[test]
+fn memory_view_refuses_a_different_owner_after_whole_owner_reservation() {
+    let assumptions = PureFactContext::new();
+    let owner = memory(0, 8, true);
+    let resources = ResourceContext::new().unchecked_with_facts([owner.clone(), owner.clone()]);
+    let mut consume = checked(owner);
+    consume.role = CResourceTransferRole::Consume;
+    let (ledger, caller, callee) = participants();
+    let error = plan_stable_view_transfer(
+        &resources,
+        &[consume, checked(memory(0, 4, false))],
+        &assumptions,
+        &ledger,
+        caller,
+        callee,
+    )
+    .expect_err("another owner cannot replace the consumed source");
+    assert!(
+        matches!(error, StableViewPlanError::ConflictingRequirement(_)),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn memory_split_origins_retain_both_sides_and_isolate_speculative_branches() {
+    let assumptions = PureFactContext::new();
+    let owner = memory(0, 12, true);
+    let resources = ResourceContext::new().unchecked_with_fact(owner.clone());
+    let original = resources.occurrences_for_fact(&owner)[0];
+    let empty_origins = MemorySplitOrigins::default();
+    let (residual, _, origins) = resources
+        .clone()
+        .reserve_owned_memory_fragments_with_origins(
+            &memory(4, 8, true),
+            &assumptions,
+            &empty_origins,
+        )
+        .unwrap();
+    let support = |context: &ResourceContext, start, end| {
+        context
+            .directly_supporting_owned_entry(&memory(start, end, true), &assumptions)
+            .unwrap()
+            .0
+    };
+    let left = support(&residual, 0, 4);
+    let right = support(&residual, 8, 12);
+    assert_eq!(origins.origin_of(left), original);
+    assert_eq!(origins.origin_of(right), original);
+    assert_eq!(empty_origins.origin_of(left), left);
+
+    let mut child_origins = origins.clone();
+    let child = residual
+        .clone()
+        .without_fact_incrementally_with_origins(
+            &memory(0, 2, true),
+            &assumptions,
+            &mut child_origins,
+        )
+        .unwrap();
+    let child_left = support(&child, 2, 4);
+    assert_eq!(child_origins.origin_of(child_left), original);
+    assert_eq!(child_origins.origin_of(right), original);
+    assert_eq!(origins.origin_of(child_left), child_left);
+    assert_eq!(support(&residual, 0, 4), left);
+
+    // This consumes one fragment speculatively, then encounters a gap. Its
+    // discarded origin updates cannot affect the retained parent or child.
+    assert!(
+        child
+            .clone()
+            .reserve_owned_memory_fragments_with_origins(
+                &memory(2, 10, true),
+                &assumptions,
+                &child_origins,
+            )
+            .is_none()
+    );
+    assert!(
+        child
+            .clone()
+            .without_fact_incrementally_with_origins(
+                &memory(2, 10, true),
+                &assumptions,
+                &mut child_origins,
+            )
+            .is_none()
+    );
+    assert_eq!(child_origins.origin_of(child_left), original);
+    assert_eq!(child_origins.origin_of(right), original);
+}
+
 /// Step 7: a loan a produced borrowing composite escapes through is not
 /// recovered at return; the caller keeps the escrow lent, holds the
 /// loan through the composite's binding, and recovers the owner only

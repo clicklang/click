@@ -16,8 +16,8 @@ pub(in crate::kernel) use local_references::{LocalReferenceId, LocalScalarRefere
 
 use super::functions::CCheckedResourceFact;
 use super::primitives::{
-    PointerBlock, ResourceMemoryIntervalNode, memory_interval_ancestors, memory_interval_nodes,
-    memory_range_is_proven_empty, memory_ranges_proven_overlapping,
+    MemorySplitOrigins, PointerBlock, ResourceMemoryIntervalNode, memory_interval_ancestors,
+    memory_interval_nodes, memory_range_is_proven_empty, memory_ranges_proven_overlapping,
 };
 use super::{
     Bitvector32Term, CMemoryRange, CResource, CResourceFact, CResourceSnapshot,
@@ -2483,6 +2483,7 @@ fn lend_owned_view_to_suspended_worker(
     ledger: &mut LoanLedger,
     transitions: &mut Vec<CheckedLoanTransition>,
     residual: &mut ResourceContext,
+    split_origins: &mut MemorySplitOrigins,
     parent_bindings: &mut LoanViewBindings,
     split_reborrows: &mut BTreeMap<LoanId, (ResourceOccurrenceId, LoanShareId)>,
     selected: &CResourceFact,
@@ -2500,7 +2501,7 @@ fn lend_owned_view_to_suspended_worker(
     transitions.push(root.transition);
     *residual = residual
         .clone()
-        .without_fact_incrementally(selected, assumptions)
+        .without_fact_incrementally_with_origins(selected, assumptions, split_origins)
         .ok_or_else(|| StableViewPlanError::MissingResource(selected.clone()))?;
     let viewed = CResourceFact::view_memory(range);
     let (next_residual, occurrence) = residual
@@ -2647,6 +2648,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
     }
     let caller_resources = coalesced.as_ref().unwrap_or(caller_resources);
     let mut residual = caller_resources.clone();
+    let mut split_origins = MemorySplitOrigins::default();
     let mut parent_view_bindings = parent_view_bindings.clone();
     let mut callee_resources = ResourceContext::new_with_equalities(assumptions);
     let mut transferred_ownership = Vec::new();
@@ -2811,8 +2813,12 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
         // aliases must not turn this join into a scan of the parent's block.
         let fragment_reservation = residual
             .clone()
-            .reserve_owned_memory_fragments(&requirement.fact, assumptions);
-        if let Some((remaining, supports)) = &fragment_reservation
+            .reserve_owned_memory_fragments_with_origins(
+                &requirement.fact,
+                assumptions,
+                &split_origins,
+            );
+        if let Some((remaining, supports, origins)) = &fragment_reservation
             && supports.len() > 1
         {
             // Bare memory may be joined, but a hold-bearing owner cannot
@@ -2851,12 +2857,13 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             canonical_transferred_ownership.push(None);
             transferred_ownership.push(requirement.clone());
             residual = remaining.clone();
+            split_origins = origins.clone();
             continue;
         }
         let direct = fragment_reservation
             .as_ref()
-            .filter(|(_, supports)| supports.len() == 1)
-            .and_then(|(_, supports)| {
+            .filter(|(_, supports, _)| supports.len() == 1)
+            .and_then(|(_, supports, _)| {
                 residual
                     .owned_fact_for_occurrence(supports[0])
                     .map(|fact| (supports[0], fact))
@@ -2935,9 +2942,16 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             transferred_holds.push((requirement.fact.clone(), binding.clone()));
         }
         residual = match fragment_reservation {
-            Some((remaining, supports)) if supports.len() == 1 => remaining,
+            Some((remaining, supports, origins)) if supports.len() == 1 => {
+                split_origins = origins;
+                remaining
+            }
             _ => residual
-                .without_fact_incrementally(&requirement.fact, assumptions)
+                .without_fact_incrementally_with_origins(
+                    &requirement.fact,
+                    assumptions,
+                    &mut split_origins,
+                )
                 .ok_or_else(|| missing_own_requirement(&requirement.fact))?,
         };
         callee_resources = callee_resources
@@ -3117,6 +3131,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     &mut planned_ledger,
                     &mut entry_transitions,
                     &mut residual,
+                    &mut split_origins,
                     &mut parent_view_bindings,
                     &mut suspended_split_reborrows,
                     &selected,
@@ -3130,7 +3145,11 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 entry_transitions.push(opening.transition.clone());
                 planned_ledger = planned_ledger.apply(&opening.transition)?;
                 residual = residual
-                    .without_fact_incrementally(&selected, assumptions)
+                    .without_fact_incrementally_with_origins(
+                        &selected,
+                        assumptions,
+                        &mut split_origins,
+                    )
                     .ok_or_else(|| StableViewPlanError::MissingResource(owned.clone()))?;
                 opening
             };
@@ -3325,29 +3344,10 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             else {
                 return Err(StableViewPlanError::ConflictingRequirement(selected));
             };
-            if support != origin_support {
-                // A memory split gives residual ranges fresh occurrence ids.
-                // Reconcile that change only when the pre-reservation owner
-                // uniquely supported this cluster and the selected residual
-                // is itself a fragment of that owner. Otherwise an equal-
-                // looking occurrence could replace the checked backing.
-                let residual_is_unique_memory_fragment = caller_resources
-                    .owned_fact_for_occurrence(origin_support)
-                    .filter(|origin| matches!(origin.resource(), CResource::Memory(_)))
-                    .is_some_and(|origin| {
-                        matches!(owned.resource(), CResource::Memory(_))
-                            && !caller_resources.has_other_directly_supporting_owned_entry(
-                                &selected,
-                                origin_support,
-                                assumptions,
-                            )
-                            && ResourceContext::new_with_equalities(assumptions)
-                                .unchecked_with_fact(origin.clone())
-                                .satisfies_fact(&owned, assumptions)
-                    });
-                if !residual_is_unique_memory_fragment {
-                    return Err(StableViewPlanError::ConflictingRequirement(selected));
-                }
+            // Splitting constructs this relation while creating each residual.
+            // Do not infer it from coverage or absence of another supplier.
+            if split_origins.origin_of(support) != origin_support {
+                return Err(StableViewPlanError::ConflictingRequirement(selected));
             }
             // The checked supplier owns this slice in its original pointer
             // domain. Keep that domain in escrow; the callee's view may have
@@ -3365,6 +3365,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     &mut planned_ledger,
                     &mut entry_transitions,
                     &mut residual,
+                    &mut split_origins,
                     &mut parent_view_bindings,
                     &mut suspended_split_reborrows,
                     &selected,
@@ -3376,7 +3377,11 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             } else if let Some(backing) = composite_backings.get(&support) {
                 let remaining = residual
                     .clone()
-                    .without_fact_incrementally(&selected, assumptions)
+                    .without_fact_incrementally_with_origins(
+                        &selected,
+                        assumptions,
+                        &mut split_origins,
+                    )
                     .ok_or(StableViewPlanError::MissingResource(selected.clone()))?;
                 // The exclusive requirements were reserved out of `residual`
                 // before any view was planned, so the residual alone cannot
@@ -3411,7 +3416,11 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                 entry_transitions.push(opening.transition.clone());
                 planned_ledger = planned_ledger.apply(&opening.transition)?;
                 residual = residual
-                    .without_fact_incrementally(&selected, assumptions)
+                    .without_fact_incrementally_with_origins(
+                        &selected,
+                        assumptions,
+                        &mut split_origins,
+                    )
                     .ok_or_else(|| StableViewPlanError::MissingResource(owned.clone()))?;
             }
             loan_roots.push((

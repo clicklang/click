@@ -434,6 +434,20 @@ its separate iterator. Build boundaries pin both the support caller and
 `MemoryFactEntries::single_supplier`; scaling tests cover exact hits, symbolic
 misses, and a fixed-span refusal beside increasing short owned fragments.
 
+Call planning retains memory split origins while constructing residual owners.
+Each new residual occurrence maps directly to its original pre-reservation
+owner in a call-local persistent map. Repeated splits propagate that original
+identity, never a predecessor link. Failed speculative reservations discard
+their map updates with the candidate state. The selected live residual must
+have the expected origin; equal-looking owners do not substitute for it.
+This replaces alternative-owner enumeration and the subsequent coverage
+reconstruction. Joins that create fresh owners do not infer a single source
+identity. The map changes only with the selected split output and is discarded
+after planning; ordinary resource contexts acquire no history or new facts.
+Boundary checks forbid the removed search and context-history reconstruction;
+scaling controls grow incident bounds, observations, and successive splits.
+Parent loan-binding selection is a separate remaining walk.
+
 Declared-resource lowering selects parameter values from the names in its
 explicit arguments, including quantities and nested resource-type arguments.
 Outcome-proposition lowering against an indexed assumption context likewise

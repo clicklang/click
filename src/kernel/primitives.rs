@@ -9427,6 +9427,13 @@ pub(crate) struct ResourceOccurrenceId {
     ordinal: u64,
 }
 
+/// Call-local origins of residual memory owners, constructed by splitting.
+/// Values name the original occurrence directly, never a predecessor chain.
+#[derive(Clone, Default)]
+pub(crate) struct MemorySplitOrigins {
+    origins: PersistentMap<ResourceOccurrenceId, ResourceOccurrenceId>,
+}
+
 impl ResourceOccurrenceId {
     pub(crate) fn arena(self) -> u64 {
         self.arena

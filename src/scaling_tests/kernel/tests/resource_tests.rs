@@ -3219,12 +3219,10 @@ fn memory_owned_support_miss_ignores_fragment_frontier() {
     );
 }
 
-/// The loan planner asks this negative query after a reservation splits its
-/// selected owner. Unrelated lower-bound premises must not turn a uniqueness
-/// check into an enumeration of other cells on the same base.
+/// Origin comparison must not inspect facts or other resource candidates.
+/// Grow the former incident-bound frontier beside a constant-coordinate split.
 #[test]
-#[ignore = "red regression: alternative-owner lookup scans incident bounds"]
-fn alternative_memory_owner_refusal_ignores_incident_bounds() {
+fn memory_split_origin_ignores_incident_bounds() {
     let mut curves = Vec::new();
     for count in [4u32, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
@@ -3233,14 +3231,15 @@ fn alternative_memory_owner_refusal_ignores_incident_bounds() {
         let range = |start: Bitvector32Term, end: Bitvector32Term| {
             CMemoryRange::new(base.clone(), start, end)
         };
-        let owner = CResourceFact::own_memory(range(
-            i.clone(),
-            Bitvector32Term::add(i.clone(), 2u32.into()),
-        ));
-        let required = CResourceFact::own_memory(range(
-            i.clone(),
-            Bitvector32Term::add(i.clone(), 1u32.into()),
-        ));
+        let slice = |start: u32, end: u32| {
+            CMemoryRange::new(
+                base.offset_by_elements(i.clone(), 4),
+                start.into(),
+                end.into(),
+            )
+        };
+        let owner = CResourceFact::own_memory(slice(0, 2));
+        let required = CResourceFact::own_memory(slice(0, 1));
         let mut facts = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::signed_less_than(128u32.into(), i.clone()),
@@ -3261,24 +3260,32 @@ fn alternative_memory_owner_refusal_ignores_incident_bounds() {
                     .map(|k| CResourceFact::own_memory(range((k + 1).into(), (k + 2).into()))),
             );
         context.synchronize_memory_equalities(&facts);
-        let excluded = context.occurrences_for_fact(&owner)[0];
+        let original = context.occurrences_for_fact(&owner)[0];
+        let mut origins = crate::kernel::primitives::MemorySplitOrigins::default();
+        let removed = CResourceFact::own_memory(slice(1, 2));
+        let residual = context
+            .without_fact_incrementally_with_origins(&removed, &facts, &mut origins)
+            .expect("split the selected symbolic owner");
+        let (support, _) = residual
+            .directly_supporting_owned_entry(&required, &facts)
+            .expect("the remaining slice keeps its ownership");
         let mut work = Vec::new();
         for _ in 0..3 {
             let (other, units) = crate::instrumentation::measure_deterministic_work(|| {
-                context.has_other_directly_supporting_owned_entry(&required, excluded, &facts)
+                origins.origin_of(support) == original
             });
-            assert!(!other, "all other cells end below i");
+            assert!(other, "the residual retains the original owner");
             work.push(units);
         }
         curves.push((count, work));
     }
-    eprintln!("alternative memory owner refusal (first/repeated work): {curves:?}");
+    eprintln!("memory split origin (first/repeated work): {curves:?}");
     assert!(
         curves.windows(2).all(|pair| pair[0]
             .1
             .iter()
             .zip(&pair[1].1)
             .all(|(small, large)| *large <= *small + 32)),
-        "alternative-owner lookup scans incident bounds: {curves:?}"
+        "split-origin lookup scans incident bounds: {curves:?}"
     );
 }

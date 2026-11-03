@@ -43,6 +43,28 @@ struct Boundary<'a> {
 impl Boundary<'_> {
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
+        if self.path == "src/kernel/loans.rs"
+            && matches!(
+                name,
+                "has_other_directly_supporting_owned_entry"
+                    | "changed_facts_since"
+                    | "descends_from"
+            )
+        {
+            self.errors.push(format!("{}: {}: loan provenance must retain split origins, not reconstruct them by search or history ({name})", self.path, self.function));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "origin_of"
+            && matches!(
+                name,
+                "iter" | "find" | "find_map" | "filter" | "filter_map" | "collect"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: split origin lookup must read a direct identity ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && self.function == "direct_nonmemory_support_entry"
             && matches!(

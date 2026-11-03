@@ -640,3 +640,28 @@ fn single_memory_owner_selection_rejects_fragment_enumeration() {
         .is_ok()
     );
 }
+
+#[test]
+fn loan_origin_reconciliation_rejects_search_and_history() {
+    for name in [
+        "has_other_directly_supporting_owned_entry",
+        "changed_facts_since",
+        "descends_from",
+    ] {
+        let source = format!("fn plan(c: C) {{ c.{name}(); }}");
+        assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+    }
+    for name in ["iter", "find", "filter_map", "collect"] {
+        let source = format!("fn origin_of(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/primitives/resource_algebra.rs",
+            "fn origin_of(c: C) { c.get(); }",
+        )
+        .is_ok()
+    );
+}

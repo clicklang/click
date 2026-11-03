@@ -31,46 +31,27 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Alternative resource support selection.**
-   `has_other_directly_supporting_owned_entry` in
-   `src/kernel/primitives/resource_algebra.rs` still examines candidate resources.
-   Loan handling reaches this helper when deciding whether another owner can
-   support a view. Measure growing candidate buckets, including ambiguous
-   matches and refusals, before selecting its replacement. Single-owner
-   selection and explicit fragment composition are distinct operations; a
-   bounded single-owner query does not establish bounded total call/coalescing
-   cost.
+1. **Parent loan-binding selection.**
+   `view_occurrences_for_fact` in `src/kernel/primitives/resource_algebra.rs`
+   enumerates matching observations; the call planner in `src/kernel/loans.rs`
+   collects them and searches for a live parent loan binding. This happens
+   both while deciding whether to coalesce a view and while selecting its
+   backing. A crowded bucket of unbound observations must not cost a scan.
 
-   Two local red regressions now isolate this work (explicitly ignored until
-   fixed; run these names with `--run-ignored all --no-capture`):
+   `split_owner_reconciliation_ignores_duplicate_observations` in
+   `src/scaling_tests/kernel/loans/tests.rs` holds a call fixed: consume
+   `[0..4]` and borrow `[6..8]` from one `[0..8]` owner. At 4/16/64/256 duplicate
+   observations, identity reconciliation itself is flat, but the test also
+   reports growing complete-call persistent-map work. Ordinary work counters
+   miss rejected-view traversal, so retain the persistent-work measurement.
+   The complete-call curve is diagnostic, not yet a flatness assertion.
 
-   - `alternative_memory_owner_refusal_ignores_incident_bounds` in
-     `src/scaling_tests/kernel/tests/resource_tests.rs`: the excluded owner
-     covers `[i..i+2]`; all other cells end below `i`. At 4/16/64 incident
-     bounds, third-query work is 295/949/5005. This isolates the helper's
-     symbolic route, not the concrete loan-reconciliation caller: symbolic
-     view groups currently use a different covering-owner path.
-   - `split_owner_reconciliation_ignores_duplicate_observations` in
-     `src/scaling_tests/kernel/loans/tests.rs`: one fixed call consumes
-     `[0..4]` and borrows `[6..8]` from `[0..8]`, beside 4/16/64/256 duplicate
-     observations of `[6..8]`. The helper's repeated persistent-map work is
-     190/254/582/2254; complete-call map work is
-     7154/8053/11191/25657. All calls succeed, and different-owner and
-     parent/child-isolation controls pass before the scaling assertion fails.
-     Ordinary work counters miss the rejected-view traversal, so retain the
-     persistent-work measurement. The call also enumerates observations in
-     `view_occurrences_for_fact` to select a parent loan binding; removing the
-     alternative-owner helper alone will not make this complete call flat.
-
-   Design checkpoint: reservation/splitting creates fresh residual occurrence
-   IDs without returning their source to the planner. It then reconstructs
-   provenance by excluding other possible owners. Prefer having the split
-   operation return its residual identities and retaining a direct
-   residual-to-original mapping local to the call plan. Propagate the original
-   identity at each split; do not follow predecessor links or scan context
-   history. A bounded unsuccessful search is not proof of uniqueness. Keep
-   occurrence-replacement refusals, including equal-looking owners. Discuss
-   this design before changing the kernel; no new axiom appears necessary.
+   Next design cycle: isolate binding selection in a red scaling assertion,
+   including exact bound hits, unbound duplicates, ambiguous bindings and
+   refusals. Select a live binding by an indexed identity or decline without
+   treating an unbound observation as authority. Preserve stale-binding,
+   equal-looking-owner, and parent/child-isolation refusals. Do not fold this
+   into memory split-origin tracking or reconstruct origins from history.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
