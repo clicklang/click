@@ -100,17 +100,26 @@ fn charon_refused_panic_names_its_condition() {
 
 #[test]
 #[ignore = "nightly: live Charon extraction takes 0.6s"]
-fn charon_macro_refusal_stays_in_the_callers_source_file() {
+fn charon_assert_eq_macro_checks_operands_and_preserves_caller_origin() {
     let p = Project::new("pub fn q(x: u32, y: u32) -> u32 {\n    assert_eq!(x, y);\n    x\n}\n");
-    let error = p.refresh().unwrap_err();
-    assert!(
-        error.contains("does not support type `(&u32, &u32)`"),
-        "{error}"
-    );
-    // Some Charon macro locals have only a generated span. In that case the
-    // enclosing function is the honest fallback, rather than a foreign line.
-    assert!(
-        error.contains("borrow.rs:2 in q:") || error.contains("borrow.rs:1 in q:"),
-        "{error}"
-    );
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let valid = "verifying \"borrow.rs\"; fn q(x: u32, y: u32) -> u32 { requires x == y; ensures result == x; }";
+    C0VerificationSession::new_program_prepared(valid, &prepared).unwrap();
+    let invalid = valid.replace("requires x == y;", "requires x != y;");
+    let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        .err()
+        .expect("unequal inputs must reach the assertion panic");
+    assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
+    let error = error.to_string();
+    assert!(error.contains("Rust panic"), "{error}");
+    assert!(error.starts_with("`q."), "{error}");
+    assert_eq!(prepared.export().logical_source, "borrow.rs");
+    let caller = prepared
+        .export()
+        .functions
+        .iter()
+        .find(|f| f.name == "q")
+        .unwrap();
+    assert_eq!(caller.span.line, 1);
 }
