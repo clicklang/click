@@ -367,7 +367,17 @@ impl LoanViewBindings {
         resources: &ResourceContext,
         assumptions: &PureFactContext,
     ) -> Option<ResourceOccurrenceId> {
-        let occurrence = self.bound_view_candidate(required)?;
+        if self.state.map.is_empty() {
+            return None;
+        }
+        let Some(occurrence) = self.bound_view_candidate(required) else {
+            // Loop construction can retain metadata for earlier occurrences
+            // beside a fresh live view. With no metadata nominee, select one
+            // live view through the resource index and read its binding.
+            // This is not a retry after a failed candidate check.
+            let occurrence = resources.indexed_view_witness(required, assumptions)?;
+            return self.get(&occurrence).map(|_| occurrence);
+        };
         let held = resources.view_fact_for_occurrence(occurrence)?;
         // Binding metadata alone cannot turn an owned composite or an absent
         // occurrence into a view. Check only the nominated held occurrence.

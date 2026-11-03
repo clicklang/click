@@ -186,6 +186,7 @@ fn bound_view_selection_is_indexed_and_branch_local() {
         let (mut resources, first) = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts_and_occurrences([view.clone()]);
         let selected = first[0].1;
+        let sole_live_view = resources.clone();
         let mut bindings = LoanViewBindings::default().with_inserted(selected, template.clone());
         for index in 0..count {
             let other = memory(16 + index * 8, 24 + index * 8, false);
@@ -205,10 +206,21 @@ fn bound_view_selection_is_indexed_and_branch_local() {
             bindings.select_bound_view(&view, &resources, &facts)
         });
         assert_eq!(found, Some(selected));
-        costs.push(work);
-        // The coarse same-base bucket is crowded. Nonexact lookup declines;
-        // it does not scan to find the otherwise suitable first binding.
-        assert_eq!(bindings.bound_view_candidate(&memory(2, 4, false)), None);
+        // Retained metadata may outlive its resource occurrence, as at loop
+        // entry. The live-view index selects the one covering occurrence;
+        // there is no scan of the old metadata or of other live views.
+        sole_live_view.synchronize_memory_equalities(&facts);
+        let subrange = memory(2, 4, false);
+        assert_eq!(bindings.bound_view_candidate(&subrange), None);
+        let (live, live_work) = crate::persistent::measure_persistent_work(|| {
+            bindings.select_bound_view(&subrange, &sole_live_view, &facts)
+        });
+        assert_eq!(live, Some(selected));
+        assert_eq!(
+            bindings.select_bound_view(&subrange, &resources, &facts),
+            Some(selected)
+        );
+        costs.push((work, live_work));
         let removed = bindings.without(selected);
         assert_eq!(removed.bound_view_candidate(&view), None);
         assert_eq!(bindings.bound_view_candidate(&view), Some(selected));
@@ -232,7 +244,8 @@ fn bound_view_selection_is_indexed_and_branch_local() {
             Some(selected)
         );
     }
-    assert!(costs[3] <= costs[0] * 3 + 128, "{costs:?}");
+    assert!(costs[3].0 <= costs[0].0 * 3 + 128, "{costs:?}");
+    assert!(costs[3].1 <= costs[0].1 + 128, "{costs:?}");
 }
 
 #[test]

@@ -53,6 +53,16 @@ facts do not establish flat cost as the queried class or bucket grows.
    preserve ownership and loan refusals, and investigate proof failures for
    missing explicit steps before proposing new primitives.
 
+2. **Loop-body binding carryover: next measurement candidate.**
+   `loop_body_resource_context` in `src/kernel/loops.rs` enumerates body views,
+   then searches matching entry and body occurrences to copy their bindings.
+   Its map can retain earlier metadata beside newly allocated live occurrences.
+   Measure a fixed loop interface beside increasing observations and retained
+   bindings before choosing a fix. Investigate whether body construction can
+   return the selected source and new occurrence directly. Do not replace the
+   lookup with a scan that prunes old metadata; preserve branch-local snapshots
+   and discuss the producer change before implementing it.
+
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
 

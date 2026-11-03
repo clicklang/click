@@ -449,8 +449,10 @@ scaling controls grow incident bounds, observations, and successive splits.
 Loan bindings retain persistent indexes of bound occurrences, keyed by exact
 view and by written memory base or nonmemory resource shape. Updates touch
 only the changed occurrences. Exact requests nominate the first indexed bound
-identity; nonexact requests require a singleton bucket, or a singleton binding
-map for a checked alias. Selection checks the actual live view, then the ledger
+identity; nonexact requests nominate through a singleton bucket or binding
+map. If metadata nominates none, the live-resource index may nominate one
+view, whose binding is read directly. This handles retained loop metadata
+beside a fresh live occurrence without scanning either set. Selection checks the actual live view, then the ledger
 checks the binding and participant and the planner checks its permitted
 coverage. An unsuitable nominee does not cause a retry. The empty binding map
 requires no observation discovery. These are metadata indexes, not e-graph

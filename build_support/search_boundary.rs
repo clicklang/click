@@ -68,7 +68,9 @@ impl Boundary<'_> {
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && matches!(
                 self.function.as_str(),
-                "without_selected_fact_with_origins" | "has_indexed_view_witness"
+                "without_selected_fact_with_origins"
+                    | "has_indexed_view_witness"
+                    | "indexed_view_witness"
             )
             && matches!(
                 name,

@@ -3584,24 +3584,32 @@ impl ResourceContext {
         required: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> bool {
+        self.indexed_view_witness(required, assumptions).is_some()
+    }
+
+    pub(crate) fn indexed_view_witness(
+        &self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
         if !required.is_view() || self.storage.index.owned_count == self.storage.facts.len() {
-            return false;
+            return None;
         }
-        if self.contains_exact_representation(required) {
-            return true;
+        if let Some(entries) = self.storage.index.exact.get(required) {
+            return entries
+                .owned_values()
+                .next()
+                .map(|entry| self.occurrence(entry));
         }
-        let Some(range) = required.memory_view_range() else {
-            return false;
-        };
+        let range = required.memory_view_range()?;
         let candidates = self.memory_fact_candidates(range, false, assumptions);
-        let Some(entry) = candidates.entries.single_supplier() else {
-            return false;
-        };
+        let entry = candidates.entries.single_supplier()?;
         let available = self.fact(entry);
-        available.is_view()
+        (available.is_view()
             && candidates
                 .requirement(entry, required)
-                .is_some_and(|aligned| resource_fact_entails(available, &aligned, assumptions))
+                .is_some_and(|aligned| resource_fact_entails(available, &aligned, assumptions)))
+        .then(|| self.occurrence(entry))
     }
 
     /// Return indexed view occurrences that entail `required`. The caller
