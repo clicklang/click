@@ -4,6 +4,69 @@ use click::surface::{
     verify_c0_sources_at,
 };
 
+#[test]
+#[ignore = "nightly: generic Rust claim expansion and retained/cold audit rechecks"]
+fn generic_rust_clause_proofs_stay_on_the_generic_function() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for (fixture, claim) in [
+        (
+            "option-values/options.click",
+            "option_values::wrap.ensures_0",
+        ),
+        (
+            "result-values/results.click",
+            "result_values::same.ensures_0",
+        ),
+    ] {
+        let path = root.join("design/charon-trial").join(fixture);
+        let arguments = parse_arguments([
+            "--claim".to_string(),
+            claim.to_string(),
+            path.display().to_string(),
+        ])
+        .unwrap();
+        run_audit(arguments).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+
+    let path = root.join("design/charon-trial/option-values/options.click");
+    let original = fs::read_to_string(&path).unwrap();
+    let invalid = original.replacen(
+        "ensures result == Option<T>::Some(value);",
+        "ensures result == Option<T>::Some(value) by { have 0 == 1 by normalize(); }",
+        1,
+    );
+    assert_ne!(invalid, original);
+    let source = load_audit_source_from_text(&path, invalid).unwrap();
+    let error = match start_session(&source) {
+        Ok(_) => panic!("the generic function's invalid proof must still be checked"),
+        Err(error) => error,
+    };
+    assert!(error.contains("normalize"), "{error}");
+    assert!(
+        !error.contains("external function contracts cannot carry proof"),
+        "{error}"
+    );
+
+    // A handwritten extern still cannot carry a proof.
+    let path = root.join("design/charon-trial/extern-functions/ffi.click");
+    let original = fs::read_to_string(&path).unwrap();
+    let invalid = original.replacen(
+        "ensures 0 <= result and result <= 100;",
+        "ensures 0 <= result and result <= 100 by { normalize(); }",
+        1,
+    );
+    assert_ne!(invalid, original);
+    let source = load_audit_source_from_text(&path, invalid).unwrap();
+    let error = match start_session(&source) {
+        Ok(_) => panic!("a handwritten extern cannot carry a proof"),
+        Err(error) => error,
+    };
+    assert!(
+        error.contains("external function contracts cannot carry proof"),
+        "{error}"
+    );
+}
+
 /// Runtime inventory names execution-theorem proofs `T.contract`; every
 /// expansion route must resolve that label to the theorem's postcondition.
 #[test]
@@ -1690,7 +1753,7 @@ fn ranked_loops_without_invariants_audit_every_site() {
     ] {
         let path = root.join(relative);
         let sites = inventory_sites(std::slice::from_ref(&path)).unwrap();
-        assert_eq!(sites.len(), 3, "{relative}: {sites:?}");
+        assert_eq!(sites.len(), 1, "{relative}: {sites:?}");
         assert!(sites.iter().any(|site| site.tactic_name == "loop"));
         let mut worker = AuditSessionWorker::start(&path, AuditLimits::default().session).unwrap();
         let deadline = Instant::now() + Duration::from_secs(120);

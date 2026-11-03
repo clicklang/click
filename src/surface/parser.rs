@@ -4192,6 +4192,10 @@ impl Parser {
         if external && self.rust_trait_interface.is_none() {
             self.expect_ident_spelling("extern")?;
         }
+        // Rust marks a generated instance at `fn`, after `extern`; C++
+        // marks its declaration at `extern` itself.
+        let written_instance =
+            written_instance || self.rust_written_instances.contains(&self.position);
         let ParsedFunctionSignature {
             signature,
             mut struct_params,
@@ -4761,8 +4765,8 @@ impl Parser {
         } else {
             None
         };
-        if external && written_instance && self.verifies_cpp() {
-            // Generated externs inherit the generic method's contract at
+        if external && written_instance {
+            // Generated externs inherit the generic declaration's contract at
             // concrete types. Its clause proofs are checked on the generic
             // body, not copied into the extern contracts of its instances.
             for clause in ensures.iter_mut().chain(exceptional_ensures.iter_mut()) {
