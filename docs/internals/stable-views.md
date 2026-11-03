@@ -139,15 +139,12 @@ source metadata retain the lowered-judgment diagnostic. The original C call
 and stale-field reproduction is checked in
 `mdtests/composite_view_assembly_names_broken_body_fact.md`.
 
-Coverage starts from the exact owner occurrence
-checked before reservations. When no single owner covers a view with
-concrete bounds, but the caller's unbound owned memory pieces tile its
-range, as a struct owned field by field in pieces of different widths is,
-those pieces are first joined bytewise into one owner, the same join a
-consumed footprint composes from several pieces, and that owner is lent; it
-stays joined after recovery, the same bytes of authority. A gap, a
-loan-bound or projected piece, or a symbolic range is refused, and such a
-view of a local is not read as implicit local storage
+Coverage starts from the exact owner occurrence checked before reservations.
+A call does not join owned fragments. To lend a complete object held as
+separate fields, explicitly fold a resource owning the whole object and unfold
+it before the call. Constant-range composition consumes indexed pieces and
+stops at the first gap. Neither a gap nor a complete tiling is classified by
+searching or normalizing candidate fragments during call preparation
 (`mdtests/a_kept_view_of_mixed_width_owned_fields_is_lent_until_released.md`,
 `mdtests/a_kept_view_of_owned_fields_with_a_gap_is_refused.md`,
 `mdtests/writing_a_field_while_its_kept_view_is_lent_is_refused.md`).
@@ -161,8 +158,14 @@ addresses the program never takes are omitted from observable separation
 compositions: structural separation already protects them, and unrelated local
 declarations must not restate the pointer frame. Addressable locals remain in
 those compositions. A view
-of other live caller-local storage with no explicit resource is backed by a
-checked local-storage loan. Its byte
+of other live caller-local storage with indexed evidence of no explicit memory
+resource is backed by a checked local-storage loan. Classification checks the
+allocation's memory-fact bucket, not whether fragments jointly cover the view.
+Any partial owner or view selects the explicit route. Nonconcrete memory
+allocation identities, or pointer-alias facts alongside memory resources,
+conservatively require explicit backing rather than an alias search. A retained
+count of nonconcrete memory facts updates with each persistent resource edit;
+classification does not scan that frame. Its byte
 range must fit inside the live allocation. Checked entry storage includes
 fresh by-value aggregate parameter copies as well as the caller's original
 locals. The loan grants a callee share and a caller close right, but escrows

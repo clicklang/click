@@ -723,3 +723,27 @@ fn constant_owned_consumption_rejects_candidate_search() {
         );
     }
 }
+
+#[test]
+fn local_storage_classification_rejects_candidate_search() {
+    for name in [
+        "iter",
+        "collect",
+        "find",
+        "find_map",
+        "memory_fact_candidates",
+        "view_occurrences_for_fact",
+    ] {
+        let source = format!("fn has_no_explicit_memory_for_local_storage(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/functions.rs",
+            "fn prepare(c: C) { c.with_coalesced_owned_memory(); }"
+        )
+        .is_err()
+    );
+}

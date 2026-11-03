@@ -584,6 +584,9 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
+            if !matches!(block, PointerBlock::Concrete(_)) {
+                result.nonconcrete_memory_count += 1;
+            }
             result.memory_by_block =
                 insert_resource_index_entry(&result.memory_by_block, block.clone(), entry);
             result.memory_by_base =
@@ -868,6 +871,9 @@ impl ResourceContextIndex {
         if let Some(range) = fact.memory_range() {
             let block = range.base().block.clone();
             let mode = fact.is_own();
+            if !matches!(block, PointerBlock::Concrete(_)) {
+                result.nonconcrete_memory_count -= 1;
+            }
             result.memory_by_block =
                 remove_resource_index_entry(&result.memory_by_block, &block, entry);
             result.memory_by_base =
@@ -2976,6 +2982,25 @@ impl ResourceContext {
             .chain(composites)
             .chain(iterated)
             .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+    }
+
+    /// Positive absence evidence for implicit local-storage borrowing. Any
+    /// explicit memory fact in the allocation selects the explicit route,
+    /// including partial owners and views. Nonconcrete allocation identities
+    /// may alias local storage, including through recorded reads. Cross-block
+    /// aliases conservatively
+    /// require explicit backing whenever memory resources exist; do not search
+    /// those resources to decide whether they cover this particular request.
+    pub(in crate::kernel) fn has_no_explicit_memory_for_local_storage(
+        &self,
+        block: &PointerBlock,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.storage.index.memory_by_block.is_empty()
+            || (self.storage.index.nonconcrete_memory_count == 0
+                && !assumptions.has_pointer_block_aliases()
+                && !self.storage.index.memory_by_block.contains_key(block))
     }
 
     /// The memory facts based in `block`, from the block index: the `owns`
@@ -6880,58 +6905,6 @@ impl ResourceContext {
         }
         self.reserve_owned_memory_fragments_impl(required, assumptions, origins)
             .map(|(remaining, _)| remaining)
-    }
-
-    /// Join the owned memory pieces that together cover `view`'s concrete
-    /// range, when no single piece does, into byte-granular owners in place:
-    /// the same join `without_fact_incrementally` composes to consume such a
-    /// footprint, kept rather than consumed, so one owner can then be lent
-    /// for a view that must stay lent. `None` when the range is symbolic,
-    /// one piece already covers it, the pieces leave a gap, or a piece is
-    /// loan-bound or projected. Proportional to the selected pieces.
-    pub(crate) fn with_coalesced_owned_memory(
-        &self,
-        view: &CResourceFact,
-        assumptions: &PureFactContext,
-    ) -> Option<Self> {
-        let CResource::Memory(range) = view.resource() else {
-            return None;
-        };
-        if range.constant_start().is_none() || range.constant_end().is_none() {
-            return None;
-        }
-        let owned = CResourceFact::own_memory(range.clone());
-        let candidates = self.memory_fact_candidates(range, true, assumptions);
-        // Fewer than two pieces, or a bound one, joins nothing.
-        let joined = self.normalized_memory_suppliers(
-            &candidates.entries.iter().collect::<Vec<_>>(),
-            &candidates,
-            range.base(),
-            assumptions,
-        )?;
-        let support = joined.memory_fact_candidates(range, true, assumptions);
-        let covered = support.entries.iter().any(|entry| {
-            support.requirement(entry, &owned).is_some_and(|required| {
-                joined.clone().consume_fact_from_candidates(
-                    &required,
-                    assumptions,
-                    std::iter::once(entry),
-                )
-            })
-        });
-        if !covered {
-            return None;
-        }
-        let mut coalesced = self.clone();
-        for entry in candidates.entries.iter() {
-            if coalesced.storage.facts.contains_key(&entry) {
-                coalesced.remove_entry(entry);
-            }
-        }
-        for piece in joined.iter() {
-            coalesced.insert_fact(piece.clone());
-        }
-        Some(coalesced)
     }
 
     /// Join only the suppliers selected for the explicit footprint. Loan-bound

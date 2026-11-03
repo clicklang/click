@@ -11441,7 +11441,7 @@ fn prepare_contract_resource_transfer_unexplained(
     // remain blocked even when a worker outlives the call. Read-only storage
     // retains intrinsic read authority. An explicitly supplied owner or view
     // takes the ordinary lend/reborrow route, including stale-binding checks.
-    let unsupplied_local = |fact: &CResourceFact, range: &CMemoryRange| {
+    let unsupplied_local = |range: &CMemoryRange| {
         range.base().block.is_local_block()
             && callee_state.memory().has_block(&range.base().block)
             && !callee_state
@@ -11449,18 +11449,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 .requires_explicit_scalar_ownership(range.base())
             && caller_state
                 .resources()
-                .directly_supporting_owned_entry(fact, assumptions)
-                .is_none()
-            && caller_state
-                .resources()
-                .view_occurrences_for_fact(fact, assumptions)
-                .is_empty()
-            // Owned pieces that together cover the range supply it:
-            // the planner joins them into one owner and lends that.
-            && caller_state
-                .resources()
-                .with_coalesced_owned_memory(fact, assumptions)
-                .is_none()
+                .has_no_explicit_memory_for_local_storage(&range.base().block, assumptions)
     };
     let implicit_read_views = checked_required_resources
         .iter()
@@ -11469,7 +11458,7 @@ fn prepare_contract_resource_transfer_unexplained(
                 requirement.fact.resource(),
                 CResource::Memory(range)
                     if requirement.fact.is_view()
-                        && (unsupplied_local(&requirement.fact, range)
+                        && (unsupplied_local(range)
                             || callee_state.memory().is_read_only_block(&range.base().block))
             )
         })
@@ -11518,7 +11507,7 @@ fn prepare_contract_resource_transfer_unexplained(
             )?
             && pieces.iter().all(|piece| {
                 piece.memory_range().is_some_and(|range| {
-                    unsupplied_local(piece, range)
+                    unsupplied_local(range)
                         // Bytes the caller holds through any resource, such
                         // as a folded composite over part of the array, are
                         // not implicit local storage.

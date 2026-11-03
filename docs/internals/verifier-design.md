@@ -480,6 +480,15 @@ nonmemory resources. It still visits owned-memory candidates; this is not a
 claim of bounded cost for arbitrary ambient owners. Frame visits are charged
 so the complete-constructor regression cannot hide that cost.
 
+Call preparation classifies implicit local storage with
+`has_no_explicit_memory_for_local_storage`: a block-index absence check and a
+retained count of memory facts with nonconcrete allocation identities. Explicit
+memory anywhere in that block, nonconcrete memory identities, and pointer-alias
+facts alongside memory resources select the explicit route. It does not search
+for complete fragment coverage or enumerate views to establish absence. This
+is conservative refusal, not new alias or ownership evidence. The complete-call
+control still records a separate post-entry cost beside unrelated owners.
+
 Explicit ownership composition for a constant 32-bit-indexed range with unit
 quantity uses `consume_constant_owned_memory`. It nominates one whole supplier,
 or consumes successive indexed fragments through the existing reservation
