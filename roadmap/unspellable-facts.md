@@ -82,6 +82,12 @@ native entry points use the same rule bodies. Fixed-size literal/variable
 comparisons preserve native spelling; shared arithmetic stays in observations.
 The signed equality dispatcher and remaining wide/index guards are still open.
 
+Bounded arithmetic-certificate conclusion identity reads shared operands directly,
+preserving its accepted operators, cast encodings, narrow comparison identity,
+written directions, and payload bound. It retains the native 64-bit reflexive
+constructor rule. Growing shared prefixes are checked without boxed exports;
+ordinary and across-effect certificate premise adapters remain open.
+
 The general comparison dispatcher still needs its compatibility bridge. Its
 migration must preserve the existing rule order as well as proof results;
 moving endpoint queries ahead of cheaper rules can multiply nested bound visits.
