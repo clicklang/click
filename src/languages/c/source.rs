@@ -2126,20 +2126,9 @@ fn expand_macro_text(
             expanded.extend(chars[start..index].iter().copied());
             continue;
         }
-        if chars[index].is_ascii_digit()
-            || (chars[index] == '.' && chars.get(index + 1).is_some_and(char::is_ascii_digit))
-        {
-            let start = index;
-            index += 1;
-            while index < chars.len()
-                && (is_identifier_continue(chars[index])
-                    || chars[index] == '.'
-                    || (matches!(chars[index], '+' | '-')
-                        && matches!(chars[index - 1], 'e' | 'E' | 'p' | 'P')))
-            {
-                index += 1;
-            }
-            expanded.extend(chars[start..index].iter());
+        if let Some(end) = preprocessing_number_end(&chars, index) {
+            expanded.extend(chars[index..end].iter());
+            index = end;
             continue;
         }
         if is_identifier_start(chars[index]) {
@@ -2394,6 +2383,11 @@ fn substitute_macro_parameters(
             expanded.extend(chars[start..index].iter().copied());
             continue;
         }
+        if let Some(end) = preprocessing_number_end(&chars, index) {
+            expanded.extend(chars[index..end].iter());
+            index = end;
+            continue;
+        }
         if is_identifier_start(chars[index]) {
             let start = index;
             index += 1;
@@ -2414,6 +2408,26 @@ fn substitute_macro_parameters(
         index += 1;
     }
     expanded
+}
+
+// Preprocessing numbers are single tokens even when letters match macro names
+// or parameters. Their spelling is validated later by the C parser.
+fn preprocessing_number_end(chars: &[char], start: usize) -> Option<usize> {
+    if !chars[start].is_ascii_digit()
+        && !(chars[start] == '.' && chars.get(start + 1).is_some_and(char::is_ascii_digit))
+    {
+        return None;
+    }
+    let mut index = start + 1;
+    while index < chars.len()
+        && (is_identifier_continue(chars[index])
+            || chars[index] == '.'
+            || (matches!(chars[index], '+' | '-')
+                && matches!(chars[index - 1], 'e' | 'E' | 'p' | 'P')))
+    {
+        index += 1;
+    }
+    Some(index)
 }
 
 fn quoted_literal_end(chars: &[char], start: usize, quote: char) -> usize {
@@ -2917,6 +2931,40 @@ int32 run(int32 value) {
             let error = local_include_paths("main.c", source).unwrap_err();
             assert!(error.to_string().contains(expected));
         }
+    }
+
+    #[test]
+    fn function_macro_parameters_do_not_replace_parts_of_numbers() {
+        for (parameter, number) in [
+            ("x1", "0x1"),
+            ("U", "1U"),
+            ("LL", "1LL"),
+            ("e3", "1e3"),
+            ("e", "1e+3"),
+            ("f", ".5f"),
+            ("x1p2", "0x1p2"),
+            ("p", "0x1p+2"),
+        ] {
+            let source = format!(
+                "#define VALUE({parameter}) {number}\n#define ADD({parameter}) ({number} + {parameter})\nVALUE(0)\nADD(2)\n"
+            );
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(number);
+            assert_eq!(
+                expanded.source().trim(),
+                format!("{number}\n({number} + 2)")
+            );
+        }
+    }
+
+    #[test]
+    fn hexadecimal_macro_literal_keeps_its_value() {
+        let sources = BTreeMap::from([(
+            "main.c",
+            "#define VALUE(x1) 0x1\nint value(void) { return VALUE(0); }\n",
+        )]);
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        assert_eq!(expanded.source().trim(), "int value(void) { return 0x1; }");
     }
 
     #[test]
