@@ -690,9 +690,6 @@ mod tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/scaling_tests/kernel/difference_graph/operand_views/tests.rs"
-        ));
+        include!("../../scaling_tests/kernel/difference_graph/operand_views/tests.rs");
     }
 }
