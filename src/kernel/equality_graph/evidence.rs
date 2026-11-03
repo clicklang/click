@@ -308,7 +308,7 @@ impl EqualityGraph {
         let (_, R::Known(value)) = self.scalar_constant_class(term)? else {
             return None;
         };
-        let literal = Bitvector32Term::Constant(value as u32);
+        let literal = Bitvector32Term::constant(value as u32);
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             for (left, right) in [(term, &literal), (&literal, term)] {
                 crate::instrumentation::record_deterministic_work(1);

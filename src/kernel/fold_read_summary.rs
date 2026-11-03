@@ -51,6 +51,7 @@
 //! supplies no evidence for a subsequent write.
 
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -336,7 +337,7 @@ impl CheckedFoldReadSummary {
             return None;
         };
         let endpoint = |template: FoldEndpointTemplate| match template {
-            FoldEndpointTemplate::Literal(value) => Some(Bitvector32Term::Constant(value)),
+            FoldEndpointTemplate::Literal(value) => Some(Bitvector32Term::constant(value)),
             FoldEndpointTemplate::Parameter(position) => match &arguments[position] {
                 PureFunctionArgument::Value(CValue::Int32(value)) => Some(value.clone()),
                 _ => None,
@@ -366,9 +367,9 @@ impl BodyChecker<'_> {
                 .scalar_parameter(name)
                 .map(FoldEndpointTemplate::Parameter)
                 .ok_or(FoldReadDecline::UnsupportedEndpoint),
-            SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-            )) => Ok(FoldEndpointTemplate::Literal(*value)),
+            SpecExpression::Value(CValue::Int32(bits32_constant!(value))) => {
+                Ok(FoldEndpointTemplate::Literal(constant_u32(*value)))
+            }
             _ => Err(FoldReadDecline::UnsupportedEndpoint),
         }
     }
@@ -466,7 +467,7 @@ impl BodyChecker<'_> {
 
     fn bitvector(&self, term: &Bitvector32Term, scope: Scope) -> Result<(), FoldReadDecline> {
         match term {
-            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => Ok(()),
+            bits32_constant!(_) => Ok(()),
             Bitvector32Term::Variable(variable)
                 if scope == Scope::Body && *variable == self.item =>
             {
@@ -1122,7 +1123,7 @@ impl LinearOffset {
                 let index = self.constant.div_euclid(width);
                 let index = i32::try_from(index).ok()?;
                 Some((
-                    Bitvector32Term::Constant(index as u32),
+                    Bitvector32Term::constant(index as u32),
                     self.constant - i128::from(index) * width,
                 ))
             }
@@ -1263,7 +1264,7 @@ fn range_misses_interval(
         return false;
     }
     if written.element_width() == interval.element_width
-        && let Some((Bitvector32Term::Constant(0), 0)) =
+        && let Some((int32_constant!(0), 0)) =
             scaled_index_from(written.base(), &interval.base, interval.element_width)
     {
         // Same base and element width: the written cells are
@@ -1324,7 +1325,7 @@ fn range_contains_interval(
     range.element_width() == interval.element_width
         && matches!(
             scaled_index_from(&interval.base, range.base(), interval.element_width),
-            Some((Bitvector32Term::Constant(0), 0))
+            Some((int32_constant!(0), 0))
         )
         && proven_signed_le(range.start(), &interval.start, assumptions)
         && proven_signed_le(&interval.end, range.end(), assumptions)
@@ -1365,7 +1366,7 @@ fn range_contains_range(
     outer.element_width() == inner.element_width()
         && matches!(
             scaled_index_from(inner.base(), outer.base(), inner.element_width()),
-            Some((Bitvector32Term::Constant(0), 0))
+            Some((int32_constant!(0), 0))
         )
         && proven_signed_le(inner.start(), inner.end(), assumptions)
         && proven_signed_le(outer.start(), inner.start(), assumptions)

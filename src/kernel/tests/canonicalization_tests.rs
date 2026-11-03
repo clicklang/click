@@ -40,7 +40,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
         block: "float-storage".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let float_value = CValue::Float32(Bitvector32Term::Constant(0x8000_0000));
+    let float_value = CValue::Float32(Bitvector32Term::constant(0x8000_0000));
     let float_memory = CMemory::new()
         .with_block("float-storage", 4)
         .store(float_pointer.clone(), float_value.clone());
@@ -60,7 +60,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
         block: "double-storage".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let double_value = CValue::Float64(Bitvector32Term::UInt64Constant(0x7ff8_0000_0000_0001));
+    let double_value = CValue::Float64(Bitvector32Term::uint64_constant(0x7ff8_0000_0000_0001));
     let double_memory = CMemory::new()
         .with_block("double-storage", 8)
         .store(double_pointer.clone(), double_value.clone());
@@ -86,12 +86,7 @@ fn collect_offset_load_variables_from_term(
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_)
-        | Bitvector32Term::Variable(_) => {}
+        Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => {}
         Bitvector32Term::MemoryLoad(_, pointer, _)
         | Bitvector32Term::PointerAddress(pointer, _) => {
             collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
@@ -163,11 +158,7 @@ fn assert_scaled_index_free_of_raw_loads(
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_) => {}
+        Bitvector32Term::Constant { .. } => {}
         Bitvector32Term::Variable(variable) => {
             if crate::kernel::is_load_variable(variable) {
                 load_variables.insert(*variable);
@@ -388,13 +379,13 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
     }
 
     let load = unresolved_canonicalization_test_load();
-    let u32_value = Bitvector32Term::Constant(3);
-    let i64_value = Bitvector32Term::Int64Constant(3);
-    let u64_value = Bitvector32Term::UInt64Constant(3);
+    let u32_value = Bitvector32Term::constant(3);
+    let i64_value = Bitvector32Term::int64_constant(3);
+    let u64_value = Bitvector32Term::uint64_constant(3);
     let terms = vec![
-        Bitvector32Term::Constant(3),
-        Bitvector32Term::Int64Constant(3),
-        Bitvector32Term::UInt64Constant(3),
+        Bitvector32Term::constant(3),
+        Bitvector32Term::int64_constant(3),
+        Bitvector32Term::uint64_constant(3),
         Bitvector32Term::Variable(Variable(30_001)),
         machine_binary!(Int32, Add, load.clone(), u32_value.clone()),
         machine_binary!(Int32, Subtract, load.clone(), u32_value.clone()),
@@ -487,12 +478,12 @@ fn canonical_term_is_idempotent_at_multiple_term_depths() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term),
-                        right: Box::new(Bitvector32Term::Constant(depth as u32)),
+                        right: Box::new(Bitvector32Term::constant(depth as u32)),
                     }),
                     then_term: Box::new(unresolved_canonicalization_test_load()),
-                    else_term: Box::new(Bitvector32Term::Constant(depth as u32 + 1)),
+                    else_term: Box::new(Bitvector32Term::constant(depth as u32 + 1)),
                 }),
-                Box::new(Bitvector32Term::Constant(depth as u32 + 2)),
+                Box::new(Bitvector32Term::constant(depth as u32 + 2)),
             );
         }
 
@@ -524,7 +515,7 @@ fn canonical_term_is_independent_of_contextual_equalities() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
-            right: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(Bitvector32Term::constant(1)),
         },
         true,
     );
@@ -533,14 +524,14 @@ fn canonical_term_is_independent_of_contextual_equalities() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
-            right: Box::new(Bitvector32Term::Constant(2)),
+            right: Box::new(Bitvector32Term::constant(2)),
         },
         true,
     );
 
     let equals = |value| {
         Proposition::ConditionIs(
-            ConditionTerm::equal(term.clone(), Bitvector32Term::Constant(value)),
+            ConditionTerm::equal(term.clone(), Bitvector32Term::constant(value)),
             true,
         )
     };
@@ -585,7 +576,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
     assert_eq!(canonical, crate::kernel::eval::canonical_term(&canonical));
 
     // A load whose cell is materialized resolves to the stored value.
-    let stored = base.store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+    let stored = base.store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(7)));
     let resolved = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(stored),
         Box::new(pointer),
@@ -593,7 +584,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
     );
     assert_eq!(
         crate::kernel::eval::canonical_term(&resolved),
-        Bitvector32Term::Constant(7)
+        Bitvector32Term::constant(7)
     );
 }
 
@@ -605,7 +596,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     let memory = CMemory::new()
         .with_block("condition-cells", 4)
-        .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+        .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(7)));
     let load = Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(pointer),
@@ -616,10 +607,10 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: Box::new(load.clone()),
-            right: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(Bitvector32Term::constant(1)),
         }),
-        then_term: Box::new(Bitvector32Term::Constant(2)),
-        else_term: Box::new(Bitvector32Term::Constant(3)),
+        then_term: Box::new(Bitvector32Term::constant(2)),
+        else_term: Box::new(Bitvector32Term::constant(3)),
     };
     let pointer_offset = Bitvector32Term::If {
         condition: Box::new(ConditionTerm::PointerOffsetEqual(
@@ -629,8 +620,8 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
             }),
             Box::new(PointerOffsetTerm::Constant(28)),
         )),
-        then_term: Box::new(Bitvector32Term::Constant(4)),
-        else_term: Box::new(Bitvector32Term::Constant(5)),
+        then_term: Box::new(Bitvector32Term::constant(4)),
+        else_term: Box::new(Bitvector32Term::constant(5)),
     };
 
     let canonical_overflow = crate::kernel::api::canonicalize_atomic_loads(&overflow);
@@ -640,7 +631,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     assert!(matches!(
         condition.as_ref(),
         ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right: _ }
-            if left.as_ref() == &Bitvector32Term::Constant(7)
+            if left.as_ref() == &Bitvector32Term::constant(7)
     ));
 
     let canonical_pointer_offset = crate::kernel::api::canonicalize_atomic_loads(&pointer_offset);
@@ -677,13 +668,13 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
             Int32,
             Add,
             Box::new(left),
-            Box::new(Bitvector32Term::Constant(value))
+            Box::new(Bitvector32Term::constant(value))
         );
         right = binary_node!(
             Int32,
             Add,
             Box::new(right),
-            Box::new(Bitvector32Term::Constant(value))
+            Box::new(Bitvector32Term::constant(value))
         );
     }
 
@@ -836,7 +827,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     );
 
     let with_index_fact = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(index, Bitvector32Term::Constant(0)),
+        ConditionTerm::equal(index, Bitvector32Term::constant(0)),
         true,
     );
     assert!(
@@ -855,7 +846,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     let other = PureFactContext::new().assume_condition(
         ConditionTerm::equal(
             Bitvector32Term::Variable(Variable(7)),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(1),
         ),
         true,
     );
@@ -869,8 +860,8 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
                     block: "data".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )],
             &PureFactContext::new(),
             None,
@@ -942,7 +933,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     let instantiated = crate::kernel::reasoning::substitute_bitvector_variable(
         &indexed_load_variable,
         bound,
-        &Bitvector32Term::Constant(0),
+        &Bitvector32Term::constant(0),
     );
     assert_eq!(
         instantiated,
@@ -953,7 +944,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
         crate::kernel::reasoning::substitute_bitvector_variable(
             &indexed_load_variable,
             Variable(3_000_001),
-            &Bitvector32Term::Constant(0),
+            &Bitvector32Term::constant(0),
         ),
         indexed_load_variable
     );
@@ -989,11 +980,11 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
 
     let pinned = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(j.clone(), Bitvector32Term::Constant(2)),
+            ConditionTerm::signed_less_equal(j.clone(), Bitvector32Term::constant(2)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(j.clone(), Bitvector32Term::Constant(2)),
+            ConditionTerm::signed_less_than(j.clone(), Bitvector32Term::constant(2)),
             false,
         );
     assert!(pinned.bitvector_terms_proven_equal(&indexed, &third));
@@ -1014,7 +1005,7 @@ fn load_variable_free_variables_include_its_snapshot_cells() {
                 byte_width: 4,
             },
         },
-        CValue::Int32(Bitvector32Term::Constant(5)),
+        CValue::Int32(Bitvector32Term::constant(5)),
     );
     let load_variable = crate::kernel::eval::canonical_term(&Bitvector32Term::MemoryLoad(
         crate::kernel::intern_c_memory(written),
@@ -1053,11 +1044,11 @@ fn symbolic_memory_block_sizes_are_free_and_substitutable() {
     let substituted = crate::kernel::reasoning::substitute_bitvector_variable_in_memory(
         &memory,
         size_variable,
-        &Bitvector32Term::Constant(24),
+        &Bitvector32Term::constant(24),
     );
     assert_eq!(
         substituted.blocks.get(&block).map(CBlock::size),
-        Some(&Bitvector32Term::Constant(24)),
+        Some(&Bitvector32Term::constant(24)),
     );
 }
 
@@ -1084,7 +1075,7 @@ fn nested_snapshot_load_named(
     };
     let blocks = std::sync::Arc::new(MemoryBlocks::from_iter([(
         block.clone(),
-        CBlock::with_symbolic_size(Bitvector32Term::Constant(8 * depth as u32 + 16)),
+        CBlock::with_symbolic_size(Bitvector32Term::constant(8 * depth as u32 + 16)),
     )]));
     let level_memory = |cells| CMemory {
         construction: None,
@@ -1248,7 +1239,7 @@ fn variable_substitution_visits_each_snapshot_once_per_rewrite() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(nested_snapshot_load(depth)),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         );
@@ -1256,7 +1247,7 @@ fn variable_substitution_visits_each_snapshot_once_per_rewrite() {
             crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
                 &goal,
                 Variable(770_001),
-                &Bitvector32Term::Constant(1),
+                &Bitvector32Term::constant(1),
             )
         });
         // The rewritten variable occurs nowhere, so every visit is pure
@@ -1370,7 +1361,7 @@ fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
         Int32,
         Add,
         Box::new(u.clone()),
-        Box::new(Bitvector32Term::Constant(0x8000_0000)),
+        Box::new(Bitvector32Term::constant(0x8000_0000)),
     ));
     let offset = PointerOffsetTerm::Add(
         Box::new(wrapping.clone()),
@@ -1382,7 +1373,7 @@ fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
         "the sum inside the scaled index stays one atom"
     );
     assert_eq!(
-        crate::kernel::reasoning::offset_atoms_and_constant(&scaled(Bitvector32Term::Constant(
+        crate::kernel::reasoning::offset_atoms_and_constant(&scaled(Bitvector32Term::constant(
             (-3i32) as u32
         ))),
         (Vec::new(), -12),
@@ -1415,11 +1406,11 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     let bounded = |word: &Bitvector32Term, low: u32| {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(low), word.clone()),
+                ConditionTerm::signed_less_equal(Bitvector32Term::constant(low), word.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(word.clone(), Bitvector32Term::Constant(8)),
+                ConditionTerm::signed_less_than(word.clone(), Bitvector32Term::constant(8)),
                 true,
             )
     };
@@ -1435,7 +1426,7 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
         Int32,
         Add,
         Box::new(Bitvector32Term::Variable(Variable(7_960_101))),
-        Box::new(Bitvector32Term::Constant(0x8000_0000)),
+        Box::new(Bitvector32Term::constant(0x8000_0000)),
     );
     let (kept, _) = crate::kernel::reasoning::run_slots_kept_by_store(
         &run,
@@ -1453,7 +1444,7 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
         Int32,
         Add,
         Box::new(Bitvector32Term::Variable(Variable(7_960_102))),
-        Box::new(Bitvector32Term::Constant(1)),
+        Box::new(Bitvector32Term::constant(1)),
     );
     let (kept, _) = crate::kernel::reasoning::run_slots_kept_by_store(
         &run,

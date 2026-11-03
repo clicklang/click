@@ -180,14 +180,14 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
             );
         }
         let facts = aliases.clone().assume_condition(
-            ConditionTerm::uint64_less_than(full.clone(), Bitvector32Term::UInt64Constant(22208)),
+            ConditionTerm::uint64_less_than(full.clone(), Bitvector32Term::uint64_constant(22208)),
             true,
         );
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
             CMemoryRange::new_wide(
                 base.clone(),
-                Bitvector32Term::UInt64Constant(0),
-                Bitvector32Term::UInt64Constant(22208),
+                Bitvector32Term::uint64_constant(0),
+                Bitvector32Term::uint64_constant(22208),
                 1,
             ),
         ));
@@ -208,7 +208,7 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         assert!(!resources.permits_memory_read(&query, 2, &facts));
         assert!(!resources.permits_memory_read(&query, 1, &aliases));
         let boundary = aliases.assume_condition(
-            ConditionTerm::uint64_equal(full, Bitvector32Term::UInt64Constant(22208)),
+            ConditionTerm::uint64_equal(full, Bitvector32Term::uint64_constant(22208)),
             true,
         );
         assert!(!resources.permits_memory_read(&query, 1, &boundary));
@@ -251,15 +251,15 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
             .assume_condition(
                 ConditionTerm::uint64_less_than(
                     native_index.clone(),
-                    Bitvector32Term::UInt64Constant(15),
+                    Bitvector32Term::uint64_constant(15),
                 ),
                 true,
             );
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
             CMemoryRange::new_wide(
                 bytes,
-                Bitvector32Term::UInt64Constant(0),
-                Bitvector32Term::UInt64Constant(15),
+                Bitvector32Term::uint64_constant(0),
+                Bitvector32Term::uint64_constant(15),
                 1,
             ),
         ));
@@ -349,7 +349,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             .assume_condition(
                 ConditionTerm::uint64_equal(
                     advance.clone(),
-                    Bitvector32Term::UInt64Constant(22208),
+                    Bitvector32Term::uint64_constant(22208),
                 ),
                 true,
             )
@@ -361,7 +361,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_less_equal(
                     value.clone(),
-                    Bitvector32Term::UInt64Constant(i32::MAX as u64),
+                    Bitvector32Term::uint64_constant(i32::MAX as u64),
                 ),
                 true,
             );
@@ -376,8 +376,13 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             );
         }
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_wide(bytes.clone(), Bitvector32Term::UInt64Constant(0), length, 1)
-                .with_pointer_carrier(&bytes_value),
+            CMemoryRange::new_wide(
+                bytes.clone(),
+                Bitvector32Term::uint64_constant(0),
+                length,
+                1,
+            )
+            .with_pointer_carrier(&bytes_value),
         ));
         resources.synchronize_memory_equalities(&facts);
         let query = cursor.offset_by_typed_elements(advance.clone(), 1, true, true);
@@ -420,7 +425,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         assert!(!permits(
             &resources,
             &cursor.offset_by_typed_elements(
-                Bitvector32Term::UInt64Constant(1u64 << 32),
+                Bitvector32Term::uint64_constant(1u64 << 32),
                 1,
                 true,
                 true

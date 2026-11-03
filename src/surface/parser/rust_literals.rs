@@ -1,6 +1,9 @@
 //! Integer literal spellings for Rust sidecars. Suffixes fix a native type;
 //! unsuffixed magnitudes remain specification integers for contextual typing.
 use super::*;
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum IntegerSuffix {
@@ -185,7 +188,7 @@ impl IntegerLiteral {
         } else {
             value
         };
-        let narrow = Bitvector32Term::Constant(bits as u32);
+        let narrow = Bitvector32Term::constant(bits as u32);
         Ok(match suffix {
             IntegerSuffix::I8 => crate::kernel::int8(narrow),
             IntegerSuffix::I16 => crate::kernel::int16(narrow),
@@ -194,10 +197,10 @@ impl IntegerLiteral {
             IntegerSuffix::U16 => crate::kernel::uint16(narrow),
             IntegerSuffix::U32 => crate::kernel::uint32(narrow),
             IntegerSuffix::I64 | IntegerSuffix::Isize => {
-                CValue::Int64(Bitvector32Term::Int64Constant(bits as i64))
+                CValue::Int64(Bitvector32Term::int64_constant(bits as i64))
             }
             IntegerSuffix::U64 | IntegerSuffix::Usize => {
-                CValue::UInt64(Bitvector32Term::UInt64Constant(bits))
+                CValue::UInt64(Bitvector32Term::uint64_constant(bits))
             }
         })
     }
@@ -242,22 +245,22 @@ impl IntegerLiteral {
                 .map_err(|_| "integer literal does not fit a native integer".to_string())?;
             if negative {
                 if magnitude <= 1 << 31 {
-                    CValue::Int32(Bitvector32Term::Constant(
+                    CValue::Int32(Bitvector32Term::constant(
                         0u32.wrapping_sub(magnitude as u32),
                     ))
                 } else if magnitude <= 1 << 63 {
-                    CValue::Int64(Bitvector32Term::Int64Constant(
-                        0u64.wrapping_sub(magnitude) as i64
+                    CValue::Int64(Bitvector32Term::int64_constant(
+                        0u64.wrapping_sub(magnitude) as i64,
                     ))
                 } else {
                     return Err("negative integer literal does not fit i64".into());
                 }
             } else if magnitude <= i32::MAX as u64 {
-                CValue::Int32(Bitvector32Term::Constant(magnitude as u32))
+                CValue::Int32(Bitvector32Term::constant(magnitude as u32))
             } else if magnitude <= i64::MAX as u64 {
-                CValue::Int64(Bitvector32Term::Int64Constant(magnitude as i64))
+                CValue::Int64(Bitvector32Term::int64_constant(magnitude as i64))
             } else {
-                CValue::UInt64(Bitvector32Term::UInt64Constant(magnitude))
+                CValue::UInt64(Bitvector32Term::uint64_constant(magnitude))
             }
         };
         // A narrow value's constant is native; its literal reads its value.
@@ -273,45 +276,37 @@ impl IntegerLiteral {
                     .and_then(crate::kernel::MachineIntegerConstant::to_i128)
                     .expect("literal constants") as i32 as u32;
                 match value {
-                    CValue::Int8(_) => CValue::Int8(Bitvector32Term::Constant(word)),
-                    CValue::UInt8(_) => CValue::UInt8(Bitvector32Term::Constant(word)),
-                    CValue::Int16(_) => CValue::Int16(Bitvector32Term::Constant(word)),
-                    _ => CValue::UInt16(Bitvector32Term::Constant(word)),
+                    CValue::Int8(_) => CValue::Int8(Bitvector32Term::constant(word)),
+                    CValue::UInt8(_) => CValue::UInt8(Bitvector32Term::constant(word)),
+                    CValue::Int16(_) => CValue::Int16(Bitvector32Term::constant(word)),
+                    _ => CValue::UInt16(Bitvector32Term::constant(word)),
                 }
             }
             _ => value,
         };
         Ok(match value {
-            CValue::Int32(
-                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
-            ) => C0Expression::Int32Literal(bits),
-            CValue::UInt8(
-                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
-            ) => C0Expression::UInt8Literal(bits as u8),
-            CValue::UInt32(
-                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
-            ) => C0Expression::UInt32Literal(bits),
-            CValue::Int64(Bitvector32Term::Int64Constant(value)) => {
-                C0Expression::Int64Literal(value)
+            CValue::Int32(bits32_constant!(bits)) => C0Expression::Int32Literal(constant_u32(bits)),
+            CValue::UInt8(bits32_constant!(bits)) => {
+                C0Expression::UInt8Literal(constant_u32(bits) as u8)
             }
-            CValue::UInt64(Bitvector32Term::UInt64Constant(value)) => {
-                C0Expression::UInt64Literal(value)
+            CValue::UInt32(bits32_constant!(bits)) => {
+                C0Expression::UInt32Literal(constant_u32(bits))
             }
-            CValue::Int8(
-                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
-            )
-            | CValue::Int16(
-                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
-            )
-            | CValue::UInt16(
-                Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits),
-            ) => C0Expression::Cast {
+            CValue::Int64(int64_constant!(value)) => {
+                C0Expression::Int64Literal(constant_i64(value))
+            }
+            CValue::UInt64(uint64_constant!(value)) => {
+                C0Expression::UInt64Literal(constant_u64(value))
+            }
+            CValue::Int8(bits32_constant!(bits))
+            | CValue::Int16(bits32_constant!(bits))
+            | CValue::UInt16(bits32_constant!(bits)) => C0Expression::Cast {
                 c_type: match value {
                     CValue::Int8(_) => C0Type::Int8,
                     CValue::Int16(_) => C0Type::Int16,
                     _ => C0Type::UInt16,
                 },
-                expression: Box::new(C0Expression::Int32Literal(bits)),
+                expression: Box::new(C0Expression::Int32Literal(constant_u32(bits))),
                 struct_name: None,
                 pointee_volatile: false,
                 pointee_constant: false,

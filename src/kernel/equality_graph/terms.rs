@@ -16,6 +16,7 @@ use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm,
 use crate::kernel::unary_node;
 use crate::kernel::unary_term;
 use crate::kernel::{MachineBinaryOp, MachineIntegerType};
+use crate::kernel::{bits32_constant, constant_i64, constant_u64, int64_constant, uint64_constant};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::sync::Arc;
 
@@ -972,7 +973,7 @@ impl TermClasses {
             self.numeric_shifts = self.numeric_shifts.without_key(&address);
             let numeric_base = self.read_address(base);
             let displacement = self.intern_node(Node::UInt64(MachineAtom::uint64(
-                crate::kernel::Bitvector32Term::UInt64Constant(bytes as u64),
+                crate::kernel::Bitvector32Term::uint64_constant(bytes as u64),
             )));
             let sum = self.intern_node(Node::UInt64Binary(
                 UInt64Binary::Add,
@@ -1576,19 +1577,17 @@ impl TermClasses {
                 None
             }
             Node::MachineNarrow(atom) => {
-                if let Some(crate::kernel::Bitvector32Term::MachineIntegerConstant(constant)) =
+                if let Some(crate::kernel::native_constant!(_, bits)) =
                     atom.operand_view().literal()
                 {
-                    self.narrow_constants.insert(id, constant.bits() as u32);
+                    self.narrow_constants.insert(id, bits as u32);
                 }
                 None
             }
             Node::UInt64(value) => {
                 let literal = match value.operand_view().literal() {
-                    Some(crate::kernel::Bitvector32Term::UInt64Constant(value)) => Some(value),
-                    Some(crate::kernel::Bitvector32Term::Int64Constant(value)) => {
-                        Some(value as u64)
-                    }
+                    Some(uint64_constant!(value)) => Some(constant_u64(value)),
+                    Some(int64_constant!(value)) => Some(constant_i64(value) as u64),
                     _ => None,
                 };
                 if let Some(value) = literal {
@@ -2270,10 +2269,7 @@ impl TermClasses {
         if left_atom.is_some() && right_atom.is_some() {
             for atom in [&left_atom, &right_atom].into_iter().flatten() {
                 if let Node::Int32(value) = atom
-                    && !matches!(
-                        value.operand_view().literal(),
-                        Some(Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_))
-                    )
+                    && !matches!(value.operand_view().literal(), Some(bits32_constant!(_)))
                     && !self.nodes.contains_key(atom)
                 {
                     return false;
@@ -2656,7 +2652,7 @@ impl TermClasses {
         }
         if width == 32 {
             let value = term.as_const()?;
-            return Some(self.intern_node(Node::Int32(MachineAtom::int32(T::Constant(value)))));
+            return Some(self.intern_node(Node::Int32(MachineAtom::int32(T::constant(value)))));
         }
         None
     }
@@ -2756,7 +2752,7 @@ impl TermClasses {
         {
             let value = left.wrapping_add(*right) as u32;
             let constant = self.intern_node(Node::Int32(MachineAtom::int32(
-                crate::kernel::Bitvector32Term::Constant(value),
+                crate::kernel::Bitvector32Term::constant(value),
             )));
             pending.push((id, constant));
         }
@@ -2783,12 +2779,12 @@ impl TermClasses {
                 Int32Binary::Other(op) => op,
             };
             let term = op.build(
-                crate::kernel::Bitvector32Term::Constant(a as u32),
-                crate::kernel::Bitvector32Term::Constant(b as u32),
+                crate::kernel::Bitvector32Term::constant(a as u32),
+                crate::kernel::Bitvector32Term::constant(b as u32),
             );
             if let Some(value) = term.as_const() {
                 let literal = self.intern_node(Node::Int32(MachineAtom::int32(
-                    crate::kernel::Bitvector32Term::Constant(value),
+                    crate::kernel::Bitvector32Term::constant(value),
                 )));
                 pending.push((id, literal));
             }
@@ -2807,7 +2803,7 @@ impl TermClasses {
             } else {
                 self.int32_constants
                     .get(&value)
-                    .map(|value| T::Constant(*value as u32))
+                    .map(|value| T::constant(*value as u32))
             };
             if let Some(operand) = operand {
                 let converted = T::machine_integer_cast(source, destination, operand);
@@ -2819,7 +2815,7 @@ impl TermClasses {
             && let Some(value) = self.int32_constants.get(&value).copied()
         {
             use crate::kernel::Bitvector32Term as T;
-            let value = T::Constant(value as u32);
+            let value = T::constant(value as u32);
             let term = match op {
                 Int32Unary::Not => unary_node!(Int32, BitwiseNot, Box::new(value)),
                 Int32Unary::Cast(source, destination) => {
@@ -2827,7 +2823,7 @@ impl TermClasses {
                 }
             };
             if let Some(value) = term.as_const() {
-                let literal = self.intern_node(Node::Int32(MachineAtom::int32(T::Constant(value))));
+                let literal = self.intern_node(Node::Int32(MachineAtom::int32(T::constant(value))));
                 pending.push((id, literal));
             }
         }
@@ -2849,7 +2845,7 @@ impl TermClasses {
             };
             if let Some(value) = value {
                 let literal = self.intern_node(Node::UInt64(MachineAtom::uint64(
-                    crate::kernel::Bitvector32Term::UInt64Constant(value),
+                    crate::kernel::Bitvector32Term::uint64_constant(value),
                 )));
                 pending.push((id, literal));
             }
@@ -3367,7 +3363,7 @@ mod tests {
                 let mut graph = EqualityGraph::default();
                 assert!(!graph.are_equal(&pointer, &base));
                 let sibling = graph.clone();
-                graph.add_uint64_equality(&value, &Bitvector32Term::UInt64Constant(0));
+                graph.add_uint64_equality(&value, &Bitvector32Term::uint64_constant(0));
                 assert!(
                     graph.are_equal(&pointer, &base),
                     "late zero: {width}, {unsigned}"
@@ -3378,11 +3374,11 @@ mod tests {
         let mut low_word_only = EqualityGraph::default();
         low_word_only.add_int32_equality(
             &Bitvector32Term::UInt32From64(Box::new(value.clone())),
-            &Bitvector32Term::Constant(0),
+            &Bitvector32Term::constant(0),
         );
         assert!(!low_word_only.are_equal(&scaled(1, true), &base));
         let mut high_word = EqualityGraph::default();
-        high_word.add_uint64_equality(&value, &Bitvector32Term::UInt64Constant(1u64 << 32));
+        high_word.add_uint64_equality(&value, &Bitvector32Term::uint64_constant(1u64 << 32));
         assert!(high_word.are_equal(
             &scaled(4, true),
             &Pointer {
@@ -3392,7 +3388,7 @@ mod tests {
         ));
         assert!(!high_word.are_equal(&scaled(4, true), &base));
         let mut overflow = EqualityGraph::default();
-        overflow.add_uint64_equality(&value, &Bitvector32Term::UInt64Constant(1u64 << 63));
+        overflow.add_uint64_equality(&value, &Bitvector32Term::uint64_constant(1u64 << 63));
         for unsigned in [false, true] {
             assert!(!overflow.are_equal(&scaled(2, unsigned), &base));
         }
@@ -3418,7 +3414,7 @@ mod tests {
         let address = Pointer::symbolic(Variable(12));
         let after = crate::kernel::intern_c_memory(before.memory().clone().store(
             address.clone(),
-            crate::kernel::CValue::Int32(Bitvector32Term::Constant(9)),
+            crate::kernel::CValue::Int32(Bitvector32Term::constant(9)),
         ));
         let load = |memory: &crate::kernel::SharedCMemory| {
             Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
@@ -3512,7 +3508,7 @@ mod tests {
         let eight = bounded(8u32.into());
         let mut classes = TermClasses::default();
         assert!(!classes.pointer_values_equal(&dynamic, &four));
-        classes.add_int32_equality(&width, &Bitvector32Term::Constant(4));
+        classes.add_int32_equality(&width, &Bitvector32Term::constant(4));
         assert!(classes.pointer_values_equal(&dynamic, &four));
         assert!(!classes.pointer_values_equal(&dynamic, &eight));
     }

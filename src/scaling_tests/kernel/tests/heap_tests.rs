@@ -158,7 +158,7 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
         };
         let pending = memory.with_pending_heap_allocation(
             request.clone(),
-            Bitvector32Term::Constant(4),
+            Bitvector32Term::constant(4),
             false,
         );
         // C assigns malloc's result before branching on it. That intervening
@@ -187,8 +187,8 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             Variable(9301),
             &[CMemoryRange::new(
                 address.clone(),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )],
             &assumptions,
             None,
@@ -317,7 +317,7 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
         for index in 0..count {
             memory = memory.with_pending_typed_heap_allocation(
                 Pointer::symbolic(Variable(950_000 + index)),
-                Bitvector32Term::Constant(8),
+                Bitvector32Term::constant(8),
                 false,
                 Some(class.clone()),
             );
@@ -326,7 +326,7 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
             let base = Pointer::symbolic(Variable(960_000));
             let next = memory.clone().with_pending_typed_heap_allocation(
                 base.clone(),
-                Bitvector32Term::Constant(8),
+                Bitvector32Term::constant(8),
                 false,
                 Some(class.clone()),
             );

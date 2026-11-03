@@ -7,6 +7,7 @@
 //! (R-dist with R-comp) meet with the native node.
 use super::*;
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
+use crate::kernel::{constant_u32, int32_constant};
 
 /// Whether `format` is an 8- or 16-bit format.
 pub(in crate::kernel) fn is_narrow_format(format: MachineIntegerType) -> bool {
@@ -31,11 +32,11 @@ pub(in crate::kernel) fn narrow_operand(
         CValue::Int8(term) | CValue::UInt8(term) | CValue::Int16(term) | CValue::UInt16(term) => {
             (MachineIntegerType::from_c_type(value.c_type()) == Some(format)).then(|| term.clone())
         }
-        CValue::Int32(Bitvector32Term::Constant(bits)) => {
-            let value = num_bigint::BigInt::from(*bits as i32);
+        CValue::Int32(int32_constant!(bits)) => {
+            let value = num_bigint::BigInt::from(constant_u32(*bits) as i32);
             let (low, high) = format.format().bounds();
             (value >= low && value <= high)
-                .then(|| Bitvector32Term::narrow_constant(format, u128::from(*bits)))
+                .then(|| Bitvector32Term::narrow_constant(format, u128::from(constant_u32(*bits))))
         }
         _ => None,
     }

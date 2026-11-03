@@ -5,8 +5,8 @@ fn wide_call_ranges_are_undecided_and_canonical_pointers_keep_their_width() {
     let base = Pointer::symbolic(Variable(984_000));
     let wide = CMemoryRange::new_wide(
         base.clone(),
-        Bitvector32Term::UInt64Constant(3),
-        Bitvector32Term::UInt64Constant(1 << 33),
+        Bitvector32Term::uint64_constant(3),
+        Bitvector32Term::uint64_constant(1 << 33),
         1,
     );
     let other = wide.with_base(base.offset_by_bytes(1));
@@ -72,7 +72,7 @@ fn wide_resource_body_loadability_preserves_native_extent() {
         vec![].into(),
         schema,
         vec![AlgebraicValue::C(CValue::UInt64(
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(1 << 33),
         ))]
         .into(),
     )

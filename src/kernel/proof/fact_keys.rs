@@ -19,6 +19,10 @@ use crate::kernel::{
     CComparisonOperator, CFloatClassification, CFloatCondition, CMemoryRange, ConditionTerm,
     Pointer, PointerBlock, PointerOffsetTerm, Proposition, Variable,
 };
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, native_constant,
+    uint64_constant,
+};
 use num_bigint::BigInt;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
@@ -2238,16 +2242,14 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
             )?),
         ),
 
-        Bitvector32Term::MachineIntegerConstant(value) => {
-            AlphaBitvectorKey::MachineIntegerConstant(*value)
+        native_constant!(_, _) => {
+            AlphaBitvectorKey::MachineIntegerConstant(term.as_machine_constant()?)
         }
 
         // A `uint32` constant is its word's `Constant` (rule K1).
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            AlphaBitvectorKey::Constant(*value)
-        }
-        Bitvector32Term::Int64Constant(value) => AlphaBitvectorKey::Int64Constant(*value),
-        Bitvector32Term::UInt64Constant(value) => AlphaBitvectorKey::UInt64Constant(*value),
+        bits32_constant!(value) => AlphaBitvectorKey::Constant(constant_u32(*value)),
+        int64_constant!(value) => AlphaBitvectorKey::Int64Constant(constant_i64(*value)),
+        uint64_constant!(value) => AlphaBitvectorKey::UInt64Constant(constant_u64(*value)),
         Bitvector32Term::Variable(variable) => {
             if let Some(ordinal) = bindings.bitvector.get(variable) {
                 AlphaBitvectorKey::Variable(AlphaVariableKey::Bound(*ordinal))
@@ -3032,7 +3034,7 @@ mod proposition_identity_tests {
                         Bitvector32Term::Variable(Variable(bound)),
                     ))],
                 },
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(1),
             )
         };
         let left = forall(2_000_000, application(2_000_000));
@@ -3053,7 +3055,7 @@ mod proposition_identity_tests {
         let before = CMemory::new().with_block("alpha-array", 8);
         let after = before
             .clone()
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(1)));
         let make = |binder: u64, argument: u64, memory: CMemory| Proposition::Exists {
             name: "fuel".into(),
             var: Variable(binder),
@@ -3073,7 +3075,7 @@ mod proposition_identity_tests {
                         }),
                     ],
                 },
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             )),
         };
         let original = make(2_000_000, 2_000_000, before.clone());
@@ -3100,7 +3102,7 @@ mod proposition_identity_tests {
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 ),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             )),
         };
         assert!(quantified_algebraic_captured_array_identity_key(&raw_load).is_none());
@@ -3126,7 +3128,7 @@ mod proposition_identity_tests {
                         )),
                         Box::new(Proposition::Not(Box::new(equal(
                             Bitvector32Term::Variable(Variable(1)),
-                            Bitvector32Term::Constant(0),
+                            Bitvector32Term::constant(0),
                         )))),
                     )),
                 )),
@@ -3150,7 +3152,7 @@ mod proposition_identity_tests {
                         )),
                         Box::new(Proposition::Not(Box::new(equal(
                             Bitvector32Term::Variable(Variable(11)),
-                            Bitvector32Term::Constant(0),
+                            Bitvector32Term::constant(0),
                         )))),
                     )),
                 )),
@@ -3177,11 +3179,11 @@ mod proposition_identity_tests {
     fn alpha_identity_rejects_sort_quantifier_and_nonbinder_changes() {
         let body = equal(
             Bitvector32Term::Variable(Variable(7)),
-            Bitvector32Term::Constant(3),
+            Bitvector32Term::constant(3),
         );
         let renamed = equal(
             Bitvector32Term::Variable(Variable(8)),
-            Bitvector32Term::Constant(3),
+            Bitvector32Term::constant(3),
         );
         assert!(propositions_are_alpha_equal(
             &forall(7, body.clone()),
@@ -3213,7 +3215,7 @@ mod proposition_identity_tests {
                 8,
                 equal(
                     Bitvector32Term::Variable(Variable(8)),
-                    Bitvector32Term::Constant(4)
+                    Bitvector32Term::constant(4)
                 )
             ),
         ));
@@ -3237,7 +3239,7 @@ mod proposition_identity_tests {
                 Proposition::And(
                     Box::new(equal(
                         Bitvector32Term::Variable(Variable(outer)),
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                     )),
                     Box::new(Proposition::Or(
                         Box::new(Proposition::Implies(
@@ -3247,17 +3249,17 @@ mod proposition_identity_tests {
                                 sort: Sort::Bitvector32,
                                 body: Box::new(Proposition::Not(Box::new(equal(
                                     Bitvector32Term::Variable(Variable(witness)),
-                                    Bitvector32Term::Constant(1),
+                                    Bitvector32Term::constant(1),
                                 )))),
                             }),
                             Box::new(equal(
                                 Bitvector32Term::Variable(Variable(outer)),
-                                Bitvector32Term::Constant(2),
+                                Bitvector32Term::constant(2),
                             )),
                         )),
                         Box::new(Proposition::Not(Box::new(equal(
                             Bitvector32Term::Variable(Variable(outer)),
-                            Bitvector32Term::Constant(3),
+                            Bitvector32Term::constant(3),
                         )))),
                     )),
                 ),
@@ -3282,23 +3284,23 @@ mod proposition_identity_tests {
         let left_memory = CMemory::new().with_block("identity-version", 8);
         let right_memory = left_memory
             .clone()
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(9)));
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(9)));
         let left = Proposition::CMemoryLoadable {
             memory: left_memory.clone(),
             base: pointer.clone(),
-            bytes: Bitvector32Term::Constant(1),
+            bytes: Bitvector32Term::constant(1),
             wide: false,
         };
         let same = Proposition::CMemoryLoadable {
             memory: left_memory,
             base: pointer.clone(),
-            bytes: Bitvector32Term::Constant(1),
+            bytes: Bitvector32Term::constant(1),
             wide: false,
         };
         let changed = Proposition::CMemoryLoadable {
             memory: right_memory,
             base: pointer,
-            bytes: Bitvector32Term::Constant(1),
+            bytes: Bitvector32Term::constant(1),
             wide: false,
         };
         assert!(propositions_are_alpha_equal(&left, &same));
@@ -3334,13 +3336,13 @@ mod proposition_identity_tests {
                     Box::new(load_pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(Bitvector32Term::Constant(7)),
+                right: Box::new(Bitvector32Term::constant(7)),
             },
             true,
         );
         let named = equal(
             Bitvector32Term::Variable(load),
-            Bitvector32Term::Constant(7),
+            Bitvector32Term::constant(7),
         );
         assert_eq!(
             proposition_identity_key(&spelled),
@@ -3349,7 +3351,7 @@ mod proposition_identity_tests {
 
         let changed_memory = memory
             .clone()
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(9)));
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(9)));
         let changed_shared = crate::kernel::intern_c_memory_ref(&changed_memory);
         let changed_load = crate::kernel::load_variable_for_cell_with_origin(
             &changed_shared,
@@ -3370,13 +3372,13 @@ mod proposition_identity_tests {
                     Box::new(changed_pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(Bitvector32Term::Constant(7)),
+                right: Box::new(Bitvector32Term::constant(7)),
             },
             true,
         );
         let changed_named = equal(
             Bitvector32Term::Variable(changed_load),
-            Bitvector32Term::Constant(7),
+            Bitvector32Term::constant(7),
         );
         assert!(propositions_are_alpha_equal(
             &changed_spelled,
@@ -4002,8 +4004,8 @@ mod integer_alpha_scaling_tests {
         let accumulator = Variable(50_001);
         let item = Variable(50_002);
         let index = crate::kernel::IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(1)),
+            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(1)),
         };
         let body = |variable| {
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -4052,8 +4054,8 @@ mod snapshot_alpha_tests {
 
     fn int32_index() -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(2)),
+            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
         }
     }
 
@@ -4136,7 +4138,7 @@ mod snapshot_alpha_tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer, CValue::Int32(Bitvector32Term::Constant(7))),
+                .store(pointer, CValue::Int32(Bitvector32Term::constant(7))),
         );
 
         let source = integer_equality_alpha_key(&equality(fold(
@@ -4196,7 +4198,7 @@ mod snapshot_alpha_tests {
         let before = crate::kernel::intern_c_memory(CMemory::new().with_block("snapshot-alpha", 8));
         let after = crate::kernel::intern_c_memory(before.as_ref().clone().store(
             pointer.clone(),
-            CValue::Int32(Bitvector32Term::Constant(11)),
+            CValue::Int32(Bitvector32Term::constant(11)),
         ));
         let before_load = crate::kernel::load_variable_for_cell_with_origin(
             &before,
@@ -4296,7 +4298,7 @@ mod snapshot_alpha_tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(Bitvector32Term::Variable(element_load)),
-                        right: Box::new(Bitvector32Term::Constant(1)),
+                        right: Box::new(Bitvector32Term::constant(1)),
                     },
                     true,
                 )),
@@ -4438,7 +4440,7 @@ mod snapshot_alpha_tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer, CValue::Int32(Bitvector32Term::Constant(13))),
+                .store(pointer, CValue::Int32(Bitvector32Term::constant(13))),
         );
         let make = |memory: &SharedCMemory, accumulator: Variable, item: Variable| {
             let term = fold_body(memory, item);
@@ -4478,7 +4480,7 @@ mod snapshot_alpha_tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(5))),
+                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(5))),
         );
         let nested = |memory: &SharedCMemory, accumulator: Variable, item: Variable| {
             let inner = fold(memory, Variable(316_000), Variable(316_001));
@@ -4793,14 +4795,14 @@ mod machine_quantifier_identity_tests {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
                         left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-                        right: Box::new(Bitvector32Term::Int64Constant(bound)),
+                        right: Box::new(Bitvector32Term::int64_constant(bound)),
                     }
                 } else {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-                        right: Box::new(Bitvector32Term::Constant(bound as u32)),
+                        right: Box::new(Bitvector32Term::constant(bound as u32)),
                     }
                 },
                 true,

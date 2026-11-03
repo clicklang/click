@@ -2,7 +2,7 @@ use super::*;
 
 fn nonnegative_i() -> SpecProposition {
     SpecProposition::Comparison {
-        left: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
+        left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
         operator: CComparisonOperator::LessEqual,
         right: SpecExpression::CExpression(c_variable("i")),
     }
@@ -26,6 +26,7 @@ fn head_refusal_names_the_invariant_that_contradicts_the_ones_before_it() {
         &state,
         &state,
         &checks,
+        &IntegerTerm::var(Variable(9_999)),
         &PureFactContext::new(),
         &ExecutionFacts::new(),
         &[],
@@ -45,6 +46,7 @@ fn head_refusal_names_the_invariant_that_contradicts_the_ones_before_it() {
         &state,
         &state,
         &checks[..1],
+        &IntegerTerm::var(Variable(9_999)),
         &PureFactContext::new(),
         &ExecutionFacts::new(),
         &[],

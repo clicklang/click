@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::{CResourceTerm, ResourceFieldSchema, c_int32_literal, c_variable};
+use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 pub(in crate::surface) fn construction_result_layout(
     parsed: &syntax::C0Function,
@@ -806,7 +807,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
             {
                 let element_pointer = offset_pointer_by_elements(
                     range.base.clone(),
-                    Bitvector32Term::Constant(offset / range.element_width),
+                    Bitvector32Term::constant(offset / range.element_width),
                     range.element_width,
                 );
                 for field in layout.fields().values() {
@@ -981,18 +982,17 @@ fn mark_uninitialized_resource_memory(
                 match evaluate_requirement_segment(parameter_binding, &state, segment) {
                     Ok(evaluated) => {
                         let extent = match (&evaluated.start, &evaluated.end) {
-                            (
-                                Bitvector32Term::Constant(start)
-                                | Bitvector32Term::UInt32Constant(start),
-                                Bitvector32Term::Constant(end)
-                                | Bitvector32Term::UInt32Constant(end),
-                            ) => {
-                                if end <= start {
+                            (bits32_constant!(start), bits32_constant!(end)) => {
+                                if constant_u32(*end) <= constant_u32(*start) {
                                     continue;
                                 }
-                                (end - start).checked_mul(element_width).ok_or_else(|| {
-                                    ClickError::new("`uninitialized` segment overflows byte count")
-                                })?
+                                (constant_u32(*end) - constant_u32(*start))
+                                    .checked_mul(element_width)
+                                    .ok_or_else(|| {
+                                        ClickError::new(
+                                            "`uninitialized` segment overflows byte count",
+                                        )
+                                    })?
                             }
                             _ => CMemory::UNBOUNDED_UNWRITTEN_EXTENT,
                         };
@@ -1168,7 +1168,7 @@ fn check_segment_base_loadability(
     let obligation = Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base: cell.into_pointer(),
-        bytes: Bitvector32Term::Constant(value_type.byte_width()),
+        bytes: Bitvector32Term::constant(value_type.byte_width()),
         wide: false,
     };
     if crate::kernel::c_state_justifies_loadability_obligation(state, &obligation, assumptions) {
@@ -1281,16 +1281,14 @@ fn materialize_access_segment_cells(
     else {
         return Ok(memory);
     };
-    let (
-        Bitvector32Term::Constant(start),
-        Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
-    ) = (&segment.start, &segment.end)
-    else {
+    let (int32_constant!(start), bits32_constant!(end)) = (&segment.start, &segment.end) else {
         return Ok(memory);
     };
-    if end < start {
+    if constant_u32(*end) < constant_u32(*start) {
         return Err(ClickError::new(format!(
-            "resource segment has an end before its start: {start}..{end}"
+            "resource segment has an end before its start: {start}..{end}",
+            start = constant_u32(*start),
+            end = constant_u32(*end)
         )));
     }
 
@@ -1324,10 +1322,10 @@ fn materialize_access_segment_cells(
         contract_segment_struct_layout(parameter_binding.parameters, source_segment)
     {
         let base_memory = memory.clone();
-        for index in *start..*end {
+        for index in constant_u32(*start)..constant_u32(*end) {
             let element_pointer = offset_pointer_by_elements(
                 segment.base.clone(),
-                Bitvector32Term::Constant(index),
+                Bitvector32Term::constant(index),
                 layout.size_bytes(),
             );
             for field in layout.fields().values() {
@@ -1356,7 +1354,7 @@ fn materialize_access_segment_cells(
     let element_type = contract_segment_element_type(parameter_binding.parameters, &segment.source);
     let mut element_width =
         contract_segment_element_width(parameter_binding.parameters, &segment.source);
-    let (mut start, mut end) = (*start, *end);
+    let (mut start, mut end) = (constant_u32(*start), constant_u32(*end));
     // A typed element wider than the segment's stride is one cell of its
     // own width (see `ConcreteMemoryRangeSeed::with_element_cells`).
     let width = element_type.byte_width();
@@ -2763,11 +2761,11 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
                 ClickError::new("an arbitrary Integer literal requires Integer context")
             })?;
             let value = if value <= i32::MAX as u64 {
-                CValue::Int32(Bitvector32Term::Constant(value as u32))
+                CValue::Int32(Bitvector32Term::constant(value as u32))
             } else if value <= i64::MAX as u64 {
-                CValue::Int64(Bitvector32Term::Int64Constant(value as i64))
+                CValue::Int64(Bitvector32Term::int64_constant(value as i64))
             } else {
-                CValue::UInt64(Bitvector32Term::UInt64Constant(value))
+                CValue::UInt64(Bitvector32Term::uint64_constant(value))
             };
             Ok(CExpression::Value(value))
         }
@@ -2777,12 +2775,12 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
                 && value <= (i32::MAX as u64) + 1
             {
                 return Ok(CExpression::Value(CValue::Int32(
-                    Bitvector32Term::Constant(0u32.wrapping_sub(value as u32)),
+                    Bitvector32Term::constant(0u32.wrapping_sub(value as u32)),
                 )));
             }
             Ok(CExpression::Subtract(
                 Box::new(CExpression::Value(CValue::Int32(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ))),
                 Box::new(resource_argument_to_c_expression(expression)?),
             ))
@@ -3012,14 +3010,13 @@ fn lower_resource_segment_with_values(
     }
     let start = bound(start_value, "start")?;
     let end = bound(end_value, "end")?;
-    if let (
-        Bitvector32Term::Constant(start),
-        Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
-    ) = (&start, &end)
-        && end < start
+    if let (int32_constant!(start), bits32_constant!(end)) = (&start, &end)
+        && constant_u32(*end) < constant_u32(*start)
     {
         return Err(ClickError::new(format!(
-            "`{resource_name}` segment has an end before its start: {start}..{end}"
+            "`{resource_name}` segment has an end before its start: {start}..{end}",
+            start = constant_u32(*start),
+            end = constant_u32(*end)
         )));
     }
     refuse_past_extent(CMemoryRange::from_pointer_value(
@@ -3246,13 +3243,11 @@ pub(in crate::surface) fn concrete_loadable_block(
                 return Ok(None);
             };
             if segment.base.offset != PointerOffsetTerm::Constant(0)
-                || segment.start != Bitvector32Term::Constant(0)
+                || segment.start != Bitvector32Term::constant(0)
             {
                 return Ok(None);
             }
-            let (Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end)) =
-                segment.end
-            else {
+            let bits32_constant!(end) = segment.end else {
                 return Ok(None);
             };
             if let Some(layout) =
@@ -3265,7 +3260,7 @@ pub(in crate::surface) fn concrete_loadable_block(
             }
             let element_width =
                 contract_segment_element_width(parameter_binding.parameters, &segment.source);
-            let bytes = end
+            let bytes = constant_u32(end)
                 .checked_mul(element_width)
                 .ok_or_else(|| ClickError::new("`viewable` segment overflows byte count"))?;
             Ok(Some((
@@ -3323,20 +3318,18 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
         else {
             continue;
         };
-        let (
-            Bitvector32Term::Constant(start),
-            Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
-        ) = (&segment.start, &segment.end)
-        else {
+        let (int32_constant!(start), bits32_constant!(end)) = (&segment.start, &segment.end) else {
             continue;
         };
-        if end < start {
+        if constant_u32(*end) < constant_u32(*start) {
             return Err(ClickError::new(format!(
-                "resource segment has an end before its start: {start}..{end}"
+                "resource segment has an end before its start: {start}..{end}",
+                start = constant_u32(*start),
+                end = constant_u32(*end)
             )));
         }
         if let Some(layout) = object_segment_layout(parameter_binding.parameters, source_segment)
-            && *start == 0
+            && constant_u32(*start) == 0
         {
             result.push((
                 format!("{:?}", segment.source),
@@ -3346,7 +3339,7 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
         }
         let element_width =
             contract_segment_element_width(parameter_binding.parameters, &segment.source);
-        let element_count = end - start;
+        let element_count = constant_u32(*end) - constant_u32(*start);
         let bytes = element_count
             .checked_mul(element_width)
             .ok_or_else(|| ClickError::new("`write` segment overflows byte count"))?;
@@ -3386,14 +3379,13 @@ pub(in crate::surface) fn loadable_base_and_bytes(
                 .map_err(|message| {
                     ClickError::new(format!("could not lower `viewable` segment: {message}"))
                 })?;
-            if let (
-                Bitvector32Term::Constant(start),
-                Bitvector32Term::Constant(end) | Bitvector32Term::UInt32Constant(end),
-            ) = (&segment.start, &segment.end)
-                && end < start
+            if let (int32_constant!(start), bits32_constant!(end)) = (&segment.start, &segment.end)
+                && constant_u32(*end) < constant_u32(*start)
             {
                 return Err(ClickError::new(format!(
-                    "`viewable` segment has an end before its start: {start}..{end}"
+                    "`viewable` segment has an end before its start: {start}..{end}",
+                    start = constant_u32(*start),
+                    end = constant_u32(*end)
                 )));
             }
             let element_width =

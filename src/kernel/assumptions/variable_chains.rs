@@ -396,7 +396,7 @@ mod memory_tests {
             context = context.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(*variable),
-                    Bitvector32Term::Constant(index as u32 + 1),
+                    Bitvector32Term::constant(index as u32 + 1),
                 ),
                 true,
             );
@@ -437,7 +437,7 @@ mod memory_tests {
             .without_possible_aliasing_cells(&near, 8, &context)
             .store(
                 near.clone(),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(7)),
+                CValue::UInt64(Bitvector32Term::uint64_constant(7)),
             );
         let after = wide.without_possible_aliasing_cells(&pointer(variables[4], 4), 4, &context);
         assert!(

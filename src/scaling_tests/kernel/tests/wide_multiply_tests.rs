@@ -45,12 +45,12 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
     for (ty, input, expected) in [
         (
             MachineIntegerType::Int64,
-            Bitvector32Term::Int64Constant(i64::MIN),
+            Bitvector32Term::int64_constant(i64::MIN),
             BigInt::from(i64::MIN) * 2,
         ),
         (
             MachineIntegerType::UInt64,
-            Bitvector32Term::UInt64Constant(u64::MAX),
+            Bitvector32Term::uint64_constant(u64::MAX),
             BigInt::from(u64::MAX) * 2,
         ),
     ] {

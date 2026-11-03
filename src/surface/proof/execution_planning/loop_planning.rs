@@ -438,6 +438,11 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         &[],
     )
     .with_surface_local_scope(&phase_proof_scope(environment))
+    // The entry checks the invariants before the first pass.
+    .with_loop_iterations(
+        &crate::kernel::IntegerTerm::constant(0.into()),
+        &context.state,
+    )
     .with_nested_tactic_capture(
         expansion_capture
             .as_deref()
@@ -748,7 +753,8 @@ pub(in crate::surface::proof) fn plan_automatic_loop_preservation_body(
         environment.spec_definitions,
         environment.theorem_environment,
     )
-    .with_surface_local_scope(&phase_proof_scope(environment));
+    .with_surface_local_scope(&phase_proof_scope(environment))
+    .with_loop_iterations(preservation.iterations(), preservation.state());
     let completed = walk_loop_body(root)?;
     let mut paths = Vec::new();
     for leaf in completed {
@@ -971,6 +977,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 region: CodeRegionRef::Region(loop_body_statement_index),
                 kind: ProgramPointKind::Entry,
             })),
+            iterations: Some(preservation.iterations().clone()),
             checks: invariant_checks.to_vec(),
             ranking_measures: ranking_measures.to_vec(),
             ranking_surfaces: loop_ranking_surfaces(environment, loop_index),
@@ -978,7 +985,16 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             declared_invariant_surfaces: invariant_surfaces.clone(),
             loop_head_premises: Vec::new(),
             binders: preservation.binders().to_vec(),
-            binder_names: Arc::new(written_invariant_binder_names(invariant_checks)),
+            binder_names: Arc::new({
+                // The head's pass count is spelled `iterations`.
+                let mut names = written_invariant_binder_names(invariant_checks);
+                if let crate::kernel::IntegerTerm::Variable(count) = preservation.iterations()
+                    && !crate::surface::loop_iterations_hidden_by(preservation.state())
+                {
+                    names.insert(*count, crate::surface::LOOP_ITERATIONS_NAME.to_string());
+                }
+                names
+            }),
         })),
         source_layout,
         function_entry_state: Some(environment.initial_state.clone()),
@@ -1094,7 +1110,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
         environment.spec_definitions,
         environment.theorem_environment,
     )
-    .with_surface_local_scope(&phase_proof_scope(environment));
+    .with_surface_local_scope(&phase_proof_scope(environment))
+    .with_loop_iterations(preservation.iterations(), preservation.state());
     if let Some(parent_lineage) = crate::surface::proof_trace::loop_parent_lineage() {
         root.register_trace_scope_under(parent_lineage);
     }
@@ -1315,6 +1332,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             leaf.check_loop_state_join(
                 preservation.loop_entry_state(),
                 preservation.state(),
+                preservation.iterations(),
                 condition,
                 &[],
                 preservation.binders(),
@@ -1329,6 +1347,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             leaf.prepare_loop_invariant_bundle(
                 preservation.loop_entry_state(),
                 preservation.state(),
+                preservation.iterations(),
                 condition,
                 invariant_checks,
                 ranking_measures,

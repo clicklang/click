@@ -1689,6 +1689,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         &self,
         loop_entry: &crate::kernel::CState,
         iteration_entry: &crate::kernel::CState,
+        head_iterations: &crate::kernel::IntegerTerm,
         checks: &[crate::kernel::CLoopInvariantCheck],
         ranking_measures: &[crate::kernel::CRankingComponent],
         binders: &[crate::kernel::CLoopBinder],
@@ -1770,6 +1771,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             &back_edge_state,
             loop_entry,
             checks,
+            head_iterations,
             facts.assumptions(),
         )
         .map_err(|_| "could not lower explicit invariant obligations")?;
@@ -2824,7 +2826,7 @@ mod tests {
         let bound = Variable(2_000_000);
         let body = Proposition::ConditionIs(
             crate::kernel::ConditionTerm::signed_less_equal(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
                 Bitvector32Term::Variable(bound),
             ),
             true,
@@ -2855,7 +2857,7 @@ mod tests {
         let second = facts
             .with_fact(Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                     Bitvector32Term::Variable(witness),
                 ),
                 true,
@@ -2877,7 +2879,7 @@ mod tests {
         let bound = Variable(2_000_000);
         let body = Proposition::Predicate {
             name: "witness_body".into(),
-            arguments: vec![Term::Bitvector32(Bitvector32Term::Constant(0))],
+            arguments: vec![Term::Bitvector32(Bitvector32Term::constant(0))],
         };
         let reserving = Proposition::ForAll {
             name: Default::default(),
@@ -2943,7 +2945,7 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
-                            left: Box::new(Bitvector32Term::Constant(0)),
+                            left: Box::new(Bitvector32Term::constant(0)),
                             right: Box::new(Bitvector32Term::Variable(variable)),
                         },
                         true,
@@ -2953,7 +2955,7 @@ mod tests {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
                             left: Box::new(Bitvector32Term::Variable(variable)),
-                            right: Box::new(Bitvector32Term::Constant(16)),
+                            right: Box::new(Bitvector32Term::constant(16)),
                         },
                         true,
                     )),
@@ -2988,8 +2990,8 @@ mod tests {
         let fold = |accumulator, item| {
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::Int32 {
-                    start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-                    end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(2)),
+                    start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+                    end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
                 },
                 IntegerTerm::constant_i64(0),
                 accumulator,
@@ -3037,7 +3039,7 @@ mod tests {
                 block: "alpha".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::Constant(7)),
+            CValue::Int32(Bitvector32Term::constant(7)),
         );
         assert!(
             root(
@@ -3108,6 +3110,7 @@ mod tests {
             .open_invariant_body(
                 &CState::new(),
                 &CState::new(),
+                &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                 &checks,
                 &[],
                 &[],

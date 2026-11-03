@@ -2,6 +2,10 @@ use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
+    uint64_constant,
+};
 
 pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
     if let Proposition::Equal(Term::Algebraic(left), Term::Algebraic(right)) = goal {
@@ -161,14 +165,16 @@ fn collect_machine_affine_atoms(
             collect_machine_affine_atoms(left, coefficient, wide, atoms, constant);
             collect_machine_affine_atoms(right, coefficient.wrapping_neg(), wide, atoms, constant);
         }
-        (Bitvector32Term::Constant(value), false) => {
-            *constant = constant.wrapping_add(coefficient.wrapping_mul(u64::from(*value)));
+        (int32_constant!(value), false) => {
+            *constant =
+                constant.wrapping_add(coefficient.wrapping_mul(u64::from(constant_u32(*value))));
         }
-        (Bitvector32Term::Int64Constant(value), true) => {
-            *constant = constant.wrapping_add(coefficient.wrapping_mul(*value as u64));
+        (int64_constant!(value), true) => {
+            *constant =
+                constant.wrapping_add(coefficient.wrapping_mul(constant_i64(*value) as u64));
         }
-        (Bitvector32Term::UInt64Constant(value), true) => {
-            *constant = constant.wrapping_add(coefficient.wrapping_mul(*value));
+        (uint64_constant!(value), true) => {
+            *constant = constant.wrapping_add(coefficient.wrapping_mul(constant_u64(*value)));
         }
         (atom, _) => {
             let entry = atoms
@@ -801,10 +807,7 @@ fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComp
     let machine_constant = |term: &Bitvector32Term| {
         matches!(
             term,
-            Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_)
-                | Bitvector32Term::Int64Constant(_)
-                | Bitvector32Term::UInt64Constant(_)
+            bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)
         )
     };
     // σ keeps its operand's bits: a cited condition on `x` selects a
@@ -1783,8 +1786,8 @@ mod tests {
         let equality = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::UInt64Constant(1)),
-            right: Box::new(Bitvector32Term::UInt64Constant(0)),
+            left: Box::new(Bitvector32Term::uint64_constant(1)),
+            right: Box::new(Bitvector32Term::uint64_constant(0)),
         };
         assert!(normalizes_context_free_leaf(&Proposition::ConditionIs(
             equality.clone(),
@@ -1797,8 +1800,8 @@ mod tests {
         let same_bits = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::UInt64Constant(u64::MAX)),
-            right: Box::new(Bitvector32Term::Int64Constant(-1)),
+            left: Box::new(Bitvector32Term::uint64_constant(u64::MAX)),
+            right: Box::new(Bitvector32Term::int64_constant(-1)),
         };
         assert!(normalizes_context_free_leaf(&Proposition::ConditionIs(
             same_bits, true,
@@ -1808,7 +1811,7 @@ mod tests {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(Variable(90_000))),
-            right: Box::new(Bitvector32Term::UInt64Constant(0)),
+            right: Box::new(Bitvector32Term::uint64_constant(0)),
         };
         assert!(!normalizes_context_free_leaf(&Proposition::ConditionIs(
             symbolic, false,
@@ -1895,7 +1898,7 @@ mod tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(9))),
+                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(9))),
         );
         let quantified = |memory: SharedCMemory, named: bool| {
             let load = if named {
@@ -1952,7 +1955,7 @@ mod tests {
         };
         let memory = intern_c_memory(CMemory::new().store(
             nested_cell.clone(),
-            CValue::Int32(Bitvector32Term::Constant(7)),
+            CValue::Int32(Bitvector32Term::constant(7)),
         ));
         let quantified = |snapshot: &crate::kernel::SharedCMemory, binder: Variable| {
             let pointer = Pointer {
@@ -1976,7 +1979,7 @@ mod tests {
                 body: Box::new(Proposition::ConditionIs(
                     ConditionTerm::equal(
                         Bitvector32Term::Variable(load),
-                        Bitvector32Term::Constant(7),
+                        Bitvector32Term::constant(7),
                     ),
                     true,
                 )),
@@ -1993,7 +1996,7 @@ mod tests {
             memory
                 .as_ref()
                 .clone()
-                .store(nested_cell, CValue::Int32(Bitvector32Term::Constant(9))),
+                .store(nested_cell, CValue::Int32(Bitvector32Term::constant(9))),
         );
         assert!(!quantified_binder_equivalent(
             &requested,
@@ -2051,7 +2054,7 @@ mod tests {
         let before = CMemory::new();
         let after = before
             .clone()
-            .store(written.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+            .store(written.clone(), CValue::Int32(Bitvector32Term::constant(1)));
         let assumptions =
             PureFactContext::new().assume_proposition(Proposition::CMemoryMutatesOnly {
                 before: before.clone(),
@@ -2090,10 +2093,10 @@ mod tests {
         // the global snapshot-comparison planner.
         let loaded = preserved;
         let changed_before =
-            CMemory::new().store(loaded.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+            CMemory::new().store(loaded.clone(), CValue::Int32(Bitvector32Term::constant(1)));
         let changed_after = changed_before
             .clone()
-            .store(loaded.clone(), CValue::Int32(Bitvector32Term::Constant(2)));
+            .store(loaded.clone(), CValue::Int32(Bitvector32Term::constant(2)));
         let changed_left = load_variable_for_cell_with_origin(
             &intern_c_memory(changed_before.clone()),
             &loaded,
@@ -2202,7 +2205,7 @@ mod tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(Bitvector32Term::Variable(Variable(1))),
-                    right: Box::new(Bitvector32Term::Constant(value)),
+                    right: Box::new(Bitvector32Term::constant(value)),
                 },
                 true,
             )
@@ -2310,9 +2313,9 @@ mod tests {
                 Bitvector32Term::Variable(index),
                 Bitvector32Term::add(
                     Bitvector32Term::Variable(index),
-                    Bitvector32Term::Constant(4),
+                    Bitvector32Term::constant(4),
                 ),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
                 accumulator,
                 item,
                 Bitvector32Term::add(
@@ -2325,7 +2328,7 @@ mod tests {
                 var: index,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
-                    ConditionTerm::equal(fold, Bitvector32Term::Constant(0)),
+                    ConditionTerm::equal(fold, Bitvector32Term::constant(0)),
                     true,
                 )),
             }
@@ -2412,16 +2415,16 @@ mod tests {
             Proposition::CResourceSeparate {
                 left: Box::new(CResource::Memory(CMemoryRange::new(
                     owner_base.clone(),
-                    Bitvector32Term::Constant(left_start),
-                    Bitvector32Term::Constant(left_end),
+                    Bitvector32Term::constant(left_start),
+                    Bitvector32Term::constant(left_end),
                 ))),
                 right: Box::new(CResource::Memory(CMemoryRange::new(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: cell_element_offset(cell_memory),
                     },
-                    Bitvector32Term::Constant(0),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::constant(0),
+                    Bitvector32Term::constant(1),
                 ))),
             }
         };
@@ -2907,13 +2910,13 @@ fn separations_equal_modulo_proven_snapshots(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(expand_load_variables_shallow(left.start())),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                     &ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(expand_load_variables_shallow(right.start())),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                 )
                 && assumptions.conditions_equal_modulo_proven_snapshots(
@@ -2921,13 +2924,13 @@ fn separations_equal_modulo_proven_snapshots(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(expand_load_variables_shallow(left.end())),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                     &ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(expand_load_variables_shallow(right.end())),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                 ))
     };
@@ -2996,8 +2999,8 @@ mod integer_reflexivity_tests {
 
     fn int32_index() -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(2)),
+            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
         }
     }
 
@@ -3130,7 +3133,7 @@ mod integer_reflexivity_tests {
             before
                 .memory()
                 .clone()
-                .store(a.clone(), CValue::Int32(Bitvector32Term::Constant(7))),
+                .store(a.clone(), CValue::Int32(Bitvector32Term::constant(7))),
         );
         let load = |memory: &crate::kernel::SharedCMemory, address: &Pointer| {
             Pointer::symbolic(crate::kernel::load_variable_for_cell_with_origin(
@@ -3216,7 +3219,7 @@ mod integer_reflexivity_tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(1))),
+                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(1))),
         );
         let load_fold = |memory: &crate::kernel::SharedCMemory, accumulator, item| {
             integer_fold(
@@ -3450,13 +3453,13 @@ mod uint64_loop_tests {
         assert_eq!(context.decide(&condition), Some(true));
         // A full-width subtrahend must not be truncated into an apparent zero.
         let wrapped = Bitvector32Term::uint64_subtract(
-            Bitvector32Term::UInt64Constant(1),
-            Bitvector32Term::UInt64Constant(1u64 << 32),
+            Bitvector32Term::uint64_constant(1),
+            Bitvector32Term::uint64_constant(1u64 << 32),
         );
         assert_eq!(
             context.decide(&ConditionTerm::uint64_less_equal(
                 wrapped,
-                Bitvector32Term::UInt64Constant(1),
+                Bitvector32Term::uint64_constant(1),
             )),
             Some(false)
         );
@@ -3528,14 +3531,14 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(984_800));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(1 << 33),
             4,
         );
         let other = CMemoryRange::new_wide(
             base,
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(2 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(2 << 33),
             4,
         );
         let separation = |range| Proposition::CResourceSeparate {
@@ -3604,10 +3607,10 @@ mod annotated_address_condition_tests {
             ConditionTerm::equal(
                 Bitvector32Term::If {
                     condition: Box::new(condition),
-                    then_term: Box::new(Bitvector32Term::Constant(1)),
-                    else_term: Box::new(Bitvector32Term::Constant(0)),
+                    then_term: Box::new(Bitvector32Term::constant(1)),
+                    else_term: Box::new(Bitvector32Term::constant(0)),
                 },
-                Bitvector32Term::Constant(u32::from(value)),
+                Bitvector32Term::constant(u32::from(value)),
             ),
             true,
         )
@@ -3696,13 +3699,13 @@ mod annotated_address_condition_tests {
         let before = intern_c_memory(
             CMemory::new()
                 .with_block("annotated-address-index", 4)
-                .store(cell.clone(), CValue::Int32(Bitvector32Term::Constant(0))),
+                .store(cell.clone(), CValue::Int32(Bitvector32Term::constant(0))),
         );
         let after = intern_c_memory(
             before
                 .memory()
                 .clone()
-                .store(cell.clone(), CValue::Int32(Bitvector32Term::Constant(1))),
+                .store(cell.clone(), CValue::Int32(Bitvector32Term::constant(1))),
         );
         let fact = |memory: SharedCMemory, annotated: bool| {
             use crate::kernel::effective_type::{CAccessClass, CScalarClass};

@@ -14,7 +14,7 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(Bitvector32Term::Variable(Variable(950_000))),
-            right: Box::new(Bitvector32Term::Constant(20)),
+            right: Box::new(Bitvector32Term::constant(20)),
         },
         true,
     );
@@ -34,7 +34,7 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
                     left: Box::new(Bitvector32Term::Variable(Variable(960_000 + index))),
-                    right: Box::new(Bitvector32Term::Constant(100)),
+                    right: Box::new(Bitvector32Term::constant(100)),
                 },
                 true,
             );

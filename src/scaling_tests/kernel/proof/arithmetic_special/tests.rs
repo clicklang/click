@@ -50,7 +50,7 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
                 Int32,
                 Subtract,
                 Box::new(index),
-                Box::new(Bitvector32Term::Constant(0))
+                Box::new(Bitvector32Term::constant(0))
             );
         }
         let relation = pointer_eq(p.clone(), add(arr.clone(), scaled(index.clone())));
@@ -59,7 +59,7 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(index.clone()),
-                right: Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
+                right: Box::new(Bitvector32Term::constant(i32::MAX as u32)),
             },
             true,
         );
@@ -71,7 +71,7 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
                     Int32,
                     Add,
                     Box::new(index),
-                    Box::new(Bitvector32Term::Constant(1)),
+                    Box::new(Bitvector32Term::constant(1)),
                 )),
             ),
         );
@@ -118,7 +118,7 @@ fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
     );
     let value = Bitvector32Term::Variable(crate::kernel::Variable(71_001));
     let mask = |term, bits| {
-        Bitvector32Term::uint64_bitwise_and(term, Bitvector32Term::UInt64Constant(bits))
+        Bitvector32Term::uint64_bitwise_and(term, Bitvector32Term::uint64_constant(bits))
     };
     let equality =
         |left, right| Proposition::ConditionIs(ConditionTerm::uint64_equal(left, right), true);
@@ -168,9 +168,9 @@ fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
     for size in [8, 16, 32, 64] {
         let mut word = address.clone();
         for _ in 0..size {
-            word = Bitvector32Term::uint64_add(word, Bitvector32Term::UInt64Constant(2));
+            word = Bitvector32Term::uint64_add(word, Bitvector32Term::uint64_constant(2));
         }
-        let goal = equality(mask(word, 1), Bitvector32Term::UInt64Constant(0));
+        let goal = equality(mask(word, 1), Bitvector32Term::uint64_constant(0));
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             check(&goal, std::slice::from_ref(&alignment))
         });
@@ -194,18 +194,18 @@ fn tagged_word_alignment_index_scales_with_alignment_count() {
     let relation = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(
             word.clone(),
-            Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::UInt64Constant(1)),
+            Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::uint64_constant(1)),
         ),
         true,
     );
     let mut deep_word = word.clone();
     for _ in 0..64 {
-        deep_word = Bitvector32Term::uint64_add(deep_word, Bitvector32Term::UInt64Constant(0));
+        deep_word = Bitvector32Term::uint64_add(deep_word, Bitvector32Term::uint64_constant(0));
     }
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(
-            Bitvector32Term::uint64_bitwise_or(deep_word, Bitvector32Term::UInt64Constant(2)),
-            Bitvector32Term::uint64_add(address, Bitvector32Term::UInt64Constant(3)),
+            Bitvector32Term::uint64_bitwise_or(deep_word, Bitvector32Term::uint64_constant(2)),
+            Bitvector32Term::uint64_add(address, Bitvector32Term::uint64_constant(3)),
         ),
         true,
     );
@@ -248,10 +248,10 @@ fn direct_tagged_word_checker_does_not_scan_unrelated_alignments() {
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(
             Bitvector32Term::uint64_bitwise_or(
-                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::UInt64Constant(1)),
-                Bitvector32Term::UInt64Constant(2),
+                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::uint64_constant(1)),
+                Bitvector32Term::uint64_constant(2),
             ),
-            Bitvector32Term::uint64_add(address, Bitvector32Term::UInt64Constant(3)),
+            Bitvector32Term::uint64_add(address, Bitvector32Term::uint64_constant(3)),
         ),
         true,
     );
@@ -321,7 +321,7 @@ fn translation_work_scales_with_explicit_payload() {
                     left: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
                         2000 + index,
                     ))),
-                    right: Box::new(Bitvector32Term::Constant(100)),
+                    right: Box::new(Bitvector32Term::constant(100)),
                 },
                 true,
             ));
@@ -363,7 +363,7 @@ fn tagged_word_traversal_scales_with_tagged_depth() {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(tagged),
-                right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                right: Box::new(Bitvector32Term::uint64_constant(1)),
             };
         }
         let relation = Proposition::ConditionIs(
@@ -527,7 +527,7 @@ fn unsigned_widening_identity_work_scales_with_operand_payload() {
                 Int32,
                 Add,
                 Box::new(value),
-                Box::new(Bitvector32Term::Constant(0))
+                Box::new(Bitvector32Term::constant(0))
             );
         }
         let widened = Bitvector32Term::UInt64From32(Box::new(value));

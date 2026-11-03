@@ -1,6 +1,7 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
 use crate::kernel::CompareRelation;
+use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 thread_local! {
     static PRESERVE_INTEGER_COMPARISONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -123,6 +124,52 @@ struct SpecEvaluation<'a> {
     integer_bindings: BTreeMap<Variable, IntegerTerm>,
 }
 
+/// The identity a loop invariant's `iterations` lowers to: the number of
+/// passes the loop has completed. It is a placeholder, never a value of its
+/// own: each loop phase that lowers an invariant binds it for that lowering
+/// ([`LoopIterationsScope`]), to `0` at entry, to the head's fresh count `K`
+/// where the head assumes the invariants, and to `K + 1` at the back edge.
+/// Nothing else mints this identity (it lies past every producer's range),
+/// and reading it where no phase binds it refuses
+/// ([`ExecutionLimit::LoopIterationsUnbound`]): an unbound placeholder in
+/// both a head assumption and a back-edge goal would prove an invariant
+/// preserved without the pass it counts.
+pub(crate) const LOOP_ITERATIONS_VARIABLE: Variable = Variable(1 << 44);
+
+std::thread_local! {
+    static LOOP_ITERATIONS: std::cell::RefCell<Option<IntegerTerm>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Binds a loop invariant's `iterations` for the lowerings made while it
+/// lives: the pass count of the loop phase lowering the invariant.
+pub(in crate::kernel) struct LoopIterationsScope(Option<IntegerTerm>);
+
+impl LoopIterationsScope {
+    pub(in crate::kernel) fn enter(iterations: IntegerTerm) -> Self {
+        Self(LOOP_ITERATIONS.with(|slot| slot.replace(Some(iterations))))
+    }
+}
+
+impl Drop for LoopIterationsScope {
+    fn drop(&mut self) {
+        LOOP_ITERATIONS.with(|slot| {
+            slot.replace(self.0.take());
+        });
+    }
+}
+
+/// The integer bindings an evaluation starts with: a loop phase's pass
+/// count, when one is in scope.
+fn initial_integer_bindings() -> BTreeMap<Variable, IntegerTerm> {
+    LOOP_ITERATIONS.with(|slot| {
+        slot.borrow()
+            .clone()
+            .map(|iterations| BTreeMap::from([(LOOP_ITERATIONS_VARIABLE, iterations)]))
+            .unwrap_or_default()
+    })
+}
+
 impl<'a> SpecEvaluation<'a> {
     fn logical(budget: &'a mut ExecutionBudget) -> Self {
         Self {
@@ -131,7 +178,7 @@ impl<'a> SpecEvaluation<'a> {
             recover_resource_call_types: false,
             pointer_cast_operand: false,
             machine_preparation_disabled: false,
-            integer_bindings: BTreeMap::new(),
+            integer_bindings: initial_integer_bindings(),
         }
     }
     fn checked(budget: &'a mut ExecutionBudget) -> Self {
@@ -141,7 +188,7 @@ impl<'a> SpecEvaluation<'a> {
             recover_resource_call_types: false,
             pointer_cast_operand: false,
             machine_preparation_disabled: false,
-            integer_bindings: BTreeMap::new(),
+            integer_bindings: initial_integer_bindings(),
         }
     }
     fn with_integer_bindings<T>(
@@ -185,6 +232,13 @@ impl<'a> SpecEvaluation<'a> {
     }
 
     fn bound_integer_term(&self, term: &IntegerTerm) -> ExecutionResult<IntegerTerm> {
+        if *term == IntegerTerm::Variable(LOOP_ITERATIONS_VARIABLE)
+            && !self
+                .integer_bindings
+                .contains_key(&LOOP_ITERATIONS_VARIABLE)
+        {
+            return Err(ExecutionLimit::LoopIterationsUnbound);
+        }
         if self.integer_bindings.is_empty() {
             return Ok(term.clone());
         }
@@ -2643,14 +2697,7 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
         // composite machine expression can still hide a registered load
         // whose pointer carries an Integer, so retain the scope rather than
         // returning an unsound negative for that opaque case.
-        return !matches!(
-            term,
-            Bitvector32Term::Constant(_)
-                | Bitvector32Term::UInt32Constant(_)
-                | Bitvector32Term::Int64Constant(_)
-                | Bitvector32Term::UInt64Constant(_)
-                | Bitvector32Term::MachineIntegerConstant(_)
-        );
+        return !matches!(term, Bitvector32Term::Constant { .. });
     };
     if !crate::kernel::is_load_variable(load) {
         return false;
@@ -2667,11 +2714,7 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
         .iter()
         .any(|value| match value {
             Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
-            Bitvector32Term::Constant(_)
-            | Bitvector32Term::UInt32Constant(_)
-            | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_)
-            | Bitvector32Term::MachineIntegerConstant(_) => false,
+            Bitvector32Term::Constant { .. } => false,
             _ => true,
         })
     {
@@ -4849,7 +4892,7 @@ fn evaluate_spec_resource_at_state_in(
                         Some(CResource::Memory(CMemoryRange::from_pointer_value(
                             base,
                             start.clone(),
-                            Bitvector32Term::Constant(end as u32),
+                            Bitvector32Term::constant(end as u32),
                             element_width,
                         )))
                     }
@@ -5035,7 +5078,7 @@ fn lower_spec_memory_loadable_at_state_in(
         // lowers to once that bound is substituted by the constant.
         [
             CValue::Pointer(base),
-            CValue::Int32(Bitvector32Term::Constant(0)),
+            CValue::Int32(int32_constant!(0)),
             CValue::UInt64(end),
         ] => {
             let range = CMemoryRange::new_wide(
@@ -5043,7 +5086,7 @@ fn lower_spec_memory_loadable_at_state_in(
                     block: base.block.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
-                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::uint64_constant(0),
                 crate::kernel::eval::canonical_term(end),
                 element_width,
             );
@@ -5252,8 +5295,8 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
 /// An element index scaled to bytes, folded when the index is a constant.
 fn canonical_scaled_offset(value: Bitvector32Term, byte_width: i64) -> PointerOffsetTerm {
     match value {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            PointerOffsetTerm::Constant((value as i32 as i64) * byte_width)
+        bits32_constant!(value) => {
+            PointerOffsetTerm::Constant((constant_u32(value) as i32 as i64) * byte_width)
         }
         value => PointerOffsetTerm::Int32Scaled {
             value: Box::new(value),
@@ -6058,7 +6101,7 @@ fn evaluate_resource_count_paths(
                 // does not restore ownership or permission to change members.
                 if creation.checked_empty_population(&description) {
                     return Ok(SpecExpressionPath {
-                        value: CValue::Int32(Bitvector32Term::Constant(0)),
+                        value: CValue::Int32(Bitvector32Term::constant(0)),
                         facts,
                         obligations,
                     });
@@ -6119,7 +6162,7 @@ fn evaluate_resource_count_paths(
                     let entry_owned = symbolic
                         .entry_symbolic_members
                         .clone()
-                        .unwrap_or(Bitvector32Term::Constant(symbolic.entry_owned_members));
+                        .unwrap_or(Bitvector32Term::constant(symbolic.entry_owned_members));
                     let minimum = Proposition::ConditionIs(
                         ConditionTerm::signed_greater_equal(entry.clone(), entry_owned),
                         true,
@@ -6132,13 +6175,13 @@ fn evaluate_resource_count_paths(
                     {
                         let overflow = ConditionTerm::signed_add_overflows(
                             quantity.clone(),
-                            Bitvector32Term::Constant(symbolic.delta as u32),
+                            Bitvector32Term::constant(symbolic.delta as u32),
                         );
                         let no_overflow = Proposition::signed_arithmetic_domain(
                             MachineIntegerType::Int32,
                             MachineBinaryOp::Add,
                             &quantity,
-                            &Bitvector32Term::Constant(symbolic.delta as u32),
+                            &Bitvector32Term::constant(symbolic.delta as u32),
                         );
                         if !path_assumptions.proves_exact(&no_overflow)
                             && PureFactContext::decide_intrinsically(&overflow) != Some(false)
@@ -6225,7 +6268,7 @@ fn evaluate_resource_count_paths(
                         Proposition::signed_arithmetic_domain(
                             MachineIntegerType::Int32,
                             MachineBinaryOp::Add,
-                            &Bitvector32Term::Constant(base),
+                            &Bitvector32Term::constant(base),
                             &quantity,
                         ),
                     ));
@@ -8580,10 +8623,10 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(Condition
     let (right, right_expected) = compound_spec_value_condition(right)?;
     let right_value = Bitvector32Term::if_then_else(
         right,
-        Bitvector32Term::Constant(u32::from(right_expected)),
-        Bitvector32Term::Constant(u32::from(!right_expected)),
+        Bitvector32Term::constant(u32::from(right_expected)),
+        Bitvector32Term::constant(u32::from(!right_expected)),
     );
-    let constant = Bitvector32Term::Constant(u32::from(!conjunction));
+    let constant = Bitvector32Term::constant(u32::from(!conjunction));
     let (then_term, else_term) = if conjunction == left_expected {
         (right_value, constant)
     } else {
@@ -8591,7 +8634,7 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(Condition
     };
     let value = Bitvector32Term::if_then_else(left, then_term, else_term);
     Some((
-        ConditionTerm::equal(value, Bitvector32Term::Constant(1)),
+        ConditionTerm::equal(value, Bitvector32Term::constant(1)),
         true,
     ))
 }
@@ -9091,8 +9134,8 @@ fn native_narrow_comparison_operands(
         _ => None,
     };
     let literal = |format: MachineIntegerType, value: &CValue| match value {
-        CValue::Int32(Bitvector32Term::Constant(bits)) => {
-            let value = i128::from(*bits as i32);
+        CValue::Int32(int32_constant!(bits)) => {
+            let value = i128::from(constant_u32(*bits) as i32);
             let (low, high) = format.format().bounds();
             (num_bigint::BigInt::from(value) >= low && num_bigint::BigInt::from(value) <= high)
                 .then(|| Bitvector32Term::narrow_constant(format, value as u128))
@@ -9329,7 +9372,7 @@ mod assumed_arithmetic_domain_tests {
             apply_spec_arithmetic(
                 crate::kernel::MachineBinaryOp::Multiply,
                 CValue::Int32(Bitvector32Term::Variable(Variable(994_020))),
-                CValue::Int32(Bitvector32Term::Constant(4)),
+                CValue::Int32(Bitvector32Term::constant(4)),
                 ExecutionFacts::default(),
                 vec![inherited.clone()],
                 assumptions,

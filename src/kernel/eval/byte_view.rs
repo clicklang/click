@@ -61,7 +61,7 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
         block: pointer.block.clone(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let mut assembled = Bitvector32Term::Constant(0);
+    let mut assembled = Bitvector32Term::constant(0);
     for byte in 0..4 {
         crate::instrumentation::record_deterministic_work(1);
         let bits = if byte == offset {
@@ -71,7 +71,7 @@ pub(in crate::kernel) fn assemble_declared_uint32_after_byte_store(
         };
         assembled = Bitvector32Term::bitwise_or(
             assembled,
-            Bitvector32Term::unsigned_shift_left(bits, Bitvector32Term::Constant(8 * byte as u32)),
+            Bitvector32Term::unsigned_shift_left(bits, Bitvector32Term::constant(8 * byte as u32)),
         );
     }
     Some((start, CValue::UInt32(assembled)))
@@ -206,7 +206,7 @@ pub(in crate::kernel) fn integer_cell_byte(value: &CValue, byte: u32) -> Option<
         let shifted = if shift == 0 {
             term
         } else {
-            Bitvector32Term::logical_shift_right(term, Bitvector32Term::Constant(shift))
+            Bitvector32Term::logical_shift_right(term, Bitvector32Term::constant(shift))
         };
         Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, shifted)
     };
@@ -227,7 +227,7 @@ pub(in crate::kernel) fn integer_cell_byte(value: &CValue, byte: u32) -> Option<
             } else {
                 Bitvector32Term::uint64_logical_shift_right(
                     bits,
-                    Bitvector32Term::UInt64Constant(u64::from(shift)),
+                    Bitvector32Term::uint64_constant(u64::from(shift)),
                 )
             };
             Bitvector32Term::machine_integer_cast(Ty::UInt64, Ty::UInt8, shifted)
@@ -283,8 +283,8 @@ pub(in crate::kernel) fn integer_cell_with_byte(
     let mask64 = !(0xFFu64 << shift);
     let update32 = |term: &Bitvector32Term| {
         Bitvector32Term::bitwise_or(
-            Bitvector32Term::bitwise_and(term.clone(), Bitvector32Term::Constant(mask32)),
-            Bitvector32Term::unsigned_shift_left(byte.clone(), Bitvector32Term::Constant(shift)),
+            Bitvector32Term::bitwise_and(term.clone(), Bitvector32Term::constant(mask32)),
+            Bitvector32Term::unsigned_shift_left(byte.clone(), Bitvector32Term::constant(shift)),
         )
     };
     use crate::kernel::MachineIntegerType as Ty;
@@ -304,11 +304,11 @@ pub(in crate::kernel) fn integer_cell_with_byte(
         CValue::UInt64(term) => CValue::UInt64(Bitvector32Term::uint64_bitwise_or(
             Bitvector32Term::uint64_bitwise_and(
                 term.clone(),
-                Bitvector32Term::UInt64Constant(mask64),
+                Bitvector32Term::uint64_constant(mask64),
             ),
             Bitvector32Term::uint64_shift_left(
                 Bitvector32Term::uint64_from_32(byte),
-                Bitvector32Term::UInt64Constant(u64::from(shift)),
+                Bitvector32Term::uint64_constant(u64::from(shift)),
             ),
         )),
         CValue::Int16(term) => {
@@ -320,7 +320,7 @@ pub(in crate::kernel) fn integer_cell_with_byte(
         CValue::Int64(term) => {
             let (value, byte) = (term.int64_as_const()?, byte.as_const()?);
             let bits = (value as u64 & mask64) | (u64::from(byte & 0xFF) << shift);
-            CValue::Int64(Bitvector32Term::Int64Constant(bits as i64))
+            CValue::Int64(Bitvector32Term::int64_constant(bits as i64))
         }
         _ => return None,
     })

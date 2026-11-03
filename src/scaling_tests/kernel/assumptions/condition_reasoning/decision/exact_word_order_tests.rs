@@ -19,7 +19,7 @@ fn adjacent_bound_queries_retain_shared_prefixes_in_changing_contexts() {
                 context = context.assume_condition(
                     ConditionTerm::equal(
                         Bitvector32Term::Variable(Variable(189330 + n as u64)),
-                        Bitvector32Term::Constant(n as u32),
+                        Bitvector32Term::constant(n as u32),
                     ),
                     true,
                 );

@@ -9,7 +9,7 @@ fn alpha_identity_work_scales_with_nested_binder_depth() {
     let make = |depth: u64, offset: u64| {
         let mut proposition = equal(
             Bitvector32Term::Variable(Variable(offset + depth - 1)),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(1),
         );
         for index in (0..depth).rev() {
             proposition = forall(offset + index, proposition);

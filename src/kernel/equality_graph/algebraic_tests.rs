@@ -272,7 +272,7 @@ fn scalar_conflicts_follow_model_congruence_and_withdrawn_support() {
     };
     let value = |v, n| {
         Proposition::ConditionIs(
-            ConditionTerm::equal(getter(v), Bitvector32Term::Constant(n)),
+            ConditionTerm::equal(getter(v), Bitvector32Term::constant(n)),
             true,
         )
     };
@@ -323,13 +323,13 @@ fn scalar_constant_conflicts_preserve_machine_widths() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut graph = EqualityGraph::default();
     let x = Bitvector32Term::Variable(Variable(700));
-    graph.add_int32_equality(&x, &Bitvector32Term::Constant(0));
-    graph.add_uint64_equality(&x, &Bitvector32Term::UInt64Constant(1));
+    graph.add_int32_equality(&x, &Bitvector32Term::constant(0));
+    graph.add_uint64_equality(&x, &Bitvector32Term::uint64_constant(1));
     assert!(!graph.has_scalar_constant_conflict());
-    graph.add_uint64_equality(&x, &Bitvector32Term::UInt64Constant(0));
+    graph.add_uint64_equality(&x, &Bitvector32Term::uint64_constant(0));
     assert!(graph.has_scalar_constant_conflict());
     let mut graph = EqualityGraph::default();
-    graph.add_int32_equality(&Bitvector32Term::Constant(0), &Bitvector32Term::Constant(1));
+    graph.add_int32_equality(&Bitvector32Term::constant(0), &Bitvector32Term::constant(1));
     assert!(graph.has_scalar_constant_conflict());
 }
 
@@ -361,7 +361,7 @@ fn scalar_read_conflicts_require_the_same_snapshot() {
     };
     let value = |term, n| {
         Proposition::ConditionIs(
-            ConditionTerm::equal(term, Bitvector32Term::Constant(n)),
+            ConditionTerm::equal(term, Bitvector32Term::constant(n)),
             true,
         )
     };

@@ -31,6 +31,9 @@
 use super::*;
 use crate::kernel::CompareRelation as R;
 use crate::kernel::MachineIntegerType as Ty;
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
+};
 
 thread_local! {
     static DECIDING_SIGN_BIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -60,11 +63,9 @@ fn signed_maximum(bits: u32) -> i64 {
 /// `term` as the constant it is at an `int32` or a 64-bit comparison.
 fn constant(term: &Bitvector32Term) -> Option<i64> {
     match term {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            Some(i64::from(*value))
-        }
-        Bitvector32Term::Int64Constant(value) => Some(*value),
-        Bitvector32Term::UInt64Constant(value) => i64::try_from(*value).ok(),
+        bits32_constant!(value) => Some(i64::from(constant_u32(*value))),
+        int64_constant!(value) => Some(constant_i64(*value)),
+        uint64_constant!(value) => i64::try_from(constant_u64(*value)).ok(),
         _ => None,
     }
 }
@@ -77,9 +78,7 @@ fn constant(term: &Bitvector32Term) -> Option<i64> {
 /// its first use must cost the same as before it.
 fn sign_cast(source: Ty, destination: Ty, operand: Bitvector32Term) -> Bitvector32Term {
     match operand {
-        Bitvector32Term::Constant(bits) | Bitvector32Term::UInt32Constant(bits) => {
-            Bitvector32Term::constant_at32(destination, bits)
-        }
+        bits32_constant!(bits) => Bitvector32Term::constant_at32(destination, constant_u32(bits)),
         Bitvector32Term::MachineIntegerCast {
             value,
             source: inner_source,
@@ -199,15 +198,15 @@ impl PureFactContext {
         let format = *format;
         let in_range = |term: &Bitvector32Term, lower: i64, upper: i64| {
             self.decide(&ConditionTerm::signed_less_equal(
-                Bitvector32Term::Constant(lower as u32),
+                Bitvector32Term::constant(lower as u32),
                 term.clone(),
             )) == Some(true)
                 && self.decide(&ConditionTerm::signed_less_equal(
                     term.clone(),
-                    Bitvector32Term::Constant(upper as u32),
+                    Bitvector32Term::constant(upper as u32),
                 )) == Some(true)
         };
-        let constant = |value: i64| Bitvector32Term::Constant(value as u32);
+        let constant = |value: i64| Bitvector32Term::constant(value as u32);
         // An 8- or 16-bit conversion between the two signednesses of one
         // width, read in an `int32` comparison through its widening. Its
         // operand is a native value of its format, in that format's range,
@@ -306,7 +305,7 @@ impl PureFactContext {
             test(relation, value, signed_maximum(bits))?,
         ) {
             (true, Test::Sign { negative }) => Some(if wide {
-                let maximum = Bitvector32Term::UInt64Constant(i64::MAX as u64);
+                let maximum = Bitvector32Term::uint64_constant(i64::MAX as u64);
                 let unsigned = |word: Bitvector32Term| {
                     if negative {
                         ConditionTerm::uint64_greater_than(word, maximum.clone())
@@ -334,7 +333,7 @@ impl PureFactContext {
                     Bitvector32Term::UInt64FromInt64(inner) => *inner,
                     operand => operand,
                 };
-                let zero = Bitvector32Term::Int64Constant(0);
+                let zero = Bitvector32Term::int64_constant(0);
                 vec![if above {
                     ConditionTerm::int64_signed_less_than(operand, zero)
                 } else {

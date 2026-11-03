@@ -47,7 +47,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
             context = context.assume_proposition(Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(720_000 + index),
-                bytes: Bitvector32Term::Constant(4),
+                bytes: Bitvector32Term::constant(4),
                 wide: false,
             });
         }
@@ -56,7 +56,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
                 assert!(!context.proves_memory_loadable(
                     &memory,
                     &pointer(730_000),
-                    &Bitvector32Term::Constant(4)
+                    &Bitvector32Term::constant(4)
                 ));
             }
         });
@@ -79,7 +79,7 @@ fn atom_memory_condition_miss_does_not_scan_open_fact_family() {
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::add(term(740_000 + index * 2), Bitvector32Term::Constant(1)),
+                    Bitvector32Term::add(term(740_000 + index * 2), Bitvector32Term::constant(1)),
                     term(740_001 + index * 2),
                 ),
                 true,
@@ -237,9 +237,9 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 let base = Pointer::symbolic(Variable(790_000));
                 let extent = |n: u32| {
                     if wide {
-                        Bitvector32Term::UInt64Constant(u64::from(n))
+                        Bitvector32Term::uint64_constant(u64::from(n))
                     } else {
-                        Bitvector32Term::Constant(n)
+                        Bitvector32Term::constant(n)
                     }
                 };
                 let mut context = PureFactContext::new();

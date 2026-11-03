@@ -700,7 +700,7 @@ mod tests {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         }
     }
 

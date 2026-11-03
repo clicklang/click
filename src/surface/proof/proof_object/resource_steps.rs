@@ -1054,7 +1054,7 @@ impl<'a> Proof<'a> {
                     values,
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                     context.fixed_state,
                     context.spec_definitions,
                     crate::surface::lowering::parameter_pointer_element_widths(
@@ -1080,7 +1080,7 @@ impl<'a> Proof<'a> {
                     values,
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                     view.fixed_state,
                     view.spec_definitions,
                     crate::surface::lowering::parameter_pointer_element_widths(
@@ -1108,7 +1108,7 @@ impl<'a> Proof<'a> {
                     values,
                     array_refs,
                     local_algebraic_values(BTreeMap::new()),
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                     FixedStateFrame::new(
                         pre_state,
                         &execution.core.state,

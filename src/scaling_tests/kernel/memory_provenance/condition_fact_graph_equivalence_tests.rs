@@ -8,7 +8,7 @@ use super::*;
 fn condition_fact_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let source = less_than(sum(var(0)), var(9000));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -40,14 +40,14 @@ fn failed_check_cell_capture_is_bounded_and_ignores_unrelated_facts() {
     let memory =
         crate::kernel::intern_c_memory(CMemory::new().with_block(base.block.clone(), 128).store(
             Pointer::symbolic(Variable(982_000)),
-            CValue::Int32(Bitvector32Term::Constant(9)),
+            CValue::Int32(Bitvector32Term::constant(9)),
         ));
     let mut samples = Vec::new();
     for size in [8u64, 32, 128, 512] {
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
-                ConditionTerm::equal(var(990_000 + index), Bitvector32Term::Constant(7)),
+                ConditionTerm::equal(var(990_000 + index), Bitvector32Term::constant(7)),
                 true,
             );
         }

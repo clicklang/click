@@ -96,7 +96,7 @@ impl Gen {
         const NAMES: [&str; 6] = ["x", "x", "n", "v", "acc", "i"];
         match self.pick(4) {
             0 => CExpression::Variable(NAMES[self.pick(6) as usize].into()),
-            1 => CExpression::Value(CValue::Int32(Bitvector32Term::Constant(1))),
+            1 => CExpression::Value(CValue::Int32(Bitvector32Term::constant(1))),
             2 => CExpression::Value(CValue::Int32(Bitvector32Term::Variable(self.variable()))),
             _ => CExpression::Load(Box::new(CExpression::Variable("p".into()))),
         }
@@ -104,7 +104,7 @@ impl Gen {
 
     fn expr_leaf(&mut self) -> SpecExpression {
         match self.pick(5) {
-            0 => SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(7))),
+            0 => SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(7))),
             1 => SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(self.variable()))),
             2 => SpecExpression::ResourceField {
                 projection: self.projection(),
@@ -122,7 +122,7 @@ impl Gen {
             1 => SpecExpression::PointerOffset {
                 pointer: Box::new(parameter),
                 elements: Box::new(SpecExpression::Value(CValue::Int32(
-                    Bitvector32Term::Constant(2),
+                    Bitvector32Term::constant(2),
                 ))),
                 byte_width: 4,
             },

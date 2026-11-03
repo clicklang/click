@@ -170,9 +170,9 @@ mod tests {
             };
             let constant = |n: i64| {
                 if format == MachineIntegerType::Int32 {
-                    Bitvector32Term::Constant(n as u32)
+                    Bitvector32Term::constant(n as u32)
                 } else {
-                    Bitvector32Term::Int64Constant(n)
+                    Bitvector32Term::int64_constant(n)
                 }
             };
             let maximum = if format == MachineIntegerType::Int32 {
@@ -264,14 +264,14 @@ mod tests {
                 }
             };
             let one = if format == MachineIntegerType::UInt32 {
-                Bitvector32Term::Constant(1)
+                Bitvector32Term::constant(1)
             } else {
-                Bitvector32Term::UInt64Constant(1)
+                Bitvector32Term::uint64_constant(1)
             };
             let maximum = if format == MachineIntegerType::UInt32 {
-                Bitvector32Term::Constant(u32::MAX)
+                Bitvector32Term::constant(u32::MAX)
             } else {
-                Bitvector32Term::UInt64Constant(u64::MAX)
+                Bitvector32Term::uint64_constant(u64::MAX)
             };
             for left in [Bitvector32Term::Variable(Variable(990001)), maximum] {
                 for operator in [
@@ -318,7 +318,7 @@ mod tests {
         assert!(!evaluate(&signed_sum, false)[0].obligations.is_empty());
         let zero = || {
             Box::new(SpecExpression::Value(CValue::UInt64(
-                Bitvector32Term::UInt64Constant(0),
+                Bitvector32Term::uint64_constant(0),
             )))
         };
         let nested =

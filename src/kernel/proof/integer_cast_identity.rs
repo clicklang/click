@@ -458,7 +458,7 @@ mod tests {
                     Int32,
                     BitwiseAnd,
                     Box::new(value.clone()),
-                    Box::new(Bitvector32Term::Constant(mask)),
+                    Box::new(Bitvector32Term::constant(mask)),
                 );
                 let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
                 Proposition::ConditionIs(
@@ -616,7 +616,7 @@ mod tests {
                 Ty::Int64,
                 Ty::Int128,
                 Ty::Int64,
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(1),
             ),
             (
                 Ty::Int64,

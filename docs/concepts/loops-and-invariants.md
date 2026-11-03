@@ -336,6 +336,32 @@ does not prove that such an iteration is eventually reached. The loop's
 `decreases` clause certifies that it is; only a loop or function marked
 `diverges` goes without that evidence.
 
+### The pass count
+
+`iterations` names the passes a loop has completed, as a mathematical
+`Integer`. It is in scope in the loop's `invariant` clauses and its
+`initialize` and `preserve` proofs, so an invariant can state a local over it
+instead of over another counter:
+
+<!-- verified-example: mdtests/a_loop_states_a_running_total_over_its_pass_count.md -->
+```click
+loop {
+    decreases n - i;
+    invariant 0 <= i and i <= n;
+    invariant i == iterations;
+    invariant total == 2 * iterations;
+}
+```
+
+The loop rule binds it per phase: the entry checks the invariants at `0`, the
+head assumes them at a fresh `K` with `0 <= K`, and the back edge checks them
+at `K + 1`. A `continue` is a back edge; a `break` exits during a pass that
+does not count, so the exit's count is the head's `K`. Past the loop the proof
+names that `K` as `loop(i).iterations`, the count the exit facts are stated
+over (`have loop(0).iterations == n`). A nested loop's `iterations` is its own
+count. The checked examples are listed under
+[Loop transitions](../reference/tactics/index.md#loop-transitions).
+
 ### Short-circuit guards
 
 A guard with `&&` or `||` leaves the loop by one path per operand that can end

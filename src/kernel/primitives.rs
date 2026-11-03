@@ -713,25 +713,27 @@ impl Ord for AddressObjectClass {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Bitvector32Term {
-    /// A 32-bit constant at `int32`, the format of every kernel-internal
-    /// constant (indices, counts, masks).
-    Constant(u32),
-    /// A 32-bit constant at `uint32`: a C, C++ or Rust `unsigned` value.
-    /// Its word is `Constant` of the same bits (rule K1,
-    /// [`Bitvector32Term::into_word32`]); it survives only on a value at
-    /// rest, since the 32-bit operators and comparisons read words.
-    UInt32Constant(u32),
-    /// Signed 64-bit constants are kept in the same term arena as the
-    /// original 32-bit terms so equality, substitution, and memory-load
-    /// indexing continue to share one checked representation.
-    Int64Constant(i64),
-    /// Unsigned 64-bit constants retain all 64 bits; interpreting these as a
-    /// signed value would lose the distinction above `i64::MAX`.
-    UInt64Constant(u64),
-    /// Checked wide payload; never truncated into the legacy 32/64-bit carriers.
-    MachineIntegerConstant(MachineIntegerConstant),
+    /// A constant of `format`, its two's-complement bits in the low
+    /// `format` bits of `bits` (`bits <= format`'s mask; every builder masks
+    /// or checks). One node for every format (decision G9,
+    /// `design/machine-integers.md`): `int32` is the format of every
+    /// kernel-internal constant (indices, counts, masks), and a C, C++ or
+    /// Rust value keeps its own. A `uint32` constant's word is the `int32`
+    /// constant of the same bits inside a 32-bit operator or comparison
+    /// ([`Bitvector32Term::into_word32`]). Build it with
+    /// [`Bitvector32Term::constant`], [`Bitvector32Term::uint32_constant`],
+    /// [`Bitvector32Term::int64_constant`],
+    /// [`Bitvector32Term::uint64_constant`] or
+    /// [`Bitvector32Term::machine_constant`]; match it with
+    /// `int32_constant!`, `uint32_constant!`, `bits32_constant!`,
+    /// `int64_constant!`, `uint64_constant!` or `constant_node!`. The derived
+    /// order sorts constants by format, then bits.
+    Constant {
+        format: MachineIntegerType,
+        bits: u128,
+    },
     Variable(Variable),
     /// `left op right`, both operands read at `format`. Signed and unsigned
     /// division, remainder and right shift are told apart by the format, not
@@ -846,6 +848,164 @@ pub enum Bitvector32Term {
         to: MachineIntegerType,
         value: Box<ConditionTerm>,
     },
+}
+
+/// The derived `Debug` spelling of every variant, except that a constant
+/// keeps the spelling of the per-format variant it had before decision G9
+/// (`Constant(7)`, `UInt32Constant(7)`, `Int64Constant(-1)`,
+/// `UInt64Constant(7)`, `MachineIntegerConstant(..)`): a diagnostic that
+/// prints a term with `{:?}` prints what it printed.
+impl std::fmt::Debug for Bitvector32Term {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            int32_constant!(bits) => f
+                .debug_tuple("Constant")
+                .field(&constant_u32(*bits))
+                .finish(),
+            uint32_constant!(bits) => f
+                .debug_tuple("UInt32Constant")
+                .field(&constant_u32(*bits))
+                .finish(),
+            int64_constant!(bits) => f
+                .debug_tuple("Int64Constant")
+                .field(&constant_i64(*bits))
+                .finish(),
+            uint64_constant!(bits) => f
+                .debug_tuple("UInt64Constant")
+                .field(&constant_u64(*bits))
+                .finish(),
+            Self::Constant { format, bits } => f
+                .debug_tuple("MachineIntegerConstant")
+                .field(&MachineIntegerConstant::from_term_bits(
+                    format.format(),
+                    *bits,
+                ))
+                .finish(),
+            Self::Variable(variable) => f.debug_tuple("Variable").field(variable).finish(),
+            Self::Binary {
+                op,
+                format,
+                left,
+                right,
+            } => f
+                .debug_struct("Binary")
+                .field("op", op)
+                .field("format", format)
+                .field("left", left)
+                .field("right", right)
+                .finish(),
+            Self::Unary {
+                format,
+                op,
+                operand,
+            } => f
+                .debug_struct("Unary")
+                .field("format", format)
+                .field("op", op)
+                .field("operand", operand)
+                .finish(),
+            Self::If {
+                condition,
+                then_term,
+                else_term,
+            } => f
+                .debug_struct("If")
+                .field("condition", condition)
+                .field("then_term", then_term)
+                .field("else_term", else_term)
+                .finish(),
+            Self::RangeFold {
+                start,
+                end,
+                initial,
+                accumulator,
+                item,
+                body,
+            } => f
+                .debug_struct("RangeFold")
+                .field("start", start)
+                .field("end", end)
+                .field("initial", initial)
+                .field("accumulator", accumulator)
+                .field("item", item)
+                .field("body", body)
+                .finish(),
+            Self::PureFunctionApplication { name, arguments } => f
+                .debug_struct("PureFunctionApplication")
+                .field("name", name)
+                .field("arguments", arguments)
+                .finish(),
+            Self::ClickFunctionApplication { name, arguments } => f
+                .debug_struct("ClickFunctionApplication")
+                .field("name", name)
+                .field("arguments", arguments)
+                .finish(),
+            Self::AlgebraicMatch { scrutinee, arms } => f
+                .debug_struct("AlgebraicMatch")
+                .field("scrutinee", scrutinee)
+                .field("arms", arms)
+                .finish(),
+            Self::MemoryLoad(memory, pointer, kind) => f
+                .debug_tuple("MemoryLoad")
+                .field(memory)
+                .field(pointer)
+                .field(kind)
+                .finish(),
+            Self::PointerAddress(pointer, class) => f
+                .debug_tuple("PointerAddress")
+                .field(pointer)
+                .field(class)
+                .finish(),
+            Self::IntegerToMachine { value, destination } => f
+                .debug_struct("IntegerToMachine")
+                .field("value", value)
+                .field("destination", destination)
+                .finish(),
+            Self::MachineIntegerCast {
+                value,
+                source,
+                destination,
+            } => f
+                .debug_struct("MachineIntegerCast")
+                .field("value", value)
+                .field("source", source)
+                .field("destination", destination)
+                .finish(),
+            Self::Int64From32(value) => f.debug_tuple("Int64From32").field(value).finish(),
+            Self::UInt64From32(value) => f.debug_tuple("UInt64From32").field(value).finish(),
+            Self::UInt32From64(value) => f.debug_tuple("UInt32From64").field(value).finish(),
+            Self::Int64FromUInt32(value) => f.debug_tuple("Int64FromUInt32").field(value).finish(),
+            Self::UInt64FromInt32(value) => f.debug_tuple("UInt64FromInt32").field(value).finish(),
+            Self::UInt64FromInt64(value) => f.debug_tuple("UInt64FromInt64").field(value).finish(),
+            Self::Float32Negate(value) => f.debug_tuple("Float32Negate").field(value).finish(),
+            Self::Float32Binary {
+                operator,
+                left,
+                right,
+            } => f
+                .debug_struct("Float32Binary")
+                .field("operator", operator)
+                .field("left", left)
+                .field("right", right)
+                .finish(),
+            Self::Float64Negate(value) => f.debug_tuple("Float64Negate").field(value).finish(),
+            Self::Float64Binary {
+                operator,
+                left,
+                right,
+            } => f
+                .debug_struct("Float64Binary")
+                .field("operator", operator)
+                .field("left", left)
+                .field("right", right)
+                .finish(),
+            Self::BoolCast { to, value } => f
+                .debug_struct("BoolCast")
+                .field("to", to)
+                .field("value", value)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -1145,7 +1305,7 @@ impl<'a> ComparisonSide<'a> {
             Self::Value(value) if format.format().bits() == 32 => {
                 std::borrow::Cow::Owned(Bitvector32Term::constant_at32(format, value as u32))
             }
-            Self::Value(value) => std::borrow::Cow::Owned(Bitvector32Term::MachineIntegerConstant(
+            Self::Value(value) => std::borrow::Cow::Owned(Bitvector32Term::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), value)
                     .expect("an identity value lies in its narrow format's range"),
             )),
@@ -1201,10 +1361,8 @@ fn comparison_identity<'a>(
     };
     if bits < 32 {
         let side = |term: &'a Bitvector32Term| match term {
-            Bitvector32Term::MachineIntegerConstant(constant)
-                if constant.format() == format.format() =>
-            {
-                constant
+            native_constant!(constant_format, bits) if *constant_format == format => {
+                MachineIntegerConstant::from_term_bits(format.format(), *bits)
                     .to_i128()
                     .map_or(ComparisonSide::Term(term), ComparisonSide::Value)
             }
@@ -1228,14 +1386,12 @@ fn comparison_identity<'a>(
                 }
             };
             let side = |term: &'a Bitvector32Term| match term {
-                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
-                    if relation == CompareRelation::Equal =>
-                {
-                    let value = i128::from(*value as i32);
+                bits32_constant!(value) if relation == CompareRelation::Equal => {
+                    let value = i128::from(constant_u32(*value) as i32);
                     (low <= value && value <= high).then_some(ComparisonSide::Value(value))
                 }
-                Bitvector32Term::Constant(value) => {
-                    let value = i128::from(*value as i32);
+                int32_constant!(value) => {
+                    let value = i128::from(constant_u32(*value) as i32);
                     (low <= value && value <= high).then_some(ComparisonSide::Value(value))
                 }
                 term => match term.narrow_widening32_operand() {
@@ -1584,6 +1740,120 @@ macro_rules! unary_node {
     };
 }
 pub(crate) use unary_node;
+
+/// The bits a 32-bit constant pattern (`int32_constant!`,
+/// `uint32_constant!`, `bits32_constant!`) bound, as the 32-bit word.
+pub(crate) const fn constant_u32(bits: u128) -> u32 {
+    bits as u32
+}
+
+/// The bits an `int64_constant!` pattern bound, as the `int64` value.
+pub(crate) const fn constant_i64(bits: u128) -> i64 {
+    bits as u64 as i64
+}
+
+/// The bits a `uint64_constant!` pattern bound, as the `uint64` value.
+pub(crate) const fn constant_u64(bits: u128) -> u64 {
+    bits as u64
+}
+
+/// Matches the `int32` constant whose bits match `$bits` (a `u128`
+/// pattern), as `int32_constant!(0)` or `int32_constant!(bits)`; see
+/// [`Bitvector32Term::Constant`].
+macro_rules! int32_constant {
+    ($bits:pat $(,)?) => {
+        $crate::kernel::Bitvector32Term::Constant {
+            format: $crate::kernel::MachineIntegerType::Int32,
+            bits: $bits,
+        }
+    };
+}
+pub(crate) use int32_constant;
+
+/// Matches the `uint32` constant whose bits match `$bits`.
+macro_rules! uint32_constant {
+    ($bits:pat $(,)?) => {
+        $crate::kernel::Bitvector32Term::Constant {
+            format: $crate::kernel::MachineIntegerType::UInt32,
+            bits: $bits,
+        }
+    };
+}
+pub(crate) use uint32_constant;
+
+/// Matches a 32-bit constant of either format whose bits match `$bits`;
+/// `bits32_constant!(f @ bits)` also binds the format to `f`.
+macro_rules! bits32_constant {
+    ($format:ident @ $bits:pat $(,)?) => {
+        $crate::kernel::Bitvector32Term::Constant {
+            format:
+                $format @ ($crate::kernel::MachineIntegerType::Int32
+                | $crate::kernel::MachineIntegerType::UInt32),
+            bits: $bits,
+        }
+    };
+    ($bits:pat $(,)?) => {
+        $crate::kernel::Bitvector32Term::Constant {
+            format: $crate::kernel::MachineIntegerType::Int32
+                | $crate::kernel::MachineIntegerType::UInt32,
+            bits: $bits,
+        }
+    };
+}
+pub(crate) use bits32_constant;
+
+/// Matches the `int64` constant whose bits match `$bits`. The bits are the
+/// value's two's complement in 64 bits; read the value with `as u64 as i64`.
+macro_rules! int64_constant {
+    ($bits:pat $(,)?) => {
+        $crate::kernel::Bitvector32Term::Constant {
+            format: $crate::kernel::MachineIntegerType::Int64,
+            bits: $bits,
+        }
+    };
+}
+pub(crate) use int64_constant;
+
+/// Matches the `uint64` constant whose bits match `$bits`.
+macro_rules! uint64_constant {
+    ($bits:pat $(,)?) => {
+        $crate::kernel::Bitvector32Term::Constant {
+            format: $crate::kernel::MachineIntegerType::UInt64,
+            bits: $bits,
+        }
+    };
+}
+pub(crate) use uint64_constant;
+
+/// Matches a constant of the 8-, 16- or 128-bit formats, the constants that
+/// are not words (a native narrow value or a 128-bit value), binding its
+/// format and bits.
+macro_rules! native_constant {
+    (_, $bits:pat $(,)?) => {
+        $crate::kernel::Bitvector32Term::Constant {
+            format: $crate::kernel::MachineIntegerType::Int8
+                | $crate::kernel::MachineIntegerType::UInt8
+                | $crate::kernel::MachineIntegerType::Int16
+                | $crate::kernel::MachineIntegerType::UInt16
+                | $crate::kernel::MachineIntegerType::Int128
+                | $crate::kernel::MachineIntegerType::UInt128,
+            bits: $bits,
+        }
+    };
+    ($format:ident, $bits:pat $(,)?) => {
+        $crate::kernel::Bitvector32Term::Constant {
+            format:
+                $format @ ($crate::kernel::MachineIntegerType::Int8
+                | $crate::kernel::MachineIntegerType::UInt8
+                | $crate::kernel::MachineIntegerType::Int16
+                | $crate::kernel::MachineIntegerType::UInt16
+                | $crate::kernel::MachineIntegerType::Int128
+                | $crate::kernel::MachineIntegerType::UInt128),
+            bits: $bits,
+        }
+    };
+}
+pub(crate) use native_constant;
 
 /// Matches every two-operand 32-bit [`Bitvector32Term`] operation, binding the operands to `$left`
 /// and `$right`.
@@ -2095,7 +2365,7 @@ impl SubobjectExtent {
     pub(crate) fn constant(start: Pointer, width: u32) -> Self {
         Self {
             start,
-            width: Bitvector32Term::Constant(width),
+            width: Bitvector32Term::constant(width),
         }
     }
 
@@ -2186,7 +2456,7 @@ impl CPointerValue {
         Some(
             SubobjectExtent {
                 start: origin.clone(),
-                width: Bitvector32Term::Constant(0),
+                width: Bitvector32Term::constant(0),
             }
             .coverage_fact(range),
         )
@@ -4191,25 +4461,21 @@ pub(crate) fn rewrite_condition_through_bits(
 ) -> ConditionTerm {
     let carrier = Bitvector32Term::If {
         condition: Box::new(condition.clone()),
-        then_term: Box::new(Bitvector32Term::Constant(1)),
-        else_term: Box::new(Bitvector32Term::Constant(0)),
+        then_term: Box::new(Bitvector32Term::constant(1)),
+        else_term: Box::new(Bitvector32Term::constant(0)),
     };
     match rewrite(&carrier) {
         Bitvector32Term::If {
             condition,
             then_term,
             else_term,
-        } if *then_term == Bitvector32Term::Constant(1)
-            && *else_term == Bitvector32Term::Constant(0) =>
+        } if *then_term == Bitvector32Term::constant(1)
+            && *else_term == Bitvector32Term::constant(0) =>
         {
             *condition
         }
-        Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1) => {
-            ConditionTerm::Constant(true)
-        }
-        Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0) => {
-            ConditionTerm::Constant(false)
-        }
+        bits32_constant!(1) => ConditionTerm::Constant(true),
+        bits32_constant!(0) => ConditionTerm::Constant(false),
         _ => condition.clone(),
     }
 }
@@ -4302,8 +4568,8 @@ impl AlgebraicTerm {
                         // them as it walks any condition.
                         visit(&Bitvector32Term::If {
                             condition: condition.clone(),
-                            then_term: Box::new(Bitvector32Term::Constant(0)),
-                            else_term: Box::new(Bitvector32Term::Constant(0)),
+                            then_term: Box::new(Bitvector32Term::constant(0)),
+                            else_term: Box::new(Bitvector32Term::constant(0)),
                         });
                         pending.push(Node::Algebraic(then_term));
                         pending.push(Node::Algebraic(else_term));
@@ -7193,6 +7459,9 @@ pub enum ExecutionLimit {
     FunctionCalls,
     LoopUnrolls,
     Paths,
+    /// A loop invariant's pass count, `iterations`, read where no loop
+    /// phase binds it.
+    LoopIterationsUnbound,
     UnsupportedIntegerExistentialBody,
     UnsupportedPureFunctionResult(CType),
     /// Stage 5 (`design/machine-integers.md`, decision D2): a `Bool`
@@ -7282,6 +7551,9 @@ impl ExecutionLimit {
             // for. The phrase has to cover both without claiming a counter
             // ran out.
             Self::Paths => "no single evaluation path".to_string(),
+            Self::LoopIterationsUnbound => {
+                "`iterations` outside a loop phase that binds its pass count".to_string()
+            }
             Self::UnsupportedPureFunctionResult(result_type) => {
                 format!("unsupported pure-function result type {result_type:?}")
             }
@@ -11796,7 +12068,7 @@ mod population_authority_spec_tests {
                 .try_compose_with_fact(
                     CResourceFact::Own(
                         CResource::PopulationAuthority(description.clone()),
-                        Box::new(Bitvector32Term::Constant(2)),
+                        Box::new(Bitvector32Term::constant(2)),
                     ),
                     &assumptions,
                 )
@@ -14339,9 +14611,12 @@ pub(super) struct CLValuePath {
 /// semantically identical paths. The empty form allocates nothing, and cloning
 /// a loop path shares its output-sized mapping.
 #[derive(Clone, Debug, Default)]
-pub(super) struct LoopInvariantCorrespondence(
-    pub(super) Option<std::sync::Arc<[(usize, Proposition)]>>,
-);
+pub(super) struct LoopInvariantCorrespondence {
+    pub(super) invariants: Option<std::sync::Arc<[(usize, Proposition)]>>,
+    /// The loop head's pass count, `iterations`, which the path's facts
+    /// state over: spelled `loop(i).iterations` past the loop.
+    pub(super) iterations: Option<IntegerTerm>,
+}
 
 impl PartialEq for LoopInvariantCorrespondence {
     fn eq(&self, _other: &Self) -> bool {

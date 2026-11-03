@@ -16,8 +16,8 @@ fn caller(pointer: &Pointer) -> CState {
 fn caller_with_owned_end(pointer: &Pointer, owned_end: u32, bytes: u32) -> CState {
     let range = CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(owned_end),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(owned_end),
     );
     CState::new()
         .with_population_creation_tracking()
@@ -253,8 +253,8 @@ fn candidate_reader_escrows_owner_until_return() {
         !transfer.caller_resources_after_requirements.satisfies_fact(
             &CResourceFact::own_memory(CMemoryRange::new(
                 pointer,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )),
             &PureFactContext::new()
         )
@@ -265,8 +265,8 @@ fn candidate_reader_escrows_owner_until_return() {
                 block: PointerBlock::Concrete("local:candidate_view:data".to_string()),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
         &PureFactContext::new(),
     ));
@@ -327,8 +327,8 @@ fn candidate_composite_call_lends_primitive_body_and_recovers_head() {
     assert!(plan.ledger.has_active_memory_loans());
     let body_range = CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     );
     assert_eq!(
         plan.ledger.permits_memory_access(&body_range),
@@ -575,8 +575,8 @@ fn candidate_composite_view_is_backed_by_a_covering_owned_composite() {
     for end in [1, 2] {
         let range = CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(end),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(end),
         );
         assert_eq!(
             plan.ledger.permits_memory_access(&range),
@@ -697,13 +697,13 @@ fn candidate_composite_view_is_materialized_from_the_caller_frontier() {
         .expect("the materialized lend records a loan plan");
     let lent = CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     );
     let kept = CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::Constant(1),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(1),
+        Bitvector32Term::constant(2),
     );
     assert_eq!(
         plan.ledger.permits_memory_access(&lent),
@@ -900,8 +900,8 @@ fn candidate_reader_recovers_owner_for_following_write() {
     assert!(state.resources().satisfies_fact(
         &CResourceFact::own_memory(CMemoryRange::new(
             pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
         &PureFactContext::new(),
     ));
@@ -929,8 +929,8 @@ fn candidate_direct_reader_recovers_owner_for_following_write() {
     assert!(state.resources().satisfies_fact(
         &CResourceFact::own_memory(CMemoryRange::new(
             pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
         &PureFactContext::new(),
     ));
@@ -1189,7 +1189,7 @@ fn candidate_repeated_token_requirement_reports_the_demanded_quantity() {
         vec![requirement("first"), requirement("second")],
         Vec::new(),
     );
-    let token = CValue::Int32(Bitvector32Term::Constant(5));
+    let token = CValue::Int32(Bitvector32Term::constant(5));
     let caller = CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
         CResourceFact::own_token("can_complete".to_string(), vec![token.clone()]),
     ));
@@ -1210,7 +1210,7 @@ fn candidate_repeated_token_requirement_reports_the_demanded_quantity() {
                     resource
                 }),
                 ..
-            }] if resource.owned_quantity_term() == Some(&Bitvector32Term::Constant(2))
+            }] if resource.owned_quantity_term() == Some(&Bitvector32Term::constant(2))
         ),
         "the refusal names the whole demand: {paths:?}"
     );
@@ -1502,8 +1502,8 @@ fn candidate_nested_reader_reborrows_and_restores_outer_view_binding() {
     assert!(resources.satisfies_fact(
         &CResourceFact::view_memory(CMemoryRange::new(
             pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
         &PureFactContext::new(),
     ));
@@ -1553,8 +1553,8 @@ fn candidate_nested_reader_body_call_reborrows_and_recovers_owner() {
     assert!(state.resources().satisfies_fact(
         &CResourceFact::own_memory(CMemoryRange::new(
             pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
         &PureFactContext::new(),
     ));
@@ -1604,8 +1604,8 @@ fn candidate_nested_call_preserves_outer_view_for_wider_output() {
     .expect("inner transfer should be accepted");
     let output = CResourceFact::view_memory(CMemoryRange::new(
         pointer,
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(2),
     ));
     let (resources, ledger, participant, bindings, _loan_evidence) =
         recover_candidate_stable_view_resources(
@@ -1683,13 +1683,13 @@ fn recover_with_extra_returned_view(
     .expect("candidate transfer should be accepted");
     let owner = CResourceFact::own_memory(CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::Constant(1),
-        Bitvector32Term::Constant(3),
+        Bitvector32Term::constant(1),
+        Bitvector32Term::constant(3),
     ));
     let returned = CResourceFact::view_memory(CMemoryRange::new(
         pointer,
-        Bitvector32Term::Constant(1),
-        Bitvector32Term::Constant(3),
+        Bitvector32Term::constant(1),
+        Bitvector32Term::constant(3),
     ));
     // Mirror the output delta recorded by evaluate_contract_return_resources.
     transfer.candidate_output_views.push(returned.clone());
@@ -1725,8 +1725,8 @@ fn candidate_accepts_a_returned_view_projected_from_a_returned_owner() {
         .expect("a checked projection of the returned owner has provenance");
     let projected = CResourceFact::view_memory(CMemoryRange::new(
         pointer(),
-        Bitvector32Term::Constant(1),
-        Bitvector32Term::Constant(3),
+        Bitvector32Term::constant(1),
+        Bitvector32Term::constant(3),
     ));
     assert!(resources.satisfies_fact(&projected, &PureFactContext::new()));
 }
@@ -1782,8 +1782,8 @@ fn recover_with_a_carried_view_of_another_block(
     .expect("candidate transfer should be accepted");
     let carried = CResourceFact::view_memory(CMemoryRange::new(
         other,
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(2),
     ));
     // Mirror the output delta recorded by evaluate_contract_return_resources.
     transfer.candidate_output_views.push(carried.clone());
@@ -1812,8 +1812,8 @@ fn candidate_accepts_a_carried_view_of_read_only_storage() {
             block: PointerBlock::Concrete("global:candidate_table#file-static:t.c".to_string()),
             offset: PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(2),
     ));
     assert!(resources.satisfies_fact(&carried, &PureFactContext::new()));
 }
@@ -1829,8 +1829,8 @@ fn candidate_rejects_a_carried_view_of_mutable_storage() {
             block: PointerBlock::Concrete("global:candidate_table#file-static:t.c".to_string()),
             offset: PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(2),
     ));
     assert!(
         matches!(&error, CRuntimeError::UnbackedReturnedView { view } if **view == carried),
@@ -1856,8 +1856,8 @@ fn symbolic_bounded_range(
 
 fn constant_bounded_range(start: i32, end: i32, element_width: u32) -> CMemoryRange {
     symbolic_bounded_range(
-        Bitvector32Term::Constant(start as u32),
-        Bitvector32Term::Constant(end as u32),
+        Bitvector32Term::constant(start as u32),
+        Bitvector32Term::constant(end as u32),
         element_width,
     )
 }
@@ -1927,8 +1927,8 @@ fn candidate_keeps_separate_ranges_below_a_base_separate() {
 #[test]
 fn candidate_proves_adjacent_symbolic_ranges_separate() {
     let count = Bitvector32Term::Variable(Variable(910));
-    let boundary = Bitvector32Term::add(count.clone(), Bitvector32Term::Constant(u32::MAX));
-    let viewed = symbolic_bounded_range(Bitvector32Term::Constant(0), boundary.clone(), 4);
+    let boundary = Bitvector32Term::add(count.clone(), Bitvector32Term::constant(u32::MAX));
+    let viewed = symbolic_bounded_range(Bitvector32Term::constant(0), boundary.clone(), 4);
     let mutable = symbolic_bounded_range(boundary, count, 4);
     assert_eq!(
         candidate_memory_ranges_relation_by_bounds(&mutable, &viewed, &PureFactContext::new()),
@@ -1960,13 +1960,13 @@ fn candidate_leaves_unrelated_symbolic_ranges_unproved() {
         CandidateMemoryRangeRelation::SeparationUnproved
     );
     let overlapping = symbolic_bounded_range(
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(4),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(4),
         4,
     );
     let inner = symbolic_bounded_range(
-        Bitvector32Term::Constant(1),
-        Bitvector32Term::Constant(2),
+        Bitvector32Term::constant(1),
+        Bitvector32Term::constant(2),
         4,
     );
     assert_eq!(
@@ -2142,8 +2142,8 @@ fn candidate_allows_a_mutable_effect_reserved_from_another_owned_occurrence() {
     let owned_range = |pointer: &Pointer| {
         CResourceFact::own(CResource::Memory(CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )))
     };
     let caller = CState::new()
@@ -2456,8 +2456,8 @@ fn candidate_early_return_closes_call_scope() {
     assert!(state.resources().satisfies_fact(
         &CResourceFact::own_memory(CMemoryRange::new(
             pointer,
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
         &PureFactContext::new(),
     ));
@@ -2561,7 +2561,7 @@ fn nonnegative_quantity(quantity: Variable) -> PureFactContext {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
             left: Box::new(Bitvector32Term::Variable(quantity)),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         true,
     )
@@ -2609,8 +2609,8 @@ fn candidate_symbolic_token_population_consume_plans_beside_a_lent_view() {
     assert_eq!(plan.stable_views().len(), 1);
     let viewed = CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
     );
     assert_eq!(
         plan.ledger.permits_memory_access(&viewed),

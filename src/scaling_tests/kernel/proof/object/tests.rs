@@ -30,9 +30,9 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
     let checks = [0, 1].map(|value| {
         CLoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(value))),
+                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(value))),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(value))),
+                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(value))),
             },
             None,
             None,
@@ -60,7 +60,16 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
         let ((body, scope), opening_work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 frontier
-                    .open_invariant_body(&entry, &entry, &checks, &[], &[], &[], |_, _| ())
+                    .open_invariant_body(
+                        &entry,
+                        &entry,
+                        &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
+                        &checks,
+                        &[],
+                        &[],
+                        &[],
+                        |_, _| (),
+                    )
                     .unwrap()
             });
         assert!(
@@ -174,9 +183,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
     let checks = vec![
         CLoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
+                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
+                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
             },
             None,
             None,
@@ -232,6 +241,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
             .open_invariant_body(
                 &entry.clone(),
                 &entry.clone(),
+                &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                 &checks,
                 &[],
                 &[],
@@ -253,9 +263,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         );
         let changed_checks = vec![CLoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(1))),
+                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(1))),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(1))),
+                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(1))),
             },
             None,
             None,
@@ -460,7 +470,7 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
                         } else {
                             Variable(700_000 + index)
                         }),
-                        Bitvector32Term::Constant(1000 + index as u32),
+                        Bitvector32Term::constant(1000 + index as u32),
                     ),
                     true,
                 )

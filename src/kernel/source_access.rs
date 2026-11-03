@@ -363,8 +363,8 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::Constant(0)),
-                        right: Box::new(Bitvector32Term::Constant(0))
+                        left: Box::new(Bitvector32Term::constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0))
                     },
                     true
                 ))

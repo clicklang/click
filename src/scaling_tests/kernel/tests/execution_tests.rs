@@ -29,7 +29,7 @@ fn verified_loop_rule_selection_is_flat_in_unrelated_ambient_facts() {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(u64::from(500_000 + index))),
-                    Bitvector32Term::Constant(index),
+                    Bitvector32Term::constant(index),
                 ),
                 true,
             );
@@ -85,8 +85,14 @@ fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts()
             }
             let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
             let (goals, work) = crate::instrumentation::measure_deterministic_work(|| {
-                c_loop_invariant_obligations_at_back_edge(&state, &state, &checks, &assumptions)
-                    .expect("all explicit members lower")
+                c_loop_invariant_obligations_at_back_edge(
+                    &state,
+                    &state,
+                    &checks,
+                    &IntegerTerm::var(Variable(9_999)),
+                    &assumptions,
+                )
+                .expect("all explicit members lower")
             });
             let entries = crate::kernel::reasoning::path_facts::context_rebuild_entries() - before;
             assert_eq!(goals.len(), size);
@@ -189,7 +195,7 @@ fn statement_theorems_do_not_list_the_context_they_executed_under() {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(1_910_000 + u64::from(index))),
-                    Bitvector32Term::Constant(index),
+                    Bitvector32Term::constant(index),
                 ),
                 true,
             );

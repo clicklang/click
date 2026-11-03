@@ -33,12 +33,12 @@ fn repeated_atomic_reduction_does_not_rebuild_its_selected_facts() {
 fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
     let value = Bitvector32Term::Variable(Variable(786_001));
     let wide_guard = Proposition::ConditionIs(
-        ConditionTerm::uint64_less_than(Bitvector32Term::UInt64Constant(0), value.clone()),
+        ConditionTerm::uint64_less_than(Bitvector32Term::uint64_constant(0), value.clone()),
         true,
     );
     let wide_goal = Proposition::ConditionIs(
         ConditionTerm::uint64_less_than(
-            Bitvector32Term::uint64_subtract(value.clone(), Bitvector32Term::UInt64Constant(1)),
+            Bitvector32Term::uint64_subtract(value.clone(), Bitvector32Term::uint64_constant(1)),
             value.clone(),
         ),
         true,
@@ -57,7 +57,7 @@ fn repeated_unsigned_and_integer_reductions_reuse_selected_evidence() {
                 Proposition::ConditionIs(
                     ConditionTerm::uint64_less_equal(
                         value.clone(),
-                        Bitvector32Term::UInt64Constant(1000),
+                        Bitvector32Term::uint64_constant(1000),
                     ),
                     true,
                 ),

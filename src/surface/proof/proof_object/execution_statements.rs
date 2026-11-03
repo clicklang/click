@@ -343,6 +343,18 @@ impl<'a> Proof<'a> {
                 &execution.presentation.recorded_snapshots,
             );
         }
+        // The pass's own count, `iterations`.
+        if let Some(crate::kernel::IntegerTerm::Variable(variable)) = self
+            .execution_context()
+            .and_then(|context| context.constants.invariant_body_context.as_deref())
+            .and_then(|bundle| {
+                bundle.iterations.as_ref().filter(|_| {
+                    !crate::surface::loop_iterations_hidden_by(&bundle.iteration_entry_state)
+                })
+            })
+        {
+            labels.integer_source_name(*variable, crate::surface::LOOP_ITERATIONS_NAME.to_string());
+        }
         let mut lowered = crate::surface::proof_diagnostics::render::render_proposition_labeled(
             goal,
             &mut labels,
@@ -1877,6 +1889,10 @@ impl<'a> Proof<'a> {
             .open_invariant_body(
                 &bundle.loop_entry_state,
                 &bundle.iteration_entry_state,
+                bundle
+                    .iterations
+                    .as_ref()
+                    .ok_or_else(|| self.step_error("loop invariant bundle lost its pass count"))?,
                 &bundle.checks,
                 &bundle.ranking_measures,
                 &bundle.binders,
@@ -1951,6 +1967,11 @@ impl<'a> Proof<'a> {
                 depth: 0,
                 split_branches: Vec::new(),
             }),
+        };
+        // The bundle's proof reads the head's pass count as `iterations`.
+        let root = match &bundle.iterations {
+            Some(count) => root.with_loop_iterations(count, &bundle.iteration_entry_state),
+            None => root,
         };
         if let Some(parent_lineage) = self.trace_lineage(self.claim_label()) {
             // Diagnostics cross the scope boundary; certificates remain
@@ -2106,10 +2127,12 @@ impl<'a> Proof<'a> {
 
     /// Checks the heap, resource, and counted-population components at this
     /// loop-state join using the Proof-owned state and facts.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::surface::proof) fn check_loop_state_join(
         &self,
         loop_entry_state: &CState,
         loop_head_state: &CState,
+        head_iterations: &crate::kernel::IntegerTerm,
         condition: &CExpression,
         invariant_checks: &[CLoopInvariantCheck],
         binders: &[crate::kernel::CLoopBinder],
@@ -2157,6 +2180,7 @@ impl<'a> Proof<'a> {
             &back_edge_state,
             loop_entry_state,
             invariant_checks,
+            head_iterations,
             &assumptions,
         )
         .map_err(|message| self.step_error(format!("loop invariant classification: {message}")))?;
@@ -2198,6 +2222,7 @@ impl<'a> Proof<'a> {
         &self,
         loop_entry_state: &CState,
         loop_head_state: &CState,
+        head_iterations: &crate::kernel::IntegerTerm,
         condition: &CExpression,
         invariant_checks: &[CLoopInvariantCheck],
         ranking_measures: &[crate::kernel::CRankingComponent],
@@ -2210,6 +2235,7 @@ impl<'a> Proof<'a> {
         self.check_loop_state_join(
             loop_entry_state,
             loop_head_state,
+            head_iterations,
             condition,
             invariant_checks,
             binders,

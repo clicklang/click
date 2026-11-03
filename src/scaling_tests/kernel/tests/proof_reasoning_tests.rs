@@ -16,11 +16,11 @@ fn nested_solve_derivations_keep_rule_temporaries_off_the_recursive_stack() {
                 let variable = Variable(98_000);
                 let value = Bitvector32Term::Variable(variable);
                 let positive = Proposition::ConditionIs(
-                    ConditionTerm::signed_less_than(Bitvector32Term::Constant(0), value.clone()),
+                    ConditionTerm::signed_less_than(Bitvector32Term::constant(0), value.clone()),
                     true,
                 );
                 let nonnegative = Proposition::ConditionIs(
-                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), value),
+                    ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), value),
                     true,
                 );
                 // Keep real quantified/atomic work below the connective spine.
@@ -35,8 +35,8 @@ fn nested_solve_derivations_keep_rule_temporaries_off_the_recursive_stack() {
                 };
                 let truth = Proposition::ConditionIs(
                     ConditionTerm::equal(
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
+                        Bitvector32Term::constant(0),
                     ),
                     true,
                 );
@@ -244,13 +244,13 @@ fn exact_contradiction_lookup_scales_near_linearly() {
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::equal(
                         Bitvector32Term::Variable(Variable(100_000 + index as u64)),
-                        Bitvector32Term::Constant(index as u32),
+                        Bitvector32Term::constant(index as u32),
                     ),
                     true,
                 );
             }
             let contradiction_left = Bitvector32Term::Variable(Variable(200_000));
-            let contradiction_right = Bitvector32Term::Constant(7);
+            let contradiction_right = Bitvector32Term::constant(7);
             assumptions = assumptions
                 .assume_condition(
                     ConditionTerm::equal(contradiction_left.clone(), contradiction_right.clone()),
@@ -280,14 +280,14 @@ fn known_scalar_queries_have_bounded_work_beside_growing_classes() {
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
         let var = |i| Bitvector32Term::Variable(Variable(991_000 + i));
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_condition(ConditionTerm::equal(var(i), var(i + 1)), true);
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
                     Bitvector32Term::Variable(Variable(992_000 + i)),
-                    Bitvector32Term::Constant(i as u32),
+                    Bitvector32Term::constant(i as u32),
                 ),
                 true,
             );
@@ -324,7 +324,7 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
             // facts that mention the queried terms without pinning them.
             assumptions = assumptions
                 .assume_condition(
-                    ConditionTerm::equal(other.clone(), Bitvector32Term::Constant(index)),
+                    ConditionTerm::equal(other.clone(), Bitvector32Term::constant(index)),
                     true,
                 )
                 .assume_condition(
@@ -335,14 +335,14 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
         }
         assumptions = assumptions
             .assume_condition(
-                ConditionTerm::equal(pinned.clone(), Bitvector32Term::Constant(7)),
+                ConditionTerm::equal(pinned.clone(), Bitvector32Term::constant(7)),
                 true,
             )
             .assume_condition(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::Constant(-3_i32 as u32)),
+                    left: Box::new(Bitvector32Term::constant(-3_i32 as u32)),
                     right: Box::new(reversed.clone()),
                 },
                 true,
@@ -352,7 +352,7 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
                     left: Box::new(wide.clone()),
-                    right: Box::new(Bitvector32Term::Int64Constant(1 << 40)),
+                    right: Box::new(Bitvector32Term::int64_constant(1 << 40)),
                 },
                 true,
             );
@@ -370,7 +370,7 @@ fn exact_signed_constant_is_a_keyed_lookup_among_unrelated_facts() {
         samples.push((size, work));
         // Withdrawing the pinning fact withdraws its entry.
         let forgotten = assumptions.without_exact_fact(&Proposition::ConditionIs(
-            ConditionTerm::equal(pinned.clone(), Bitvector32Term::Constant(7)),
+            ConditionTerm::equal(pinned.clone(), Bitvector32Term::constant(7)),
             true,
         ));
         assert_eq!(exact_signed_constant(&pinned, &forgotten), None);
@@ -434,7 +434,7 @@ fn structured_obligation_emission_scales_flat_in_unrelated_facts() {
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::signed_less_equal(
                         Bitvector32Term::Variable(Variable(96_100 + index as u64)),
-                        Bitvector32Term::Constant(1_000),
+                        Bitvector32Term::constant(1_000),
                     ),
                     true,
                 );
@@ -443,14 +443,14 @@ fn structured_obligation_emission_scales_flat_in_unrelated_facts() {
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::signed_less_than(
                         Bitvector32Term::Variable(Variable(96_001)),
-                        Bitvector32Term::Constant(10),
+                        Bitvector32Term::constant(10),
                     ),
                     true,
                 )),
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::signed_less_than(
                         Bitvector32Term::Variable(Variable(96_002)),
-                        Bitvector32Term::Constant(10),
+                        Bitvector32Term::constant(10),
                     ),
                     true,
                 )),
@@ -490,7 +490,7 @@ fn order_path_decision_scales_flat_in_unrelated_propositions() {
             for index in 0..size {
                 let guard = ConditionTerm::signed_less_than(
                     Bitvector32Term::Variable(Variable(97_200 + index as u64)),
-                    Bitvector32Term::Constant(10),
+                    Bitvector32Term::constant(10),
                 );
                 assumptions = assumptions
                     .assume_condition(guard.clone(), true)
@@ -648,7 +648,7 @@ fn loadability_same_base_extent_graph_queries_scale_without_fact_index() {
     let memory = CMemory::new();
     let base = Pointer::symbolic(Variable(90_310));
     let var = |id| Bitvector32Term::Variable(Variable(id));
-    let bytes = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+    let bytes = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
     for size in [16u64, 64, 256, 512] {
         let fact = Proposition::CMemoryLoadable {
             memory: memory.clone(),
@@ -725,7 +725,7 @@ fn fixed_overflow_decision_scales_near_linearly_with_unrelated_order_facts() {
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::signed_less_equal(
                         Bitvector32Term::Variable(Variable(94_100 + index as u64)),
-                        Bitvector32Term::Constant(1_000),
+                        Bitvector32Term::constant(1_000),
                     ),
                     true,
                 );
@@ -735,12 +735,12 @@ fn fixed_overflow_decision_scales_near_linearly_with_unrelated_order_facts() {
                     .assume_condition(
                         ConditionTerm::signed_greater_equal(
                             term.clone(),
-                            Bitvector32Term::Constant(0),
+                            Bitvector32Term::constant(0),
                         ),
                         true,
                     )
                     .assume_condition(
-                        ConditionTerm::signed_less_equal(term, Bitvector32Term::Constant(1_000)),
+                        ConditionTerm::signed_less_equal(term, Bitvector32Term::constant(1_000)),
                         true,
                     );
             }
@@ -768,11 +768,11 @@ fn increment_chain_add_work_does_not_grow_with_earlier_increments() {
     let base = Bitvector32Term::Variable(Variable(95_001));
     let bounded = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(base.clone(), Bitvector32Term::Constant(0)),
+            ConditionTerm::signed_greater_equal(base.clone(), Bitvector32Term::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(base.clone(), Bitvector32Term::Constant(1_000_000)),
+            ConditionTerm::signed_less_equal(base.clone(), Bitvector32Term::constant(1_000_000)),
             true,
         );
     let state = CState::new();
@@ -844,7 +844,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                     Box::new(Proposition::And(
                         Box::new(Proposition::ConditionIs(
                             ConditionTerm::signed_less_equal(
-                                Bitvector32Term::Constant(0),
+                                Bitvector32Term::constant(0),
                                 Bitvector32Term::Variable(fact_index),
                             ),
                             true,
@@ -866,7 +866,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                                 ))),
                                 crate::kernel::LoadKind::Int32,
                             ),
-                            Bitvector32Term::Constant(7),
+                            Bitvector32Term::constant(7),
                         ),
                         true,
                     )),
@@ -884,7 +884,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                     Proposition::Implies(
                         Box::new(Proposition::ConditionIs(
                             ConditionTerm::signed_less_equal(
-                                Bitvector32Term::Constant(0),
+                                Bitvector32Term::constant(0),
                                 Bitvector32Term::Variable(unrelated_index),
                             ),
                             true,
@@ -898,7 +898,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                                     )),
                                     crate::kernel::LoadKind::Int32,
                                 ),
-                                Bitvector32Term::Constant(9),
+                                Bitvector32Term::constant(9),
                             ),
                             true,
                         )),
@@ -908,7 +908,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
             assumptions = assumptions
                 .assume_condition(
                     ConditionTerm::signed_less_equal(
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                         Bitvector32Term::Variable(target_index),
                     ),
                     true,
@@ -923,7 +923,7 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
             let target = Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: data.offset_by_int32_elements(Bitvector32Term::Variable(target_index)),
-                bytes: Bitvector32Term::Constant(4),
+                bytes: Bitvector32Term::constant(4),
                 wide: false,
             };
             let (proved, work) =
@@ -998,7 +998,7 @@ fn theory_capable_order_endpoints_scale_near_linearly() {
                     crate::kernel::LoadKind::Int32,
                 );
                 assumptions = assumptions.assume_condition(
-                    ConditionTerm::signed_less_than(load, Bitvector32Term::Constant(index as u32)),
+                    ConditionTerm::signed_less_than(load, Bitvector32Term::constant(index as u32)),
                     true,
                 );
             }
@@ -1121,7 +1121,7 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
     let goal = Proposition::ConditionIs(
         ConditionTerm::equal(
             Bitvector32Term::Variable(Variable(99_000)),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(1),
         ),
         true,
     );
@@ -1129,7 +1129,7 @@ fn guarded_implication_lookup_is_keyed_by_consequent_operands() {
         Proposition::ConditionIs(
             ConditionTerm::signed_less_than(
                 Bitvector32Term::Variable(Variable(97_900)),
-                Bitvector32Term::Constant(value),
+                Bitvector32Term::constant(value),
             ),
             true,
         )
@@ -1171,14 +1171,14 @@ fn snapshot_substitution_of_an_absent_variable_is_memoized() {
         crate::kernel::reasoning::substitute_bitvector_variable_in_memory(
             &memory,
             absent,
-            &Bitvector32Term::Constant(1),
+            &Bitvector32Term::constant(1),
         )
     });
     let (_, second) = crate::instrumentation::measure_deterministic_work(|| {
         crate::kernel::reasoning::substitute_bitvector_variable_in_memory(
             &memory,
             absent,
-            &Bitvector32Term::Constant(2),
+            &Bitvector32Term::constant(2),
         )
     });
     assert!(
@@ -1197,7 +1197,7 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(x.clone()),
-            right: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(Bitvector32Term::constant(1)),
         },
         true,
     ));
@@ -1211,18 +1211,18 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
         crate::kernel::clear_integer_bridge_memo();
         let mut facts = PureFactContext::new()
             .assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::uint64_equal(x.clone(), Bitvector32Term::UInt64Constant(u64::MAX)),
+                ConditionTerm::uint64_equal(x.clone(), Bitvector32Term::uint64_constant(u64::MAX)),
                 true,
             ))
             .assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::uint64_equal(y.clone(), Bitvector32Term::UInt64Constant(2)),
+                ConditionTerm::uint64_equal(y.clone(), Bitvector32Term::uint64_constant(2)),
                 true,
             ));
         for index in 0..size {
             facts = facts.assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::uint64_equal(
                     Bitvector32Term::Variable(Variable(991_000 + index)),
-                    Bitvector32Term::UInt64Constant(index),
+                    Bitvector32Term::uint64_constant(index),
                 ),
                 true,
             ));
@@ -1250,28 +1250,28 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
             ),
             (Bitvector32Term::uint64_bitwise_not(x.clone()), Some(0)),
             (
-                Bitvector32Term::uint64_shift_left(x.clone(), Bitvector32Term::Constant(63)),
+                Bitvector32Term::uint64_shift_left(x.clone(), Bitvector32Term::constant(63)),
                 Some(1 << 63),
             ),
             (
                 Bitvector32Term::uint64_logical_shift_right(
                     x.clone(),
-                    Bitvector32Term::Constant(63),
+                    Bitvector32Term::constant(63),
                 ),
                 Some(1),
             ),
             (
-                Bitvector32Term::uint64_divide(x.clone(), Bitvector32Term::UInt64Constant(0)),
+                Bitvector32Term::uint64_divide(x.clone(), Bitvector32Term::uint64_constant(0)),
                 None,
             ),
             (
-                Bitvector32Term::uint64_remainder(x.clone(), Bitvector32Term::UInt64Constant(0)),
+                Bitvector32Term::uint64_remainder(x.clone(), Bitvector32Term::uint64_constant(0)),
                 None,
             ),
             (
                 Bitvector32Term::uint64_logical_shift_right(
                     x.clone(),
-                    Bitvector32Term::Constant(64),
+                    Bitvector32Term::constant(64),
                 ),
                 None,
             ),
@@ -1297,7 +1297,7 @@ fn uint64_arithmetic_constant_queries_ignore_unrelated_context() {
 fn wide_constant_arithmetic_work_scales_with_selected_expression() {
     let variable = Bitvector32Term::Variable(Variable(993_000));
     let facts = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::uint64_equal(variable.clone(), Bitvector32Term::UInt64Constant(9)),
+        ConditionTerm::uint64_equal(variable.clone(), Bitvector32Term::uint64_constant(9)),
         true,
     ));
     let mut prior = None;
@@ -1308,7 +1308,7 @@ fn wide_constant_arithmetic_work_scales_with_selected_expression() {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Divide,
                 left: Box::new(expression),
-                right: Box::new(Bitvector32Term::UInt64Constant(1)),
+                right: Box::new(Bitvector32Term::uint64_constant(1)),
             };
         }
         let (value, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1326,7 +1326,7 @@ fn wide_constant_arithmetic_work_scales_with_selected_expression() {
 fn pointer_association_selected_guard_work_ignores_ambient_facts() {
     let i = Bitvector32Term::Variable(Variable(198201));
     let defined = Proposition::ConditionIs(
-        ConditionTerm::signed_add_overflows(i.clone(), Bitvector32Term::Constant(4)),
+        ConditionTerm::signed_add_overflows(i.clone(), Bitvector32Term::constant(4)),
         false,
     );
     let goal = Proposition::ConditionIs(
@@ -1336,7 +1336,7 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
                 Box::new(PointerOffsetTerm::Constant(4)),
             ),
             PointerOffsetTerm::scale_int32(
-                Bitvector32Term::add(i, Bitvector32Term::Constant(4)),
+                Bitvector32Term::add(i, Bitvector32Term::constant(4)),
                 1,
             ),
         ),
@@ -1349,7 +1349,7 @@ fn pointer_association_selected_guard_work_ignores_ambient_facts() {
             Proposition::ConditionIs(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(199000 + n)),
-                    Bitvector32Term::Constant(n as u32),
+                    Bitvector32Term::constant(n as u32),
                 ),
                 true,
             )
@@ -1386,33 +1386,33 @@ fn native_loadability_window_query_work_ignores_unrelated_views() {
             context = context.assume_proposition(Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: root.offset_by_bytes(4 * (index + 1)),
-                bytes: Bitvector32Term::UInt64Constant(16),
+                bytes: Bitvector32Term::uint64_constant(16),
                 wide: true,
             });
         }
         context = context.assume_proposition(Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: root.clone(),
-            bytes: Bitvector32Term::UInt64Constant(16),
+            bytes: Bitvector32Term::uint64_constant(16),
             wide: true,
         });
         // Construct the address index once before measuring hot queries.
         assert!(context.proves_native_memory_loadable(
             &memory,
             &root,
-            &Bitvector32Term::UInt64Constant(16)
+            &Bitvector32Term::uint64_constant(16)
         ));
         let (answers, work) = crate::instrumentation::measure_deterministic_work(|| {
             (
                 context.proves_native_memory_loadable(
                     &memory,
                     &target,
-                    &Bitvector32Term::UInt64Constant(15),
+                    &Bitvector32Term::uint64_constant(15),
                 ),
                 context.proves_native_memory_loadable(
                     &memory,
                     &target,
-                    &Bitvector32Term::UInt64Constant(16),
+                    &Bitvector32Term::uint64_constant(16),
                 ),
             )
         });
@@ -1440,7 +1440,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
             context = context.assume_proposition(Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: base.offset_by_bytes(4 * (index + 1)),
-                bytes: Bitvector32Term::UInt64Constant(16),
+                bytes: Bitvector32Term::uint64_constant(16),
                 wide: true,
             });
         }
@@ -1448,13 +1448,13 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
             .assume_proposition(Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: base.clone(),
-                bytes: Bitvector32Term::UInt64Constant(16),
+                bytes: Bitvector32Term::uint64_constant(16),
                 wide: true,
             })
             .assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::uint64_less_equal(
                     requested.clone(),
-                    Bitvector32Term::UInt64Constant(16),
+                    Bitvector32Term::uint64_constant(16),
                 ),
                 true,
             ));
@@ -1464,7 +1464,7 @@ fn native_loadability_prefix_coverage_ignores_unrelated_addresses() {
                 context.proves_native_memory_loadable(
                     &memory,
                     &base,
-                    &Bitvector32Term::UInt64Constant(17),
+                    &Bitvector32Term::uint64_constant(17),
                 ),
             )
         });
@@ -1495,14 +1495,14 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
                     block: base.block.clone(),
                     offset: PointerOffsetTerm::Constant(4 * (index + 1)),
                 },
-                bytes: Bitvector32Term::UInt64Constant(8),
+                bytes: Bitvector32Term::uint64_constant(8),
                 wide: true,
             });
         }
         context = context.assume_proposition(Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: Bitvector32Term::UInt64Constant(8),
+            bytes: Bitvector32Term::uint64_constant(8),
             wide: true,
         });
         // Index construction is setup work. Repeated exact-range queries must
@@ -1510,13 +1510,13 @@ fn native_loadability_queries_do_not_visit_unrelated_addresses() {
         assert!(context.proves_native_memory_loadable(
             &memory,
             &base,
-            &Bitvector32Term::UInt64Constant(8)
+            &Bitvector32Term::uint64_constant(8)
         ));
         let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.proves_native_memory_loadable(
                 &memory,
                 &base,
-                &Bitvector32Term::UInt64Constant(9),
+                &Bitvector32Term::uint64_constant(9),
             )
         });
         assert!(!proved);
@@ -2021,13 +2021,13 @@ fn direct_compound_interval_ignores_unrelated_facts() {
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::Constant(5)),
+                ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::constant(5)),
                 true,
             )
             .assume_condition(
                 ConditionTerm::signed_greater_than(
                     x.clone(),
-                    Bitvector32Term::Constant(i32::MIN as u32),
+                    Bitvector32Term::constant(i32::MIN as u32),
                 ),
                 true,
             );
@@ -2035,7 +2035,7 @@ fn direct_compound_interval_ignores_unrelated_facts() {
             facts = facts.assume_condition(
                 ConditionTerm::signed_less_than(
                     variable(100 + index),
-                    Bitvector32Term::Constant(1000),
+                    Bitvector32Term::constant(1000),
                 ),
                 true,
             );

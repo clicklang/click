@@ -3083,6 +3083,12 @@ fn execute_step_from_frontier_position_selecting_path(
             loop_index,
         )?;
     }
+    if let (Some(loop_index), Some(iterations)) = (loop_index, &transition.loop_iterations) {
+        execution
+            .presentation
+            .recorded_snapshots
+            .record_loop_iterations(loop_index, iterations);
+    }
 
     execution
         .core

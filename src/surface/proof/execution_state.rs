@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{constant_u32, int32_constant};
 #[cfg(test)]
 thread_local! {
     static SURFACE_LEAF_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -753,10 +754,7 @@ fn match_arm_selection(
                 arms: selector_arms,
             },
         operator: ComparisonOperator::Equal,
-        right:
-            ContractExpression::CFragment(CExpression::Value(CValue::Int32(Bitvector32Term::Constant(
-                1,
-            )))),
+        right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(int32_constant!(1,)))),
     } = condition
     else {
         return None;
@@ -769,7 +767,7 @@ fn match_arm_selection(
         .zip(selector_arms)
         .map(|(arm, selector)| {
             let ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(value),
+                int32_constant!(value),
             ))) = &selector.body
             else {
                 return None;
@@ -777,8 +775,8 @@ fn match_arm_selection(
             (arm.type_name == selector.type_name
                 && arm.variant == selector.variant
                 && arm.bindings == selector.bindings
-                && *value <= 1)
-                .then_some(*value == 1)
+                && constant_u32(*value) <= 1)
+                .then_some(constant_u32(*value) == 1)
         })
         .collect::<Option<Vec<_>>>()?;
     (selection.iter().any(|selected| *selected) && selection.iter().any(|selected| !selected))

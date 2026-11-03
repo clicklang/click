@@ -1382,7 +1382,10 @@ fn parse_directive(
     };
     let directive = directive.trim_start();
     if let Some(rest) = directive.strip_prefix("include")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let rest = rest.trim_start();
         let Some(rest) = rest.strip_prefix('"') else {
@@ -1430,7 +1433,10 @@ fn parse_directive(
         return Ok(Some(SourceDirective::Include(include.to_string())));
     }
     if let Some(rest) = directive.strip_prefix("ifndef")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let (name, trailing) = split_identifier(rest.trim_start());
         if let Some(name) = name.filter(|_| trailing_comments_only(trailing)) {
@@ -1445,7 +1451,10 @@ fn parse_directive(
         ));
     }
     if let Some(rest) = directive.strip_prefix("ifdef")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let (name, trailing) = split_identifier(rest.trim_start());
         if let Some(name) = name.filter(|_| trailing_comments_only(trailing)) {
@@ -1460,21 +1469,30 @@ fn parse_directive(
         ));
     }
     if let Some(rest) = directive.strip_prefix("if")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         return Ok(Some(SourceDirective::ConditionalStart(parse_condition(
             "if", rest,
         ))));
     }
     if let Some(rest) = directive.strip_prefix("elif")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         return Ok(Some(SourceDirective::ConditionalElif(parse_condition(
             "elif", rest,
         ))));
     }
     if let Some(rest) = directive.strip_prefix("define")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let (name, trailing) = split_identifier(rest.trim_start());
         let Some(name) = name else {
@@ -1503,7 +1521,10 @@ fn parse_directive(
         }));
     }
     if let Some(rest) = directive.strip_prefix("undef")
-        && (rest.is_empty() || rest.chars().next().is_some_and(char::is_whitespace))
+        && rest
+            .chars()
+            .next()
+            .is_none_or(|ch| !is_identifier_continue(ch))
     {
         let (name, trailing) = split_identifier(rest.trim_start());
         if let Some(name) = name.filter(|_| trailing_comments_only(trailing)) {
@@ -1526,9 +1547,11 @@ fn parse_directive(
     {
         return Ok(Some(SourceDirective::ConditionalEnd));
     }
-    if directive == "pragma once"
-        || directive
-            .strip_prefix("pragma once")
+    if let Some(rest) = directive.strip_prefix("pragma")
+        && rest.chars().next().is_some_and(char::is_whitespace)
+        && rest
+            .trim_start()
+            .strip_prefix("once")
             .is_some_and(trailing_comments_only)
     {
         return Ok(Some(SourceDirective::PragmaOnce));
@@ -1591,7 +1614,7 @@ impl<'a> ConditionalParser<'a> {
 
     fn parse(&mut self) -> Result<Conditional, ()> {
         let condition = self.parse_or()?;
-        self.skip_whitespace();
+        self.skip_trivia();
         trailing_comments_only(&self.input[self.position..])
             .then_some(condition)
             .ok_or(())
@@ -1600,7 +1623,7 @@ impl<'a> ConditionalParser<'a> {
     fn parse_or(&mut self) -> Result<Conditional, ()> {
         let mut condition = self.parse_and()?;
         loop {
-            self.skip_whitespace();
+            self.skip_trivia();
             if !self.consume("||") {
                 return Ok(condition);
             }
@@ -1612,7 +1635,7 @@ impl<'a> ConditionalParser<'a> {
     fn parse_and(&mut self) -> Result<Conditional, ()> {
         let mut condition = self.parse_comparison()?;
         loop {
-            self.skip_whitespace();
+            self.skip_trivia();
             if !self.consume("&&") {
                 return Ok(condition);
             }
@@ -1623,7 +1646,7 @@ impl<'a> ConditionalParser<'a> {
 
     fn parse_comparison(&mut self) -> Result<Conditional, ()> {
         let left = self.parse_unary()?;
-        self.skip_whitespace();
+        self.skip_trivia();
         let operator = if self.consume("==") {
             ComparisonOperator::Equal
         } else if self.consume("!=") {
@@ -1643,7 +1666,7 @@ impl<'a> ConditionalParser<'a> {
     }
 
     fn parse_unary(&mut self) -> Result<Conditional, ()> {
-        self.skip_whitespace();
+        self.skip_trivia();
         if self.consume("!") {
             Ok(Conditional::Not(Box::new(self.parse_unary()?)))
         } else {
@@ -1652,10 +1675,10 @@ impl<'a> ConditionalParser<'a> {
     }
 
     fn parse_primary(&mut self) -> Result<Conditional, ()> {
-        self.skip_whitespace();
+        self.skip_trivia();
         if self.consume("(") {
             let condition = self.parse_or()?;
-            self.skip_whitespace();
+            self.skip_trivia();
             if !self.consume(")") {
                 return Err(());
             }
@@ -1666,7 +1689,7 @@ impl<'a> ConditionalParser<'a> {
     }
 
     fn parse_atom(&mut self) -> Result<Conditional, ()> {
-        self.skip_whitespace();
+        self.skip_trivia();
         if let Some(literal) = self.parse_literal() {
             return Ok(match literal.as_str() {
                 "0" => Conditional::Literal(false),
@@ -1678,14 +1701,15 @@ impl<'a> ConditionalParser<'a> {
         if name != "defined" {
             return Ok(Conditional::Macro(name));
         }
-        self.skip_whitespace();
-        if !self.consume("(") {
-            return Err(());
-        }
+        self.skip_trivia();
+        let parenthesized = self.consume("(");
+        self.skip_trivia();
         let name = self.parse_identifier().ok_or(())?;
-        self.skip_whitespace();
-        if !self.consume(")") {
-            return Err(());
+        if parenthesized {
+            self.skip_trivia();
+            if !self.consume(")") {
+                return Err(());
+            }
         }
         Ok(Conditional::Defined(name))
     }
@@ -1709,12 +1733,22 @@ impl<'a> ConditionalParser<'a> {
         Some(name)
     }
 
-    fn skip_whitespace(&mut self) {
-        while let Some(character) = self.input[self.position..].chars().next() {
-            if !character.is_ascii_whitespace() {
-                break;
+    fn skip_trivia(&mut self) {
+        loop {
+            let rest = &self.input[self.position..];
+            let trimmed = rest.trim_start_matches(|ch: char| ch.is_ascii_whitespace());
+            self.position += rest.len() - trimmed.len();
+            if trimmed.starts_with("//") {
+                self.position = self.input.len();
+                return;
             }
-            self.position += character.len_utf8();
+            if let Some(comment) = trimmed.strip_prefix("/*")
+                && let Some(end) = comment.find("*/")
+            {
+                self.position += 2 + end + 2;
+                continue;
+            }
+            return;
         }
     }
 
@@ -2092,20 +2126,9 @@ fn expand_macro_text(
             expanded.extend(chars[start..index].iter().copied());
             continue;
         }
-        if chars[index].is_ascii_digit()
-            || (chars[index] == '.' && chars.get(index + 1).is_some_and(char::is_ascii_digit))
-        {
-            let start = index;
-            index += 1;
-            while index < chars.len()
-                && (is_identifier_continue(chars[index])
-                    || chars[index] == '.'
-                    || (matches!(chars[index], '+' | '-')
-                        && matches!(chars[index - 1], 'e' | 'E' | 'p' | 'P')))
-            {
-                index += 1;
-            }
-            expanded.extend(chars[start..index].iter());
+        if let Some(end) = preprocessing_number_end(&chars, index) {
+            expanded.extend(chars[index..end].iter());
+            index = end;
             continue;
         }
         if is_identifier_start(chars[index]) {
@@ -2360,6 +2383,11 @@ fn substitute_macro_parameters(
             expanded.extend(chars[start..index].iter().copied());
             continue;
         }
+        if let Some(end) = preprocessing_number_end(&chars, index) {
+            expanded.extend(chars[index..end].iter());
+            index = end;
+            continue;
+        }
         if is_identifier_start(chars[index]) {
             let start = index;
             index += 1;
@@ -2380,6 +2408,26 @@ fn substitute_macro_parameters(
         index += 1;
     }
     expanded
+}
+
+// Preprocessing numbers are single tokens even when letters match macro names
+// or parameters. Their spelling is validated later by the C parser.
+fn preprocessing_number_end(chars: &[char], start: usize) -> Option<usize> {
+    if !chars[start].is_ascii_digit()
+        && !(chars[start] == '.' && chars.get(start + 1).is_some_and(char::is_ascii_digit))
+    {
+        return None;
+    }
+    let mut index = start + 1;
+    while index < chars.len()
+        && (is_identifier_continue(chars[index])
+            || chars[index] == '.'
+            || (matches!(chars[index], '+' | '-')
+                && matches!(chars[index - 1], 'e' | 'E' | 'p' | 'P')))
+    {
+        index += 1;
+    }
+    Some(index)
 }
 
 fn quoted_literal_end(chars: &[char], start: usize, quote: char) -> usize {
@@ -2629,17 +2677,42 @@ mod tests {
 
     #[test]
     fn pragma_once_headers_expand_only_once() {
-        let sources = BTreeMap::from([
-            ("main.c", "#include \"left.h\"\n#include \"right.h\"\n"),
-            ("left.h", "#include \"common.h\"\n"),
-            ("right.h", "#include \"common.h\"\n"),
-            ("common.h", "#pragma once\ntypedef int32 shared_t;\n"),
-        ]);
-        let expanded = expand_includes("main.c", &sources).unwrap();
-        assert_eq!(
-            expanded.source().matches("typedef int32 shared_t;").count(),
-            1
-        );
+        for separator in [" ", "\t", "  ", " \t ", "\x0b", "\x0c"] {
+            let header =
+                format!("#pragma{separator}once /* header guard */\ntypedef int32 shared_t;\n");
+            let sources = BTreeMap::from([
+                ("main.c", "#include \"left.h\"\n#include \"right.h\"\n"),
+                ("left.h", "#include \"common.h\"\n"),
+                ("right.h", "#include \"common.h\"\n"),
+                ("common.h", header.as_str()),
+            ]);
+            let expanded = expand_includes("main.c", &sources).expect(&header);
+            assert_eq!(
+                expanded.source().matches("typedef int32 shared_t;").count(),
+                1,
+                "{header}"
+            );
+        }
+    }
+
+    #[test]
+    fn pragma_once_requires_separate_words_and_no_extra_tokens() {
+        for directive in [
+            "pragmaonce",
+            "pragma onceX",
+            "pragma once more",
+            "pragma twice",
+        ] {
+            let source = format!("#{directive}\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let error = expand_includes("main.c", &sources).expect_err(&source);
+            assert!(
+                error
+                    .to_string()
+                    .contains("unsupported preprocessor directive"),
+                "{error}"
+            );
+        }
     }
 
     #[test]
@@ -2858,6 +2931,40 @@ int32 run(int32 value) {
             let error = local_include_paths("main.c", source).unwrap_err();
             assert!(error.to_string().contains(expected));
         }
+    }
+
+    #[test]
+    fn function_macro_parameters_do_not_replace_parts_of_numbers() {
+        for (parameter, number) in [
+            ("x1", "0x1"),
+            ("U", "1U"),
+            ("LL", "1LL"),
+            ("e3", "1e3"),
+            ("e", "1e+3"),
+            ("f", ".5f"),
+            ("x1p2", "0x1p2"),
+            ("p", "0x1p+2"),
+        ] {
+            let source = format!(
+                "#define VALUE({parameter}) {number}\n#define ADD({parameter}) ({number} + {parameter})\nVALUE(0)\nADD(2)\n"
+            );
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(number);
+            assert_eq!(
+                expanded.source().trim(),
+                format!("{number}\n({number} + 2)")
+            );
+        }
+    }
+
+    #[test]
+    fn hexadecimal_macro_literal_keeps_its_value() {
+        let sources = BTreeMap::from([(
+            "main.c",
+            "#define VALUE(x1) 0x1\nint value(void) { return VALUE(0); }\n",
+        )]);
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        assert_eq!(expanded.source().trim(), "int value(void) { return 0x1; }");
     }
 
     #[test]
@@ -3304,6 +3411,147 @@ int32 run(void) { return 3; }
         let expanded = expand_includes("main.c", &sources).unwrap();
         assert!(expanded.source().contains("int32 run(void) { return 3; }"));
         assert!(!expanded.source().contains("wrong(void)"));
+    }
+
+    #[test]
+    fn conditional_comments_are_whitespace_between_tokens() {
+        for condition in [
+            "1 /* enabled */ && !0",
+            "/* leading */ 1",
+            "1/**//**/&&/**/!/**/0",
+            "(/**/1/**/) /* operator */ == /**/ 1",
+            "defined/**/(/**/FEATURE/**/)",
+            "defined/**/FEATURE && !defined/**/MISSING",
+            "1 /* && 0 */ // || 0",
+            "'/' == '/' && '*' == '*'",
+        ] {
+            let source = format!(
+                "#define FEATURE 1\n#if 0\nint wrong_if;\n#elif {condition}\nint selected;\n#else\nint wrong_else;\n#endif\n"
+            );
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(condition);
+            assert!(expanded.source().contains("int selected;"), "{condition}");
+            assert!(!expanded.source().contains("int wrong_"), "{condition}");
+        }
+    }
+
+    #[test]
+    fn conditional_comments_do_not_join_tokens_or_hide_missing_operands() {
+        for condition in [
+            "1/**/1",
+            "1 &/**/& 1",
+            "defined(FEA/**/TURE)",
+            "1 && // missing operand",
+            "1 && /**/",
+            "1 /* unterminated",
+        ] {
+            let source = format!("#if {condition}\nint selected;\n#endif\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            assert!(expand_includes("main.c", &sources).is_err(), "{condition}");
+        }
+    }
+
+    #[test]
+    fn defined_operands_accept_both_c_forms_and_whitespace() {
+        for condition in [
+            "defined(FEATURE)",
+            "defined( FEATURE )",
+            "defined \t( \tFEATURE\t )",
+            "defined FEATURE",
+            "defined\tFEATURE",
+            "!defined MISSING",
+            "defined FEATURE && !defined MISSING",
+            "defined MISSING || defined FEATURE",
+            "(defined FEATURE)",
+            "defined FEATURE == 1",
+            "defined FEATURE != defined MISSING",
+        ] {
+            let source = format!(
+                "#define FEATURE 1\n#if {condition}\nint selected;\n#else\nint wrong;\n#endif\n"
+            );
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(condition);
+            assert!(expanded.source().contains("int selected;"), "{condition}");
+            assert!(!expanded.source().contains("int wrong;"), "{condition}");
+        }
+    }
+
+    #[test]
+    fn defined_operands_require_one_identifier_and_balanced_parentheses() {
+        for condition in [
+            "defined",
+            "defined()",
+            "defined( FEATURE",
+            "defined FEATURE)",
+            "defined 1",
+            "defined(1)",
+            "defined FEATURE EXTRA",
+            "defined(FEATURE EXTRA)",
+        ] {
+            let source = format!("#if {condition}\nint selected;\n#endif\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let error = expand_includes("main.c", &sources).expect_err(condition);
+            assert!(
+                error
+                    .to_string()
+                    .contains("unsupported conditional expression"),
+                "{condition}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn directives_accept_adjacent_punctuation() {
+        let sources = BTreeMap::from([
+            (
+                "main.c",
+                r##"#include"config.h"
+#include<stdint.h>
+#if(0)
+int wrong_if;
+#elif(1)
+int selected_elif;
+#else
+int wrong_else;
+#endif
+#if!defined(MISSING)
+int selected_not;
+#endif
+#if(1)
+int selected_if;
+#endif
+"##,
+            ),
+            ("config.h", "int included;\n"),
+        ]);
+        assert_eq!(
+            local_include_paths("main.c", sources["main.c"]).unwrap(),
+            ["config.h"]
+        );
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        for declaration in ["included", "selected_elif", "selected_not", "selected_if"] {
+            assert!(expanded.source().contains(&format!("int {declaration};")));
+        }
+        assert!(!expanded.source().contains("wrong_"));
+    }
+
+    #[test]
+    fn directive_keywords_require_identifier_boundaries() {
+        for keyword in [
+            "include", "ifndef", "ifdef", "if", "elif", "define", "undef",
+        ] {
+            for suffix in ["X", "1", "_"] {
+                let source = format!("#{keyword}{suffix} 1\n");
+                let sources = BTreeMap::from([("main.c", source.as_str())]);
+                let error = expand_includes("main.c", &sources).expect_err(&source);
+                assert!(
+                    error
+                        .to_string()
+                        .contains("unsupported preprocessor directive"),
+                    "{source}: {error}"
+                );
+            }
+        }
     }
 
     #[test]

@@ -276,7 +276,7 @@ fn pointer_element_index_from_base_with_width(
     if pointer.offset == base.offset
         || pointer_offsets_equal_for_effect(&pointer.offset, &base.offset, assumptions)
     {
-        return Some(Bitvector32Term::Constant(0));
+        return Some(Bitvector32Term::constant(0));
     }
 
     if base.offset == PointerOffsetTerm::Constant(0) {
@@ -329,7 +329,7 @@ fn element_index_from_pointer_offset(
             let index = offset / i64::from(element_width);
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
-                .then_some(Bitvector32Term::Constant((index as i32) as u32))
+                .then_some(Bitvector32Term::constant((index as i32) as u32))
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width }
             if *byte_width == i64::from(element_width) =>
@@ -359,7 +359,7 @@ fn bitvector_index_relative_to_base(
     base_index: Bitvector32Term,
 ) -> Bitvector32Term {
     if pointer_index == base_index {
-        return Bitvector32Term::Constant(0);
+        return Bitvector32Term::constant(0);
     }
     if let binary_term!(Int32, Add, left, right) = &pointer_index {
         if left.as_ref() == &base_index {

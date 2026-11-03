@@ -38,7 +38,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
             );
             memory = memory.store(
                 written.offset_by_bytes(32 + index as u32 * 8),
-                CValue::UInt64(Bitvector32Term::UInt64Constant(index)),
+                CValue::UInt64(Bitvector32Term::uint64_constant(index)),
             );
         }
         let stored = Pointer::symbolic(Variable(180_000 + count));
@@ -110,7 +110,7 @@ fn selected_pointer_store_endpoint_preserves_width_history_and_scales() {
         for offset in [0, 4, 32] {
             let changed = endpoint(memory.clone().store(
                 written.offset_by_bytes(offset),
-                CValue::Int32(Bitvector32Term::Constant(1)),
+                CValue::Int32(Bitvector32Term::constant(1)),
             ));
             assert!(
                 pointer_value_at_stopping_store(&changed, &address, LoadKind::Int32, 8, &context)

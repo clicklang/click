@@ -6094,7 +6094,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(Bitvector32Term::Variable(Variable(2))),
-                right: Box::new(Bitvector32Term::Constant(10)),
+                right: Box::new(Bitvector32Term::constant(10)),
             },
             true,
         );
@@ -6110,7 +6110,7 @@ mod tests {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(Bitvector32Term::Variable(Variable(1))),
-            right: Box::new(Bitvector32Term::Constant(10)),
+            right: Box::new(Bitvector32Term::constant(10)),
         };
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::ConditionIs(condition.clone(), false));

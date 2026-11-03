@@ -114,9 +114,9 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
             let accumulator = Variable(11_000 + index as u64);
             let item = Variable(12_000 + index as u64);
             let fold = Bitvector32Term::RangeFold {
-                start: Box::new(Bitvector32Term::Constant(0)),
-                end: Box::new(Bitvector32Term::Constant(2)),
-                initial: Box::new(Bitvector32Term::Constant(0)),
+                start: Box::new(Bitvector32Term::constant(0)),
+                end: Box::new(Bitvector32Term::constant(2)),
+                initial: Box::new(Bitvector32Term::constant(0)),
                 accumulator,
                 item,
                 body: Box::new(Bitvector32Term::Variable(accumulator)),
@@ -143,7 +143,7 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
         }
         let (visits, measured) = crate::instrumentation::measure_deterministic_work(|| {
             let from = Bitvector32Term::Variable(Variable(90_000));
-            let to = Bitvector32Term::Constant(0);
+            let to = Bitvector32Term::constant(0);
             let mut rewrite = TermRewrite::for_bits(&from, &to);
             let _ = rewrite.term(&Term::Integer(expression.clone()));
             rewrite.visits
@@ -163,7 +163,7 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
 fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
     let source = Variable(3_104_000);
     let source_term = Bitvector32Term::Variable(source);
-    let replacement = Bitvector32Term::Constant(9);
+    let replacement = Bitvector32Term::constant(9);
     let mut work = Vec::new();
     let mut last_load = None;
     for depth in [8usize, 16, 32, 64] {
@@ -417,9 +417,9 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
         IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
                 start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
                     1,
                 )),
             },
@@ -608,9 +608,9 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
         IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
                 start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Constant(0),
+                    Bitvector32Term::constant(0),
                 ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
                     1,
                 )),
             },
@@ -630,7 +630,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(offset as i64),
                 },
-                CValue::Int32(Bitvector32Term::Constant(offset as u32)),
+                CValue::Int32(Bitvector32Term::constant(offset as u32)),
             );
         }
         crate::kernel::intern_c_memory(memory)
@@ -904,7 +904,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
                 block: PointerBlock::Concrete("array".into()),
                 offset: PointerOffsetTerm::Variable(load),
             },
-            bytes: Bitvector32Term::Constant(4),
+            bytes: Bitvector32Term::constant(4),
             wide: false,
         };
         let mut proposition = atom.clone();
@@ -951,7 +951,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     };
     let bound = ConditionTerm::uint64_less_equal(
         index.clone(),
-        Bitvector32Term::UInt64Constant(1_073_741_823),
+        Bitvector32Term::uint64_constant(1_073_741_823),
     );
     let projection = |condition, truth| {
         let conditions = HashMap::from([(condition, truth)]);
@@ -965,13 +965,13 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         (
             ConditionTerm::uint64_less_than(
                 index.clone(),
-                Bitvector32Term::UInt64Constant(1_073_741_824),
+                Bitvector32Term::uint64_constant(1_073_741_824),
             ),
             true,
         ),
         (
             ConditionTerm::uint64_greater_equal(
-                Bitvector32Term::UInt64Constant(1_073_741_823),
+                Bitvector32Term::uint64_constant(1_073_741_823),
                 index.clone(),
             ),
             true,
@@ -979,14 +979,14 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         (
             ConditionTerm::uint64_greater_than(
                 index.clone(),
-                Bitvector32Term::UInt64Constant(1_073_741_823),
+                Bitvector32Term::uint64_constant(1_073_741_823),
             ),
             false,
         ),
         (
             ConditionTerm::uint64_greater_equal(
                 index.clone(),
-                Bitvector32Term::UInt64Constant(1_073_741_824),
+                Bitvector32Term::uint64_constant(1_073_741_824),
             ),
             false,
         ),
@@ -998,30 +998,33 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         (
             ConditionTerm::signed_less_equal(
                 Bitvector32Term::uint32_from_64(index.clone()),
-                Bitvector32Term::Constant(1_073_741_823),
+                Bitvector32Term::constant(1_073_741_823),
             ),
             true,
         ),
         (
             ConditionTerm::int64_signed_less_equal(
                 index.clone(),
-                Bitvector32Term::Int64Constant(1_073_741_823),
+                Bitvector32Term::int64_constant(1_073_741_823),
             ),
             true,
         ),
         (
             ConditionTerm::uint64_less_equal(
                 index.clone(),
-                Bitvector32Term::UInt64Constant(1u64 << 32),
+                Bitvector32Term::uint64_constant(1u64 << 32),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_less_than(index.clone(), Bitvector32Term::UInt64Constant(0)),
+            ConditionTerm::uint64_less_than(index.clone(), Bitvector32Term::uint64_constant(0)),
             true,
         ),
         (
-            ConditionTerm::uint64_equal(index.clone(), Bitvector32Term::UInt64Constant(1u64 << 32)),
+            ConditionTerm::uint64_equal(
+                index.clone(),
+                Bitvector32Term::uint64_constant(1u64 << 32),
+            ),
             true,
         ),
     ] {
@@ -1076,7 +1079,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
             explicit.insert(
                 ConditionTerm::uint64_less_equal(
                     Bitvector32Term::Variable(Variable(990_000 + offset)),
-                    Bitvector32Term::UInt64Constant(123),
+                    Bitvector32Term::uint64_constant(123),
                 ),
                 true,
             );
@@ -1354,7 +1357,7 @@ fn arithmetic_comparison_memos_are_bounded_and_session_local() {
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Add,
                 expression,
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             );
         }
         let goal = Proposition::ConditionIs(ConditionTerm::equal(expression, variable), true);

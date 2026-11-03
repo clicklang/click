@@ -2,6 +2,9 @@ use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
+};
 
 /// Whether a memory fact about `base` established in `range_memory` still
 /// describes an available region in `current_memory`: the block must be
@@ -370,11 +373,9 @@ fn sequence_terms_definitely_distinct(left: &SequenceTerm, right: &SequenceTerm)
 fn c_values_definitely_distinct(left: &CValue, right: &CValue) -> bool {
     fn constant(bits: &Bitvector32Term) -> Option<u64> {
         match bits {
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-                Some(u64::from(*value))
-            }
-            Bitvector32Term::Int64Constant(value) => Some(*value as u64),
-            Bitvector32Term::UInt64Constant(value) => Some(*value),
+            bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
+            int64_constant!(value) => Some(constant_i64(*value) as u64),
+            uint64_constant!(value) => Some(constant_u64(*value)),
             _ => None,
         }
     }
@@ -446,7 +447,7 @@ pub(in crate::kernel) fn element_index_from_offset(
             let index = offset / i64::from(element_width);
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
-                .then_some(Bitvector32Term::Constant((index as i32) as u32))
+                .then_some(Bitvector32Term::constant((index as i32) as u32))
         }
         _ => None,
     }
@@ -500,7 +501,7 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
             ) {
                 return i32::try_from(index)
                     .ok()
-                    .map(|index| Bitvector32Term::Constant(index as u32));
+                    .map(|index| Bitvector32Term::constant(index as u32));
             }
             if !*unsigned {
                 // A signed index in `0..=INT_MAX` is its own low word.
@@ -586,7 +587,7 @@ impl ExactElementDelta {
     /// The delta of a wholly constant number of elements.
     fn constant(constant: i64) -> Self {
         Self {
-            index: Bitvector32Term::Constant(0),
+            index: Bitvector32Term::constant(0),
             constant,
         }
     }
@@ -609,13 +610,13 @@ impl ExactElementDelta {
         }
         i32::try_from(self.constant)
             .ok()
-            .map(|constant| Bitvector32Term::Constant(constant as u32))
+            .map(|constant| Bitvector32Term::constant(constant as u32))
     }
 
     /// Whether this delta names no symbolic index, so its `i64` value is the
     /// whole of it.
     pub(in crate::kernel) fn is_constant(&self) -> bool {
-        self.index == Bitvector32Term::Constant(0)
+        self.index == Bitvector32Term::constant(0)
     }
 
     /// The two deltas added, when at most one of them is symbolic. Two
@@ -749,7 +750,7 @@ pub(in crate::kernel) fn pointer_byte_offset_from_base(
         return None;
     }
     if pointer.offset == base.offset {
-        return Some(Bitvector32Term::Constant(0));
+        return Some(Bitvector32Term::constant(0));
     }
     if base.offset == PointerOffsetTerm::Constant(0) {
         return byte_offset_from_pointer_offset(&pointer.offset);
@@ -767,7 +768,7 @@ pub(in crate::kernel) fn pointer_byte_offset_from_base(
         base: &PointerOffsetTerm,
     ) -> Option<Bitvector32Term> {
         if offset == base {
-            return Some(Bitvector32Term::Constant(0));
+            return Some(Bitvector32Term::constant(0));
         }
         let PointerOffsetTerm::Add(left, right) = offset else {
             return None;
@@ -806,7 +807,7 @@ pub(in crate::kernel) fn byte_offset_from_pointer_offset(
     match offset {
         PointerOffsetTerm::Constant(offset) => (i32::MIN as i64..=i32::MAX as i64)
             .contains(offset)
-            .then_some(Bitvector32Term::Constant((*offset as i32) as u32)),
+            .then_some(Bitvector32Term::constant((*offset as i32) as u32)),
         PointerOffsetTerm::Add(left, right) => Some(Bitvector32Term::add(
             byte_offset_from_pointer_offset(left)?,
             byte_offset_from_pointer_offset(right)?,
@@ -814,17 +815,17 @@ pub(in crate::kernel) fn byte_offset_from_pointer_offset(
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok()?;
             match width {
-                0 => Some(Bitvector32Term::Constant(0)),
+                0 => Some(Bitvector32Term::constant(0)),
                 1 => Some(value.as_ref().clone()),
                 _ => Some(binary_node!(
                     Int32,
                     Multiply,
                     Box::new(value.as_ref().clone()),
-                    Box::new(Bitvector32Term::Constant(width)),
+                    Box::new(Bitvector32Term::constant(width)),
                 )),
             }
         }
-        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => Some(Bitvector32Term::Constant(0)),
+        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => Some(Bitvector32Term::constant(0)),
         // A 64-bit index is not a 32-bit byte residue, even when its stride
         // is one. Callers that need its numeric value must use a 64-bit bound.
         PointerOffsetTerm::Int64Scaled { .. } | PointerOffsetTerm::Variable(_) => None,
@@ -841,7 +842,7 @@ pub(in crate::kernel) fn element_count_from_bytes(
     if element_width == 1 {
         return Some(bytes.clone());
     }
-    let element_width = Bitvector32Term::Constant(element_width);
+    let element_width = Bitvector32Term::constant(element_width);
     match bytes {
         binary_term!(Int32, Multiply, left, right) if right.as_ref() == &element_width => {
             Some(left.as_ref().clone())
@@ -849,10 +850,12 @@ pub(in crate::kernel) fn element_count_from_bytes(
         binary_term!(Int32, Multiply, left, right) if left.as_ref() == &element_width => {
             Some(right.as_ref().clone())
         }
-        Bitvector32Term::Constant(bytes) | Bitvector32Term::UInt32Constant(bytes)
-            if bytes % element_width.as_const()? == 0 =>
+        bits32_constant!(bytes)
+            if constant_u32(*bytes).is_multiple_of(element_width.as_const()?) =>
         {
-            Some(Bitvector32Term::Constant(bytes / element_width.as_const()?))
+            Some(Bitvector32Term::constant(
+                constant_u32(*bytes) / element_width.as_const()?,
+            ))
         }
         _ => None,
     }
@@ -1030,12 +1033,12 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
         Some(if *unsigned {
             ConditionTerm::uint64_equal(
                 index.as_ref().clone(),
-                Bitvector32Term::UInt64Constant(u64::try_from(element).ok()?),
+                Bitvector32Term::uint64_constant(u64::try_from(element).ok()?),
             )
         } else {
             ConditionTerm::int64_equal(
                 index.as_ref().clone(),
-                Bitvector32Term::Int64Constant(element),
+                Bitvector32Term::int64_constant(element),
             )
         })
     };
@@ -1082,7 +1085,7 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
         add_condition_path_fact(
             facts,
             assumptions,
-            ConditionTerm::equal(index.clone(), Bitvector32Term::Constant(element as u32)),
+            ConditionTerm::equal(index.clone(), Bitvector32Term::constant(element as u32)),
             value,
         )?;
     }
@@ -2207,7 +2210,7 @@ mod mandatory_integer_obligation_tests {
     fn prepared_path_effect_fragment_keeps_fresh_rebuild_ordering() {
         let condition = ConditionTerm::equal(
             Bitvector32Term::Variable(Variable(912_347)),
-            Bitvector32Term::Constant(3),
+            Bitvector32Term::constant(3),
         );
         let base = PureFactContext::new();
         let left = vec![ProofObligation::condition(condition.clone(), true)];
@@ -2251,7 +2254,7 @@ mod mandatory_integer_obligation_tests {
     fn prepared_path_delta_rejects_a_conflicting_pure_successor() {
         let condition = ConditionTerm::equal(
             Bitvector32Term::Variable(Variable(912_345)),
-            Bitvector32Term::Constant(3),
+            Bitvector32Term::constant(3),
         );
         let base = PureFactContext::new();
         let left = vec![ProofObligation::condition(condition.clone(), true)];
@@ -2306,13 +2309,13 @@ mod native_observation_guard_tests {
         let value = Bitvector32Term::Variable(Variable(912_801));
         let native = match ty {
             MachineIntegerType::Int32 | MachineIntegerType::UInt32 => {
-                ConditionTerm::equal(value.clone(), Bitvector32Term::Constant(0))
+                ConditionTerm::equal(value.clone(), Bitvector32Term::constant(0))
             }
             MachineIntegerType::Int64 => {
-                ConditionTerm::int64_equal(value.clone(), Bitvector32Term::Int64Constant(0))
+                ConditionTerm::int64_equal(value.clone(), Bitvector32Term::int64_constant(0))
             }
             MachineIntegerType::UInt64 => {
-                ConditionTerm::uint64_equal(value.clone(), Bitvector32Term::UInt64Constant(0))
+                ConditionTerm::uint64_equal(value.clone(), Bitvector32Term::uint64_constant(0))
             }
             _ => unreachable!(),
         };

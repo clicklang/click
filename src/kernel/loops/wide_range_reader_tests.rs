@@ -6,8 +6,8 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     let base = Pointer::symbolic(Variable(984_500));
     let wide = CMemoryRange::new_wide(
         base.clone(),
-        Bitvector32Term::UInt64Constant(0),
-        Bitvector32Term::UInt64Constant(1 << 33),
+        Bitvector32Term::uint64_constant(0),
+        Bitvector32Term::uint64_constant(1 << 33),
         4,
     );
     let segment = EvaluatedMemorySegment {
@@ -28,8 +28,8 @@ fn wide_loop_frames_cover_native_accesses_and_refuse_cross_width_ranges() {
     ));
     let bytes = CMemoryRange::new_wide(
         base.clone(),
-        Bitvector32Term::UInt64Constant(0),
-        Bitvector32Term::UInt64Constant(1 << 33),
+        Bitvector32Term::uint64_constant(0),
+        Bitvector32Term::uint64_constant(1 << 33),
         1,
     );
     assert!(!loop_effect_segment_contains_range(

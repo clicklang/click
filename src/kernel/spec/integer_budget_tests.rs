@@ -171,10 +171,10 @@ fn integer_existential_scopes_definedness_with_its_witness() {
 #[test]
 fn from_machine_keeps_signed_and_unsigned_values_distinct() {
     let signed = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        CValue::Int32(Bitvector32Term::Constant(u32::MAX)),
+        CValue::Int32(Bitvector32Term::constant(u32::MAX)),
     )));
     let unsigned = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        CValue::UInt32(Bitvector32Term::Constant(u32::MAX)),
+        CValue::UInt32(Bitvector32Term::constant(u32::MAX)),
     )));
     let evaluate = |expression| {
         evaluate_spec_integer_expression_paths_in(
@@ -212,7 +212,7 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     let substituted = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
         &proposition,
         variable,
-        &Bitvector32Term::Constant(7),
+        &Bitvector32Term::constant(7),
     );
     // Substitution reached inside the machine-backed Integer term. The
     // observation it left behind is decided -- `to_integer(7)` is the
@@ -225,7 +225,7 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     );
 
     let expression = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        CValue::Int32(Bitvector32Term::Constant(7)),
+        CValue::Int32(Bitvector32Term::constant(7)),
     )));
     let paths = evaluate_spec_integer_expression_paths_in(
         SpecScope::unbound(&CState::default(), None),
@@ -241,8 +241,8 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
 fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     let shared_id = Variable(71_100);
     let index = IntegerRangeFoldIndex::Int32 {
-        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(4)),
+        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(4)),
     };
     let integer_address = Bitvector32Term::IntegerToMachine {
         value: IntegerTerm::var(shared_id).into(),
@@ -257,7 +257,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
                 byte_width: 4,
             },
         },
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let wrapped = integer_range_fold_body_obligation(
@@ -294,7 +294,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
                 byte_width: 4,
             },
         },
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let wrapped =
@@ -339,12 +339,12 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
                 byte_width: 4,
             },
         },
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let index = IntegerRangeFoldIndex::Int32 {
-        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(4)),
+        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(4)),
     };
     let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
     assert!(matches!(
@@ -362,7 +362,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Variable(load),
         },
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let direct_wrapped =
@@ -413,12 +413,12 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Variable(outer),
         },
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let index = IntegerRangeFoldIndex::Int32 {
-        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(0)),
-        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Constant(4)),
+        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(4)),
     };
     let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
     assert!(matches!(
@@ -462,7 +462,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let loadable = Proposition::CMemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let exact = drop_verified_load_definition_conjuncts(Proposition::And(
@@ -519,7 +519,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::CMemoryLoadable {
             memory: registered_memory.as_ref().clone(),
             base: registered_pointer.clone(),
-            bytes: Bitvector32Term::Constant(4),
+            bytes: Bitvector32Term::constant(4),
             wide: false,
         }),
     ))
@@ -545,7 +545,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::CMemoryLoadable {
             memory: memory.as_ref().clone(),
             base: pointer,
-            bytes: Bitvector32Term::Constant(4),
+            bytes: Bitvector32Term::constant(4),
             wide: false,
         }),
     ))
@@ -642,7 +642,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     let loadable = Proposition::CMemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: Bitvector32Term::Constant(4),
+        bytes: Bitvector32Term::constant(4),
         wide: false,
     };
     let marker = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
@@ -748,10 +748,10 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {
             start: Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(4),
+                Bitvector32Term::constant(4),
             ))),
             end: Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(4),
+                Bitvector32Term::constant(4),
             ))),
         },
         initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(19))),
@@ -808,10 +808,10 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {
             start: Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ))),
             end: Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::Constant(4),
+                Bitvector32Term::constant(4),
             ))),
         },
         initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(0))),
@@ -859,7 +859,7 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::Int32,
             BigInt::from(i32::MIN),
-            CValue::Int32(Bitvector32Term::Constant(i32::MIN as u32)),
+            CValue::Int32(Bitvector32Term::constant(i32::MIN as u32)),
         ),
         (
             MachineIntegerType::UInt8,
@@ -874,17 +874,17 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::UInt32,
             BigInt::from(u32::MAX),
-            CValue::UInt32(Bitvector32Term::UInt32Constant(u32::MAX)),
+            CValue::UInt32(Bitvector32Term::uint32_constant(u32::MAX)),
         ),
         (
             MachineIntegerType::Int64,
             BigInt::from(i64::MIN),
-            CValue::Int64(Bitvector32Term::Int64Constant(i64::MIN)),
+            CValue::Int64(Bitvector32Term::int64_constant(i64::MIN)),
         ),
         (
             MachineIntegerType::UInt64,
             BigInt::from(u64::MAX),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(u64::MAX)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(u64::MAX)),
         ),
     ];
     for (destination, integer, expected) in cases {

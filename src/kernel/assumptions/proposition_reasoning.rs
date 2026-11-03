@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 /// Discharge one guard left open by a universal instantiation, naming the
 /// premises it consumed, or `None` when the retained exact routes do not
@@ -62,16 +63,16 @@ fn exact_predecessor_base(term: &Bitvector32Term) -> Option<Bitvector32Term> {
     let binary_term!(Int32, Subtract, value, amount) = term else {
         return None;
     };
-    (amount.as_ref() == &Bitvector32Term::Constant(1)).then(|| value.as_ref().clone())
+    (amount.as_ref() == &Bitvector32Term::constant(1)).then(|| value.as_ref().clone())
 }
 
 fn exact_predecessor_equal_zero_base(
     left: &Bitvector32Term,
     right: &Bitvector32Term,
 ) -> Option<Bitvector32Term> {
-    if right == &Bitvector32Term::Constant(0) {
+    if right == &Bitvector32Term::constant(0) {
         exact_predecessor_base(left)
-    } else if left == &Bitvector32Term::Constant(0) {
+    } else if left == &Bitvector32Term::constant(0) {
         exact_predecessor_base(right)
     } else {
         None
@@ -353,7 +354,7 @@ impl PureFactContext {
             }
             _ => return false,
         };
-        let one = Bitvector32Term::Constant(1);
+        let one = Bitvector32Term::constant(1);
         let guards = [
             ConditionTerm::signed_add_overflows(pair.0.clone(), pair.1.clone()),
             ConditionTerm::signed_add_overflows(pair.0.clone(), one.clone()),
@@ -765,7 +766,7 @@ impl PureFactContext {
             };
             for (side, other) in [(left, right), (right, left)] {
                 let mentions_var =
-                    substitute_bitvector_variable(other, var, &Bitvector32Term::Constant(0))
+                    substitute_bitvector_variable(other, var, &Bitvector32Term::constant(0))
                         != **other;
                 if **side == bound && !mentions_var {
                     witnesses.push((**other).clone());
@@ -1281,19 +1282,18 @@ impl SelectedFacts<'_> {
             ) => incremented
                 .add_const_base(1)
                 .and_then(|base| {
-                    let (Bitvector32Term::Constant(goal_bits)
-                    | Bitvector32Term::UInt32Constant(goal_bits)) = goal_upper.as_ref()
-                    else {
+                    let bits32_constant!(goal_bits) = goal_upper.as_ref() else {
                         return None;
                     };
                     self.signed_order_bound_entries(&base).find_map(
                         |(fact_endpoint, candidate, strict, forward)| {
-                            let (Bitvector32Term::Constant(candidate_bits)
-                            | Bitvector32Term::UInt32Constant(candidate_bits)) = &candidate
-                            else {
+                            let bits32_constant!(candidate_bits) = &candidate else {
                                 return None;
                             };
-                            (!strict && forward && (*candidate_bits as i32) < (*goal_bits as i32))
+                            (!strict
+                                && forward
+                                && (constant_u32(*candidate_bits) as i32)
+                                    < (constant_u32(*goal_bits) as i32))
                                 .then(|| {
                                     self.exact_direct_order_step(&fact_endpoint, &candidate, false)
                                 })
@@ -1342,10 +1342,10 @@ impl SelectedFacts<'_> {
                 true,
             ) => match sum.as_ref() {
                 binary_term!(Int32, Add, left, right)
-                    if left.as_ref() == &Bitvector32Term::Constant(1)
+                    if left.as_ref() == &Bitvector32Term::constant(1)
                         && right.as_ref() == value.as_ref() =>
                 {
-                    let int_max = Bitvector32Term::Constant(i32::MAX as u32);
+                    let int_max = Bitvector32Term::constant(i32::MAX as u32);
                     self.exact_direct_order_step(value, &int_max, true)
                         .map(Box::new)
                         .map(AtomicPropositionDerivationEvidence::Int32OnePlusStrictlyIncreases)
@@ -1363,8 +1363,8 @@ impl SelectedFacts<'_> {
                     right: amount,
                 },
                 false,
-            ) if amount.as_ref() == &Bitvector32Term::Constant(1) => {
-                let int_max = Bitvector32Term::Constant(i32::MAX as u32);
+            ) if amount.as_ref() == &Bitvector32Term::constant(1) => {
+                let int_max = Bitvector32Term::constant(i32::MAX as u32);
                 self.exact_signed_order_path_evidence(base, &int_max, true)
                     .and_then(|path| match path.as_slice() {
                         [step] if step.lower == **base && step.upper == int_max && step.strict => {
@@ -1386,8 +1386,8 @@ impl SelectedFacts<'_> {
                     right: value,
                 },
                 false,
-            ) if one.as_ref() == &Bitvector32Term::Constant(1) => {
-                let int_max = Bitvector32Term::Constant(i32::MAX as u32);
+            ) if one.as_ref() == &Bitvector32Term::constant(1) => {
+                let int_max = Bitvector32Term::constant(i32::MAX as u32);
                 self.exact_direct_order_step(value, &int_max, true)
                     .map(Box::new)
                     .map(AtomicPropositionDerivationEvidence::Int32OnePlusBelowMaxIsDefined)
@@ -1404,11 +1404,11 @@ impl SelectedFacts<'_> {
                 },
                 false,
             ) => {
-                let zero = Bitvector32Term::Constant(0);
+                let zero = Bitvector32Term::constant(0);
                 let headroom = binary_node!(
                     Int32,
                     Subtract,
-                    Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
+                    Box::new(Bitvector32Term::constant(i32::MAX as u32)),
                     Box::new(amount.as_ref().clone()),
                 );
                 self.exact_direct_order_step(&zero, amount, false)
@@ -1434,7 +1434,7 @@ impl SelectedFacts<'_> {
                 },
                 false,
             ) => {
-                let zero = Bitvector32Term::Constant(0);
+                let zero = Bitvector32Term::constant(0);
                 self.exact_direct_order_step(&zero, amount, false)
                     .zip(self.exact_direct_order_step(amount, value, false))
                     .map(|(amount_nonnegative, within_value)| {
@@ -1546,8 +1546,8 @@ impl SelectedFacts<'_> {
                     right: lower,
                 },
                 true,
-            ) if lower.as_ref() == &Bitvector32Term::Constant(0) => self
-                .exact_direct_order_step(&Bitvector32Term::Constant(0), value, true)
+            ) if lower.as_ref() == &Bitvector32Term::constant(0) => self
+                .exact_direct_order_step(&Bitvector32Term::constant(0), value, true)
                 .map(Box::new)
                 .map(AtomicPropositionDerivationEvidence::Int32PositiveIsNonnegative),
             _ => None,
@@ -1571,12 +1571,11 @@ impl SelectedFacts<'_> {
                 },
                 true,
             ) => match lower.as_ref() {
-                Bitvector32Term::Constant(lower_bits)
-                | Bitvector32Term::UInt32Constant(lower_bits) => (*lower_bits as i32)
+                bits32_constant!(lower_bits) => (constant_u32(*lower_bits) as i32)
                     .checked_add(1)
                     .and_then(|successor| {
                         self.exact_direct_order_step(
-                            &Bitvector32Term::Constant(successor as u32),
+                            &Bitvector32Term::constant(successor as u32),
                             value,
                             false,
                         )
@@ -1597,16 +1596,16 @@ impl SelectedFacts<'_> {
                 },
                 true,
             ) => match goal_lower.as_ref() {
-                Bitvector32Term::Constant(goal_bits)
-                | Bitvector32Term::UInt32Constant(goal_bits) => self
+                bits32_constant!(goal_bits) => self
                     .signed_order_bound_entries(value.as_ref())
                     .find_map(|(fact_endpoint, candidate, strict, forward)| {
-                        let (Bitvector32Term::Constant(candidate_bits)
-                        | Bitvector32Term::UInt32Constant(candidate_bits)) = &candidate
-                        else {
+                        let bits32_constant!(candidate_bits) = &candidate else {
                             return None;
                         };
-                        (!strict && !forward && (*goal_bits as i32) < (*candidate_bits as i32))
+                        (!strict
+                            && !forward
+                            && (constant_u32(*goal_bits) as i32)
+                                < (constant_u32(*candidate_bits) as i32))
                             .then(|| {
                                 self.exact_direct_order_step(&candidate, &fact_endpoint, false)
                             })
@@ -1628,10 +1627,10 @@ impl SelectedFacts<'_> {
                 },
                 true,
             ) => match lower.as_ref() {
-                Bitvector32Term::Constant(lower_bits)
-                | Bitvector32Term::UInt32Constant(lower_bits) => {
-                    (*lower_bits as i32).checked_add(1).and_then(|upper| {
-                        let upper = Bitvector32Term::Constant(upper as u32);
+                bits32_constant!(lower_bits) => (constant_u32(*lower_bits) as i32)
+                    .checked_add(1)
+                    .and_then(|upper| {
+                        let upper = Bitvector32Term::constant(upper as u32);
                         let premise = Proposition::ConditionIs(
                             ConditionTerm::signed_less_than(value.as_ref().clone(), upper.clone()),
                             false,
@@ -1646,8 +1645,7 @@ impl SelectedFacts<'_> {
                                 }),
                             )
                         })
-                    })
-                }
+                    }),
                 _ => None,
             },
             _ => None,
@@ -1661,9 +1659,9 @@ impl SelectedFacts<'_> {
                     right: predecessor,
                 },
                 true,
-            ) if lower.as_ref() == &Bitvector32Term::Constant(0) => {
+            ) if lower.as_ref() == &Bitvector32Term::constant(0) => {
                 exact_predecessor_base(predecessor).and_then(|value| {
-                    self.exact_direct_order_step(&Bitvector32Term::Constant(0), &value, true)
+                    self.exact_direct_order_step(&Bitvector32Term::constant(0), &value, true)
                     .map(Box::new)
                     .map(AtomicPropositionDerivationEvidence::Int32PositivePredecessorIsNonnegative)
                 })
@@ -1678,7 +1676,7 @@ impl SelectedFacts<'_> {
                 .filter(|base| base == value.as_ref())
                 .and_then(|base| {
                     self.exact_direct_order_step(
-                        &Bitvector32Term::Constant(0),
+                        &Bitvector32Term::constant(0),
                         &base,
                         true,
                     )
@@ -1697,7 +1695,7 @@ impl SelectedFacts<'_> {
                 true,
             ) => exact_predecessor_base(predecessor).and_then(|value| {
                 let nonnegative =
-                    self.exact_direct_order_step(&Bitvector32Term::Constant(0), &value, false)?;
+                    self.exact_direct_order_step(&Bitvector32Term::constant(0), &value, false)?;
                 let upper_bound = self.exact_direct_order_step(&value, upper, false)?;
                 Some(
                     AtomicPropositionDerivationEvidence::Int32NonnegativePredecessorUpperBound(
@@ -1719,7 +1717,7 @@ impl SelectedFacts<'_> {
                     right: predecessor,
                 },
                 true,
-            ) if lower.as_ref() == &Bitvector32Term::Constant(0) => {
+            ) if lower.as_ref() == &Bitvector32Term::constant(0) => {
                 exact_predecessor_base(predecessor).and_then(|value| {
                     self.exact_one_le_evidence(&value).map(
                         AtomicPropositionDerivationEvidence::Int32OneLePredecessorIsNonnegative,
@@ -1756,7 +1754,7 @@ impl SelectedFacts<'_> {
                 },
                 true,
             ) => exact_predecessor_equal_zero_base(left, right).and_then(|value| {
-                self.exact_bitvector_equality_path_evidence(&value, &Bitvector32Term::Constant(1))
+                self.exact_bitvector_equality_path_evidence(&value, &Bitvector32Term::constant(1))
                     .map(AtomicPropositionDerivationEvidence::Int32EqualOnePredecessorIsZero)
             }),
             _ => None,
@@ -2136,15 +2134,13 @@ impl SelectedFacts<'_> {
             let Some(base) = incremented.add_const_base(1) else {
                 return false;
             };
-            let (
-                Bitvector32Term::Constant(premise_bits),
-                Bitvector32Term::Constant(goal_bits) | Bitvector32Term::UInt32Constant(goal_bits),
-            ) = (&step.upper, goal_upper.as_ref())
+            let (int32_constant!(premise_bits), bits32_constant!(goal_bits)) =
+                (&step.upper, goal_upper.as_ref())
             else {
                 return false;
             };
             return step.lower == base
-                && (*premise_bits as i32) < (*goal_bits as i32)
+                && (constant_u32(*premise_bits) as i32) < (constant_u32(*goal_bits) as i32)
                 && !step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2197,8 +2193,8 @@ impl SelectedFacts<'_> {
             let binary_term!(Int32, Add, left, right) = sum.as_ref() else {
                 return false;
             };
-            let int_max = Bitvector32Term::Constant(i32::MAX as u32);
-            return left.as_ref() == &Bitvector32Term::Constant(1)
+            let int_max = Bitvector32Term::constant(i32::MAX as u32);
+            return left.as_ref() == &Bitvector32Term::constant(1)
                 && right.as_ref() == value.as_ref()
                 && step.lower == **value
                 && step.upper == int_max
@@ -2219,8 +2215,8 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            let int_max = Bitvector32Term::Constant(i32::MAX as u32);
-            return amount.as_ref() == &Bitvector32Term::Constant(1)
+            let int_max = Bitvector32Term::constant(i32::MAX as u32);
+            return amount.as_ref() == &Bitvector32Term::constant(1)
                 && step.lower == **base
                 && step.upper == int_max
                 && step.strict
@@ -2245,8 +2241,8 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            let int_max = Bitvector32Term::Constant(i32::MAX as u32);
-            return one.as_ref() == &Bitvector32Term::Constant(1)
+            let int_max = Bitvector32Term::constant(i32::MAX as u32);
+            return one.as_ref() == &Bitvector32Term::constant(1)
                 && step.lower == **value
                 && step.upper == int_max
                 && step.strict
@@ -2270,10 +2266,10 @@ impl SelectedFacts<'_> {
             let headroom = binary_node!(
                 Int32,
                 Subtract,
-                Box::new(Bitvector32Term::Constant(i32::MAX as u32)),
+                Box::new(Bitvector32Term::constant(i32::MAX as u32)),
                 Box::new(amount.as_ref().clone()),
             );
-            return bounds.amount_nonnegative.lower == Bitvector32Term::Constant(0)
+            return bounds.amount_nonnegative.lower == Bitvector32Term::constant(0)
                 && bounds.amount_nonnegative.upper == **amount
                 && !bounds.amount_nonnegative.strict
                 && bounds.within_headroom.lower == **value
@@ -2298,7 +2294,7 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            return bounds.amount_nonnegative.lower == Bitvector32Term::Constant(0)
+            return bounds.amount_nonnegative.lower == Bitvector32Term::constant(0)
                 && bounds.amount_nonnegative.upper == **amount
                 && !bounds.amount_nonnegative.strict
                 && bounds.within_value.lower == **amount
@@ -2427,8 +2423,8 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            return lower.as_ref() == &Bitvector32Term::Constant(0)
-                && step.lower == Bitvector32Term::Constant(0)
+            return lower.as_ref() == &Bitvector32Term::constant(0)
+                && step.lower == Bitvector32Term::constant(0)
                 && step.upper == **value
                 && step.strict
                 && self.checks_exact_order_step(step);
@@ -2455,15 +2451,13 @@ impl SelectedFacts<'_> {
                 ) => (lower, value),
                 _ => return false,
             };
-            let (Bitvector32Term::Constant(lower_bits)
-            | Bitvector32Term::UInt32Constant(lower_bits)) = lower.as_ref()
-            else {
+            let bits32_constant!(lower_bits) = lower.as_ref() else {
                 return false;
             };
-            let Some(successor_bits) = (*lower_bits as i32).checked_add(1) else {
+            let Some(successor_bits) = (constant_u32(*lower_bits) as i32).checked_add(1) else {
                 return false;
             };
-            return step.lower == Bitvector32Term::Constant(successor_bits as u32)
+            return step.lower == Bitvector32Term::constant(successor_bits as u32)
                 && step.upper == **value
                 && !step.strict
                 && self.checks_exact_order_step(step);
@@ -2483,15 +2477,12 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            let (
-                Bitvector32Term::Constant(goal_bits),
-                Bitvector32Term::Constant(premise_bits)
-                | Bitvector32Term::UInt32Constant(premise_bits),
-            ) = (goal_lower.as_ref(), &step.lower)
+            let (int32_constant!(goal_bits), bits32_constant!(premise_bits)) =
+                (goal_lower.as_ref(), &step.lower)
             else {
                 return false;
             };
-            return (*goal_bits as i32) < (*premise_bits as i32)
+            return (constant_u32(*goal_bits) as i32) < (constant_u32(*premise_bits) as i32)
                 && step.upper == **value
                 && !step.strict
                 && self.checks_exact_order_step(step);
@@ -2511,15 +2502,13 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            let (Bitvector32Term::Constant(lower_bits)
-            | Bitvector32Term::UInt32Constant(lower_bits)) = lower.as_ref()
-            else {
+            let bits32_constant!(lower_bits) = lower.as_ref() else {
                 return false;
             };
-            let Some(upper_bits) = (*lower_bits as i32).checked_add(1) else {
+            let Some(upper_bits) = (constant_u32(*lower_bits) as i32).checked_add(1) else {
                 return false;
             };
-            let upper = Bitvector32Term::Constant(upper_bits as u32);
+            let upper = Bitvector32Term::constant(upper_bits as u32);
             return step.lower == upper
                 && step.upper == **value
                 && !step.strict
@@ -2551,8 +2540,8 @@ impl SelectedFacts<'_> {
             let Some(value) = exact_predecessor_base(predecessor) else {
                 return false;
             };
-            return lower.as_ref() == &Bitvector32Term::Constant(0)
-                && step.lower == Bitvector32Term::Constant(0)
+            return lower.as_ref() == &Bitvector32Term::constant(0)
+                && step.lower == Bitvector32Term::constant(0)
                 && step.upper == value
                 && step.strict
                 && self.checks_exact_order_step(step);
@@ -2577,7 +2566,7 @@ impl SelectedFacts<'_> {
                 return false;
             };
             return base == **value
-                && step.lower == Bitvector32Term::Constant(0)
+                && step.lower == Bitvector32Term::constant(0)
                 && step.upper == base
                 && step.strict
                 && self.checks_exact_order_step(step);
@@ -2600,7 +2589,7 @@ impl SelectedFacts<'_> {
             let Some(value) = exact_predecessor_base(predecessor) else {
                 return false;
             };
-            return bounds.nonnegative.lower == Bitvector32Term::Constant(0)
+            return bounds.nonnegative.lower == Bitvector32Term::constant(0)
                 && bounds.nonnegative.upper == value
                 && !bounds.nonnegative.strict
                 && bounds.upper_bound.lower == value
@@ -2627,7 +2616,7 @@ impl SelectedFacts<'_> {
             let Some(value) = exact_predecessor_base(predecessor) else {
                 return false;
             };
-            return lower.as_ref() == &Bitvector32Term::Constant(0)
+            return lower.as_ref() == &Bitvector32Term::constant(0)
                 && self.checks_one_le_evidence(source, &value);
         }
         if let AtomicPropositionDerivationEvidence::Int32OneLePredecessorStrictlyDecreases(source) =
@@ -2670,7 +2659,7 @@ impl SelectedFacts<'_> {
             return self.checks_exact_bitvector_equality_path(
                 path,
                 &value,
-                &Bitvector32Term::Constant(1),
+                &Bitvector32Term::constant(1),
             );
         }
         if let AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality(evidence) = evidence
@@ -2961,10 +2950,10 @@ impl PureFactContext {
     }
 
     fn exact_one_le_evidence(&self, value: &Bitvector32Term) -> Option<Int32OneLeEvidence> {
-        self.exact_bitvector_equality_path_evidence(value, &Bitvector32Term::Constant(1))
+        self.exact_bitvector_equality_path_evidence(value, &Bitvector32Term::constant(1))
             .map(Int32OneLeEvidence::EqualOne)
             .or_else(|| {
-                self.exact_direct_order_step(&Bitvector32Term::Constant(1), value, false)
+                self.exact_direct_order_step(&Bitvector32Term::constant(1), value, false)
                     .map(Box::new)
                     .map(Int32OneLeEvidence::Direct)
             })
@@ -3008,7 +2997,7 @@ impl PureFactContext {
     fn checks_one_le_evidence(&self, source: &Int32OneLeEvidence, value: &Bitvector32Term) -> bool {
         match source {
             Int32OneLeEvidence::Direct(step) => {
-                step.lower == Bitvector32Term::Constant(1)
+                step.lower == Bitvector32Term::constant(1)
                     && step.upper == *value
                     && !step.strict
                     && self.checks_exact_order_step(step)
@@ -3016,7 +3005,7 @@ impl PureFactContext {
             Int32OneLeEvidence::EqualOne(path) => self.checks_exact_bitvector_equality_path(
                 path,
                 value,
-                &Bitvector32Term::Constant(1),
+                &Bitvector32Term::constant(1),
             ),
         }
     }
@@ -3167,7 +3156,7 @@ impl PureFactContext {
         else {
             return false;
         };
-        if witness != &Bitvector32Term::Constant(0)
+        if witness != &Bitvector32Term::constant(0)
             || !self.proves_exact(source)
             || !matches!(source, Proposition::CMemoryLoadable { .. })
         {
@@ -3372,10 +3361,10 @@ impl PureFactContext {
             if crate::kernel::reasoning::substitute_bitvector_variable_in_pointer_offset(
                 pattern,
                 bound,
-                &Bitvector32Term::Constant(0),
+                &Bitvector32Term::constant(0),
             ) == *target
             {
-                candidates.insert(Bitvector32Term::Constant(0));
+                candidates.insert(Bitvector32Term::constant(0));
             }
             match (pattern, target) {
                 (
@@ -3407,7 +3396,7 @@ impl PureFactContext {
                     let elements = bytes / byte_width;
                     collect_term_candidates(
                         left,
-                        &Bitvector32Term::Constant((elements as i32) as u32),
+                        &Bitvector32Term::constant((elements as i32) as u32),
                         bound,
                         candidates,
                     );
@@ -3439,9 +3428,9 @@ impl PureFactContext {
                         let Ok(elements) = u64::try_from(elements) else {
                             return;
                         };
-                        Bitvector32Term::UInt64Constant(elements)
+                        Bitvector32Term::uint64_constant(elements)
                     } else {
-                        Bitvector32Term::Int64Constant(elements)
+                        Bitvector32Term::int64_constant(elements)
                     };
                     collect_term_candidates(left, &value, bound, candidates);
                 }
@@ -4076,14 +4065,12 @@ impl PureFactContext {
         // Check a literal bound before registering a possibly large model
         // getter on the other side. The equality judgments are unchanged;
         // a mismatched bound makes visiting that payload unnecessary.
-        let (first_fact, first_target, second_fact, second_target) = if matches!(
-            fact_right,
-            Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
-        ) {
-            (fact_right, target_right, fact_left, target_left)
-        } else {
-            (fact_left, target_left, fact_right, target_right)
-        };
+        let (first_fact, first_target, second_fact, second_target) =
+            if matches!(fact_right, bits32_constant!(_)) {
+                (fact_right, target_right, fact_left, target_left)
+            } else {
+                (fact_left, target_left, fact_right, target_right)
+            };
         self.bitvector_terms_equal_for_transport(first_fact, first_target)
             && self.bitvector_terms_equal_for_transport(second_fact, second_target)
     }
@@ -4787,8 +4774,8 @@ pub(super) fn collect_order_index_add_terms(
                 pending.push(right);
                 pending.push(left);
             }
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-                *constant = constant.wrapping_add(*value);
+            bits32_constant!(value) => {
+                *constant = constant.wrapping_add(constant_u32(*value));
             }
             term => terms.push(term.clone()),
         }
@@ -4906,7 +4893,7 @@ mod constant_prefix_certificate_tests {
         let path = context
             .exact_signed_order_path_evidence(&1u32.into(), &upper, true)
             .unwrap();
-        assert_eq!(path[0].lower, Bitvector32Term::Constant(2));
+        assert_eq!(path[0].lower, Bitvector32Term::constant(2));
         assert!(context.checks_exact_signed_order_path(&path, &1u32.into(), &upper, true));
         assert!(context.checks_exact_signed_order_path(&path, &2u32.into(), &upper, false));
         assert!(!context.checks_exact_signed_order_path(&path, &2u32.into(), &upper, true));
@@ -5023,9 +5010,9 @@ mod annotated_alignment_conflict_tests {
             Proposition::ConditionIs(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
         let masked_address = Bitvector32Term::uint64_bitwise_and(
             Bitvector32Term::object_pointer_address(pointer, Some(class)),
-            Bitvector32Term::UInt64Constant(7),
+            Bitvector32Term::uint64_constant(7),
         );
-        let zero = Bitvector32Term::UInt64Constant(0);
+        let zero = Bitvector32Term::uint64_constant(0);
         assert_eq!(
             aligned,
             Proposition::ConditionIs(
@@ -5050,7 +5037,7 @@ mod annotated_alignment_conflict_tests {
                         Pointer::symbolic(Variable(970_001)),
                         None,
                     ),
-                    Bitvector32Term::UInt64Constant(7),
+                    Bitvector32Term::uint64_constant(7),
                 )),
                 right: Box::new(zero.clone())
             },
@@ -5147,7 +5134,7 @@ mod comparison_operand_order_tests {
         let value = getter(4);
         let x = Bitvector32Term::Variable(Variable(9_991_001));
         let bound = Bitvector32Term::Variable(Variable(9_991_002));
-        let limit = Bitvector32Term::Constant(2147483646);
+        let limit = Bitvector32Term::constant(2147483646);
         let value_alias =
             Proposition::ConditionIs(ConditionTerm::equal(value.clone(), x.clone()), true);
         let bound_alias =

@@ -1,6 +1,7 @@
 use super::*;
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{bits32_constant, constant_u32};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[cfg(test)]
@@ -2209,8 +2210,8 @@ fn quantified_index_interval(
 fn unsigned_binder_zero(binder_type: &ClickType) -> Option<CExpression> {
     let value = match binder_type.c_type()? {
         C0Type::UInt8 => crate::kernel::uint8(0),
-        C0Type::UInt32 => CValue::UInt32(Bitvector32Term::UInt32Constant(0)),
-        C0Type::UInt64(_) => CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+        C0Type::UInt32 => CValue::UInt32(Bitvector32Term::uint32_constant(0)),
+        C0Type::UInt64(_) => CValue::UInt64(Bitvector32Term::uint64_constant(0)),
         _ => return None,
     };
     Some(CExpression::Value(value))
@@ -2779,7 +2780,7 @@ fn collect_resource_fact_reads_from_c_expression(
             collect_resource_fact_reads_from_c_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
+                index: CExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
                 expression: describe_c_expression(expression),
                 enclosing_range: None,
             });
@@ -2788,7 +2789,7 @@ fn collect_resource_fact_reads_from_c_expression(
             collect_resource_fact_reads_from_c_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: CExpression::Value(CValue::Int32(Bitvector32Term::Constant(0))),
+                index: CExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
                 expression: describe_c_expression(expression),
                 enclosing_range: None,
             });
@@ -3098,12 +3099,12 @@ fn constant_segment_covers_index(
 
 fn constant_c_expression_i64(expression: &CExpression) -> Option<i64> {
     match expression {
-        CExpression::Value(CValue::Int32(
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-        )) => Some(*value as i32 as i64),
-        CExpression::Value(CValue::UInt8(
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value),
-        )) => Some(i64::from(*value)),
+        CExpression::Value(CValue::Int32(bits32_constant!(value))) => {
+            Some(constant_u32(*value) as i32 as i64)
+        }
+        CExpression::Value(CValue::UInt8(bits32_constant!(value))) => {
+            Some(i64::from(constant_u32(*value)))
+        }
         CExpression::Add(left, right) => {
             Some(constant_c_expression_i64(left)? + constant_c_expression_i64(right)?)
         }
@@ -3313,7 +3314,7 @@ mod read_authority_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(Bitvector32Term::Constant(0)),
+                    left: Box::new(Bitvector32Term::constant(0)),
                     right: Box::new(index_value.clone()),
                 },
                 true,

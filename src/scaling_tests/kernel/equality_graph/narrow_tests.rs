@@ -114,7 +114,7 @@ fn narrow_cast_chains_fold_a_late_constant_in_linear_work() {
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             state
                 .terms
-                .add_typed_equality(W::Bits32, &operand, &Bitvector32Term::Constant(0x1f0));
+                .add_typed_equality(W::Bits32, &operand, &Bitvector32Term::constant(0x1f0));
             assert!(
                 state.terms.are_typed_equal(width, &chain, &expected),
                 "depth {depth}: {last:?} {bits:#x}"

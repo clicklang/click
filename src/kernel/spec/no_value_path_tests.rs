@@ -10,7 +10,7 @@ fn error_path(error: CRuntimeError) -> CExpressionPath {
 
 fn value_path() -> CExpressionPath {
     CExpressionPath {
-        outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Constant(1))),
+        outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::constant(1))),
         facts: Vec::new().into(),
         obligations: Vec::new(),
     }
@@ -20,7 +20,9 @@ fn width_mismatch() -> CRuntimeError {
     CRuntimeError::LoadTypeMismatch {
         pointer: Pointer::null(),
         value_type: CType::Int32,
-        stored: Some(Box::new(CValue::UInt64(Bitvector32Term::UInt64Constant(6)))),
+        stored: Some(Box::new(CValue::UInt64(Bitvector32Term::uint64_constant(
+            6,
+        )))),
     }
 }
 

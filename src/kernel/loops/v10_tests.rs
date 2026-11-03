@@ -6,8 +6,8 @@ fn memory_range(base: u32, end: u32) -> CMemoryRange {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::Constant(base),
-        Bitvector32Term::Constant(end),
+        Bitvector32Term::constant(base),
+        Bitvector32Term::constant(end),
     )
 }
 

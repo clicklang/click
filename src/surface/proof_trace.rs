@@ -1386,7 +1386,7 @@ mod tests {
         let first = crate::kernel::intern_c_memory(CMemory::new());
         let second = crate::kernel::intern_c_memory(CMemory::new().store(
             address.clone(),
-            crate::kernel::CValue::Int32(Bitvector32Term::Constant(1)),
+            crate::kernel::CValue::Int32(Bitvector32Term::constant(1)),
         ));
         let a = Pointer::loaded_value(&first, &address);
         let b = Pointer::loaded_value(&second, &address);
@@ -1493,7 +1493,7 @@ mod tests {
         let first = CMemory::new();
         let second = first.clone().store(
             pointer.clone(),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(9)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(9)),
         );
         let fact = |memory| {
             Proposition::ConditionIs(
@@ -1505,7 +1505,7 @@ mod tests {
                         Box::new(pointer.clone()),
                         LoadKind::Bits64,
                     )),
-                    right: Box::new(Bitvector32Term::UInt64Constant(3)),
+                    right: Box::new(Bitvector32Term::uint64_constant(3)),
                 },
                 true,
             )
@@ -1574,7 +1574,7 @@ mod tests {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             },
-            bytes: Bitvector32Term::Constant(1),
+            bytes: Bitvector32Term::constant(1),
             wide: false,
         }
     }

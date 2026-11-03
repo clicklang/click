@@ -20,18 +20,18 @@ fn narrowed_cast_identity_work_is_independent_of_unrelated_facts() {
     for unrelated in [4u32, 64, 1024] {
         let mut context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::Constant(0)),
+                ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::constant(0)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::Constant(255)),
+                ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::constant(255)),
                 true,
             );
         for index in 0..unrelated {
             context = context.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(171_000 + u64::from(index))),
-                    Bitvector32Term::Constant(index),
+                    Bitvector32Term::constant(index),
                 ),
                 true,
             );

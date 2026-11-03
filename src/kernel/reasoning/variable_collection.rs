@@ -471,8 +471,8 @@ pub(in crate::kernel) fn collect_term_bitvector_variables(
 fn condition_carrier(condition: &ConditionTerm) -> AlgebraicValue {
     AlgebraicValue::C(CValue::Int32(Bitvector32Term::If {
         condition: Box::new(condition.clone()),
-        then_term: Box::new(Bitvector32Term::Constant(1)),
-        else_term: Box::new(Bitvector32Term::Constant(0)),
+        then_term: Box::new(Bitvector32Term::constant(1)),
+        else_term: Box::new(Bitvector32Term::constant(0)),
     }))
 }
 
@@ -2032,12 +2032,7 @@ fn collect_bitvector_integer_variables_seen(
         return;
     }
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_)
-        | Bitvector32Term::Variable(_) => {}
+        Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => {}
         Bitvector32Term::MemoryLoad(_, pointer, _)
         | Bitvector32Term::PointerAddress(pointer, _) => {
             collect_pointer_integer_variables(pointer, variables, seen)
@@ -2749,11 +2744,7 @@ pub(crate) fn collect_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_) => {}
+        Bitvector32Term::Constant { .. } => {}
         Bitvector32Term::Variable(variable) => {
             let newly_seen = variables.insert(*variable);
             if collecting_connection_variables() && !newly_seen {
@@ -2860,11 +2851,7 @@ fn collect_bitvector_capture_variables_seen(
         return;
     }
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_) => {}
+        Bitvector32Term::Constant { .. } => {}
         Bitvector32Term::Variable(variable) => {
             variables.insert(*variable);
             if crate::kernel::is_load_variable(variable)
@@ -3655,11 +3642,7 @@ fn collect_bitvector_scope_summary(
         return IntegerScopeSummary::default();
     }
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_) => IntegerScopeSummary::default(),
+        Bitvector32Term::Constant { .. } => IntegerScopeSummary::default(),
         Bitvector32Term::Variable(variable) => {
             let mut summary = IntegerScopeSummary::bitvector_variable(*variable);
             if crate::kernel::is_load_variable(variable)
@@ -4287,11 +4270,7 @@ fn collect_bitvector_binder_variables_seen(
         return;
     }
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_)
+        Bitvector32Term::Constant { .. }
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::MemoryLoad(_, _, _)
         | Bitvector32Term::PointerAddress(_, _) => {}

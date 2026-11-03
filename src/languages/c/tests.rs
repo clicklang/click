@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::int32_constant;
 
 #[test]
 fn struct_pointer_arrays_keep_element_types_layout_and_incomplete_tags() {
@@ -701,34 +702,34 @@ fn c0_wide_static_initializers_use_checked_wide_values() {
     for (name, expected) in [
         (
             "low",
-            CValue::Int64(Bitvector32Term::Int64Constant(i64::MIN)),
+            CValue::Int64(Bitvector32Term::int64_constant(i64::MIN)),
         ),
         (
             "high",
-            CValue::UInt64(Bitvector32Term::UInt64Constant(u64::MAX)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(u64::MAX)),
         ),
         (
             "wrapped",
-            CValue::UInt64(Bitvector32Term::UInt64Constant(u64::MAX)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(u64::MAX)),
         ),
-        ("mixed", CValue::UInt32(Bitvector32Term::UInt32Constant(0))),
+        ("mixed", CValue::UInt32(Bitvector32Term::uint32_constant(0))),
         (
             "conditional",
-            CValue::UInt32(Bitvector32Term::UInt32Constant(u32::MAX)),
+            CValue::UInt32(Bitvector32Term::uint32_constant(u32::MAX)),
         ),
         (
             "shifted",
-            CValue::UInt32(Bitvector32Term::UInt32Constant(u32::MAX - 1)),
+            CValue::UInt32(Bitvector32Term::uint32_constant(u32::MAX - 1)),
         ),
-        ("zero", CValue::UInt64(Bitvector32Term::UInt64Constant(0))),
+        ("zero", CValue::UInt64(Bitvector32Term::uint64_constant(0))),
         (
             "promoted",
-            CValue::Int64(Bitvector32Term::Int64Constant(i64::from(u32::MAX))),
+            CValue::Int64(Bitvector32Term::int64_constant(i64::from(u32::MAX))),
         ),
         // GCC converts an out-of-range constant modulo 2^64.
         (
             "converted",
-            CValue::Int64(Bitvector32Term::Int64Constant(i64::MIN)),
+            CValue::Int64(Bitvector32Term::int64_constant(i64::MIN)),
         ),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
@@ -5407,7 +5408,7 @@ fn c0_unary_minus_preserves_signed_overflow_semantics() {
     .expect("unary minus function should parse");
     let state = crate::kernel::CState::new().with_local(
         "value",
-        crate::kernel::int32(crate::kernel::Bitvector32Term::Constant(0x8000_0000)),
+        crate::kernel::int32(crate::kernel::Bitvector32Term::constant(0x8000_0000)),
     );
     let theorem = crate::kernel::prove_symbolic_c_execution(
         state.clone(),
@@ -6641,7 +6642,7 @@ fn c0_chained_field_load_executes_through_typed_pointer_memory() {
         proposition,
         crate::kernel::Proposition::CStatementExecutes {
             outcome: crate::kernel::CStatementOutcome::Return {
-                value: crate::kernel::CValue::Int32(crate::kernel::Bitvector32Term::Constant(9)),
+                value: crate::kernel::CValue::Int32(int32_constant!(9)),
                 ..
             },
             ..
@@ -6994,7 +6995,7 @@ fn c0_syntax_targets_kernel_float64_struct_field_load() {
         block: "object".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let value = crate::kernel::float64(crate::kernel::Bitvector32Term::UInt64Constant(
+    let value = crate::kernel::float64(crate::kernel::Bitvector32Term::uint64_constant(
         1.25f64.to_bits(),
     ));
     let statement = function.body_kernel_statement();
@@ -8544,14 +8545,14 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
                         block: "packet".into(),
                         offset: crate::kernel::PointerOffsetTerm::Constant(8),
                     },
-                    crate::kernel::int64(crate::kernel::Bitvector32Term::Int64Constant(-9)),
+                    crate::kernel::int64(crate::kernel::Bitvector32Term::int64_constant(-9)),
                 )
                 .store(
                     crate::kernel::Pointer {
                         block: "packet".into(),
                         offset: crate::kernel::PointerOffsetTerm::Constant(16),
                     },
-                    crate::kernel::uint64(crate::kernel::Bitvector32Term::UInt64Constant(11)),
+                    crate::kernel::uint64(crate::kernel::Bitvector32Term::uint64_constant(11)),
                 ),
         )
         .with_resource_context(resources);
@@ -8580,7 +8581,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::uint64(crate::kernel::Bitvector32Term::UInt64Constant(11)),
+                value: crate::kernel::uint64(crate::kernel::Bitvector32Term::uint64_constant(11)),
                 state: Box::new(final_state),
             },
         }
@@ -10842,7 +10843,7 @@ fn c0_syntax_targets_kernel_float_argument_conversion() {
     };
     assert_eq!(
         value,
-        &crate::kernel::Bitvector32Term::UInt64Constant(1.0f64.to_bits())
+        &crate::kernel::Bitvector32Term::uint64_constant(1.0f64.to_bits())
     );
 }
 
@@ -12401,7 +12402,7 @@ fn c0_floating_point_storage_initializers_cover_static_local_arrays_and_calloc()
     assert_eq!(
         load.to_kernel_function().static_variables()[0].initial_value(),
         &crate::kernel::CValue::Float32(
-            crate::kernel::Bitvector32Term::Constant(2.5f32.to_bits(),)
+            crate::kernel::Bitvector32Term::constant(2.5f32.to_bits(),)
         )
     );
 
@@ -12745,7 +12746,7 @@ fn c0_bool_objects_normalize_values_and_keep_abi_metadata() {
         execution.proposition(),
         crate::kernel::Proposition::CFunctionExecutes {
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::CValue::Int32(crate::kernel::Bitvector32Term::Constant(1)),
+                value: crate::kernel::CValue::Int32(int32_constant!(1)),
                 ..
             },
             ..
@@ -12783,7 +12784,7 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
         null.proposition(),
         crate::kernel::Proposition::CFunctionExecutes {
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::CValue::Int32(crate::kernel::Bitvector32Term::Constant(0)),
+                value: crate::kernel::CValue::Int32(int32_constant!(0)),
                 ..
             },
             ..
@@ -12803,7 +12804,7 @@ fn c0_bool_header_constants_pointer_conversion_and_callbacks_are_typed() {
         non_null.proposition(),
         crate::kernel::Proposition::CFunctionExecutes {
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::CValue::Int32(crate::kernel::Bitvector32Term::Constant(1)),
+                value: crate::kernel::CValue::Int32(int32_constant!(1)),
                 ..
             },
             ..
@@ -13074,7 +13075,7 @@ fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
         ("negative", crate::kernel::uint8(200)),
         ("wide", crate::kernel::uint8(44)),
         ("big", crate::kernel::int16(-25536i32 as u32)),
-        ("value", CValue::Int32(Bitvector32Term::Constant(0))),
+        ("value", CValue::Int32(Bitvector32Term::constant(0))),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
         assert_eq!(global.initial_value(), &expected, "{name}");
@@ -14217,11 +14218,11 @@ fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
         ),
         (
             "uint64 run() { uint64 n = 0; uint64 before = n--; return n; }",
-            crate::kernel::uint64(Bitvector32Term::UInt64Constant(u64::MAX)),
+            crate::kernel::uint64(Bitvector32Term::uint64_constant(u64::MAX)),
         ),
         (
             "uint64 run() { uint64 n = 0; while (n--) { } return n; }",
-            crate::kernel::uint64(Bitvector32Term::UInt64Constant(u64::MAX)),
+            crate::kernel::uint64(Bitvector32Term::uint64_constant(u64::MAX)),
         ),
         (
             "int32 run() { uint64 n = 2; int32 count = 0; while (n--) { count++; } return count; }",

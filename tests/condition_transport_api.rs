@@ -29,7 +29,7 @@ fn consistent_context_retains_its_symbolic_premise() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(Variable(777))),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         true,
     );
@@ -107,7 +107,7 @@ fn retained_premises_ignore_unrelated_ambient_context_at_scale() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(Bitvector32Term::Variable(Variable(777))),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         },
         true,
     );

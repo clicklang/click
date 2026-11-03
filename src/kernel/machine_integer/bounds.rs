@@ -23,6 +23,9 @@ use crate::kernel::binary_node;
 use crate::kernel::{
     Bitvector32Term, ConditionTerm, IntegerTerm, Proposition, SharedMachineIntegerTerm,
 };
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
+};
 use num_bigint::BigInt;
 use num_traits::{One, Zero};
 
@@ -30,11 +33,9 @@ use num_traits::{One, Zero};
 /// amount is a count, whatever word carries it.
 fn unsigned_constant(term: &Bitvector32Term) -> Option<BigInt> {
     match term {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-            Some(BigInt::from(*value))
-        }
-        Bitvector32Term::Int64Constant(value) => Some(BigInt::from(*value)),
-        Bitvector32Term::UInt64Constant(value) => Some(BigInt::from(*value)),
+        bits32_constant!(value) => Some(BigInt::from(constant_u32(*value))),
+        int64_constant!(value) => Some(BigInt::from(constant_i64(*value))),
+        uint64_constant!(value) => Some(BigInt::from(constant_u64(*value))),
         _ => None,
     }
 }
@@ -134,12 +135,12 @@ mod tests {
             (
                 MachineIntegerType::Int32,
                 Bitvector32Term::Variable(Variable(173_001)),
-                Bitvector32Term::Constant(8),
+                Bitvector32Term::constant(8),
             ),
             (
                 MachineIntegerType::Int64,
                 Bitvector32Term::Variable(Variable(173_001)),
-                Bitvector32Term::Int64Constant(8),
+                Bitvector32Term::int64_constant(8),
             ),
         ] {
             let operand = IntegerTerm::from_machine(ty, word.clone()).unwrap();
@@ -192,13 +193,13 @@ mod tests {
                         Int32,
                         ShiftRight,
                         Box::new(word.clone()),
-                        Box::new(Bitvector32Term::Constant(3)),
+                        Box::new(Bitvector32Term::constant(3)),
                     ),
                     _ => Bitvector32Term::Binary {
                         format: MachineIntegerType::Int64,
                         op: MachineBinaryOp::ShiftRight,
                         left: Box::new(word.clone()),
-                        right: Box::new(Bitvector32Term::Constant(3)),
+                        right: Box::new(Bitvector32Term::constant(3)),
                     },
                 },
             );
@@ -237,8 +238,8 @@ mod tests {
         // though its unsigned reading is a large positive number.
         let x = Box::new(Bitvector32Term::Variable(Variable(173_002)));
         for divisor in [
-            Bitvector32Term::Constant(-8i32 as u32),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(-8i32 as u32),
+            Bitvector32Term::constant(0),
         ] {
             for word in [
                 binary_node!(Int32, Divide, x.clone(), Box::new(divisor.clone())),
@@ -257,7 +258,7 @@ mod tests {
                     Int32,
                     ShiftRight,
                     x.clone(),
-                    Box::new(Bitvector32Term::Constant(amount)),
+                    Box::new(Bitvector32Term::constant(amount)),
                 ),
             );
             assert_eq!(operation_bound(&value, true), None);

@@ -320,12 +320,12 @@ mod tests {
             format,
             op: MachineBinaryOp::Add,
             left: Box::new(Bitvector32Term::Variable(variable)),
-            right: Box::new(Bitvector32Term::Constant(1)),
+            right: Box::new(Bitvector32Term::constant(1)),
         };
         let shared = KernelTermImport::default()
             .machine_arithmetic(format, &native)
             .unwrap();
-        let limit = Bitvector32Term::Constant(20);
+        let limit = Bitvector32Term::constant(20);
         for relation in [
             CompareRelation::Equal,
             CompareRelation::LessThan,

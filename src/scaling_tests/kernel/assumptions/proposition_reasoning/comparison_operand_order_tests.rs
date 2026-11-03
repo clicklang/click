@@ -12,7 +12,7 @@ fn rejecting_comparison_bound_ignores_unrelated_getter_payload() {
             let _session = crate::kernel::VerificationSession::enter();
             let fact = ConditionTerm::signed_less_equal(
                 getter(size),
-                Bitvector32Term::Constant(2147483646),
+                Bitvector32Term::constant(2147483646),
             );
             let goal = if mirrored {
                 ConditionTerm::signed_greater_equal(y.clone(), x.clone())

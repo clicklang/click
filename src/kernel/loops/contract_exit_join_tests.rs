@@ -27,7 +27,7 @@ fn exit_disjunct_restates_model_getters_without_replacing_history() {
                     name: "pending".into(),
                     arguments: vec![crate::kernel::PureFunctionArgument::Algebraic(model)],
                 },
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
             true,
         )
@@ -212,7 +212,7 @@ fn numeric_float_equality_does_not_materialize_positive_zero_bits() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = CMemory::new().with_block("shared", 4);
-    let zero = CValue::Float32(Bitvector32Term::Constant(0));
+    let zero = CValue::Float32(Bitvector32Term::constant(0));
     let load = symbolic_storage_cell_value(&memory, &pointer, CType::Float32, true).unwrap();
     // This equation also permits a negative-zero representation. Filling
     // the cache with positive-zero bits would make a later bitwise read false.

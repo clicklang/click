@@ -249,7 +249,7 @@ pub(crate) fn iterated_separate_from_range(
         let first = iterated.element_range(iterated.lower());
         let last = iterated.element_range(&Bitvector32Term::subtract(
             iterated.upper().clone(),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(1),
         ));
         Some(CMemoryRange::new_with_element_width(
             iterated.element_base().clone(),
@@ -318,7 +318,7 @@ fn element_index(
     };
     let scaled = Bitvector32Term::subtract(
         start.clone(),
-        Bitvector32Term::Constant(iterated.start_offset as u32),
+        Bitvector32Term::constant(iterated.start_offset as u32),
     );
     if iterated.stride == 1 {
         return Ok(scaled);
@@ -730,8 +730,8 @@ pub(crate) fn plan_iterated_guard_store(
         // cannot be a guard cell another owned range holds.
         let written = CResource::Memory(CMemoryRange::new_with_element_width(
             pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
             value.byte_width().max(1),
         ));
         if resources.proves_owned_resources_separate(
@@ -834,8 +834,8 @@ mod wide_range_reader_tests {
         .unwrap();
         let wide = CMemoryRange::new_wide(
             base,
-            Bitvector32Term::UInt64Constant(0),
-            Bitvector32Term::UInt64Constant(1 << 33),
+            Bitvector32Term::uint64_constant(0),
+            Bitvector32Term::uint64_constant(1 << 33),
             4,
         );
         assert!(

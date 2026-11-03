@@ -673,7 +673,7 @@ mod tests {
         for i in 0..history {
             before = before.store(
                 Pointer::symbolic(Variable(8_320_000 + i)),
-                CValue::Int32(Bitvector32Term::Constant(i as u32)),
+                CValue::Int32(Bitvector32Term::constant(i as u32)),
             );
         }
         if cached {
@@ -685,7 +685,7 @@ mod tests {
         let after = before
             .clone()
             .without_possible_aliasing_cells(&changed, 4, &PureFactContext::new())
-            .store(changed.clone(), CValue::Int32(Bitvector32Term::Constant(1)));
+            .store(changed.clone(), CValue::Int32(Bitvector32Term::constant(1)));
         let resource = |p, bytes| {
             Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
                 p,

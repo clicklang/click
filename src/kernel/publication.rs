@@ -311,7 +311,7 @@ fn release_store(
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(desired.clone()),
-        right: Box::new(Bitvector32Term::Constant(0)),
+        right: Box::new(Bitvector32Term::constant(0)),
     }) != Some(false)
     {
         return Ok(Err(refusal(
@@ -457,7 +457,7 @@ pub(crate) fn resolve_observed_publications(
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
-            right: Box::new(Bitvector32Term::Constant(0)),
+            right: Box::new(Bitvector32Term::constant(0)),
         };
         let Some(unpublished) = assumptions.decide(&zero) else {
             continue;
@@ -572,7 +572,7 @@ mod tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term),
-                        right: Box::new(Bitvector32Term::Constant(0)),
+                        right: Box::new(Bitvector32Term::constant(0)),
                     },
                     false,
                 ))

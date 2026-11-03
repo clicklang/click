@@ -9,14 +9,14 @@ fn quantity_query_work_is_indexed_over_separately_retained_units() {
     let assumptions = PureFactContext::new();
     let samples = [16_u32, 64, 256, 1024].map(|size| {
         let context = ResourceContext::new()
-            .unchecked_with_facts((0..size).map(|_| required(Bitvector32Term::Constant(1))));
+            .unchecked_with_facts((0..size).map(|_| required(Bitvector32Term::constant(1))));
         let ((), work) = crate::persistent::measure_persistent_work(|| {
             assert!(
-                context.satisfies_fact(&required(Bitvector32Term::Constant(size)), &assumptions)
+                context.satisfies_fact(&required(Bitvector32Term::constant(size)), &assumptions)
             );
             assert!(
                 !context
-                    .satisfies_fact(&required(Bitvector32Term::Constant(size + 1)), &assumptions)
+                    .satisfies_fact(&required(Bitvector32Term::constant(size + 1)), &assumptions)
             );
         });
         work
@@ -37,7 +37,7 @@ fn zero_ownership_graph_queries_scale_without_fact_index() {
                 context.assume_condition(ConditionTerm::equal(var(index), var(index + 1)), true);
         }
         context = context.assume_condition(
-            ConditionTerm::equal(var(size), Bitvector32Term::Constant(0)),
+            ConditionTerm::equal(var(size), Bitvector32Term::constant(0)),
             true,
         );
         let empty = ResourceContext::new();

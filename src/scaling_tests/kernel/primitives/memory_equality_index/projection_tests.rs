@@ -62,8 +62,8 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
             );
             ambient = ambient.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
                 Pointer::symbolic(Variable(895_000 + i)),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(1),
             )));
         }
         let state = CState::new()

@@ -1164,7 +1164,7 @@ impl PureFactContext {
         let target = signed_bitvector_constant(target)?;
         let (unsigned, source) = self.indexed_exact_int32_constant(byte)?;
         let unsigned = u8::try_from(unsigned).ok()?;
-        let signed = Bitvector32Term::signed_byte(Bitvector32Term::Constant(u32::from(unsigned)))
+        let signed = Bitvector32Term::signed_byte(Bitvector32Term::constant(u32::from(unsigned)))
             .as_const()? as i32;
         record_implicit_reasoning_provenance(self, &source);
         Some(i64::from(signed) == target)
@@ -1228,7 +1228,7 @@ impl PureFactContext {
         if shifted < minimum || shifted > maximum {
             return Some(!strict);
         }
-        let bound = Bitvector32Term::Constant(shifted as u32);
+        let bound = Bitvector32Term::constant(shifted as u32);
         let relation = match (greater, strict) {
             (true, true) => CompareRelation::GreaterEqual,
             (true, false) => CompareRelation::GreaterThan,
@@ -1639,9 +1639,9 @@ impl PureFactContext {
             } else {
                 value.map(|value| {
                     if view.format == MachineIntegerType::Int64 && !equality {
-                        Bitvector32Term::Int64Constant(value as i64)
+                        Bitvector32Term::int64_constant(value as i64)
                     } else {
-                        Bitvector32Term::UInt64Constant(value)
+                        Bitvector32Term::uint64_constant(value)
                     }
                 })
             }
@@ -2101,21 +2101,14 @@ impl PureFactContext {
         term: &Bitvector32Term,
     ) -> Bitvector32Term {
         if let Some(value) = self.bitvector_constant_from_direct_equalities(term) {
-            return Bitvector32Term::Constant(value);
+            return Bitvector32Term::constant(value);
         }
         match term {
-            Bitvector32Term::MachineIntegerConstant(value) => {
-                Bitvector32Term::MachineIntegerConstant(*value)
-            }
-
-            Bitvector32Term::Constant(value) => Bitvector32Term::Constant(*value),
-            Bitvector32Term::UInt32Constant(value) => Bitvector32Term::UInt32Constant(*value),
+            Bitvector32Term::Constant { .. } => term.clone(),
             Bitvector32Term::Variable(variable) => Bitvector32Term::Variable(*variable),
-            Bitvector32Term::Int64Constant(value) => Bitvector32Term::Int64Constant(*value),
-            Bitvector32Term::UInt64Constant(value) => Bitvector32Term::UInt64Constant(*value),
             Bitvector32Term::UInt32From64(value) => {
                 match self.wide_constant_from_equalities(value) {
-                    Some(bits) => Bitvector32Term::Constant(bits as u32),
+                    Some(bits) => Bitvector32Term::constant(bits as u32),
                     None => Bitvector32Term::uint32_from_64(
                         self.simplify_bitvector_under_assumptions(value),
                     ),
@@ -2175,7 +2168,7 @@ impl PureFactContext {
             }
             // Rule C1: a decided `Bool` casts to 1 or 0.
             Bitvector32Term::BoolCast { value, .. } => match self.decide(value) {
-                Some(value) => Bitvector32Term::Constant(u32::from(value)),
+                Some(value) => Bitvector32Term::constant(u32::from(value)),
                 None => term.clone(),
             },
             Bitvector32Term::ClickFunctionApplication { .. }
@@ -2639,7 +2632,7 @@ mod exact_word_order_tests {
         condition_for_operand_views(
             format,
             relation,
-            [term, V::Legacy(&Bitvector32Term::Constant(bound))],
+            [term, V::Legacy(&Bitvector32Term::constant(bound))],
         )
     }
 
@@ -2703,7 +2696,7 @@ mod exact_word_order_tests {
                     let mirrored = condition_for_operand_views(
                         format,
                         mirrored,
-                        [V::Legacy(&Bitvector32Term::Constant(10)), V::Shared(&root)],
+                        [V::Legacy(&Bitvector32Term::constant(10)), V::Shared(&root)],
                     );
                     assert_eq!(
                         context.decide_exact_word_constant_order(&mirrored, format),

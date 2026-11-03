@@ -57,7 +57,7 @@ fn numerical_batch_quantity(
         .or_else(|| {
             (assumptions.exact_condition_value(&crate::kernel::ConditionTerm::equal(
                 quantity.clone(),
-                Bitvector32Term::Constant(held),
+                Bitvector32Term::constant(held),
             )) == Some(true))
             .then_some(held)
         })
@@ -194,11 +194,11 @@ impl SymbolicPopulationCount {
         match (&self.symbolic_delta, self.delta) {
             (Some((true, quantity)), delta) if delta > 0 => Some((
                 true,
-                Bitvector32Term::add(quantity.clone(), Bitvector32Term::Constant(delta as u32)),
+                Bitvector32Term::add(quantity.clone(), Bitvector32Term::constant(delta as u32)),
             )),
             (Some(delta), _) => Some(delta.clone()),
             (None, delta) if delta != 0 => {
-                Some((delta > 0, Bitvector32Term::Constant(delta.unsigned_abs())))
+                Some((delta > 0, Bitvector32Term::constant(delta.unsigned_abs())))
             }
             (None, _) => None,
         }
@@ -571,7 +571,7 @@ impl CreationEvents {
     ) -> Result<Self, CreationRefusal> {
         self.import_observable_contract_population_quantity(
             description,
-            &Bitvector32Term::Constant(owned_members),
+            &Bitvector32Term::constant(owned_members),
         )
     }
 
@@ -1272,7 +1272,7 @@ impl CreationEvents {
                 .then(|| {
                     (
                         true,
-                        Bitvector32Term::Constant(u32::from(member.owner.is_some())),
+                        Bitvector32Term::constant(u32::from(member.owner.is_some())),
                     )
                 });
         }
@@ -1288,7 +1288,7 @@ impl CreationEvents {
                 true,
                 Bitvector32Term::add(
                     import.symbolic_delta.as_ref()?.1.clone(),
-                    Bitvector32Term::Constant(import.owned_members),
+                    Bitvector32Term::constant(import.owned_members),
                 ),
             ));
         }
@@ -1302,13 +1302,13 @@ impl CreationEvents {
                 return None;
             }
             if import.entry_owned_members.checked_add(1) == Some(import.owned_members) {
-                Some((true, Bitvector32Term::Constant(1)))
+                Some((true, Bitvector32Term::constant(1)))
             } else if import.owned_members.checked_add(1) == Some(import.entry_owned_members) {
-                Some((false, Bitvector32Term::Constant(1)))
+                Some((false, Bitvector32Term::constant(1)))
             } else {
                 Some((
                     import.owned_members >= import.entry_owned_members,
-                    Bitvector32Term::Constant(
+                    Bitvector32Term::constant(
                         import.owned_members.abs_diff(import.entry_owned_members),
                     ),
                 ))
@@ -1851,7 +1851,7 @@ impl CreationEvents {
                     return Err(CreationRefusal::InvalidMember);
                 }
                 return Ok(SymbolicPopulationCount {
-                    entry_count: Bitvector32Term::Constant(u32::from(member.owner.is_some())),
+                    entry_count: Bitvector32Term::constant(u32::from(member.owner.is_some())),
                     delta: 0,
                     entry_owned_members: 0,
                     entry_symbolic_members: None,
@@ -1934,7 +1934,7 @@ impl CreationEvents {
             return Err(CreationRefusal::InvalidMember);
         }
         Ok(SymbolicPopulationCount {
-            entry_count: Bitvector32Term::Constant(if empty {
+            entry_count: Bitvector32Term::constant(if empty {
                 0
             } else {
                 self.0
@@ -1969,7 +1969,7 @@ impl CreationEvents {
                 AlgebraicValue::C(CValue::Int32(
                     value
                         .as_const()
-                        .map(Bitvector32Term::Constant)
+                        .map(Bitvector32Term::constant)
                         .unwrap_or(value),
                 ))
             }
@@ -2015,7 +2015,7 @@ impl CreationEvents {
             .authority
             .observe(self.0.invocation, population)
             .map_err(CreationRefusal::from)?;
-        let base = Bitvector32Term::Constant(base);
+        let base = Bitvector32Term::constant(base);
         Ok(match self.0.symbolic_batches.get(&population) {
             Some(batch) => Bitvector32Term::add(base, batch.quantity.clone()),
             None => base,
@@ -2086,7 +2086,7 @@ impl CreationEvents {
             .then(|| crate::kernel::assumptions::exact_signed_constant(quantity, assumptions))
             .flatten()
             .filter(|value| (0..=i64::from(i32::MAX)).contains(value))
-            .map(|value| Bitvector32Term::Constant(value as u32));
+            .map(|value| Bitvector32Term::constant(value as u32));
         let quantity = exact_numeric.as_ref().unwrap_or(quantity);
         // A helper may select the complete numerical batch by an entry field
         // rather than a literal. Keep the symbolic-batch path unchanged.
@@ -2107,7 +2107,7 @@ impl CreationEvents {
                     assumptions,
                 )
             })
-            .map(Bitvector32Term::Constant);
+            .map(Bitvector32Term::constant);
         let quantity = numerical.as_ref().unwrap_or(quantity);
         if quantity.as_const() == Some(1) {
             return self.checked_member_exchange_with_context(
@@ -2160,7 +2160,7 @@ impl CreationEvents {
                 let zero_entry =
                     assumptions.exact_condition_value(&crate::kernel::ConditionTerm::equal(
                         entry.clone(),
-                        Bitvector32Term::Constant(0),
+                        Bitvector32Term::constant(0),
                     )) == Some(true);
                 let upper = entry
                     .as_const()
@@ -2175,9 +2175,9 @@ impl CreationEvents {
                         high + delta + i64::from(amount) <= i64::from(i32::MAX)
                     });
                 let current = if delta >= 0 {
-                    Bitvector32Term::add(entry, Bitvector32Term::Constant(delta as u32))
+                    Bitvector32Term::add(entry, Bitvector32Term::constant(delta as u32))
                 } else {
-                    Bitvector32Term::subtract(entry, Bitvector32Term::Constant((-delta) as u32))
+                    Bitvector32Term::subtract(entry, Bitvector32Term::constant((-delta) as u32))
                 };
                 if !bounded
                     && assumptions.exact_condition_value(
@@ -2205,7 +2205,7 @@ impl CreationEvents {
             assumptions,
             crate::kernel::ConditionTerm::signed_greater_equal(
                 quantity.clone(),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
         ) {
             return Err(CreationRefusal::InvalidQuantity);
@@ -2240,7 +2240,7 @@ impl CreationEvents {
                     .authority
                     .observe(self.0.invocation, population)
                     .map_err(CreationRefusal::from)?;
-                let maximum = Bitvector32Term::Constant(i32::MAX as u32 - base);
+                let maximum = Bitvector32Term::constant(i32::MAX as u32 - base);
                 if !crate::kernel::quantity_condition_holds(
                     assumptions,
                     crate::kernel::ConditionTerm::signed_greater_equal(maximum, quantity.clone()),
@@ -2465,17 +2465,17 @@ impl CreationEvents {
             let current = if aggregate.delta >= 0 {
                 Bitvector32Term::add(
                     entry.clone(),
-                    Bitvector32Term::Constant(aggregate.delta as u32),
+                    Bitvector32Term::constant(aggregate.delta as u32),
                 )
             } else {
                 Bitvector32Term::subtract(
                     entry.clone(),
-                    Bitvector32Term::Constant(aggregate.delta.unsigned_abs()),
+                    Bitvector32Term::constant(aggregate.delta.unsigned_abs()),
                 )
             };
             let overflow = crate::kernel::ConditionTerm::signed_add_overflows(
                 current,
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(1),
             );
             if assumptions.exact_condition_value(&overflow) != Some(false)
                 && !assumptions
@@ -2544,7 +2544,7 @@ impl CreationEvents {
                     symbolic_delta: (aggregate.delta != 0).then(|| {
                         (
                             aggregate.delta > 0,
-                            Bitvector32Term::Constant(aggregate.delta.unsigned_abs()),
+                            Bitvector32Term::constant(aggregate.delta.unsigned_abs()),
                         )
                     }),
                     consumed_named,
@@ -2681,16 +2681,16 @@ impl CreationEvents {
                     let delta =
                         i64::from(import.owned_members) - i64::from(import.entry_owned_members);
                     let total = if delta >= 0 {
-                        Bitvector32Term::add(entry.clone(), Bitvector32Term::Constant(delta as u32))
+                        Bitvector32Term::add(entry.clone(), Bitvector32Term::constant(delta as u32))
                     } else {
                         Bitvector32Term::subtract(
                             entry.clone(),
-                            Bitvector32Term::Constant((-delta) as u32),
+                            Bitvector32Term::constant((-delta) as u32),
                         )
                     };
                     let no_overflow = crate::kernel::ConditionTerm::signed_add_overflows(
                         total,
-                        Bitvector32Term::Constant(1),
+                        Bitvector32Term::constant(1),
                     );
                     if !assumptions.is_some_and(|facts| {
                         facts.exact_condition_value(&no_overflow) == Some(false)
@@ -2727,7 +2727,7 @@ impl CreationEvents {
                         .ok_or(CreationRefusal::MissingAuthority)?;
                     let condition = crate::kernel::ConditionTerm::signed_add_overflows(
                         current.clone(),
-                        Bitvector32Term::Constant(amount),
+                        Bitvector32Term::constant(amount),
                     );
                     if !assumptions.is_some_and(|facts| {
                         facts.exact_condition_value(&condition) == Some(false)
@@ -2988,7 +2988,7 @@ impl CreationEvents {
             to,
             description,
             authority_fact,
-            &Bitvector32Term::Constant(1),
+            &Bitvector32Term::constant(1),
             &PureFactContext::new(),
         )
     }
@@ -3024,12 +3024,12 @@ impl CreationEvents {
                     assumptions,
                 )
             })
-            .map(Bitvector32Term::Constant);
+            .map(Bitvector32Term::constant);
         let quantity = numerical.as_ref().unwrap_or(quantity);
         // Zero ownership transports no member capability, including when a
         // checked contract equality establishes that a field-valued quantity
         // is zero. It cannot move the authority or justify a unit operation.
-        if !authority_fact && same_quantity(quantity, &Bitvector32Term::Constant(0), assumptions) {
+        if !authority_fact && same_quantity(quantity, &Bitvector32Term::constant(0), assumptions) {
             return Ok(self.clone());
         }
         if let Some(scope) = scope
@@ -3524,10 +3524,10 @@ impl CreationEvents {
         let consumed = symbolic
             .symbolic_delta
             .map(|(_, quantity)| quantity)
-            .unwrap_or(Bitvector32Term::Constant(symbolic.delta.unsigned_abs()));
+            .unwrap_or(Bitvector32Term::constant(symbolic.delta.unsigned_abs()));
         let current = Bitvector32Term::subtract(symbolic.entry_count.clone(), consumed.clone());
         if !same_quantity(&symbolic.entry_count, &consumed, assumptions)
-            && !same_quantity(&current, &Bitvector32Term::Constant(0), assumptions)
+            && !same_quantity(&current, &Bitvector32Term::constant(0), assumptions)
         {
             return Err(CreationRefusal::UnknownTotal);
         }

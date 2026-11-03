@@ -124,6 +124,7 @@ pub(crate) mod reasoning;
 pub(crate) use reasoning::variable_collection::count_cells_collected;
 pub(crate) mod resource_tracker;
 mod spec;
+pub(crate) use spec::LOOP_ITERATIONS_VARIABLE;
 pub(crate) use spec::{
     SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,
     capture_spec_integer_value, capture_spec_integer_value_with_guards,

@@ -13,6 +13,7 @@
 //! that explicit script and nothing here is trusted.
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
 
 /// Which integers a goal orders: the 64-bit ones, or `uint32`, whose order
 /// this route reads only for an order goal ([`Carrier::of_order_goal`]).
@@ -115,15 +116,15 @@ impl Carrier {
                     Self::UInt64 => text
                         .parse::<u64>()
                         .ok()
-                        .map(|value| CValue::UInt64(Bitvector32Term::UInt64Constant(value))),
+                        .map(|value| CValue::UInt64(Bitvector32Term::uint64_constant(value))),
                     Self::Int64 => text
                         .parse::<i64>()
                         .ok()
-                        .map(|value| CValue::Int64(Bitvector32Term::Int64Constant(value))),
+                        .map(|value| CValue::Int64(Bitvector32Term::int64_constant(value))),
                     Self::UInt32 => text
                         .parse::<u32>()
                         .ok()
-                        .map(|value| CValue::UInt32(Bitvector32Term::UInt32Constant(value))),
+                        .map(|value| CValue::UInt32(Bitvector32Term::uint32_constant(value))),
                 };
                 value
                     .map(|value| ContractExpression::CFragment(CExpression::Value(value)))
@@ -267,9 +268,9 @@ fn at_operand(selector: &SnapshotSelector, expression: &ContractExpression) -> C
     match expression {
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::CFragment(CExpression::Value(
-            CValue::UInt64(Bitvector32Term::UInt64Constant(_))
-            | CValue::Int64(Bitvector32Term::Int64Constant(_))
-            | CValue::UInt32(Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)),
+            CValue::UInt64(uint64_constant!(_))
+            | CValue::Int64(int64_constant!(_))
+            | CValue::UInt32(bits32_constant!(_)),
         ))
         | ContractExpression::At { .. }
         | ContractExpression::Old(_) => expression.clone(),

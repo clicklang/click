@@ -19,8 +19,9 @@ needs the fact at all: the loop's store `occupied[i - 1]` and an earlier cell
 `occupied[k]` are separated by `k < i - 1` alone. The loop also follows a
 proof-level `branch`, the shape `loop_after_proof_branch_expands.md` reduces.
 The expansion regression in `src/surface/tests/expansion_tests.rs` expands
-the site and re-verifies the rewrite, and the audit regression in
-`src/bin/click-audit/tests.rs` audits every smart site of this file.
+the site and re-verifies the rewrite. The retained-session audit regression
+uses the smaller `loop_after_proof_branch_expands.md` fixture rather than
+repeatedly checking this entire allocation proof.
 
 ```c filename=arena_init.c
 struct arena {

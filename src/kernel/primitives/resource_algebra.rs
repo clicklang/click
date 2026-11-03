@@ -3,6 +3,7 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 mod observable;
 
 /// A proof-aware composition query in progress on this thread. Bridging a
@@ -63,8 +64,8 @@ fn composition_query_guard_refuses_reentry_and_keeps_the_outer_query() {
                 block: "buffer".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::Constant(index as u32),
-            Bitvector32Term::Constant(index as u32 + 1),
+            Bitvector32Term::constant(index as u32),
+            Bitvector32Term::constant(index as u32 + 1),
         )
     };
     let first = CompositionQuery::RangesSeparate(range(0), range(1));
@@ -1260,8 +1261,8 @@ fn collect_memory_load_work<'a>(
                         *source_snapshot = Some(snapshot);
                         ranges.push(CMemoryRange::new_with_element_width(
                             pointer.as_ref().clone(),
-                            Bitvector32Term::Constant(0),
-                            Bitvector32Term::Constant(1),
+                            Bitvector32Term::constant(0),
+                            Bitvector32Term::constant(1),
                             width,
                         ));
                         work.push(MemoryLoadFootprintWork::Offset(&pointer.offset, depth + 1));
@@ -1278,12 +1279,7 @@ fn collect_memory_load_work<'a>(
                     crate::kernel::unary_machine_term!(value) => {
                         work.push(MemoryLoadFootprintWork::Term(value, depth + 1));
                     }
-                    Bitvector32Term::Constant(_)
-                    | Bitvector32Term::UInt32Constant(_)
-                    | Bitvector32Term::Int64Constant(_)
-                    | Bitvector32Term::UInt64Constant(_)
-                    | Bitvector32Term::MachineIntegerConstant(_)
-                    | Bitvector32Term::Variable(_) => {}
+                    Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => {}
                     // These forms can hide load-bearing children behind a
                     // separate semantic object. Until checked read evidence
                     // is exposed for that object, invalidate conservatively.
@@ -3635,8 +3631,8 @@ impl ResourceContext {
                 let piece = CResourceFact::own_memory(
                     CMemoryRange::new_wide(
                         available.base().clone(),
-                        Bitvector32Term::UInt64Constant(at),
-                        Bitvector32Term::UInt64Constant(at.checked_add(bytes / width)?),
+                        Bitvector32Term::uint64_constant(at),
+                        Bitvector32Term::uint64_constant(at.checked_add(bytes / width)?),
                         available.element_width(),
                     )
                     .with_carrier_of(available),
@@ -4160,8 +4156,8 @@ impl ResourceContext {
                 for (pointer, value) in &stores {
                     let write = CMemoryRange::new_with_element_width(
                         pointer.clone(),
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(1),
+                        Bitvector32Term::constant(0),
+                        Bitvector32Term::constant(1),
                         value.byte_width(),
                     );
                     if memory_interval_nodes(&write).is_some() {
@@ -4217,8 +4213,8 @@ impl ResourceContext {
                 if let Some(byte_count) = bytes.as_const() {
                     let freed = CMemoryRange::new_with_element_width(
                         allocation_base.clone(),
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(byte_count),
+                        Bitvector32Term::constant(0),
+                        Bitvector32Term::constant(byte_count),
                         1,
                     );
                     add_memory_interval_candidates(
@@ -7831,7 +7827,7 @@ fn memory_normalization_position(range: &CMemoryRange, bound: &Bitvector32Term) 
         let base = range.base().offset.as_const()?;
         let elements = signed_bitvector_constant(bound)?;
         let byte = base.checked_add(elements.checked_mul(i64::from(range.element_width()))?)?;
-        Some(Bitvector32Term::Constant(i32::try_from(byte).ok()? as u32))
+        Some(Bitvector32Term::constant(i32::try_from(byte).ok()? as u32))
     };
     let root_position = || -> Option<Bitvector32Term> {
         let (block, atom) = memory_base_root(range.base());
@@ -7849,7 +7845,7 @@ fn memory_normalization_position(range: &CMemoryRange, bound: &Bitvector32Term) 
         let constant = i32::try_from(delta.constant).ok()? as u32;
         Some(Bitvector32Term::add(
             Bitvector32Term::add(delta.index, bound.clone()),
-            Bitvector32Term::Constant(constant),
+            Bitvector32Term::constant(constant),
         ))
     };
     byte_position()
@@ -8706,7 +8702,7 @@ pub(super) fn resource_quantity_is_positive(
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: Box::new(quantity.clone()),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
         )
 }
@@ -8740,7 +8736,7 @@ pub(in crate::kernel) fn population_quantity_sum(
         return u32::try_from(total)
             .ok()
             .filter(|_| total <= i64::from(i32::MAX))
-            .map(Bitvector32Term::Constant);
+            .map(Bitvector32Term::constant);
     }
     if left.as_const() == Some(0) {
         return Some(right.clone());
@@ -8796,7 +8792,7 @@ fn resource_quantity_is_zero(quantity: &Bitvector32Term, assumptions: &PureFactC
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(quantity.clone()),
-                right: Box::new(Bitvector32Term::Constant(0)),
+                right: Box::new(Bitvector32Term::constant(0)),
             },
             true,
         ))
@@ -8809,7 +8805,7 @@ fn resource_quantity_resolves_to_zero(
     resource_quantity_is_zero(quantity, assumptions)
         || crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
             quantity,
-            &Bitvector32Term::Constant(0),
+            &Bitvector32Term::constant(0),
             assumptions,
         )
 }
@@ -8835,9 +8831,9 @@ mod zero_quantity_graph_tests {
     #[test]
     fn separately_retained_units_entail_their_exact_quantity() {
         let assumptions = PureFactContext::new();
-        let one = required(Bitvector32Term::Constant(1));
-        let two = required(Bitvector32Term::Constant(2));
-        let three = required(Bitvector32Term::Constant(3));
+        let one = required(Bitvector32Term::constant(1));
+        let two = required(Bitvector32Term::constant(2));
+        let three = required(Bitvector32Term::constant(3));
         let context = ResourceContext::new().unchecked_with_facts([one.clone(), one.clone()]);
         assert!(context.satisfies_fact(&two, &assumptions));
         assert!(!context.satisfies_fact(&three, &assumptions));
@@ -8852,11 +8848,11 @@ mod zero_quantity_graph_tests {
         let views = ResourceContext::new()
             .unchecked_with_facts([CResourceFact::View(one.resource().clone()), one.clone()]);
         assert!(!views.satisfies_fact(&two, &assumptions));
-        let large = required(Bitvector32Term::Constant(2_000_000_000));
+        let large = required(Bitvector32Term::constant(2_000_000_000));
         let oversized = ResourceContext::new().unchecked_with_facts([large.clone(), large]);
         assert!(oversized.satisfies_fact(&two, &assumptions));
         assert!(oversized.satisfies_fact(
-            &required(Bitvector32Term::Constant(i32::MAX as u32)),
+            &required(Bitvector32Term::constant(i32::MAX as u32)),
             &assumptions,
         ));
     }
@@ -8881,14 +8877,14 @@ mod zero_quantity_graph_tests {
         let (a, b) = (var(90_101), var(90_102));
         let after = crate::kernel::intern_c_memory(before.memory().clone().store(
             pointer(b.clone()),
-            CValue::Int32(Bitvector32Term::Constant(9)),
+            CValue::Int32(Bitvector32Term::constant(9)),
         ));
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::Constant(1));
+        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
         let source = required(sum(load(&before, a.clone())));
         let later = required(sum(load(&after, b.clone())));
         let address_premise = ConditionTerm::equal(a, b.clone());
         let zero_premise =
-            ConditionTerm::equal(sum(load(&before, b)), Bitvector32Term::Constant(0));
+            ConditionTerm::equal(sum(load(&before, b)), Bitvector32Term::constant(0));
         let parent = PureFactContext::new();
         let address_only = parent
             .clone()
@@ -8958,7 +8954,7 @@ fn consume_exact_resource_fact(
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(residual.clone()),
-                    right: Box::new(Bitvector32Term::Constant(0)),
+                    right: Box::new(Bitvector32Term::constant(0)),
                 },
             );
         ResourceFactConsumption::Replace(if residual_is_zero {
@@ -9924,7 +9920,7 @@ fn pointer_offsets_equal_with_load_bridging(
 // Coverage, splitting and overlap all dispatch wide ranges before normalization.
 fn byte_normalized_memory_range(range: &CMemoryRange) -> CMemoryRange {
     let (base, bytes) = range.byte_footprint();
-    CMemoryRange::new_with_element_width(base, Bitvector32Term::Constant(0), bytes, 1)
+    CMemoryRange::new_with_element_width(base, Bitvector32Term::constant(0), bytes, 1)
         .with_carrier_of(range)
 }
 
@@ -9954,8 +9950,8 @@ fn memory_range_in_element_width(range: &CMemoryRange, width: u32) -> Option<CMe
     Some(
         CMemoryRange::new_with_element_width(
             range.base().clone(),
-            Bitvector32Term::Constant(start as u32),
-            Bitvector32Term::Constant(end as u32),
+            Bitvector32Term::constant(start as u32),
+            Bitvector32Term::constant(end as u32),
             width,
         )
         .with_carrier_of(range),
@@ -9992,8 +9988,8 @@ pub(in crate::kernel) fn pointer_formation_in_range(
             (start <= end && end <= i32::MAX as u64 / u64::from(width)).then(|| {
                 CMemoryRange::new_with_element_width(
                     range.base().clone(),
-                    Bitvector32Term::Constant(start as u32),
-                    Bitvector32Term::Constant(end as u32),
+                    Bitvector32Term::constant(start as u32),
+                    Bitvector32Term::constant(end as u32),
                     width,
                 )
             })
@@ -10004,14 +10000,14 @@ pub(in crate::kernel) fn pointer_formation_in_range(
             let (_, limit) = range.wide_bounds().expect("wide spelling");
             assumptions.decide(&ConditionTerm::uint64_less_equal(
                 limit.clone(),
-                Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(width)),
+                Bitvector32Term::uint64_constant(i64::MAX as u64 / u64::from(width)),
             )) == Some(true)
                 && wide_memory_range_covers(
                     range,
                     &CMemoryRange::new_wide(
                         base.clone(),
-                        Bitvector32Term::UInt64Constant(start),
-                        Bitvector32Term::UInt64Constant(end),
+                        Bitvector32Term::uint64_constant(start),
+                        Bitvector32Term::uint64_constant(end),
                         width,
                     ),
                     assumptions,
@@ -10124,7 +10120,7 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
         && index >= 0
         && let Some(next) = index.checked_add(1)
         && assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
-            Bitvector32Term::Constant(next as u32),
+            Bitvector32Term::constant(next as u32),
             available.end().clone(),
         )) == Some(true)
     {
@@ -10220,46 +10216,45 @@ pub(in crate::kernel) fn checked_native_range_endpoint(
     assumptions: &PureFactContext,
 ) -> Option<Bitvector32Term> {
     let wide = match term {
-        Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
-            if *value <= i32::MAX as u32 =>
-        {
-            return Some(Bitvector32Term::UInt64Constant(u64::from(*value)));
+        bits32_constant!(value) if constant_u32(*value) <= i32::MAX as u32 => {
+            return Some(Bitvector32Term::uint64_constant(u64::from(constant_u32(
+                *value,
+            ))));
         }
         Bitvector32Term::Variable(_) => term.clone(),
         Bitvector32Term::UInt32From64(value) => value.as_ref().clone(),
         binary_term!(Int32, Add, left, right) => {
             let (value, constant) = match (left.as_ref(), right.as_ref()) {
-                (
-                    value,
-                    Bitvector32Term::Constant(constant) | Bitvector32Term::UInt32Constant(constant),
-                )
-                | (Bitvector32Term::Constant(constant), value)
-                    if *constant <= i32::MAX as u32 =>
+                (value, bits32_constant!(constant)) | (int32_constant!(constant), value)
+                    if constant_u32(*constant) <= i32::MAX as u32 =>
                 {
                     let value = match value {
                         Bitvector32Term::Variable(_) => value.clone(),
                         Bitvector32Term::UInt32From64(inner) => inner.as_ref().clone(),
                         _ => return None,
                     };
-                    (value, *constant)
+                    (value, constant_u32(*constant))
                 }
                 _ => return None,
             };
             // Check the operand too: an overflowing native sum can be small.
             if assumptions.decide(&ConditionTerm::uint64_less_equal(
                 value.clone(),
-                Bitvector32Term::UInt64Constant(i32::MAX as u64 - u64::from(constant)),
+                Bitvector32Term::uint64_constant(i32::MAX as u64 - u64::from(constant)),
             )) != Some(true)
             {
                 return None;
             }
-            Bitvector32Term::uint64_add(value, Bitvector32Term::UInt64Constant(u64::from(constant)))
+            Bitvector32Term::uint64_add(
+                value,
+                Bitvector32Term::uint64_constant(u64::from(constant)),
+            )
         }
         _ => return None,
     };
     (assumptions.decide(&ConditionTerm::uint64_less_equal(
         wide.clone(),
-        Bitvector32Term::UInt64Constant(i32::MAX as u64),
+        Bitvector32Term::uint64_constant(i32::MAX as u64),
     )) == Some(true))
     .then_some(wide)
 }
@@ -10333,8 +10328,8 @@ fn wide_memory_range_covers_window(
                 return false;
             };
             (
-                Bitvector32Term::UInt64Constant(first),
-                Bitvector32Term::UInt64Constant(last),
+                Bitvector32Term::uint64_constant(first),
+                Bitvector32Term::uint64_constant(last),
             )
         }
     };
@@ -10347,7 +10342,9 @@ fn wide_memory_range_covers_window(
     if required.wide_bounds().is_some()
         && !holds(
             end.clone(),
-            Bitvector32Term::UInt64Constant(i64::MAX as u64 / u64::from(available.element_width())),
+            Bitvector32Term::uint64_constant(
+                i64::MAX as u64 / u64::from(available.element_width()),
+            ),
         )
     {
         return false;
@@ -10477,8 +10474,8 @@ pub(in crate::kernel) fn wide_memory_ranges_proven_overlapping(
             let start = u64::try_from(range.signed_constant_start()?).ok()?;
             let end = u64::try_from(range.signed_constant_end()?).ok()?;
             Some((
-                Bitvector32Term::UInt64Constant(start),
-                Bitvector32Term::UInt64Constant(end),
+                Bitvector32Term::uint64_constant(start),
+                Bitvector32Term::uint64_constant(end),
             ))
         }
     };
@@ -10796,17 +10793,17 @@ fn exact_shifted_endpoint(
     endpoint: &Bitvector32Term,
     assumptions: &PureFactContext,
 ) -> Option<Bitvector32Term> {
-    if delta == &Bitvector32Term::Constant(0) {
+    if delta == &Bitvector32Term::constant(0) {
         return Some(endpoint.clone());
     }
-    if endpoint == &Bitvector32Term::Constant(0) {
+    if endpoint == &Bitvector32Term::constant(0) {
         return Some(delta.clone());
     }
     if let (Some(delta), Some(endpoint)) = (delta.as_const(), endpoint.as_const()) {
         let sum = i64::from(delta as i32) + i64::from(endpoint as i32);
         return i32::try_from(sum)
             .ok()
-            .map(|sum| Bitvector32Term::Constant(sum as u32));
+            .map(|sum| Bitvector32Term::constant(sum as u32));
     }
     (assumptions.decide(&ConditionTerm::signed_add_overflows(
         delta.clone(),
@@ -10829,7 +10826,7 @@ fn native_wide_normalization_key(
     }
     let constant = |bound: &Bitvector32Term| {
         let value = bound.as_const()?;
-        (value as i32 >= 0).then(|| Bitvector32Term::UInt64Constant(u64::from(value)))
+        (value as i32 >= 0).then(|| Bitvector32Term::uint64_constant(u64::from(value)))
     };
     Some((
         range.base().clone(),
@@ -10880,7 +10877,7 @@ pub(super) fn wide_normalization_form(
             index.as_ref()?;
             let constant = |bound: &Bitvector32Term| {
                 let value = bound.as_const()?;
-                (value as i32 >= 0).then(|| Bitvector32Term::UInt64Constant(u64::from(value)))
+                (value as i32 >= 0).then(|| Bitvector32Term::uint64_constant(u64::from(value)))
             };
             (constant(range.start())?, constant(range.end())?)
         }
@@ -11052,7 +11049,7 @@ pub(in crate::kernel) fn split_memory_range(
                     available.base(),
                     assumptions,
                 )
-                .then_some(Bitvector32Term::Constant(0))
+                .then_some(Bitvector32Term::constant(0))
             })
     }?;
     let required_start = Bitvector32Term::add(base_delta.clone(), required.start().clone());
@@ -11323,7 +11320,7 @@ impl CResourceFact {
     }
 
     pub fn own(resource: CResource) -> Self {
-        Self::Own(resource, Box::new(Bitvector32Term::Constant(1)))
+        Self::Own(resource, Box::new(Bitvector32Term::constant(1)))
     }
 
     pub fn own_quantity(resource: CResource, quantity: Bitvector32Term) -> Self {
@@ -11446,7 +11443,7 @@ impl CResourceFact {
         };
         let allocation_memory = CResource::Memory(CMemoryRange::new_with_element_width(
             base.clone(),
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             element_count,
             element_width,
         ));
@@ -11831,7 +11828,7 @@ fn memory_range_rebased(
     )?;
     let offset = delta.constant.checked_add(start)?;
     let start = if delta.is_constant() {
-        Bitvector32Term::Constant(i32::try_from(offset).ok()? as u32)
+        Bitvector32Term::constant(i32::try_from(offset).ok()? as u32)
     } else if offset == 0 {
         delta.index
     } else {
@@ -11839,7 +11836,7 @@ fn memory_range_rebased(
     };
     let end = Bitvector32Term::add(
         start.clone(),
-        Bitvector32Term::Constant(i32::try_from(count).ok()? as u32),
+        Bitvector32Term::constant(i32::try_from(count).ok()? as u32),
     );
     Some(
         CMemoryRange::new_with_element_width(base.clone(), start, end, range.element_width())
@@ -11868,8 +11865,8 @@ mod support_removal_tests {
                 block: "frame".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(4),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(4),
         ));
         let body = ResourceContext::new();
         let frame = body.clone().unchecked_with_fact(authority.clone());
@@ -11908,12 +11905,12 @@ mod support_removal_tests {
         let endpoint = |variable| {
             Bitvector32Term::add(
                 Bitvector32Term::Variable(variable),
-                Bitvector32Term::Constant(1),
+                Bitvector32Term::constant(1),
             )
         };
         let base = Pointer::symbolic(Variable(90_012));
-        let left = CMemoryRange::new(base.clone(), Bitvector32Term::Constant(0), endpoint(a));
-        let right = CMemoryRange::new(base.clone(), endpoint(b), Bitvector32Term::Constant(16));
+        let left = CMemoryRange::new(base.clone(), Bitvector32Term::constant(0), endpoint(a));
+        let right = CMemoryRange::new(base.clone(), endpoint(b), Bitvector32Term::constant(16));
         let premise =
             ConditionTerm::equal(Bitvector32Term::Variable(a), Bitvector32Term::Variable(b));
         let parent = PureFactContext::new();
@@ -11924,8 +11921,8 @@ mod support_removal_tests {
             merge_memory_ranges(&left, &right, &branch),
             Some(CMemoryRange::new(
                 base,
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(16),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(16),
             )),
         );
         assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
@@ -11941,8 +11938,8 @@ mod support_removal_tests {
                 block: "boundary".into(),
                 offset: PointerOffsetTerm::Constant(1),
             },
-            Bitvector32Term::Constant((i32::MAX - 1) as u32),
-            Bitvector32Term::Constant(i32::MAX as u32),
+            Bitvector32Term::constant((i32::MAX - 1) as u32),
+            Bitvector32Term::constant(i32::MAX as u32),
         );
         assert_eq!(concrete_memory_range_bounds(&range), None);
     }
@@ -11962,7 +11959,7 @@ mod support_removal_tests {
             .store(short_pointer.clone(), int16(0))
             .store(
                 wide_pointer.clone(),
-                CValue::Float64(Bitvector32Term::UInt64Constant(0)),
+                CValue::Float64(Bitvector32Term::uint64_constant(0)),
             );
         let short_load = Bitvector32Term::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
@@ -12051,7 +12048,7 @@ mod support_removal_tests {
                 Int32,
                 Add,
                 Box::new(nested),
-                Box::new(Bitvector32Term::Constant(0))
+                Box::new(Bitvector32Term::constant(0))
             );
         }
         let fact = CResourceFact::view_memory(CMemoryRange::new(
@@ -12059,7 +12056,7 @@ mod support_removal_tests {
                 block: "deep-result".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
             nested,
         ));
         assert_eq!(
@@ -12216,7 +12213,7 @@ fn symbolic_struct_coverage_uses_exact_element_indices() {
         &required(base.offset_by_bytes(8), 8u32.into()),
         &first
     ));
-    let negative = base.offset_by_elements(Bitvector32Term::Constant(u32::MAX), 16);
+    let negative = base.offset_by_elements(Bitvector32Term::constant(u32::MAX), 16);
     assert!(!memory_range_covers(
         &owned,
         &required(negative.offset_by_bytes(8), 8u32.into()),

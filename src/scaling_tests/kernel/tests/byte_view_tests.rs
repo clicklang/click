@@ -29,7 +29,7 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             assemble(&memory, &word(3), &incoming, Some(ByteOrder::Little))
         });
-        let mut expected = Bitvector32Term::Constant(0);
+        let mut expected = Bitvector32Term::constant(0);
         for byte in 0u32..4 {
             expected = Bitvector32Term::bitwise_or(
                 expected,
@@ -59,7 +59,7 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
     for unrelated in [8_u32, 32, 128, 512] {
         let mut memory = CMemory::new().store(
             word(0),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(0x0102_0304_0506_0708)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(0x0102_0304_0506_0708)),
         );
         for index in 0..unrelated {
             memory = memory.store(

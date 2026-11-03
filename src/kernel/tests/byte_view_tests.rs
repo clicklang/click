@@ -4,6 +4,7 @@
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::eval::{ContainingIntegerCell, containing_integer_cell, integer_cell_byte};
+use crate::kernel::{int32_constant, native_constant};
 
 fn word(offset: i64) -> Pointer {
     Pointer {
@@ -173,7 +174,7 @@ fn byte_assembly_refuses_untyped_other_types_missing_bytes_and_other_orders() {
 fn is_constant_byte(outcome: &CExpressionOutcome) -> bool {
     matches!(
         outcome,
-        CExpressionOutcome::Value(CValue::UInt8(Bitvector32Term::MachineIntegerConstant(_)))
+        CExpressionOutcome::Value(CValue::UInt8(native_constant!(_, _)))
     )
 }
 
@@ -200,8 +201,8 @@ fn byte_loads_read_each_little_endian_byte_of_a_constant_uint32_cell() {
 fn byte_loads_read_each_little_endian_byte_of_constant_64_bit_cells() {
     let bits = 0x8877_6655_4433_2211_u64;
     for cell in [
-        CValue::UInt64(Bitvector32Term::UInt64Constant(bits)),
-        CValue::Int64(Bitvector32Term::Int64Constant(bits as i64)),
+        CValue::UInt64(Bitvector32Term::uint64_constant(bits)),
+        CValue::Int64(Bitvector32Term::int64_constant(bits as i64)),
     ] {
         let memory = CMemory::new().store(word(0), cell.clone());
         for offset in 0..8 {
@@ -228,7 +229,7 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
                 UInt32,
                 ShiftRight,
                 Box::new(value.clone()),
-                Box::new(Bitvector32Term::UInt32Constant(16)),
+                Box::new(Bitvector32Term::uint32_constant(16)),
             ),
         )))
     );
@@ -244,7 +245,7 @@ fn byte_loads_of_symbolic_cells_extract_the_shifted_masked_byte() {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::ShiftRight,
                 left: Box::new(wide),
-                right: Box::new(Bitvector32Term::UInt64Constant(40))
+                right: Box::new(Bitvector32Term::uint64_constant(40))
             },
         )))
     );
@@ -304,7 +305,7 @@ fn byte_stores_update_the_containing_uint32_cell_in_place() {
         );
         assert_eq!(
             after.known_value(&word(0)),
-            Some(CValue::UInt32(Bitvector32Term::Constant(expected))),
+            Some(CValue::UInt32(Bitvector32Term::constant(expected))),
             "byte {offset}"
         );
         // The updated cell is the only description of this storage.
@@ -324,12 +325,12 @@ fn byte_stores_update_the_containing_uint64_cell_in_place() {
     for offset in 0..8 {
         let memory = CMemory::new().store(
             word(0),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(bits)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(bits)),
         );
         let after = store_byte(memory, offset, crate::kernel::uint8(0), ByteOrder::Little);
         assert_eq!(
             after.known_value(&word(0)),
-            Some(CValue::UInt64(Bitvector32Term::UInt64Constant(
+            Some(CValue::UInt64(Bitvector32Term::uint64_constant(
                 bits & !(0xFF << (8 * offset))
             ))),
             "byte {offset}"
@@ -351,9 +352,9 @@ fn byte_stores_into_a_symbolic_uint32_cell_keep_the_other_bytes() {
                 Int32,
                 BitwiseAnd,
                 Box::new(value),
-                Box::new(Bitvector32Term::Constant(0xFFFF_00FF)),
+                Box::new(Bitvector32Term::constant(0xFFFF_00FF)),
             )),
-            Box::new(Bitvector32Term::Constant(0x5A00)),
+            Box::new(Bitvector32Term::constant(0x5A00)),
         )))
     );
 }
@@ -427,7 +428,7 @@ fn a_one_byte_cell_is_read_as_its_own_access() {
 #[test]
 fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
     use MachineIntegerType::{Int32, UInt32};
-    let constant = Bitvector32Term::Constant(u32::MAX);
+    let constant = Bitvector32Term::constant(u32::MAX);
     let variable = Bitvector32Term::Variable(Variable(613_101));
     for term in [constant, variable] {
         for (stored, read, cast) in [
@@ -461,7 +462,7 @@ fn a_32_bit_read_of_the_other_signedness_is_the_sign_cast_of_the_word() {
                 kind.read_cell(&cell),
                 Some(read.value_from_term(expected.clone()))
             );
-            if matches!(term, Bitvector32Term::Constant(_)) && cast.is_some() {
+            if matches!(term, int32_constant!(_)) && cast.is_some() {
                 assert_eq!(expected.constant32(), Some(u32::MAX));
             }
         }
@@ -521,10 +522,10 @@ fn character_loads_read_a_one_byte_cell_of_the_other_signedness_as_its_bits() {
     for (load, stored) in [
         (CType::UInt8, crate::kernel::int16(1)),
         (CType::Int8, CValue::bool_constant(true)),
-        (CType::UInt8, CValue::Float32(Bitvector32Term::Constant(0))),
+        (CType::UInt8, CValue::Float32(Bitvector32Term::constant(0))),
         (CType::Int16, crate::kernel::uint8(1)),
         (CType::Int32, crate::kernel::int16(1)),
-        (CType::UInt64, CValue::UInt32(Bitvector32Term::Constant(1))),
+        (CType::UInt64, CValue::UInt32(Bitvector32Term::constant(1))),
         (CType::UInt16, crate::kernel::int8(1)),
     ] {
         assert_eq!(load.read_cell(&stored), None, "{load:?} of {stored:?}");
@@ -559,7 +560,7 @@ fn integer_loads_read_a_cell_of_the_other_signedness_as_its_bits() {
         );
     }
     for word in [0u32, 1, 0x7FFF_FFFF, 0x8000_0000, 0xFFFF_FFFF] {
-        let bits = Bitvector32Term::Constant(word);
+        let bits = Bitvector32Term::constant(word);
         assert_eq!(
             CType::UInt32.read_cell(&CValue::Int32(bits.clone())),
             Some(uint32(bits.clone()))
@@ -577,12 +578,12 @@ fn integer_loads_read_a_cell_of_the_other_signedness_as_its_bits() {
         u64::MAX,
     ] {
         assert_eq!(
-            CType::UInt64.read_cell(&CValue::Int64(Bitvector32Term::Int64Constant(word as i64))),
-            Some(CValue::UInt64(Bitvector32Term::UInt64Constant(word)))
+            CType::UInt64.read_cell(&CValue::Int64(Bitvector32Term::int64_constant(word as i64))),
+            Some(CValue::UInt64(Bitvector32Term::uint64_constant(word)))
         );
         assert_eq!(
-            CType::Int64.read_cell(&CValue::UInt64(Bitvector32Term::UInt64Constant(word))),
-            Some(CValue::Int64(Bitvector32Term::Int64Constant(word as i64)))
+            CType::Int64.read_cell(&CValue::UInt64(Bitvector32Term::uint64_constant(word))),
+            Some(CValue::Int64(Bitvector32Term::int64_constant(word as i64)))
         );
     }
     let variable = Bitvector32Term::Variable(Variable(613_002));

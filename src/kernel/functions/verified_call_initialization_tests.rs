@@ -26,8 +26,8 @@ fn caller_state(pointer: &Pointer) -> CState {
     let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own(
         CResource::Memory(CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         )),
     ));
     CState::new()

@@ -158,7 +158,7 @@ fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
         crate::kernel::MachineIntegerType::Int32,
         crate::kernel::MachineBinaryOp::Add,
         &Bitvector32Term::Variable(Variable(41)),
-        &Bitvector32Term::Constant(1),
+        &Bitvector32Term::constant(1),
     );
     let Proposition::Exists { var, body, .. } = &goal else {
         panic!("the lowered goal is an existential, got {goal:?}");

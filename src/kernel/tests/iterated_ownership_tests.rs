@@ -29,14 +29,14 @@ fn heap_base(identity: u64) -> Pointer {
 }
 
 fn cell(base: u64, index: u32) -> Pointer {
-    heap_base(base).offset_by_elements(Bitvector32Term::Constant(index), 4)
+    heap_base(base).offset_by_elements(Bitvector32Term::constant(index), 4)
 }
 
 fn range(base: u64, start: u32, end: u32) -> CMemoryRange {
     CMemoryRange::new(
         heap_base(base),
-        Bitvector32Term::Constant(start),
-        Bitvector32Term::Constant(end),
+        Bitvector32Term::constant(start),
+        Bitvector32Term::constant(end),
     )
 }
 
@@ -49,14 +49,14 @@ fn cells_fact(capacity: u32) -> CIteratedMemory {
         1,
         0,
         1,
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(capacity),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(capacity),
         CIteratedGuard::new(
             heap_base(OCCUPIED),
             CType::Int32,
             4,
             true,
-            Bitvector32Term::Constant(0),
+            Bitvector32Term::constant(0),
         ),
     )
     .expect("a one-cell element with stride one is a valid shape")

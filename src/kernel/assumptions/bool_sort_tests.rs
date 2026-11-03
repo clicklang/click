@@ -16,7 +16,7 @@ pub(super) fn word(id: u64) -> Bitvector32Term {
 
 /// `x > 0` over the `int32` word `x`.
 pub(super) fn positive(id: u64) -> ConditionTerm {
-    ConditionTerm::signed_greater_than(word(id), Bitvector32Term::Constant(0))
+    ConditionTerm::signed_greater_than(word(id), Bitvector32Term::constant(0))
 }
 
 /// The application `name(x)` of a `-> Bool` function to the `int32` word `x`.
@@ -281,7 +281,7 @@ fn rule_c1_links_a_cast_with_its_bool_in_both_directions() {
         PureFactContext::new()
             .assume_condition(word_equal(x.clone(), cast(b.clone())), true)
             .assume_condition(
-                word_equal(x.clone(), Bitvector32Term::Constant(value)),
+                word_equal(x.clone(), Bitvector32Term::constant(value)),
                 truth,
             )
     };
@@ -291,11 +291,11 @@ fn rule_c1_links_a_cast_with_its_bool_in_both_directions() {
     assert_eq!(with(1, false).decide(&b), Some(false));
     let decided = PureFactContext::new().assume_condition(b.clone(), true);
     assert_eq!(
-        decided.decide(&word_equal(cast(b.clone()), Bitvector32Term::Constant(1))),
+        decided.decide(&word_equal(cast(b.clone()), Bitvector32Term::constant(1))),
         Some(true)
     );
     let two = PureFactContext::new()
-        .assume_condition(word_equal(cast(b), Bitvector32Term::Constant(2)), true);
+        .assume_condition(word_equal(cast(b), Bitvector32Term::constant(2)), true);
     assert!(two.is_inconsistent());
 }
 

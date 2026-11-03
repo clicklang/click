@@ -7,6 +7,10 @@ use crate::kernel::binary_node;
 use crate::kernel::population_authority::c_creation::is_external_population_anchor;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
+    native_constant, uint32_constant, uint64_constant,
+};
 use std::fmt::Write;
 
 fn memory_havoc_write_set_identity(mutable_ranges: &[CMemoryRange]) -> String {
@@ -214,7 +218,7 @@ fn havoc_range_identity(range: &CMemoryRange) -> String {
         }),
         vec![
             HavocIdentityTask::Text(")"),
-            HavocIdentityTask::Bitvector(Bitvector32Term::Constant(range.element_width())),
+            HavocIdentityTask::Bitvector(Bitvector32Term::constant(range.element_width())),
             HavocIdentityTask::Text(","),
             HavocIdentityTask::Bitvector(end.clone()),
             HavocIdentityTask::Text(","),
@@ -305,21 +309,21 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         tasks.push(HavocIdentityTask::Bitvector(*value));
                     }
 
-                    Bitvector32Term::MachineIntegerConstant(value) => {
-                        let _ = write!(identity, "twc{:?}:{:032x};", value.format(), value.bits());
+                    native_constant!(format, bits) => {
+                        let _ = write!(identity, "twc{:?}:{:032x};", format.format(), bits);
                     }
 
-                    Bitvector32Term::Constant(value) => {
-                        let _ = write!(identity, "tc{value};");
+                    int32_constant!(value) => {
+                        let _ = write!(identity, "tc{value};", value = constant_u32(value));
                     }
-                    Bitvector32Term::UInt32Constant(value) => {
-                        let _ = write!(identity, "tuc{value};");
+                    uint32_constant!(value) => {
+                        let _ = write!(identity, "tuc{value};", value = constant_u32(value));
                     }
-                    Bitvector32Term::Int64Constant(value) => {
-                        let _ = write!(identity, "ti64c{value};");
+                    int64_constant!(value) => {
+                        let _ = write!(identity, "ti64c{value};", value = constant_i64(value));
                     }
-                    Bitvector32Term::UInt64Constant(value) => {
-                        let _ = write!(identity, "tu64c{value};");
+                    uint64_constant!(value) => {
+                        let _ = write!(identity, "tu64c{value};", value = constant_u64(value));
                     }
                     Bitvector32Term::Variable(variable) => {
                         if !push_registered_load(
@@ -693,9 +697,9 @@ mod call_havoc_local_retention_tests {
         };
         let before = CMemory::new()
             .with_block(block.clone(), 16)
-            .store(at(0), CValue::Int32(Bitvector32Term::Constant(7)))
-            .store(at(8), CValue::Int32(Bitvector32Term::Constant(1)))
-            .store(at(12), CValue::Int32(Bitvector32Term::Constant(9)));
+            .store(at(0), CValue::Int32(Bitvector32Term::constant(7)))
+            .store(at(8), CValue::Int32(Bitvector32Term::constant(1)))
+            .store(at(12), CValue::Int32(Bitvector32Term::constant(9)));
         let range = CMemoryRange::new_with_element_width(at(8), 0u32.into(), 4u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
@@ -719,7 +723,7 @@ mod call_havoc_local_retention_tests {
         ));
         let stale = after
             .clone()
-            .store(at(8), CValue::Int32(Bitvector32Term::Constant(1)));
+            .store(at(8), CValue::Int32(Bitvector32Term::constant(1)));
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
             std::slice::from_ref(&range),
@@ -736,7 +740,7 @@ mod call_havoc_local_retention_tests {
         };
         let before = CMemory::new()
             .with_block(at(0).block.clone(), 16)
-            .store(at(0), CValue::Int32(Bitvector32Term::Constant(7)));
+            .store(at(0), CValue::Int32(Bitvector32Term::constant(7)));
         let range = CMemoryRange::new_with_element_width(at(0), 0u32.into(), 16u32.into(), 1);
         let facts = PureFactContext::new();
         let after = before.clone().with_call_memory_havoc(
@@ -759,7 +763,7 @@ mod call_havoc_local_retention_tests {
         assert!(named.has_initialized_bytes_at(&at(0), 4));
         let fresh = after
             .clone()
-            .materialize_named_cell(at(8), CValue::Int32(Bitvector32Term::Constant(1)));
+            .materialize_named_cell(at(8), CValue::Int32(Bitvector32Term::constant(1)));
         assert!(fresh.known_value(&at(8)).is_none());
         let mut forged = after.clone();
         std::sync::Arc::make_mut(&mut forged.heap)
@@ -800,7 +804,7 @@ mod call_havoc_local_retention_tests {
                 vec![(
                     pointer.clone(),
                     CType::Int32,
-                    CValue::Int32(Bitvector32Term::Constant(1)),
+                    CValue::Int32(Bitvector32Term::constant(1)),
                 )],
             );
         let range =
@@ -830,7 +834,7 @@ mod call_havoc_local_retention_tests {
         let alias = Pointer::symbolic(Variable(944_021));
         let before = CMemory::new()
             .with_block(pointer.block.clone(), 4)
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::Constant(7)));
+            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(7)));
         let facts = PureFactContext::new().assume_condition(
             ConditionTerm::pointer_equal(alias.clone(), pointer.offset_by_bytes(1)),
             true,
@@ -852,7 +856,7 @@ mod call_havoc_local_retention_tests {
         ));
         assert!(
             !after
-                .store(pointer, CValue::Int32(Bitvector32Term::Constant(7)))
+                .store(pointer, CValue::Int32(Bitvector32Term::constant(7)))
                 .matches_call_memory_havoc_result(
                     &before,
                     std::slice::from_ref(&range),
@@ -874,8 +878,8 @@ mod call_havoc_local_retention_tests {
         };
         let assumed_alias_range = CMemoryRange::new(
             symbolic.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         );
         let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
             ConditionTerm::pointer_equal(symbolic, local.clone()),
@@ -886,10 +890,10 @@ mod call_havoc_local_retention_tests {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         );
-        let value = CValue::Int32(Bitvector32Term::Constant(41));
+        let value = CValue::Int32(Bitvector32Term::constant(41));
         let before = CMemory::new()
             .with_block(local.block.clone(), 4)
             .store(local.clone(), value.clone());
@@ -951,7 +955,7 @@ mod call_havoc_union_view_tests {
             (
                 pointer.clone(),
                 CType::Int32,
-                CValue::Int32(Bitvector32Term::Constant(value)),
+                CValue::Int32(Bitvector32Term::constant(value)),
             )
         };
         let before = CMemory::new()
@@ -960,8 +964,8 @@ mod call_havoc_union_view_tests {
             .store_union_views(sibling.clone(), 8, vec![view(&sibling, 5)]);
         let range = CMemoryRange::new_with_element_width(
             written.clone(),
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(4),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(4),
             1,
         );
         let assumptions = PureFactContext::new();
@@ -974,7 +978,7 @@ mod call_havoc_union_view_tests {
         assert_eq!(after.known_union_value(&written, CType::Int32), None);
         assert_eq!(
             after.known_union_value(&sibling, CType::Int32),
-            Some(CValue::Int32(Bitvector32Term::Constant(5)))
+            Some(CValue::Int32(Bitvector32Term::constant(5)))
         );
         assert!(after.matches_call_memory_havoc_result(
             &before,
@@ -986,7 +990,7 @@ mod call_havoc_union_view_tests {
         let mut stale = after.clone();
         std::sync::Arc::make_mut(&mut stale.union_cells).insert(
             (written.clone(), CType::Int32),
-            CValue::Int32(Bitvector32Term::Constant(3)),
+            CValue::Int32(Bitvector32Term::constant(3)),
         );
         assert!(!stale.matches_call_memory_havoc_result(
             &before,
@@ -1005,7 +1009,7 @@ mod forget_cached_values_tests {
         (
             pointer.clone(),
             CType::Int32,
-            CValue::Int32(Bitvector32Term::Constant(value)),
+            CValue::Int32(Bitvector32Term::constant(value)),
         )
     }
 
@@ -1017,7 +1021,7 @@ mod forget_cached_values_tests {
         let mut memory = CMemory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
-            .insert(base.clone(), Bitvector32Term::Constant(8));
+            .insert(base.clone(), Bitvector32Term::constant(8));
         heap.zeroed_allocations.insert(base.clone());
         let memory = memory.store(base.clone(), int32(9));
         (memory, base)
@@ -1049,7 +1053,7 @@ mod forget_cached_values_tests {
         assert_eq!(after.known_union_value(&written, CType::Int32), None);
         assert_eq!(
             after.known_union_value(&preserved, CType::Int32),
-            Some(CValue::Int32(Bitvector32Term::Constant(5)))
+            Some(CValue::Int32(Bitvector32Term::constant(5)))
         );
     }
 
@@ -1093,7 +1097,7 @@ mod forget_cached_values_tests {
         let mut memory = CMemory::new().with_block(base.block.clone(), 16);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
-            .insert(base.clone(), Bitvector32Term::Constant(16));
+            .insert(base.clone(), Bitvector32Term::constant(16));
         heap.zeroed_allocations.insert(base.clone());
         let facts = PureFactContext::new();
         // A byte at offset 5 lies inside the four bytes at 4 and the eight
@@ -1105,7 +1109,7 @@ mod forget_cached_values_tests {
         // Eight bytes at 0 contain the four at 4, and miss the four at 8.
         let wide = memory.clone().store(
             at(0),
-            CValue::Int64(Bitvector32Term::Int64Constant(1 << 40)),
+            CValue::Int64(Bitvector32Term::int64_constant(1 << 40)),
         );
         assert!(!wide.is_zeroed_heap_address(&at(4), 4, &facts));
         assert!(wide.is_zeroed_heap_address(&at(8), 4, &facts));
@@ -1131,7 +1135,7 @@ mod forget_cached_values_tests {
         let mut untouched = CMemory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut untouched.heap);
         heap.live_allocations
-            .insert(base.clone(), Bitvector32Term::Constant(8));
+            .insert(base.clone(), Bitvector32Term::constant(8));
         heap.zeroed_allocations.insert(base.clone());
         let arms = [&wrote, &untouched];
         let from_wrote = wrote
@@ -1156,11 +1160,11 @@ mod havoc_identity_tests {
     use super::*;
 
     fn nested_term(depth: usize, tail: u32) -> Bitvector32Term {
-        (0..depth).fold(Bitvector32Term::Constant(tail), |term, _| {
+        (0..depth).fold(Bitvector32Term::constant(tail), |term, _| {
             binary_node!(
                 Int32,
                 Add,
-                Box::new(Bitvector32Term::Constant(0)),
+                Box::new(Bitvector32Term::constant(0)),
                 Box::new(term)
             )
         })
@@ -1173,7 +1177,7 @@ mod havoc_identity_tests {
                 offset: PointerOffsetTerm::Constant(0),
             },
             nested_term(depth, tail),
-            Bitvector32Term::Constant(1_024),
+            Bitvector32Term::constant(1_024),
         )
     }
 
@@ -1816,11 +1820,14 @@ pub(crate) fn held_term_fingerprint(term: &Bitvector32Term) -> u64 {
     use std::hash::{Hash, Hasher};
     fn atom(term: &Bitvector32Term, hasher: &mut impl Hasher) {
         std::mem::discriminant(term).hash(hasher);
+        // One variant spells every constant, so its format is part of the
+        // fingerprint, as the operators' is.
+        if let Bitvector32Term::Constant { format, .. } = term {
+            format.hash(hasher);
+        }
         match term {
             Bitvector32Term::Variable(variable) => variable.hash(hasher),
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value) => {
-                value.hash(hasher)
-            }
+            bits32_constant!(value) => constant_u32(*value).hash(hasher),
             Bitvector32Term::Binary { format, op, .. } => (format, op).hash(hasher),
             Bitvector32Term::Unary { format, op, .. } => (format, op).hash(hasher),
             _ => {}
@@ -2106,7 +2113,7 @@ impl CLocalEnvironment {
 impl CBlock {
     pub fn new(size: u32) -> Self {
         Self {
-            size: Bitvector32Term::Constant(size),
+            size: Bitvector32Term::constant(size),
             read_only: false,
             declared_scalar_type: None,
             declared_class: None,
@@ -2115,7 +2122,7 @@ impl CBlock {
 
     pub fn read_only(size: u32) -> Self {
         Self {
-            size: Bitvector32Term::Constant(size),
+            size: Bitvector32Term::constant(size),
             read_only: true,
             declared_scalar_type: None,
             declared_class: None,
@@ -2839,8 +2846,8 @@ fn loan_preserving_havoc_keeps_cell(
                 && ledger
                     .permits_memory_access(&CMemoryRange::new_with_element_width(
                         pointer.clone(),
-                        Bitvector32Term::Constant(0),
-                        Bitvector32Term::Constant(byte_width),
+                        Bitvector32Term::constant(0),
+                        Bitvector32Term::constant(byte_width),
                         1,
                     ))
                     .is_err()
@@ -2867,8 +2874,8 @@ fn loan_preserving_havoc_keeps_run(
     };
     let whole = CMemoryRange::new_with_element_width(
         run.base().clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(
             (run.count().saturating_sub(1))
                 .saturating_mul(run.element_width())
                 .saturating_add(run.value_width()),
@@ -4600,7 +4607,7 @@ impl CMemory {
                 zeroed_allocations.remove(base);
                 zeroed_prefix_allocations.insert(
                     base.clone(),
-                    Bitvector32Term::Constant(
+                    Bitvector32Term::constant(
                         prefixes.into_iter().min().expect("nonempty interface arms"),
                     ),
                 );
@@ -7828,7 +7835,7 @@ impl CState {
                 .ok_or("batch import requires the creation ledger")?
                 .import_observable_contract_population_quantity(
                     description,
-                    &Bitvector32Term::Constant(total),
+                    &Bitvector32Term::constant(total),
                 )
                 .map_err(|refusal| format!("batch population import refused: {refusal}"))?;
             let mut next = self.clone();
@@ -8122,11 +8129,11 @@ impl CState {
                         std::cmp::Ordering::Equal => imported.entry_count,
                         std::cmp::Ordering::Greater => Bitvector32Term::add(
                             imported.entry_count,
-                            Bitvector32Term::Constant(imported.delta.unsigned_abs()),
+                            Bitvector32Term::constant(imported.delta.unsigned_abs()),
                         ),
                         std::cmp::Ordering::Less => Bitvector32Term::subtract(
                             imported.entry_count,
-                            Bitvector32Term::Constant(imported.delta.unsigned_abs()),
+                            Bitvector32Term::constant(imported.delta.unsigned_abs()),
                         ),
                     }
                 }
@@ -8781,7 +8788,7 @@ impl CState {
                 && !assumptions.proves_memory_loadable_for_memory_resolution(
                     &self.memory,
                     &base,
-                    &Bitvector32Term::Constant(bytes),
+                    &Bitvector32Term::constant(bytes),
                 )
             {
                 return Err("member private memory exceeds live storage".into());
@@ -9750,7 +9757,7 @@ mod contract_retirement_tests {
         assert!(memory.has_initialized_bytes_at(&aliases[0], 4));
         let retired = memory.retire_contract_heap_allocation_claim(
             &base,
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
             &assumptions,
         );
         for alias in &aliases {
@@ -9782,7 +9789,7 @@ mod union_store_tests {
             .store_union(
                 base.clone(),
                 CType::Int32,
-                CValue::Int32(Bitvector32Term::Constant(0x51)),
+                CValue::Int32(Bitvector32Term::constant(0x51)),
             );
         assert_eq!(
             memory.known_union_value(&base, CType::UInt8),
@@ -9791,7 +9798,7 @@ mod union_store_tests {
         );
         assert_eq!(
             memory.known_union_value(&base, CType::Int32),
-            Some(CValue::Int32(Bitvector32Term::Constant(0x51))),
+            Some(CValue::Int32(Bitvector32Term::constant(0x51))),
         );
     }
 }
@@ -10068,11 +10075,11 @@ mod initialization_record_tests {
             .with_block(block, 8)
             .store(
                 element(block, 0),
-                CValue::Int32(Bitvector32Term::Constant(5)),
+                CValue::Int32(Bitvector32Term::constant(5)),
             )
             .store(
                 element(block, 1),
-                CValue::Int32(Bitvector32Term::Constant(5)),
+                CValue::Int32(Bitvector32Term::constant(5)),
             )
     }
 
@@ -10093,7 +10100,7 @@ mod initialization_record_tests {
         assert!(forgotten.has_initialized_bytes_at(&element(block, 0), 8));
         assert!(!forgotten.has_initialized_bytes_at(&element(block, 1), 8));
         // The store the forgetting precedes only initializes more.
-        let stored = forgotten.store(unplaced(block), CValue::Int32(Bitvector32Term::Constant(7)));
+        let stored = forgotten.store(unplaced(block), CValue::Int32(Bitvector32Term::constant(7)));
         assert!(stored.has_initialized_bytes_at(&element(block, 0), 8));
     }
 
@@ -10118,7 +10125,7 @@ mod initialization_record_tests {
         let forgotten = forgotten_pair(block);
         let first_only = CMemory::new().with_block(block, 8).store(
             element(block, 0),
-            CValue::Int32(Bitvector32Term::Constant(5)),
+            CValue::Int32(Bitvector32Term::constant(5)),
         );
         let arms = [&forgotten, &first_only];
         let joined = forgotten
@@ -10138,7 +10145,7 @@ mod initialization_record_tests {
     /// `count` int32s (`stride` 4), its zero contents seeded as constant runs
     /// with no initialization recorded, so only the runs say it was written.
     fn zero_runs(block: &str, count: u32, stride: u32) -> CMemory {
-        let zero = CValue::Int32(Bitvector32Term::Constant(0));
+        let zero = CValue::Int32(Bitvector32Term::constant(0));
         let runs = (0..stride / 4)
             .map(|field| CConstantRun {
                 offset: 4 * field,
@@ -10195,13 +10202,13 @@ mod initialization_record_tests {
         let bounded = |high: u32| {
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), index.clone()),
+                    ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), index.clone()),
                     true,
                 )
                 .assume_condition(
                     ConditionTerm::signed_less_equal(
                         index.clone(),
-                        Bitvector32Term::Constant(high),
+                        Bitvector32Term::constant(high),
                     ),
                     true,
                 )
@@ -10214,11 +10221,11 @@ mod initialization_record_tests {
     fn index_between(index: &Bitvector32Term, low: u32, high: u32) -> PureFactContext {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(low), index.clone()),
+                ConditionTerm::signed_less_equal(Bitvector32Term::constant(low), index.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(index.clone(), Bitvector32Term::Constant(high)),
+                ConditionTerm::signed_less_equal(index.clone(), Bitvector32Term::constant(high)),
                 true,
             )
     }
@@ -10242,11 +10249,11 @@ mod initialization_record_tests {
             .with_block(block, 12)
             .store(
                 element(block, 0),
-                CValue::Int32(Bitvector32Term::Constant(5)),
+                CValue::Int32(Bitvector32Term::constant(5)),
             )
             .store(
                 element(block, 2),
-                CValue::Int32(Bitvector32Term::Constant(5)),
+                CValue::Int32(Bitvector32Term::constant(5)),
             );
         assert!(!gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 0, 2)));
         assert!(gap.has_initialized_bytes_under(&read, 4, &index_between(&index, 2, 2)));
@@ -10338,7 +10345,7 @@ mod local_variable_spelling_tests {
                     Box::new(term),
                     Box::new(x.clone())
                 )),
-                Box::new(Bitvector32Term::Constant(1)),
+                Box::new(Bitvector32Term::constant(1)),
             )
         };
         let terms = [
@@ -10346,7 +10353,7 @@ mod local_variable_spelling_tests {
             y.clone(),
             deep(x.clone()),
             deep(y.clone()),
-            Bitvector32Term::Constant(7),
+            Bitvector32Term::constant(7),
         ];
         let mut state = CState::new();
         for step in 0..60usize {
@@ -10397,7 +10404,7 @@ mod local_variable_spelling_tests {
         );
         let state = state.clone().with_memory(state.memory().clone().store(
             CMemory::local_pointer("a"),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(0)),
         ));
         assert_eq!(
             state.local_name_holding_bitvector_variable(variable),
@@ -10410,7 +10417,7 @@ mod local_variable_spelling_tests {
         );
         let state = state.clone().with_memory(state.memory().clone().store(
             CMemory::local_pointer("z"),
-            CValue::UInt64(Bitvector32Term::UInt64Constant(0)),
+            CValue::UInt64(Bitvector32Term::uint64_constant(0)),
         ));
         assert_eq!(state.local_name_holding_bitvector_variable(variable), None);
     }

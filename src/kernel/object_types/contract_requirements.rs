@@ -1,6 +1,7 @@
 //! Declaration-only nominal requirements. This never examines a C body or proof.
 use super::*;
 use crate::kernel::spec::walk::{SpecNode, Visit, WalkBudget, walk_spec};
+use crate::kernel::{bits32_constant, uint64_constant};
 
 type Origins = Option<Arc<Origin>>;
 enum Origin {
@@ -297,13 +298,9 @@ fn zero(value: &SpecExpression) -> bool {
         SpecExpression::Value(value) | SpecExpression::CExpression(CExpression::Value(value)) => {
             match value {
                 CValue::Pointer(p) => p.is_null(),
-                CValue::Int32(
-                    Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0),
-                )
-                | CValue::UInt32(
-                    Bitvector32Term::Constant(0) | Bitvector32Term::UInt32Constant(0),
-                )
-                | CValue::UInt64(Bitvector32Term::UInt64Constant(0)) => true,
+                CValue::Int32(bits32_constant!(0))
+                | CValue::UInt32(bits32_constant!(0))
+                | CValue::UInt64(uint64_constant!(0)) => true,
                 _ => false,
             }
         }

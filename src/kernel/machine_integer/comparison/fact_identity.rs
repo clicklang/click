@@ -2,9 +2,10 @@
 //! Native narrow comparisons and their promoted spellings share this reading;
 //! stored terms and the comparison's written direction remain unchanged.
 use crate::kernel::{
-    Bitvector32Term, CompareRelation, ConditionTerm, KernelMachineCastEncoding as Encoding,
-    MachineIntegerType, MachineOperandView as View,
+    CompareRelation, ConditionTerm, KernelMachineCastEncoding as Encoding, MachineIntegerType,
+    MachineOperandView as View,
 };
+use crate::kernel::{constant_u32, int32_constant, uint32_constant};
 
 #[derive(Clone, Copy)]
 pub(crate) enum FactOperand<'a> {
@@ -29,8 +30,11 @@ pub(crate) fn fact_operand_identity<'a>(
         left = peel(left);
         right = peel(right);
     }
-    let narrow_value = |term: View<'a>| match term.literal() {
-        Some(Bitvector32Term::MachineIntegerConstant(c)) if c.format() == format.format() => c
+    let narrow_value = |term: View<'a>| match term
+        .literal()
+        .and_then(|literal| literal.as_machine_constant())
+    {
+        Some(c) if c.format() == format.format() => c
             .to_i128()
             .map(FactOperand::Value)
             .unwrap_or(FactOperand::Term(term)),
@@ -58,9 +62,9 @@ pub(crate) fn fact_operand_identity<'a>(
         };
         let side = |term: View<'a>| -> Option<FactOperand<'a>> {
             let value = match term.literal() {
-                Some(Bitvector32Term::Constant(v)) => Some(i128::from(v as i32)),
-                Some(Bitvector32Term::UInt32Constant(v)) if relation == CompareRelation::Equal => {
-                    Some(i128::from(v as i32))
+                Some(int32_constant!(v)) => Some(i128::from(constant_u32(v) as i32)),
+                Some(uint32_constant!(v)) if relation == CompareRelation::Equal => {
+                    Some(i128::from(constant_u32(v) as i32))
                 }
                 _ => None,
             };

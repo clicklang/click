@@ -110,7 +110,7 @@ fn rule_c1_links_cost_constant_work_per_cast() {
                 context = context
                     .assume_condition(ConditionTerm::equal(word(521_000 + link), cast), true)
                     .assume_condition(
-                        ConditionTerm::equal(word(521_000 + link), Bitvector32Term::Constant(0)),
+                        ConditionTerm::equal(word(521_000 + link), Bitvector32Term::constant(0)),
                         true,
                     );
             }

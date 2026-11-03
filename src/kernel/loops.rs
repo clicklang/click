@@ -3,6 +3,7 @@ use super::loans::{
     empty_checked_loan_evidence_sequence,
 };
 use super::prelude::*;
+use crate::kernel::int32_constant;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[cfg(test)]
@@ -866,7 +867,7 @@ fn execute_modeled_pthread_mutex_paths(
         } else if initializing
             && !matches!(&path.values[1],
                 CValue::Pointer(pointer) if pointer.is_null())
-            && !matches!(&path.values[1], CValue::Int32(Bitvector32Term::Constant(0)))
+            && !matches!(&path.values[1], CValue::Int32(int32_constant!(0)))
         {
             refusal("modeled-pthread mutex init requires null attributes")
         } else {
@@ -1159,7 +1160,7 @@ fn execute_modeled_pthread_mutex_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            CValue::Int32(Bitvector32Term::Constant(0)),
+                            CValue::Int32(Bitvector32Term::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -1176,7 +1177,7 @@ fn execute_modeled_pthread_mutex_paths(
         paths.push(CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             call_result: matches!(outcome, CStatementOutcome::Normal(_))
-                .then(|| CValue::Int32(Bitvector32Term::Constant(0))),
+                .then(|| CValue::Int32(Bitvector32Term::constant(0))),
             outcome,
             facts: path.facts,
             obligations: path.obligations,
@@ -1228,8 +1229,8 @@ fn modeled_pthread_indeterminate_handle(
 ) -> ExecutionResult<CState> {
     let range = CMemoryRange::new_with_element_width(
         slot.clone(),
-        Bitvector32Term::Constant(0),
-        Bitvector32Term::Constant(1),
+        Bitvector32Term::constant(0),
+        Bitvector32Term::constant(1),
         8,
     );
     let marker = budget.allocate_kernel_variable()?;
@@ -1370,7 +1371,7 @@ fn execute_modeled_pthread_create_paths(
                             let failure = prepared.failure();
                             let (success, handle, _) = prepared.success();
                             let checked_failure_value =
-                                CValue::UInt64(Bitvector32Term::UInt64Constant(0));
+                                CValue::UInt64(Bitvector32Term::uint64_constant(0));
                             let slot = &path.values[0];
                             let checked_success = modeled_pthread_handle_store(
                                 success.parent(),
@@ -1540,7 +1541,7 @@ fn execute_modeled_pthread_join_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            CValue::Int32(Bitvector32Term::Constant(0)),
+                            CValue::Int32(Bitvector32Term::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -1558,7 +1559,7 @@ fn execute_modeled_pthread_join_paths(
         };
         paths.push(
             CStatementExecutionPath::new(outcome, path.facts, path.obligations)
-                .with_call_result(Some(CValue::Int32(Bitvector32Term::Constant(0)))),
+                .with_call_result(Some(CValue::Int32(Bitvector32Term::constant(0)))),
         );
     }
     budget.check_path_width(paths.len())?;
@@ -2779,7 +2780,10 @@ fn retained_loop_invariant_correspondence(
     .into_iter()
     .map(|(index, proposition)| (index, proposition.clone()))
     .collect::<Vec<_>>();
-    LoopInvariantCorrespondence((!correspondence.is_empty()).then(|| correspondence.into()))
+    LoopInvariantCorrespondence {
+        invariants: (!correspondence.is_empty()).then(|| correspondence.into()),
+        iterations: None,
+    }
 }
 
 fn retained_loop_invariant_declarations<'a, T: Ord + 'a>(
@@ -3936,8 +3940,8 @@ fn abstract_loop_exit_memory(
             }
             let range = CMemoryRange::new_with_element_width(
                 pointer.clone(),
-                Bitvector32Term::Constant(0),
-                Bitvector32Term::Constant(byte_width),
+                Bitvector32Term::constant(0),
+                Bitvector32Term::constant(byte_width),
                 1,
             );
             if ledger
@@ -4436,6 +4440,7 @@ fn execute_c_while_exit_paths(
             state,
             invariant_checks,
             InvariantPhase::Entry,
+            None,
             assumptions,
             budget,
         )?
@@ -4630,6 +4635,7 @@ fn execute_c_while_exit_paths(
         &guard_state,
         state,
         invariant_checks,
+        &head.iterations,
         assumptions,
         &whole_loop_effect_facts,
         &base_obligations,
@@ -4816,6 +4822,9 @@ fn execute_c_while_exit_paths(
         ));
     }
     budget.check_path_width(paths.len())?;
+    for path in &mut paths {
+        path.loop_invariant_correspondence.iterations = Some(head.iterations.clone());
+    }
     Ok(paths)
 }
 
@@ -4857,6 +4866,7 @@ pub(super) fn collect_invariant_check_obligations(
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
     phase: InvariantPhase,
+    head_iterations: Option<&IntegerTerm>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ProofObligation>> {
@@ -4865,6 +4875,7 @@ pub(super) fn collect_invariant_check_obligations(
         loop_entry_state,
         invariant_checks,
         phase,
+        head_iterations,
         assumptions,
         budget,
         false,
@@ -4877,6 +4888,7 @@ pub(super) fn collect_invariant_check_obligations_without_search(
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
     phase: InvariantPhase,
+    head_iterations: Option<&IntegerTerm>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<Vec<ProofObligation>> {
@@ -4885,6 +4897,7 @@ pub(super) fn collect_invariant_check_obligations_without_search(
         loop_entry_state,
         invariant_checks,
         phase,
+        head_iterations,
         assumptions,
         budget,
         true,
@@ -4906,6 +4919,7 @@ pub(super) fn collect_loop_entry_goals(
         state,
         checks,
         InvariantPhase::Entry,
+        None,
         assumptions,
         budget,
         true,
@@ -4919,11 +4933,22 @@ fn collect_invariant_check_obligations_with_mode(
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
     phase: InvariantPhase,
+    head_iterations: Option<&IntegerTerm>,
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     without_search: bool,
     mut declarations: Option<&mut [Vec<ProofObligation>]>,
 ) -> ExecutionResult<Vec<ProofObligation>> {
+    // `iterations` counts the passes completed: none at entry, and at a back
+    // edge one more than the head the pass started from.
+    let iterations = match (phase, head_iterations) {
+        (InvariantPhase::Entry, None) => IntegerTerm::constant(0.into()),
+        (InvariantPhase::Preservation, Some(head)) => {
+            IntegerTerm::add(head.clone(), IntegerTerm::constant(1.into()))
+        }
+        _ => return Err(ExecutionLimit::LoopIterationsUnbound),
+    };
+    let _iterations = crate::kernel::spec::LoopIterationsScope::enter(iterations);
     // Each context carries, beside its facts and obligations, the guards a
     // later declaration is wrapped with: the same list position for position,
     // except that an earlier declaration's own entry is its lowered
@@ -5307,6 +5332,7 @@ pub(super) fn collect_loop_preservation_summary(
         top_state,
         loop_entry_state,
         invariant_checks,
+        &head.iterations,
         assumptions,
         &whole_loop_effect_facts,
         &[],
@@ -5451,6 +5477,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 loop_entry_state,
                                 invariant_checks,
                                 InvariantPhase::Preservation,
+                                Some(&head.iterations),
                                 &path_assumptions,
                                 budget,
                             )?
@@ -5845,6 +5872,11 @@ pub(super) struct CLoopHead {
     /// names. Entry invariant checks read binder fields from here, so a loop
     /// binder that renames an enclosing instance is available at entry too.
     pub(super) entry: CState,
+    /// The head's pass count `K`: a fresh Integer standing for the number of
+    /// passes the loop has completed when it reaches this head. Every
+    /// invariant this head assumes reads `iterations` as `K`, and every back
+    /// edge from it owes them at `K + 1`.
+    pub(super) iterations: IntegerTerm,
     pub(super) summaries: Vec<Proposition>,
     /// Why a declared loop resource could not be taken from the enclosing
     /// resource context. A non-empty list is a verification failure.
@@ -6067,6 +6099,7 @@ pub(super) fn prepare_loop_top_state(
     budget: &mut ExecutionBudget,
     variables: &mut KernelVariableGenerator,
 ) -> ExecutionResult<CLoopHead> {
+    let iterations = IntegerTerm::var(variables.next_in(budget)?);
     let (captured_resource_specs, capture_failures) =
         capture_loop_entry_memory_specs(entry_state, resource_specs, assumptions, budget)?;
     let resource_specs = captured_resource_specs.as_slice();
@@ -6467,6 +6500,7 @@ pub(super) fn prepare_loop_top_state(
         top_state.clone(),
         &top_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6475,6 +6509,7 @@ pub(super) fn prepare_loop_top_state(
         body_state,
         &top_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6483,6 +6518,7 @@ pub(super) fn prepare_loop_top_state(
         &guard_state,
         &top_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6491,6 +6527,7 @@ pub(super) fn prepare_loop_top_state(
         &body_state,
         &top_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6501,6 +6538,7 @@ pub(super) fn prepare_loop_top_state(
         top_state,
         &premise_state,
         invariant_checks,
+        &iterations,
         definitions,
         assumptions,
         budget,
@@ -6510,6 +6548,7 @@ pub(super) fn prepare_loop_top_state(
         body: body_state,
         guard: guard_state,
         entry: entry_state,
+        iterations,
         summaries,
         resource_failures,
         effect_checks,
@@ -6528,6 +6567,7 @@ fn with_selected_arm_views_attached(
     state: CState,
     premise_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    iterations: &IntegerTerm,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -6539,6 +6579,7 @@ fn with_selected_arm_views_attached(
         premise_state,
         premise_state,
         invariant_checks,
+        iterations,
         assumptions,
         &[],
         &[],
@@ -6620,6 +6661,7 @@ fn with_selected_arm_views(
     state: &CState,
     premise_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    iterations: &IntegerTerm,
     definitions: &[CCompositeResourceDefinition],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -6631,6 +6673,7 @@ fn with_selected_arm_views(
         premise_state,
         premise_state,
         invariant_checks,
+        iterations,
         assumptions,
         &[],
         &[],
@@ -8216,10 +8259,12 @@ pub(super) fn false_equals_true_proposition() -> Proposition {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn assume_invariant_checks(
     state: &CState,
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    iterations: &IntegerTerm,
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
@@ -8229,6 +8274,7 @@ pub(super) fn assume_invariant_checks(
         state,
         loop_entry_state,
         invariant_checks,
+        iterations,
         assumptions,
         prefix_facts,
         prefix_obligations,
@@ -8262,20 +8308,33 @@ impl HeadInvariantRefusal {
 
 /// [`assume_invariant_checks`], also saying which declaration left the head
 /// with no context when that happens.
+#[allow(clippy::too_many_arguments)]
 fn assume_invariant_checks_explained(
     state: &CState,
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    iterations: &IntegerTerm,
     assumptions: &PureFactContext,
     prefix_facts: &(impl ExecutionFactSource + ?Sized),
     prefix_obligations: &[ProofObligation],
     budget: &mut ExecutionBudget,
 ) -> ExecutionResult<(HeadContexts, Option<HeadInvariantRefusal>)> {
+    // The head assumes the invariants at its own pass count, a fresh `K`
+    // that is never negative.
+    let _iterations = crate::kernel::spec::LoopIterationsScope::enter(iterations.clone());
+    let mut head_facts = prefix_facts.persistent_facts();
+    head_facts.push(ExecutionPureFact::new(Proposition::ConditionIs(
+        ConditionTerm::IntegerLessEqual(
+            IntegerTerm::constant(0.into()).into(),
+            iterations.clone().into(),
+        ),
+        true,
+    )));
     // Each lowering path forks this declaration history. Keep its prefix
     // persistent so a loop with many explicit invariants does not clone the
     // whole preceding clause vector at every declaration.
     let mut contexts = vec![(
-        prefix_facts.persistent_facts(),
+        head_facts,
         prefix_obligations.to_vec(),
         crate::kernel::proof::PersistentSequence::default(),
     )];
@@ -9383,16 +9442,16 @@ fn range_extent_refusal(
                     offset.clone(),
                     Bitvector32Term::int64_multiply(
                         index,
-                        Bitvector32Term::Int64Constant(element_width),
+                        Bitvector32Term::int64_constant(element_width),
                     ),
                 )
             };
             let inside = proves(ConditionTerm::int64_signed_less_equal(
-                Bitvector32Term::Int64Constant(0),
+                Bitvector32Term::int64_constant(0),
                 byte(start),
             )) && proves(ConditionTerm::int64_signed_less_equal(
                 byte(end),
-                Bitvector32Term::Int64Constant(width),
+                Bitvector32Term::int64_constant(width),
             ));
             (!inside).then(refusal).flatten()
         }
@@ -9403,7 +9462,7 @@ fn range_extent_refusal(
             let room = u64::try_from((width - offset) / element_width.max(1)).ok()?;
             let inside = proves(ConditionTerm::uint64_less_equal(
                 end.clone(),
-                Bitvector32Term::UInt64Constant(room),
+                Bitvector32Term::uint64_constant(room),
             ));
             (!inside).then(refusal).flatten()
         }

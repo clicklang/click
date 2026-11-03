@@ -707,7 +707,7 @@ mod wide_range_reader_tests {
         let alias = Pointer::symbolic(Variable(985_201));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::UInt64Constant(0),
+            Bitvector32Term::uint64_constant(0),
             Bitvector32Term::Variable(Variable(985_202)),
             1,
         );

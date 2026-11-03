@@ -3,6 +3,7 @@ use crate::kernel::CompareRelation;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::unary_term;
+use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 use num_traits::ToPrimitive;
 
 /// One variable substitution, bitvector or pointer, as the structural walks
@@ -1728,7 +1729,7 @@ mod resource_frame_substitution_tests {
             substitute_bitvector_variable_in_c_resource(
                 resource,
                 variable,
-                &Bitvector32Term::Constant(4)
+                &Bitvector32Term::constant(4)
             ),
             *resource
         );
@@ -1751,7 +1752,7 @@ mod resource_frame_substitution_tests {
             ),
         };
         let snapshot = crate::kernel::intern_c_memory(
-            base.store(metadata, CValue::Int32(Bitvector32Term::Constant(7))),
+            base.store(metadata, CValue::Int32(Bitvector32Term::constant(7))),
         );
         let rewritten = substitute_bitvector_variable_in_shared_memory(
             &snapshot,
@@ -1772,7 +1773,7 @@ mod resource_frame_substitution_tests {
         let bitvector_substituted = substitute_bitvector_variable_in_c_state(
             &state,
             Variable(71_100),
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
         );
         let pointer_substituted = substitute_pointer_variable_in_c_state(
             &state,
@@ -1825,7 +1826,7 @@ mod resource_frame_substitution_tests {
                 Int32,
                 Add,
                 Box::new(Bitvector32Term::Variable(from)),
-                Box::new(Bitvector32Term::Constant(1)),
+                Box::new(Bitvector32Term::constant(1)),
             ),
         );
         let statement = CStatement::While {
@@ -1844,7 +1845,7 @@ mod resource_frame_substitution_tests {
         let substituted = substitute_bitvector_variable_in_c_statement(
             &statement,
             from,
-            &Bitvector32Term::Constant(4),
+            &Bitvector32Term::constant(4),
         );
         let CStatement::While { effect_checks, .. } = substituted else {
             panic!("substitution changed the statement shape");
@@ -1852,8 +1853,8 @@ mod resource_frame_substitution_tests {
         let actual = effect_checks[0]
             .validated_ranges()
             .expect("validated carrier must be retained");
-        assert_eq!(actual[0].start(), &Bitvector32Term::Constant(4));
-        assert_eq!(actual[0].end(), &Bitvector32Term::Constant(5));
+        assert_eq!(actual[0].start(), &Bitvector32Term::constant(4));
+        assert_eq!(actual[0].end(), &Bitvector32Term::constant(5));
         assert_eq!(actual[0].base.offset, PointerOffsetTerm::Constant(16));
     }
 
@@ -1869,8 +1870,8 @@ mod resource_frame_substitution_tests {
                 block: PointerBlock::Symbolic(from),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::Constant(0),
-            Bitvector32Term::Constant(1),
+            Bitvector32Term::constant(0),
+            Bitvector32Term::constant(1),
         );
         let statement = CStatement::While {
             condition: c_int32_literal(0),
@@ -3151,9 +3152,7 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
 /// bound identities as well so a logical or fold binder cannot reuse one.
 fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTreeSet<Variable>) {
     match term {
-        Bitvector32Term::Constant(_)
-        | Bitvector32Term::UInt32Constant(_)
-        | Bitvector32Term::Variable(_) => {}
+        bits32_constant!(_) | Bitvector32Term::Variable(_) => {}
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
@@ -3236,9 +3235,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
         Bitvector32Term::IntegerToMachine { value, .. } => {
             collect_integer_bound_variables(value, variables);
         }
-        Bitvector32Term::Int64Constant(_)
-        | Bitvector32Term::UInt64Constant(_)
-        | Bitvector32Term::MachineIntegerConstant(_) => {}
+        int64_constant!(_) | uint64_constant!(_) | native_constant!(_, _) => {}
         Bitvector32Term::Int64From32(value)
         | Bitvector32Term::MachineIntegerCast { value, .. }
         | Bitvector32Term::UInt64From32(value)
@@ -4476,9 +4473,9 @@ fn integer_item_bitvector(
         (IntegerTerm::Constant(value), MachineIntegerType::Int32) => value
             .to_i64()
             .filter(|value| (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(value))
-            .map(|value| Bitvector32Term::Constant(value as i32 as u32)),
+            .map(|value| Bitvector32Term::constant(value as i32 as u32)),
         (IntegerTerm::Constant(value), MachineIntegerType::UInt64) => {
-            value.to_u64().map(Bitvector32Term::UInt64Constant)
+            value.to_u64().map(Bitvector32Term::uint64_constant)
         }
         _ => None,
     }
@@ -4869,7 +4866,7 @@ mod spec_carrier_substitution_binder_tests {
                 index: SpecIntegerRangeFoldIndex::Int32 {
                     start: Box::new(int32_value(source)),
                     end: Box::new(SpecExpression::Value(CValue::Int32(
-                        Bitvector32Term::Constant(8),
+                        Bitvector32Term::constant(8),
                     ))),
                 },
                 initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(0))),
@@ -4931,7 +4928,7 @@ mod spec_carrier_substitution_binder_tests {
         let rewritten = substitute_bitvector_variable_in_spec_expression(
             &int32_fold(source, source),
             source,
-            &Bitvector32Term::Constant(5),
+            &Bitvector32Term::constant(5),
         );
         let SpecExpression::IntegerToMachine { value, .. } = rewritten else {
             panic!("the Integer fold was dropped")
@@ -4948,7 +4945,7 @@ mod spec_carrier_substitution_binder_tests {
         };
         assert_eq!(
             *start,
-            SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(5)))
+            SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(5)))
         );
         let SpecIntegerExpression::Add(bound_item, machine_source) = *body else {
             panic!("the fold body changed shape")
@@ -5010,13 +5007,13 @@ mod spec_carrier_substitution_binder_tests {
             body: Box::new(SpecProposition::Comparison {
                 left: int32_value(source),
                 operator: CComparisonOperator::Equal,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::Constant(8))),
+                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(8))),
             }),
         };
         let rewritten = substitute_bitvector_variable_in_spec_proposition(
             &proposition,
             source,
-            &Bitvector32Term::Constant(5),
+            &Bitvector32Term::constant(5),
         );
         assert_eq!(rewritten, proposition);
     }
@@ -5046,7 +5043,7 @@ mod spec_carrier_substitution_binder_tests {
                     substitute_bitvector_variable_in_integer(
                         &IntegerTerm::var(Variable(340)),
                         Variable(340),
-                        &Bitvector32Term::Constant(1),
+                        &Bitvector32Term::constant(1),
                     )
                 });
                 crate::instrumentation::emit(
@@ -5267,14 +5264,7 @@ pub(crate) fn substitute_bitvector_variable(
     to: &Bitvector32Term,
 ) -> Bitvector32Term {
     match term {
-        Bitvector32Term::MachineIntegerConstant(value) => {
-            Bitvector32Term::MachineIntegerConstant(*value)
-        }
-
-        Bitvector32Term::Constant(value) => Bitvector32Term::Constant(*value),
-        Bitvector32Term::UInt32Constant(value) => Bitvector32Term::UInt32Constant(*value),
-        Bitvector32Term::Int64Constant(value) => Bitvector32Term::Int64Constant(*value),
-        Bitvector32Term::UInt64Constant(value) => Bitvector32Term::UInt64Constant(*value),
+        Bitvector32Term::Constant { .. } => term.clone(),
         Bitvector32Term::Variable(variable) if *variable == from => to.clone(),
         Bitvector32Term::Variable(variable) => {
             // A load variable can represent a load whose address mentions
@@ -5732,7 +5722,7 @@ fn snapshot_size_substitution_preserves_declared_types_and_write_protection() {
     let rewritten = substitute_bitvector_variable_in_memory_contents(
         &memory,
         from,
-        &Bitvector32Term::Constant(16),
+        &Bitvector32Term::constant(16),
     );
     assert_eq!(
         rewritten.blocks.get(&PointerBlock::from("local:word")),
@@ -5743,7 +5733,7 @@ fn snapshot_size_substitution_preserves_declared_types_and_write_protection() {
         .get(&PointerBlock::from("global:protected"))
         .unwrap();
     assert!(protected.read_only);
-    assert_eq!(protected.size, Bitvector32Term::Constant(16));
+    assert_eq!(protected.size, Bitvector32Term::constant(16));
 }
 
 fn substitute_bitvector_variable_in_memory_contents(
@@ -7451,7 +7441,7 @@ mod pointee_const_return_tests {
             substitute_bitvector_variable_in_c_value(
                 &value,
                 Variable(919),
-                &Bitvector32Term::Constant(0)
+                &Bitvector32Term::constant(0)
             ),
             value
         );
@@ -7478,7 +7468,7 @@ mod pointee_const_return_tests {
             substitute_bitvector_variable_in_c_function(
                 &function,
                 Variable(914),
-                &Bitvector32Term::Constant(0),
+                &Bitvector32Term::constant(0),
             )
             .return_pointee_is_constant()
         );
@@ -7531,7 +7521,7 @@ mod integer_to_machine_substitution_tests {
             destination: crate::kernel::MachineIntegerType::Int32,
         };
         let replaced =
-            substitute_bitvector_variable(&term, Variable(704), &Bitvector32Term::Constant(0));
+            substitute_bitvector_variable(&term, Variable(704), &Bitvector32Term::constant(0));
         let Bitvector32Term::IntegerToMachine { value, .. } = replaced else {
             panic!("substitution changed the carrier shape")
         };
@@ -8311,7 +8301,7 @@ mod integer_range_fold_substitution_tests {
             c_item(free_zero),
         );
         let fold = IntegerTerm::range_fold(
-            int32_index(Bitvector32Term::Constant(0), Bitvector32Term::Constant(1)),
+            int32_index(Bitvector32Term::constant(0), Bitvector32Term::constant(1)),
             IntegerTerm::var(accumulator),
             accumulator,
             item,
@@ -8374,7 +8364,7 @@ mod integer_range_fold_substitution_tests {
         );
 
         let replaced =
-            substitute_bitvector_variable_in_integer(&fold, source, &Bitvector32Term::Constant(9));
+            substitute_bitvector_variable_in_integer(&fold, source, &Bitvector32Term::constant(9));
         let IntegerTerm::RangeFold {
             index,
             initial,
@@ -8389,8 +8379,8 @@ mod integer_range_fold_substitution_tests {
         let IntegerRangeFoldIndex::Int32 { start, end } = index else {
             panic!("substitution changed the index carrier")
         };
-        assert_eq!(start.value(), &Bitvector32Term::Constant(9));
-        assert_eq!(end.value(), &Bitvector32Term::Constant(9));
+        assert_eq!(start.value(), &Bitvector32Term::constant(9));
+        assert_eq!(end.value(), &Bitvector32Term::constant(9));
         // The initial value was `to_integer(source)`, so substituting a literal
         // decides that observation: it is the mathematical 9, the same Integer
         // an evaluation of `to_integer(9)` produces. The body's observation is
@@ -8419,7 +8409,7 @@ mod integer_range_fold_substitution_tests {
         let replaced = substitute_bitvector_variable_in_integer(
             &outer,
             Variable(70_022),
-            &Bitvector32Term::Constant(9),
+            &Bitvector32Term::constant(9),
         );
         let IntegerTerm::Add(left, right) = replaced else {
             panic!("substitution changed the shared outer shape")
@@ -8585,7 +8575,7 @@ mod integer_range_fold_substitution_tests {
             Variable(70_057),
             &IntegerTerm::constant_i64(0),
             item,
-            &c_item_value(Bitvector32Term::Constant(0)),
+            &c_item_value(Bitvector32Term::constant(0)),
             Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
@@ -8633,7 +8623,7 @@ mod integer_range_fold_substitution_tests {
             Variable(70_059),
             &IntegerTerm::constant_i64(0),
             item,
-            &c_item_value(Bitvector32Term::Constant(0)),
+            &c_item_value(Bitvector32Term::constant(0)),
             Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
@@ -8661,7 +8651,7 @@ mod integer_range_fold_substitution_tests {
                 Int32,
                 Add,
                 Box::new(payload),
-                Box::new(Bitvector32Term::Constant(1))
+                Box::new(Bitvector32Term::constant(1))
             );
         }
         let term = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -8689,7 +8679,7 @@ mod integer_range_fold_substitution_tests {
                     let result = substitute_bitvector_variable_in_integer_checked(
                         &term,
                         source,
-                        &Bitvector32Term::Constant(7),
+                        &Bitvector32Term::constant(7),
                     );
                     instrumentation::emit(VerificationEvent::TacticFailed(tactic));
                     result
@@ -8752,7 +8742,7 @@ mod resource_reference_substitution_tests {
         let replaced = substitute_bitvector_variable_in_c_resource(
             &source,
             Variable(100),
-            &Bitvector32Term::Constant(7),
+            &Bitvector32Term::constant(7),
         );
         let pointer = Pointer::symbolic(Variable(103));
         let replaced =
@@ -8944,7 +8934,7 @@ mod checked_singleton_substitution_tests {
                 name: "opaque".into(),
                 arguments: vec![
                     Term::Integer(IntegerTerm::constant_i64(7)),
-                    Term::Bitvector32(Bitvector32Term::Constant(7)),
+                    Term::Bitvector32(Bitvector32Term::constant(7)),
                     Term::Integer(IntegerTerm::var(variable)),
                 ],
             }),
@@ -9033,7 +9023,7 @@ mod checked_surface_load_resolution_tests {
             Term::Integer(IntegerTerm::var(variable)),
         );
         let result =
-            substitute_surface_load_binding(&source, variable, &Bitvector32Term::Constant(7))
+            substitute_surface_load_binding(&source, variable, &Bitvector32Term::constant(7))
                 .unwrap();
         assert_eq!(
             result,
@@ -9073,7 +9063,7 @@ mod checked_surface_load_resolution_tests {
                     let binding = substitute_surface_load_binding(
                         &source,
                         variable,
-                        &Bitvector32Term::Constant(7),
+                        &Bitvector32Term::constant(7),
                     );
                     let registry = try_resolve_load_variables_from_registry(&source);
                     instrumentation::emit(VerificationEvent::TacticFailed(event));

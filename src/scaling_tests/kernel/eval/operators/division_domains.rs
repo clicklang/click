@@ -13,7 +13,7 @@ fn division_domain_checks_do_not_scan_unrelated_assumptions() {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
                         Bitvector32Term::Variable(Variable(971_000 + index)),
-                        Bitvector32Term::Constant(index as u32),
+                        Bitvector32Term::constant(index as u32),
                     ),
                     true,
                 );

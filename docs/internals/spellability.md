@@ -57,6 +57,12 @@ checked. Each one costs completeness, expansion, or a readable report.
   or read authority. Its value is constructed from the producer's recorded
   pending allocation, without facts or a history scan. The index is scoped with
   recorded snapshots and removes a name when its exit is replaced or removed.
+  A loop head mints its pass count `K` fresh; the loop's phases spell it
+  `iterations` (kernel placeholder `LOOP_ITERATIONS_VARIABLE`, bound per phase
+  by `LoopIterationsScope`), and each path past the loop carries it on its
+  correspondence metadata to the exit, which records it by loop in
+  `RecordedSnapshots::loop_iterations` with a reverse index from the variable:
+  it is spelled `loop(i).iterations` in one lookup.
   Recorded points index each integer value, and each pointer's block, by the
   point and the local it was first given to (`RecordedSnapshots::value_points`
   and `pointer_points`, filled from the locals each recorded state changed),

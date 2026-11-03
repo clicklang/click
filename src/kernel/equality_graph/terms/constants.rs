@@ -79,7 +79,7 @@ impl TermClasses {
             return;
         }
         let value = self.intern_node(super::Node::Int32(MachineAtom::int32(
-            Bitvector32Term::Constant(u32::from(value as i8 as u8)),
+            Bitvector32Term::constant(u32::from(value as i8 as u8)),
         )));
         for byte in bytes.iter() {
             pending.push((*byte, value));
@@ -230,8 +230,8 @@ pub(in crate::kernel) fn fold_arithmetic(
             }
             (SignedConstantResolution::Known(left), SignedConstantResolution::Known(right)) => {
                 SignedConstantResolution::from_term(operator.build(
-                    Bitvector32Term::Constant(left as i32 as u32),
-                    Bitvector32Term::Constant(right as i32 as u32),
+                    Bitvector32Term::constant(left as i32 as u32),
+                    Bitvector32Term::constant(right as i32 as u32),
                 ))
             }
             _ => SignedConstantResolution::Unknown,
@@ -239,7 +239,7 @@ pub(in crate::kernel) fn fold_arithmetic(
     }
     match term {
         unary_term!(Bits32, BitwiseNot, value) => operand(value).map(|value| {
-            Bitvector32Term::bitwise_not(Bitvector32Term::Constant(value as i32 as u32))
+            Bitvector32Term::bitwise_not(Bitvector32Term::constant(value as i32 as u32))
         }),
         // The conversion's own constant fold: a byte constant `c` in
         // `0..=255` converts to its two's-complement value, and a constant
@@ -249,7 +249,7 @@ pub(in crate::kernel) fn fold_arithmetic(
                 Bitvector32Term::machine_integer_cast(
                     source,
                     destination,
-                    Bitvector32Term::Constant(value as i32 as u32),
+                    Bitvector32Term::constant(value as i32 as u32),
                 )
             }),
             None => SignedConstantResolution::Unknown,

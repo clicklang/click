@@ -12,8 +12,8 @@ fn certified_range_list_graph_queries_scale_without_fact_index() {
         let range = |value| {
             CMemoryRange::new(
                 base.clone(),
-                Bitvector32Term::add(value, Bitvector32Term::Constant(1)),
-                Bitvector32Term::Constant(16),
+                Bitvector32Term::add(value, Bitvector32Term::constant(1)),
+                Bitvector32Term::constant(16),
             )
         };
         let left = range(var(0));

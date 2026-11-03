@@ -36,7 +36,7 @@ fn rewritten_integer_observations_preserve_binders_and_selected_goal_work() {
     use crate::kernel::proof::ProofFacts;
     let variable = Variable(989_002);
     let word = Bitvector32Term::Variable(variable);
-    let one = Bitvector32Term::Constant(1);
+    let one = Bitvector32Term::constant(1);
     let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
         ConditionTerm::equal(word.clone(), one.clone()),
         true,
@@ -80,7 +80,7 @@ fn rewritten_goal_comparison_visits_only_the_selected_proposition() {
     let facts = crate::kernel::proof::ProofFacts::default();
     for size in [4, 8, 16, 32] {
         let leaf = Proposition::ConditionIs(
-            ConditionTerm::equal(Bitvector32Term::Constant(0), Bitvector32Term::Constant(0)),
+            ConditionTerm::equal(Bitvector32Term::constant(0), Bitvector32Term::constant(0)),
             true,
         );
         let mut goal = leaf.clone();
@@ -100,7 +100,7 @@ fn rewritten_store_witness_work_scales_with_explicit_adjacent_equalities() {
     crate::kernel::eval::declare_load_access_width(&arc_pointer(4), 4);
     let mut samples = Vec::new();
     for size in [1, 2, 4, 8] {
-        let value = Bitvector32Term::Constant(17);
+        let value = Bitvector32Term::constant(17);
         let mut memory = CMemory::new()
             .with_block("arg-memory", 128)
             .store(arc_pointer(4), CValue::Int32(value.clone()));
@@ -231,7 +231,7 @@ fn memory_dag_walks_follow_chains_of_any_length() {
             for index in 0..size {
                 memory = memory.store(
                     arc_pointer(8 + 4 * index),
-                    CValue::Int32(Bitvector32Term::Constant(index as u32)),
+                    CValue::Int32(Bitvector32Term::constant(index as u32)),
                 );
             }
             let read = arc_pointer(0);
@@ -352,7 +352,7 @@ fn pointer_read_cache_forgetting_registration_does_not_search_older_history() {
         for i in 0..size {
             memory = memory.store(
                 address.clone(),
-                CValue::Int64(Bitvector32Term::Int64Constant(i as i64)),
+                CValue::Int64(Bitvector32Term::int64_constant(i as i64)),
             );
         }
         let before = intern_c_memory(memory.clone());
@@ -429,7 +429,7 @@ fn named_snapshot_alias_equality_does_not_depend_on_sibling_observation_origins(
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
                     Bitvector32Term::Variable(Variable(978_100 + index)),
-                    Bitvector32Term::Constant(index as u32),
+                    Bitvector32Term::constant(index as u32),
                 ),
                 true,
             );
@@ -754,7 +754,7 @@ fn stored_field_value_uses_indexed_base_aliases() {
         assert!(!write_supplies_read(&write, &stored, &read, 4, &context));
         assert!(!write_supplies_read(
             &write,
-            &CValue::Int32(Bitvector32Term::Constant(0)),
+            &CValue::Int32(Bitvector32Term::constant(0)),
             &read,
             8,
             &context
@@ -894,8 +894,8 @@ fn graph_aliased_range_membership_checks_complete_access_and_scales() {
     let range = |base: &Pointer, end| {
         CMemoryRange::new_with_element_width(
             base.clone(),
-            Bitvector32Term::Constant(8),
-            Bitvector32Term::Constant(end),
+            Bitvector32Term::constant(8),
+            Bitvector32Term::constant(end),
             1,
         )
     };

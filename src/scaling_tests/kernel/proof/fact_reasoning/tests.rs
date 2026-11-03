@@ -55,7 +55,7 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
         let mut p = Proposition::ConditionIs(
             ConditionTerm::equal(
                 Bitvector32Term::Variable(Variable(base)),
-                Bitvector32Term::Constant(0),
+                Bitvector32Term::constant(0),
             ),
             true,
         );
@@ -90,7 +90,7 @@ fn quantified_nested_matching_work_is_linear_and_context_indexed() {
                 body: Box::new(Proposition::ConditionIs(
                     ConditionTerm::equal(
                         Bitvector32Term::Variable(Variable(9000)),
-                        Bitvector32Term::Constant(index as u32 + 1),
+                        Bitvector32Term::constant(index as u32 + 1),
                     ),
                     true,
                 )),

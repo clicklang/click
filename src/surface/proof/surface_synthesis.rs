@@ -3,6 +3,10 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
+use crate::kernel::{
+    bits32_constant, constant_i64, constant_u64, int32_constant, int64_constant, uint32_constant,
+    uint64_constant,
+};
 
 #[cfg(test)]
 mod tests;
@@ -956,12 +960,7 @@ fn bitvector_term_exceeds_depth_limit(root: &Bitvector32Term) -> bool {
                     pending.push((value, depth + 1));
                 }
             }
-            Bitvector32Term::Constant(_)
-            | Bitvector32Term::UInt32Constant(_)
-            | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_)
-            | Bitvector32Term::MachineIntegerConstant(_)
-            | Bitvector32Term::Variable(_) => {}
+            Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => {}
         }
     }
     false
@@ -1722,7 +1721,7 @@ fn synthesize_named_range_loadable_segment(
                 })
                 .find(|(_, _, start)| start.as_const().is_some_and(|start| start != 0))?;
         let element_count = byte_count / width;
-        let end = Bitvector32Term::add(start.clone(), Bitvector32Term::Constant(element_count));
+        let end = Bitvector32Term::add(start.clone(), Bitvector32Term::constant(element_count));
         let start = contract_expression_to_c_fragment(&synthesize_surface_bitvector(
             &start,
             parameter_binding,
@@ -1864,27 +1863,16 @@ fn synthesize_external_symbolic_element_range(
                 Subtract,
                 Box::new(Bitvector32Term::add(
                     index.clone(),
-                    Bitvector32Term::Constant(1),
+                    Bitvector32Term::constant(1),
                 )),
                 Box::new(index.clone()),
             );
-            if !matches!(
-                bytes,
-                Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)
-            ) && bytes != &one_element
-            {
+            if !matches!(bytes, bits32_constant!(1)) && bytes != &one_element {
                 return None;
             }
-            (!matches!(
-                index,
-                Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_)
-            ))
-            .then_some((parameter.name(), index))
+            (!matches!(index, bits32_constant!(_))).then_some((parameter.name(), index))
         })?;
-    if matches!(
-        bytes,
-        Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)
-    ) {
+    if matches!(bytes, bits32_constant!(1)) {
         // Keep the byte count constant in the re-lowered proposition by
         // moving the symbolic index into the named pointer expression and
         // spelling a zero-based one-byte range over that displaced pointer.
@@ -1914,7 +1902,7 @@ fn synthesize_external_symbolic_element_range(
         state,
         bound_variables,
     )?)?;
-    let end_term = Bitvector32Term::add(index, Bitvector32Term::Constant(1));
+    let end_term = Bitvector32Term::add(index, Bitvector32Term::constant(1));
     let end = contract_expression_to_c_fragment(&synthesize_surface_bitvector(
         &end_term,
         parameter_binding,
@@ -1942,14 +1930,11 @@ fn is_reduced_one_element_byte_count(bytes: &Bitvector32Term) -> bool {
     let binary_term!(Int32, Subtract, end, start) = bytes else {
         return false;
     };
-    *end.as_ref() == Bitvector32Term::add(start.as_ref().clone(), Bitvector32Term::Constant(1))
+    *end.as_ref() == Bitvector32Term::add(start.as_ref().clone(), Bitvector32Term::constant(1))
 }
 
 fn is_one_element_byte_count(bytes: &Bitvector32Term) -> bool {
-    matches!(
-        bytes,
-        Bitvector32Term::Constant(1) | Bitvector32Term::UInt32Constant(1)
-    ) || is_reduced_one_element_byte_count(bytes)
+    matches!(bytes, bits32_constant!(1)) || is_reduced_one_element_byte_count(bytes)
 }
 
 fn int32_scaled_value(offset: &PointerOffsetTerm, width: i64) -> Option<Bitvector32Term> {
@@ -2825,7 +2810,26 @@ fn raise_kernel_term(
         }
         Node::IntegerLiteral(value) => SurfaceTerm::IntegerLiteral(value.to_string()),
         Node::Variable(variable) if term.ty() == &KernelType::Integer => {
-            SurfaceTerm::Binding(bound_variables.get(variable)?.clone())
+            match bound_variables
+                .get(variable)
+                .cloned()
+                .or_else(|| proof_binder_name(*variable))
+                // A name the loop phase gives a variable it binds, such as
+                // the head's pass count `iterations`.
+                .or_else(|| {
+                    SYNTHESIS_BINDER_NAMES.with(|slot| {
+                        slot.borrow()
+                            .as_ref()
+                            .and_then(|names| names.get(variable).cloned())
+                    })
+                }) {
+                Some(name) => SurfaceTerm::Binding(name),
+                // A loop's pass count past the loop.
+                None => SurfaceTerm::Binding(crate::surface::loop_iterations_spelling(
+                    SYNTHESIS_RECORDED_POINTS
+                        .with(|slot| slot.borrow().as_ref()?.loop_naming_iterations(*variable))?,
+                )),
+            }
         }
         Node::IntegerOperation {
             operator,
@@ -3251,7 +3255,7 @@ pub(super) fn synthesize_surface_pointer_offset(
                 Some(ContractExpression::CFragment(CExpression::Add(
                     Box::new(base),
                     Box::new(CExpression::Value(CValue::Int32(
-                        Bitvector32Term::Constant((byte_offset / 4) as u32),
+                        Bitvector32Term::constant((byte_offset / 4) as u32),
                     ))),
                 )))
             };
@@ -3582,14 +3586,14 @@ fn synthesize_surface_bitvector(
             name.clone(),
         )));
     }
-    if let Bitvector32Term::Constant(_) = term {
+    if let int32_constant!(_) = term {
         return Some(ContractExpression::CFragment(CExpression::Value(
             CValue::Int32(term.clone()),
         )));
     }
     // A `uint32` constant keeps its format, so an operator over it spells
     // and lowers back at `uint32`.
-    if let Bitvector32Term::UInt32Constant(_) = term {
+    if let uint32_constant!(_) = term {
         return Some(ContractExpression::CFragment(CExpression::Value(
             CValue::UInt32(term.clone()),
         )));
@@ -3742,17 +3746,17 @@ fn synthesize_surface_bitvector(
             raise_kernel_term(&term, parameter_binding, state, bound_variables)
         }
 
-        Bitvector32Term::MachineIntegerConstant(value) => {
-            let value = if value.format() == MachineIntegerType::Int128.format() {
+        crate::kernel::native_constant!(format, _) => {
+            let value = if *format == MachineIntegerType::Int128 {
                 CValue::Int128(term.clone())
-            } else if value.format() == MachineIntegerType::UInt128.format() {
+            } else if *format == MachineIntegerType::UInt128 {
                 CValue::UInt128(term.clone())
             } else {
                 return None;
             };
             Some(ContractExpression::CFragment(CExpression::Value(value)))
         }
-        Bitvector32Term::Constant(_) | Bitvector32Term::UInt32Constant(_) => {
+        bits32_constant!(_) => {
             unreachable!("constants returned above")
         }
         binary_term!(Bits32, Add, left, right) => {
@@ -4118,12 +4122,12 @@ fn synthesize_surface_bitvector(
                     synthesize_load_at_recorded_point(variable, parameter_binding, bound_variables)
                 })
         }
-        Bitvector32Term::Int64Constant(value) => Some(ContractExpression::CFragment(
-            CExpression::Value(CValue::Int64(Bitvector32Term::Int64Constant(*value))),
-        )),
-        Bitvector32Term::UInt64Constant(value) => Some(ContractExpression::CFragment(
-            CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(*value))),
-        )),
+        int64_constant!(value) => Some(ContractExpression::CFragment(CExpression::Value(
+            CValue::Int64(Bitvector32Term::int64_constant(constant_i64(*value))),
+        ))),
+        uint64_constant!(value) => Some(ContractExpression::CFragment(CExpression::Value(
+            CValue::UInt64(Bitvector32Term::uint64_constant(constant_u64(*value))),
+        ))),
         Bitvector32Term::Int64From32(value)
         | Bitvector32Term::Int64FromUInt32(value)
         | Bitvector32Term::UInt64From32(value)
@@ -4651,12 +4655,7 @@ pub(super) fn bitvector_term_is_load_free(term: &Bitvector32Term) -> bool {
             Bitvector32Term::PointerAddress(pointer, _) => {
                 pending.extend(pointer.offset.scaled_values());
             }
-            Bitvector32Term::Constant(_)
-            | Bitvector32Term::UInt32Constant(_)
-            | Bitvector32Term::Int64Constant(_)
-            | Bitvector32Term::UInt64Constant(_)
-            | Bitvector32Term::MachineIntegerConstant(_)
-            | Bitvector32Term::Variable(_) => {}
+            Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => {}
             crate::kernel::binary_bitvector32_term!(left, right) => {
                 pending.push(left);
                 pending.push(right);
@@ -5116,7 +5115,7 @@ fn synthesize_surface_pointer(
                 .byte_width();
             let index = synthesis_element_index(pointer, base, element_width)?;
             let base = CExpression::Variable(parameter.name().to_string());
-            if index == Bitvector32Term::Constant(0) {
+            if index == Bitvector32Term::constant(0) {
                 return Some(base);
             }
             let index =
@@ -5140,7 +5139,7 @@ fn synthesize_surface_pointer(
             let element_width = base.c_type().pointee_type()?.byte_width();
             let index = synthesis_element_index(pointer, base, element_width)?;
             let base = CExpression::Variable(surface_local_name(name).to_string());
-            if index == Bitvector32Term::Constant(0) {
+            if index == Bitvector32Term::constant(0) {
                 return Some(base);
             }
             let index =
