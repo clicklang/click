@@ -23,8 +23,8 @@ Restore::~Restore() {
 int32 conditional_restore(bool construct, bool early, int32& value) {
     owns value;
     requires value == 41;
-    ensures construct != 0 implies (early != 0 implies result == 7);
-    ensures construct != 0 implies (early == 0 implies result == 41);
-    ensures construct == 0 implies result == 41;
+    ensures construct == true implies (early == true implies result == 7);
+    ensures construct == true implies (early == false implies result == 41);
+    ensures construct == false implies result == 41;
     ensures value == 41;
 }
