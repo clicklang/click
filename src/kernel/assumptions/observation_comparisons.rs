@@ -127,6 +127,27 @@ fn key(view: &NativeComparisonView<'_>) -> Key {
     Key::Comparison(format, relation, operands)
 }
 
+/// Exact comparison identity for an already selected source. This is not a
+/// search and does not decide a stronger or weaker bound.
+pub(super) fn same_comparison(
+    condition: &ConditionTerm,
+    truth: bool,
+    source: &Proposition,
+) -> bool {
+    let Proposition::ConditionIs(other, value) = source else {
+        return false;
+    };
+    match (
+        crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+            condition, truth,
+        ),
+        comparison_view(other, *value),
+    ) {
+        (Some(left), Some(right)) => key(&left) == key(&right),
+        _ => false,
+    }
+}
+
 /// The intrinsic rules formerly reached through the native comparison
 /// constructors. Read shared roots and exact format ranges, never export.
 pub(super) fn constant_observation_value(condition: &ConditionTerm) -> Option<bool> {

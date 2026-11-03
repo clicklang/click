@@ -751,10 +751,28 @@ pub(crate) fn record_reasoning_provenance(
     // general derivation builder used to fill in the rest, but it left the
     // kernel with the rest of the proposition search, and asking it for a
     // premise set would have conservatively attached its complete ambient
-    // context anyway. A proposition the exact index does not name
-    // contributes no premise here; certificate planning that needs one
-    // spells the step instead.
-    let premises = if assumptions.proves_exact(proposition) {
+    // context anyway. Shared observations select their existing source from
+    // the comparison or direct-bound index. A query with no selected exact
+    // source contributes no premise here; certificate planning spells the step.
+    let observed_source = match proposition {
+        Proposition::ConditionIs(condition, truth)
+            if !assumptions.contains_assumed_exact(proposition) =>
+        {
+            assumptions
+                .observation_comparisons
+                .source(condition, *truth)
+                .cloned()
+                .or_else(|| {
+                    assumptions
+                        .checked_order_bounds
+                        .exact_observation_source(condition, *truth)
+                })
+        }
+        _ => None,
+    };
+    let premises = if let Some(source) = observed_source {
+        vec![source.clone()]
+    } else if assumptions.proves_exact(proposition) {
         vec![proposition.clone()]
     } else {
         Vec::new()
@@ -11333,6 +11351,49 @@ mod integer_observation_tests {
         let facts = PureFactContext::new().assume_proposition(impossible.clone());
         assert!(facts.is_inconsistent());
         assert!(!facts.without_exact_fact(&impossible).is_inconsistent());
+    }
+
+    #[test]
+    fn shared_bound_provenance_selects_written_source_and_respects_withdrawal() {
+        use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+        use crate::kernel::{KernelTermImport, MachineOperandView};
+        let _session = crate::kernel::VerificationSession::enter();
+        let term = Bitvector32Term::sign_cast32(
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int32,
+            Bitvector32Term::add(word(189131), word(189132)),
+        );
+        let zero = Bitvector32Term::Constant(0);
+        let native = ConditionTerm::signed_less_equal(zero.clone(), term.clone());
+        let source = Proposition::ConditionIs(native, true);
+        let root = KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int32, &term)
+            .unwrap();
+        let goal = condition_for_operand_views(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            [
+                MachineOperandView::Legacy(&zero),
+                MachineOperandView::Shared(&root),
+            ],
+        );
+        let parent = PureFactContext::new();
+        let child = parent.clone().assume_proposition(source.clone());
+        let select = |context: &PureFactContext| {
+            context
+                .checked_order_bounds
+                .exact_observation_source(&goal, true)
+        };
+        assert_eq!(select(&child), Some(source.clone()));
+        assert_eq!(select(&parent), None);
+        assert_eq!(select(&child.without_exact_fact(&source)), None);
+        assert_eq!(select(&child), Some(source.clone()));
+        for _ in 0..2 {
+            let (_, used) = collect_reasoning_provenance(|| {
+                record_reasoning_provenance(&child, &Proposition::ConditionIs(goal.clone(), true));
+            });
+            assert_eq!(used, vec![source.clone()]);
+        }
     }
 
     #[test]
