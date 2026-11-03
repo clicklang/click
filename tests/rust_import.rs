@@ -2882,31 +2882,41 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(BOX_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
+    for (function, before, after, expected) in [
         (
+            "boxed::boxed",
             "    ensures result == x + 1;",
             "    ensures result == x;",
             "boxed::boxed.ensures_0",
         ),
-        ("    requires x < 100;\n", "", "Rust add panic check"),
+        (
+            "boxed::boxed",
+            "    requires x < 100;\n",
+            "",
+            "Rust add panic check",
+        ),
         // `read` frees the box it is passed, so it cannot hand it back.
         (
+            "boxed::read",
             "    consumes allocation(b, sizeof(boxed::Cell));\n    consumes *b;",
             "    owns allocation(b, sizeof(boxed::Cell));\n    owns *b;",
             "boxed::read.owns_0",
         ),
         // `make` returns the allocation it made.
         (
+            "boxed::make",
             "    produces allocation(result, sizeof(boxed::Cell));\n",
             "",
             "live allocation obligation was neither returned nor freed",
         ),
         (
+            "boxed::value_or",
             "    consumes cell: cell_box(o);",
             "    owns cell: cell_box(o);",
             "boxed::value_or.owns_0",
         ),
         (
+            "boxed::maybe_through",
             "    ensures make == false implies result == 0;",
             "    ensures make == false implies result == x;",
             "boxed::maybe_through.ensures_1",
@@ -2914,9 +2924,12 @@ fn charon_boxes_allocate_read_write_and_free_their_struct() {
     ] {
         assert!(BOX_SIDECAR.contains(before), "{before}");
         let invalid = BOX_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the complete mutated function and its dependencies, while
+        // the initial successful run covers every body in the fixture.
+        let error = verify_rust_function(&invalid, &prepared, function)
             .err()
             .expect("a claim the box program does not meet must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
