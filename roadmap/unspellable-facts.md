@@ -92,6 +92,8 @@ directions and disequality polarity. Exact observation-bound provenance selects
 retained sources from the existing bound index, including branch withdrawal;
 it adds no index to ordinary fact admission. The common KernelTerm cast engine
 keeps the distinct comparison-reading and generated-premise composition policies.
+Adjacent strict/inclusive signed and unsigned word bounds also read retained
+operands, including extrema, mirrored queries, and original supporting facts.
 The signed equality dispatcher remains open.
 
 Bounded arithmetic-certificate conclusion identity reads shared operands directly,

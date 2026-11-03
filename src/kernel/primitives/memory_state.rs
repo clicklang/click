@@ -4448,7 +4448,9 @@ impl CMemory {
         // visits only the entries on which another arm differs from it. The
         // arms share what neither touched, so the work is their changes.
         let others = &sibling_memories[1..];
-        let blocks = union_of_arm_maps(&first.blocks, others.iter().map(|memory| &*memory.blocks))
+        let blocks = first
+            .blocks
+            .union_of_arms(others.iter().map(|memory| &*memory.blocks))
             .map_err(|block| {
                 format!("interface arms disagree on the size of memory block {block:?}")
             })?;

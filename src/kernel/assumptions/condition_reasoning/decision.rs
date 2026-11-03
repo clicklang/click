@@ -1177,113 +1177,69 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
-        let (left, right, greater, strict) = match condition {
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                left,
-                right,
-            } => (left, right, true, true),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                left,
-                right,
-            } => (left, right, true, false),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                left,
-                right,
-            } => (left, right, false, true),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left,
-                right,
-            } => (left, right, false, false),
-            _ => return None,
-        };
-        let (term, bound, greater) = if let Some(bound) = right.as_const() {
-            (left.as_ref().clone(), bound as i32, greater)
-        } else {
-            let bound = left.as_const()?;
-            (right.as_ref().clone(), bound as i32, !greater)
-        };
-        let shifted = if greater == strict {
-            match bound.checked_add(1) {
-                Some(bound) => bound,
-                None => return Some(!strict),
-            }
-        } else {
-            match bound.checked_sub(1) {
-                Some(bound) => bound,
-                None => return Some(!strict),
-            }
-        };
-        let bound = Bitvector32Term::constant(shifted as u32);
-        let equivalent = match (greater, strict) {
-            (true, true) => ConditionTerm::signed_greater_equal(term, bound),
-            (true, false) => ConditionTerm::signed_greater_than(term, bound),
-            (false, true) => ConditionTerm::signed_less_equal(term, bound),
-            (false, false) => ConditionTerm::signed_less_than(term, bound),
-        };
-        self.decide_by_equivalent_order(&equivalent)
+        self.decide_exact_word_constant_order(condition, MachineIntegerType::Int32)
     }
 
-    /// [`Self::decide_exact_signed_constant_order`] for a `uint32` order:
-    /// `x < c` is `x <= c - 1` and `c < x` is `c + 1 <= x`, decided by the
-    /// exact fact of the shifted spelling. A shift past `0` or `UINT32_MAX`
-    /// decides the order by the range alone.
+    /// The same adjacent-bound rule at the unsigned word's endpoints.
     pub(super) fn decide_exact_unsigned32_constant_order(
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
-        let ConditionTerm::Compare {
-            format: MachineIntegerType::UInt32,
-            relation:
-                relation @ (crate::kernel::CompareRelation::LessThan
-                | crate::kernel::CompareRelation::LessEqual
-                | crate::kernel::CompareRelation::GreaterThan
-                | crate::kernel::CompareRelation::GreaterEqual),
-            left,
-            right,
-        } = condition
-        else {
+        self.decide_exact_word_constant_order(condition, MachineIntegerType::UInt32)
+    }
+
+    fn decide_exact_word_constant_order(
+        &self,
+        condition: &ConditionTerm,
+        format: MachineIntegerType,
+    ) -> Option<bool> {
+        use crate::kernel::machine_integer::{
+            Relation,
+            comparison::{comparison_view, condition_for_operand_views},
+        };
+        let view = comparison_view(condition, true)?;
+        if view.format != format {
             return None;
+        }
+        let strict = match view.relation {
+            Relation::Less => true,
+            Relation::LessEqual => false,
+            _ => return None,
         };
-        let (greater, strict) = match relation {
-            CompareRelation::GreaterThan => (true, true),
-            CompareRelation::GreaterEqual => (true, false),
-            CompareRelation::LessThan => (false, true),
-            CompareRelation::LessEqual => (false, false),
-            CompareRelation::Equal => return None,
-        };
-        let (term, bound, greater) = if let Some(bound) = right.as_const() {
-            (left.as_ref().clone(), bound, greater)
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let (term, bits, greater) = if let Some(bound) = right.word32_constant() {
+            (left, bound, false)
         } else {
-            let bound = left.as_const()?;
-            (right.as_ref().clone(), bound, !greater)
+            (right, left.word32_constant()?, true)
         };
-        let shifted = if greater == strict {
-            match bound.checked_add(1) {
-                Some(bound) => bound,
-                None => return Some(!strict),
-            }
+        let (bound, minimum, maximum) = if format == MachineIntegerType::Int32 {
+            (
+                i64::from(bits as i32),
+                i64::from(i32::MIN),
+                i64::from(i32::MAX),
+            )
         } else {
-            match bound.checked_sub(1) {
-                Some(bound) => bound,
-                None => return Some(!strict),
-            }
+            (i64::from(bits), 0, i64::from(u32::MAX))
         };
-        let bound = Bitvector32Term::constant(shifted);
-        let equivalent = match (greater, strict) {
-            (true, true) => ConditionTerm::unsigned_greater_equal(term, bound),
-            (true, false) => ConditionTerm::unsigned_greater_than(term, bound),
-            (false, true) => ConditionTerm::unsigned_less_equal(term, bound),
-            (false, false) => ConditionTerm::unsigned_less_than(term, bound),
+        let shifted = bound + if greater == strict { 1 } else { -1 };
+        if shifted < minimum || shifted > maximum {
+            return Some(!strict);
+        }
+        let bound = Bitvector32Term::constant(shifted as u32);
+        let relation = match (greater, strict) {
+            (true, true) => CompareRelation::GreaterEqual,
+            (true, false) => CompareRelation::GreaterThan,
+            (false, true) => CompareRelation::LessEqual,
+            (false, false) => CompareRelation::LessThan,
         };
-        self.decide_by_equivalent_order(&equivalent)
+        self.decide_by_equivalent_order(&condition_for_operand_views(
+            format,
+            relation,
+            [term, MachineOperandView::Legacy(&bound)],
+        ))
     }
 
     /// The exact fact of `equivalent`, an order equivalent to the one asked,
@@ -2658,5 +2614,135 @@ mod shared_wide_decision_tests {
             }
             assert!(!operand.has_boxed_operand());
         }
+    }
+}
+
+#[cfg(test)]
+mod exact_word_order_tests {
+    use super::*;
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{KernelTermExport, KernelTermImport, MachineOperandView as V};
+
+    fn query(
+        format: MachineIntegerType,
+        relation: CompareRelation,
+        term: V<'_>,
+        bound: u32,
+    ) -> ConditionTerm {
+        condition_for_operand_views(
+            format,
+            relation,
+            [term, V::Legacy(&Bitvector32Term::constant(bound))],
+        )
+    }
+
+    #[test]
+    fn adjacent_bound_views_preserve_answers_mirrors_and_sources() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let term = Bitvector32Term::add(
+            Bitvector32Term::Variable(Variable(189301)),
+            Bitvector32Term::Variable(Variable(189302)),
+        );
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            let root = KernelTermImport::default()
+                .machine_arithmetic(format, &term)
+                .unwrap();
+            for (relation, source_relation, source_bound) in [
+                (CompareRelation::LessThan, CompareRelation::LessEqual, 9),
+                (CompareRelation::LessEqual, CompareRelation::LessThan, 11),
+                (
+                    CompareRelation::GreaterThan,
+                    CompareRelation::GreaterEqual,
+                    11,
+                ),
+                (
+                    CompareRelation::GreaterEqual,
+                    CompareRelation::GreaterThan,
+                    9,
+                ),
+            ] {
+                let native = query(format, relation, V::Legacy(&term), 10);
+                let shared = query(format, relation, V::Shared(&root), 10);
+                let source = query(format, source_relation, V::Legacy(&term), source_bound);
+                for truth in [None, Some(false), Some(true)] {
+                    let context = truth.map_or_else(PureFactContext::new, |truth| {
+                        PureFactContext::new().assume_condition(source.clone(), truth)
+                    });
+                    assert_eq!(
+                        context.decide_exact_word_constant_order(&native, format),
+                        truth
+                    );
+                    let exports = KernelTermExport::machine_export_count();
+                    let (answer, used) = collect_reasoning_provenance(|| {
+                        capture_implicit_reasoning_provenance(|| {
+                            context.decide_exact_word_constant_order(&shared, format)
+                        })
+                    });
+                    assert_eq!(answer, truth, "{native:?}");
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                    if let Some(truth) = truth {
+                        assert!(
+                            used.contains(&Proposition::ConditionIs(source.clone(), truth)),
+                            "{used:?}"
+                        );
+                    }
+                    let mirrored = match relation {
+                        CompareRelation::LessThan => CompareRelation::GreaterThan,
+                        CompareRelation::LessEqual => CompareRelation::GreaterEqual,
+                        CompareRelation::GreaterThan => CompareRelation::LessThan,
+                        CompareRelation::GreaterEqual => CompareRelation::LessEqual,
+                        _ => unreachable!(),
+                    };
+                    let mirrored = condition_for_operand_views(
+                        format,
+                        mirrored,
+                        [V::Legacy(&Bitvector32Term::constant(10)), V::Shared(&root)],
+                    );
+                    assert_eq!(
+                        context.decide_exact_word_constant_order(&mirrored, format),
+                        truth
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn adjacent_bound_views_keep_signed_and_unsigned_endpoints() {
+        use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp};
+        let _session = crate::kernel::VerificationSession::enter();
+        for (format, minimum, maximum) in [
+            (MachineIntegerType::Int32, i32::MIN as u32, i32::MAX as u32),
+            (MachineIntegerType::UInt32, 0, u32::MAX),
+        ] {
+            let variable = KernelTerm::variable(KernelType::C(format.c_type()), Variable(189311));
+            let root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [variable.clone(), variable],
+            );
+            let exports = KernelTermExport::machine_export_count();
+            for (relation, bound, answer) in [
+                (CompareRelation::LessThan, minimum, false),
+                (CompareRelation::GreaterEqual, minimum, true),
+                (CompareRelation::LessEqual, maximum, true),
+                (CompareRelation::GreaterThan, maximum, false),
+            ] {
+                assert_eq!(
+                    PureFactContext::new().decide_exact_word_constant_order(
+                        &query(format, relation, V::Shared(&root), bound),
+                        format
+                    ),
+                    Some(answer)
+                );
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../../scaling_tests/kernel/assumptions/condition_reasoning/decision/exact_word_order_tests.rs"
+        );
     }
 }

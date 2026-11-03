@@ -258,3 +258,110 @@ fn explicit_loop_views_keep_scalar_owners_without_visiting_observations() {
     assert!(large.1 <= small.1 + 16, "{samples:?}");
     assert!(large.2 <= small.2 * 3 + 64, "{samples:?}");
 }
+
+/// Fixed loop interface and fixed output: one retained scalar owner plus one
+/// declared view. Extra heap owners are withheld and must not enter the body.
+#[test]
+fn explicit_loop_frame_ignores_rejected_heap_owners() {
+    let mut curves = Vec::new();
+    for count in [4u64, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let scalar = Pointer::symbolic(Variable(9_390_001));
+        let viewed =
+            CPointerValue::new(Pointer::symbolic(Variable(9_390_002)), CType::Int32Pointer);
+        let scalar_owner =
+            CResourceFact::own_memory(CMemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
+        let view = CResourceFact::view_memory(CMemoryRange::from_pointer_value(
+            &viewed,
+            0u32.into(),
+            1u32.into(),
+            4,
+        ));
+        let spec = CResourceSpec::viewed_memory(CMemorySegment::new(
+            CExpression::Value(CValue::Pointer(viewed)),
+            CExpression::Value(CValue::Int32(0u32.into())),
+            CExpression::Value(CValue::Int32(1u32.into())),
+        ));
+        let mut withheld =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(scalar_owner.clone());
+        let mut memory = CMemory::new().with_declared_scalar_block(scalar.block, 4, CType::Int32);
+        let mut heaps = Vec::new();
+        for index in 0..count {
+            let owner = CResourceFact::own_memory(CMemoryRange::new(
+                Pointer::symbolic(Variable(9_391_000 + index)),
+                0u32.into(),
+                4u32.into(),
+            ));
+            memory = memory.with_block(owner.memory_own_range().unwrap().base().block.clone(), 4);
+            withheld = withheld.unchecked_with_fact(owner.clone());
+            heaps.push(owner);
+        }
+        withheld.synchronize_memory_equalities(&facts);
+        let declared =
+            ResourceContext::new_with_equalities(&facts).unchecked_with_fact(view.clone());
+        declared.synchronize_memory_equalities(&facts);
+        let resources = withheld.clone().unchecked_with_fact(view.clone());
+        resources.synchronize_memory_equalities(&facts);
+        let entry = CState::new()
+            .with_memory(memory)
+            .with_resource_context(resources);
+        let mut samples = Vec::new();
+        for _ in 0..3 {
+            let ((retained, selection_work), selection_maps) =
+                crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        with_loop_frame_resources(
+                            declared.clone(),
+                            &withheld,
+                            false,
+                            &entry,
+                            &facts,
+                            &entry,
+                        )
+                    })
+                });
+            let (((body, failures), body_work), body_maps) =
+                crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        loop_body_resource_context(
+                            &entry,
+                            &entry,
+                            std::slice::from_ref(&spec),
+                            &[],
+                            &facts,
+                            &mut ExecutionBudget::default(),
+                        )
+                        .unwrap()
+                    })
+                });
+            assert!(failures.is_empty(), "{failures:?}");
+            for resources in [&retained, body.resources()] {
+                assert_eq!(resources.facts().len(), 2);
+                assert!(resources.contains_exact_representation(&scalar_owner));
+                assert!(resources.contains_exact_representation(&view));
+                for heap in &heaps {
+                    assert!(!resources.contains_exact_representation(heap));
+                }
+            }
+            assert_eq!(entry.resources().facts().len(), count as usize + 2);
+            assert!(
+                entry
+                    .resources()
+                    .contains_exact_representation(&scalar_owner)
+            );
+            samples.push((selection_work, selection_maps, body_work, body_maps));
+        }
+        curves.push((count, samples));
+    }
+    eprintln!("loop rejected heap owners (count; selection work/maps, body work/maps): {curves:?}");
+    assert!(
+        curves[3].1.iter().zip(&curves[0].1).all(|(large, small)| {
+            large.0 <= small.0 + 64
+                && large.1 <= small.1 * 3 + 512
+                && large.2 <= small.2 + 64
+                && large.3 <= small.3 * 3 + 512
+        }),
+        "loop frame scans rejected heap owners: {curves:?}"
+    );
+}

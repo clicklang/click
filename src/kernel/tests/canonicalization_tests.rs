@@ -1027,7 +1027,7 @@ fn symbolic_memory_block_sizes_are_free_and_substitutable() {
     let block = PointerBlock::Concrete("symbolic-size".to_string());
     let memory = CMemory {
         construction: None,
-        blocks: std::sync::Arc::new(SnapshotMap::from_iter([(
+        blocks: std::sync::Arc::new(MemoryBlocks::from_iter([(
             block.clone(),
             CBlock::with_symbolic_size(Bitvector32Term::Variable(size_variable)),
         )])),
@@ -1073,7 +1073,7 @@ fn nested_snapshot_load_named(
         block: block.clone(),
         offset: PointerOffsetTerm::Constant(offset),
     };
-    let blocks = std::sync::Arc::new(SnapshotMap::from_iter([(
+    let blocks = std::sync::Arc::new(MemoryBlocks::from_iter([(
         block.clone(),
         CBlock::with_symbolic_size(Bitvector32Term::constant(8 * depth as u32 + 16)),
     )]));
