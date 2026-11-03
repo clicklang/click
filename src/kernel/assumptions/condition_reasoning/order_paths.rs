@@ -1938,8 +1938,11 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
-        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
-        use crate::kernel::{KernelMachineCastEncoding as Cast, SharedMachineIntegerTerm};
+        use crate::kernel::KernelMachineCastEncoding as Cast;
+        use crate::kernel::machine_integer::{
+            Relation,
+            comparison::{ComparisonOperand, comparison_view},
+        };
         let view = comparison_view(condition, true)?;
         if view.format != MachineIntegerType::UInt64
             || !matches!(view.relation, Relation::Less | Relation::LessEqual)
@@ -1956,7 +1959,7 @@ impl PureFactContext {
         if !reinterpreted(left) && !reinterpreted(right) {
             return None;
         }
-        let as_signed = |term: MachineOperandView<'_>| -> Option<SharedMachineIntegerTerm> {
+        let as_signed = |term: MachineOperandView<'_>| -> Option<ComparisonOperand<'static>> {
             if let Some((Cast::UInt64FromInt64, _, _, value)) = term.cast() {
                 let zero = Bitvector32Term::Int64Constant(0);
                 let nonnegative = self.decide_operand_comparison(
@@ -1965,13 +1968,17 @@ impl PureFactContext {
                     MachineOperandView::Legacy(&zero),
                     value,
                 ) == Some(true);
-                return nonnegative.then(|| value.retain(MachineIntegerType::Int64));
+                return nonnegative.then(|| match value {
+                    MachineOperandView::Shared(_) => {
+                        ComparisonOperand::Observation(value.retain(MachineIntegerType::Int64))
+                    }
+                    MachineOperandView::Legacy(value) => ComparisonOperand::Constant(value.clone()),
+                });
             }
             let constant = i64::try_from(term.uint64_constant()?).ok()?;
-            Some(SharedMachineIntegerTerm::intern(
-                MachineIntegerType::Int64,
-                Bitvector32Term::Int64Constant(constant),
-            ))
+            Some(ComparisonOperand::Constant(Bitvector32Term::Int64Constant(
+                constant,
+            )))
         };
         let left = as_signed(left)?;
         let right = as_signed(right)?;

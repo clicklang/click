@@ -15,6 +15,7 @@ impl WideEqualitySources {
         condition: &ConditionTerm,
         truth: bool,
         insert: bool,
+        admitted_endpoints: Option<&(super::MachineAtom, super::MachineAtom)>,
     ) {
         let Some(view) = comparison_view(condition, truth) else {
             return;
@@ -22,10 +23,29 @@ impl WideEqualitySources {
         if view.relation != Relation::Equal || view.format.format().bits() != 64 {
             return;
         }
-        let [left, right] = view
-            .operands
-            .each_ref()
-            .map(|operand| Key::for_format(MachineIntegerType::UInt64, operand.operand_view()));
+        let operand_key = |operand: MachineOperandView<'_>,
+                           admitted: Option<&super::MachineAtom>| {
+            if let MachineOperandView::Legacy(written) = operand
+                && let Some(admitted) = admitted
+                && matches!(admitted.operand_view(), MachineOperandView::Shared(_))
+                && admitted.retains_written(written)
+            {
+                // Native equality admission already imported this exact
+                // endpoint. Its canonical form may differ, so reuse it only
+                // when it retained the same explicit written operand.
+                Key::Shared(admitted.clone())
+            } else {
+                Key::for_format(MachineIntegerType::UInt64, operand)
+            }
+        };
+        let left = operand_key(
+            view.operands[0].operand_view(),
+            admitted_endpoints.map(|ends| &ends.0),
+        );
+        let right = operand_key(
+            view.operands[1].operand_view(),
+            admitted_endpoints.map(|ends| &ends.1),
+        );
         let source = Proposition::ConditionIs(condition.clone(), truth);
         for (own, other) in [(&left, &right), (&right, &left)] {
             let mut neighbors = self.endpoints.get(own).cloned().unwrap_or_default();

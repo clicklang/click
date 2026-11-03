@@ -234,6 +234,43 @@ mod tests {
     }
 
     #[test]
+    fn wide_source_index_keeps_a_written_endpoint_when_canonicalization_changes_it() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let written = Bitvector32Term::MachineIntegerCast {
+            source: format,
+            destination: format,
+            value: Box::new(Bitvector32Term::Variable(Variable(995879))),
+        };
+        assert_ne!(crate::kernel::canonical_term(&written), written);
+        let operand = SharedMachineIntegerTerm::from_shared(
+            format,
+            KernelTermImport::default()
+                .machine_arithmetic(format, &written)
+                .unwrap(),
+        )
+        .unwrap();
+        let source = Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int64,
+                relation: CompareRelation::Equal,
+                left: Box::new(written),
+                right: Box::new(Bitvector32Term::UInt64Constant(7)),
+            },
+            true,
+        );
+        let context = PureFactContext::new().assume_proposition(source.clone());
+        let (value, sources) = collect_reasoning_provenance(|| {
+            capture_implicit_reasoning_provenance(|| {
+                context.wide_constant_from_equalities_view(operand.operand_view())
+            })
+        });
+        assert_eq!(value, Some(7));
+        assert!(sources.contains(&source));
+        assert!(!operand.has_boxed_operand());
+    }
+
+    #[test]
     fn shared_wide_casts_preserve_sign_extension_and_low_words() {
         let _session = crate::kernel::VerificationSession::enter();
         use MachineIntegerType as Ty;

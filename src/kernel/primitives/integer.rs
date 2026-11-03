@@ -596,6 +596,15 @@ impl SharedMachineIntegerTerm {
             MachineIntegerOperand::Legacy(_) => None,
         }
     }
+    /// The explicit legacy input, if one was already retained. Unlike
+    /// `value`, this never exports a shared operand or fills its cache.
+    pub(crate) fn retained_written_operand(&self) -> Option<&Bitvector32Term> {
+        match &self.0.operand {
+            MachineIntegerOperand::Shared { boxed, .. } => boxed.get(),
+            MachineIntegerOperand::Legacy(value) => Some(value),
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn has_boxed_operand(&self) -> bool {
         match &self.0.operand {

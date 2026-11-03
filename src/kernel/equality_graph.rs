@@ -131,6 +131,9 @@ impl MachineAtom {
     pub(in crate::kernel) fn operand_view(&self) -> crate::kernel::MachineOperandView<'_> {
         self.0.operand_view()
     }
+    pub(in crate::kernel) fn retains_written(&self, term: &Bitvector32Term) -> bool {
+        self.0.retained_written_operand() == Some(term)
+    }
     pub(in crate::kernel) fn value(&self) -> &Bitvector32Term {
         self.0.value()
     }

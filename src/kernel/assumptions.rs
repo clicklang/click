@@ -4795,10 +4795,18 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
-        self.equality_graph
+        let admitted_endpoints = self
+            .equality_graph
             .admitted
-            .wide_constant_sources
-            .adjust(condition, value, insert);
+            .uint64_input_edges
+            .get(condition)
+            .cloned();
+        self.equality_graph.admitted.wide_constant_sources.adjust(
+            condition,
+            value,
+            insert,
+            admitted_endpoints.as_ref(),
+        );
         let ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
