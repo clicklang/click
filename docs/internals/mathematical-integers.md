@@ -571,7 +571,8 @@ conversions build it, the usual arithmetic conversions build it for an
 `int` operand of an `unsigned` operation, and so does the modulo boundary
 above (Rust `as`, C++ conversions, specification casts). A sign-cleared
 `unsigned` array index is σ to `int32` (`pointer_index_term`). The
-constructor folds a constant and undoes a σ, so `σ(σ(x))` is `x`.
+constructor folds a constant and keeps σ of σ as written: `σ(σ(x))` is a
+node over σ(x), which the e-graph's R0 puts in `x`'s class.
 The widening of an 8- or 16-bit value into `int32` or `uint32` is also
 a `MachineIntegerCast`, read as its operand's word by rule K8 (below).
 
@@ -583,7 +584,7 @@ and K2, keeping each relation as reasoning:
 | Rule | Statement | Where |
 |---|---|---|
 | K1 word identity | Deleted. σ(x) is a node of its own: no constructor, observation, e-graph or difference-graph reader peels it | the e-graph's R0 (`σ(σ(x))` in `x`'s class) and R-dist (σ of `+ - * & \| ^ ~ <<` is the operator at the other format over σ of the operands; σ of a low word is that low word), `terms/machine_relations.rs` |
-| K2 observation | Deleted as a rewrite. `to_integer(σ(x))` keeps σ and reads as `to_integer(x)` at that format | rule W: `machine_value_reading` |
+| K2 observation | Deleted as a rewrite. `to_integer(σ(x))` keeps σ and reads as `to_integer(x)` at that format, through every σ of a written chain | rule W: `machine_value_reading` |
 | K3 orders and indices | Restated. Either 32-bit difference-graph reading of σ(x) is linked to the same reading of `x` with offset 0; an element index reads σ's operand in `int32` index coordinates (decision G1); a sign test of σ is its operand's half-range test; `integer_cast_identity` compares a conversion of a written σ as written | `difference_graph::link_parts`, `structural_interval`, `into_index_word32`, `condition_reasoning/sign_bit.rs`, `conversion::cast` |
 | K4 modular equality | Restated: an observation of σ(x) reads `x` | through rule W |
 | K6 equality | A lookup-level equivalence: a 32-bit equality is a term of its written format; its identity and keys read it at `int32`, each side through one σ | `comparison_identity`, `condition_match_key` |

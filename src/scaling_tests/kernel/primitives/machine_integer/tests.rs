@@ -142,14 +142,17 @@ fn machine_integer_constant_work_is_linear_and_oversized_integer_rejection_is_co
     }
 }
 
-/// Building σ, the 32-bit sign cast, inverting it, and reading an index's
-/// word through it (`into_index_word32`, decision G1) inspect only the
-/// operand's root: the work is the same for operands of 16 to 1,024 nodes.
-/// σ is a node of its own: a 32-bit operator over σ(x) keeps σ(x) as its
-/// operand ("Every format its own nodes", step 4b).
+/// Building σ, the 32-bit sign cast, building σ of it back, and reading an
+/// index's word through it (`into_index_word32`, decision G1) inspect only
+/// the operand's root: the work is the same for operands of 16 to 1,024
+/// nodes. σ is a node of its own: σ of σ(x) is kept as written (R0 relates
+/// it to `x` in the e-graph), its observation reads as `x`'s through both σ
+/// (rule W) in the same work at every size, and a 32-bit operator over σ(x)
+/// keeps σ(x) as its operand ("Every format its own nodes", step 4b).
 #[test]
 fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
     use crate::kernel::Variable;
+    let mut observe_works = Vec::new();
     for size in [16, 64, 256, 1024] {
         let mut operand = Bitvector32Term::Variable(Variable(149_003));
         for _ in 0..size {
@@ -186,8 +189,30 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
                 cast.clone(),
             )
         });
-        assert_eq!(back, operand, "σ(σ(x)) is x, size {size}");
-        assert_eq!(work, 2, "size {size}");
+        assert_eq!(work, 1, "size {size}");
+        let ((), back_read_work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                back.sign_cast32_operand(),
+                Some((MachineIntegerType::UInt32, &cast)),
+                "σ(σ(x)) is kept as written, size {size}"
+            );
+            assert_eq!(back.sign_cast32_bits(), &cast, "size {size}");
+        });
+        assert_eq!(back_read_work, 0, "size {size}");
+        // Rule W reads the observation of σ(σ(x)) through both σ nodes, as
+        // `x`'s. Building the observation imports the boxed operand, the
+        // cost of any first observation of it; reading it walks only the σ
+        // roots, the same work at every size.
+        let read =
+            crate::kernel::IntegerTerm::from_machine(MachineIntegerType::Int32, operand.clone())
+                .map(|observed| observed.value_read().clone());
+        let observed =
+            crate::kernel::IntegerTerm::from_machine(MachineIntegerType::Int32, back.clone())
+                .expect("σ(σ(x)) is observable");
+        let (reading, observe_work) =
+            crate::instrumentation::measure_deterministic_work(|| observed.value_read().clone());
+        assert_eq!(Some(reading), read, "σ(σ(x)) reads as x, size {size}");
+        observe_works.push(observe_work);
         let sum = Bitvector32Term::add_at(
             MachineIntegerType::UInt32,
             cast.clone(),
@@ -198,6 +223,10 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
             "size {size}"
         );
     }
+    assert!(
+        observe_works.windows(2).all(|pair| pair[0] == pair[1]),
+        "{observe_works:?}"
+    );
 }
 
 /// The widening of a narrow value into 32 bits (rule K8, a relation) is a

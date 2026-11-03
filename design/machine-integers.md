@@ -682,10 +682,11 @@ Progress:
      its own 32-bit format, and K7' joins only the widening at its word's
      format with the masked word. Known remaining items: the 32-bit
      sign-free operators are still word operators, one node at either
-     format (`terms::word_operator`). The constructor still folds σ(σ(x)) to `x`: without the fold,
-     `a_bounded_wrapped_difference_does_not_define_the_signed_one` stops
-     at a lowering error instead of its signed-overflow refusal, so its
-     removal waits on that.
+     format (`terms::word_operator`). A third follow-up (2026-11-03,
+     [Decisions](#decisions)) removes the constructor's σ(σ(x)) to `x`
+     fold: σ of σ is kept as written, R0 relates it to `x`, and rule W
+     reads an observation through every σ of a chain, whose reading
+     through only the outer σ was the lowering error that blocked it.
   5. Reads by their own kind, with R-mem; typed index coordinates (G1).
      Steps 5 and 6 land before step 4b removes K1 and K6 (maintainer
      direction, 2026-10-30), so 4b removes no rule a read or a widening
@@ -1477,7 +1478,8 @@ Maintainer direction, 2026-11-02 (σ a node of its own, step 4b):
   word load application; the `uint32` read is σ of it; an `int32` read of
   a cell storing a `uint32` value is σ of that value.
 - **The sign-bit rule reads σ.** The equivalent of `u as int32 < 0` is
-  `u > 2^31 - 1`, built through σ, whose constructor folds σ of σ; a test
+  `u > 2^31 - 1`, built through σ, whose constructor then folded σ of σ
+  (kept as written since 2026-11-03); a test
   of σ files its equivalent when assumed, as an 8- or 16-bit one does.
 
 Follow-up to step 4b, 2026-11-02 (the word identities it left), under the
@@ -1552,3 +1554,32 @@ by the maintainer:
   distributes σ down the chain once, about 2,200 units a level
   (`narrow_cast_words_intern_in_work_linear_in_the_casts` bounds it); a
   chain widened at its own format costs about 790 a level, down from 1,230.
+
+Follow-up, 2026-11-03 (σ of σ as written), under the maintainer's rule that
+lowering keeps the source term's structure and equivalences live in
+reasoning:
+
+- **σ of σ is kept as written.** `Bitvector32Term::machine_integer_cast`
+  no longer folds σ(σ(x)) to `x`; `(int32)((uint32)a)` is two σ nodes over
+  `a`, and prints as written. R0 already puts σ(σ(x)) in `x`'s class, so
+  equality carries across by congruence. The sign-bit rule's equivalent
+  reads σ of a σ as that σ's operand at decision time (it never used the
+  constructor).
+- **Rule W reads through every σ.** An observation of σ(x) at either 32-bit
+  format reads as `x`'s, so an observation of σ(σ(x)) reads as `x`'s too.
+  Both readers (`machine_value_reading`, and the shared terms'
+  `machine_view::shared_value_reading`, one cached step per σ node) read
+  only the outer σ, leaving the `uint32` σ(x) observed at `int32` with no
+  reading, so the observation did not exist. With the fold removed, that
+  made `to_integer((a as uint32) as int32)` lower to "no single evaluation
+  path", a C round trip `(int32)((uint32)a)` lower to "invalid machine
+  integer representation", and `+ 0` over the written cast panic building
+  the addition's domain. The implicit closer of
+  `mdtests/a_bounded_wrapped_difference_does_not_define_the_signed_one.md`
+  spelled the operation identity's operands `σ(σ(a))` and stopped at that
+  lowering error instead of its signed-overflow refusal. Regressions:
+  `mdtests/a_sign_cast_of_a_sign_cast_is_observed_as_its_operand.md` and
+  `a_sign_cast_of_a_sign_cast_is_observed_through_both`; the scaling test
+  `sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands`
+  states that building σ of σ is one unit and reading its observation the
+  same work at every operand size.
