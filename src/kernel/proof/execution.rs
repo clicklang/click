@@ -2782,6 +2782,9 @@ impl CheckedResourceObservation {
         let observation_support = before_state
             .resources()
             .directly_supporting_owned_entry(observed, assumptions);
+        if observed.is_own() && !zero_quantity && observation_support.is_none() {
+            return Err("resource observation requires a directly selected live owner");
+        }
         let observation_authority = before_state
             .resources()
             .directly_supporting_fact(observed, assumptions)

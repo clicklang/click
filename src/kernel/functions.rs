@@ -15141,6 +15141,15 @@ fn rewrite_resource_instance_selecting_children_unspelled(
             ));
         }
     }
+    if unfold {
+        // The opened owner and the caller's loan-bound views coexist in the
+        // constructed successor. Retain that persistent composition so the
+        // existing borrow-partition rule can relate them. The body's isolated
+        // composition alone cannot express separation from the outer frame.
+        // Publish only after lowering the body: temporary body assumptions
+        // must not prepare indexes over the unrelated caller frame.
+        facts.extend(next.resources.observable_facts_assuming_valid(assumptions));
+    }
     let mut seen = BTreeSet::new();
     let semantic_facts = if unfold {
         facts

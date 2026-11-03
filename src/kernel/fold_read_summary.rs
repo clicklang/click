@@ -45,9 +45,10 @@
 //! **What it never does.** It inserts no viewability or initialization guard,
 //! produces no resource fact, and grants no C access: the only thing it proves
 //! is a logical equality between two opaque applications. It crosses no
-//! allocation, free, lifetime end, loop havoc, forgotten-cell or claim edge
-//! except where the kernel's assumption-free block rule already proves the
-//! whole block untouched.
+//! allocation, free, lifetime end, loop havoc or claim edge except where
+//! the kernel's assumption-free block rule already proves the whole block
+//! untouched. Cache-only forgetting preserves bytes and may be crossed; it
+//! supplies no evidence for a subsequent write.
 
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use std::collections::BTreeMap;
@@ -983,6 +984,10 @@ fn step_misses_interval(
         return Ok(());
     }
     match step {
+        // This edge changes only cached knowledge, not any byte or lifetime.
+        // Its producer records it only for unconditional forgetting, never
+        // for havoc or assumption-dependent pruning.
+        CMemoryDerivation::CellsForgotten { .. } => Ok(()),
         CMemoryDerivation::Store { pointer, value, .. } => {
             if empty || access_misses_interval(pointer, value.byte_width(), interval, assumptions) {
                 Ok(())
@@ -1025,7 +1030,7 @@ fn step_misses_interval(
         }
         other => Err((
             other.kind_name(),
-            "only stores and calls with a checked write set are framed; allocation, free, lifetime, loop and forgetting steps keep the conservative whole-block rule",
+            "only stores and calls with a checked write set are framed; allocation, free, lifetime and loop steps keep the conservative whole-block rule",
         )),
     }
 }
