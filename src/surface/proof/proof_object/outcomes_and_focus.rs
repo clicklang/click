@@ -171,6 +171,18 @@ impl<'a> Proof<'a> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Err(self.step_error("contract resource effects require an execution proof"));
         };
+        // The transition reads the outcome through copies of its resources.
+        // Advance the retained outcome's memory index to these facts first,
+        // as each step does for its execution state, so a transition retried
+        // after each later `have` pairs only the facts added since the last
+        // attempt rather than every fact since execution ended.
+        if let Some(Obligation::FunctionOutcome(goal)) = self.focused_obligation() {
+            goal.data
+                .core
+                .state
+                .resources()
+                .synchronize_memory_equalities(self.facts().assumptions());
+        }
 
         let outcome = crate::kernel::checked_c_function_contract_resource_transition(
             pre_state,

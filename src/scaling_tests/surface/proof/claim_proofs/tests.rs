@@ -159,3 +159,80 @@ fn joint_resource_receipts_ignore_unrelated_holdings() {
         ));
     }
 }
+
+/// Post-execution `have` steps before the fold of a produced resource, the
+/// shape of the generic stack's `pop` proof. Before each `have` the proof
+/// retries the contract's return-resource transition, which fails until the
+/// fold. The retry reads the outcome's resources against the facts, so the
+/// outcome's memory index must advance with the facts each `have` adds:
+/// pairing every fact since execution ended made the `have` at position `k`
+/// cost about nine units per earlier `have`, quadratic over the proof.
+#[test]
+fn post_execution_haves_before_a_fold_cost_the_same_at_every_position() {
+    use crate::instrumentation::collect_tactic_work;
+    crate::surface::verify_c0_sources("theorem warm() { ensures true by normalize(); }", &[])
+        .unwrap();
+    let mut last_works = Vec::new();
+    for size in [4, 8, 12, 16] {
+        let parameters = (1..=size)
+            .map(|i| format!(", int x{i}"))
+            .collect::<String>();
+        let click_parameters = (1..=size)
+            .map(|i| format!(", int32 x{i}"))
+            .collect::<String>();
+        let bounds = (1..=size)
+            .map(|i| format!("requires x{i} >= {i};\nrequires x{i} <= {i};\n"))
+            .collect::<String>();
+        let haves = (1..=size)
+            .map(|i| {
+                format!("have x{i} == {i} by normalize() using {{ x{i} >= {i}; x{i} <= {i}; }};\n")
+            })
+            .collect::<String>();
+        let c = format!(
+            "struct cell {{ int value; }};\nstruct holder {{ struct cell *first; }};\nvoid write(struct holder *h, int x{parameters}) {{ h->first->value = x; }}\n"
+        );
+        let source = format!(
+            "verifying \"cell.c\";
+resource cell_at(c: struct cell*) {{ field value: int32; owns c->value; fact c->value == value; }}
+void write(struct holder* h, int32 x{click_parameters}) {{
+    owns h->first;
+    consumes before: cell_at(h->first);
+    produces after: cell_at(h->first);
+    {bounds}
+    ensures after.value == x;
+}} by {{
+    let {{}} = unfold(before);
+    step_until(function.exit);
+    {haves}
+    let after = fold(cell_at(h->first), {{ value: x }}, {{}});
+}}"
+        );
+        let (verified, samples) = collect_tactic_work(|| {
+            crate::surface::verify_c0_sources(&source, &[("cell.c", c.as_str())])
+        });
+        verified.unwrap_or_else(|error| panic!("size {size}: {error}"));
+        let works = samples
+            .iter()
+            .filter(|sample| sample.tactic.tactic_name == "have")
+            .map(|sample| sample.work)
+            .collect::<Vec<_>>();
+        eprintln!("haves before a fold: size={size}, works={works:?}");
+        assert_eq!(works.len(), size);
+        // The first two `have`s warm the outcome's index; from the third on
+        // each pairs one `have`'s facts.
+        let settled = &works[2..];
+        let (low, high) = (
+            *settled.iter().min().unwrap(),
+            *settled.iter().max().unwrap(),
+        );
+        assert!(
+            high <= low + 4,
+            "a `have` before the fold must not cost more at a later position: size={size}, works={works:?}"
+        );
+        last_works.push(works[size - 1]);
+    }
+    assert!(
+        last_works[3] <= last_works[0] + 4,
+        "the last `have` must cost the same at every size: {last_works:?}"
+    );
+}
