@@ -247,7 +247,7 @@ pub(super) fn lower(
                 cx.memory_values.insert(local.name.clone(), value_type);
                 c_begin_aggregate_construction(
                     local.name.clone(),
-                    CAggregateLayout::new(value_type.byte_width(), value_type.byte_width(), vec![]),
+                    CAggregateLayout::holding_value(value_type),
                 )
             }
             t => {
@@ -510,6 +510,20 @@ pub(super) fn lower(
                     )
                 } else if callee.return_type == Type::Unit {
                     c_call(function, arguments_values)
+                } else if let Some(&value_type) = cx.memory_values.get(destination.as_str()) {
+                    // A borrowed enum or type-parameter local receives the
+                    // result through a temporary stored to its object.
+                    let temporary = cx.fresh_temporary()?;
+                    let address = cx.address(&E::Local {
+                        name: destination.clone(),
+                    })?;
+                    c_seq(
+                        c_seq(
+                            c_declare(&temporary, value_type),
+                            c_call_assign(&temporary, function, arguments_values),
+                        ),
+                        c_typed_store(address, c_variable(&temporary), value_type),
+                    )
                 } else {
                     c_call_assign(destination, function, arguments_values)
                 };

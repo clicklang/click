@@ -3210,6 +3210,9 @@ struct RecordedSnapshots {
     /// Values produced at call exits, independent of destination locals.
     call_results: crate::persistent::PersistentMap<usize, CValue>,
     call_result_points: crate::persistent::PersistentMap<(u64, usize), ()>,
+    /// The call that produced each algebraic value a call returned, a Rust
+    /// enum's: the value is spelled `<region>.result`.
+    algebraic_call_results: crate::persistent::PersistentMap<crate::kernel::AlgebraicTerm, usize>,
     /// The recorded point at which each scalar model-field value was first
     /// held by its resource instance, keyed by the value's variable: a field
     /// value no nearer state's instance holds is spelled at that point.
@@ -3269,6 +3272,7 @@ impl Default for RecordedSnapshots {
             allocation_results: crate::persistent::PersistentMap::default(),
             call_results: crate::persistent::PersistentMap::default(),
             call_result_points: crate::persistent::PersistentMap::default(),
+            algebraic_call_results: crate::persistent::PersistentMap::default(),
             field_points: crate::persistent::PersistentMap::default(),
             last_locals: None,
             last_resources: None,
@@ -3642,14 +3646,37 @@ impl RecordedSnapshots {
             self.call_result_points
                 .remove(&(crate::kernel::held_term_fingerprint(term), index));
         }
+        if let Some(CValue::Parameter(term)) = self.call_results.get(&index)
+            && self.algebraic_call_results.get(term.as_ref()) == Some(&index)
+        {
+            self.algebraic_call_results.remove(term.as_ref());
+        }
         self.call_results.remove(&index);
         if let Some(value) = value.filter(|value| *value != CValue::Void) {
             if let CValue::Bool(term) | crate::kernel::integer_c_value!(term) = &value {
                 self.call_result_points
                     .insert((crate::kernel::held_term_fingerprint(term), index), ());
             }
+            // The first call to produce an algebraic value names it.
+            if let CValue::Parameter(term) = &value
+                && self.algebraic_call_results.get(term.as_ref()).is_none()
+            {
+                self.algebraic_call_results
+                    .insert(term.as_ref().clone(), index);
+            }
             self.call_results.insert(index, value);
         }
+    }
+
+    /// The call that produced the algebraic value `term`: one index lookup.
+    fn call_result_naming_algebraic(
+        &self,
+        term: &crate::kernel::AlgebraicTerm,
+    ) -> Option<CodeRegionRef> {
+        crate::instrumentation::record_deterministic_work(1);
+        let index = *self.algebraic_call_results.get(term)?;
+        matches!(self.call_results.get(&index), Some(CValue::Parameter(held)) if held.as_ref() == term)
+            .then_some(CodeRegionRef::Region(index))
     }
 
     fn call_result_naming_integer(
