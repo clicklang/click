@@ -85,7 +85,6 @@ int32 composite_resource_vector_fill_loop_snapshot(
                     i <= owner->len;
                 };
             }
-            close_invariants();
         }
     }
     step();
