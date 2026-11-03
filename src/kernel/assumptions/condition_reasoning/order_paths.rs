@@ -2232,10 +2232,6 @@ impl PureFactContext {
 
     /// Follow only upper edges in the operand's indexed uint64 order graph.
     /// Each node is visited once; unrelated facts are never read.
-    fn uint64_small_upper_bound(&self, term: &Bitvector32Term) -> Option<u64> {
-        self.uint64_small_upper_bound_view(MachineOperandView::Legacy(term))
-    }
-
     fn uint64_small_upper_bound_view(&self, term: MachineOperandView<'_>) -> Option<u64> {
         use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
         let format = MachineIntegerType::UInt64;
@@ -2288,19 +2284,6 @@ impl PureFactContext {
     /// by their canonical spelling; a visited term and the far end that
     /// both have a constant value join by comparing the values, as the kind
     /// compares them.
-    fn wide_order_chain(
-        &self,
-        lower: &Bitvector32Term,
-        upper: &Bitvector32Term,
-        unsigned: bool,
-    ) -> Option<bool> {
-        self.wide_order_chain_views(
-            MachineOperandView::Legacy(lower),
-            MachineOperandView::Legacy(upper),
-            unsigned,
-        )
-    }
-
     fn wide_order_chain_views(
         &self,
         lower: MachineOperandView<'_>,
@@ -2512,114 +2495,170 @@ impl PureFactContext {
         {
             return Some(true);
         }
-        // This route needs a low-word extraction at one root (possibly
-        // plus a small literal). Reject other shared roots before exporting.
-        if let Some(view) =
-            crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
-        {
-            let low_word = |operand: MachineOperandView<'_>| {
-                matches!(
-                    operand.cast(),
-                    Some((
-                        crate::kernel::KernelMachineCastEncoding::UInt32From64,
-                        _,
-                        _,
-                        _
-                    ))
-                )
-            };
-            let truncated = |operand: MachineOperandView<'_>| {
-                low_word(operand)
-                    || matches!(operand.binary(),
-                    Some((MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [a, b]))
-                    if (low_word(a) && b.word32_constant().is_some_and(|n| n <= i32::MAX as u32))
-                        || (low_word(b) && a.word32_constant().is_some_and(|n| n <= i32::MAX as u32)))
-            };
-            if !view
-                .operands
-                .iter()
-                .any(|operand| truncated(operand.operand_view()))
-            {
-                return None;
-            }
-        }
-        let (left, right, strict) = condition_as_order_fact(condition, true)?;
-        let small = |term: &Bitvector32Term| match term {
-            Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
-                if *value <= i32::MAX as u32 =>
-            {
-                Some(*value as u64)
-            }
-            _ => None,
+        use crate::kernel::machine_integer::comparison::{
+            comparison_view, condition_for_operand_views,
         };
-        // Truncation commutes with addition modulo 2^32, so a truncated
-        // term plus a constant is the truncation of the 64-bit sum, signed
-        // or unsigned. The range check below is made on that sum.
-        let truncated = |term: &Bitvector32Term, unsigned: bool| match term {
-            Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
-            binary_term!(Int32, Add, left, right) => {
-                let (value, constant) = match (left.as_ref(), right.as_ref()) {
-                    (Bitvector32Term::UInt32From64(value), constant)
-                    | (constant, Bitvector32Term::UInt32From64(value)) => (value, small(constant)?),
-                    _ => return None,
-                };
-                Some(if unsigned {
-                    Bitvector32Term::uint64_add(
-                        value.as_ref().clone(),
-                        Bitvector32Term::UInt64Constant(constant),
-                    )
-                } else {
-                    Bitvector32Term::int64_add(
-                        value.as_ref().clone(),
-                        Bitvector32Term::Int64Constant(constant as i64),
-                    )
-                })
-            }
-            _ => None,
+        use crate::kernel::{
+            KernelMachineCastEncoding, KernelTerm, KernelTermImport, MachineBinaryOp,
+            SharedMachineIntegerTerm,
         };
-        if truncated(&left, true).is_none() && truncated(&right, true).is_none() {
+        let view = comparison_view(condition, true)?;
+        if view.format != MachineIntegerType::Int32 {
             return None;
         }
-        let wide = |term: &Bitvector32Term, unsigned: bool| {
-            truncated(term, unsigned).or_else(|| {
-                small(term).map(|value| {
-                    if unsigned {
-                        Bitvector32Term::UInt64Constant(value)
+        let strict = match view.relation {
+            crate::kernel::machine_integer::Relation::Less => true,
+            crate::kernel::machine_integer::Relation::LessEqual => false,
+            _ => return None,
+        };
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        fn small(operand: MachineOperandView<'_>) -> Option<u64> {
+            match operand.literal()? {
+                Bitvector32Term::Constant(value) | Bitvector32Term::UInt32Constant(value)
+                    if value <= i32::MAX as u32 =>
+                {
+                    Some(u64::from(value))
+                }
+                _ => None,
+            }
+        }
+        fn low_word(operand: MachineOperandView<'_>) -> Option<MachineOperandView<'_>> {
+            match operand.cast()? {
+                (KernelMachineCastEncoding::UInt32From64, _, _, value) => Some(value),
+                _ => None,
+            }
+        }
+        // Truncation commutes with addition modulo 2^32. Retain the wide
+        // root and append only the selected literal, preserving the native
+        // query constructor's literal and subtraction-cancellation rules.
+        fn truncated(
+            operand: MachineOperandView<'_>,
+            unsigned: bool,
+        ) -> Option<SharedMachineIntegerTerm> {
+            let format = if unsigned {
+                MachineIntegerType::UInt64
+            } else {
+                MachineIntegerType::Int64
+            };
+            if let Some(value) = low_word(operand) {
+                return Some(value.retain(format));
+            }
+            let (MachineIntegerType::Int32, MachineBinaryOp::Add, [a, b]) = operand.binary()?
+            else {
+                return None;
+            };
+            let (value, constant) = if let Some(value) = low_word(a) {
+                (value, small(b)?)
+            } else {
+                (low_word(b)?, small(a)?)
+            };
+            let literal = if unsigned {
+                Bitvector32Term::UInt64Constant(constant)
+            } else {
+                Bitvector32Term::Int64Constant(constant as i64)
+            };
+            let native = |value| {
+                if unsigned {
+                    Bitvector32Term::uint64_add(value, literal.clone())
+                } else {
+                    Bitvector32Term::int64_add(value, literal.clone())
+                }
+            };
+            if let MachineOperandView::Legacy(value) = value {
+                return Some(SharedMachineIntegerTerm::intern(
+                    format,
+                    native(value.clone()),
+                ));
+            }
+            if let Some(value) = value.literal() {
+                return Some(SharedMachineIntegerTerm::intern(format, native(value)));
+            }
+            if unsigned {
+                if constant == 0 {
+                    return Some(value.retain(format));
+                }
+                if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Subtract, [inner, taken])) =
+                    value.binary()
+                    && matches!(taken.literal(), Some(Bitvector32Term::UInt64Constant(taken)) if taken == constant)
+                {
+                    return Some(inner.retain(format));
+                }
+            }
+            let MachineOperandView::Shared(root) = value else {
+                unreachable!()
+            };
+            SharedMachineIntegerTerm::from_shared(
+                format,
+                KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [
+                        root.with_machine_observation_type(format),
+                        KernelTermImport::default().machine(format, &literal),
+                    ],
+                ),
+            )
+        }
+        if truncated(left, true).is_none() && truncated(right, true).is_none() {
+            return None;
+        }
+        let wide = |operand, unsigned| {
+            truncated(operand, unsigned).or_else(|| {
+                small(operand).map(|value| {
+                    let (format, value) = if unsigned {
+                        (
+                            MachineIntegerType::UInt64,
+                            Bitvector32Term::UInt64Constant(value),
+                        )
                     } else {
-                        Bitvector32Term::Int64Constant(value as i64)
-                    }
+                        (
+                            MachineIntegerType::Int64,
+                            Bitvector32Term::Int64Constant(value as i64),
+                        )
+                    };
+                    SharedMachineIntegerTerm::intern(format, value)
                 })
             })
         };
-        // Read as unsigned values: both at most `INT_MAX`.
-        let a = wide(&left, true)?;
-        let b = wide(&right, true)?;
-        let unsigned_small = |term: &Bitvector32Term| {
-            self.uint64_small_upper_bound(term)
+        let relation = if strict {
+            CompareRelation::LessThan
+        } else {
+            CompareRelation::LessEqual
+        };
+        let a = wide(left, true)?;
+        let b = wide(right, true)?;
+        let unsigned_small = |term: &SharedMachineIntegerTerm| {
+            self.uint64_small_upper_bound_view(term.operand_view())
                 .is_some_and(|bound| bound <= i32::MAX as u64)
         };
         if unsigned_small(&a) && unsigned_small(&b) {
-            if a.uint64_as_const() == Some(0) && !strict {
+            if a.operand_view().uint64_constant() == Some(0) && !strict {
                 return Some(true);
             }
-            let comparison = if strict {
-                ConditionTerm::uint64_less_than(a, b)
-            } else {
-                ConditionTerm::uint64_less_equal(a, b)
-            };
-            return self.decide(&comparison);
+            return self.decide(&condition_for_operand_views(
+                MachineIntegerType::UInt64,
+                relation,
+                [a.operand_view(), b.operand_view()],
+            ));
         }
-        // Read as signed values: both in `0..=INT_MAX`, where the low word
-        // is the value and the two readings of the order agree.
-        let a = wide(&left, false)?;
-        let b = wide(&right, false)?;
-        let signed_small = |term: &Bitvector32Term| {
-            self.wide_order_chain(&Bitvector32Term::Int64Constant(0), term, false)
-                .is_some()
+        let a = wide(left, false)?;
+        let b = wide(right, false)?;
+        let signed_small = |term: &SharedMachineIntegerTerm| {
+            self.wide_order_chain_views(
+                MachineOperandView::Legacy(&Bitvector32Term::Int64Constant(0)),
+                term.operand_view(),
+                false,
+            )
+            .is_some()
                 && self
-                    .wide_order_chain(
-                        term,
-                        &Bitvector32Term::Int64Constant(i32::MAX as i64),
+                    .wide_order_chain_views(
+                        term.operand_view(),
+                        MachineOperandView::Legacy(&Bitvector32Term::Int64Constant(
+                            i32::MAX as i64,
+                        )),
                         false,
                     )
                     .is_some()
@@ -2627,18 +2666,148 @@ impl PureFactContext {
         if !signed_small(&a) || !signed_small(&b) {
             return None;
         }
-        let comparison = if strict {
-            ConditionTerm::int64_signed_less_than(a, b)
-        } else {
-            ConditionTerm::int64_signed_less_equal(a, b)
-        };
-        self.decide(&comparison)
+        self.decide(&condition_for_operand_views(
+            MachineIntegerType::Int64,
+            relation,
+            [a.operand_view(), b.operand_view()],
+        ))
     }
 }
 
 #[cfg(test)]
 mod slice_index_tests {
     use super::*;
+
+    #[test]
+    fn low_word_index_transport_keeps_the_literal_addend_restriction() {
+        use crate::kernel::{KernelTermExport, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        let n = Bitvector32Term::Variable(Variable(998191));
+        let wide = Bitvector32Term::uint64_add(n.clone(), Bitvector32Term::UInt64Constant(2));
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::uint64_less_equal(wide, Bitvector32Term::UInt64Constant(20)),
+            true,
+        );
+        let add = |a, b| Bitvector32Term::Binary {
+            format: MachineIntegerType::Int32,
+            op: crate::kernel::MachineBinaryOp::Add,
+            left: Box::new(a),
+            right: Box::new(b),
+        };
+        let low = add(
+            Bitvector32Term::UInt32From64(Box::new(n)),
+            add(Bitvector32Term::Constant(1), Bitvector32Term::Constant(1)),
+        );
+        let native = ConditionTerm::signed_less_than(low.clone(), Bitvector32Term::Constant(22));
+        assert_eq!(context.decide_small_uint64_index_order(&native), None);
+        let operand = SharedMachineIntegerTerm::from_shared(
+            MachineIntegerType::Int32,
+            crate::kernel::KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, &low)
+                .unwrap(),
+        )
+        .unwrap();
+        let shared = ConditionTerm::integer_less_than(
+            IntegerTerm::Machine(operand),
+            IntegerTerm::constant(22.into()),
+        );
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(context.decide_small_uint64_index_order(&shared), None);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_low_word_index_order_keeps_range_guards_without_export() {
+        use crate::kernel::{KernelTermExport, SharedMachineIntegerTerm};
+        for format in [MachineIntegerType::UInt64, MachineIntegerType::Int64] {
+            for bounded in [false, true] {
+                for offset in [0, 1] {
+                    for limit in [19, 22] {
+                        let _session = crate::kernel::VerificationSession::enter();
+                        let constant = |value| {
+                            if format == MachineIntegerType::UInt64 {
+                                Bitvector32Term::UInt64Constant(value as u64)
+                            } else {
+                                Bitvector32Term::Int64Constant(value)
+                            }
+                        };
+                        let add = |a, b| {
+                            if format == MachineIntegerType::UInt64 {
+                                Bitvector32Term::uint64_add(a, b)
+                            } else {
+                                Bitvector32Term::int64_add(a, b)
+                            }
+                        };
+                        let n = add(
+                            Bitvector32Term::Variable(Variable(998181)),
+                            Bitvector32Term::Variable(Variable(998182)),
+                        );
+                        let wide = if offset == 0 {
+                            n.clone()
+                        } else {
+                            add(n.clone(), constant(offset as i64))
+                        };
+                        let context = if bounded {
+                            PureFactContext::new()
+                                .assume_condition(
+                                    ConditionTerm::machine_compare(
+                                        format,
+                                        CompareRelation::LessEqual,
+                                        wide.clone(),
+                                        constant(20),
+                                    ),
+                                    true,
+                                )
+                                .assume_condition(
+                                    ConditionTerm::machine_compare(
+                                        format,
+                                        CompareRelation::LessEqual,
+                                        constant(20),
+                                        wide,
+                                    ),
+                                    true,
+                                )
+                        } else {
+                            PureFactContext::new()
+                        };
+                        let low = Bitvector32Term::UInt32From64(Box::new(n));
+                        let low = if offset == 0 {
+                            low
+                        } else {
+                            Bitvector32Term::add(low, Bitvector32Term::Constant(offset))
+                        };
+                        let native = ConditionTerm::signed_less_than(
+                            low.clone(),
+                            Bitvector32Term::Constant(limit),
+                        );
+                        let expected = context.decide_small_uint64_index_order(&native);
+                        assert_eq!(
+                            expected,
+                            bounded.then_some(limit == 22),
+                            "{format:?}, offset={offset}, limit={limit}"
+                        );
+                        let operand = SharedMachineIntegerTerm::from_shared(
+                            MachineIntegerType::Int32,
+                            crate::kernel::KernelTermImport::default()
+                                .machine_arithmetic(MachineIntegerType::Int32, &low)
+                                .unwrap(),
+                        )
+                        .unwrap();
+                        let shared = ConditionTerm::integer_less_than(
+                            IntegerTerm::Machine(operand.clone()),
+                            IntegerTerm::constant(limit.into()),
+                        );
+                        let exports = KernelTermExport::machine_export_count();
+                        // Native source admission may already retain this exact written operand.
+                        let boxed_before = operand.has_boxed_operand();
+                        assert_eq!(context.decide_small_uint64_index_order(&shared), expected);
+                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                        assert_eq!(operand.has_boxed_operand(), boxed_before);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn shared_wide_order_consumers_keep_endpoints_and_negative_answers() {
