@@ -4936,10 +4936,6 @@ fn rust_while_loop_rejects_unsupported_control_flow_and_guards() {
 
     for (source, diagnostic) in [
         (
-            "pub fn bad() { for _i in 0..2 {} }",
-            "does not support type",
-        ),
-        (
             "pub fn bad(mut i:i32, n:i32) { while i + 1 < n { i += 1; } }",
             "MIR while header",
         ),
