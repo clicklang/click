@@ -1229,11 +1229,23 @@ impl FixedStateLowering {
             {
                 element_types.insert(name.clone(), element_type);
             }
-            if let Some(value) = entry_state.locals().get(&name) {
-                entry_values.insert(name.clone(), value.clone());
+            // A local that keeps its value in memory, a borrowed Rust enum
+            // local, is named by the read of its object.
+            if let Some(value) = entry_state
+                .locals()
+                .get(&name)
+                .cloned()
+                .or_else(|| entry_state.held_local_value(&name))
+            {
+                entry_values.insert(name.clone(), value);
             }
-            if let Some(value) = lowering_state.locals().get(&name) {
-                current_values.insert(name, value.clone());
+            if let Some(value) = lowering_state
+                .locals()
+                .get(&name)
+                .cloned()
+                .or_else(|| lowering_state.held_local_value(&name))
+            {
+                current_values.insert(name, value);
             }
         }
         if let Some(result) = result {

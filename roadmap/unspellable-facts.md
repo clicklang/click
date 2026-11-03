@@ -54,6 +54,9 @@ Merged checkpoints relevant to the active work:
 - #2328 migrated native comparison-class queries and variable-chain matching.
 - #2330 migrated signed 32-bit ranges, constant-offset definedness decisions,
   and comparisons whose operands are pinned by equalities.
+- #2331 added spelling for borrowed Rust enum/type-parameter locals and
+  algebraic call results. Held locals lower to their versioned object reads;
+  historical reads use `at(point, o)` and call results use `<region>.result`.
 
 Endpoint-bound helpers and the exact signed-order walk now consume operand
 views. The general comparison dispatcher still needs its compatibility bridge;
@@ -146,6 +149,9 @@ representations, spelling searches or placeholder fallbacks.
 
 - [ ] Run fresh fact-stability and written/smart spellability censuses. Historical
   counts are not a current inventory; reduce each remaining miss before fixing it.
+  The `design/charon-trial/held-values` census still has `unfold` equations
+  with a `match` right side and a call precondition instance recorded before
+  its result. Preserve `charon_held_value_locals_are_spelled_by_name` coverage.
 - [ ] Name any remaining introduced values/states and supply missing fact syntax.
 - [ ] Enforce `lower(raise(x)) == x` for every fact added by a checked step and
   every focused goal, with a census ratchet preventing regressions.
@@ -163,5 +169,5 @@ Ask the user for semantic decisions, not routine implementation order.
 
 The detailed chronological handoff, old branches, trials, dropped approaches
 and validation logs remain in the
-[pre-consolidation history](https://github.com/clicklang/click/blob/b44e09bbc0c756ee3c68743f988e4f677b693517/roadmap/unspellable-facts.md).
+[pre-consolidation history](https://github.com/clicklang/click/blob/1e4e07c98fb5354cf6a14ce985c08d5af95f286c/roadmap/unspellable-facts.md).
 Use that for historical evidence, not as a current outstanding-work list.

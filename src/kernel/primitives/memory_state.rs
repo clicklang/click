@@ -1573,6 +1573,25 @@ impl CLocalEnvironment {
             })
     }
 
+    /// The type of the value local `name`'s object holds, and the object's
+    /// address, for a local that keeps one value in memory
+    /// ([`CAggregateLayout::holding_value`]).
+    pub fn held_value_local(&self, name: &str) -> Option<(CType, &Pointer)> {
+        match self.bindings.get(name)? {
+            CLocalBinding::AggregateObject { layout, slot, .. } => {
+                Some((layout.value_type()?, slot))
+            }
+            _ => None,
+        }
+    }
+
+    /// The locals that keep one value in memory, with the value's type and
+    /// the object's address.
+    pub fn held_value_locals(&self) -> impl Iterator<Item = (&str, CType, &Pointer)> + '_ {
+        self.aggregate_object_values()
+            .filter_map(|(name, layout, slot)| Some((name, layout.value_type()?, slot)))
+    }
+
     /// Read one local array's pointer and element type without scanning the frame.
     /// `None` for an array whose elements have no pointer type of their own,
     /// as [`Self::array_object_values`] leaves it out.
@@ -7367,6 +7386,21 @@ impl CMemory {
 }
 
 impl CState {
+    /// The value local `name` keeps in its object, for a local that keeps
+    /// one value of an abstract or enum type in memory, as a Click name reads
+    /// it: the read of the object at the point it was last written, never
+    /// the value a store left there, so `o` names one read per version.
+    pub fn held_local_value(&self, name: &str) -> Option<CValue> {
+        let (CType::Parameter(value_type), slot) = self.locals().held_value_local(name)? else {
+            return None;
+        };
+        Some(AlgebraicTermNode::parameter_load(
+            crate::kernel::intern_c_memory(self.memory().clone()),
+            slot.clone(),
+            value_type,
+        ))
+    }
+
     /// The first part of `self` that differs from `other`, named for a
     /// diagnostic, or `None` when the states are equal. A differing resource
     /// context names a resource fact held on one side only; every other part

@@ -1600,6 +1600,12 @@ enum, of a type parameter, or of an integer or `bool` that the body borrows
 with `&` or `&mut` keeps its value in its stack object, so a callee's write
 through the borrow is the value the caller reads next; an enum or
 type-parameter local the body never borrows keeps its value in its binding.
+A proof names such a local's value by the local's name, `o`, read where the
+program last wrote it, so a fact a callee's contract gives about `*o` is one
+a proof can cite: in
+[`design/charon-trial/held-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/held-values/held.click),
+`constructed` and `returned` close `result < x` by arithmetic over
+`shrink`'s `size(*o) + 1 <= size(old(*o))` about the borrowed local `o`.
 [`design/charon-trial/option-refs`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-refs/refs.click)
 verifies `take_it(o: &mut Option<u32>) -> Option<u32>`, with `ensures result ==
 old(*o);` and `ensures *o == Option<u32>::None;`, `fill`, which stores

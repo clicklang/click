@@ -6816,6 +6816,12 @@ impl AnnotationLowerer<'_> {
                             .and_then(|state| state.locals().get(name))
                     })
                     .map(CValue::c_type)
+                    // A name bound to a value in this context: a fixed state's
+                    // local, including one that keeps an enum in memory.
+                    .or_else(|| match environment.values.get(name)? {
+                        SpecExpression::Value(value @ CValue::Parameter(_)) => Some(value.c_type()),
+                        _ => None,
+                    })
             })
         }
     }
@@ -6843,6 +6849,16 @@ impl AnnotationLowerer<'_> {
                 }
             }
             ContractExpression::Old(inner) => self.enum_c_value_type(inner, environment),
+            // The enum value a call returned.
+            ContractExpression::RegionResult(region) => {
+                match self.snapshots?.region_result_value(region).ok()? {
+                    CValue::Parameter(term) => {
+                        let enum_type = crate::kernel::TypeParameterName::of(&term.algebraic_type);
+                        enum_type.is_enum().then_some(enum_type)
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -7833,8 +7849,13 @@ impl AnnotationLowerer<'_> {
         if let Some(names) = &self.capture_referenced_names {
             for name in names {
                 check_integer_lowering_work(1)?;
-                if let Some(value) = state.locals().get(name) {
-                    values.insert(name.clone(), SpecExpression::Value(value.clone()));
+                if let Some(value) = state
+                    .locals()
+                    .get(name)
+                    .cloned()
+                    .or_else(|| state.held_local_value(name))
+                {
+                    values.insert(name.clone(), SpecExpression::Value(value));
                 }
             }
         } else {
@@ -7843,6 +7864,19 @@ impl AnnotationLowerer<'_> {
                     .locals()
                     .object_values()
                     .map(|(name, value)| (name.to_string(), SpecExpression::Value(value.clone()))),
+            );
+            // A local that keeps its value in memory is named by the read of
+            // its object in the snapshot's memory.
+            values.extend(
+                state
+                    .locals()
+                    .held_value_locals()
+                    .filter_map(|(name, _, _)| {
+                        Some((
+                            name.to_string(),
+                            SpecExpression::Value(state.held_local_value(name)?),
+                        ))
+                    }),
             );
         }
         let mut array_refs = environment

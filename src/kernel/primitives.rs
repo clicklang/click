@@ -5698,6 +5698,10 @@ pub struct CAggregateLayout {
     pub(super) alignment_bytes: u32,
     pub(super) fields: Vec<CAggregateField>,
     pub(super) unions: Vec<CAggregateUnion>,
+    /// The one value the object holds, for a local that keeps a value of a
+    /// type with no fields in memory: a borrowed Rust enum local. The
+    /// local's name reads that value.
+    pub(super) value_type: Option<CType>,
 }
 
 impl CAggregateLayout {
@@ -5708,7 +5712,24 @@ impl CAggregateLayout {
             alignment_bytes,
             fields,
             unions: Vec::new(),
+            value_type: None,
         }
+    }
+
+    /// The layout of an object that holds one value of `value_type`, a type
+    /// with no fields such as a Rust enum's: its size and alignment are the
+    /// value's width.
+    pub fn holding_value(value_type: CType) -> Self {
+        let width = value_type.byte_width();
+        Self {
+            value_type: Some(value_type),
+            ..Self::new(width, width, Vec::new())
+        }
+    }
+
+    /// The type of the one value the object holds, when it holds one.
+    pub fn value_type(&self) -> Option<CType> {
+        self.value_type
     }
 
     pub fn with_unions(
@@ -5723,6 +5744,7 @@ impl CAggregateLayout {
             alignment_bytes,
             fields,
             unions,
+            value_type: None,
         }
     }
 

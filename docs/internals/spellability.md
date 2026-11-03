@@ -43,7 +43,9 @@ checked. Each one costs completeness, expansion, or a readable report.
   source discards the return value. The checked call transition retains the
   exact returned value, and its exit records it by region in
   `RecordedSnapshots::call_results`. Lowering reads that value directly;
-  integer and Boolean synthesis uses a reverse term index. Replacing or removing
+  integer and Boolean synthesis uses a reverse term index, and algebraic
+  synthesis (a Rust enum a call returned) an index from the value to the
+  first call that returned it (`algebraic_call_results`). Replacing or removing
   the recorded exit replaces or removes its result name too. Source-layout
   result locals preserve allocation naming, and frontend result temporaries
   map back to their calls (`SourceExecutionLayout::temporary_call_region`).
@@ -66,6 +68,12 @@ checked. Each one costs completeness, expansion, or a readable report.
   state names. A load or field read made in a memory no point
   records, inside a call or after the last point, is read at the nearest
   recorded memory that reads the same bytes.
+  A local that keeps one value in memory, a borrowed Rust enum or
+  type-parameter local (`CAggregateLayout::holding_value`), is named by its
+  own name: `o` lowers to the read of its object at the point it was last
+  written (`CState::held_local_value`), never to a value a store left there,
+  and that read spells `o`, or `at(point, o)` at the recorded point whose
+  memory reads it.
 - **Every fact kind has syntax.** A kernel fact that a proof state can hold
   has a Surface form. Adding a kernel fact or term form includes adding its
   Surface form and its spelling, in the same change.

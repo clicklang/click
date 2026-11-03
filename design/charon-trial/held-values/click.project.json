@@ -1,0 +1,18 @@
+{
+  "units": {
+    "held_values": {
+      "language": "rust",
+      "sources": { "held.rs": {} },
+      "crate": {
+        "name": "held_values",
+        "edition": "2021",
+        "features": [],
+        "roots": [
+          "held_values::constructed",
+          "held_values::returned"
+        ],
+        "files": ["held.rs"]
+      }
+    }
+  }
+}
