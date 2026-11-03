@@ -294,6 +294,9 @@ int32 owned_split_buffer_pipeline(
     };
     fold(owned_split_buffer(owner));
     step();
+    transport(at(statement(6).entry, data[1]) == right_value, data[1] == right_value) using {
+        at(statement(6).entry, data[1]) == right_value;
+    };
     apply(int32_equality_transitive(c(result), data[1], right_value)) using {
         c(result) == data[1];
         data[1] == right_value;

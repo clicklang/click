@@ -382,11 +382,9 @@ int32 owned_segmented_buffer_pipeline(
     };
     fold(owned_segmented_buffer(owner));
     step();
-    have c(result) == first_data[0] by {
-        rewrite(at(region(6).entry, c(result)) == at(region(6).entry, owner->first_data[0]));
-        rewrite(owner->first_data == first_data);
-        normalize();
-    }
+    transport(at(statement(5).entry, first_data[0]) == first_value, first_data[0] == first_value) using {
+        at(statement(5).entry, first_data[0]) == first_value;
+    };
     apply(int32_equality_transitive(c(result), first_data[0], first_value)) using {
         c(result) == first_data[0];
         *first_data == first_value;

@@ -459,9 +459,9 @@ requires no observation discovery. These are metadata indexes, not e-graph
 facts or new resource authority. Branches share persistent roots, and removal
 or replacement updates only that branch.
 
-Call planning uses this selection for parent and callee bindings, including
-its coalescing prepass; a boundary guard forbids observation enumeration in
-`loans.rs`. The prepass and refusal classification may consult one indexed
+Call planning uses this selection for parent and callee bindings; boundary
+guards forbid observation enumeration and implicit fragment coalescing in
+`loans.rs`. Refusal classification may consult one indexed
 observation witness; that lookup grants no loan authority and never retries. When lending a selected owner, consumption receives that occurrence
 directly, aligns the requested slice and consumes only it, retaining split
 origins with the successor. It does not rediscover a supplier or join other
@@ -479,6 +479,49 @@ uses the owned-memory index and does not visit discarded observations or
 nonmemory resources. It still visits owned-memory candidates; this is not a
 claim of bounded cost for arbitrary ambient owners. Frame visits are charged
 so the complete-constructor regression cannot hide that cost.
+
+Call preparation classifies implicit local storage with
+`has_no_explicit_memory_for_local_storage`: a block-index absence check and a
+retained count of memory facts with nonconcrete allocation identities. Explicit
+memory anywhere in that block, nonconcrete memory identities, and pointer-alias
+facts alongside memory resources select the explicit route. It does not search
+for complete fragment coverage or enumerate views to establish absence. This
+is conservative refusal, not new alias or ownership evidence. The complete-call
+control also bounds completion beside unrelated constant owners.
+
+Call completion inserts returned outputs and recovered escrows into the valid
+persistent frame using incremental conflict checks. It never normalizes a whole
+memory block or revalidates old-old ownership pairs. Returned-view authority is
+checked for the declared output delta recorded during contract evaluation;
+unchanged caller views and supported projections retain their existing authority.
+Escrow presence uses exact representation lookup rather than a supplier search.
+`returning_one_borrowed_owner_does_not_rebuild_its_memory_block` measures entry,
+recovery, and the complete call beside increasing disjoint same-block fragments,
+including repeated queries and persistent-map work. Build guards prohibit the
+removed frame iteration and normalization APIs in these completion paths.
+Nonconstant insertion candidates remain a separate audit target.
+
+Explicit ownership composition for a constant 32-bit-indexed range with unit
+quantity uses `consume_constant_owned_memory`. It nominates one whole supplier,
+or consumes successive indexed fragments through the existing reservation
+operation, stopping at the first gap or unsuitable supplier. It retains split
+origins when requested and edits a persistent branch; it neither collects a
+candidate frontier nor retries alternatives. Selected native-indexed suppliers
+keep their original 64-bit bounds, element width, and carrier; their consumed
+pieces must have exact aligned coordinates and checked lengths. The constant
+neighbor index orders narrow and native ranges by checked byte coordinates,
+so unfolding does not scan unrelated same-base suppliers whose constant byte
+coordinates fit that index. Symbolic and wide-indexed requests remain separate
+audit targets. A build guard forbids candidate enumeration in this
+constant-consumption path.
+
+A proof can combine differently sized owned fields by folding a resource whose
+body owns the complete object, then unfolding it before a call that borrows the
+whole object. This is an explicit ownership construction, not a new separation
+axiom or pure fact. The complete fold/unfold scaling control measures successful
+mixed-width composition and a fixed early gap beside growing rejected fragments,
+including repeated work and persistent-map visits. Loan planning itself does not
+perform that composition automatically.
 
 Declared-resource lowering selects parameter values from the names in its
 explicit arguments, including quantities and nested resource-type arguments.

@@ -31,27 +31,23 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Call-side fragment composition: next measurement candidate.**
-   The loan planner's coalescing prepass calls
-   `ResourceContext::with_coalesced_owned_memory` when no nominated owner or
-   bound view supplies a memory requirement. That helper materializes the
-   candidate frontier before trying to join owned pieces. Owned requirement
-   reservation also uses `reserve_owned_memory_fragments_with_origins` and
-   the unselected `without_fact_incrementally_with_origins` route.
+1. **Remaining fragment-selection routes.**
+   `without_fact_incrementally_impl` still enumerates candidates for requests
+   outside constant, 32-bit-indexed, unit-owned memory. `satisfies_fact` also
+   retains a normalization-based memory-supplier fallback. Isolate real checking
+   callers and red scaling curves before changing these remaining routes.
+   Distinguish the relevant pieces consumed by explicit composition from
+   rejected candidates and speculative searches. Preserve symbolic/wide range
+   carriers, split origins, ownership refusals and branch isolation. Incremental
+   ownership-validity checking still enumerates related candidates when the
+   constant same-base neighbor index cannot represent the block (for example,
+   symbolic bounds or native byte coordinates beyond its signed range).
 
-   Isolate a fixed call requirement while varying rejected observations and
-   irrelevant fragments in the selected bucket. Measure both deterministic
-   work and persistent-map work, including misses and repeated queries.
-   Distinguish a scan of rejected candidates from work proportional to the
-   pieces actually consumed or produced; explicit composition may legitimately
-   touch its selected pieces. The existing complete-call observation tests do
-   not establish bounded cost for arbitrary fragment composition.
-
-   Start with a red scaling test, then discuss the design before removal.
-   Prefer retaining an explicitly selected supplier or explicit composition
-   over adding automatic candidate searches. Keep the C and contracts fixed,
-   preserve ownership and loan refusals, and investigate proof failures for
-   missing explicit steps before proposing new primitives.
+   Keep complete-operation controls: a flat call query does not establish flat
+   folding, and a flat constant-range fold does not establish bounded symbolic
+   or wide-range checking. Prefer indexed, selected-piece construction or an
+   explicit proof repair; do not restore implicit candidate search in loan
+   planning or move it into another non-expandable tactic.
 
 2. **Loop retained-frame candidates: remaining measurement boundary.**
    With an explicit view interface, `with_loop_frame_resources` visits the

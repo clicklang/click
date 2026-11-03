@@ -1,10 +1,11 @@
 # A partial owned call rejoins the cell's byte pieces
 
 `memset` owns the first two bytes of the four-byte `unsigned int` cell. After
-it returns, the caller's two byte pieces are rejoined, as they are when the
-call also lends a view (`byte_representation_partial_copy_frontier.md`), so
-the typed load of `dst->x` is decided by the cell's contents rather than by
-missing authority. Every byte is initialized here, the high bytes by the store
+it returns, the non-view call route rejoins the caller's immediate byte
+neighbours, so the typed load of `dst->x` is decided by the cell's contents
+rather than by missing authority. Calls that also lend a view restore the
+exact escrow without automatic composition; see the explicit fold/unfold in
+`byte_representation_partial_copy_frontier.md`. Every byte is initialized here, the high bytes by the store
 of `7u` and the low ones by `memset`, so the load is defined; its value is not
 fixed by any fact, so `result == 7` would not be proved.
 `byte_representation_partial_memset_fresh_cell_uninitialized.md` is the same

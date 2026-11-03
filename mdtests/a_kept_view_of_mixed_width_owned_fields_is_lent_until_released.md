@@ -3,7 +3,8 @@
 `lend` views `*p` and produces `Lent(p)`, whose body keeps that view, so the
 memory stays lent until `unlend` consumes it. The caller owns `*p` as three
 pieces of different widths, `x` (8 bytes), `a` and `b` (4 each), which no
-single owner covers: the planner joins them into one owner and lends that.
+single owner covers. The proof folds and reopens `Whole(p)` to combine those
+permissions explicitly before lending the complete object.
 The fields keep their values across the lend, and after `unlend` the caller
 owns them again, so `set_a` can write `a`.
 
@@ -17,6 +18,7 @@ void keep(struct S* p) { lend(p); unlend(p); set_a(p); }
 
 ```click
 verifying "lend.c";
+resource Whole(p: struct S*) { owns *p; }
 resource Lent(p: struct S*) { views *p; }
 extern void lend(const struct S* p) {
     views *p;
@@ -37,6 +39,9 @@ void keep(struct S* p) {
     ensures p->a == 9;
     ensures p->b == old(p->b);
     ensures p->x == old(p->x);
+} by {
+    fold(Whole(p));
+    unfold(Whole(p));
 }
 ```
 

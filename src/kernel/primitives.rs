@@ -9851,6 +9851,9 @@ pub(super) struct ResourceContextIndex {
     /// a parameter's fact with every other parameter's.
     pub(super) exact_shapes_by_root: PersistentMap<ShapeRootKey, ResourceEntryIds>,
     pub(super) memory_by_block: PersistentMap<PointerBlock, ResourceEntryIds>,
+    /// Memory facts whose allocation identity is not a concrete block. An
+    /// implicit local loan must not rediscover whether these alias its storage.
+    pub(super) nonconcrete_memory_count: usize,
     /// Iterated guarded-ownership facts keyed by both blocks their
     /// denotation depends on: the element base and the guard cells. A store,
     /// havoc, or free visits only the facts filed under its own block.

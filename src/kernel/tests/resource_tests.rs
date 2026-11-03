@@ -710,7 +710,7 @@ fn owned_fragment_reservation_checks_aliases_gaps_and_linear_consumption() {
 }
 
 #[test]
-fn owned_fragment_reservation_keeps_wide_suppliers_on_native_coverage() {
+fn owned_fragment_reservation_preserves_native_supplier_bounds() {
     let base = Pointer::symbolic(Variable(862_019));
     let owner = CResourceFact::own_memory(CMemoryRange::new_wide(
         base.clone(),
@@ -719,20 +719,29 @@ fn owned_fragment_reservation_keeps_wide_suppliers_on_native_coverage() {
         1,
     ));
     let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-        base,
+        base.clone(),
         0u32.into(),
         4u32.into(),
         1,
     ));
     let facts = PureFactContext::new();
-    let resources = ResourceContext::new().unchecked_with_fact(owner);
+    let resources = ResourceContext::new().unchecked_with_fact(owner.clone());
     resources.synchronize_memory_equalities(&facts);
-    assert!(
-        resources
-            .clone()
-            .reserve_owned_memory_fragments(&required, &facts)
-            .is_none()
+    let (remaining, supports) = resources
+        .clone()
+        .reserve_owned_memory_fragments(&required, &facts)
+        .expect("an aligned constant piece preserves native coordinates");
+    assert_eq!(supports.len(), 1);
+    assert_eq!(
+        remaining.facts(),
+        [CResourceFact::own_memory(CMemoryRange::new_wide(
+            base,
+            Bitvector32Term::UInt64Constant(4),
+            Bitvector32Term::UInt64Constant(16),
+            1,
+        ))]
     );
+    assert!(resources.contains_exact_representation(&owner));
     assert!(
         resources
             .directly_supporting_owned_entry(&required, &facts)
@@ -5893,6 +5902,63 @@ mod concrete_partition_sweep {
                 &assumptions,
             )
             .is_ok()
+    }
+
+    #[test]
+    fn neighbour_order_uses_exact_bytes_for_native_and_mixed_width_ranges() {
+        let native = |start, end, width| {
+            CResourceFact::own_memory(CMemoryRange::new_wide(
+                external(),
+                Bitvector32Term::UInt64Constant(start),
+                Bitvector32Term::UInt64Constant(end),
+                width,
+            ))
+        };
+        let bytes = |start: u32, end: u32| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                external(),
+                start.into(),
+                end.into(),
+                1,
+            ))
+        };
+        // Element-coordinate ordering would place the disjoint byte decoy
+        // between the overlapping four-byte ranges.
+        let cases = [
+            [owns(10, 20), bytes(21u32, 22u32), owns(19, 23)],
+            [native(10, 20, 4), bytes(21, 22), native(19, 23, 4)],
+            [native(10, 20, 4), bytes(21, 22), bytes(76, 92)],
+            [
+                native(1 << 33, (1 << 33) + 8, 4),
+                owns(0, 1),
+                native((1 << 33) + 7, (1 << 33) + 9, 4),
+            ],
+            // Unrepresentable byte coordinates must not wrap into the index.
+            [
+                native(u64::MAX - 8, u64::MAX - 2, 1),
+                owns(0, 1),
+                native(u64::MAX - 4, u64::MAX - 1, 1),
+            ],
+        ];
+        let assumptions = PureFactContext::new();
+        for [first, decoy, overlapping] in cases {
+            let context = ResourceContext::new().unchecked_with_facts([first, decoy]);
+            assert!(
+                context
+                    .clone()
+                    .unchecked_with_fact(overlapping.clone())
+                    .validity_error(&assumptions)
+                    .is_some()
+            );
+            assert!(
+                context
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [overlapping],
+                        &assumptions,
+                    )
+                    .is_err()
+            );
+        }
     }
 
     /// `p[-1..1]` and `p[0..2]` are two owners of element `p[0]`. With a

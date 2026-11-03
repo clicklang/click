@@ -31,6 +31,10 @@ int caller(int scale) noexcept {
 
 ```click
 verifying "shapes.cpp";
+// Match the imported object's logical footprint, without hard-coding its size.
+resource Whole(p: uint8*) {
+    owns (p as (int32 *))[0..((sizeof(Square) as int32) / (sizeof(int32) as int32))];
+}
 class Shape {
     function size(this) -> int32;
 }
@@ -63,6 +67,11 @@ int through_square(const Square& square, int scale) {
 int caller(int scale) {
     requires 0 <= scale and scale <= 100;
     ensures to_integer(result) == to_integer(3 + scale);
+} by {
+    step();
+    step();
+    fold(Whole(sq));
+    unfold(Whole(sq));
 }
 ```
 

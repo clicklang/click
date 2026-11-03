@@ -1124,8 +1124,8 @@ fn active_memory_candidates_ignore_unrelated_live_loans() {
 }
 
 /// A view no single owner covers, over owned pieces of different element
-/// widths that tile it, is lent from the pieces joined into one owner. The
-/// join reads only the pieces under the view, never the unrelated owners
+/// widths that tile it, is explicitly composed before it is lent. The
+/// composition reads only the pieces under the view, never the unrelated owners
 /// beside them.
 #[test]
 fn mixed_width_view_backing_joins_only_its_own_pieces() {
@@ -1153,10 +1153,19 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
             resources =
                 resources.unchecked_with_fact(memory(8192 + index * 2, 8193 + index * 2, true));
         }
+        resources.synchronize_memory_equalities(&facts);
         let ((plan, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
+                // Explicit owned composition, as a fold/unfold before the call.
+                let owner = memory(0, 4, true);
+                let composed = resources
+                    .clone()
+                    .without_fact_incrementally(&owner, &facts)
+                    .unwrap()
+                    .try_compose_into_valid_context_delaying_normalization([owner], &facts)
+                    .unwrap();
                 plan_stable_view_transfer(
-                    &resources,
+                    &composed,
                     std::slice::from_ref(&required),
                     &facts,
                     &ledger,
@@ -1177,4 +1186,114 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
         samples[3].1 <= samples[0].1 * 4 + 256,
         "ambient index scan: {samples:?}"
     );
+}
+
+/// The call needs a fixed range. A gap immediately after its first four-byte cell cannot
+/// be filled by any of the growing, disjoint fragments farther into the range.
+#[test]
+fn call_fragment_composition_stops_at_a_fixed_gap() {
+    let mut curves = Vec::new();
+    for case in ["gap", "joined", "owner", "observations"] {
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = PureFactContext::new();
+            let required = memory(0, 1024, false);
+            let mut resources =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(memory(
+                    0,
+                    if case == "owner" {
+                        1024
+                    } else if case == "joined" {
+                        512
+                    } else {
+                        1
+                    },
+                    true,
+                ));
+            if case == "joined" {
+                resources = resources.unchecked_with_fact(memory(512, 1024, true));
+            }
+            for index in 0..count {
+                let start = if matches!(case, "joined" | "owner") {
+                    2048
+                } else {
+                    100
+                } + 2 * index;
+                resources =
+                    resources.unchecked_with_fact(memory(start, start + 1, case != "observations"));
+            }
+            resources.synchronize_memory_equalities(&facts);
+            let (ledger, caller, callee) = participants();
+            let requirements = [checked(required.clone())];
+            let bindings = LoanViewBindings::default();
+            let original_len = resources.facts().len();
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((consumed, consume_work), consume_maps) =
+                    crate::persistent::measure_persistent_work(|| {
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            resources
+                                .clone()
+                                .without_fact_incrementally(&memory(0, 1024, true), &facts)
+                        })
+                    });
+                assert_eq!(
+                    consumed.is_some(),
+                    matches!(case, "owner" | "joined"),
+                    "{case}/{count}"
+                );
+                let ((plan, call_work), call_maps) =
+                    crate::persistent::measure_persistent_work(|| {
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            plan_stable_view_transfer_with_bindings(
+                                &resources,
+                                &requirements,
+                                &facts,
+                                &ledger,
+                                caller,
+                                callee,
+                                &bindings,
+                            )
+                        })
+                    });
+                assert_eq!(plan.is_ok(), case == "owner", "{case}/{count}: {plan:?}");
+                if let Ok(plan) = plan {
+                    assert!(plan.callee_resources.satisfies_fact(&required, &facts));
+                }
+                assert_eq!(resources.facts().len(), original_len);
+                assert!(resources.contains_exact_representation(&memory(
+                    0,
+                    if case == "owner" {
+                        1024
+                    } else if case == "joined" {
+                        512
+                    } else {
+                        1
+                    },
+                    true
+                )));
+                queries.push((call_work, call_maps, consume_work, consume_maps));
+            }
+            samples.push((count, queries));
+        }
+        eprintln!("fragment {case} (count; call work/maps, consumption work/maps): {samples:?}");
+        curves.push((case, samples));
+    }
+    // Check semantics for every size and control before checking the cost curves.
+    for (case, samples) in &curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(large, small)| {
+                    large.0 <= small.0 + 64
+                        && large.1 <= small.1 * 3 + 256
+                        && large.2 <= small.2 + 64
+                        && large.3 <= small.3 * 3 + 256
+                }),
+            "fragment composition walks rejected candidates ({case}): {samples:?}"
+        );
+    }
 }

@@ -1,8 +1,12 @@
 # a view below a local's block is not storage the caller can lend
 
-A caller lends a view over its own stack object without a resource clause,
-because the object is its own. What it may lend is the storage the block
-actually has, and `local_view_range_within_block` is the check.
+A caller can lend a view over its declared stack object without a function
+resource clause: declaration supplies the object's ownership. The requested
+view must fit that ownership. It must not fall back to implicit storage when
+its range extends outside the owner.
+
+The original regression concerned `local_view_range_within_block`, the bounds
+check for implicit local storage.
 
 It read both endpoints through `Bitvector32Term::as_const`, which answers
 `u32`, and then took `end <= start` as "an empty range names no storage". A
@@ -71,5 +75,5 @@ int32 lends_below_its_local() {
 ```
 
 ```expect
-fail: missing resource fact `views pair[-1..3]`
+fail: selected resource `views pair[-1..3]`
 ```
