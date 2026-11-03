@@ -1230,7 +1230,7 @@ fn observing_one_composite_ignores_same_shape_owners() {
 /// One held owner and a fixed proof: unused function parameters must not add
 /// work to each observation. Keep the selected parameter's spelling fixed.
 #[test]
-#[ignore = "red: observation rebuilds ambient parameter environments"]
+#[ignore = "nightly: observation parameter scaling"]
 fn observing_one_owner_ignores_unused_parameters() {
     let mut curves = Vec::new();
     for count in [4usize, 16, 64] {

@@ -423,6 +423,16 @@ misses, crowded quantity buckets, duplicate unbound views, and parent/child
 isolation after owner removal. The build boundary forbids candidate search in
 `direct_nonmemory_support_entry`.
 
+Declared-resource lowering selects parameter values from the names in its
+explicit arguments, including quantities and nested resource-type arguments.
+Outcome-proposition lowering against an indexed assumption context likewise
+selects only the names its proposition mentions. Both use `ParameterIndex`
+and construct array references from the selected values. Neither selection
+uses facts to change the term being lowered. The observation regression
+`observing_one_owner_ignores_unused_parameters` holds one owner and three
+observations fixed at 4/16/64 function parameters; first and repeated work must
+remain flat as unused parameters grow.
+
 An explicit loop read frame can select a flat range withheld from the loop
 body by the checked ownership partition. The loop history retains that
 persistent frame even when a conditional collection's conservative mutable

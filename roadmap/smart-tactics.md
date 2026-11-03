@@ -39,17 +39,6 @@ facts do not establish flat cost as the queried class or bucket grows.
    Audit the memory paths and remaining alternative-support queries; distinguish
    an explicitly selected resource or footprint from an implicit candidate bucket.
    Measure ambiguous buckets and refusals as well as exact hits.
-   The observation scaling control also shows work growing with the function's
-   parameter count even with only one held owner. The dedicated red test
-   `observing_one_owner_ignores_unused_parameters` holds the selected spelling,
-   one owner, and three observations fixed while growing parameters 4/16/64.
-   Repeated observations cost 711/807/1191 work units. Run this explicitly
-   ignored reproduction by name. Temporary work-site instrumentation attributes
-   the entire 8-unit-per-parameter slope to four full `parameter_values` maps,
-   two `array_refs_for_parameters` scans, and two indexed lookups per parameter
-   while building array references. Proposed fix for review: restrict declared
-   resource lowering to the names its arguments mention, using the existing
-   indexed environment helpers. The owner-count control is a separate dimension.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
