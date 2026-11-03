@@ -123,6 +123,52 @@ struct SpecEvaluation<'a> {
     integer_bindings: BTreeMap<Variable, IntegerTerm>,
 }
 
+/// The identity a loop invariant's `iterations` lowers to: the number of
+/// passes the loop has completed. It is a placeholder, never a value of its
+/// own: each loop phase that lowers an invariant binds it for that lowering
+/// ([`LoopIterationsScope`]), to `0` at entry, to the head's fresh count `K`
+/// where the head assumes the invariants, and to `K + 1` at the back edge.
+/// Nothing else mints this identity (it lies past every producer's range),
+/// and reading it where no phase binds it refuses
+/// ([`ExecutionLimit::LoopIterationsUnbound`]): an unbound placeholder in
+/// both a head assumption and a back-edge goal would prove an invariant
+/// preserved without the pass it counts.
+pub(crate) const LOOP_ITERATIONS_VARIABLE: Variable = Variable(1 << 44);
+
+std::thread_local! {
+    static LOOP_ITERATIONS: std::cell::RefCell<Option<IntegerTerm>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Binds a loop invariant's `iterations` for the lowerings made while it
+/// lives: the pass count of the loop phase lowering the invariant.
+pub(in crate::kernel) struct LoopIterationsScope(Option<IntegerTerm>);
+
+impl LoopIterationsScope {
+    pub(in crate::kernel) fn enter(iterations: IntegerTerm) -> Self {
+        Self(LOOP_ITERATIONS.with(|slot| slot.replace(Some(iterations))))
+    }
+}
+
+impl Drop for LoopIterationsScope {
+    fn drop(&mut self) {
+        LOOP_ITERATIONS.with(|slot| {
+            slot.replace(self.0.take());
+        });
+    }
+}
+
+/// The integer bindings an evaluation starts with: a loop phase's pass
+/// count, when one is in scope.
+fn initial_integer_bindings() -> BTreeMap<Variable, IntegerTerm> {
+    LOOP_ITERATIONS.with(|slot| {
+        slot.borrow()
+            .clone()
+            .map(|iterations| BTreeMap::from([(LOOP_ITERATIONS_VARIABLE, iterations)]))
+            .unwrap_or_default()
+    })
+}
+
 impl<'a> SpecEvaluation<'a> {
     fn logical(budget: &'a mut ExecutionBudget) -> Self {
         Self {
@@ -131,7 +177,7 @@ impl<'a> SpecEvaluation<'a> {
             recover_resource_call_types: false,
             pointer_cast_operand: false,
             machine_preparation_disabled: false,
-            integer_bindings: BTreeMap::new(),
+            integer_bindings: initial_integer_bindings(),
         }
     }
     fn checked(budget: &'a mut ExecutionBudget) -> Self {
@@ -141,7 +187,7 @@ impl<'a> SpecEvaluation<'a> {
             recover_resource_call_types: false,
             pointer_cast_operand: false,
             machine_preparation_disabled: false,
-            integer_bindings: BTreeMap::new(),
+            integer_bindings: initial_integer_bindings(),
         }
     }
     fn with_integer_bindings<T>(
@@ -185,6 +231,13 @@ impl<'a> SpecEvaluation<'a> {
     }
 
     fn bound_integer_term(&self, term: &IntegerTerm) -> ExecutionResult<IntegerTerm> {
+        if *term == IntegerTerm::Variable(LOOP_ITERATIONS_VARIABLE)
+            && !self
+                .integer_bindings
+                .contains_key(&LOOP_ITERATIONS_VARIABLE)
+        {
+            return Err(ExecutionLimit::LoopIterationsUnbound);
+        }
         if self.integer_bindings.is_empty() {
             return Ok(term.clone());
         }

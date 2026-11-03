@@ -88,6 +88,9 @@ pub(in crate::surface::proof) struct InvariantBodyContext {
     /// Ranking members read their `pre` values there, so their synthesized
     /// surface spells them `at(<selector>, name)`.
     pub(in crate::surface::proof) iteration_entry_selector: Option<SnapshotSelector>,
+    /// The head's pass count `K`, which the body's proof reads as
+    /// `iterations`; the back edge owes the invariants at `K + 1`.
+    pub(in crate::surface::proof) iterations: Option<crate::kernel::IntegerTerm>,
     pub(in crate::surface::proof) checks: Vec<CLoopInvariantCheck>,
     pub(in crate::surface::proof) ranking_measures: Vec<crate::kernel::CRankingComponent>,
     /// The declared `decreases` components as the loop head writes them, in

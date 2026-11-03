@@ -240,7 +240,7 @@ impl<'a> Proof<'a> {
                 let integer_values = integer_values_for_surface_proposition(
                     surface,
                     &context.theorem_context.integer_values,
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                 );
                 // The premises in scope at this point of the proof: the
                 // theorem's `requires` and every fact already proved, exactly
@@ -288,7 +288,7 @@ impl<'a> Proof<'a> {
                     context.parameter_binding,
                     context.fixed_state,
                     &algebraic_values,
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                     context.spec_definitions,
                 )
                 .map_err(|message| {
@@ -339,7 +339,7 @@ impl<'a> Proof<'a> {
                     view.parameter_binding,
                     view.fixed_state,
                     &algebraic_values,
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                     view.spec_definitions,
                 )
                 .map_err(|message| {
@@ -369,7 +369,7 @@ impl<'a> Proof<'a> {
                         &execution.presentation.recorded_snapshots,
                     ),
                     &algebraic_values,
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                     context.spec_definitions,
                 )
                 .map_err(|message| {
@@ -426,7 +426,7 @@ impl<'a> Proof<'a> {
                 let integer_values = integer_values_for_surface_proposition(
                     surface,
                     &context.theorem_context.integer_values,
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                 );
                 lower_pure_theorem_proposition_recording_introductions(
                     context.claim_label,
@@ -459,7 +459,7 @@ impl<'a> Proof<'a> {
                     context.parameter_binding,
                     context.fixed_state,
                     &algebraic_values,
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                     context.spec_definitions,
                 )
                 .map_err(|message| {
@@ -482,7 +482,7 @@ impl<'a> Proof<'a> {
                     view.parameter_binding,
                     view.fixed_state,
                     &algebraic_values,
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                     view.spec_definitions,
                 )
                 .map_err(|message| {
@@ -512,7 +512,7 @@ impl<'a> Proof<'a> {
                         &execution.presentation.recorded_snapshots,
                     ),
                     &algebraic_values,
-                    self.local_integer_values(),
+                    &self.local_integer_values(),
                     context.spec_definitions,
                 )
                 .map_err(|message| {

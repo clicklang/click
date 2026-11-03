@@ -2933,7 +2933,10 @@ fn loop_resource_declarations(
                 let guard = lowerer
                     .click_proposition_to_spec_proposition(
                         condition,
-                        &SpecElaborationContext::for_loop_invariant(*loop_index),
+                        &SpecElaborationContext::for_loop_invariant(
+                            *loop_index,
+                            clause.iterations_is_c(),
+                        ),
                     )
                     .map_err(ClickError::new)?;
                 let start = declaration.specs.len();
@@ -3840,7 +3843,8 @@ impl AnnotationLowerer<'_> {
             let source = crate::surface::verification::termination_measure_source(
                 written.unwrap_or(expression),
             );
-            let context = SpecElaborationContext::for_loop_invariant(loop_index);
+            let context =
+                SpecElaborationContext::for_loop_invariant(loop_index, clause.iterations_is_c());
             // A `Nat` measure ranks by its Integer image: `to_integer` is the
             // kernel's checked observation of a structural natural, so the
             // two members are the Integer ones over that image and its
@@ -4050,6 +4054,10 @@ impl AnnotationLowerer<'_> {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
+        let iterations_is_c = self
+            .structural_clauses
+            .for_loop(loop_index)
+            .is_some_and(StructuralClause::iterations_is_c);
         self.structural_clauses
             .for_loop(loop_index)
             .into_iter()
@@ -4070,7 +4078,7 @@ impl AnnotationLowerer<'_> {
                 Ok(CLoopInvariantCheck::new(
                     self.click_proposition_to_spec_proposition(
                         &proposition,
-                        &SpecElaborationContext::for_loop_invariant(loop_index),
+                        &SpecElaborationContext::for_loop_invariant(loop_index, iterations_is_c),
                     )
                     .map_err(|message| {
                         ClickError::new(format!(

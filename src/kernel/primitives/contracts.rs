@@ -4055,9 +4055,17 @@ impl CVerifiedLoopRule {
     ) -> &[(usize, Proposition)] {
         self.paths[path_index]
             .loop_invariant_correspondence
-            .0
+            .invariants
             .as_deref()
             .unwrap_or_default()
+    }
+
+    /// The loop head's pass count the path's facts state over.
+    pub(crate) fn loop_iterations(&self, path_index: usize) -> Option<&IntegerTerm> {
+        self.paths[path_index]
+            .loop_invariant_correspondence
+            .iterations
+            .as_ref()
     }
 
     pub(crate) fn loop_index(&self) -> Option<usize> {

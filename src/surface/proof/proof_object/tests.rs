@@ -10495,6 +10495,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
             .open_invariant_body(
                 &CState::new(),
                 &CState::new(),
+                &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                 &checks,
                 &[],
                 &[],

@@ -60,7 +60,16 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
         let ((body, scope), opening_work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 frontier
-                    .open_invariant_body(&entry, &entry, &checks, &[], &[], &[], |_, _| ())
+                    .open_invariant_body(
+                        &entry,
+                        &entry,
+                        &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
+                        &checks,
+                        &[],
+                        &[],
+                        &[],
+                        |_, _| (),
+                    )
                     .unwrap()
             });
         assert!(
@@ -232,6 +241,7 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
             .open_invariant_body(
                 &entry.clone(),
                 &entry.clone(),
+                &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                 &checks,
                 &[],
                 &[],

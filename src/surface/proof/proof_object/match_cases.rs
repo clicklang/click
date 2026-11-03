@@ -173,6 +173,25 @@ impl<'a> Proof<'a> {
     ) -> Result<ProofCertificate, ClickError> {
         self.certificate_after_node(Some(&marker.node))
     }
+    /// This proof with the loop's pass count in scope: `iterations` names
+    /// `count`, the head's count for a pass's proof. A C object of that name
+    /// in `state` keeps the name.
+    pub(in crate::surface::proof) fn with_loop_iterations(
+        &self,
+        count: &crate::kernel::IntegerTerm,
+        state: &CState,
+    ) -> Self {
+        if crate::surface::loop_iterations_hidden_by(state) {
+            return self.clone();
+        }
+        let mut locals = self.state.locals().clone();
+        locals.integer_values = locals.integer_values.with_inserted(
+            crate::surface::LOOP_ITERATIONS_NAME.to_string(),
+            crate::kernel::SpecIntegerExpression::Term(count.clone()),
+        );
+        self.with_kernel_state(self.state.with_locals(locals))
+    }
+
     pub(in crate::surface::proof) fn with_surface_local_scope(
         &self,
         bindings: &PersistentMap<String, ContractExpression>,

@@ -1439,7 +1439,18 @@ impl Proof<'_> {
                 .filter_map(|(name, value)| Some((variable(value)?, name.to_owned())))
                 .collect::<BTreeMap<_, _>>()
         };
-        let intro = named(&mut goal_binder_c_values(&self.state));
+        let mut intro = named(&mut goal_binder_c_values(&self.state));
+        // An Integer proof local, such as a loop's `iterations` or an
+        // `obtain`'s binder, names the variable it holds.
+        for (name, value) in self.local_integer_values().iter() {
+            if let crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::Variable(
+                variable,
+            )) = value
+                && !shadowing.contains(name.as_str())
+            {
+                intro.entry(*variable).or_insert_with(|| name.clone());
+            }
+        }
         let locals = self
             .state
             .state()
@@ -1513,6 +1524,12 @@ pub(in crate::surface::proof) fn register_recorded_snapshot_names(
     snapshots: &crate::surface::RecordedSnapshots,
 ) {
     register_snapshot_names(labels, &citable_snapshots(snapshots));
+    // Each exited loop's pass count, `loop(i).iterations`.
+    for (name, iterations) in snapshots.loop_iteration_bindings() {
+        if let crate::kernel::IntegerTerm::Variable(variable) = iterations {
+            labels.integer_source_name(*variable, name);
+        }
+    }
 }
 
 /// The most recent recorded snapshots an `at(...)` can cite, oldest first,
@@ -2643,10 +2660,25 @@ impl<'a> Proof<'a> {
         self.state.state()
     }
 
+    /// The proof's Integer locals, with each loop the focused path has left
+    /// binding its pass count as `loop(i).iterations`.
     pub(super) fn local_integer_values(
         &self,
-    ) -> &PersistentMap<String, crate::kernel::SpecIntegerExpression> {
-        &self.state().locals().integer_values
+    ) -> PersistentMap<String, crate::kernel::SpecIntegerExpression> {
+        let mut values = self.state().locals().integer_values.clone();
+        if let Some(execution) = self.execution() {
+            for (name, iterations) in execution
+                .presentation
+                .recorded_snapshots
+                .loop_iteration_bindings()
+            {
+                values.insert(
+                    name,
+                    crate::kernel::SpecIntegerExpression::Term(iterations.clone()),
+                );
+            }
+        }
+        values
     }
 
     pub(super) fn local_algebraic_values(

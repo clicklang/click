@@ -460,6 +460,10 @@ pub struct CLoopPreservationContext {
     /// The back edge binds those names again on whatever the body ends
     /// holding, so the join needs them beside the head state.
     binders: Vec<crate::kernel::CLoopBinder>,
+    /// The head's pass count `K`: the invariants this head assumes read
+    /// `iterations` as `K`, and the back edge owes them at `K + 1`
+    /// ([`c_loop_invariant_obligations_at_back_edge`]).
+    iterations: IntegerTerm,
     /// The execution's fresh-variable counter after building this head.
     ///
     /// Preparing the head invents identities -- the havoc of every local and
@@ -804,6 +808,12 @@ impl CLoopPreservationContext {
     /// The execution's fresh-variable counter after this head was built. It
     /// is never below the counter the head was built from, so an execution
     /// that continues from it only moves forward.
+    /// The head's pass count `K`, which a preserve proof reads as
+    /// `iterations`.
+    pub fn iterations(&self) -> &IntegerTerm {
+        &self.iterations
+    }
+
     pub fn next_kernel_variable(&self) -> u64 {
         self.next_kernel_variable
     }
@@ -973,6 +983,7 @@ fn c_loop_preservation_contexts_with_mode(
         .narrows_resources()
         .then(|| head.top.resources().clone());
     let top_state = head.body;
+    let iterations = head.iterations;
     let whole_loop_effect_summaries = head.summaries;
     let whole_loop_effect_facts = whole_loop_effect_summaries
         .iter()
@@ -984,6 +995,7 @@ fn c_loop_preservation_contexts_with_mode(
         &top_state,
         loop_entry_state,
         invariant_checks,
+        &iterations,
         assumptions,
         &whole_loop_effect_facts,
         &[],
@@ -994,6 +1006,7 @@ fn c_loop_preservation_contexts_with_mode(
             &top_state,
             loop_entry_state,
             invariant_checks,
+            &iterations,
             assumptions,
             error,
         )
@@ -1101,6 +1114,7 @@ fn c_loop_preservation_contexts_with_mode(
                 invariant_propositions: invariant_propositions.iter().cloned().collect(),
                 whole_loop_effect_facts: whole_loop_effect_summaries.clone(),
                 binders: crate::kernel::c_loop_binders(resource_specs),
+                iterations: iterations.clone(),
                 // Filled in below from the one budget every context here was
                 // built with, so each reports the same high-water mark rather
                 // than the mark at the moment it happened to be pushed.
@@ -1129,6 +1143,7 @@ fn loop_head_invariant_failure(
     top_state: &CState,
     loop_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    iterations: &IntegerTerm,
     assumptions: &PureFactContext,
     error: ExecutionLimit,
 ) -> String {
@@ -1138,6 +1153,7 @@ fn loop_head_invariant_failure(
             top_state,
             loop_entry_state,
             std::slice::from_ref(check),
+            iterations,
             assumptions,
             &[],
             &[],
@@ -1162,6 +1178,7 @@ pub fn c_loop_invariant_obligations_at_back_edge(
     state: &CState,
     iteration_entry_state: &CState,
     invariant_checks: &[CLoopInvariantCheck],
+    head_iterations: &IntegerTerm,
     assumptions: &PureFactContext,
 ) -> Result<Vec<ProofObligation>, String> {
     collect_invariant_check_obligations_without_search(
@@ -1169,6 +1186,7 @@ pub fn c_loop_invariant_obligations_at_back_edge(
         iteration_entry_state,
         invariant_checks,
         InvariantPhase::Preservation,
+        Some(head_iterations),
         assumptions,
         &mut ExecutionBudget::beside_live_state(),
     )
@@ -1374,6 +1392,7 @@ pub fn c_loop_invariant_obligations_at_entry(
         state,
         invariant_checks,
         InvariantPhase::Entry,
+        None,
         assumptions,
         &mut ExecutionBudget::beside_live_state(),
     )
@@ -1395,6 +1414,7 @@ pub fn c_loop_invariants_hold_at_entry(
         state,
         invariant_checks,
         InvariantPhase::Entry,
+        None,
         assumptions,
         &mut ExecutionBudget::beside_live_state(),
     )

@@ -1689,6 +1689,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
         &self,
         loop_entry: &crate::kernel::CState,
         iteration_entry: &crate::kernel::CState,
+        head_iterations: &crate::kernel::IntegerTerm,
         checks: &[crate::kernel::CLoopInvariantCheck],
         ranking_measures: &[crate::kernel::CRankingComponent],
         binders: &[crate::kernel::CLoopBinder],
@@ -1770,6 +1771,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             &back_edge_state,
             loop_entry,
             checks,
+            head_iterations,
             facts.assumptions(),
         )
         .map_err(|_| "could not lower explicit invariant obligations")?;
@@ -3108,6 +3110,7 @@ mod tests {
             .open_invariant_body(
                 &CState::new(),
                 &CState::new(),
+                &crate::kernel::IntegerTerm::var(crate::kernel::Variable(9_999)),
                 &checks,
                 &[],
                 &[],

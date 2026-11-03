@@ -740,6 +740,25 @@ closure as one `have <member> by { ... }` per member at the end of the
 `close_invariants` tactic is rejected by the parser
 ([`close_invariants_is_retired.md`](https://github.com/clicklang/click/blob/master/mdtests/close_invariants_is_retired.md)).
 
+Inside the loop's clauses and phases, `iterations` is the mathematical
+`Integer` count of passes completed: `0` when `initialize` checks the
+invariants, a fresh `K` with `0 <= K` at the head, and `K + 1` where a pass's
+back edge, a `continue` included, checks them again. A `break` leaves during a
+pass, which does not count. Past the loop, `loop(i).iterations` names the count
+the exit facts state over, on each path that left loop `i`; inside a nested
+loop, `iterations` is that loop's own count, and the enclosing proof reads it
+as `loop(i).iterations` once the inner loop exits. `iterations` outside a loop,
+and `loop(i).iterations` on a path that has not left loop `i`, are refused. A
+function whose C has an object named `iterations` keeps that name's C meaning
+in its loop clauses
+([`a_c_local_named_iterations_keeps_its_c_meaning.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_keeps_its_c_meaning.md)).
+Like any proof `Integer`, it compares with a C value directly, `i == iterations`
+([`a_loop_states_a_running_total_over_its_pass_count.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_states_a_running_total_over_its_pass_count.md),
+[`a_loop_pass_count_names_the_passes_after_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md),
+[`a_break_exit_counts_the_passes_before_it.md`](https://github.com/clicklang/click/blob/master/mdtests/a_break_exit_counts_the_passes_before_it.md),
+[`a_continue_is_a_pass_of_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_continue_is_a_pass_of_the_loop.md),
+[`an_inner_loop_counts_its_own_passes.md`](https://github.com/clicklang/click/blob/master/mdtests/an_inner_loop_counts_its_own_passes.md)).
+
 The frontier may be one a `branch` arm or a proof-level `if` arm reached, which
 is how a loop guarded by a C `if` is proved; the invariants are then established
 from the arm's state, with its path condition available.

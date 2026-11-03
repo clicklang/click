@@ -85,8 +85,14 @@ fn invariant_back_edge_context_extension_scales_with_members_not_ambient_facts()
             }
             let before = crate::kernel::reasoning::path_facts::context_rebuild_entries();
             let (goals, work) = crate::instrumentation::measure_deterministic_work(|| {
-                c_loop_invariant_obligations_at_back_edge(&state, &state, &checks, &assumptions)
-                    .expect("all explicit members lower")
+                c_loop_invariant_obligations_at_back_edge(
+                    &state,
+                    &state,
+                    &checks,
+                    &IntegerTerm::var(Variable(9_999)),
+                    &assumptions,
+                )
+                .expect("all explicit members lower")
             });
             let entries = crate::kernel::reasoning::path_facts::context_rebuild_entries() - before;
             assert_eq!(goals.len(), size);
