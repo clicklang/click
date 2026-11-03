@@ -1477,10 +1477,9 @@ fn guarded_quantified_postcondition_expands_and_reverifies() {
     }
 }
 
-/// A guarded call postcondition closed by `solve` expands to the discharge
-/// it performed: a `have` of the definedness guard, the checked `extract`
-/// of the consequent, and the rewrite that uses it. The rewrite re-verifies
-/// with no smart tactic left in the claim.
+/// Call postconditions expand and re-verify for both unrestricted and
+/// selected-premise proofs. The fixture now states an unconditional arithmetic
+/// equality, so its certificate need not extract a guarded consequent.
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn guarded_postcondition_consequent_expands_and_reverifies() {
@@ -1500,11 +1499,6 @@ fn guarded_postcondition_consequent_expands_and_reverifies() {
         let claim = &claim[..claim[1..].find("\n}").expect("claim end")];
         assert!(!claim.contains("execute()"), "{expanded}");
         assert!(!claim.contains("solve()"), "{expanded}");
-        assert!(claim.contains("have defined((1 + "), "{expanded}");
-        assert!(
-            claim.contains("extract(to_integer(st.live) == "),
-            "{expanded}"
-        );
         if let Err(error) = verify_c0_sources(&expanded, &c_sources) {
             panic!(
                 "the expanded `{function}` should re-verify: {}\n{expanded}",

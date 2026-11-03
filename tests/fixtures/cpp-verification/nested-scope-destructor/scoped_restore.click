@@ -21,7 +21,7 @@ Restore::~Restore() {
 
 int32 scoped_restore(bool early, int32& value) {
     owns value;
-    ensures early != 0 implies result == 7;
-    ensures early == 0 implies result == old(value);
+    ensures early == true implies result == 7;
+    ensures early == false implies result == old(value);
     ensures value == old(value);
 }

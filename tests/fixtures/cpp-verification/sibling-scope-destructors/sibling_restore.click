@@ -21,8 +21,8 @@ Restore::~Restore() {
 
 int32 sibling_restore(bool first_early, bool second_early, int32& value) {
     owns value;
-    ensures first_early != 0 implies result == 7;
-    ensures first_early == 0 implies (second_early != 0 implies result == 7);
-    ensures first_early == 0 implies (second_early == 0 implies result == old(value));
+    ensures first_early == true implies result == 7;
+    ensures first_early == false implies (second_early == true implies result == 7);
+    ensures first_early == false implies (second_early == false implies result == old(value));
     ensures value == old(value);
 }
