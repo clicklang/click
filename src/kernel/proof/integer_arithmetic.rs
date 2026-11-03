@@ -549,11 +549,12 @@ fn integer_disequality(
         },
         _ => return None,
     };
+    // The written constant may be literal arithmetic, such as INT_MIN spelled
+    // `-2147483647 - 1`. Read its value from this selected premise; do not rely
+    // on admission having filed a folded native copy of the disequality.
     match (left.as_ref(), right.as_ref()) {
-        (IntegerTerm::Machine(value), IntegerTerm::Constant(constant))
-        | (IntegerTerm::Constant(constant), IntegerTerm::Machine(value)) => {
-            Some((value.clone(), constant.clone()))
-        }
+        (IntegerTerm::Machine(value), _) => Some((value.clone(), literal_integer_value(right)?)),
+        (_, IntegerTerm::Machine(value)) => Some((value.clone(), literal_integer_value(left)?)),
         _ => None,
     }
 }
@@ -2057,6 +2058,28 @@ mod tests {
             excluded_type_bound(&differs(MachineIntegerType::Int32, 0)),
             None
         );
+        let minimum = IntegerTerm::Subtract(
+            IntegerTerm::constant_i64(-2147483647).into(),
+            IntegerTerm::constant_i64(1).into(),
+        );
+        for reversed in [false, true] {
+            let mut sides = [observed(MachineIntegerType::Int32), minimum.clone()];
+            if reversed {
+                sides.swap(0, 1);
+            }
+            let [left, right] = sides;
+            let premise = Proposition::ConditionIs(
+                ConditionTerm::IntegerNotEqual(left.into(), right.into()),
+                true,
+            );
+            assert_eq!(
+                excluded_type_bound(&premise),
+                Some(less_equal(
+                    IntegerTerm::constant_i64(-2147483647),
+                    observed(MachineIntegerType::Int32),
+                ))
+            );
+        }
         // An equality is no disequality.
         let equal = Proposition::ConditionIs(
             ConditionTerm::integer_equal(

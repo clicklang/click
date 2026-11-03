@@ -3336,9 +3336,29 @@ fn collect_integer_bitvector_capture_variables(
     }
     match term {
         IntegerTerm::Constant(_) | IntegerTerm::Variable(_) => {}
-        IntegerTerm::Machine(value) => {
-            collect_bitvector_capture_variables_seen(value.value(), variables, integer_seen)
-        }
+        IntegerTerm::Machine(value) => match value.operand_view() {
+            MachineOperandView::Legacy(value) => {
+                collect_bitvector_capture_variables_seen(value, variables, integer_seen)
+            }
+            MachineOperandView::Shared(root) => {
+                if let Some(written) =
+                    shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
+                {
+                    for variable in written.iter() {
+                        if checked_collection_checkpoint() {
+                            return;
+                        }
+                        // A registered load's pointer can capture the binder.
+                        // Keep the ordinary leaf rule after traversing the DAG.
+                        collect_bitvector_capture_variables_seen(
+                            &Bitvector32Term::Variable(*variable),
+                            variables,
+                            integer_seen,
+                        );
+                    }
+                }
+            }
+        },
         IntegerTerm::PureFunctionApplication(application) => {
             for argument in application.arguments() {
                 if crate::instrumentation::checked_collection_exhausted() {

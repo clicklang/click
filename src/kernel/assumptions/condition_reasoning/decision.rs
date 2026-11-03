@@ -1445,6 +1445,14 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
+        if self.condition_facts.get(condition).is_none() {
+            for truth in [true, false] {
+                if let Some(source) = self.observation_comparisons.source(condition, truth) {
+                    record_implicit_reasoning_provenance(self, source);
+                    return Some(truth);
+                }
+            }
+        }
         let value = self.exact_condition_value_unrecorded(condition);
         if value == Some(false) && self.condition_facts.get(condition).is_none() {
             let bounds = crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(

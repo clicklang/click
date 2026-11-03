@@ -1086,8 +1086,18 @@ fn machine_readings_of_selected_integer_facts_ignore_ambient_facts() {
         let facts = facts.with_fact(range);
         let (((), work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                assert!(no_range.native_operation_reading(&bound).is_none());
-                assert_eq!(facts.native_operation_reading(&bound), Some(goal.clone()));
+                assert!(no_range.shared_operation_reading(&bound).is_none());
+                let Proposition::ConditionIs(condition, truth) = &goal else {
+                    unreachable!()
+                };
+                let shared_goal =
+                    crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)
+                        .unwrap()
+                        .integer_condition();
+                assert_eq!(
+                    facts.shared_operation_reading(&bound),
+                    Some(Proposition::ConditionIs(shared_goal, true))
+                );
                 let rewritten = facts.check_equality_rewrite(&goal, &equality).unwrap();
                 assert_eq!(
                     rewritten.proposition(),

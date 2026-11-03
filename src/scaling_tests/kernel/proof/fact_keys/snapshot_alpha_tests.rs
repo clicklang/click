@@ -121,3 +121,45 @@ fn snapshot_alpha_nested_shared_load_dags_scale_linearly() {
         assert!(pair[1] <= pair[0] * 3 + 32, "snapshot alpha work: {work:?}");
     }
 }
+
+#[test]
+fn machine_comparison_alpha_keys_retain_shared_dags() {
+    use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm};
+    let samples = [8usize, 32, 96].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let mut term = KernelTerm::variable(KernelType::C(format.c_type()), Variable(98123));
+        for _ in 0..size {
+            term = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [term.clone(), term],
+            );
+        }
+        let operand = SharedMachineIntegerTerm::from_shared(format, term).unwrap();
+        let proposition = Proposition::ForAll {
+            var: Variable(98123),
+            name: crate::kernel::BinderName::written("i"),
+            sort: Sort::CMachineInteger(format),
+            body: Box::new(Proposition::ConditionIs(
+                ConditionTerm::IntegerLessThan(
+                    IntegerTerm::Machine(operand.clone()).into(),
+                    IntegerTerm::Constant(BigInt::from(100)).into(),
+                ),
+                true,
+            )),
+        };
+        let (key, work) = crate::instrumentation::measure_deterministic_work(|| {
+            proposition_identity_key(&proposition)
+        });
+        assert!(key.is_some());
+        assert!(!operand.has_boxed_operand());
+        (size, work)
+    });
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small <= sw * large * 2, "{samples:?}");
+    }
+}
