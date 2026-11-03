@@ -3385,3 +3385,73 @@ fn explicit_constant_fold_stops_at_a_gap_and_joins_mixed_width_pieces() {
         );
     }
 }
+
+/// A native-width fold has fixed input and a fixed early gap. Later disjoint
+/// fragments cannot help; fixture/index construction is outside the measurement.
+#[test]
+fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
+    let mut curves = Vec::new();
+    for complete in [false, true] {
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (instance, mut definition, _) = instance_memory_fixture();
+            let bound = |n| CExpression::Value(CValue::UInt64(Bitvector32Term::UInt64Constant(n)));
+            definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
+                base: c_variable("p"),
+                start: bound(0),
+                end: bound(1024),
+                element_width: 4,
+                guard: None,
+                uninitialized: false,
+                value_runs: Default::default(),
+            })];
+            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+                unreachable!()
+            };
+            let piece = |start, end| {
+                CResourceFact::own_memory(CMemoryRange::new_wide(
+                    value.pointer().clone(),
+                    Bitvector32Term::UInt64Constant(start),
+                    Bitvector32Term::UInt64Constant(end),
+                    4,
+                ))
+            };
+            let facts = PureFactContext::new();
+            let first = piece(0, if complete { 1024 } else { 1 });
+            let mut resources =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(first.clone());
+            for index in 0..count {
+                let start = if complete { 2048 } else { 100 } + 2 * u64::from(index);
+                resources = resources.unchecked_with_fact(piece(start, start + 1));
+            }
+            resources.synchronize_memory_equalities(&facts);
+            let state = CState::new().with_resource_context(resources);
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        rewrite_resource_instance(&state, &instance, &definition, &facts, false)
+                    })
+                });
+                assert_eq!(result.is_ok(), complete, "{complete}/{count}: {result:?}");
+                assert_eq!(state.resources().facts().len(), count as usize + 1);
+                assert!(state.resources().contains_exact_representation(&first));
+                queries.push((work, maps));
+            }
+            samples.push((count, queries));
+        }
+        eprintln!("native fold complete={complete}, count/work/maps: {samples:?}");
+        curves.push(samples);
+    }
+    for samples in curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(big, small)| big.0 <= small.0 + 64 && big.1 <= small.1 * 3 + 512),
+            "native fold scans rejected fragments: {samples:?}"
+        );
+    }
+}
