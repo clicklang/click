@@ -29,6 +29,7 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
                 true,
                 &state,
                 &assumptions,
+                &state,
             )
         });
         assert_eq!(body.facts().len(), views.len());
@@ -41,6 +42,7 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
             false,
             &state,
             &assumptions,
+            &state,
         );
         assert!(
             hidden.facts().is_empty(),
@@ -56,7 +58,6 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
 /// Keep one declared loop view fixed. Measure the binding-copy block as well
 /// as its real checking caller, without charging fixture/index construction.
 #[test]
-#[ignore = "red regression: loop binding carryover scans matching observations"]
 fn loop_binding_carryover_ignores_ambient_observations() {
     use crate::kernel::loans::{LoanLedger, LoanViewBinding, LoanViewBindings};
 
@@ -133,28 +134,13 @@ fn loop_binding_carryover_ignores_ambient_observations() {
             for _ in 0..3 {
                 let ((carried, work), maps) = crate::persistent::measure_persistent_work(|| {
                     crate::instrumentation::measure_deterministic_work(|| {
-                        // The binding-copy block in loop_body_resource_context.
-                        let mut carried = entry.loan_view_bindings().clone();
-                        for fact in body_resources.facts().iter().filter(|fact| fact.is_view()) {
-                            let Some(binding) = entry
-                                .resources()
-                                .view_occurrences_for_fact(fact, &assumptions)
-                                .into_iter()
-                                .find_map(|occurrence| {
-                                    entry.loan_view_bindings().get(&occurrence).cloned()
-                                })
-                            else {
-                                continue;
-                            };
-                            if let Some(occurrence) = body_resources
-                                .view_occurrences_for_fact(fact, &assumptions)
-                                .into_iter()
-                                .find(|occurrence| carried.get(occurrence).is_none())
-                            {
-                                carried = carried.with_inserted(occurrence, binding);
-                            }
-                        }
-                        carried
+                        let destination = bindings.attach_to_inserted_views(
+                            entry.resources(),
+                            body_resources.clone(),
+                            &body_occurrences,
+                            &assumptions,
+                        );
+                        LoanViewBindings::from_state(destination.loan_dependency_state())
                     })
                 });
                 assert_eq!(
@@ -221,4 +207,54 @@ fn loop_binding_carryover_ignores_ambient_observations() {
             "loop binding carryover walks ambient state ({case}): {samples:?}"
         );
     }
+}
+
+#[test]
+fn explicit_loop_views_keep_scalar_owners_without_visiting_observations() {
+    let mut samples = Vec::new();
+    for count in [4u64, 16, 64, 256] {
+        let assumptions = PureFactContext::new();
+        let scalar = Pointer::symbolic(Variable(9_380_001));
+        let heap = Pointer::symbolic(Variable(9_380_002));
+        let scalar_owner =
+            CResourceFact::own_memory(CMemoryRange::new(scalar.clone(), 0u32.into(), 4u32.into()));
+        let heap_owner =
+            CResourceFact::own_memory(CMemoryRange::new(heap, 0u32.into(), 4u32.into()));
+        let state = CState::new().with_memory(CMemory::new().with_declared_scalar_block(
+            scalar.block,
+            4,
+            CType::Int32,
+        ));
+        let mut withheld = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_fact(scalar_owner.clone())
+            .unchecked_with_fact(heap_owner.clone());
+        for index in 0..count {
+            withheld = withheld.unchecked_with_fact(CResourceFact::view_memory(CMemoryRange::new(
+                Pointer::symbolic(Variable(9_381_000 + index)),
+                0u32.into(),
+                4u32.into(),
+            )));
+        }
+        withheld.synchronize_memory_equalities(&assumptions);
+        let ((body, work), maps) = crate::persistent::measure_persistent_work(|| {
+            crate::instrumentation::measure_deterministic_work(|| {
+                with_loop_frame_resources(
+                    ResourceContext::new_with_equalities(&assumptions),
+                    &withheld,
+                    false,
+                    &state,
+                    &assumptions,
+                    &state,
+                )
+            })
+        });
+        assert!(body.contains_exact_representation(&scalar_owner));
+        assert!(!body.contains_exact_representation(&heap_owner));
+        assert_eq!(body.facts().len(), 1);
+        samples.push((count, work, maps));
+    }
+    let small = samples[0];
+    let large = samples[3];
+    assert!(large.1 <= small.1 + 16, "{samples:?}");
+    assert!(large.2 <= small.2 * 3 + 64, "{samples:?}");
 }

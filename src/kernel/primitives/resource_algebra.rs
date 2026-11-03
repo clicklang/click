@@ -2093,6 +2093,17 @@ impl ResourceContext {
         self.storage.facts.iter().map(|(_, fact)| fact)
     }
 
+    /// Enumerate owned-memory candidates for a loop's retained scalar frame.
+    /// This excludes observations and nonmemory resources using the maintained index.
+    pub(in crate::kernel) fn owned_memory_facts(&self) -> impl Iterator<Item = &CResourceFact> {
+        self.storage
+            .index
+            .owned_memory_by_block
+            .values()
+            .flat_map(ResourceEntryIds::iter)
+            .map(|entry| self.fact(*entry))
+    }
+
     /// A bounded diagnostic view; never a source of checked resource authority.
     pub(crate) fn diagnostic_facts(
         &self,

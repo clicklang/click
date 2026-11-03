@@ -53,45 +53,18 @@ facts do not establish flat cost as the queried class or bucket grows.
    preserve ownership and loan refusals, and investigate proof failures for
    missing explicit steps before proposing new primitives.
 
-2. **Loop-body binding carryover: red test and design checkpoint.**
-   `loop_body_resource_context` in `src/kernel/loops.rs` enumerates body views,
-   then searches matching entry and body occurrences to copy their bindings.
+2. **Loop retained-frame candidates: remaining measurement boundary.**
+   With an explicit view interface, `with_loop_frame_resources` visits the
+   owned-memory index to retain declared scalar owners. It still examines
+   heap-owned memory that the scalar predicate rejects. Without an explicit
+   view interface, it enumerates the withheld frame to build retained views.
 
-   `loop_binding_carryover_ignores_ambient_observations` in
-   `src/scaling_tests/kernel/loops/frame_resource_tests.rs` keeps one declared
-   view fixed. It measures the binding-copy block and the complete constructor,
-   with fixture construction and index preparation outside the measurements.
-   At 4/16/64/256 extra observations, repeated copy-block map visits are
-   273/477/1545/6933 with an early binding; complete-constructor visits are
-   1245/1569/2757/8265. A late binding costs 277/493/1609/7189 in the copy block.
-   Even an empty binding map costs 149/353/1421/6809. Ordinary work counters
-   remain flat and do not capture this enumeration.
-
-   Growing only retained metadata, with one live entry view, costs
-   247/269/291/313 copy-block map visits and 1076/1098/1120/1142 for the whole
-   constructor. The immediate target is therefore observation enumeration,
-   not a scan that prunes old metadata. Success, absent-binding, fresh body
-   occurrence and unchanged entry-branch controls all pass before the expected
-   scaling failure. The reproduction is explicitly ignored while red; run
-   its exact name with `--run-ignored all --no-capture`.
-
-   Proposed fast-resource-checking design, to discuss before implementation:
-   skip binding discovery for an empty map; use the existing bounded binding
-   selector to nominate one source for each selected view; retain the
-   destination occurrence when body construction creates it. Carry the source
-   binding directly to that destination rather than searching either context.
-   Normalization that changes occurrences must retain this association at its
-   producer, not reconstruct it afterward. No new e-graph facts, axioms or
-   surface tactics are indicated. Preserve live-loan and coverage refusals,
-   subrange/alias proofs, and persistent branch isolation.
-
-   Keep the complete-constructor measurement: fixing the binding-copy block
-   alone does not establish bounded cost for declaration consumption or frame
-   construction. In particular, `with_loop_frame_resources` still enumerates
-   withheld facts before skipping undeclared views, and the current counters
-   do not fully charge those rejected frame entries. Add per-entry accounting
-   when isolating that phase; do not treat a flat binding lookup as evidence
-   that the complete constructor has no other walks.
+   Measure a fixed retained scalar frame beside growing rejected owned-memory
+   candidates, including the complete body constructor and persistent-map
+   work. Distinguish rejected candidates from output-sized frame construction.
+   The observation/binding-carryover regression does not establish bounded cost
+   for arbitrary owned frames. Frame visits must remain charged. Establish a
+   red test and discuss the design before changing this selection.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).

@@ -61,6 +61,7 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
                 std::slice::from_ref(&spec),
                 &assumptions,
                 &mut ExecutionBudget::default(),
+                false,
             )
             .unwrap()
             .unwrap()
@@ -80,7 +81,8 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
                 &state,
                 std::slice::from_ref(&spec),
                 &PureFactContext::new(),
-                &mut ExecutionBudget::default()
+                &mut ExecutionBudget::default(),
+                false,
             )
             .unwrap()
             .is_err()
@@ -94,7 +96,8 @@ fn loop_view_partition_uses_alias_graph_without_scanning_ambient_ranges() {
                 &independently_originated,
                 std::slice::from_ref(&spec),
                 &assumptions,
-                &mut ExecutionBudget::default()
+                &mut ExecutionBudget::default(),
+                false,
             )
             .unwrap()
             .is_err()

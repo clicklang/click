@@ -16727,6 +16727,27 @@ pub(crate) fn evaluate_function_resource_context_with_metadata(
     )
 }
 
+/// Loop declarations retain the new occurrences and attach inherited loan
+/// bindings before normalization can combine unbound views.
+pub(crate) fn evaluate_loop_resource_context(
+    state: &CState,
+    resources: &[CResourceSpec],
+    assumptions: &PureFactContext,
+    budget: &mut ExecutionBudget,
+) -> ExecutionResult<Result<ResourceContext, CRuntimeError>> {
+    evaluate_function_resource_context_with_entry_and_normalization(
+        state,
+        state,
+        resources,
+        &[],
+        assumptions,
+        budget,
+        true,
+        true,
+    )
+    .map(|result| result.map(|(context, _)| context))
+}
+
 fn evaluate_function_resource_context_with_normalization(
     state: &CState,
     resources: &[CResourceSpec],
@@ -16743,6 +16764,7 @@ fn evaluate_function_resource_context_with_normalization(
         assumptions,
         budget,
         normalize,
+        false,
     )
 }
 
@@ -16754,6 +16776,7 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
     normalize: bool,
+    inherit_view_bindings: bool,
 ) -> ExecutionResult<Result<(ResourceContext, Vec<CCheckedResourceFact>), CRuntimeError>> {
     // `entry_state` supplies only expressions explicitly marked `old(...)`;
     // `state` supplies current/post expressions and the section's resulting
@@ -16778,7 +16801,23 @@ fn evaluate_function_resource_context_with_entry_and_normalization(
     // does not need to normalize an ambient block just to consume those
     // pieces.
     let facts = checked.iter().map(|resource| resource.fact.clone());
-    let composed = if normalize {
+    let composed = if inherit_view_bindings {
+        context
+            .try_compose_with_facts_delaying_normalization_with_occurrences(facts, assumptions)
+            .map(|(context, inserted)| {
+                let context = state.loan_view_bindings().attach_to_inserted_views(
+                    state.resources(),
+                    context,
+                    &inserted,
+                    assumptions,
+                );
+                if normalize {
+                    context.normalized(assumptions)
+                } else {
+                    context
+                }
+            })
+    } else if normalize {
         context.try_compose_with_facts(facts, assumptions)
     } else {
         context.try_compose_into_valid_context_delaying_normalization(facts, assumptions)

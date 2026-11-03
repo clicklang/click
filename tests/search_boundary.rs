@@ -693,3 +693,16 @@ fn selected_loan_consumption_rejects_supplier_discovery() {
         );
     }
 }
+
+#[test]
+fn loop_binding_handoff_rejects_view_rediscovery() {
+    for (path, function) in [
+        ("src/kernel/loops.rs", "loop_body_resource_context"),
+        ("src/kernel/loans.rs", "attach_to_inserted_views"),
+    ] {
+        for name in ["view_occurrences_for_fact", "find", "find_map"] {
+            let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
+            assert!(boundary::check_source(path, &source).is_err());
+        }
+    }
+}
