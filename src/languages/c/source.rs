@@ -1702,13 +1702,14 @@ impl<'a> ConditionalParser<'a> {
             return Ok(Conditional::Macro(name));
         }
         self.skip_whitespace();
-        if !self.consume("(") {
-            return Err(());
-        }
-        let name = self.parse_identifier().ok_or(())?;
+        let parenthesized = self.consume("(");
         self.skip_whitespace();
-        if !self.consume(")") {
-            return Err(());
+        let name = self.parse_identifier().ok_or(())?;
+        if parenthesized {
+            self.skip_whitespace();
+            if !self.consume(")") {
+                return Err(());
+            }
         }
         Ok(Conditional::Defined(name))
     }
@@ -3352,6 +3353,55 @@ int32 run(void) { return 3; }
         let expanded = expand_includes("main.c", &sources).unwrap();
         assert!(expanded.source().contains("int32 run(void) { return 3; }"));
         assert!(!expanded.source().contains("wrong(void)"));
+    }
+
+    #[test]
+    fn defined_operands_accept_both_c_forms_and_whitespace() {
+        for condition in [
+            "defined(FEATURE)",
+            "defined( FEATURE )",
+            "defined \t( \tFEATURE\t )",
+            "defined FEATURE",
+            "defined\tFEATURE",
+            "!defined MISSING",
+            "defined FEATURE && !defined MISSING",
+            "defined MISSING || defined FEATURE",
+            "(defined FEATURE)",
+            "defined FEATURE == 1",
+            "defined FEATURE != defined MISSING",
+        ] {
+            let source = format!(
+                "#define FEATURE 1\n#if {condition}\nint selected;\n#else\nint wrong;\n#endif\n"
+            );
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(condition);
+            assert!(expanded.source().contains("int selected;"), "{condition}");
+            assert!(!expanded.source().contains("int wrong;"), "{condition}");
+        }
+    }
+
+    #[test]
+    fn defined_operands_require_one_identifier_and_balanced_parentheses() {
+        for condition in [
+            "defined",
+            "defined()",
+            "defined( FEATURE",
+            "defined FEATURE)",
+            "defined 1",
+            "defined(1)",
+            "defined FEATURE EXTRA",
+            "defined(FEATURE EXTRA)",
+        ] {
+            let source = format!("#if {condition}\nint selected;\n#endif\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let error = expand_includes("main.c", &sources).expect_err(condition);
+            assert!(
+                error
+                    .to_string()
+                    .contains("unsupported conditional expression"),
+                "{condition}: {error}"
+            );
+        }
     }
 
     #[test]

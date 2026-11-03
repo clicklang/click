@@ -166,7 +166,8 @@ conditional subset accepts `#if 0`, `#if 1`, `#if NAME` for a previously defined
 `#if !defined(NAME)`, and those atoms combined with `!`, `&&`, `||`, or
 parentheses. `#elif` with those same conditions, `#else`, and `#endif` are
 supported, including nesting; unsupported active conditions receive a
-diagnostic.
+diagnostic. The `defined` operand accepts both `defined NAME` and
+`defined(NAME)`, with optional whitespace inside the parentheses.
 
 One- to three-parameter function-like macros are also supported with ordinary
 argument substitution, balanced nested calls, and bounded rescanning of
