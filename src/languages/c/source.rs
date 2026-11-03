@@ -1547,9 +1547,11 @@ fn parse_directive(
     {
         return Ok(Some(SourceDirective::ConditionalEnd));
     }
-    if directive == "pragma once"
-        || directive
-            .strip_prefix("pragma once")
+    if let Some(rest) = directive.strip_prefix("pragma")
+        && rest.chars().next().is_some_and(char::is_whitespace)
+        && rest
+            .trim_start()
+            .strip_prefix("once")
             .is_some_and(trailing_comments_only)
     {
         return Ok(Some(SourceDirective::PragmaOnce));
@@ -2650,17 +2652,42 @@ mod tests {
 
     #[test]
     fn pragma_once_headers_expand_only_once() {
-        let sources = BTreeMap::from([
-            ("main.c", "#include \"left.h\"\n#include \"right.h\"\n"),
-            ("left.h", "#include \"common.h\"\n"),
-            ("right.h", "#include \"common.h\"\n"),
-            ("common.h", "#pragma once\ntypedef int32 shared_t;\n"),
-        ]);
-        let expanded = expand_includes("main.c", &sources).unwrap();
-        assert_eq!(
-            expanded.source().matches("typedef int32 shared_t;").count(),
-            1
-        );
+        for separator in [" ", "\t", "  ", " \t ", "\x0b", "\x0c"] {
+            let header =
+                format!("#pragma{separator}once /* header guard */\ntypedef int32 shared_t;\n");
+            let sources = BTreeMap::from([
+                ("main.c", "#include \"left.h\"\n#include \"right.h\"\n"),
+                ("left.h", "#include \"common.h\"\n"),
+                ("right.h", "#include \"common.h\"\n"),
+                ("common.h", header.as_str()),
+            ]);
+            let expanded = expand_includes("main.c", &sources).expect(&header);
+            assert_eq!(
+                expanded.source().matches("typedef int32 shared_t;").count(),
+                1,
+                "{header}"
+            );
+        }
+    }
+
+    #[test]
+    fn pragma_once_requires_separate_words_and_no_extra_tokens() {
+        for directive in [
+            "pragmaonce",
+            "pragma onceX",
+            "pragma once more",
+            "pragma twice",
+        ] {
+            let source = format!("#{directive}\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let error = expand_includes("main.c", &sources).expect_err(&source);
+            assert!(
+                error
+                    .to_string()
+                    .contains("unsupported preprocessor directive"),
+                "{error}"
+            );
+        }
     }
 
     #[test]
