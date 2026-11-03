@@ -95,7 +95,7 @@ fn rust_shift_resource_arguments_retain_width_and_count_obligations() {
     // representation, even without a shift. Keep that failure separate from
     // the Rust count domain this regression exercises.
     let literal_control = source.replace("total[0..(1i32 << 0u32)]", "total[0..1u32]");
-    let literal_error = C0VerificationSession::new_program_prepared(&literal_control, &prepared)
+    let literal_error = verify_rust_function(&literal_control, &prepared, "split")
         .err()
         .unwrap_or_else(|| panic!("the direct UInt32 index control unexpectedly verified"));
     assert!(
@@ -108,13 +108,17 @@ fn rust_shift_resource_arguments_retain_width_and_count_obligations() {
         "total[0..(1i32 << 0u32)]",
         "total[0..((1i8 << 0u32) as i32)]",
     );
-    C0VerificationSession::new_program_prepared(&narrow_extent, &prepared)
+    verify_rust_function(&narrow_extent, &prepared, "split")
         .unwrap_or_else(|error| panic!("a valid narrow shift, widened to an index: {error:?}"));
-    for invalid in [
-        source.replace("owns byte(x << n);", "owns byte(x << 8u32);"),
-        narrow_extent.replace("1i8 << 0u32", "1i8 << 8u32"),
+    // The first positive run covers every body; subsequent edits affect one function.
+    for (function, invalid) in [
+        (
+            "shift_narrow",
+            source.replace("owns byte(x << n);", "owns byte(x << 8u32);"),
+        ),
+        ("split", narrow_extent.replace("1i8 << 0u32", "1i8 << 8u32")),
     ] {
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        let error = verify_rust_function(&invalid, &prepared, function)
             .err()
             .unwrap_or_else(|| panic!("an invalid narrow Rust shift count must be rejected"));
         let message = error.to_string();
