@@ -3335,6 +3335,7 @@ impl ResourceContext {
             if let Some(entry) = candidates.entries.single_supplier() {
                 let candidate = self.fact(entry);
                 if candidate.is_own()
+                    && candidate.has_proven_positive_quantity(assumptions)
                     && let Some(aligned) = candidates.requirement(entry, required)
                     && Self::memory_support_entails(
                         candidate,
@@ -3355,7 +3356,9 @@ impl ResourceContext {
                 let support_occurrence =
                     *self.storage.support_occurrence_by_projection.get(&entry)?;
                 let support = self.owned_fact_for_occurrence(support_occurrence)?;
-                if self.storage.supported_by.get(&entry) != Some(support) {
+                if self.storage.supported_by.get(&entry) != Some(support)
+                    || !support.has_proven_positive_quantity(assumptions)
+                {
                     return None;
                 }
                 let aligned = projections.requirement(entry, required)?;
