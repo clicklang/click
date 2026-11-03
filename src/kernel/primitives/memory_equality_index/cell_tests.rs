@@ -1349,6 +1349,7 @@ fn native_fragment_consumption_preserves_large_bounds_and_residuals() {
     let context = ResourceContext::new_with_equalities(&facts)
         .unchecked_with_facts([first.clone(), second.clone()]);
     context.synchronize_memory_equalities(&facts);
+    assert!(context.satisfies_fact(&own(start, end), &facts));
     let remaining = context
         .clone()
         .without_fact_incrementally(&own(start, end), &facts)
@@ -1384,6 +1385,7 @@ fn native_fragment_consumption_refuses_gaps_views_and_nonpositive_ownership() {
         let context = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts([own(0, 2), bad.clone()]);
         context.synchronize_memory_equalities(&facts);
+        assert!(!context.satisfies_fact(&required, &facts));
         assert!(
             context
                 .clone()
@@ -1425,6 +1427,7 @@ fn native_fragment_consumption_checks_each_typed_designation() {
         let context = ResourceContext::new_with_equalities(&facts)
             .unchecked_with_facts([first.clone(), second.clone()]);
         context.synchronize_memory_equalities(&facts);
+        assert_eq!(context.satisfies_fact(&required, &facts), !wrong);
         assert_eq!(
             context
                 .clone()

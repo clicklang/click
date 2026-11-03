@@ -3469,3 +3469,128 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
         );
     }
 }
+
+/// A non-consuming ownership check must not enumerate candidates after a gap.
+#[test]
+fn native_ownership_query_stops_at_a_fixed_gap() {
+    let mut curves = Vec::new();
+    for case in ["gap", "owner", "joined", "views"] {
+        let mut samples = Vec::new();
+        for count in [4u64, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = PureFactContext::new();
+            let p = Pointer::symbolic(Variable(989_970));
+            let range = |start, end| {
+                CMemoryRange::new_wide(
+                    p.clone(),
+                    Bitvector32Term::UInt64Constant(start),
+                    Bitvector32Term::UInt64Constant(end),
+                    4,
+                )
+            };
+            let own = |start, end| CResourceFact::own_memory(range(start, end));
+            let first = own(
+                0,
+                match case {
+                    "owner" => 1024,
+                    "joined" => 512,
+                    _ => 1,
+                },
+            );
+            let mut context =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(first.clone());
+            if case == "joined" {
+                context = context.unchecked_with_fact(own(512, 1024));
+            }
+            for i in 0..count {
+                let start = if matches!(case, "owner" | "joined") {
+                    2048
+                } else {
+                    100
+                } + 2 * i;
+                context = context.unchecked_with_fact(if case == "views" {
+                    CResourceFact::view_memory(range(start, start + 1))
+                } else {
+                    own(start, start + 1)
+                });
+            }
+            context.synchronize_memory_equalities(&facts);
+            let required = own(0, 1024);
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((answer, work), maps) = crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        context.satisfies_fact(&required, &facts)
+                    })
+                });
+                assert_eq!(answer, matches!(case, "owner" | "joined"), "{case}/{count}");
+                assert!(context.contains_exact_representation(&first));
+                assert_eq!(
+                    context.facts().len(),
+                    count as usize + 1 + usize::from(case == "joined")
+                );
+                queries.push((work, maps));
+            }
+            samples.push((count, queries));
+        }
+        eprintln!("native ownership {case}, count/work/maps: {samples:?}");
+        curves.push(samples);
+    }
+    for samples in curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(big, small)| big.0 <= small.0 + 64 && big.1 <= small.1 * 3 + 512),
+            "query scans candidates: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn native_ownership_query_scales_with_selected_pieces() {
+    let mut samples = Vec::new();
+    for count in [4u64, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let p = Pointer::symbolic(Variable(989_971));
+        let own = |start, end| {
+            CResourceFact::own_memory(CMemoryRange::new_wide(
+                p.clone(),
+                Bitvector32Term::UInt64Constant(start),
+                Bitvector32Term::UInt64Constant(end),
+                4,
+            ))
+        };
+        let mut context = ResourceContext::new_with_equalities(&facts);
+        for i in 0..count {
+            context = context.unchecked_with_fact(own(i, i + 1));
+        }
+        context.synchronize_memory_equalities(&facts);
+        let required = own(0, count);
+        let mut queries = Vec::new();
+        for _ in 0..3 {
+            let ((answer, work), maps) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    context.satisfies_fact(&required, &facts)
+                })
+            });
+            assert!(answer);
+            assert_eq!(context.facts().len(), count as usize);
+            assert!(context.contains_exact_representation(&own(0, 1)));
+            assert!(context.contains_exact_representation(&own(count - 1, count)));
+            queries.push((work, maps));
+        }
+        samples.push((count, queries));
+    }
+    eprintln!("native selected pieces, count/work/maps: {samples:?}");
+    assert!(
+        samples[3]
+            .1
+            .iter()
+            .zip(&samples[0].1)
+            .all(|(big, small)| big.0 <= small.0 * 96 + 256 && big.1 <= small.1 * 192 + 1024),
+        "{samples:?}"
+    );
+}

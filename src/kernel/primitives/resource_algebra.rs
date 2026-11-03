@@ -6379,6 +6379,18 @@ impl ResourceContext {
             {
                 return true;
             }
+            // Decide constant native ownership by constructing its consumption
+            // on a persistent branch. The caller retains every occurrence;
+            // indexed selection stops at a gap instead of normalizing candidates.
+            if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1)
+                && range.wide_bounds().is_some()
+                && !range.has_symbolic_bounds()
+            {
+                return self
+                    .clone()
+                    .consume_constant_owned_memory(fact, assumptions, None)
+                    .is_some();
+            }
             let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
             if candidates.entries.iter().any(|entry| {
                 candidates.requirement(entry, fact).is_some_and(|aligned| {

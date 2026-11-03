@@ -524,6 +524,16 @@ designation, as the previous whole-range entailment route required.
 Symbolic requests remain a separate audit target. A build guard forbids
 candidate enumeration in this constant-consumption path.
 
+Non-consuming `satisfies_fact` queries for constant native ranges with unit
+ownership use that same indexed consumption operation on a persistent copy.
+Success establishes the requested ownership without changing the caller's
+occurrences; failure stops at a gap or unsuitable supplier. They never enter
+the enumeration/normalization fallback. Scaling controls hold the requested
+range fixed beside growing rejected fragments, then separately grow the
+selected contiguous pieces; both include repeated queries and persistent-map
+work. Symbolic, narrow, viewed, and other-quantity satisfaction routes remain
+separate audit targets.
+
 A proof can combine differently sized owned fields by folding a resource whose
 body owns the complete object, then unfolding it before a call that borrows the
 whole object. This is an explicit ownership construction, not a new separation
