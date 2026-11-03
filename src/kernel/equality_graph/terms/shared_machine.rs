@@ -335,7 +335,6 @@ impl TermClasses {
                             if inverse {
                                 self.register_byte_inverse(node, value);
                             }
-                            self.join_widening_sibling(op, node, value);
                             node
                         } else {
                             let head = self.intern_node(Node::MachineUnary(

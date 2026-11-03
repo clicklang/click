@@ -34,28 +34,39 @@ fn narrow_cast_words_intern_in_work_linear_in_the_casts() {
             for i in 0..size {
                 let cast =
                     Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, var(175_000 + i));
-                let widened = Bitvector32Term::machine_integer_cast(Ty::UInt8, Ty::Int32, cast);
+                let widened = Bitvector32Term::machine_integer_cast(Ty::UInt8, Ty::UInt32, cast);
                 let mask =
                     Bitvector32Term::bitwise_and(var(175_000 + i), Bitvector32Term::Constant(255));
                 assert!(graph.are_int32_equal(&widened, &mask));
             }
         });
+        let last = if size % 2 == 0 { Ty::UInt8 } else { Ty::Int16 };
         let ((), chain_work) = crate::instrumentation::measure_deterministic_work(|| {
-            let last = if size % 2 == 0 { Ty::UInt8 } else { Ty::Int16 };
-            let chain = Bitvector32Term::machine_integer_cast(last, Ty::Int32, chain);
+            let chain = Bitvector32Term::machine_integer_cast(last, Ty::UInt32, chain.clone());
             assert!(!graph.are_int32_equal(&chain, &var(174_000)));
         });
-        // Each half is linear in `size`. Measured (2026-11-01): about 54
-        // units per independent cast, and about 1230 per chain level (a
+        // The chain's `int32` widening is σ of its `uint32` one (the
+        // sibling relation): σ distributes down the chain once, a constant
+        // per level. Measured at the three smaller sizes, which bound it.
+        if size <= 256 {
+            let ((), cross_work) = crate::instrumentation::measure_deterministic_work(|| {
+                let chain = Bitvector32Term::machine_integer_cast(last, Ty::Int32, chain.clone());
+                assert!(!graph.are_int32_equal(&chain, &var(174_001)));
+            });
+            assert!(
+                cross_work < 2600 * size as usize,
+                "size={size}, cross={cross_work}"
+            );
+        }
+        // Each half is linear in `size`. Measured (2026-11-03): about 36
+        // units per independent cast, about 790 per chain level (a
         // narrowing, a widening, a sum and its constant; most of it is
-        // union-find root reads while the level's K7', K1 and R-comp
-        // relations close). The chain half is what rose with the merge of
-        // master's 2026-10-31 change that interns an absent opaque endpoint
-        // before deciding an equality (`TermClasses::are_int32_equal`): the
-        // chain query used to stop at its unknown root and intern nothing.
+        // union-find root reads while the level's K7' and R-comp relations
+        // close), and about 2220 per level for the `int32` widening of the
+        // `uint32` chain.
         assert!(casts < 120 * size as usize, "size={size}, casts={casts}");
         assert!(
-            chain_work < 1400 * size as usize,
+            chain_work < 1000 * size as usize,
             "size={size}, chain={chain_work}"
         );
     }
