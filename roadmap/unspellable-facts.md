@@ -12,6 +12,29 @@ This is a handoff document for the work in progress. The rule itself, and
 the tools that measure it, are in [Spellability](../docs/internals/spellability.md);
 read that first.
 
+## Shared bound consumers (2026-11-03)
+
+Following merged #2309, `codex/shared-bound-consumers` keeps selected
+32-bit upper/lower bounds as shared machine operands through their comparison
+checks. Signed and unsigned bound checks construct Integer comparison views
+when an operand is shared; literal offset and successor checks inspect only
+roots. They no longer export every selected bound to a boxed arithmetic tree.
+The existing nested-bound-search guard, strictness, and overflow prerequisites
+remain in place. Exact successful comparisons and root-only rejections retain
+the DAG; unresolved comparisons still reach `decide_unrecorded`'s native
+compatibility conversion. A missing-premise control exposed that remaining
+export, so this is not yet a fully shared refusal path. This does not migrate the contextual 64-bit constant evaluator,
+wide order walks, or memory-matching endpoints, and nested signed preparation
+remains disabled.
+
+Validation: all 1,544 selected scaling, kernel bound, search-boundary, and
+documentation tests pass (82.8s test runtime), as do formatting and diff checks.
+The new regression checks 8/32/96 shared prefixes beside 0/64 unrelated facts;
+selected successful comparisons and root-only refusals never materialize their
+operands. Missing-premise and strictness controls preserve refusal behavior.
+The full `scripts/check.sh` gate remains with PR CI and the merge queue; no
+nightly suite ran.
+
 ## Shared range bridges and interval sources (2026-11-03)
 
 The follow-up on `codex/ordinary-admission` keeps operation-through-range

@@ -864,15 +864,6 @@ pub(in crate::kernel) fn int32_element_count_from_bytes(
     element_count_from_bytes(bytes, 4)
 }
 
-pub(in crate::kernel) fn signed_const_add(
-    term: &Bitvector32Term,
-    addend: u32,
-) -> Option<Bitvector32Term> {
-    let addend = i32::try_from(addend).ok()?;
-    let sum = (term.as_const()? as i32).checked_add(addend)?;
-    Some(Bitvector32Term::Constant(sum as u32))
-}
-
 pub(in crate::kernel) fn add_path_fact(
     facts: &mut ExecutionFacts,
     assumptions: &PureFactContext,
