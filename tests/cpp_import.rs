@@ -14989,13 +14989,23 @@ fn locked_header_graph_conditions_verify_offline_with_inherited_frames() {
         );
     }
     fs::remove_file(&project.exporter).unwrap();
-    for (value, result) in [(0, 1), (3, 3)] {
+    for (value, empty, result) in [(0, true, 1), (3, false, 3)] {
         let sidecar = format!(
             r#"verifying "graph.cpp";
-        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ 1 }} else {{ 0 }}); }}
-        bool predicate(const struct Base& state) {{ views state.value; ensures result == (if state.value == 0 {{ 1 }} else {{ 0 }}); }}
+        bool Base::Empty() const {{ views this->value; ensures result == (if this->value == 0 {{ true }} else {{ false }}); }}
+        bool predicate(const struct Base& state) {{ views state.value; ensures result == (if state.value == 0 {{ true }} else {{ false }}); }}
         int32 Read(const struct Base& state) {{ views state.value; ensures result == state.value; }}
-        int32 choose(const struct Box& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {result}; ensures state.sibling == old(state.sibling); }}
+        int32 choose(const struct Box& state) {{ views state.left.base.value; views state.sibling; requires state.left.base.value == {value}; ensures result == {result}; ensures state.sibling == old(state.sibling); }} by {{
+            step();
+            let {{ result: empty }} = step(predicate, {{}});
+            have empty == {empty} by {{
+                rewrite(empty == (if state.left.base.value == 0 {{ true }} else {{ false }}));
+                rewrite(state.left.base.value == {value});
+                normalize();
+            }}
+            step_until(function.exit);
+            solve();
+        }}
         "#
         );
         check_selected_claim_certificate(&project, &import, &sidecar);
@@ -17881,10 +17891,11 @@ fn returned_constructor_composed_observers_verify_and_reject_writes_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = r#"verifying "observe-result.cpp";
+    let proof = r#"import click::integer;
+verifying "observe-result.cpp";
 uint64 Count::size() const { views this->value; ensures result == this->value; }
 Box::Box(uint64 input) { owns this->value; ensures this->value == input; }
-struct Box probe(const struct Count& count) { views count.value; ensures result.value == count.value + 1u64; ensures count.value == old(count.value); }
+struct Box probe(const struct Count& count) { views count.value; ensures result.value == integer::uint64_wrapping_add(count.value, 1u64); ensures count.value == old(count.value); }
 "#;
     check_selected_claim_certificate(&project, &import, proof);
     let owning = proof
@@ -17998,7 +18009,7 @@ fn scalar_assignment_observers_verify_and_reject_writes_offline() {
     refresh_import(&project.config()).unwrap();
     fs::remove_file(&project.exporter).unwrap();
     let import = load_import(&project.config()).unwrap();
-    let proof = "verifying \"assign-observer.cpp\"; uint64 Count::size() const { views this->value; ensures result == this->value; } uint64 probe(const struct Count& count, uint64 n) { views count.value; ensures result == count.value + 1u64; ensures count.value == old(count.value); }";
+    let proof = "import click::integer;\nverifying \"assign-observer.cpp\"; uint64 Count::size() const { views this->value; ensures result == this->value; } uint64 probe(const struct Count& count, uint64 n) { views count.value; ensures result == integer::uint64_wrapping_add(count.value, 1u64); ensures count.value == old(count.value); }";
     check_selected_claim_certificate(&project, &import, proof);
     for bad in [
         proof
