@@ -1012,7 +1012,9 @@ pub(super) fn validate_well_founded_click_recursion(
     for caller in &recursive_functions {
         validate_recursive_calls_in_expression(
             caller,
-            definitions[caller].body(),
+            definitions[caller]
+                .body()
+                .expect("a recursive function has a body"),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &definitions,

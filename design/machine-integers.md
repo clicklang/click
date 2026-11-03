@@ -675,12 +675,14 @@ Progress:
      reads the stored word through σ at the other signedness
      (`LoadKind::read_cell`; `LoadKind::reads_value` holds only at the
      stored kind), and the range extent guard compares σ of the `int32`
-     element count (`memory_range_byte_count_extent`). Known remaining
-     items: the e-graph still joins the `int32` and `uint32` widenings of
-     one narrow value as one word (`join_widening_sibling`, and R0's
-     sibling union in `machine_relations::invert`), beside K7'; removing
-     the union costs two gate proofs (see the Decisions entry). The
-     constructor still folds σ(σ(x)) to `x`: without the fold,
+     element count (`memory_range_byte_count_extent`). A second follow-up
+     (2026-11-03, [Decisions](#decisions)) removes the third: the two
+     32-bit widenings of one narrow value are two nodes, related by σ
+     where both exist, a specification comparison reads its operands at
+     its own 32-bit format, and K7' joins only the widening at its word's
+     format with the masked word. Known remaining items: the 32-bit
+     sign-free operators are still word operators, one node at either
+     format (`terms::word_operator`). The constructor still folds σ(σ(x)) to `x`: without the fold,
      `a_bounded_wrapped_difference_does_not_define_the_signed_one` stops
      at a lowering error instead of its signed-overflow refusal, so its
      removal waits on that.
@@ -1514,3 +1516,39 @@ maintainer's rule that equivalences live in reasoning, not in terms:
   widened to `uint32`, an `int32` one through σ) and let σ distribute over
   a same-width shift by any count; or keep the join until the 32-bit
   sign-free operators stop being word operators.
+
+Follow-up, 2026-11-03 (the widening sibling join), option (a) as approved
+by the maintainer:
+
+- **A specification 32-bit comparison reads its operands at its own
+  format.** At `uint32`, when either operand is one, a narrow operand is
+  its `uint32` widening and an `int32` operand is σ of it (an `int32`
+  literal folds to its `uint32` constant); at `int32` otherwise
+  (`spec::c_value_word32_term`). `uint32 widen(uint8 c) { ensures result
+  == c; }` is `result == c as uint32`, where it was `result == c as
+  int32`. C's comparisons keep C's structure; a native narrow comparison
+  (PR 3) is unchanged.
+- **The two 32-bit widenings of one narrow value are two nodes.**
+  `join_widening_sibling` and R0's sibling union are gone. Where the
+  e-graph has both, the sibling relation joins the later with σ of the
+  earlier, `σ(widen_S(v)) == widen_D(v)` (R-comp read backwards): one node
+  and one union per pair, nothing where a class is widened at one format.
+- **K7' joins one widening.** A narrow cast's widening at its word's format
+  (the operand's own 32-bit format, a 64-bit operand's `uint32` low word,
+  or a narrow operand's widening: its `uint32` one where the graph has only
+  that, else `int32`) is the masked word; the other widening is interned
+  only where a term names it, and the sibling relation makes it σ of the
+  first, so its word is σ of the masked word. Interning both eagerly, each
+  with σ, cost about four times the rule-N scaling tests' work and timed
+  them out; reusing an existing `uint32` widening as the word keeps a
+  `uint32` chain free of σ.
+- **σ over a shift.** R-dist already moved σ, which keeps the width, over
+  a 32-bit `<<` by any count; what `examples/rust-unsigned`'s
+  `shifted_byte` lacked was a σ to move. Its native shift's rule-N word is
+  `int32` and its specification's widening `uint32`; the sibling relation
+  interns σ of the `int32` widening of the shift, which distributes to
+  `(value as u32 << count) & 255u32`.
+- **Cost.** The `int32` widening of a `uint32` chain of narrow casts
+  distributes σ down the chain once, about 2,200 units a level
+  (`narrow_cast_words_intern_in_work_linear_in_the_casts` bounds it); a
+  chain widened at its own format costs about 790 a level, down from 1,230.

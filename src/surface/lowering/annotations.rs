@@ -604,8 +604,11 @@ pub(in crate::surface) fn register_kernel_fold_read_definitions(
             snapshots: None,
             loop_records: None,
         };
-        let Ok(body) = lowerer
-            .lower_contract_integer_to_spec(definition.body(), &SpecElaborationContext::default())
+        let Some(body) = definition.body() else {
+            continue;
+        };
+        let Ok(body) =
+            lowerer.lower_contract_integer_to_spec(body, &SpecElaborationContext::default())
         else {
             continue;
         };
@@ -4938,7 +4941,9 @@ impl AnnotationLowerer<'_> {
                         self.spec_definitions.functions,
                         environment,
                         &mut Vec::new(),
-                    );
+                    )
+                    || self.generic_call_returns_algebraic(left, environment)
+                    || self.generic_call_returns_algebraic(right, environment);
                 if has_algebraic {
                     let equal = match operator {
                         ComparisonOperator::Equal => true,
@@ -7426,6 +7431,27 @@ impl AnnotationLowerer<'_> {
             .collect()
     }
 
+    /// Whether `expression` calls a generic function whose result type, a
+    /// type parameter, is algebraic at this call: `vec::get(v, i)` with `v`
+    /// a `Vec<T>` of a theorem's rigid `T`.
+    fn generic_call_returns_algebraic(
+        &mut self,
+        expression: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> bool {
+        let ContractExpression::Call { name, arguments } = expression else {
+            return false;
+        };
+        let Some(definition) = self.spec_definitions.functions.get(name).cloned() else {
+            return false;
+        };
+        if !matches!(definition.return_type(), ClickType::Parameter(_)) {
+            return false;
+        }
+        self.instantiate_click_function_for_call(&definition, arguments, environment)
+            .is_ok_and(|instance| matches!(instance.return_type(), ClickType::Algebraic(_)))
+    }
+
     fn instantiate_click_function_for_call(
         &mut self,
         definition: &ClickFunctionDefinition,
@@ -9115,6 +9141,19 @@ fn algebraic_kernel_type_from_parts(
     name: &str,
     arguments: &[AlgebraicValueType],
 ) -> Result<AlgebraicType, String> {
+    if environment
+        .algebraic_type_definitions
+        .get(name)
+        .is_some_and(|definition| definition.is_primitive())
+    {
+        return Ok(AlgebraicType::parameter(
+            generics::primitive_instance_kernel_name(
+                name,
+                arguments,
+                primitive_kernel_type_name(name, arguments),
+            ),
+        ));
+    }
     let root_type = AlgebraicValueType::Algebraic {
         name: name.to_string(),
         arguments: arguments.to_vec(),
@@ -9141,6 +9180,35 @@ fn algebraic_kernel_type_from_parts(
 /// fields name, with the declared object classes of their pointer fields
 /// (`AlgebraicSchemas::with_object_classes`). A type whose fields declare no
 /// class records none.
+/// The kernel's name for an instance of a Click library primitive type,
+/// `Vec<uint32>`. The kernel reads each instance as a rigid type of its own:
+/// it has no constructors to case on and no structure to induct over, and
+/// two instances are one type exactly when their arguments are equal.
+fn primitive_kernel_type_name(name: &str, arguments: &[AlgebraicValueType]) -> String {
+    fn argument_name(argument: &AlgebraicValueType) -> String {
+        match argument {
+            AlgebraicValueType::Algebraic { name, arguments } if !arguments.is_empty() => {
+                primitive_kernel_type_name(name, arguments)
+            }
+            AlgebraicValueType::Algebraic { name, .. } => name.clone(),
+            AlgebraicValueType::Parameter(name) => format!("[rigid {name}]"),
+            AlgebraicValueType::Integer => "Integer".to_string(),
+            AlgebraicValueType::C(c_type) => validation::describe_click_type(&ClickType::C(
+                generics::c0_type_from_kernel(*c_type),
+            )),
+            AlgebraicValueType::ObjectPointer(c_type, class) => format!("{c_type:?} [{class:?}]"),
+        }
+    }
+    format!(
+        "{name}<{}>",
+        arguments
+            .iter()
+            .map(argument_name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
 fn collect_algebraic_kernel_schemas(
     environment: &ClickFunctionEnvironment,
     value_type: &AlgebraicValueType,
@@ -9157,6 +9225,11 @@ fn collect_algebraic_kernel_schemas(
         .algebraic_type_definitions
         .get(name)
         .ok_or_else(|| format!("unknown algebraic datatype `{name}`"))?;
+    if definition.is_primitive() {
+        return Err(format!(
+            "the Click library primitive type `{name}` cannot be the type of a datatype's field yet"
+        ));
+    }
     let variants = definition
         .variants()
         .iter()

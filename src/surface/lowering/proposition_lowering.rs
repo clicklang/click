@@ -125,13 +125,21 @@ pub(in crate::surface) fn comparison_proposition(
             !matches!(operator, ComparisonOperator::NotEqual),
         ));
     }
+    // A 32-bit comparison reads its operands at its own format, as the
+    // kernel's specification comparisons do (`c_value_word32_term`).
     let unsigned = matches!(
         (&left, &right),
         (CValue::UInt32(_), _) | (_, CValue::UInt32(_))
     );
-    if let (Some(left_term), Some(right_term)) =
-        (promoted_int32_term(&left), promoted_int32_term(&right))
-    {
+    let format = if unsigned {
+        MachineIntegerType::UInt32
+    } else {
+        MachineIntegerType::Int32
+    };
+    let word = |value: &CValue| {
+        crate::kernel::c_value_word32_term(value, format).map(|term| normalize_bitvector(&term))
+    };
+    if let (Some(left_term), Some(right_term)) = (word(&left), word(&right)) {
         let Some((condition, value)) =
             comparison_condition(left_term, operator, right_term, unsigned)
         else {
@@ -160,28 +168,6 @@ pub(in crate::surface) fn spec_range_membership_proposition(
             right: end,
         }),
     )
-}
-
-pub(in crate::surface) fn promoted_int32_term(value: &CValue) -> Option<Bitvector32Term> {
-    match value.numeric_value() {
-        CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int8(bits) => Some(normalize_bitvector(bits)),
-        CValue::Bool(bits)
-        | CValue::Int16(bits)
-        | CValue::Int32(bits)
-        | CValue::UInt8(bits)
-        | CValue::UInt16(bits)
-        | CValue::UInt32(bits) => Some(normalize_bitvector(bits)),
-        CValue::Int128(_)
-        | CValue::UInt128(_)
-        | CValue::Void
-        | CValue::Int64(_)
-        | CValue::UInt64(_)
-        | CValue::Pointer(_)
-        | CValue::Parameter(_)
-        | CValue::Float32(_)
-        | CValue::Float64(_) => None,
-    }
 }
 
 fn promoted_int64_term(value: &CValue) -> Option<Bitvector32Term> {

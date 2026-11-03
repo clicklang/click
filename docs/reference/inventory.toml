@@ -4072,6 +4072,54 @@ id = "library.function.usize::abs_diff"
 path = "reference/library/index.md#usizeabs_diff"
 
 [[item]]
+id = "library.type.Vec"
+path = "reference/library/index.md#vec"
+
+[[item]]
+id = "library.function.vec::len"
+path = "reference/library/index.md#veclen"
+
+[[item]]
+id = "library.function.vec::get"
+path = "reference/library/index.md#vecget"
+
+[[item]]
+id = "library.function.vec::push"
+path = "reference/library/index.md#vecpush"
+
+[[item]]
+id = "library.function.vec::set"
+path = "reference/library/index.md#vecset"
+
+[[item]]
+id = "library.theorem.vec::len_push"
+path = "reference/library/index.md#veclen_push"
+
+[[item]]
+id = "library.theorem.vec::get_push_last"
+path = "reference/library/index.md#vecget_push_last"
+
+[[item]]
+id = "library.theorem.vec::get_push_kept"
+path = "reference/library/index.md#vecget_push_kept"
+
+[[item]]
+id = "library.theorem.vec::len_set"
+path = "reference/library/index.md#veclen_set"
+
+[[item]]
+id = "library.theorem.vec::get_set_same"
+path = "reference/library/index.md#vecget_set_same"
+
+[[item]]
+id = "library.theorem.vec::get_set_other"
+path = "reference/library/index.md#vecget_set_other"
+
+[[item]]
+id = "library.theorem.vec::extensionality"
+path = "reference/library/index.md#vecextensionality"
+
+[[item]]
 id = "library.function.option::unwrap_or"
 path = "reference/library/index.md#optionunwrap_or"
 

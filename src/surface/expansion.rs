@@ -4531,7 +4531,8 @@ fn source_tactic_entries(
     let mut entries = Vec::new();
     let declarations = DeclarationSources::new(&tokens);
     for theorem in file.theorem_definitions() {
-        if !file.theorem_is_selected(theorem.name()) {
+        // An axiom has no proof to expand.
+        if theorem.is_axiom() || !file.theorem_is_selected(theorem.name()) {
             continue;
         }
         let source = declarations.theorem(theorem)?;

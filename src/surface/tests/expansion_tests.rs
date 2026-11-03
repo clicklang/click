@@ -20170,3 +20170,66 @@ fn structural_invariant_bundles_expand_as_ordered_member_haves() {
     );
     without_implicit_auto(|| verify_click_theorems(&replay)).unwrap();
 }
+
+#[test]
+#[ignore = "nightly: explicit store geometry expansion"]
+fn explicit_store_geometry_expands_without_search() {
+    let (source, sources) =
+        mdtest_sources("mdtests/store_geometry_uses_explicit_order_and_transport.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let mut expanded = source;
+    for claim in ["wide_after.contract", "keep_first.contract"] {
+        expanded = expand_c0_claim_source_by_label(&expanded, &sources, claim).unwrap();
+    }
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: original fork/join store-frame expansion"]
+fn fork_join_store_frame_expands_without_search() {
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/concurrency-fork-join");
+    let sidecar = std::fs::read_to_string(directory.join("fork_join.click")).unwrap();
+    let source = sidecar.split("int fill_parallel(").next().unwrap();
+    let c = std::fs::read_to_string(directory.join("fork_join.c")).unwrap();
+    let sources = [("fork_join.c", c.as_str())];
+    let expanded =
+        expand_c0_claim_source_by_label(source, &sources, "fill_range.contract").unwrap();
+    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+#[ignore = "nightly: compact-store proof repairs expand and cold replay"]
+fn compact_store_proof_repairs_expand_and_replay() {
+    for (fixture, function) in [
+        (
+            "c_pointer_field_subrange_write_preserves_resources",
+            "arena_write",
+        ),
+        (
+            "iterated_give_preserves_descriptor_loop_ownership",
+            "release_run",
+        ),
+        ("modeled_pthread_local_job_external_output", "worker"),
+    ] {
+        if std::env::var("CLICK_COMPACT_REPAIR").is_ok_and(|selected| selected != function) {
+            continue;
+        }
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        verify_c0_sources(&source, &sources).unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        let claim = format!("{function}.contract");
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, &claim)
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        without_implicit_auto_for_claim(&claim, || {
+            verify_c0_sources(&expanded, &sources).map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
+    }
+}

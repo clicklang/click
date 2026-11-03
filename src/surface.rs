@@ -443,6 +443,12 @@ fn library_module_path(identity: &str) -> String {
     format!("click::{}", relative.replace('/', "::"))
 }
 
+/// The primitive types the Click library declares with `type`, like
+/// `uint32` is to the kernel: each has no definition, only the library's
+/// bodyless functions over it and the axioms relating them. Only a library
+/// module declares one, and only one listed here.
+pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec"];
+
 /// The Click library modules loaded implicitly with every sidecar, as
 /// `(identity, source)` pairs in declaration order. Each module is parsed
 /// with the declarations of the modules before it.
@@ -529,6 +535,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/usize.click",
         include_str!("../library/rust/usize.click"),
+    ),
+    (
+        "library/rust/vec.click",
+        include_str!("../library/rust/vec.click"),
     ),
 ];
 
@@ -780,6 +790,10 @@ pub struct AlgebraicTypeDefinition {
     name: String,
     type_parameters: Vec<String>,
     variants: Vec<AlgebraicVariantDefinition>,
+    /// A Click library primitive type, `type Vec<T>;`: no constructors, no
+    /// `match` and no induction. The kernel reads each instance as a distinct
+    /// rigid type, so nothing follows from its having no written variants.
+    primitive: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -964,7 +978,10 @@ pub struct ClickFunctionDefinition {
     /// (`design/effective-types.md`).
     return_object_class: Option<crate::kernel::effective_type::CAccessClass>,
     decreases: Option<ContractExpression>,
-    body: ContractExpression,
+    /// `None` for a library primitive operation, `function len<T>(v:
+    /// Vec<T>) -> uint64;`: an uninterpreted function, known only through
+    /// the library's axioms. Only library modules declare one.
+    body: Option<ContractExpression>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1059,6 +1076,9 @@ impl ResourceWitness {
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct TheoremDefinition {
+    /// A Click library `axiom`: trusted, never proved. Only a library module
+    /// declares one, about the library's primitive operations.
+    axiom: bool,
     /// `T*` supplies a declared element type, not original-object provenance.
     generic_pointer_parameters: BTreeSet<String>,
     /// Where the parser read this theorem's clauses.
@@ -2519,6 +2539,7 @@ pub(crate) fn clone_theorem_definition_iteratively(
     #[cfg(test)]
     THEOREM_DEFINITION_COPIES.with(|copies| copies.set(copies.get() + 1));
     TheoremDefinition {
+        axiom: theorem.axiom,
         generic_pointer_parameters: theorem.generic_pointer_parameters.clone(),
         body: theorem.body.clone(),
         name: theorem.name.clone(),
@@ -7006,8 +7027,12 @@ fn memory_independent_click_functions(definitions: &[ClickFunctionDefinition]) -
         .map(|definition| definition.name())
         .collect::<BTreeSet<_>>();
     for definition in definitions {
+        // A library primitive operation has no body and reads no memory.
+        let Some(body) = definition.body() else {
+            continue;
+        };
         let mut callees = Vec::new();
-        let reads = contract_expression_reads_memory(definition.body(), &mut callees);
+        let reads = contract_expression_reads_memory(body, &mut callees);
         let unknown_callee = callees
             .iter()
             .any(|callee| !declared.contains(generic_instance_source_name(callee)));
@@ -7857,6 +7882,10 @@ impl AlgebraicTypeDefinition {
     pub fn variants(&self) -> &[AlgebraicVariantDefinition] {
         &self.variants
     }
+
+    pub fn is_primitive(&self) -> bool {
+        self.primitive
+    }
 }
 
 impl AlgebraicVariantDefinition {
@@ -7912,8 +7941,10 @@ impl ClickFunctionDefinition {
         self.decreases.as_ref()
     }
 
-    pub fn body(&self) -> &ContractExpression {
-        &self.body
+    /// The definition, or `None` for a library primitive operation, which
+    /// nothing unfolds or evaluates.
+    pub fn body(&self) -> Option<&ContractExpression> {
+        self.body.as_ref()
     }
 }
 
@@ -8047,6 +8078,11 @@ impl CompositeResourceBody {
 }
 
 impl TheoremDefinition {
+    /// Whether this is a Click library `axiom`, trusted without proof.
+    pub fn is_axiom(&self) -> bool {
+        self.axiom
+    }
+
     /// Where the parser read this theorem's clauses.
     pub(in crate::surface) fn parsed_body(&self) -> &parser::DeclarationBody {
         &self.body

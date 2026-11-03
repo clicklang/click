@@ -188,7 +188,7 @@ fn rust_shift_source_identity_survives_printing_and_resource_arguments() {
             "verifying \"shift.rs\"; function shifted(x: i32, n: i32) -> i32 {{ x {operator} n }}"
         );
         let parsed = parser::parse(&source).unwrap();
-        let expression = parsed.click_function_definitions()[0].body();
+        let expression = parsed.click_function_definitions()[0].body().unwrap();
         assert!(matches!(
             (expression, left_shift),
             (ContractExpression::RustShiftLeft(..), true)
@@ -205,13 +205,19 @@ fn rust_shift_source_identity_survives_printing_and_resource_arguments() {
             "verifying \"shift.rs\"; function shifted(x: i32, n: i32) -> i32 {{ {spelled} }}"
         ))
         .unwrap();
-        assert_eq!(reparsed.click_function_definitions()[0].body(), expression);
+        assert_eq!(
+            reparsed.click_function_definitions()[0].body().unwrap(),
+            expression
+        );
         let c = parser::parse(&format!(
             "function shifted(x: int32, n: int32) -> int32 {{ x {operator} n }}"
         ))
         .unwrap();
         assert!(matches!(
-            (c.click_function_definitions()[0].body(), left_shift),
+            (
+                c.click_function_definitions()[0].body().unwrap(),
+                left_shift
+            ),
             (ContractExpression::ShiftLeft(..), true) | (ContractExpression::ShiftRight(..), false)
         ));
     }

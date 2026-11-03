@@ -58,11 +58,13 @@ pub(super) fn top_level_declarations(tokens: &[Token]) -> Vec<TopLevelDeclaratio
             }
             Token::Ident(word) if depth == 0 => {
                 let kind = match word.as_str() {
-                    "theorem" => DeclarationKind::Theorem,
+                    // A library `axiom` is cited as a theorem is.
+                    "theorem" | "axiom" => DeclarationKind::Theorem,
                     "function" => DeclarationKind::Function,
                     "predicate" => DeclarationKind::Predicate,
                     "resource" => DeclarationKind::Resource,
-                    "enum" => DeclarationKind::Enum,
+                    // `spec enum Name` and a library primitive `type Name`.
+                    "enum" | "type" => DeclarationKind::Enum,
                     "tactic" => DeclarationKind::Tactic,
                     // `extern <return type> name(...)`: the name precedes the
                     // parameter list. A member such as `V::length` declares no
@@ -222,6 +224,7 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/rust/u32.click",
     "library/rust/u64.click",
     "library/rust/usize.click",
+    "library/rust/vec.click",
 ];
 
 /// Whether the library declaration `name` in module `identity` is known to

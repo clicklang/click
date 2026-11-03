@@ -104,7 +104,7 @@ fn nested_getter_arguments_are_not_revisited_for_each_enclosing_call() {
         // This isolates the analysis from the surface parser's nesting cap.
         let mut file = parser::parse_file_items("spec enum Ref { At(struct node*), } function id(p: struct node*) -> struct node* { p } function wrap(p: struct node*) -> Ref { Ref::At(p) }").unwrap();
         let ContractExpression::AlgebraicConstructor { arguments, .. } =
-            &mut file.click_function_definitions[1].body
+            file.click_function_definitions[1].body.as_mut().unwrap()
         else {
             panic!("constructor")
         };
