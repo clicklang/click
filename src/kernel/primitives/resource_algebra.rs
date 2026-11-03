@@ -3576,6 +3576,42 @@ impl ResourceContext {
         Some((self, supports))
     }
 
+    /// One indexed observation witness for refusal classification and the
+    /// loan coalescing prepass. This grants no loan authority and does not
+    /// search another candidate if the nominated entry is unsuitable.
+    pub(crate) fn has_indexed_view_witness(
+        &self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> bool {
+        self.indexed_view_witness(required, assumptions).is_some()
+    }
+
+    pub(crate) fn indexed_view_witness(
+        &self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+    ) -> Option<ResourceOccurrenceId> {
+        if !required.is_view() || self.storage.index.owned_count == self.storage.facts.len() {
+            return None;
+        }
+        if let Some(entries) = self.storage.index.exact.get(required) {
+            return entries
+                .owned_values()
+                .next()
+                .map(|entry| self.occurrence(entry));
+        }
+        let range = required.memory_view_range()?;
+        let candidates = self.memory_fact_candidates(range, false, assumptions);
+        let entry = candidates.entries.single_supplier()?;
+        let available = self.fact(entry);
+        (available.is_view()
+            && candidates
+                .requirement(entry, required)
+                .is_some_and(|aligned| resource_fact_entails(available, &aligned, assumptions)))
+        .then(|| self.occurrence(entry))
+    }
+
     /// Return indexed view occurrences that entail `required`. The caller
     /// resolves each occurrence through an explicit checked-state binding;
     /// this method never searches the loan ledger or unrelated frame entries.
@@ -6661,6 +6697,39 @@ impl ResourceContext {
             self.without_fact_incrementally_impl(fact, assumptions, Some(&mut next_origins))?;
         *origins = next_origins;
         Some(next)
+    }
+
+    /// Consume one already selected occurrence. The caller supplies its
+    /// identity; this operation neither discovers suppliers nor composes
+    /// fragments. A failed check never tries a different occurrence.
+    pub(crate) fn without_selected_fact_with_origins(
+        mut self,
+        occurrence: ResourceOccurrenceId,
+        fact: &CResourceFact,
+        assumptions: &PureFactContext,
+        origins: &mut MemorySplitOrigins,
+    ) -> Option<Self> {
+        if !fact.has_valid_exclusive_access() {
+            return None;
+        }
+        let entry = *self.storage.entry_by_occurrence.get(&occurrence)?;
+        let aligned = if let Some(range) = fact.memory_range() {
+            self.memory_fact_candidates(range, fact.is_own(), assumptions)
+                .requirement(entry, fact)?
+        } else {
+            fact.clone()
+        };
+        let mut next_origins = origins.clone();
+        if !self.consume_fact_from_candidates_with_origins(
+            &aligned,
+            assumptions,
+            [entry],
+            Some(&mut next_origins),
+        ) {
+            return None;
+        }
+        *origins = next_origins;
+        Some(self)
     }
 
     fn without_fact_incrementally_impl(

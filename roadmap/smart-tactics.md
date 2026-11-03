@@ -31,27 +31,37 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Parent loan-binding selection.**
-   `view_occurrences_for_fact` in `src/kernel/primitives/resource_algebra.rs`
-   enumerates matching observations; the call planner in `src/kernel/loans.rs`
-   collects them and searches for a live parent loan binding. This happens
-   both while deciding whether to coalesce a view and while selecting its
-   backing. A crowded bucket of unbound observations must not cost a scan.
+1. **Call-side fragment composition: next measurement candidate.**
+   The loan planner's coalescing prepass calls
+   `ResourceContext::with_coalesced_owned_memory` when no nominated owner or
+   bound view supplies a memory requirement. That helper materializes the
+   candidate frontier before trying to join owned pieces. Owned requirement
+   reservation also uses `reserve_owned_memory_fragments_with_origins` and
+   the unselected `without_fact_incrementally_with_origins` route.
 
-   `split_owner_reconciliation_ignores_duplicate_observations` in
-   `src/scaling_tests/kernel/loans/tests.rs` holds a call fixed: consume
-   `[0..4]` and borrow `[6..8]` from one `[0..8]` owner. At 4/16/64/256 duplicate
-   observations, identity reconciliation itself is flat, but the test also
-   reports growing complete-call persistent-map work. Ordinary work counters
-   miss rejected-view traversal, so retain the persistent-work measurement.
-   The complete-call curve is diagnostic, not yet a flatness assertion.
+   Isolate a fixed call requirement while varying rejected observations and
+   irrelevant fragments in the selected bucket. Measure both deterministic
+   work and persistent-map work, including misses and repeated queries.
+   Distinguish a scan of rejected candidates from work proportional to the
+   pieces actually consumed or produced; explicit composition may legitimately
+   touch its selected pieces. The existing complete-call observation tests do
+   not establish bounded cost for arbitrary fragment composition.
 
-   Next design cycle: isolate binding selection in a red scaling assertion,
-   including exact bound hits, unbound duplicates, ambiguous bindings and
-   refusals. Select a live binding by an indexed identity or decline without
-   treating an unbound observation as authority. Preserve stale-binding,
-   equal-looking-owner, and parent/child-isolation refusals. Do not fold this
-   into memory split-origin tracking or reconstruct origins from history.
+   Start with a red scaling test, then discuss the design before removal.
+   Prefer retaining an explicitly selected supplier or explicit composition
+   over adding automatic candidate searches. Keep the C and contracts fixed,
+   preserve ownership and loan refusals, and investigate proof failures for
+   missing explicit steps before proposing new primitives.
+
+2. **Loop-body binding carryover: next measurement candidate.**
+   `loop_body_resource_context` in `src/kernel/loops.rs` enumerates body views,
+   then searches matching entry and body occurrences to copy their bindings.
+   Its map can retain earlier metadata beside newly allocated live occurrences.
+   Measure a fixed loop interface beside increasing observations and retained
+   bindings before choosing a fix. Investigate whether body construction can
+   return the selected source and new occurrence directly. Do not replace the
+   lookup with a scan that prunes old metadata; preserve branch-local snapshots
+   and discuss the producer change before implementing it.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).

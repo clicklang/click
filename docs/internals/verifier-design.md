@@ -446,7 +446,28 @@ identity. The map changes only with the selected split output and is discarded
 after planning; ordinary resource contexts acquire no history or new facts.
 Boundary checks forbid the removed search and context-history reconstruction;
 scaling controls grow incident bounds, observations, and successive splits.
-Parent loan-binding selection is a separate remaining walk.
+Loan bindings retain persistent indexes of bound occurrences, keyed by exact
+view and by written memory base or nonmemory resource shape. Updates touch
+only the changed occurrences. Exact requests nominate the first indexed bound
+identity; nonexact requests nominate through a singleton bucket or binding
+map. If metadata nominates none, the live-resource index may nominate one
+view, whose binding is read directly. This handles retained loop metadata
+beside a fresh live occurrence without scanning either set. Selection checks the actual live view, then the ledger
+checks the binding and participant and the planner checks its permitted
+coverage. An unsuitable nominee does not cause a retry. The empty binding map
+requires no observation discovery. These are metadata indexes, not e-graph
+facts or new resource authority. Branches share persistent roots, and removal
+or replacement updates only that branch.
+
+Call planning uses this selection for parent and callee bindings, including
+its coalescing prepass; a boundary guard forbids observation enumeration in
+`loans.rs`. The prepass and refusal classification may consult one indexed
+observation witness; that lookup grants no loan authority and never retries. When lending a selected owner, consumption receives that occurrence
+directly, aligns the requested slice and consumes only it, retaining split
+origins with the successor. It does not rediscover a supplier or join other
+fragments on failure. Scaling controls measure both selection and complete
+calls beside increasing unbound observations, plus exact lookup and branch
+isolation beside increasing bound occurrences.
 
 Declared-resource lowering selects parameter values from the names in its
 explicit arguments, including quantities and nested resource-type arguments.

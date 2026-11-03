@@ -4592,3 +4592,26 @@ fn refusal_diagnostic_is_a_small_bounded_payload() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/loans/tests.rs");
 }
+
+#[test]
+fn selected_loan_consumption_never_tries_another_occurrence() {
+    let facts = PureFactContext::new();
+    let first = memory(0, 4, true);
+    let second = memory(4, 8, true);
+    let (resources, occurrences) = ResourceContext::new_with_equalities(&facts)
+        .unchecked_with_facts_and_occurrences([first.clone(), second.clone()]);
+    let mut origins = MemorySplitOrigins::default();
+    assert!(
+        resources
+            .clone()
+            .without_selected_fact_with_origins(occurrences[0].1, &second, &facts, &mut origins,)
+            .is_none()
+    );
+    let consumed = resources
+        .clone()
+        .without_selected_fact_with_origins(occurrences[1].1, &second, &facts, &mut origins)
+        .expect("the supplied occurrence owns the requested resource");
+    assert!(consumed.contains_exact_representation(&first));
+    assert!(!consumed.contains_exact_representation(&second));
+    assert!(resources.contains_exact_representation(&second));
+}

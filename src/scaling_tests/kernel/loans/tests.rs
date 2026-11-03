@@ -4,6 +4,250 @@
 
 use super::*;
 
+/// One fixed view requirement, with independently varied irrelevant observations.
+/// Measure both the planner's current selection expression and the real call.
+/// Index preparation, resource insertion and loan construction are outside both.
+#[test]
+fn parent_loan_binding_selection_ignores_unbound_observations() {
+    check_parent_binding_observation_scaling(&["early", "late", "two_bindings", "subrange"]);
+}
+
+#[test]
+fn parent_loan_binding_refusals_and_owner_selection_ignore_observations() {
+    check_parent_binding_observation_scaling(&["unbound", "owner", "stale"]);
+}
+
+fn check_parent_binding_observation_scaling(cases: &[&str]) {
+    let mut curves = Vec::new();
+    for &case in cases {
+        let mut samples = Vec::new();
+        for count in [4usize, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = PureFactContext::new();
+            let owned = memory(0, 8, true);
+            let view = memory(0, 8, false);
+            let (mut ledger, caller, callee) = participants();
+            let support = backing(&owned);
+            let opening = ledger.lend(caller, caller, support, owned.clone()).unwrap();
+            if case != "owner" {
+                ledger = ledger.apply(&opening.transition).unwrap();
+            }
+            let mut binding = LoanViewBinding {
+                loan: opening.loan,
+                scope: opening.scope,
+                share: opening.root_share,
+                support,
+                viewed: view.clone(),
+                hold: None,
+            };
+            let mut second_binding = None;
+            if case == "two_bindings" {
+                let (split, left, right) = ledger
+                    .split(opening.root_share, caller, caller, caller)
+                    .unwrap();
+                ledger = ledger.apply(&split).unwrap();
+                binding.share = left;
+                second_binding = Some(LoanViewBinding {
+                    share: right,
+                    ..binding.clone()
+                });
+            }
+            if case == "stale" {
+                ledger = ledger
+                    .apply(&ledger.end(opening.scope, caller).unwrap())
+                    .unwrap();
+                let (recovery, _, _) = ledger.recover(opening.loan, caller).unwrap();
+                ledger = ledger.apply(&recovery).unwrap();
+            }
+            let (mut resources, occurrences) = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_facts_and_occurrences(std::iter::repeat_n(view.clone(), count + 1));
+            let first = occurrences[0].1;
+            let last = occurrences[count].1;
+            let mut bindings = LoanViewBindings::default();
+            let expected = match case {
+                "early" | "two_bindings" | "subrange" => Some(first),
+                "late" | "stale" => Some(last),
+                _ => None,
+            };
+            if let Some(occurrence) = expected {
+                bindings = bindings.with_inserted(occurrence, binding);
+            }
+            if let Some(binding) = second_binding {
+                bindings = bindings.with_inserted(last, binding);
+            }
+            if case == "owner" {
+                resources = resources.unchecked_with_fact(owned);
+            }
+            resources = resources.with_loan_dependency_state(bindings.state());
+            resources.synchronize_memory_equalities(&facts);
+            let required = if case == "subrange" {
+                memory(2, 4, false)
+            } else {
+                view.clone()
+            };
+            let requirements = [checked(required.clone())];
+            let select = |bindings: &LoanViewBindings| {
+                bindings.select_bound_view(&required, &resources, &facts)
+            };
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((selected, work), map_work) =
+                    crate::persistent::measure_persistent_work(|| {
+                        crate::instrumentation::measure_deterministic_work(|| select(&bindings))
+                    });
+                assert_eq!(selected, expected, "{case}, {count}");
+                let ((plan, call_work), call_maps) =
+                    crate::persistent::measure_persistent_work(|| {
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            plan_stable_view_transfer_with_bindings(
+                                &resources,
+                                &requirements,
+                                &facts,
+                                &ledger,
+                                caller,
+                                callee,
+                                &bindings,
+                            )
+                        })
+                    });
+                if matches!(case, "unbound" | "stale") {
+                    assert_eq!(
+                        plan,
+                        Err(StableViewPlanError::Loan(LoanRefusal::MissingLoanBinding)),
+                        "{case}, {count}"
+                    );
+                } else {
+                    assert!(plan.is_ok(), "{case}, {count}: {plan:?}");
+                }
+                queries.push((work, map_work, call_work, call_maps));
+            }
+            if case == "late" {
+                let child = bindings.without(last);
+                assert_eq!(select(&child), None);
+                assert_eq!(select(&bindings), Some(last));
+                assert!(
+                    plan_stable_view_transfer_with_bindings(
+                        &resources,
+                        &requirements,
+                        &facts,
+                        &ledger,
+                        caller,
+                        callee,
+                        &child,
+                    )
+                    .is_err(),
+                    "removing the binding cannot promote an observation"
+                );
+            }
+            samples.push((count, queries));
+        }
+        eprintln!(
+            "parent binding {case} (count; selection work/maps, call work/maps): {samples:?}"
+        );
+        curves.push((case, samples));
+    }
+    for (case, samples) in &curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(large, small)| {
+                    large.0 <= small.0 + 64
+                        && large.1 <= small.1 * 3 + 256
+                        && large.2 <= small.2 + 64
+                        && large.3 <= small.3 + 512
+                }),
+            "parent binding selection scans observations ({case}): {samples:?}"
+        );
+    }
+}
+
+/// Binding updates, including replacements and removals, maintain persistent
+/// indexes. Query cost depends on indexed depth, not the number of bindings.
+#[test]
+fn bound_view_selection_is_indexed_and_branch_local() {
+    let mut costs = Vec::new();
+    for count in [4u32, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let view = memory(0, 8, false);
+        let (ledger, caller, _) = participants();
+        let owner = memory(0, 8, true);
+        let opening = ledger.lend(caller, caller, backing(&owner), owner).unwrap();
+        let template = LoanViewBinding {
+            loan: opening.loan,
+            scope: opening.scope,
+            share: opening.root_share,
+            support: opening.description.support(),
+            viewed: view.clone(),
+            hold: None,
+        };
+        let (mut resources, first) = ResourceContext::new_with_equalities(&facts)
+            .unchecked_with_facts_and_occurrences([view.clone()]);
+        let selected = first[0].1;
+        let sole_live_view = resources.clone();
+        let mut bindings = LoanViewBindings::default().with_inserted(selected, template.clone());
+        for index in 0..count {
+            let other = memory(16 + index * 8, 24 + index * 8, false);
+            let (next, occurrences) =
+                resources.unchecked_with_facts_and_occurrences([other.clone()]);
+            resources = next;
+            bindings = bindings.with_inserted(
+                occurrences[0].1,
+                LoanViewBinding {
+                    viewed: other,
+                    ..template.clone()
+                },
+            );
+        }
+        resources.synchronize_memory_equalities(&facts);
+        let (found, work) = crate::persistent::measure_persistent_work(|| {
+            bindings.select_bound_view(&view, &resources, &facts)
+        });
+        assert_eq!(found, Some(selected));
+        // Retained metadata may outlive its resource occurrence, as at loop
+        // entry. The live-view index selects the one covering occurrence;
+        // there is no scan of the old metadata or of other live views.
+        sole_live_view.synchronize_memory_equalities(&facts);
+        let subrange = memory(2, 4, false);
+        assert_eq!(bindings.bound_view_candidate(&subrange), None);
+        let (live, live_work) = crate::persistent::measure_persistent_work(|| {
+            bindings.select_bound_view(&subrange, &sole_live_view, &facts)
+        });
+        assert_eq!(live, Some(selected));
+        assert_eq!(
+            bindings.select_bound_view(&subrange, &resources, &facts),
+            Some(selected)
+        );
+        costs.push((work, live_work));
+        let removed = bindings.without(selected);
+        assert_eq!(removed.bound_view_candidate(&view), None);
+        assert_eq!(bindings.bound_view_candidate(&view), Some(selected));
+        let replacement = memory(4000, 4008, false);
+        let replaced = bindings.with_inserted(
+            selected,
+            LoanViewBinding {
+                viewed: replacement.clone(),
+                ..template
+            },
+        );
+        assert_eq!(replaced.bound_view_candidate(&view), None);
+        assert_eq!(replaced.bound_view_candidate(&replacement), Some(selected));
+        // A nominated identity with the wrong held view is not authority.
+        assert_eq!(
+            replaced.select_bound_view(&replacement, &resources, &facts),
+            None
+        );
+        assert_eq!(
+            bindings.select_bound_view(&view, &resources, &facts),
+            Some(selected)
+        );
+    }
+    assert!(costs[3].0 <= costs[0].0 * 3 + 128, "{costs:?}");
+    assert!(costs[3].1 <= costs[0].1 + 128, "{costs:?}");
+}
+
 #[test]
 fn memory_split_origin_lookup_does_not_follow_successive_splits() {
     let mut samples = Vec::new();
@@ -136,8 +380,14 @@ fn split_owner_reconciliation_ignores_duplicate_observations() {
             .all(|(small, large)| *large <= *small + 32)),
         "alternative-owner query scans observations: {curves:?}"
     );
-    // Whole-call curves remain visible: parent loan-binding selection still
-    // enumerates observations and is a separate roadmap target.
+    assert!(
+        curves[3]
+            .4
+            .iter()
+            .zip(&curves[0].4)
+            .all(|(large, small)| *large <= *small + 1200),
+        "complete call scans observations: {curves:?}"
+    );
 }
 
 #[test]
