@@ -5597,8 +5597,8 @@ fn conditional_construction_cleans_up_only_the_constructed_arm() {
         .expect_err("the caller cannot claim a different restored value");
 
     let wrong_skipped_result = CONDITIONAL_CONSTRUCTION_SIDECAR.replace(
-        "ensures construct == 0 implies result == 41;",
-        "ensures construct == 0 implies result == 7;",
+        "ensures construct == false implies result == 41;",
+        "ensures construct == false implies result == 7;",
     );
     fs::write(&sidecar, &wrong_skipped_result).unwrap();
     let wrong_project = read_click_project(&sidecar, &wrong_skipped_result).unwrap();
@@ -10240,8 +10240,8 @@ fn lifetime_returns_destroy_only_the_objects_constructed_on_that_path() {
     let source = REVERSE_DESTRUCTOR_SIDECAR.replace("restore_twice(", "construction_prefix(");
     check_selected_claim_certificate(&project, &import, &source);
     let false_claim = source.replace(
-        "early != 0 implies result == 7",
-        "early != 0 implies result == 9",
+        "early == true implies result == 7",
+        "early == true implies result == 9",
     );
     let sidecar = project.directory.join("demo.click");
     fs::write(&sidecar, &false_claim).unwrap();
@@ -10277,12 +10277,12 @@ fn lifetime_return_before_any_construction_has_no_cleanup() {
     let source = REVERSE_DESTRUCTOR_SIDECAR
         .replace("restore_twice(", "before_construction(")
         .replace(
-            "early != 0 implies result == 7",
-            "early != 0 implies result == old(value)",
+            "early == true implies result == 7",
+            "early == true implies result == old(value)",
         )
         .replace(
-            "early == 0 implies result == 9",
-            "early == 0 implies result == 7",
+            "early == false implies result == 9",
+            "early == false implies result == 7",
         );
     check_selected_claim_certificate(&project, &import, &source);
 }
