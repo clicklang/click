@@ -9110,7 +9110,10 @@ fn native_narrow_comparison_operands(
 /// The term an integer operand of at most 32 bits has at the comparison's
 /// 32-bit `format`: its own word at that format, σ of the other 32-bit
 /// format's word, a narrow value's widening, or a `Bool`'s cast (rule C1).
-pub(crate) fn c_value_word32_term(value: &CValue, format: MachineIntegerType) -> Option<Bitvector32Term> {
+pub(crate) fn c_value_word32_term(
+    value: &CValue,
+    format: MachineIntegerType,
+) -> Option<Bitvector32Term> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         value @ (CValue::Bool(_)

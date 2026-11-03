@@ -693,9 +693,7 @@ impl TermClasses {
         else {
             return;
         };
-        self.fired_machine_relations = self
-            .fired_machine_relations
-            .with_value((widening, sibling));
+        self.fired_machine_relations = self.fired_machine_relations.with_value((widening, sibling));
         crate::instrumentation::record_deterministic_work(1);
         let sigma = self.intern_node(Node::Int32Unary(
             Int32Unary::Cast(other.destination, key.destination),

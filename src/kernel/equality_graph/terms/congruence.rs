@@ -1345,7 +1345,9 @@ impl TermClasses {
                 let widening = |to| Node::Int32Unary(Int32Unary::Cast(source, to), value);
                 match (
                     self.nodes.get(&widening(MachineIntegerType::Int32)),
-                    self.nodes.get(&widening(MachineIntegerType::UInt32)).copied(),
+                    self.nodes
+                        .get(&widening(MachineIntegerType::UInt32))
+                        .copied(),
                 ) {
                     (None, Some(unsigned)) => (unsigned, MachineIntegerType::UInt32),
                     _ => (
