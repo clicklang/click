@@ -773,3 +773,64 @@ fn indexed_lower_bound_decision_retains_shared_operands() {
         }
     }
 }
+
+#[test]
+fn signed_ranges_keep_shared_prefixes_and_memoize_refusals() {
+    use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, SharedMachineIntegerTerm};
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        for ambient in [1, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let ty = MachineIntegerType::Int32;
+            let x = Bitvector32Term::Variable(Variable(994601));
+            let mut facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(Bitvector32Term::Constant(0), x.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::Constant(1)),
+                    true,
+                );
+            for i in 0..ambient {
+                facts = facts.assume_condition(
+                    ConditionTerm::equal(
+                        Bitvector32Term::Variable(Variable(995600 + i)),
+                        Bitvector32Term::Constant(3),
+                    ),
+                    true,
+                );
+            }
+            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994601));
+            let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+                for level in 1..=size {
+                    root = KernelTerm::machine_binary_shared(
+                        ty,
+                        MachineBinaryOp::Add,
+                        [root.clone(), root.clone()],
+                    );
+                    let operand = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
+                    let expected = if level < 31 {
+                        Some((0, 1i64 << level))
+                    } else {
+                        None
+                    };
+                    assert_eq!(facts.signed_interval_view(operand.operand_view()), expected);
+                    assert!(!operand.has_boxed_operand());
+                }
+            });
+            samples.push((size, ambient, work));
+        }
+    }
+    for pair in samples.chunks_exact(2) {
+        assert!(pair[1].2 <= pair[0].2 * 2 + 64, "{samples:?}");
+    }
+    for pair in samples.chunks_exact(2).collect::<Vec<_>>().windows(2) {
+        let (small, _, sw) = pair[0][0];
+        let (large, _, lw) = pair[1][0];
+        assert!(
+            lw * small as usize <= sw * large as usize * 2,
+            "{samples:?}"
+        );
+    }
+}

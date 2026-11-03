@@ -454,6 +454,12 @@ impl PureFactContext {
         {
             return Some(value);
         }
+        if let Some(value) = self.decide_signed_constant_offset_order(condition) {
+            return Some(value);
+        }
+        if let Some(value) = self.decide_shared_signed_constant_order(condition) {
+            return Some(value);
+        }
         // Still required for arithmetic rules not yet migrated to operand
         // views (for example, a positive offset with a no-overflow premise).
         if let Some((native, truth)) = native_comparison_of_integer_observation(condition, true)
@@ -2192,13 +2198,22 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Option<i64> {
-        if let Some(value) = signed_bitvector_constant(term) {
-            return Some(value);
+        self.signed_constant_known_equal_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(in crate::kernel) fn signed_constant_known_equal_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<i64> {
+        if let Some(value) = term.word32_constant() {
+            return Some(i64::from(value as i32));
         }
-        if let Some(value) = self.equality_graph.known_atom_constant(term) {
-            return Some(value);
+        if let MachineOperandView::Legacy(term) = term {
+            if let Some(value) = self.equality_graph.known_atom_constant(term) {
+                return Some(value);
+            }
         }
-        match self.equality_graph.scalar_constant_class(term)?.1 {
+        match self.equality_graph.scalar_constant_class_view(term)?.1 {
             SignedConstantResolution::Known(value) => Some(value),
             _ => None,
         }
@@ -2291,6 +2306,22 @@ impl PureFactContext {
                 .constant_class_resolution(if condition { then_term } else { else_term }, visiting),
             None => SignedConstantResolution::Unknown,
         }
+    }
+
+    fn decide_shared_signed_constant_order(&self, condition: &ConditionTerm) -> Option<bool> {
+        use crate::kernel::machine_integer::{Relation, comparison::native_comparison_view};
+        let view = native_comparison_view(condition, true)?;
+        if view.format != MachineIntegerType::Int32 {
+            return None;
+        }
+        let left = self.signed_constant_known_equal_view(view.operands[0].operand_view())?;
+        let right = self.signed_constant_known_equal_view(view.operands[1].operand_view())?;
+        Some(match view.relation {
+            Relation::Equal => left == right,
+            Relation::NotEqual => left != right,
+            Relation::Less => left < right,
+            Relation::LessEqual => left <= right,
+        })
     }
 
     pub(in crate::kernel) fn decide_signed_comparison_from_equal_constants(

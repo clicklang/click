@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::binary_node;
+#[cfg(test)]
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, MachineOperandView, OverflowOperation};
 
@@ -906,25 +907,51 @@ impl PureFactContext {
     /// never evidence that the term's own operation does not overflow; that
     /// question is [`Self::signed_interval_from_operands`].
     pub(in crate::kernel) fn signed_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
-        // A successfully reconstructed interval is a function of the fact set
-        // and the term alone. Key by fact-set content and
-        // term so a nested arithmetic expression reuses its operands' ranges
-        // instead of rescanning every order fact at each tree level.
-        let key = ambient_assumptions_memo_id(self).map(|id| (id, term.clone()));
+        self.signed_interval_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(in crate::kernel) fn signed_interval_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<(i64, i64)> {
+        // A shared operand is a DAG entry point even when no outer decision
+        // established a scope. Nested queries reuse this borrowed context id.
+        let _scope = matches!(term, MachineOperandView::Shared(_))
+            .then(|| PureFactContextIdScope::enter(self));
+        // Successful ranges and completed refusals depend only on the fact
+        // set and operand. Memoize both so successive shared prefixes do not
+        // revisit an overflowing subtree. Interrupted queries remain uncached.
+        // Shared keys retain syntax identity; legacy keys keep their spelling.
+        let key = ambient_assumptions_memo_id(self).map(|id| {
+            (
+                id,
+                match term {
+                    MachineOperandView::Legacy(term) => {
+                        SignedIntervalOperandKey::Written(term.clone())
+                    }
+                    MachineOperandView::Shared(term) => {
+                        SignedIntervalOperandKey::Shared(term.clone())
+                    }
+                },
+            )
+        });
         if let Some(hit) = key
             .as_ref()
             .and_then(|key| SIGNED_INTERVAL_MEMO.with(|memo| memo.borrow().get(key).copied()))
         {
-            return Some(hit);
+            return hit;
         }
+        let epoch = INCOMPLETE_REASONING_EPOCH.with(Cell::get);
         let result = self.signed_interval_uncached(term);
-        if let (Some(key), Some(interval)) = (key, result) {
+        if let Some(key) = key
+            && (result.is_some() || INCOMPLETE_REASONING_EPOCH.with(Cell::get) == epoch)
+        {
             SIGNED_INTERVAL_MEMO.with(|memo| {
                 let mut memo = memo.borrow_mut();
                 if memo.len() >= SIGNED_INTERVAL_MEMO_LIMIT {
                     memo.clear();
                 }
-                memo.insert(key, interval);
+                memo.insert(key, result);
             });
         }
         result
@@ -939,17 +966,38 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
-        let (lower, upper) = self.signed_interval(term)?;
-        let canonical = crate::kernel::eval::canonical_term(term);
-        let (mut lower, mut upper) = self.checked_scalar_facts.past_exclusions(
-            crate::kernel::MachineOperandView::Legacy(&canonical),
-            lower,
-            upper,
-        );
+        self.signed_interval_past_exclusions_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(in crate::kernel) fn signed_interval_past_exclusions_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<(i64, i64)> {
+        let (lower, upper) = self.signed_interval_view(term)?;
+        let canonical;
+        let indexed = match term {
+            MachineOperandView::Legacy(term) => {
+                canonical = crate::kernel::eval::canonical_term(term);
+                MachineOperandView::Legacy(&canonical)
+            }
+            MachineOperandView::Shared(_) => term,
+        };
+        let (mut lower, mut upper) = self
+            .checked_scalar_facts
+            .past_exclusions(indexed, lower, upper);
         let excluded = |value: i64| {
             crate::instrumentation::record_deterministic_work(1);
             self.has_condition_fact(
-                ConditionTerm::equal(term.clone(), Bitvector32Term::Constant(value as i32 as u32)),
+                match term {
+                    MachineOperandView::Legacy(term) => ConditionTerm::equal(
+                        term.clone(),
+                        Bitvector32Term::Constant(value as i32 as u32),
+                    ),
+                    MachineOperandView::Shared(_) => ConditionTerm::integer_equal(
+                        IntegerTerm::Machine(term.retain(MachineIntegerType::Int32)),
+                        IntegerTerm::constant(value.into()),
+                    ),
+                },
                 false,
             )
         };
@@ -964,116 +1012,100 @@ impl PureFactContext {
 
     /// The interval is reconstructed over the term's structure, so the walk
     /// is finite with no depth cut: each arithmetic node ranges its operands.
-    fn signed_interval_uncached(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
-        if let Some(value) = self.signed_constant_known_equal(term) {
+    fn signed_interval_uncached(&self, term: MachineOperandView<'_>) -> Option<(i64, i64)> {
+        use crate::kernel::{KernelMachineCastEncoding as E, MachineBinaryOp as Op};
+        if let Some(value) = self.signed_constant_known_equal_view(term) {
             return Some((value, value));
         }
         let (mut lower, mut upper) = self
             .equality_graph
-            .signed_int32_interval(term)
+            .signed_int32_interval_view(term)
             .unwrap_or((i64::from(i32::MIN), i64::from(i32::MAX)));
         if lower != i64::from(i32::MIN) && upper != i64::from(i32::MAX) {
             return Some((lower, upper));
         }
-        let canonical = crate::kernel::eval::canonical_term(term);
-        if let Some((direct_lower, direct_upper)) =
-            self.checked_order_bounds.interval_with_strict(&canonical)
-        {
-            lower = lower.max(direct_lower);
-            upper = upper.min(direct_upper);
+        let canonical;
+        let indexed = match term {
+            MachineOperandView::Legacy(term) => {
+                canonical = crate::kernel::eval::canonical_term(term);
+                MachineOperandView::Legacy(&canonical)
+            }
+            MachineOperandView::Shared(_) => term,
+        };
+        if let Some((lo, hi)) = self.checked_order_bounds.interval_with_strict_view(indexed) {
+            lower = lower.max(lo);
+            upper = upper.min(hi);
         }
         if lower != i64::from(i32::MIN) && upper != i64::from(i32::MAX) {
             return (lower <= upper).then_some((lower, upper));
         }
-        match term {
-            // The exact range of a word sum, difference or product, when it
-            // fits `int32`, is its signed reading whatever its format.
-            binary_term!(Bits32, Add, _, _)
-            | binary_term!(Bits32, Subtract, _, _)
-            | binary_term!(Bits32, Multiply, _, _) => {
-                return self.signed_interval_from_operands(term);
+        if let Some((format, op, [left, right])) = term.binary()
+            && format.format().bits() == 32
+        {
+            if matches!(op, Op::Add | Op::Subtract | Op::Multiply) {
+                return self.signed_interval_from_operands_view(term);
             }
-            // A signed byte read is its unsigned byte's two's-complement
-            // value: below 0x80 the same number, from 0x80 that number less
-            // 256, and otherwise somewhere in the signed byte range.
-            term if term.signed_byte_operand().is_some() => {
-                let unsigned = term.signed_byte_operand().expect("matched above");
-                let (unsigned_lower, unsigned_upper) = self
-                    .signed_interval(unsigned)
-                    .map(|(lower, upper)| (lower.max(0), upper.min(255)))
+            if op == Op::BitwiseAnd
+                && let Some(mask) = [left, right]
+                    .into_iter()
+                    .filter_map(|operand| operand.word32_constant().map(|v| i64::from(v as i32)))
+                    .filter(|mask| *mask >= 0)
+                    .min()
+            {
+                let (lo, hi) = (lower.max(0), upper.min(mask));
+                return (lo <= hi).then_some((lo, hi));
+            }
+        }
+        if let Some((E::Generic, source, destination, operand)) = term.cast() {
+            if source == MachineIntegerType::UInt8 && destination == MachineIntegerType::Int8 {
+                let (lo, hi) = self
+                    .signed_interval_view(operand)
+                    .map(|(lo, hi)| (lo.max(0), hi.min(255)))
                     .unwrap_or((0, 255));
-                let (lower, upper) = if unsigned_upper <= 127 {
-                    (unsigned_lower, unsigned_upper)
-                } else if unsigned_lower >= 128 {
-                    (unsigned_lower - 256, unsigned_upper - 256)
+                let (lo, hi) = if hi <= 127 {
+                    (lo, hi)
+                } else if lo >= 128 {
+                    (lo - 256, hi - 256)
                 } else {
                     (-128, 127)
                 };
-                return (lower <= upper).then_some((lower, upper));
+                return (lo <= hi).then_some((lo, hi));
             }
-            // A mask with its sign bit clear keeps only bits of the mask, so
-            // `x & m` is between 0 and `m` whatever `x` is: `u & 1` is 0 or 1.
-            binary_term!(Bits32, BitwiseAnd, left, right)
-                if [left, right]
-                    .iter()
-                    .any(|operand| signed_bitvector_constant(operand).is_some_and(|m| m >= 0)) =>
-            {
-                let mask = [left, right]
-                    .iter()
-                    .filter_map(|operand| signed_bitvector_constant(operand))
-                    .filter(|mask| *mask >= 0)
-                    .min()
-                    .expect("matched above");
-                let (lower, upper) = (lower.max(0), upper.min(mask));
-                return (lower <= upper).then_some((lower, upper));
-            }
-            // A 32-bit widening of an 8- or 16-bit value holds that value,
-            // so it lies in its source format's range (K8, a relation).
-            term if term.narrow_widening32_operand().is_some() => {
-                let (source, _) = term.narrow_widening32_operand().expect("matched above");
+            if crate::kernel::primitives::is_narrow_widening32(source, destination) {
                 let (min, max) = source.format().bounds();
-                let (min, max) = (
-                    i64::try_from(min).expect("a narrow bound"),
-                    i64::try_from(max).expect("a narrow bound"),
+                let (lo, hi) = (
+                    lower.max(i64::try_from(min).expect("narrow bound")),
+                    upper.min(i64::try_from(max).expect("narrow bound")),
                 );
-                let (lower, upper) = (lower.max(min), upper.min(max));
-                return (lower <= upper).then_some((lower, upper));
+                return (lo <= hi).then_some((lo, hi));
             }
-            // Any other narrowing conversion: its operand's interval moved
-            // into the destination range, or that whole range
-            // (`narrowed_casts`), within what the context states of it.
-            Bitvector32Term::MachineIntegerCast { .. } => {
-                if let Some((cast_lower, cast_upper)) = self.narrowed_cast_interval(term) {
-                    let (lower, upper) = (lower.max(cast_lower), upper.min(cast_upper));
-                    return (lower <= upper).then_some((lower, upper));
-                }
+            if let Some((lo, hi)) = self.narrowed_cast_interval_view(term) {
+                let (lo, hi) = (lower.max(lo), upper.min(hi));
+                return (lo <= hi).then_some((lo, hi));
             }
-            Bitvector32Term::If {
+        }
+        // Opaque conditionals and memory reads retain their existing carrier.
+        // Shared arithmetic has neither payload; do not export it to inspect one.
+        if let MachineOperandView::Legacy(term) = term {
+            if let Bitvector32Term::If {
                 then_term,
                 else_term,
                 ..
-            } => {
-                // A conditional denotes one of its two arms, so any interval
-                // containing both contains it. The condition is not consulted:
-                // deciding it is condition reasoning, and the hull is sound
-                // whichever way it goes. This is two recursive calls on the
-                // written arms, memoized like every other node, not a scan.
-                let (then_lower, then_upper) = self.signed_interval(then_term)?;
-                let (else_lower, else_upper) = self.signed_interval(else_term)?;
-                return Some((then_lower.min(else_lower), then_upper.max(else_upper)));
+            } = term
+            {
+                let (a, b) = self.signed_interval(then_term)?;
+                let (c, d) = self.signed_interval(else_term)?;
+                return Some((a.min(c), b.max(d)));
             }
-            _ => {}
-        }
-
-        // A resolved load adds one explicit endpoint, never its order component.
-        if let Some(resolved) = self.resolve_memory_load_term(term)
-            && resolved != *term
-            && let Some((resolved_lower, resolved_upper)) = self
-                .checked_order_bounds
-                .interval_with_strict(&crate::kernel::eval::canonical_term(&resolved))
-        {
-            lower = lower.max(resolved_lower);
-            upper = upper.min(resolved_upper);
+            if let Some(resolved) = self.resolve_memory_load_term(term)
+                && resolved != *term
+                && let Some((lo, hi)) = self
+                    .checked_order_bounds
+                    .interval_with_strict(&crate::kernel::eval::canonical_term(&resolved))
+            {
+                lower = lower.max(lo);
+                upper = upper.min(hi);
+            }
         }
         (lower <= upper).then_some((lower, upper))
     }
@@ -1090,6 +1122,13 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> Option<(i64, i64)> {
+        self.signed_interval_from_operands_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(in crate::kernel) fn signed_interval_from_operands_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<(i64, i64)> {
         let (lower, upper) = self.integer_interval_from_operands(term)?;
         (i128::from(i32::MIN) <= lower && upper <= i128::from(i32::MAX))
             .then_some((lower as i64, upper as i64))
@@ -1098,41 +1137,124 @@ impl PureFactContext {
     /// The integer range of an addition, subtraction or multiplication of
     /// two 32-bit words, from the operands' signed value ranges, with
     /// nothing wrapped. `None` for any other term or an operand with no range.
-    fn integer_interval_from_operands(&self, term: &Bitvector32Term) -> Option<(i128, i128)> {
-        let (left, right) = match term {
-            binary_term!(Bits32, Add, left, right)
-            | binary_term!(Bits32, Subtract, left, right)
-            | binary_term!(Bits32, Multiply, left, right) => (left, right),
-            _ => return None,
-        };
-        let (left_lower, left_upper) = self.signed_interval(left)?;
-        let (right_lower, right_upper) = self.signed_interval(right)?;
-        let (lower, upper) = match term {
-            binary_term!(Bits32, Add, _, _) => (
-                i128::from(left_lower) + i128::from(right_lower),
-                i128::from(left_upper) + i128::from(right_upper),
-            ),
-            binary_term!(Bits32, Subtract, _, _) => (
-                i128::from(left_lower) - i128::from(right_upper),
-                i128::from(left_upper) - i128::from(right_lower),
-            ),
-            _ => {
-                let products = [
-                    i128::from(left_lower) * i128::from(right_lower),
-                    i128::from(left_lower) * i128::from(right_upper),
-                    i128::from(left_upper) * i128::from(right_lower),
-                    i128::from(left_upper) * i128::from(right_upper),
-                ];
-                (*products.iter().min()?, *products.iter().max()?)
+    fn integer_interval_from_operands(&self, term: MachineOperandView<'_>) -> Option<(i128, i128)> {
+        use crate::kernel::MachineBinaryOp as Op;
+        let (format, op, [left, right]) = term.binary()?;
+        if format.format().bits() != 32 || !matches!(op, Op::Add | Op::Subtract | Op::Multiply) {
+            return None;
+        }
+        let (a, b) = self.signed_interval_view(left)?;
+        let (c, d) = self.signed_interval_view(right)?;
+        let (a, b, c, d) = (i128::from(a), i128::from(b), i128::from(c), i128::from(d));
+        Some(match op {
+            Op::Add => (a + c, b + d),
+            Op::Subtract => (a - d, b - c),
+            Op::Multiply => {
+                let values = [a * c, a * d, b * c, b * d];
+                (*values.iter().min()?, *values.iter().max()?)
             }
-        };
-        Some((lower, upper))
+            _ => unreachable!(),
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_signed_ranges_preserve_wrapping_and_cast_rules() {
+        use crate::kernel::{KernelTermImport, MachineBinaryOp, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = Bitvector32Term::Variable(Variable(994701));
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_equal(Bitvector32Term::Constant(2), x.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::Constant(4)),
+                true,
+            );
+        for (op, expected) in [
+            (MachineBinaryOp::Add, (4, 8)),
+            (MachineBinaryOp::Subtract, (-2, 2)),
+            (MachineBinaryOp::Multiply, (4, 16)),
+            (MachineBinaryOp::BitwiseAnd, (0, 7)),
+        ] {
+            let right = if op == MachineBinaryOp::BitwiseAnd {
+                Bitvector32Term::Constant(7)
+            } else {
+                x.clone()
+            };
+            let written = Bitvector32Term::Binary {
+                format: ty,
+                op,
+                left: Box::new(x.clone()),
+                right: Box::new(right),
+            };
+            let root = KernelTermImport::default()
+                .machine_arithmetic(ty, &written)
+                .unwrap();
+            let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+            assert_eq!(
+                facts.signed_interval_view(operand.operand_view()),
+                Some(expected)
+            );
+            assert!(!operand.has_boxed_operand());
+            assert_eq!(facts.signed_interval(&written), Some(expected));
+        }
+        for (source, destination, expected) in [
+            (MachineIntegerType::UInt8, MachineIntegerType::Int8, (2, 4)),
+            (
+                MachineIntegerType::UInt8,
+                MachineIntegerType::Int32,
+                (0, 255),
+            ),
+            (MachineIntegerType::Int32, MachineIntegerType::UInt8, (2, 4)),
+        ] {
+            let written = Bitvector32Term::MachineIntegerCast {
+                source,
+                destination,
+                value: Box::new(x.clone()),
+            };
+            let root = KernelTermImport::default()
+                .machine_arithmetic(destination, &written)
+                .unwrap();
+            assert_eq!(
+                facts.signed_interval_view(MachineOperandView::Shared(&root)),
+                Some(expected)
+            );
+            assert_eq!(facts.signed_interval(&written), Some(expected));
+        }
+        let written = Bitvector32Term::add(x.clone(), Bitvector32Term::Constant(1));
+        let root = KernelTermImport::default()
+            .machine_arithmetic(ty, &written)
+            .unwrap();
+        let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+        let wrapped = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::equal(x, Bitvector32Term::Constant(i32::MAX as u32)),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::integer_equal(
+                    IntegerTerm::Machine(operand.clone()),
+                    IntegerTerm::constant(i32::MIN.into()),
+                ),
+                true,
+            );
+        assert_eq!(
+            wrapped.signed_interval_view(operand.operand_view()),
+            Some((i64::from(i32::MIN), i64::from(i32::MIN)))
+        );
+        assert_eq!(
+            wrapped.signed_interval_from_operands_view(operand.operand_view()),
+            None
+        );
+        assert!(!operand.has_boxed_operand());
+    }
 
     #[test]
     fn int32_division_overflow_is_decided_from_operand_intervals_and_disequalities() {
