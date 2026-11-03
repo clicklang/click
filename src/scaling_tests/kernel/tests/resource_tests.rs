@@ -3112,3 +3112,111 @@ fn nonexact_owner_selection_declines_crowded_quantity_buckets() {
             .is_none()
     );
 }
+
+/// Call-view support selection must not walk other symbolic ranges sharing
+/// the selected base. Prepare the index outside the measured query, then
+/// measure exact early/late hits and a miss, both first and repeated.
+#[test]
+#[ignore = "nightly: symbolic memory owner selection control"]
+fn memory_owned_support_ignores_symbolic_range_bucket() {
+    let mut curves = Vec::new();
+    for count in [4usize, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(995_000));
+        let range = |i: usize| {
+            CMemoryRange::new(
+                base.clone(),
+                Bitvector32Term::Variable(Variable(995_100 + i as u64)),
+                Bitvector32Term::Variable(Variable(995_101 + i as u64)),
+            )
+        };
+        let assumptions = PureFactContext::new();
+        let context = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_facts((0..count).map(|i| CResourceFact::own_memory(range(i))));
+        context.synchronize_memory_equalities(&assumptions);
+        let mut work = Vec::new();
+        for query in [0, count - 1, count] {
+            let required = CResourceFact::view_memory(range(query));
+            for _ in 0..3 {
+                let (selected, units) = crate::instrumentation::measure_deterministic_work(|| {
+                    context.directly_supporting_owned_entry(&required, &assumptions)
+                });
+                assert_eq!(
+                    selected.is_some(),
+                    query < count,
+                    "count {count}, query {query}"
+                );
+                if let Some((_, owner)) = selected {
+                    assert_eq!(owner, &CResourceFact::own_memory(range(query)));
+                }
+                work.push(units);
+            }
+        }
+        curves.push((count, work));
+    }
+    eprintln!("memory owner lookup (ranges, first/last/miss x3 work): {curves:?}");
+    assert!(
+        curves.windows(2).all(|pair| pair[0]
+            .1
+            .iter()
+            .zip(&pair[1].1)
+            .all(|(small, large)| *large <= *small + 32)),
+        "memory support selection scans symbolic candidates: {curves:?}"
+    );
+}
+
+/// A fixed-size read request cannot be backed by any of these short owners.
+/// Reject it without enumerating the fragment frontier; exact early and late
+/// hits are controls. Index preparation is outside all measured queries.
+#[test]
+#[ignore = "red: memory owner selection scans fragment candidates"]
+fn memory_owned_support_miss_ignores_fragment_frontier() {
+    let mut curves = Vec::new();
+    for count in [4usize, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let base = Pointer::symbolic(Variable(995_000));
+        let range = |i: usize| {
+            CMemoryRange::new(
+                base.clone(),
+                Bitvector32Term::Constant(i as u32),
+                Bitvector32Term::Constant(i as u32 + 1),
+            )
+        };
+        let assumptions = PureFactContext::new();
+        let context = ResourceContext::new_with_equalities(&assumptions)
+            .unchecked_with_facts((0..count).map(|i| CResourceFact::own_memory(range(i))));
+        context.synchronize_memory_equalities(&assumptions);
+        let mut work = Vec::new();
+        for query in [0, count - 1, count] {
+            let required = CResourceFact::view_memory(if query == count {
+                CMemoryRange::new(base.clone(), 0u32.into(), 128u32.into())
+            } else {
+                range(query)
+            });
+            for _ in 0..3 {
+                let (selected, units) = crate::instrumentation::measure_deterministic_work(|| {
+                    context.directly_supporting_owned_entry(&required, &assumptions)
+                });
+                assert_eq!(
+                    selected.is_some(),
+                    query < count,
+                    "count {count}, query {query}"
+                );
+                if let Some((_, owner)) = selected {
+                    assert_eq!(owner, &CResourceFact::own_memory(range(query)));
+                }
+                work.push(units);
+            }
+        }
+        curves.push((count, work));
+    }
+    eprintln!("memory owner lookup (fragments, first/last/miss x3 work): {curves:?}");
+    assert!(
+        curves.windows(2).all(|pair| pair[0]
+            .1
+            .iter()
+            .zip(&pair[1].1)
+            .all(|(small, large)| *large <= *small + 32)),
+        "memory support selection scans fragment candidates: {curves:?}"
+    );
+}
