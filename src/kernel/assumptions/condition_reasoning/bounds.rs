@@ -1,4 +1,9 @@
 use super::*;
+use crate::kernel::machine_integer::{
+    Relation,
+    comparison::{ComparisonOperand, NativeComparisonView},
+};
+use crate::kernel::{MachineOperandView as V, SharedMachineIntegerTerm};
 
 /// One collected order fact: `left (<|<=) right` with its strictness.
 pub(in crate::kernel) type OrderFact = (Bitvector32Term, Bitvector32Term, bool);
@@ -212,11 +217,21 @@ impl PureFactContext {
         self.bounds_for_search(kind, lower, true)
             .into_iter()
             .any(|(bound, bound_strict)| {
-                self.bound_proves_order_in(kind, &bound, upper, strict && !bound_strict)
+                self.bound_proves_order_views(
+                    kind,
+                    bound.operand_view(),
+                    V::Legacy(upper),
+                    strict && !bound_strict,
+                )
             })
             || self.bounds_for_search(kind, upper, false).into_iter().any(
                 |(bound, bound_strict)| {
-                    self.bound_proves_order_in(kind, lower, &bound, strict && !bound_strict)
+                    self.bound_proves_order_views(
+                        kind,
+                        V::Legacy(lower),
+                        bound.operand_view(),
+                        strict && !bound_strict,
+                    )
                 },
             )
     }
@@ -230,7 +245,14 @@ impl PureFactContext {
     ) -> bool {
         self.upper_bounds_for_search(left)
             .into_iter()
-            .any(|(upper, strict)| self.bound_proves_order(&upper, right, !strict))
+            .any(|(upper, strict)| {
+                self.bound_proves_order_views(
+                    OrderKind::Signed32,
+                    upper.operand_view(),
+                    V::Legacy(right),
+                    !strict,
+                )
+            })
     }
 
     /// Whether a recorded upper bound of `left` lies at or below `right`, so
@@ -242,7 +264,14 @@ impl PureFactContext {
     ) -> bool {
         self.upper_bounds_for_search(left)
             .into_iter()
-            .any(|(upper, _)| self.bound_proves_order(&upper, right, false))
+            .any(|(upper, _)| {
+                self.bound_proves_order_views(
+                    OrderKind::Signed32,
+                    upper.operand_view(),
+                    V::Legacy(right),
+                    false,
+                )
+            })
     }
 
     /// `left < right` from a recorded `left < right + 1` and a recorded
@@ -256,7 +285,7 @@ impl PureFactContext {
             .into_iter()
             .any(|(upper, strict)| {
                 strict
-                    && upper.add_const_base(1).is_some_and(|base| base == *right)
+                    && shared_successor_of(upper.operand_view(), right)
                     && self.has_condition_fact(
                         ConditionTerm::equal(left.clone(), right.clone()),
                         false,
@@ -284,7 +313,7 @@ impl PureFactContext {
         self.upper_bounds_for_search(&base)
             .into_iter()
             .any(|(upper, strict)| {
-                signed_const_add(&upper, addend)
+                shared_signed_const_add(upper.operand_view(), addend)
                     .is_some_and(|upper| self.bound_proves_order(&upper, right, !strict))
             })
     }
@@ -307,7 +336,7 @@ impl PureFactContext {
         self.upper_bounds_for_search(&base)
             .into_iter()
             .any(|(upper, _)| {
-                signed_const_add(&upper, addend)
+                shared_signed_const_add(upper.operand_view(), addend)
                     .is_some_and(|upper| self.bound_proves_order(&upper, right, false))
             })
     }
@@ -502,7 +531,7 @@ impl PureFactContext {
     pub(super) fn lower_bounds_for_search(
         &self,
         term: &Bitvector32Term,
-    ) -> Vec<(Bitvector32Term, bool)> {
+    ) -> Vec<(SharedMachineIntegerTerm, bool)> {
         self.bounds_for_search(OrderKind::Signed32, term, false)
     }
 
@@ -512,7 +541,7 @@ impl PureFactContext {
     pub(super) fn upper_bounds_for_search(
         &self,
         term: &Bitvector32Term,
-    ) -> Vec<(Bitvector32Term, bool)> {
+    ) -> Vec<(SharedMachineIntegerTerm, bool)> {
         self.bounds_for_search(OrderKind::Signed32, term, true)
     }
 
@@ -525,7 +554,7 @@ impl PureFactContext {
         kind: OrderKind,
         term: &Bitvector32Term,
         upper: bool,
-    ) -> Vec<(Bitvector32Term, bool)> {
+    ) -> Vec<(SharedMachineIntegerTerm, bool)> {
         let index = match kind {
             OrderKind::Signed32 => &self.signed_order_bounds,
             OrderKind::Unsigned32 => &self.uint32_order_bounds,
@@ -552,7 +581,7 @@ impl PureFactContext {
                         OrderKind::Signed32 => MachineIntegerType::Int32,
                         OrderKind::Unsigned32 => MachineIntegerType::UInt32,
                     };
-                    let other = other.retain(format).value().clone();
+                    let other = other.retain(format);
                     if !bounds.contains(&(other.clone(), strict)) {
                         bounds.push((other, strict));
                     }
@@ -585,15 +614,23 @@ impl PureFactContext {
         upper: &Bitvector32Term,
         strict: bool,
     ) -> bool {
-        let constants = match kind {
-            OrderKind::Signed32 => {
-                signed_bitvector_constant(lower).zip(signed_bitvector_constant(upper))
-            }
-            OrderKind::Unsigned32 => lower
-                .as_const()
-                .map(i64::from)
-                .zip(upper.as_const().map(i64::from)),
+        self.bound_proves_order_views(kind, V::Legacy(lower), V::Legacy(upper), strict)
+    }
+
+    fn bound_proves_order_views(
+        &self,
+        kind: OrderKind,
+        lower: V<'_>,
+        upper: V<'_>,
+        strict: bool,
+    ) -> bool {
+        let constant = |operand: V<'_>| {
+            operand.word32_constant().map(|word| match kind {
+                OrderKind::Signed32 => i64::from(word as i32),
+                OrderKind::Unsigned32 => i64::from(word),
+            })
         };
+        let constants = constant(lower).zip(constant(upper));
         if let Some((lower, upper)) = constants {
             return if strict {
                 lower < upper
@@ -601,7 +638,28 @@ impl PureFactContext {
                 lower <= upper
             };
         }
-        let condition = kind.order(lower.clone(), upper.clone(), strict);
+        let condition = match (lower, upper) {
+            (V::Legacy(lower), V::Legacy(upper)) => {
+                kind.order(lower.clone(), upper.clone(), strict)
+            }
+            _ => {
+                let format = match kind {
+                    OrderKind::Signed32 => MachineIntegerType::Int32,
+                    OrderKind::Unsigned32 => MachineIntegerType::UInt32,
+                };
+                NativeComparisonView {
+                    format,
+                    relation: if strict {
+                        Relation::Less
+                    } else {
+                        Relation::LessEqual
+                    },
+                    operands: [lower, upper]
+                        .map(|operand| ComparisonOperand::Observation(operand.retain(format))),
+                }
+                .integer_condition()
+            }
+        };
         if self.exact_condition_value(&condition) == Some(true)
             || self.difference_graph_proves(&condition)
         {
@@ -625,7 +683,12 @@ impl PureFactContext {
             .any(|(lower, strict)| {
                 // `lower < left` and `lower >= right`, or `lower <= left` and
                 // `lower > right`, give `left > right`.
-                self.bound_proves_order(right, &lower, !strict)
+                self.bound_proves_order_views(
+                    OrderKind::Signed32,
+                    V::Legacy(right),
+                    lower.operand_view(),
+                    !strict,
+                )
             })
     }
 
@@ -638,7 +701,14 @@ impl PureFactContext {
     ) -> bool {
         self.lower_bounds_for_search(left)
             .into_iter()
-            .any(|(lower, _)| self.bound_proves_order(right, &lower, false))
+            .any(|(lower, _)| {
+                self.bound_proves_order_views(
+                    OrderKind::Signed32,
+                    V::Legacy(right),
+                    lower.operand_view(),
+                    false,
+                )
+            })
     }
 
     pub(in crate::kernel) fn has_add_const_lower_bound_above(
@@ -665,7 +735,7 @@ impl PureFactContext {
         self.lower_bounds_for_search(&base)
             .into_iter()
             .any(|(lower, strict)| {
-                signed_const_add(&lower, addend)
+                shared_signed_const_add(lower.operand_view(), addend)
                     .is_some_and(|lower| self.bound_proves_order(right, &lower, !strict))
             })
     }
@@ -691,7 +761,7 @@ impl PureFactContext {
         self.lower_bounds_for_search(&base)
             .into_iter()
             .any(|(lower, _)| {
-                signed_const_add(&lower, addend)
+                shared_signed_const_add(lower.operand_view(), addend)
                     .is_some_and(|lower| self.bound_proves_order(right, &lower, false))
             })
     }
@@ -827,4 +897,77 @@ impl SelectedFacts<'_> {
         }
         facts
     }
+}
+
+// These consumers need only a literal or one additive root, never a boxed
+// expansion of a retained bound.
+fn shared_signed_const_add(term: V<'_>, addend: u32) -> Option<Bitvector32Term> {
+    let sum = (term.word32_constant()? as i32).checked_add(i32::try_from(addend).ok()?)?;
+    Some(Bitvector32Term::Constant(sum as u32))
+}
+
+fn shared_successor_of(term: V<'_>, right: &Bitvector32Term) -> bool {
+    if let V::Legacy(term) = term {
+        return term.add_const_base(1).is_some_and(|base| base == *right);
+    }
+    let Some((format, crate::kernel::MachineBinaryOp::Add, [left, right_operand])) = term.binary()
+    else {
+        return false;
+    };
+    if format != MachineIntegerType::Int32 {
+        return false;
+    }
+    use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+    let same = |operand| {
+        Key::for_format(MachineIntegerType::Int32, operand)
+            == Key::for_format(MachineIntegerType::Int32, V::Legacy(right))
+    };
+    (right_operand.literal() == Some(Bitvector32Term::Constant(1)) && same(left))
+        || (left.literal() == Some(Bitvector32Term::Constant(1)) && same(right_operand))
+}
+
+#[cfg(test)]
+mod shared_bound_tests {
+    use super::*;
+    use crate::kernel::{KernelTerm, KernelType, MachineBinaryOp, Variable};
+
+    #[test]
+    fn shared_bounds_keep_strictness_and_require_the_second_premise() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let root = KernelTerm::machine_binary_shared(
+            ty,
+            MachineBinaryOp::Add,
+            [
+                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994101)),
+                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994102)),
+            ],
+        );
+        let operand = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+        let x = Bitvector32Term::Variable(Variable(994103));
+        let y = Bitvector32Term::Variable(Variable(994104));
+        let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
+        let first = ConditionTerm::integer_less_equal(
+            observe(x.clone()),
+            IntegerTerm::Machine(operand.clone()),
+        );
+        let second = ConditionTerm::integer_less_equal(
+            IntegerTerm::Machine(operand.clone()),
+            observe(y.clone()),
+        );
+        let parent = PureFactContext::new().assume_condition(first, true);
+        let facts = parent.clone().assume_condition(second, true);
+        assert!(facts.has_upper_bound_at_or_below(&x, &y));
+        assert!(!operand.has_boxed_operand());
+        // Unresolved queries still reach the general decision dispatcher's
+        // native compatibility conversion. Preserve its refusal behavior;
+        // migrating that boundary is separate from retaining selected bounds.
+        assert!(!facts.has_upper_bound_below(&x, &y));
+        assert!(!parent.has_upper_bound_at_or_below(&x, &y));
+    }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../../scaling_tests/kernel/assumptions/condition_reasoning/bounds.rs");
 }
