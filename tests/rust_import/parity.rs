@@ -190,8 +190,8 @@ fn charon_canonical_examples_use_locked_native_artifacts() {
         adopted += 1;
     }
     assert_eq!(
-        adopted, 17,
-        "canonical adoption uses the fixed 17-fixture baseline"
+        adopted, 18,
+        "canonical adoption uses the fixed 18-fixture baseline"
     );
 }
 
@@ -203,22 +203,42 @@ fn charon_canonical_basic_tools_agree() {
     assert_cli(&p, &["verify"]);
     assert_cli(&p, &["profile"]);
     let prepared = p.prepared().unwrap();
-    let expanded =
-        click::surface::expand_program_prepared_tactic_source_at(SIDECAR, &prepared, 8, 5).unwrap();
+    let project = click::cli::read_click_project(&p.root.join("borrow.click"), SIDECAR).unwrap();
+    let sites = click::surface::project_smart_tactic_source_sites(
+        &project,
+        &click::surface::ProgramInputs::program(&prepared),
+    )
+    .unwrap();
+    let site = sites
+        .iter()
+        .find(|site| site.claim_label == "choose.ensures_0")
+        .unwrap();
+    let expanded = click::surface::expand_program_prepared_tactic_source_at(
+        SIDECAR,
+        &prepared,
+        site.position.line,
+        site.position.column,
+    )
+    .unwrap();
     C0VerificationSession::new_program_prepared(&expanded, &prepared).unwrap();
     assert_cli(
         &p,
         &[
             "audit",
             "--claim",
-            "choose.contract",
+            "choose.ensures_0",
             "--start-at",
-            &format!("{}:8:5", p.root.join("borrow.click").display()),
+            &format!(
+                "{}:{}:{}",
+                p.root.join("borrow.click").display(),
+                site.position.line,
+                site.position.column
+            ),
             "--max-sites",
             "1",
         ],
     );
-    assert_cli(&p, &["expand", "--claim", "choose.contract", "--in-place"]);
+    assert_cli(&p, &["expand", "--claim", "choose.ensures_0", "--in-place"]);
     assert_cli(&p, &["verify"]);
     assert_cli(&p, &["expand", "--claim", "update.contract", "--in-place"]);
     assert_cli(&p, &["verify"]);

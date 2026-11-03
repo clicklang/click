@@ -1428,7 +1428,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
         // context, then pass that checked consequence beside the listed fact.
         let mut premises_with_readings = explicit_premises.to_vec();
         for premise in explicit_premises {
-            if let Some(native) = facts.native_operation_reading(premise) {
+            if let Some(native) = facts.shared_operation_reading(premise) {
                 premises_with_readings.push(native);
             }
         }

@@ -27,14 +27,18 @@
 //!
 //! See `docs/internals/verification-efficiency.md`.
 
-use super::proposition_reasoning::{canonical_contradiction_condition, order_endpoint_key};
+use super::checked_scalar_facts::ScalarOperandKey as Key;
+use super::contradiction_endpoints::EndpointKeys;
+use super::proposition_reasoning::canonical_contradiction_condition;
+#[cfg(test)]
+use crate::kernel::Bitvector32Term;
+#[cfg(test)]
+use crate::kernel::CompareRelation;
+use crate::kernel::MachineIntegerType;
+use crate::kernel::MachineOperandView as V;
 use crate::kernel::equality_graph::scalar_evidence_pair;
-use crate::kernel::reasoning::order_reasoning::{
-    bitvector_variable, bitvector_variable_and_constant, condition_as_order_fact,
-    signed_bitvector_constant,
-};
-use crate::kernel::{Bitvector32Term, ConditionTerm, Variable};
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+use crate::kernel::{ConditionTerm, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 
 /// The widest bounded interval whose values are checked one by one against
@@ -46,7 +50,7 @@ const EXHAUSTIBLE_RANGE: i64 = 256;
 enum Cell {
     Polarity(ConditionTerm),
     /// The order edges between two class roots, smaller root first.
-    Order(Bitvector32Term, Bitvector32Term),
+    Order(Key, Key),
     Range(Variable),
 }
 
@@ -116,16 +120,17 @@ fn counted(map: &PersistentMap<i64, u32>, value: i64, insert: bool) -> Persisten
 /// The contradiction index of one set of condition facts.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Contradictions {
+    endpoints: EndpointKeys,
     /// `[false, true]` fact counts under each canonical condition.
     polarity: PersistentMap<ConditionTerm, [u32; 2]>,
     /// Union-find parents of non-root endpoint keys.
-    parent: PersistentMap<Bitvector32Term, Bitvector32Term>,
+    parent: PersistentMap<Key, Key>,
     /// Member counts of class roots with more than one member.
-    size: PersistentMap<Bitvector32Term, usize>,
+    size: PersistentMap<Key, usize>,
     /// `from -> to -> edge`: `from <= to`, or `<` when strict, by class root.
-    out_edges: PersistentMap<Bitvector32Term, PersistentMap<Bitvector32Term, Edge>>,
+    out_edges: PersistentMap<Key, PersistentMap<Key, Edge>>,
     /// The same edges keyed by `to`.
-    in_edges: PersistentMap<Bitvector32Term, PersistentMap<Bitvector32Term, Edge>>,
+    in_edges: PersistentMap<Key, PersistentMap<Key, Edge>>,
     ranges: PersistentMap<Variable, Range>,
     /// The cells currently in conflict.
     conflicts: PersistentSet<Cell>,
@@ -141,6 +146,9 @@ impl Contradictions {
     /// classes.
     fn joins_classes(condition: &ConditionTerm, value: bool) -> bool {
         scalar_evidence_pair(condition, value).is_some()
+            || comparison_view(condition, value).is_some_and(|view| {
+                view.format.format().bits() == 32 && view.relation == Relation::Equal
+            })
     }
 
     fn adjust(&mut self, condition: &ConditionTerm, value: bool, insert: bool) {
@@ -153,20 +161,37 @@ impl Contradictions {
                 ConditionTerm::pointer_equal(left.pointer().clone(), right.pointer().clone());
             self.adjust_polarity(canonical_contradiction_condition(&address), true, insert);
         }
-        if let ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        } = condition
-        {
-            if value {
-                self.register(left);
-                self.register(right);
+        let observation =
+            crate::kernel::machine_integer::comparison::native_comparison_view(condition, value);
+        let cancel = observation.is_some();
+        let mut comparison = observation.or_else(|| comparison_view(condition, value));
+        while let Some(view) = comparison {
+            // The old native copy admitted both the written equation and each
+            // cancellation. Keep those endpoint classes without filing facts.
+            comparison = cancel.then(|| view.cancelled_equality()).flatten();
+            if view.format.format().bits() != 32
+                || !matches!(view.relation, Relation::Equal | Relation::NotEqual)
+            {
+                continue;
             }
-            if let Some((variable, constant)) = bitvector_variable_and_constant(left, right) {
-                self.adjust_range(variable, |range| {
-                    if value {
+            let [left, right] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            let equal = view.relation == Relation::Equal;
+            if equal && insert {
+                let left = self.register(left);
+                let right = self.register(right);
+                self.union(&left, &right);
+            }
+            let pair = left
+                .variable()
+                .zip(right.word32_constant())
+                .or_else(|| right.variable().zip(left.word32_constant()));
+            if let Some((variable, bits)) = pair {
+                let constant = i64::from(bits as i32);
+                self.adjust_range(*variable, |range| {
+                    if equal {
                         range.lower = counted(&range.lower, constant, insert);
                         range.upper = counted(&range.upper, constant, insert);
                     } else {
@@ -175,16 +200,27 @@ impl Contradictions {
                 });
             }
         }
-        if insert && let Some((left, right)) = scalar_evidence_pair(condition, value) {
-            self.union(&left, &right);
+        if insert
+            && !matches!(condition, ConditionTerm::Compare { .. })
+            && let Some((left, right)) = scalar_evidence_pair(condition, value)
+        {
+            self.union(&Key::new(V::Legacy(&left)), &Key::new(V::Legacy(&right)));
         }
-        if let Some((left, right, strict)) = condition_as_order_fact(condition, value) {
-            if insert {
-                self.register(&left);
-                self.register(&right);
-            }
-            let from = self.find(&order_endpoint_key(&left));
-            let to = self.find(&order_endpoint_key(&right));
+        if let Some(view) = super::retained_order_bounds::order_view(condition, value)
+            && view.format == MachineIntegerType::Int32
+        {
+            let [left, right] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            let strict = view.relation == Relation::Less;
+            let (left_key, right_key) = if insert {
+                (self.register(left), self.register(right))
+            } else {
+                (self.endpoints.key(left), self.endpoints.key(right))
+            };
+            let from = self.find(&left_key);
+            let to = self.find(&right_key);
             let edge = if strict {
                 Edge {
                     loose: 0,
@@ -198,17 +234,19 @@ impl Contradictions {
             };
             self.adjust_edge(&from, &to, edge, insert);
             self.refresh_order(&from, &to);
-            if let (Some(variable), Some(bound)) =
-                (bitvector_variable(&left), signed_bitvector_constant(&right))
-            {
+            if let (Some(variable), Some(bound)) = (
+                left.variable().copied(),
+                right.word32_constant().map(|bits| i64::from(bits as i32)),
+            ) {
                 let upper = if strict { bound - 1 } else { bound };
                 self.adjust_range(variable, |range| {
                     range.upper = counted(&range.upper, upper, insert);
                 });
             }
-            if let (Some(bound), Some(variable)) =
-                (signed_bitvector_constant(&left), bitvector_variable(&right))
-            {
+            if let (Some(bound), Some(variable)) = (
+                left.word32_constant().map(|bits| i64::from(bits as i32)),
+                right.variable().copied(),
+            ) {
                 let lower = if strict { bound + 1 } else { bound };
                 self.adjust_range(variable, |range| {
                     range.lower = counted(&range.lower, lower, insert);
@@ -256,15 +294,33 @@ impl Contradictions {
     }
 
     /// An endpoint and its key name one value, so they share a class.
-    fn register(&mut self, endpoint: &Bitvector32Term) {
-        let graph_key = super::equality_graph_term_key(endpoint);
-        let key = order_endpoint_key(endpoint);
+    fn register(&mut self, endpoint: V<'_>) -> Key {
+        let (graph_key, key) = match endpoint {
+            V::Legacy(term) => {
+                let graph = super::equality_graph_term_key(term);
+                if let Some(root) = crate::kernel::KernelTermImport::default()
+                    .machine_arithmetic(MachineIntegerType::Int32, &graph)
+                {
+                    (
+                        Key::new(V::Shared(&root)),
+                        self.endpoints.key(V::Shared(&root)),
+                    )
+                } else {
+                    (
+                        Key::Written(graph),
+                        Key::Written(super::proposition_reasoning::order_endpoint_key(term)),
+                    )
+                }
+            }
+            V::Shared(_) => (Key::new(endpoint), self.endpoints.key(endpoint)),
+        };
         if graph_key != key {
             self.union(&graph_key, &key);
         }
+        key
     }
 
-    fn find(&self, term: &Bitvector32Term) -> Bitvector32Term {
+    fn find(&self, term: &Key) -> Key {
         let mut current = term;
         while let Some(parent) = self.parent.get(current) {
             crate::instrumentation::record_deterministic_work(1);
@@ -273,11 +329,11 @@ impl Contradictions {
         current.clone()
     }
 
-    fn class_size(&self, root: &Bitvector32Term) -> usize {
+    fn class_size(&self, root: &Key) -> usize {
         self.size.get(root).copied().unwrap_or(1)
     }
 
-    fn union(&mut self, left: &Bitvector32Term, right: &Bitvector32Term) {
+    fn union(&mut self, left: &Key, right: &Key) {
         let left = self.find(left);
         let right = self.find(right);
         if left == right {
@@ -298,7 +354,7 @@ impl Contradictions {
     }
 
     /// Refiles every edge at `merged` under `root`, which absorbed it.
-    fn move_edges(&mut self, merged: &Bitvector32Term, root: &Bitvector32Term) {
+    fn move_edges(&mut self, merged: &Key, root: &Key) {
         let outgoing = self.out_edges.get(merged).cloned().unwrap_or_default();
         let incoming = self.in_edges.get(merged).cloned().unwrap_or_default();
         let mut touched = Vec::new();
@@ -325,7 +381,7 @@ impl Contradictions {
         }
     }
 
-    fn edge(&self, from: &Bitvector32Term, to: &Bitvector32Term) -> Edge {
+    fn edge(&self, from: &Key, to: &Key) -> Edge {
         self.out_edges
             .get(from)
             .and_then(|edges| edges.get(to))
@@ -333,13 +389,7 @@ impl Contradictions {
             .unwrap_or_default()
     }
 
-    fn adjust_edge(
-        &mut self,
-        from: &Bitvector32Term,
-        to: &Bitvector32Term,
-        edge: Edge,
-        insert: bool,
-    ) {
+    fn adjust_edge(&mut self, from: &Key, to: &Key, edge: Edge, insert: bool) {
         let current = self.edge(from, to);
         let next = if insert {
             current.add(edge)
@@ -354,7 +404,7 @@ impl Contradictions {
     }
 
     /// Recomputes whether the edges between two roots conflict.
-    fn refresh_order(&mut self, left: &Bitvector32Term, right: &Bitvector32Term) {
+    fn refresh_order(&mut self, left: &Key, right: &Key) {
         let forward = self.edge(left, right);
         let conflict = if left == right {
             forward.strict > 0
@@ -366,7 +416,7 @@ impl Contradictions {
     }
 }
 
-fn order_cell(left: &Bitvector32Term, right: &Bitvector32Term) -> Cell {
+fn order_cell(left: &Key, right: &Key) -> Cell {
     if left <= right {
         Cell::Order(left.clone(), right.clone())
     } else {
@@ -375,11 +425,11 @@ fn order_cell(left: &Bitvector32Term, right: &Bitvector32Term) -> Cell {
 }
 
 fn with_edge(
-    edges: &PersistentMap<Bitvector32Term, PersistentMap<Bitvector32Term, Edge>>,
-    from: &Bitvector32Term,
-    to: &Bitvector32Term,
+    edges: &PersistentMap<Key, PersistentMap<Key, Edge>>,
+    from: &Key,
+    to: &Key,
     edge: Edge,
-) -> PersistentMap<Bitvector32Term, PersistentMap<Bitvector32Term, Edge>> {
+) -> PersistentMap<Key, PersistentMap<Key, Edge>> {
     let targets = edges.get(from).cloned().unwrap_or_default();
     let targets = if edge.any() {
         targets.with_inserted(to.clone(), edge)

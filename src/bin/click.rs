@@ -260,13 +260,12 @@ mod tests {
             )),
             "{uncovered}"
         );
-        let several = expand(&format!("{path}:9"), "several.click").unwrap_err();
-        assert!(
-            several.contains(&format!(
-                "{path}:9: 2 claims cover this line; add the column of one of them:\n  {path}:9:20 `g.owns_0`\n  {path}:9:34 `g.ensures_0`"
-            )),
-            "{several}"
+        let grouped = expand(&format!("{path}:9"), "grouped.click").unwrap();
+        assert_eq!(
+            grouped,
+            expand("g.contract", "grouped-label.click").unwrap()
         );
+        run(&["verify", &output("grouped.click")]).unwrap();
         let elsewhere = expand("other.click:5", "elsewhere.click").unwrap_err();
         assert!(
             elsewhere.contains("`other.click:5` names a location in `other.click`"),

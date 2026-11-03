@@ -2797,9 +2797,18 @@ impl PureFactContext {
         direct
             .into_iter()
             .chain(alias)
-            .flat_map(|bounds| bounds.keys())
+            .flat_map(|bounds| bounds.operand_keys())
             .map(|(fact_endpoint, other, strict, forward)| {
-                (fact_endpoint.clone(), other.clone(), *strict, *forward)
+                // This derivation API returns written endpoints for proof construction.
+                (
+                    fact_endpoint
+                        .retain(MachineIntegerType::Int32)
+                        .value()
+                        .clone(),
+                    other.retain(MachineIntegerType::Int32).value().clone(),
+                    strict,
+                    forward,
+                )
             })
     }
 
@@ -2821,9 +2830,18 @@ impl PureFactContext {
         direct
             .into_iter()
             .chain(alias)
-            .flat_map(|bounds| bounds.keys())
+            .flat_map(|bounds| bounds.operand_keys())
             .map(|(fact_endpoint, other, strict, forward)| {
-                (fact_endpoint.clone(), other.clone(), *strict, *forward)
+                // This derivation API returns written endpoints for proof construction.
+                (
+                    fact_endpoint
+                        .retain(MachineIntegerType::UInt32)
+                        .value()
+                        .clone(),
+                    other.retain(MachineIntegerType::UInt32).value().clone(),
+                    strict,
+                    forward,
+                )
             })
     }
 
@@ -4433,6 +4451,11 @@ impl PureFactContext {
     }
 
     pub(crate) fn is_inconsistent(&self) -> bool {
+        if let Some(source) = self.observation_comparisons.false_source() {
+            record_implicit_reasoning_provenance(self, source);
+            return true;
+        }
+
         // Exact opposite assumptions construct this fact directly, without
         // deleting the original condition or invalidating derived indexes.
         if self.prop_facts.contains(&Proposition::ConditionIs(

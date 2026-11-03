@@ -6,12 +6,22 @@ pub(in crate::kernel) fn condition_as_order_fact(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
-    if let Some((native, truth)) =
-        crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
-            condition, value,
-        )
+    if let Some(view) =
+        crate::kernel::machine_integer::comparison::native_comparison_view(condition, value)
     {
-        return condition_as_order_fact(&native, truth);
+        if view.format != MachineIntegerType::Int32 {
+            return None;
+        }
+        let strict = match view.relation {
+            crate::kernel::machine_integer::Relation::Less => true,
+            crate::kernel::machine_integer::Relation::LessEqual => false,
+            _ => return None,
+        };
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view().retain(view.format).value().clone());
+        return Some((left, right, strict));
     }
     match (condition, value) {
         (
@@ -172,6 +182,23 @@ pub(in crate::kernel) fn condition_as_int64_order_fact(
     condition: &ConditionTerm,
     value: bool,
 ) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
+    if let Some(view) =
+        crate::kernel::machine_integer::comparison::native_comparison_view(condition, value)
+    {
+        if view.format != MachineIntegerType::Int64 {
+            return None;
+        }
+        let strict = match view.relation {
+            crate::kernel::machine_integer::Relation::Less => true,
+            crate::kernel::machine_integer::Relation::LessEqual => false,
+            _ => return None,
+        };
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view().retain(view.format).value().clone());
+        return Some((left, right, strict));
+    }
     let (left, right, lower_first, strict) = match condition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,

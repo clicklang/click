@@ -282,7 +282,65 @@ pub(super) fn instantiate_algebraic_type(
     })
 }
 
+/// The instances of Click library primitive types the kernel has been
+/// given, by their kernel name: each is a rigid kernel type, and this is how
+/// its kernel name reads back as the Surface application `Vec<uint32>`.
+/// Each name is a function of its parts alone, so one table serves the
+/// whole process.
+static PRIMITIVE_INSTANCES: std::sync::LazyLock<
+    std::sync::RwLock<BTreeMap<String, (String, Vec<AlgebraicValueType>)>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// Records the kernel name of a primitive type instance and returns it.
+pub(super) fn primitive_instance_kernel_name(
+    name: &str,
+    arguments: &[AlgebraicValueType],
+    kernel_name: String,
+) -> String {
+    let known = PRIMITIVE_INSTANCES
+        .read()
+        .expect("primitive instance table")
+        .contains_key(&kernel_name);
+    if !known {
+        PRIMITIVE_INSTANCES
+            .write()
+            .expect("primitive instance table")
+            .insert(kernel_name.clone(), (name.to_string(), arguments.to_vec()));
+    }
+    kernel_name
+}
+
+/// Whether the kernel type `kernel_name` is the instance of a Click library
+/// primitive type that `expected` writes.
+pub(super) fn is_primitive_instance(
+    kernel_name: &str,
+    expected: &AlgebraicTypeApplication,
+) -> bool {
+    !expected.rigid
+        && click_type_from_algebraic_value_type(&AlgebraicValueType::Parameter(
+            kernel_name.to_string(),
+        )) == ClickType::Algebraic(expected.clone())
+}
+
 pub(super) fn click_type_from_algebraic_value_type(value_type: &AlgebraicValueType) -> ClickType {
+    let primitive = match value_type {
+        AlgebraicValueType::Parameter(name) => PRIMITIVE_INSTANCES
+            .read()
+            .expect("primitive instance table")
+            .get(name)
+            .cloned(),
+        _ => None,
+    };
+    if let Some((name, arguments)) = primitive {
+        return ClickType::Algebraic(AlgebraicTypeApplication {
+            rigid: false,
+            name,
+            arguments: arguments
+                .iter()
+                .map(click_type_from_algebraic_value_type)
+                .collect(),
+        });
+    }
     match value_type {
         AlgebraicValueType::Parameter(name) => ClickType::Algebraic(AlgebraicTypeApplication {
             rigid: true,
@@ -437,7 +495,10 @@ pub(super) fn instantiate_function(
             .decreases()
             .map(|expression| instantiate_expression(expression, substitution))
             .transpose()?,
-        body: instantiate_expression(definition.body(), substitution)?,
+        body: definition
+            .body()
+            .map(|body| instantiate_expression(body, substitution))
+            .transpose()?,
     })
 }
 
@@ -654,6 +715,7 @@ pub(super) fn instantiate_theorem(
         })
         .collect::<BTreeMap<_, _>>();
     Ok(TheoremDefinition {
+        axiom: definition.axiom,
         generic_pointer_parameters: definition.generic_pointer_parameters.clone(),
         body: definition.parsed_body().clone(),
         executes: definition.executes.clone(),

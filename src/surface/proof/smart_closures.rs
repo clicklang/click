@@ -6723,6 +6723,14 @@ impl<'a> Proof<'a> {
                 if introduced.is_complete() {
                     return Ok(Some(introduced));
                 }
+                // Each conjunct is probed as a curried antecedent would be:
+                // `a and b implies c` closes where `a implies b implies c`
+                // does, when the facts hold a conjunct's exact opposite.
+                if let Some(closed) =
+                    introduced.try_introduced_antecedent_contradiction(conjunct)?
+                {
+                    return Ok(Some(closed));
+                }
             }
             available_surfaces.push(antecedent.clone());
             available_surfaces.extend(conjuncts.iter().cloned());
@@ -7247,9 +7255,14 @@ impl<'a> Proof<'a> {
             Proposition::Not(body) => body.as_ref().clone(),
             proposition => Proposition::Not(Box::new(proposition.clone())),
         };
-        if !self.facts().contains(&opposite) {
+        // The facts may hold the opposite in another of its spellings,
+        // `x > 100` for `x <= 100` false.
+        let Some(opposite) = std::iter::once(opposite.clone())
+            .chain(crate::kernel::proof::fact_reasoning::condition_polarity_forms(&opposite))
+            .find(|form| self.facts().contains(form))
+        else {
             return Ok(None);
-        }
+        };
         if let Some(closed) = attempt::candidate_outcome(
             self.apply_step(ProofStep::Contradiction(surface_antecedent.clone())),
         )? {

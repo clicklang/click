@@ -709,7 +709,7 @@ pub(super) fn validate_algebraic_type_declarations(file: &ClickFile) -> Result<(
                 definition.name()
             )));
         }
-        if definition.variants().is_empty() {
+        if definition.variants().is_empty() && !definition.is_primitive() {
             return Err(ClickError::new(format!(
                 "algebraic datatype `{}` must declare at least one variant",
                 definition.name()
@@ -778,6 +778,15 @@ fn validate_algebraic_field_declaration(
                     variant.name()
                 ))
             })?;
+            // The kernel reads a primitive type as a rigid type of its own,
+            // which a datatype's field schema does not yet carry.
+            if nested.is_primitive() {
+                return Err(ClickError::new(format!(
+                    "variant `{}::{}` holds the Click library primitive type `{name}`, which a `spec enum` field cannot hold yet",
+                    owner.name(),
+                    variant.name()
+                )));
+            }
             if arguments.len() != nested.type_parameters().len() {
                 return Err(ClickError::new(format!(
                     "algebraic datatype `{name}` expects {} type argument(s), got {} in variant `{}::{}`",
@@ -829,12 +838,15 @@ fn validate_recursive_algebraic_declarations(
     loop {
         let before = grounded.len();
         for definition in definitions.values() {
-            if definition.variants().iter().any(|variant| {
-                variant
-                    .fields()
-                    .iter()
-                    .all(|field| algebraic_field_is_grounded(field, &grounded))
-            }) {
+            // A primitive type has values without constructors.
+            if definition.is_primitive()
+                || definition.variants().iter().any(|variant| {
+                    variant
+                        .fields()
+                        .iter()
+                        .all(|field| algebraic_field_is_grounded(field, &grounded))
+                })
+            {
                 grounded.insert(definition.name());
             }
         }
@@ -1123,9 +1135,14 @@ pub(super) fn validate_algebraic_type_uses(
         }
     }
     for definition in &functions {
+        // A library primitive operation has no body to check; its
+        // signature is its whole surface meaning.
+        let Some(body) = definition.body() else {
+            continue;
+        };
         let mut variables = AlgebraicVariables::parameters(definition.parameters());
         let body_type = validate_algebraic_expression(
-            definition.body(),
+            body,
             &mut variables,
             click_functions,
             &predicate_types,
@@ -1151,7 +1168,7 @@ pub(super) fn validate_algebraic_type_uses(
             // result carrier, retaining the existing purity diagnostic.
             let mut referenced = BTreeSet::new();
             crate::surface::lowering::collect_contract_expression_referenced_names(
-                definition.body(),
+                body,
                 &mut referenced,
             );
             if let Some(object) = referenced
@@ -1164,7 +1181,7 @@ pub(super) fn validate_algebraic_type_uses(
                 )).with_kind(ClickErrorKind::Type));
             }
             require_scalar_return_value(
-                definition.body(),
+                body,
                 definition.return_type(),
                 &mut ScopedTypes::new(click_variables),
                 click_functions,
@@ -1224,7 +1241,7 @@ pub(super) fn validate_algebraic_type_uses(
                 })
                 .collect();
             let actual = infer_generic_expression_type(
-                definition.body(),
+                body,
                 &mut ScopedTypes::new(click_variables),
                 click_functions,
                 &definitions,
@@ -2165,6 +2182,12 @@ fn validate_algebraic_expression_node(
                 )));
             };
             let definition = definitions[algebraic_type.name.as_str()];
+            if definition.is_primitive() {
+                return Err(ClickError::new(format!(
+                    "`match` needs a datatype; `{}` is a Click library primitive type with no constructors, in {context}",
+                    definition.name()
+                )));
+            }
             let mut seen = BTreeSet::new();
             let mut result_type: Option<ClickType> = None;
             for arm in arms {

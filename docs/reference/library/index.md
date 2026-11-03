@@ -5077,6 +5077,137 @@ function abs_diff(a: uint64, b: uint64) -> uint64 {
 }
 ```
 
+## Rust vectors
+
+`click::rust::vec` declares `Vec<T>`, the values a Rust vector holds, as a
+primitive library type, with four operations and the axioms that relate them.
+A sidecar reads them after `import click::rust::vec;` and proves claims about
+vectors by citing the axioms, `apply(vec::len_push(v, x));`. The `type`, the
+bodyless `function`s and the `axiom`s are forms only the built-in library
+modules may declare; each axiom is trusted, not proved
+([trust](../../concepts/trust.md#the-click-library)). Capacity and allocation
+are outside the model.
+
+### `Vec`
+
+```click
+type Vec<T>;
+```
+
+A Rust vector's values: a finite sequence of fewer than 2^64 values of `T`. It is a primitive type, like `uint32`: it has no constructors, so a `match`, a proof `match` and `induct` refuse it, and the kernel reads each instance, `Vec<uint32>`, as a rigid type of its own. Its meaning is the four operations below and the axioms that relate them; two vectors that hold the same values are equal by `vec::extensionality`. A `spec enum` field cannot hold a `Vec` yet.
+
+### `vec::len`
+
+```click
+function len<T>(v: Vec<T>) -> uint64;
+```
+
+The number of values in `v`. Opaque: `unfold` refuses it, since it has no definition.
+
+### `vec::get`
+
+```click
+function get<T>(v: Vec<T>, i: uint64) -> T;
+```
+
+The value at index `i`. The axioms describe it only below `vec::len(v)`; past the end it names a value nothing constrains.
+
+### `vec::push`
+
+```click
+function push<T>(v: Vec<T>, x: T) -> Vec<T>;
+```
+
+`v` with `x` appended.
+
+### `vec::set`
+
+```click
+function set<T>(v: Vec<T>, i: uint64, x: T) -> Vec<T>;
+```
+
+`v` with the value at index `i` replaced by `x`. The axioms describe it only for `i` below `vec::len(v)`.
+
+### `vec::len_push`
+
+```click
+axiom len_push<T>(v: Vec<T>, x: T) {
+    requires vec::len(v) < 18446744073709551615u64;
+    ensures vec::len(vec::push(v, x)) == vec::len(v) + 1;
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `vec::get_push_last`
+
+```click
+axiom get_push_last<T>(v: Vec<T>, x: T) {
+    requires vec::len(v) < 18446744073709551615u64;
+    ensures vec::get(vec::push(v, x), vec::len(v)) == x;
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `vec::get_push_kept`
+
+```click
+axiom get_push_kept<T>(v: Vec<T>, x: T, i: uint64) {
+    requires i < vec::len(v);
+    ensures vec::get(vec::push(v, x), i) == vec::get(v, i);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `vec::len_set`
+
+```click
+axiom len_set<T>(v: Vec<T>, i: uint64, x: T) {
+    requires i < vec::len(v);
+    ensures vec::len(vec::set(v, i, x)) == vec::len(v);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `vec::get_set_same`
+
+```click
+axiom get_set_same<T>(v: Vec<T>, i: uint64, x: T) {
+    requires i < vec::len(v);
+    ensures vec::get(vec::set(v, i, x), i) == x;
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `vec::get_set_other`
+
+```click
+axiom get_set_other<T>(v: Vec<T>, i: uint64, j: uint64, x: T) {
+    requires i < vec::len(v);
+    requires j < vec::len(v);
+    requires i != j;
+    ensures vec::get(vec::set(v, i, x), j) == vec::get(v, j);
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `vec::extensionality`
+
+```click
+axiom extensionality<T>(v: Vec<T>, w: Vec<T>) {
+    requires vec::len(v) == vec::len(w);
+    requires forall (i: uint64) { i < vec::len(v) implies vec::get(v, i) == vec::get(w, i) };
+    ensures v == w;
+}
+```
+
+**Axiom:** trusted, not proved.
+
 ## Separation
 
 ### `separation::restrict`

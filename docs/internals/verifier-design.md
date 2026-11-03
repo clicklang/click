@@ -375,7 +375,7 @@ it does not enumerate aliases. A miss forgets the cached value. The boundary
 rejects general resolution, range search, alias enumeration and order-path walks
 in this helper. Growing same-block separation buckets leave cold and repeated
 miss work unchanged, while written index disequality still respects access
-widths. Compact-run preservation remains a separate audit.
+widths.
 
 Automatic store byte-gap eligibility reads an exact stated endpoint order;
 it does not follow recorded order chains or invoke general condition decision.
@@ -384,6 +384,54 @@ store (for example `have i < j by solve() using { i < middle; middle < j; };`).
 That search expands into explicit proof steps. The checking boundary rejects
 order-walk helpers in `one_element_gap_separates_bytes`; deterministic tests
 hold the store fixed while increasing both successful and missing order chains.
+
+Store preservation of compact runs uses constant byte geometry or the cached
+signed interval of the written index. It forgets the entire possible write
+window as an interval, including for runs whose values are symbolic loads or
+copies. The existing bounded ownership selector also handles a run as one
+complete byte footprint. One explicitly stated separation selected by the
+run/write address anchors can likewise retain the whole run, provided both
+complete byte footprints fit.
+The lookup inspects at most two candidates and declines an ambiguous bucket.
+An otherwise unplaced write forgets the whole run. It does not enumerate
+logical slots or search separation-fact buckets. Fixed-offset writes query hole
+coverage only for the two partially covered boundary intervals, including when
+value widths exceed slot strides. Initialization records and immutable
+source history remain available; explicit separation and `transport` recover
+selected values, as in
+`mdtests/store_geometry_uses_explicit_order_and_transport.md`. Scaling tests
+grow order chains, separation buckets and logical run lengths independently;
+the build boundary rejects the removed search and per-slot routes.
+
+Named `unfold` publishes the constructed successor composition so explicit
+separation can use the existing checked-borrow partition rule. This publication
+follows body evaluation; temporary body assumptions must not index the caller
+frame. Incoming loans remain distinct from ordinary read observations, and a
+caller cannot lend the owner it transfers. The named-unfold alias-call and
+two-view refusal fixtures pin these restrictions.
+
+Non-memory owned-support selection nominates one indexed witness. Exact facts
+and exact owner-backed projections use their fact keys; non-exact queries
+require a singleton resource, prepared address-class/shape, or shape bucket.
+A selected candidate must entail the requested quantity and resource; failure
+never searches another candidate. The projection index is persistent and updated
+only for inserted or removed non-memory projections. Its support occurrence
+still names a live owner, so equal unbound views cannot erase that association.
+An owned observation without selected live support is refused; zero-quantity
+observations still establish no body authority. Scaling tests cover exact hits,
+misses, crowded quantity buckets, duplicate unbound views, and parent/child
+isolation after owner removal. The build boundary forbids candidate search in
+`direct_nonmemory_support_entry`.
+
+Declared-resource lowering selects parameter values from the names in its
+explicit arguments, including quantities and nested resource-type arguments.
+Outcome-proposition lowering against an indexed assumption context likewise
+selects only the names its proposition mentions. Both use `ParameterIndex`
+and construct array references from the selected values. Neither selection
+uses facts to change the term being lowered. The observation regression
+`observing_one_owner_ignores_unused_parameters` holds one owner and three
+observations fixed at 4/16/64 function parameters; first and repeated work must
+remain flat as unused parameters grow.
 
 An explicit loop read frame can select a flat range withheld from the loop
 body by the checked ownership partition. The loop history retains that

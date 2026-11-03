@@ -3947,8 +3947,8 @@ fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
             "== to_integer(bytes[count as uint32 as int32 + lane + 1] as int32) by",
         ),
         (
-            "bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 1]) by",
-            "bytes[(total as uint32 as int32 - remaining as uint32 as int32)]) by",
+            "bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 1] as int32) by",
+            "bytes[(total as uint32 as int32 - remaining as uint32 as int32)] as int32) by",
         ),
         ("requires count <= 22204u64;", ""),
         ("requires lane <= 3;", ""),
@@ -3970,8 +3970,8 @@ fn adler_count_byte_observations_reject_wrong_positions_and_missing_guards() {
 fn adler_remaining_count_byte_observations_reject_wrong_positions_and_missing_guards() {
     for (before, after) in [
         (
-            "bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 4 + lane]) by",
-            "bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 4 + lane + 1]) by",
+            "bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 4 + lane] as int32) by",
+            "bytes[(total as uint32 as int32 - remaining as uint32 as int32) - 4 + lane + 1] as int32) by",
         ),
         (
             "ensures to_integer((bytes + (total - remaining - 4u64))[lane] as int32)",

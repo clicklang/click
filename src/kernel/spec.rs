@@ -9016,9 +9016,18 @@ pub(super) fn c_value_comparison_proposition(
             value,
         ));
     }
+    // A 32-bit comparison reads its operands at its own format: at
+    // `uint32` when either operand is one, a narrow operand widened to
+    // `uint32` and an `int32` operand through σ, as the comparison's
+    // format converts them; at `int32` otherwise.
     let unsigned = matches!(left, CValue::UInt32(_)) || matches!(right, CValue::UInt32(_));
-    let left = c_value_int32_term(left)?;
-    let right = c_value_int32_term(right)?;
+    let format = if unsigned {
+        MachineIntegerType::UInt32
+    } else {
+        MachineIntegerType::Int32
+    };
+    let left = c_value_word32_term(left, format)?;
+    let right = c_value_word32_term(right, format)?;
     let (condition, value) = match operator {
         CComparisonOperator::Equal | CComparisonOperator::NotEqual => (
             if unsigned {
@@ -9064,9 +9073,6 @@ pub(super) fn c_value_comparison_proposition(
     Some(Proposition::ConditionIs(condition, value))
 }
 
-/// The word an integer operand of at most 32 bits has at the comparison's
-/// 32-bit format: its own word, a narrow value's widening to `int32`, or a
-/// `Bool`'s cast (rule C1), as C's promotion reads them.
 /// The format and operands of a specification comparison made natively at
 /// 8 or 16 bits: two values of one narrow format, or a narrow value and an
 /// `int32` literal its format holds, which becomes that format's constant.
@@ -9101,17 +9107,22 @@ fn native_narrow_comparison_operands(
     }
 }
 
-fn c_value_int32_term(value: &CValue) -> Option<Bitvector32Term> {
+/// The term an integer operand of at most 32 bits has at the comparison's
+/// 32-bit `format`: its own word at that format, σ of the other 32-bit
+/// format's word, a narrow value's widening, or a `Bool`'s cast (rule C1).
+pub(crate) fn c_value_word32_term(
+    value: &CValue,
+    format: MachineIntegerType,
+) -> Option<Bitvector32Term> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Int32(value) | CValue::UInt32(value) => Some(value.clone()),
         value @ (CValue::Bool(_)
         | CValue::Int8(_)
         | CValue::Int16(_)
+        | CValue::Int32(_)
         | CValue::UInt8(_)
-        | CValue::UInt16(_)) => {
-            crate::kernel::eval::promote_c_path_value(value.clone(), MachineIntegerType::Int32)
-        }
+        | CValue::UInt16(_)
+        | CValue::UInt32(_)) => crate::kernel::eval::promote_c_path_value(value.clone(), format),
         CValue::Int128(_)
         | CValue::UInt128(_)
         | CValue::Void

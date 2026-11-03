@@ -182,6 +182,64 @@ impl TermClasses {
         self.close(vec![(a, b)])
     }
 
+    /// Read an admitted observation through its carrier without exporting it.
+    /// The caller retains the original Integer source for restriction/replay.
+    pub(in crate::kernel::equality_graph) fn admit_observation_comparison(
+        &mut self,
+        view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+    ) -> bool {
+        let mut next = Some(view.clone());
+        let mut changed = false;
+        while let Some(view) = next {
+            next = view.cancelled_equality();
+            changed = self.admit_observation_comparison_leaf(&view) || changed;
+        }
+        changed
+    }
+
+    fn admit_observation_comparison_leaf(
+        &mut self,
+        view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+    ) -> bool {
+        use crate::kernel::machine_integer::Relation;
+        if matches!(view.relation, Relation::Less | Relation::LessEqual)
+            && let Some(widened) = view.widened()
+        {
+            return self.admit_observation_comparison(&widened);
+        }
+        let operands = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let (relation, truth) = match view.relation {
+            Relation::Equal => (CompareRelation::Equal, true),
+            Relation::NotEqual => (CompareRelation::Equal, false),
+            Relation::Less => (CompareRelation::LessThan, true),
+            Relation::LessEqual => (CompareRelation::LessEqual, true),
+        };
+        let format =
+            if relation == CompareRelation::Equal && view.format == MachineIntegerType::UInt64 {
+                MachineIntegerType::Int64
+            } else {
+                view.format
+            };
+        if relation == CompareRelation::Equal && truth {
+            let width = Self::machine_comparison_width(format, relation, operands);
+            let [left, right] = operands.map(|operand| match operand {
+                crate::kernel::MachineOperandView::Shared(term) => {
+                    self.intern_shared_machine(term, width)
+                }
+                crate::kernel::MachineOperandView::Legacy(term) => {
+                    self.intern_typed_machine(term, width)
+                }
+            });
+            self.register_pending_loads();
+            self.close(vec![(left, right)])
+        } else {
+            self.admit_machine_comparison(format, relation, operands, truth)
+        }
+    }
+
     /// Equality of Integers implies equality of their 32-bit residues.
     /// Visit only the rule's bounded Integer skeleton; machine observations
     /// register their existing shared graph, never a boxed expansion.
@@ -1239,7 +1297,6 @@ impl TermClasses {
                     if inverse {
                         self.register_byte_inverse(node, value);
                     }
-                    self.join_widening_sibling(op, node, value);
                     values.push(node);
                     continue;
                 }
@@ -1270,28 +1327,6 @@ impl TermClasses {
             values.push(id);
         }
         values.pop().expect("machine term")
-    }
-
-    /// Rule K1 at a widening: the `int32` and `uint32` widenings of one 8-
-    /// or 16-bit value are one word, as a narrow cast's two widenings are
-    /// (rule K7'). Interning either interns the other and joins them: one
-    /// node and one union, once per widening.
-    pub(super) fn join_widening_sibling(&mut self, op: Int32Unary, node: u64, value: u64) {
-        let Int32Unary::Cast(source, destination) = op else {
-            return;
-        };
-        let other = match destination {
-            MachineIntegerType::Int32 => MachineIntegerType::UInt32,
-            MachineIntegerType::UInt32 => MachineIntegerType::Int32,
-            _ => return,
-        };
-        if source.format().bits() >= 32 {
-            return;
-        }
-        let sibling = self.intern_node(Node::Int32Unary(Int32Unary::Cast(source, other), value));
-        if self.root(sibling) != self.root(node) {
-            self.close(vec![(node, sibling)]);
-        }
     }
 
     /// The class of `Cast(source -> destination, v)` into an 8- or 16-bit
@@ -1336,22 +1371,22 @@ impl TermClasses {
         node
     }
 
-    /// The narrow cast node, and the unions of its two 32-bit widenings
-    /// with its rule-K7' word, not yet joined. The cast is a value of its
-    /// own width, so the word joins its widenings (`int32` and `uint32`,
-    /// the same bits), never the node itself.
+    /// The narrow cast node, and the union of its 32-bit widening at its
+    /// word's format with its rule-K7' word, not yet joined. The cast is a
+    /// value of its own width, so the word joins its widening, never the
+    /// node itself.
     fn narrow_cast_with_word(
         &mut self,
         source: MachineIntegerType,
         destination: MachineIntegerType,
         value: u64,
         inverse: bool,
-    ) -> (u64, [(u64, u64); 2]) {
+    ) -> (u64, [(u64, u64); 1]) {
         use crate::kernel::BitvectorBinaryOp as B;
         crate::instrumentation::record_deterministic_work(1);
         let (mask, sign) = representation::narrow_carrier_mask(destination)
             .expect("a narrow destination has a carrier mask");
-        let (node, word) = if source.format().bits() <= 32 {
+        let (node, word, word_format) = if source.format().bits() <= 32 {
             let node = self.intern_node(Node::Int32Unary(
                 Int32Unary::Cast(source, destination),
                 value,
@@ -1359,16 +1394,29 @@ impl TermClasses {
             if inverse {
                 self.register_byte_inverse(node, value);
             }
-            // A narrow operand's word is its 32-bit widening.
-            let word = if source.format().bits() < 32 {
-                self.intern_node(Node::Int32Unary(
-                    Int32Unary::Cast(source, MachineIntegerType::Int32),
-                    value,
-                ))
+            // A narrow operand's word is its 32-bit widening: its `uint32`
+            // widening where the graph has that one and not the `int32`
+            // one, so a chain of `uint32` widenings adds no second widening
+            // for the sibling relation to join through σ; its `int32`
+            // widening otherwise.
+            let (word, word_format) = if source.format().bits() < 32 {
+                let widening = |to| Node::Int32Unary(Int32Unary::Cast(source, to), value);
+                match (
+                    self.nodes.get(&widening(MachineIntegerType::Int32)),
+                    self.nodes
+                        .get(&widening(MachineIntegerType::UInt32))
+                        .copied(),
+                ) {
+                    (None, Some(unsigned)) => (unsigned, MachineIntegerType::UInt32),
+                    _ => (
+                        self.intern_node(widening(MachineIntegerType::Int32)),
+                        MachineIntegerType::Int32,
+                    ),
+                }
             } else {
-                value
+                (value, source)
             };
-            (node, word)
+            (node, word, word_format)
         } else {
             let head = self.intern_node(Node::MachineUnary(
                 U::MachineIntegerCast {
@@ -1379,7 +1427,11 @@ impl TermClasses {
             ));
             let node = self.intern_node(Node::Apply(head, value));
             let low = self.intern_node(Node::MachineUnary(U::UInt32From64, W::Bits32));
-            (node, self.intern_node(Node::Apply(low, value)))
+            (
+                node,
+                self.intern_node(Node::Apply(low, value)),
+                MachineIntegerType::UInt32,
+            )
         };
         let mask = self.intern_typed_machine(&T::Constant(mask), W::Bits32);
         let mut carrier = self.intern_node(Node::Int32Binary(
@@ -1404,9 +1456,17 @@ impl TermClasses {
                 sign,
             ));
         }
-        let widened = [MachineIntegerType::Int32, MachineIntegerType::UInt32]
-            .map(|to| self.intern_node(Node::Int32Unary(Int32Unary::Cast(destination, to), node)));
-        (node, widened.map(|widening| (widening, carrier)))
+        // The word is a value of `word_format`: the operand's own 32-bit
+        // format, a narrow operand's widening's, or `uint32` for a 64-bit
+        // operand's low word. The cast's widening at that format is the
+        // masked word. The other widening is interned only where a term
+        // names it; it is then σ of this one (the sibling relation,
+        // `machine_relations`), so its word is σ of the masked word.
+        let widening = self.intern_node(Node::Int32Unary(
+            Int32Unary::Cast(destination, word_format),
+            node,
+        ));
+        (node, [(widening, carrier)])
     }
 
     fn algebraic_type_token(&mut self, ty: &crate::kernel::AlgebraicType) -> SharedPureApplication {

@@ -1252,6 +1252,13 @@ An implication whose antecedent `normalize()` refutes, such as
 by `contradiction` on that antecedent, reading only the goal; expansion
 writes `intro(); contradiction(A);`
 ([`an_antecedent_normalization_refutes_closes_its_implication.md`](https://github.com/clicklang/click/blob/master/mdtests/an_antecedent_normalization_refutes_closes_its_implication.md)).
+An implication whose antecedent, or one conjunct of an `a and b` antecedent,
+has its opposite among the facts closes by `contradiction` once `solve`
+introduces it, whichever spelling the facts state the opposite in (`x > 100`
+for `x <= 100` false), so `a and b implies c` closes where the curried
+`a implies b implies c` does
+([`solve_refutes_a_conjunct_of_an_antecedent.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_refutes_a_conjunct_of_an_antecedent.md),
+[`solve_keeps_a_conjunct_antecedent_that_holds.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_keeps_a_conjunct_antecedent_that_holds.md)).
 
 A goal that is one conjunct of an implication's consequent, `c == 2` from
 `a != 0` and `a != 0 implies (b == 1 and c == 2)`, is closed once the
