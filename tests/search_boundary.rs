@@ -747,3 +747,35 @@ fn local_storage_classification_rejects_candidate_search() {
         .is_err()
     );
 }
+
+#[test]
+fn call_completion_rejects_frame_revalidation_and_normalization() {
+    for (path, function) in [
+        ("src/kernel/loans.rs", "recover_stable_views_impl"),
+        (
+            "src/kernel/functions.rs",
+            "recover_candidate_stable_view_resources",
+        ),
+        (
+            "src/kernel/functions.rs",
+            "evaluate_contract_return_resources",
+        ),
+    ] {
+        for name in [
+            "normalized_around_facts",
+            "try_compose_with_fact_with_occurrence",
+            "try_compose_with_facts_delaying_normalization",
+            "try_compose_with_facts_delaying_normalization_with_occurrences",
+        ] {
+            let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
+            assert!(boundary::check_source(path, &source).is_err());
+        }
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/functions.rs",
+            "fn recover_candidate_stable_view_resources(c: C) { c.facts(); }"
+        )
+        .is_err()
+    );
+}

@@ -228,7 +228,12 @@ ledger) is rechecked from the callee root. A returned view is accepted only
 as a lent input, through a preserved outer binding, as a projection of a
 returned owner, or as read-only storage. Every produced composite's one-level
 frontier is checked against what the caller holds across the call, escrowed
-owners included, so a produced body cannot duplicate authority.
+owners included, so a produced body cannot duplicate authority. These view
+checks inspect the declared output delta recorded by contract evaluation, not
+the unchanged caller frame. Supported projections retain their exact owner
+occurrences. Recovery restores each escrow with incremental insertion, without
+whole-block normalization or old-old ownership checks; explicit composition
+handles any joins a later proof needs.
 
 ### Escaping borrows
 

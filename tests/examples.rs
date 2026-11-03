@@ -3093,3 +3093,27 @@ fn separation_history_repairs_expand_and_replay() {
         });
     }
 }
+
+#[test]
+#[ignore = "focused audit: expands and replays call-completion proof repairs"]
+fn call_completion_repairs_expand_and_replay() {
+    for (example, sidecar, claim) in [
+        (
+            "owned-split-buffer",
+            "owned_split_buffer.click",
+            "owned_split_buffer_pipeline.contract",
+        ),
+        (
+            "owned-segmented-buffer",
+            "owned_segmented_buffer.click",
+            "owned_segmented_buffer_pipeline.contract",
+        ),
+        (
+            "ring-buffer",
+            "ring_buffer.click",
+            "ring_buffer_pipeline.contract",
+        ),
+    ] {
+        replay_cell_source_example(example, sidecar, claim);
+    }
+}

@@ -73,6 +73,27 @@ impl Boundary<'_> {
         {
             self.errors.push(format!("{}: {}: loop binding handoff must retain producer occurrences, not rediscover views ({name})", self.path, self.function));
         }
+        if ((self.path == "src/kernel/loans.rs" && self.function == "recover_stable_views_impl")
+            || (self.path == "src/kernel/functions.rs"
+                && matches!(
+                    self.function.as_str(),
+                    "recover_candidate_stable_view_resources"
+                        | "evaluate_contract_return_resources"
+                )))
+            && (matches!(
+                name,
+                "normalized_around_facts"
+                    | "try_compose_with_fact_with_occurrence"
+                    | "try_compose_with_facts_delaying_normalization"
+                    | "try_compose_with_facts_delaying_normalization_with_occurrences"
+            ) || (self.function == "recover_candidate_stable_view_resources"
+                && name == "facts"))
+        {
+            self.errors.push(format!(
+                "{}: {}: call completion must insert the recorded delta without scanning or normalizing the caller frame ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && self.function == "has_no_explicit_memory_for_local_storage"
             && matches!(

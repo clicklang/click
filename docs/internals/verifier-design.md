@@ -487,7 +487,19 @@ memory anywhere in that block, nonconcrete memory identities, and pointer-alias
 facts alongside memory resources select the explicit route. It does not search
 for complete fragment coverage or enumerate views to establish absence. This
 is conservative refusal, not new alias or ownership evidence. The complete-call
-control still records a separate post-entry cost beside unrelated owners.
+control also bounds completion beside unrelated constant owners.
+
+Call completion inserts returned outputs and recovered escrows into the valid
+persistent frame using incremental conflict checks. It never normalizes a whole
+memory block or revalidates old-old ownership pairs. Returned-view authority is
+checked for the declared output delta recorded during contract evaluation;
+unchanged caller views and supported projections retain their existing authority.
+Escrow presence uses exact representation lookup rather than a supplier search.
+`returning_one_borrowed_owner_does_not_rebuild_its_memory_block` measures entry,
+recovery, and the complete call beside increasing disjoint same-block fragments,
+including repeated queries and persistent-map work. Build guards prohibit the
+removed frame iteration and normalization APIs in these completion paths.
+Nonconstant insertion candidates remain a separate audit target.
 
 Explicit ownership composition for a constant 32-bit-indexed range with unit
 quantity uses `consume_constant_owned_memory`. It nominates one whole supplier,

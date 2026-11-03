@@ -1670,7 +1670,7 @@ fn recover_with_extra_returned_view(
     let callee_template =
         bind_c_function_arguments(&caller, &function, &[CValue::pointer(pointer.clone())])
             .expect("reader argument should bind");
-    let transfer = prepare_function_resource_transfer(
+    let mut transfer = prepare_function_resource_transfer(
         &caller,
         &callee_template,
         &function,
@@ -1691,6 +1691,8 @@ fn recover_with_extra_returned_view(
         Bitvector32Term::Constant(1),
         Bitvector32Term::Constant(3),
     ));
+    // Mirror the output delta recorded by evaluate_contract_return_resources.
+    transfer.candidate_output_views.push(returned.clone());
     let base = ResourceContext::new().unchecked_with_fact(owner.clone());
     let (support_occurrence, _) = base
         .unique_owned_occurrence_for_fact(&owner)
@@ -1767,7 +1769,7 @@ fn recover_with_a_carried_view_of_another_block(
     let callee_template =
         bind_c_function_arguments(&caller, &function, &[CValue::pointer(pointer)])
             .expect("reader argument should bind");
-    let transfer = prepare_function_resource_transfer(
+    let mut transfer = prepare_function_resource_transfer(
         &caller,
         &callee_template,
         &function,
@@ -1783,6 +1785,8 @@ fn recover_with_a_carried_view_of_another_block(
         Bitvector32Term::Constant(0),
         Bitvector32Term::Constant(2),
     ));
+    // Mirror the output delta recorded by evaluate_contract_return_resources.
+    transfer.candidate_output_views.push(carried.clone());
     let return_resources = transfer
         .caller_resources_after_requirements
         .clone()

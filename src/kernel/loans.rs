@@ -3975,13 +3975,10 @@ impl StableViewTransferPlan {
         // frame would rebuild unrelated resource indexes at every child join.
         let restore_resource = |resources: ResourceContext, fact: &CResourceFact| {
             resources
-                .try_compose_with_facts_delaying_normalization(
+                .try_compose_into_valid_context_delaying_normalization(
                     std::iter::once(fact.clone()),
                     assumptions,
                 )
-                .map(|resources| {
-                    resources.normalized_around_facts(std::slice::from_ref(fact), assumptions)
-                })
                 .map_err(|error| composition_conflict(error, fact))
         };
         self.validate_exclusive_reservation()?;
@@ -4197,9 +4194,7 @@ impl StableViewTransferPlan {
                 ledger = returned.ledger;
                 transitions.extend(returned.exit_transitions);
                 let source = use_plan.source_resource().clone();
-                resources = resources
-                    .try_compose_with_facts_delaying_normalization([source.clone()], assumptions)
-                    .map_err(|error| composition_conflict(error, &source))?;
+                resources = restore_resource(resources, &source)?;
                 recovered_escrows.push((source, None));
             }
         }

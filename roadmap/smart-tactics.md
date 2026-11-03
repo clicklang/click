@@ -31,14 +31,7 @@ These are concrete checking call paths. Code inspection establishes the walks;
 measure their growth before choosing fixes. Existing flat tests with unrelated
 facts do not establish flat cost as the queried class or bucket grows.
 
-1. **Remaining fragment-selection and call-completion routes.**
-   `local_storage_classification_stops_at_a_fixed_ownership_gap` in
-   `src/scaling_tests/kernel/functions/stable_view_call_tests.rs` separates
-   full calls from transfer preparation. Its complete-owner control has flat
-   transfer work but full-call work still grows with unrelated owned fragments.
-   Isolate the later call cost before choosing a fix; keep implicit-storage,
-   partial-owner refusal, complete-owner, and two-fragment controls.
-
+1. **Remaining fragment-selection routes.**
    `without_fact_incrementally_impl` still enumerates candidates for requests
    outside constant, 32-bit-indexed, unit-owned memory. `satisfies_fact` also
    retains a normalization-based memory-supplier fallback. Isolate real checking
