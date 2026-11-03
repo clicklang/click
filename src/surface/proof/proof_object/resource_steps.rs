@@ -714,6 +714,22 @@ impl<'a> Proof<'a> {
             // The instantiated fact the fold could not establish is the
             // refused step's goal, reported on the standard `goal:` line.
             let requirement = match &refusal {
+                crate::kernel::ResourceRewriteRefusal::ChildArgumentNotEstablished {
+                    actual,
+                    required,
+                    ..
+                } => {
+                    let term = |value: &AlgebraicValue| match value {
+                        AlgebraicValue::C(value) => Term::CValue(value.clone()),
+                        AlgebraicValue::Integer(value) => Term::Integer(value.clone()),
+                        AlgebraicValue::Algebraic(value) => Term::Algebraic(value.clone()),
+                    };
+                    Some((
+                        "goal",
+                        Box::new(Proposition::Equal(term(actual), term(required))),
+                        None,
+                    ))
+                }
                 crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
                     proposition,
                     ..
