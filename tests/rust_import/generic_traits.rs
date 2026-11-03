@@ -245,15 +245,26 @@ fn charon_generic_struct_fields_are_verified_once_for_every_type() {
     let prepared = p.prepared().unwrap();
     C0VerificationSession::new_program_prepared(STRUCT_SIDECAR, &prepared)
         .unwrap_or_else(|error| panic!("{error:?}"));
-    for (before, after, expected) in [
+    // At x = 1 the method caller returns 1, so claiming zero is false.
+    // Check the same concrete setup with its valid postcondition first.
+    let method_contract =
+        "fn generic_structs::via_methods(x: u32) -> u32 {\n    ensures result == x;";
+    let witness_contract = "fn generic_structs::via_methods(x: u32) -> u32 {\n    requires x == 1u32;\n    ensures result == 1u32;";
+    assert!(STRUCT_SIDECAR.contains(method_contract));
+    let witness = STRUCT_SIDECAR.replacen(method_contract, witness_contract, 1);
+    verify_rust_function(&witness, &prepared, "generic_structs::via_methods")
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    for (head, before, after, expected) in [
         // Two fields of `T` are two values.
         (
+            "fn generic_structs::swap<",
             "    ensures pair.first == old(pair.second);",
             "    ensures pair.first == old(pair.first);",
             "generic_structs::swap.ensures_0",
         ),
         // A caller at `u8` knows the instance's contract and no more.
         (
+            "fn generic_structs::swapped(",
             "    ensures result == y;",
             "    ensures result == x;",
             "generic_structs::swapped.ensures_0",
@@ -261,6 +272,7 @@ fn charon_generic_struct_fields_are_verified_once_for_every_type() {
         // A stored value of `T` reads back as itself, and only as itself:
         // a generic struct's method is verified once.
         (
+            "fn get(",
             "        ensures result == self.value;",
             "        ensures result != self.value;",
             "generic_structs::Cell<T>::get.ensures_0",
@@ -268,21 +280,26 @@ fn charon_generic_struct_fields_are_verified_once_for_every_type() {
         // Generic code's calls of generic code at its own `U` have their
         // contracts at `U`.
         (
+            "fn generic_structs::read_twice<",
             "        ensures result == self.value;\n    }\n\n    fn set",
             "        ensures true;\n    }\n\n    fn set",
             "generic_structs::read_twice.ensures_0",
         ),
         (
+            "fn generic_structs::via_methods(",
             "fn generic_structs::via_methods(x: u32) -> u32 {\n    ensures result == x;",
-            "fn generic_structs::via_methods(x: u32) -> u32 {\n    ensures result == 0;",
+            "fn generic_structs::via_methods(x: u32) -> u32 {\n    requires x == 1u32;\n    ensures result == 0u32;",
             "generic_structs::via_methods.ensures_0",
         ),
     ] {
         assert!(STRUCT_SIDECAR.contains(before), "{before}");
         let invalid = STRUCT_SIDECAR.replacen(before, after, 1);
-        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+        // Recheck the affected method or caller, including its dependencies.
+        // The positive run above still covers the entire fixture.
+        let error = verify_rust_proof_after(&invalid, &prepared, head)
             .err()
             .expect("a claim the generic contracts do not justify must fail");
+        assert_eq!(error.kind(), click::surface::ClickErrorKind::Proof);
         let rendered = format!("{error:?} {error}");
         let rendered = click::languages::rust::names::display_rust_names(&rendered);
         assert!(rendered.contains(expected), "{rendered}");
