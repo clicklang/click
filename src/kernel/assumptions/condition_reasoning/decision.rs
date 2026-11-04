@@ -1127,7 +1127,14 @@ impl PureFactContext {
     }
 
     pub(in crate::kernel) fn decide_intrinsically(condition: &ConditionTerm) -> Option<bool> {
-        Self::new().decide(condition)
+        // Drop the thread-local borrow before deciding: compound guards can
+        // ask another intrinsic question recursively.
+        let context = INTRINSIC_CONTEXT.with(|slot| {
+            slot.borrow_mut()
+                .get_or_insert_with(|| std::rc::Rc::new(Self::new()))
+                .clone()
+        });
+        context.decide(condition)
     }
 
     /// A byte read compared with a constant, decided by the constant its
@@ -3293,5 +3300,49 @@ mod shared_equality_dispatch_tests {
         include!(
             "../../../scaling_tests/kernel/assumptions/condition_reasoning/decision/shared_equality_dispatch_tests.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod intrinsic_context_tests {
+    use super::*;
+
+    #[test]
+    fn intrinsic_queries_never_inherit_context_hypotheses() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let goal = ConditionTerm::equal(
+            Bitvector32Term::Variable(Variable(986001)),
+            Bitvector32Term::Variable(Variable(986002)),
+        );
+        for truth in [true, false] {
+            let context = PureFactContext::new().assume_condition(goal.clone(), truth);
+            assert_eq!(context.decide(&goal), Some(truth));
+            assert_eq!(PureFactContext::decide_intrinsically(&goal), None);
+        }
+    }
+
+    #[test]
+    fn intrinsic_read_definitions_follow_growth_restore_and_new_sessions() {
+        use crate::kernel::{CMemory, Pointer, VerificationSession, intern_c_memory};
+        let check = || {
+            let memory = intern_c_memory(CMemory::new().with_block("intrinsic", 16));
+            let address = Pointer::symbolic(Variable(986010));
+            let value = Pointer::symbolic(Variable(986011));
+            let application = Pointer::loaded_value(&memory, &address);
+            let goal = ConditionTerm::PointerEqual(Box::new(value.clone()), Box::new(application));
+            assert_eq!(PureFactContext::decide_intrinsically(&goal), None);
+            let before = VerificationSession::capture_state();
+            let producer = PureFactContext::new();
+            producer
+                .equality_graph
+                .register_pointer_read_definition(&value, &memory, &address);
+            assert_eq!(PureFactContext::decide_intrinsically(&goal), Some(true));
+            assert!(VerificationSession::restore_state(&before));
+            assert_eq!(PureFactContext::decide_intrinsically(&goal), None);
+        };
+        for _ in 0..2 {
+            let _session = VerificationSession::enter();
+            check();
+        }
     }
 }

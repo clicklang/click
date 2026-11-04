@@ -129,7 +129,7 @@ fn key(view: &NativeComparisonView<'_>) -> Key {
 
 /// Exact comparison identity for an already selected source. This is not a
 /// search and does not decide a stronger or weaker bound.
-pub(super) fn same_comparison(
+pub(in crate::kernel) fn same_comparison(
     condition: &ConditionTerm,
     truth: bool,
     source: &Proposition,
