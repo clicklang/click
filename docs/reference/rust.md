@@ -1138,7 +1138,7 @@ A shared or mutable slice of any integer element, `&[i64]` or `&mut [u16]`,
 is a pointer and a length, as a byte slice is: indexed reads and writes owe
 `Rust slice index panic check`, `xs.len()` is the length, a slice passes to a
 callee whole, a guard may read either kind's length, and a shared slice
-iterates with the cursor and remaining count `for &x in xs` keeps
+iterates by the remaining count `for &x in xs` keeps
 ([`design/charon-trial/scalar-slices`](https://github.com/clicklang/click/blob/master/design/charon-trial/scalar-slices/slices.click)).
 Slices of records or of slices, by-value array parameters or returns, and
 nested arrays remain unsupported. Supported flat records can contain owned array fields,
@@ -1234,26 +1234,27 @@ require view authority. Shared-reference qualifiers survive local declarations.
 The original Rust source stays unchanged.
 
 The adapter retains Charon's native control flow, iterator calls, and `Option`
-branches. A proof reads a loop's iterator as `iter` inside that loop's
-clauses and phases, and as `loop(i).iter` anywhere, through Rust's own
-methods: `iter.len()` is the remaining length and `iter.as_slice()` the
-remaining elements, which read as a slice parameter does, so
-`iter.as_slice() == bytes + (bytes.len() - iter.len())` places the cursor and
-`iter.as_slice().len()` is `iter.len()`. The importer records which iterator
-each loop advances, so the iterator needs no name of its own; diagnostics
-print its state the same way. The older spellings of that state,
-`<iterator>_cursor` and `<iterator>_remaining`, are still read while other
-iterator kinds migrate. A successful `next()` records the
-shared element address in the returned option, advances the cursor, and
-reduces the remaining length before entering the Rust body. Copied patterns
-read that address; reference patterns bind it directly. An exhausted iterator
-exits without a read or pointer advance, including for an empty slice.
+branches. The iterator holds the slice it was built from, set once, and how
+many elements remain: each successful `next()` yields the element
+`bytes.len() - iter.len()` into that slice, records its shared address in the
+returned option, and reduces the remaining length before entering the Rust
+body. Where the iterator stands therefore follows from its remaining length,
+and the loop never writes the slice it holds, so a proof states no cursor.
+A proof reads a loop's iterator as `iter` inside that loop's clauses and
+phases, and as `loop(i).iter` anywhere, through Rust's own methods:
+`iter.len()` is the remaining length, and `iter.as_slice()` the remaining
+elements, which read as a slice parameter does, `iter.as_slice()[k]` and
+`iter.as_slice().len()`. The importer records which iterator each loop
+advances, so the iterator needs no name of its own; diagnostics print its
+state the same way. The older spelling `<iterator>_remaining` is still read
+while other iterator kinds migrate. Copied patterns read the yielded address;
+reference patterns bind it directly. An exhausted iterator exits without a
+read, including for an empty slice.
 
 There is no generated processed-count or index variable. Sidecars choose their
 own properties of iterator state
 ([`examples/rust-iterators/sum.click`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.click)).
-The sum examples explicitly relate the cursor
-to the original slice and derive a processed prefix as original length minus
+The sum examples derive a processed prefix as original length minus
 remaining length; the remaining length also proves termination. This length is
 the iterator's remaining slice metadata, represented as full-width `uint64`
 for the locked 64-bit target. Signed prefix-index observations require a checked
@@ -1273,17 +1274,17 @@ including borrowed arrays, local arrays, explicit `.iter()` calls, stored
 `Iter` locals, and moves of the remaining iterator. See the locked
 [array iteration example](https://github.com/clicklang/click/tree/master/design/charon-trial/array-iteration).
 Moving an iterator retires its source; repeated exhaustion yields no element.
-`for (i, x) in xs.iter().enumerate()` over a slice of any integer width adds
-`iter_count`, the number of values the iterator has yielded, to the slice
-iterator's `iter_cursor`, `iter_remaining` and `iter_live`. The exporter checks
-that `enumerate` is the core `Iterator::enumerate` default method and that
-`next` is the core `impl<I: Iterator> Iterator for Enumerate<I>`. Each
-iteration yields index `iter_count` and the element at `iter_cursor`, then
-advances both; a reference pattern `(i, x)` binds the element's address and a
-copied pattern `(i, &x)` reads it.
+`for (i, x) in xs.iter().enumerate()` over a slice of any integer width is the
+slice iterator's state, re-based where the iterator stood when enumerated,
+and is read through `iter.len()` (`Enumerate` is an `ExactSizeIterator`).
+The exporter checks that `enumerate` is the core `Iterator::enumerate` default
+method and that `next` is the core `impl<I: Iterator> Iterator for
+Enumerate<I>`. Each iteration yields index `xs.len() - iter.len()` and the
+element there, then advances; a reference pattern `(i, x)` binds the
+element's address and a copied pattern `(i, &x)` reads it.
 [`design/charon-trial/enumerate`](https://github.com/clicklang/click/blob/master/design/charon-trial/enumerate/enumerate.click)
-proves the last index a loop yields and bounds the elements it reads; its
-cursor invariant needs the same explicit `u64` steps as the sum example.
+proves the last index a loop yields and bounds the elements it reads from
+`iter.len()` alone.
 `.iter_mut()`, by-value array iteration and custom iterators remain outside
 this subset.
 

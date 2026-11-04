@@ -8,9 +8,9 @@ fn prepared_enumeration() -> click::languages::rust::PreparedRustImport {
     p.prepared().unwrap()
 }
 
-/// `slice.iter().enumerate()` holds the slice iterator's state and the
-/// count of values it has yielded: the index each iteration yields is that
-/// count, and the element is read through the cursor.
+/// `slice.iter().enumerate()` is read through `iter.len()`: the index each
+/// iteration yields is how far it has advanced, `len - iter.len()`, and the
+/// element is the slice's there, with no cursor to state.
 #[test]
 fn charon_enumerated_slice_loops_verify_from_their_count() {
     C0VerificationSession::new_program_prepared(SIDECAR, &prepared_enumeration())
@@ -32,19 +32,20 @@ fn rejects_enumeration_mutation(before: &str, after: &str, function: &str) {
 
 #[test]
 fn charon_enumeration_rejects_shifted_yielded_index() {
-    // The index yielded is the count before the advance.
+    // The index yielded is how far the iterator stood before the advance.
     rejects_enumeration_mutation(
-        "        invariant iter_count != 0u64 implies last == iter_count - 1u64;\n",
-        "        invariant iter_count != 0u64 implies last == iter_count;\n",
+        "        invariant iter.len() != bytes.len() implies last == bytes.len() - iter.len() - 1u64;\n",
+        "        invariant iter.len() != bytes.len() implies last == bytes.len() - iter.len();\n",
         "last_index",
     );
 }
 
 #[test]
-fn charon_enumeration_rejects_nonzero_initial_count() {
+fn charon_enumeration_rejects_an_advance_before_the_first_pass() {
+    // The enumerated iterator starts with every element left.
     rejects_enumeration_mutation(
-        "        invariant iter_count == bytes.len() - iter_remaining;\n",
-        "        invariant iter_count == (bytes.len() - iter_remaining) + 1u64;\n",
+        "        invariant iter.len() <= bytes.len();\n",
+        "        invariant iter.len() < bytes.len();\n",
         "last_index",
     );
 }

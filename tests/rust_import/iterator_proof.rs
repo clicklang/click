@@ -38,10 +38,10 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
     }
     // A growing measure is false even when the checker can derive the
     // remaining count's decrease without its explicit `have`. Its back-edge
-    // diagnostic must spell the count through the iteration's mark.
+    // diagnostic spells the count through `iter.len()` and an earlier point.
     let growing = proof.replace(
-        "decreases iter_remaining;",
-        "decreases bytes.len() - iter_remaining;",
+        "decreases iter.len();",
+        "decreases bytes.len() - iter.len();",
     );
     assert_ne!(growing, proof, "negative proof must change the sidecar");
     {
@@ -51,7 +51,7 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
             .to_string();
         assert!(!error.contains("budget exhausted"), "{error}");
         assert!(
-            error.contains("bytes.len() - (at(iteration, iter_remaining) - 1u64) < bytes.len() - at(iteration, iter_remaining)"),
+            error.contains("(to_integer(bytes.len()) - to_integer(iter.len())) < at("),
             "{error}"
         );
         assert!(!error.contains("<unnamed"), "{error}");
@@ -64,7 +64,10 @@ fn preserves_source_and_checks_obligations(fixture: &str) {
         } else {
             "byte"
         };
-        assert!(error.contains(&format!(" + {scalar_byte})")), "{error}");
+        assert!(
+            error.contains(&format!(" + ({scalar_byte} as i32))")),
+            "{error}"
+        );
         assert!(error.contains("prefix(old(bytes), bytes.len(),"), "{error}");
     }
 }

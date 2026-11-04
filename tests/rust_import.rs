@@ -5213,10 +5213,6 @@ fn rust_slice_for_sum_verifies_and_expands() {
             "invariant iter.len() <= bytes.len();",
             "invariant iter.len() < bytes.len();",
         ),
-        sidecar.replace(
-            "invariant iter.as_slice() == bytes + (bytes.len() - iter.len());",
-            "invariant iter.as_slice() == bytes + ((bytes.len() - iter.len()) + 1u64);",
-        ),
         sidecar.replace("requires bytes.len() <= 1000u64;", ""),
     ] {
         assert_ne!(invalid, sidecar, "negative proof must change the sidecar");

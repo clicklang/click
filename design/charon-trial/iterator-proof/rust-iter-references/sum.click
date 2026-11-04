@@ -23,7 +23,6 @@ fn sum(bytes: &[u8]) -> i32 {
         views bytes[0..bytes.len()];
         invariant bytes.len() <= 1000u64;
         invariant iter.len() <= bytes.len();
-        invariant iter.as_slice() == bytes + (bytes.len() - iter.len());
         invariant 0 <= to_integer(total) and to_integer(total) <= 255 * to_integer(bytes.len() - iter.len());
         invariant to_integer(total) == prefix(bytes, bytes.len() - iter.len());
         preserve by {
@@ -59,14 +58,7 @@ fn sum(bytes: &[u8]) -> i32 {
             step_until(assignment(total, 1)); step();
             step_until(back_edge());
             have iter.len() <= bytes.len();
-            have at(iteration, iter.as_slice()) == bytes + at(iteration, (bytes.len() - iter.len()));
             have to_integer(at(iteration, (bytes.len() - iter.len()))) < to_integer(18446744073709551615u64);
-            have at(iteration, iter.as_slice()) + 1 == bytes + ((bytes.len() - at(iteration, iter.len())) + 1u64) by {
-                solve() using {
-                    at(iteration, iter.as_slice()) == bytes + at(iteration, (bytes.len() - iter.len()));
-                    to_integer(at(iteration, (bytes.len() - iter.len()))) < to_integer(18446744073709551615u64);
-                };
-            }
             have iter.len() < at(iteration, iter.len());
         }
     }

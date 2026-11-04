@@ -1,4 +1,7 @@
-//! Scalar shared iteration retains cursor/remaining state and a typed Option.
+//! Scalar shared iteration: the iterator holds the slice it was built from,
+//! `base` and `length`, set once, and how many elements remain. Each `next`
+//! yields `base + (length - remaining)`, so where the iterator stands in its
+//! slice follows from `remaining` alone: a proof reads `iter.len()`.
 use super::*;
 /// The cursor's pointer type, as a Rust reference to the element lowers.
 fn pointer_type(element: &Type) -> Result<CType, String> {
@@ -11,6 +14,17 @@ fn pointer_type(element: &Type) -> Result<CType, String> {
     })?
     .to_kernel_type())
 }
+/// The element a slice iterator yields next: `base + (length - remaining)`.
+pub(super) fn shared_array_position(iterator: &str) -> CExpression {
+    c_add(
+        c_variable(format!("{iterator}_base")),
+        c_subtract(
+            c_variable(format!("{iterator}_length")),
+            c_variable(format!("{iterator}_remaining")),
+        ),
+    )
+}
+
 impl Context<'_> {
     pub(super) fn shared_array_storage(
         &mut self,
@@ -29,8 +43,9 @@ impl Context<'_> {
         } else {
             self.shared_array_iterators.insert(name.into(), element);
             vec![
-                ("cursor", pointer, true),
-                // The remaining count is a `usize`.
+                ("base", pointer, true),
+                // The lengths are `usize`s.
+                ("length", CType::UInt64, false),
                 ("remaining", CType::UInt64, false),
                 ("live", CType::Int32, false),
             ]
@@ -75,12 +90,15 @@ impl Context<'_> {
             },
         )?;
         let (l_capture, l) = self.capture_operand(length, &Type::Usize)?;
-        let begin = |remaining: CExpression| {
+        let begin = |length: CExpression| {
             c_seq(
-                c_assign(format!("{target}_cursor"), c_variable(&p)),
+                c_assign(format!("{target}_base"), c_variable(&p)),
                 c_seq(
-                    c_assign(format!("{target}_remaining"), remaining),
-                    c_assign(format!("{target}_live"), c_int32_literal(1)),
+                    c_assign(format!("{target}_length"), length.clone()),
+                    c_seq(
+                        c_assign(format!("{target}_remaining"), length),
+                        c_assign(format!("{target}_live"), c_int32_literal(1)),
+                    ),
                 ),
             )
         };
@@ -130,7 +148,7 @@ impl Context<'_> {
                 c_int32_literal(0),
             )),
         );
-        for suffix in ["cursor", "remaining"] {
+        for suffix in ["base", "length", "remaining"] {
             result = c_seq(
                 result,
                 c_assign(
@@ -154,7 +172,8 @@ impl Context<'_> {
     ) -> Result<CStatement, String> {
         self.shared_array_next_with(iterator, option, c_skip())
     }
-    /// [`Self::shared_array_next`], also running `yielded` when it yields.
+    /// [`Self::shared_array_next`], also running `yielded` when it yields,
+    /// before the iterator advances.
     pub(super) fn shared_array_next_with(
         &self,
         iterator: &str,
@@ -166,20 +185,16 @@ impl Context<'_> {
         {
             return Err("shared iterator Option element mismatch".into());
         }
-        let cursor = format!("{iterator}_cursor");
         let remaining = format!("{iterator}_remaining");
         let some = c_seq(
             c_assign(format!("{option}_some"), c_int32_literal(1)),
             c_seq(
-                c_assign(format!("{option}_pointer"), c_variable(&cursor)),
+                c_assign(format!("{option}_pointer"), shared_array_position(iterator)),
                 c_seq(
-                    c_assign(&cursor, c_add(c_variable(&cursor), c_int32_literal(1))),
-                    c_seq(
-                        c_assign(
-                            &remaining,
-                            c_subtract(c_variable(&remaining), c_uint64_literal(1)),
-                        ),
-                        yielded,
+                    yielded,
+                    c_assign(
+                        &remaining,
+                        c_subtract(c_variable(&remaining), c_uint64_literal(1)),
                     ),
                 ),
             ),

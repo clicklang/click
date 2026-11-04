@@ -1,6 +1,8 @@
-//! An enumerated slice iterator is the slice iterator's cursor, remaining
-//! length and live flag with `{name}_count`, the values it has yielded; its
-//! `Option` holds the yielded element's address and `{name}_index`.
+//! An enumerated slice iterator is the slice iterator's state, re-based at
+//! the element it stood at when enumerated: the index it yields is how far
+//! it has advanced, `length - remaining`, and `iter.len()` reads what is
+//! left. Its `Option` holds the yielded element's address and
+//! `{name}_index`.
 use super::*;
 
 impl Context<'_> {
@@ -11,8 +13,14 @@ impl Context<'_> {
         option: bool,
     ) -> Result<CStatement, String> {
         let storage = self.shared_array_storage(name, element, option)?;
-        let field = format!("{name}_{}", if option { "index" } else { "count" });
-        if !self.locals.insert(field.clone()) || !self.enumerated.insert(name.into()) {
+        if !self.enumerated.insert(name.into()) {
+            return Err("enumerated iterator identity collision".into());
+        }
+        if !option {
+            return Ok(storage);
+        }
+        let field = format!("{name}_index");
+        if !self.locals.insert(field.clone()) {
             return Err("enumerated iterator identity collision".into());
         }
         Ok(c_seq(storage, c_declare(field, CType::UInt64)))
@@ -26,8 +34,8 @@ impl Context<'_> {
         }
     }
 
-    /// `target = source.enumerate()`: the slice iterator's state, with no
-    /// value yielded yet.
+    /// `target = source.enumerate()`: the slice iterator's state, re-based at
+    /// the element it stands at, so it has yielded no value yet.
     pub(super) fn enumerate_initialize(
         &self,
         target: &str,
@@ -37,26 +45,25 @@ impl Context<'_> {
         if self.enumerated.contains(source) {
             return Err("enumerate requires a slice iterator".into());
         }
+        let base = format!("{target}_base");
+        let length = format!("{target}_length");
         Ok(c_seq(
             self.shared_array_move(target, source)?,
-            c_assign(format!("{target}_count"), c_uint64_literal(0)),
+            c_seq(
+                c_assign(&base, super::shared_arrays::shared_array_position(target)),
+                c_assign(&length, c_variable(format!("{target}_remaining"))),
+            ),
         ))
     }
 
     pub(super) fn enumerate_move(&self, target: &str, source: &str) -> Result<CStatement, String> {
         self.enumerated_iterator(target)?;
         self.enumerated_iterator(source)?;
-        Ok(c_seq(
-            self.shared_array_move(target, source)?,
-            c_assign(
-                format!("{target}_count"),
-                c_variable(format!("{source}_count")),
-            ),
-        ))
+        self.shared_array_move(target, source)
     }
 
     /// The slice iterator's `next`, which also records the yielded value's
-    /// index and counts it.
+    /// index, how far the iterator has advanced.
     pub(super) fn enumerate_next(
         &self,
         iterator: &str,
@@ -66,10 +73,12 @@ impl Context<'_> {
         if !self.enumerated.contains(option) || !self.shared_array_options.contains_key(option) {
             return Err("unknown enumerated iterator Option".into());
         }
-        let count = format!("{iterator}_count");
-        let yielded = c_seq(
-            c_assign(format!("{option}_index"), c_variable(&count)),
-            c_assign(&count, c_add(c_variable(&count), c_uint64_literal(1))),
+        let yielded = c_assign(
+            format!("{option}_index"),
+            c_subtract(
+                c_variable(format!("{iterator}_length")),
+                c_variable(format!("{iterator}_remaining")),
+            ),
         );
         self.shared_array_next_with(iterator, option, yielded)
     }

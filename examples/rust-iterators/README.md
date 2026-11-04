@@ -7,34 +7,35 @@ prefix invariant and bounds each intermediate sum by 255 times that prefix's
 length.
 
 Charon retains the standard slice iterator protocol. The checked proof
-observations are `iter.as_slice()` and `iter.len()`, read through Rust's own
-slice-iterator methods: a successful
-`next()` saves the yielded address, advances the cursor, and reduces the remaining
-slice length before the source body. The copied pattern reads the saved address.
-An exhausted iterator performs no read or pointer advance. Remaining length is
+observation is `iter.len()`, read through Rust's own slice-iterator
+methods: a successful
+`next()` saves the address `bytes.len() - iter.len()` into the slice, and
+reduces the remaining slice length before the source body, so the proof
+states no cursor. The copied pattern reads the saved address.
+An exhausted iterator performs no read. Remaining length is
 signed under the shared memory model's checked length limit.
 
 The sidecar uses Integer specification arithmetic,
 so it imports no library bridge: the contract and invariants compare exact
 Integers, and the body's arithmetic is `have P;`. The prefix length
 `bytes.len() - iter.len()` is also a `usize` value, used as a fold
-endpoint and a cursor offset. Facts about that machine value are written as
+endpoint and an index. Facts about that machine value are written as
 Integer observations, `to_integer(bytes.len() - iter.len()) < 18446744073709551615`,
 which is the same fact as the native bound (see "One form for comparisons of
 observations" in `docs/internals/mathematical-integers.md`), so `peel` and
-pointer arithmetic use it directly. A plain `bytes.len() - iter.len()` in
+indexing use it directly. A plain `bytes.len() - iter.len()` in
 a comparison is Integer subtraction.
 
 No processed count or index is supplied by default. This sidecar explicitly
-derives its prefix length as original slice length minus remaining length and
-relates it to the cursor. It retains views of the input and uses remaining
+derives its prefix length as original slice length minus remaining length. It
+retains views of the input and uses remaining
 length as its decreasing measure.
 
 Immutable shared byte-slice bindings support copied byte patterns and shared
 reference variables, directly or through `.iter()`. The
 [reference iterator example](../rust-iter-references/README.md) proves a sum
-using yielded references. Shared scalar array iteration and stored `.chunks_exact()` iterators also use
-actual cursor/remaining state; see the [exact-chunk example](../rust-chunks-exact/README.md).
+using yielded references. Shared scalar array iteration uses the same state; stored `.chunks_exact()`
+iterators still hold a cursor and remaining length; see the [exact-chunk example](../rust-chunks-exact/README.md).
 This fixture covers immutable shared bytes. The pinned checksum libraries remain unverified.
 
 Build the pinned Charon with `scripts/build-charon.sh --install-toolchain`, then run:
