@@ -128,6 +128,7 @@ impl Boundary<'_> {
                 self.function.as_str(),
                 "directly_supporting_memory_fact"
                     | "constant_relative_byte_endpoints"
+                    | "constant_memory_coordinates"
                     | "consume_unit_owned_memory"
                     | "consume_symbolic_partition"
                     | "memory_range_definitely_shorter"

@@ -531,6 +531,18 @@ hold an insertion fixed beside growing owners above the old signed limit;
 semantic controls retain overlap rejection, mixed widths, maximal endpoints,
 empty/reversed intervals and persistent removal.
 
+The same index strips a literal leading or trailing byte displacement from a
+range's base and adds it to the exact coordinates. Pointer construction already
+combines trailing constant displacements, so this inspects one offset node;
+it does not normalize a symbolic expression, traverse history, or consult
+facts. Original resource terms and occurrences remain unchanged. Constant
+translations of one symbolic base share neighbour checks and the full-context
+sweep; the overlap predicate uses that same geometry, including native bounds
+and mixed element widths. Refusal and removal controls retain distinct symbolic
+origins, negative displacements, empty ranges, aliases and branch isolation.
+Symbolic bounds, multiple symbolic origins in one block, and bases related
+only by facts retain their separate checking routes.
+
 Call completion inserts returned outputs and recovered escrows into the valid
 persistent frame using incremental conflict checks. It never normalizes a whole
 memory block or revalidates old-old ownership pairs. Returned-view authority is

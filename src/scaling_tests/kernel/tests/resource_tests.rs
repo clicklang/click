@@ -1441,6 +1441,76 @@ fn native_large_coordinate_insertion_uses_interval_neighbors() {
 }
 
 #[test]
+fn translated_owner_insertion_uses_interval_neighbors() {
+    for symbolic in [false, true] {
+        for native in [false, true] {
+            let mut samples = Vec::new();
+            for size in [4usize, 16, 64] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let assumptions = PureFactContext::new();
+                let owned = |byte_offset: i64| {
+                    let base = Pointer {
+                        block: PointerBlock::Symbolic(Variable(995_300)),
+                        offset: if symbolic {
+                            PointerOffsetTerm::add(
+                                PointerOffsetTerm::Variable(Variable(995_301)),
+                                PointerOffsetTerm::Constant(byte_offset),
+                            )
+                        } else {
+                            PointerOffsetTerm::Constant(byte_offset)
+                        },
+                    };
+                    CResourceFact::own_memory(if native {
+                        CMemoryRange::new_wide(
+                            base,
+                            MachineTerm::uint64_constant(0),
+                            MachineTerm::uint64_constant(1),
+                            4,
+                        )
+                    } else {
+                        CMemoryRange::new_with_element_width(base, 0u32.into(), 1u32.into(), 4)
+                    })
+                };
+                let context = ResourceContext::new_with_equalities(&assumptions)
+                    .unchecked_with_facts((0..size).map(|i| owned(8 * i as i64)));
+                context.synchronize_memory_equalities(&assumptions);
+                let mut work = Vec::new();
+                for (next, accepted) in [
+                    (owned(-8), true),
+                    (owned(0), false),
+                    (owned(8 * (size - 1) as i64), false),
+                ] {
+                    for _ in 0..3 {
+                        let (result, units) =
+                            crate::instrumentation::measure_deterministic_work(|| {
+                                context
+                                    .clone()
+                                    .try_compose_into_valid_context_delaying_normalization(
+                                        [next.clone()],
+                                        &assumptions,
+                                    )
+                            });
+                        assert_eq!(result.is_ok(), accepted);
+                        assert_eq!(context.facts().len(), size);
+                        work.push(units);
+                    }
+                }
+                samples.push((size, work));
+            }
+            eprintln!("translated owners symbolic={symbolic}, native={native}: {samples:?}");
+            assert!(
+                samples.windows(2).all(|pair| pair[0]
+                    .1
+                    .iter()
+                    .zip(&pair[1].1)
+                    .all(|(small, large)| *large <= *small + 48)),
+                "constant base translations scan ambient owners: {samples:?}"
+            );
+        }
+    }
+}
+
+#[test]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
     let base = Pointer {
