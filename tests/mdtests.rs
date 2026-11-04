@@ -620,6 +620,21 @@ fn run_mdtest_attempt(path: &Path) -> Result<(), String> {
     run_mdtest(path)
 }
 
+fn timed_mdtest_phase<T>(path: &Path, phase: &str, run: impl FnOnce() -> T) -> T {
+    let started = std::env::var_os("CLICK_MDTEST_PHASE_TIMINGS")
+        .is_some()
+        .then(std::time::Instant::now);
+    let result = run();
+    if let Some(started) = started {
+        eprintln!(
+            "mdtest phase `{}` {phase} {:.6}s",
+            path.display(),
+            started.elapsed().as_secs_f64()
+        );
+    }
+    result
+}
+
 fn run_mdtest(path: &Path) -> Result<(), String> {
     if path
         .extension()
@@ -634,18 +649,20 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
                 .map_err(|error| error.report())?;
         return verification.map(|_| ()).map_err(|error| error.report());
     }
-    let mdtest = read_mdtest(path)?;
+    let mdtest = timed_mdtest_phase(path, "read", || read_mdtest(path))?;
     let click_source = mdtest
         .click_source
         .as_deref()
         .ok_or_else(|| format!("`{}` is missing a ```click block", path.display()))?;
-    let inputs = prepare_mdtest_inputs(&mdtest)?;
+    let inputs = timed_mdtest_phase(path, "prepare-inputs", || prepare_mdtest_inputs(&mdtest))?;
     let expectation = mdtest
         .expectation
         .as_ref()
         .ok_or_else(|| format!("`{}` is missing a ```expect block", path.display()))?;
 
-    let project = read_mdtest_project_if_needed(path, click_source, &inputs)?;
+    let project = timed_mdtest_phase(path, "load-project", || {
+        read_mdtest_project_if_needed(path, click_source, &inputs)
+    })?;
     let verify = || -> Result<(), (String, String)> {
         match (&inputs, &project) {
             (CInput::Bundle(sources), Some(project)) => {
@@ -664,7 +681,7 @@ fn run_mdtest(path: &Path) -> Result<(), String> {
         .map_err(|error| (error.message().to_string(), error.report()))
     };
 
-    let (result, samples) = tactic_work::measure(verify);
+    let (result, samples) = timed_mdtest_phase(path, "verify", || tactic_work::measure(verify));
     if !samples.is_empty() {
         let line_offset = mdtest.click_start_line.saturating_sub(1);
         let relative = path
