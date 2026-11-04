@@ -7,7 +7,7 @@
 //!
 //! Every case of [`CASES`] is in each language's sidecar (`c.click`,
 //! `cpp.click`, `rust.click`) or, as a named gap, in its gap file
-//! (`cpp.click-gap`, `rust.click-gap`), which holds the same claims and proof; a
+//! (`cpp.click-gap`), which holds the same claims and proof; a
 //! language with no gap has no gap file.
 //! [`claims_agree_across_languages`] holds every language to the same
 //! signatures and claims. The example harness verifies the three sidecars as
@@ -19,10 +19,9 @@
 //! - [`Gap::Verify`]: the source imports but the claims do not verify; checked
 //!   here, in the nightly, with the goal the refusal names.
 //! - [`Gap::Import`]: the front end refuses the source. A C++ import gap is
-//!   checked with the pinned exporter, where `CLICK_CPP_EXPORTER` names it; a
-//!   Rust one with Charon, in the nightly. A Rust import gap's source is in
-//!   `gaps.rs`, outside the crate, since Charon translates every function of
-//!   a crate; a C++ one stays in `integers.cpp`, unselected in the project.
+//!   checked with the pinned exporter, where `CLICK_CPP_EXPORTER` names it.
+//!   Rust has no remaining import gaps. A C++ gap stays in `integers.cpp`,
+//!   unselected in the project.
 //!
 //! The C++ and Rust imports are checked in, so the gate needs neither
 //! toolchain. After changing a source, run `click import lock` on its
@@ -78,16 +77,15 @@ struct Case {
 
 const SHIFT: Gap = Gap::Import("unsupported binary operator");
 const SIGNED_CHAR: Gap = Gap::Import("the supported C++ slice supports bool");
-const WRAPPING: Gap = Gap::Import("unmodeled external call");
 
 #[rustfmt::skip]
 const CASES: &[Case] = &[
     Case { name: "add_i32", gaps: [None, None, None] },
     Case { name: "sub_i32", gaps: [None, None, None] },
     Case { name: "mul_i32", gaps: [None, None, None] },
-    Case { name: "wrapping_add_u32", gaps: [None, None, Some(WRAPPING)] },
-    Case { name: "wrapping_sub_u32", gaps: [None, None, Some(WRAPPING)] },
-    Case { name: "wrapping_mul_u32", gaps: [None, None, Some(WRAPPING)] },
+    Case { name: "wrapping_add_u32", gaps: [None, None, None] },
+    Case { name: "wrapping_sub_u32", gaps: [None, None, None] },
+    Case { name: "wrapping_mul_u32", gaps: [None, None, None] },
     Case { name: "above_int32_max", gaps: [None, None, None] },
     Case { name: "keep_above_int32_max", gaps: [None, None, None] },
     Case { name: "to_signed_i32", gaps: [None, None, None] },
@@ -102,7 +100,7 @@ const CASES: &[Case] = &[
     Case { name: "narrow_i8", gaps: [None, Some(SIGNED_CHAR), None] },
     Case { name: "narrow_u8_in_range", gaps: [None, None, None] },
     Case { name: "add_i64", gaps: [None, None, None] },
-    Case { name: "wrapping_add_u64", gaps: [None, None, Some(WRAPPING)] },
+    Case { name: "wrapping_add_u64", gaps: [None, None, None] },
     Case { name: "below_i32", gaps: [None, None, None] },
     Case { name: "below_u32", gaps: [None, None, None] },
     Case { name: "sign_bit_set", gaps: [None, None, None] },
@@ -364,24 +362,6 @@ fn rust_refuses_a_false_uint32_above_int32_max_as_itself() {
     a_refused_uint32_above_int32_max_prints_as_itself(Language::Rust);
 }
 
-/// The source of one function of `source`: from its line to its closing
-/// brace at the start of a line.
-fn function_source(source: &str, name: &str) -> String {
-    let start = source
-        .lines()
-        .position(|line| line.contains(&format!(" {name}(")) && !line.starts_with(' '))
-        .unwrap_or_else(|| panic!("no function `{name}`"));
-    let mut lines = source.lines().skip(start);
-    let mut function = Vec::new();
-    for line in lines.by_ref() {
-        function.push(line);
-        if line.starts_with('}') {
-            break;
-        }
-    }
-    function.join("\n") + "\n"
-}
-
 /// A one-unit project in a fresh temporary directory, removed on drop.
 struct Scratch(PathBuf);
 
@@ -509,26 +489,4 @@ fn rust_import_matches_live_charon_extraction() {
         "the fixture's Rust import differs from live extraction; run `click import lock examples/integer-languages/rust`: {}",
         cpp_imports::first_import_difference(&checked_in, &extracted)
     );
-}
-
-/// Each Rust import gap in `gaps.rs` is still refused by Charon.
-#[test]
-#[ignore = "nightly: runs the pinned Rust compiler once per gap"]
-fn rust_import_gaps_are_still_refused() {
-    let gaps = read(Language::Rust, "gaps.rs");
-    for case in CASES {
-        let Some(Gap::Import(refusal)) = case.gaps[2] else {
-            continue;
-        };
-        let scratch = Scratch::new("rust-gap");
-        fs::write(scratch.0.join("gap.rs"), function_source(&gaps, case.name)).unwrap();
-        let unit = serde_json::json!({ "language": "rust", "sources": { "gap.rs": {} } });
-        match scratch.lock(one_unit("gap", unit), None) {
-            Ok(()) => panic!(
-                "Charon now imports `{}`: move it from `gaps.rs` into `integers.rs`",
-                case.name
-            ),
-            Err(error) => assert!(error.contains(refusal), "`{}`: {error}", case.name),
-        }
-    }
 }

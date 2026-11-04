@@ -1,7 +1,6 @@
 // The Rust side of the cross-language integer fixture
 // (`tests/examples/integer_languages.rs`): the same claims as `../c/c.click`
-// and `../cpp/cpp.click`. A case Rust does not verify yet is in `rust.click-
-// gap`.
+// and `../cpp/cpp.click`.
 
 import click::integer;
 
@@ -199,4 +198,20 @@ fn bool_sum(a: bool, b: bool) -> i32 {
 fn select_i32(b: bool, x: i32, y: i32) -> i32 {
     ensures b implies result == x;
     ensures not b implies result == y;
+}
+
+fn wrapping_add_u32(a: u32, b: u32) -> u32 {
+    ensures result == integer::uint32_wrapping_add(a, b);
+}
+
+fn wrapping_sub_u32(a: u32, b: u32) -> u32 {
+    ensures result == integer::uint32_wrapping_sub(a, b);
+}
+
+fn wrapping_mul_u32(a: u32, b: u32) -> u32 {
+    ensures result == integer::uint32_wrapping_mul(a, b);
+}
+
+fn wrapping_add_u64(a: u64, b: u64) -> u64 {
+    ensures result == integer::uint64_wrapping_add(a, b);
 }
