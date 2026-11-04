@@ -452,7 +452,8 @@ Done 2026-10-24. What changed:
   then the six legacy conversions.
 - Keep the constructor API. Retire `Bitvector32Term`'s name when it no
   longer describes the type.
-- Separate floats into their own term type.
+- Separate floats into their own term type (retired 2026-11-04; see
+  Progress).
 - Load equations take their load's format.
 
 Progress:
@@ -617,6 +618,24 @@ Progress:
   `machine_relations.rs`). That is an equivalence in reasoning, where the
   principle that lowering keeps the source's structure puts equivalences,
   not a construction shortcut, so it is not a Stage 3 item.
+- Floats stay in the term family (2026-11-04). The
+  split would give floats a term type of their own, `FloatTerm` with a
+  bits leaf (a `Bitvector32Term`: variable, load, constant, application)
+  and float negation and arithmetic nodes, held by `CValue::Float32`,
+  `CValue::Float64` and `CFloatCondition`. It keeps every identity only if
+  no float operation sits under a non-float node. A census (a temporary
+  format-audit hook, not committed) checked every evaluated value,
+  stored value and 32-bit e-graph interning over the integer mdtests and
+  the examples, and found none: no float operation under an `If`, an
+  application or an integer operator or cast, and none as an integer
+  value. Coverage is thin: only two fixtures build a symbolic float
+  operation at all (`json_object_scale_double`, in `jsonc-numeric` and its
+  mdtest); C joins split paths, and a specification `if` refuses float
+  values. The split would touch about 57 files (215 `CValue` float sites,
+  half of them or-patterns shared with the integer variants, 89
+  `CFloatCondition` sites and 147 uses of the float variants and their
+  shape operators) for two fixtures, so it is retired. If floats gain
+  richer symbolic use, that bits-leaf `FloatTerm` remains the design.
 
 
 - Every format its own nodes (planned 2026-10-29, [Decisions](#decisions)).
