@@ -451,6 +451,14 @@ controls grow both owned and viewed fragments beside a fixed missing view,
 with repeated queries and exact early/late hits. Non-memory view queries and
 memory queries for other ownership quantities retain separate routes.
 
+Incremental memory-view consumption uses the same single-supplier check.
+Observing a view returns the original context, preserving supplier occurrences,
+loan bindings and split origins. It does not consume an owner or construct a
+normalized resource context. A view spanning adjacent fragments needs explicit
+composition before this check; a failed lookup does not search for a partition.
+Scaling controls cover cold and repeated misses and exact early/late hits for
+both owned and viewed suppliers, and identity tests pin unchanged storage.
+
 Call planning retains memory split origins while constructing residual owners.
 Each new residual occurrence maps directly to its original pre-reservation
 owner in a call-local persistent map. Repeated splits propagate that original

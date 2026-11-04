@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn adjacent_supply_wakes_wide_memory_waiter() {
+fn memory_waiter_requires_a_whole_range_supplier() {
     let base = Pointer {
         block: PointerBlock::Concrete("resource-clause-adjacent".to_string()),
         offset: PointerOffsetTerm::Constant(0),
@@ -44,9 +44,24 @@ fn adjacent_supply_wakes_wide_memory_waiter() {
     assert!(pending.is_empty());
 
     let section_supply = section_supply.unchecked_with_fact(right.clone());
-    assert!(section_supply.satisfies_fact(&wide, &assumptions));
+    // The query no longer searches for a composition of adjacent fragments.
+    assert!(!section_supply.satisfies_fact(&wide, &assumptions));
     resource_clause_enqueue_waiters(
         &right,
+        &assumptions,
+        &section_supply,
+        &evaluated,
+        &mut queued,
+        &mut pending,
+        &dependencies,
+        &waiters,
+    );
+    assert!(pending.is_empty());
+
+    let section_supply = section_supply.unchecked_with_fact(wide.clone());
+    assert!(section_supply.satisfies_fact(&wide, &assumptions));
+    resource_clause_enqueue_waiters(
+        &wide,
         &assumptions,
         &section_supply,
         &evaluated,

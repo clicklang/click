@@ -6900,6 +6900,14 @@ impl ResourceContext {
         {
             return Some(self);
         }
+        if fact.is_view() {
+            // Observing a view preserves the supplier, including its occurrence
+            // and loan identities. Joining fragments requires explicit proof.
+            let supported = self
+                .directly_supporting_memory_fact(fact, range, assumptions)
+                .is_some();
+            return supported.then_some(self);
+        }
         if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1) {
             return self.consume_unit_owned_memory(fact, assumptions, origins, false);
         }
