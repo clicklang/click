@@ -13020,6 +13020,13 @@ pub struct SignedOrderDerivationStep {
     pub(super) premise: Proposition,
 }
 
+/// One exact wide-order edge, retained in its original orientation and
+/// polarity. Checking reads its endpoints from the premise's operand views.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WideOrderDerivationStep {
+    pub(super) premise: Proposition,
+}
+
 /// The base-alignment fact an atomic pointer-alignment decision rested on.
 /// `None` means the base is a heap allocation, whose alignment is intrinsic
 /// to the LP64 allocator profile and needs no context fact.
@@ -13309,7 +13316,7 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     /// `uint32`, each step's premise in the context as written.
     WideOrderPath {
         format: MachineIntegerType,
-        path: Vec<SignedOrderDerivationStep>,
+        path: Vec<WideOrderDerivationStep>,
     },
     Int32IncrementUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementConstantUpperBound(Box<SignedOrderDerivationStep>),
@@ -13684,8 +13691,10 @@ pub struct PureFactContext {
     /// Numeric comparison views retain their exact source for withdrawal.
     pub(super) comparison_sources:
         PersistentMap<Proposition, super::assumptions::observation_comparisons::PropositionKey>,
-    pub(super) comparison_counts:
-        PersistentMap<super::assumptions::observation_comparisons::PropositionKey, usize>,
+    pub(super) comparison_views: PersistentMap<
+        super::assumptions::observation_comparisons::PropositionKey,
+        crate::persistent::PersistentSet<Proposition>,
+    >,
     /// Alpha/load identity index for propositions that may be stated as a
     /// call requirement.  The key retains memory versions and canonicalizes
     /// only binders; the persistent buckets keep updates local to one key.

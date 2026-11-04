@@ -46,7 +46,7 @@ impl PropositionKey {
             crate::instrumentation::record_deterministic_work(1);
             match proposition {
                 Proposition::ConditionIs(condition, truth)
-                    if native_comparison_view(condition, *truth).is_some() =>
+                    if comparison_view(condition, *truth).is_some() =>
                 {
                     return true;
                 }
@@ -432,5 +432,71 @@ impl ObservationComparisons {
             key(&comparison_view(condition, truth)?)
         };
         self.sources.get(&key)?.iter().next()
+    }
+}
+
+#[cfg(test)]
+mod compound_observation_lookup_tests {
+    use super::*;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    #[test]
+    fn compound_comparison_lookup_is_bidirectional_and_tracks_source_withdrawal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let root = KernelTerm::machine_binary_shared(
+            ty,
+            MachineBinaryOp::Multiply,
+            [
+                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(989001)),
+                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(989002)),
+            ],
+        );
+        let retained = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+        let shared = ConditionTerm::integer_not_equal(
+            IntegerTerm::Machine(retained.clone()),
+            IntegerTerm::constant_i64(-1),
+        );
+        let other = Proposition::ConditionIs(ConditionTerm::Variable(Variable(989003)), true);
+        let guard = |condition, truth| {
+            Proposition::Or(
+                Box::new(Proposition::ConditionIs(condition, truth)),
+                Box::new(other.clone()),
+            )
+        };
+        let shared_guard = guard(shared, true);
+        let exports = KernelTermExport::machine_export_count();
+        assert!(!retained.has_boxed_operand());
+        let shared_context = PureFactContext::new().assume_proposition(shared_guard.clone());
+        assert!(shared_context.proves_exact(&shared_guard));
+        assert!(!retained.has_boxed_operand());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+
+        let native = ConditionTerm::equal(
+            Bitvector32Term::logical_machine_binary(
+                ty,
+                MachineBinaryOp::Multiply,
+                Bitvector32Term::Variable(Variable(989001)),
+                Bitvector32Term::Variable(Variable(989002)),
+            ),
+            Bitvector32Term::constant(u32::MAX),
+        );
+        let native_guard = guard(native.clone(), false);
+        let native_context = PureFactContext::new().assume_proposition(native_guard.clone());
+        let (proved, sources) = collect_reasoning_provenance(|| {
+            capture_implicit_reasoning_provenance(|| native_context.proves_exact(&shared_guard))
+        });
+        assert!(proved);
+        assert_eq!(sources, vec![native_guard.clone()]);
+        assert!(!native_context.contains_assumed_exact(&shared_guard));
+        assert!(shared_context.proves_exact(&native_guard));
+        assert!(!native_context.proves_exact(&guard(native, true)));
+        let both = native_context.assume_proposition(shared_guard.clone());
+        let one = both.without_exact_fact(&native_guard);
+        assert!(one.proves_exact(&native_guard));
+        let none = one.without_exact_fact(&shared_guard);
+        assert!(!none.proves_exact(&native_guard));
+        assert!(!none.proves_exact(&shared_guard));
+        assert!(both.proves_exact(&shared_guard));
     }
 }

@@ -95,7 +95,7 @@ impl PropositionDerivation {
 
     /// Return the format and the exact ordered edges selected by an atomic
     /// 64-bit or `uint32` order decision.
-    pub fn wide_order_path(&self) -> Option<(MachineIntegerType, &[SignedOrderDerivationStep])> {
+    pub fn wide_order_path(&self) -> Option<(MachineIntegerType, &[WideOrderDerivationStep])> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence: AtomicPropositionDerivationEvidence::WideOrderPath { format, path },
@@ -1204,6 +1204,13 @@ impl LoadAddressCongruenceEvidence {
             && self
                 .offset
                 .checks(&left_pointer.offset, &right_pointer.offset, assumptions)
+    }
+}
+
+impl WideOrderDerivationStep {
+    /// The exact proposition supporting this oriented edge.
+    pub fn premise(&self) -> &Proposition {
+        &self.premise
     }
 }
 

@@ -5186,7 +5186,7 @@ impl PureFactContext {
     fn clear_proposition_facts_with_graph_rebuild(&mut self, rebuild_graph: bool) {
         self.prop_facts = Default::default();
         self.comparison_sources = Default::default();
-        self.comparison_counts = Default::default();
+        self.comparison_views = Default::default();
         self.equality_graph.clear_proposition_pointer_facts();
         self.execution_fact_projection = self
             .execution_fact_projection
@@ -6490,7 +6490,7 @@ impl PureFactContext {
 
     fn adjust_comparison_view(&mut self, source: &Proposition, insert: bool) {
         if let Proposition::ConditionIs(condition, truth) = source
-            && crate::kernel::machine_integer::comparison::native_comparison_view(condition, *truth)
+            && crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)
                 .is_some()
         {
             // Atomic aliases are maintained by the shared source index.
@@ -6502,20 +6502,25 @@ impl PureFactContext {
                 return;
             }
             let view = observation_comparisons::PropositionKey::new(source);
-            let count = self.comparison_counts.get(&view).copied().unwrap_or(0);
-            self.comparison_counts.insert(view.clone(), count + 1);
+            let sources = self
+                .comparison_views
+                .get(&view)
+                .cloned()
+                .unwrap_or_default();
+            self.comparison_views
+                .insert(view.clone(), sources.with_value(source.clone()));
             self.comparison_sources.insert(source.clone(), view);
         } else if let Some(view) = self.comparison_sources.get(source).cloned() {
             self.comparison_sources.remove(source);
-            let count = self
-                .comparison_counts
+            let sources = self
+                .comparison_views
                 .get(&view)
-                .copied()
-                .expect("comparison source");
-            if count == 1 {
-                self.comparison_counts.remove(&view);
+                .expect("comparison source")
+                .without_value(source);
+            if sources.is_empty() {
+                self.comparison_views.remove(&view);
             } else {
-                self.comparison_counts.insert(view, count - 1);
+                self.comparison_views.insert(view, sources);
             }
         }
     }
@@ -7083,11 +7088,31 @@ impl PureFactContext {
             );
             return true;
         }
-        let proved = self.contains_assumed_exact(proposition);
-        if proved {
+        if self.contains_assumed_exact(proposition) {
             record_implicit_reasoning_provenance(self, proposition);
+            return true;
         }
-        proved
+        // Compound comparison identities select a held source, not a newly
+        // manufactured alias. Exact membership stays separate for withdrawal.
+        if !self.comparison_views.is_empty()
+            && matches!(
+                proposition,
+                Proposition::Not(_)
+                    | Proposition::And(_, _)
+                    | Proposition::Or(_, _)
+                    | Proposition::Implies(_, _)
+                    | Proposition::ForAll { .. }
+                    | Proposition::Exists { .. }
+            )
+            && let Some(source) = self
+                .comparison_views
+                .get(&observation_comparisons::PropositionKey::new(proposition))
+                .and_then(|sources| sources.iter().next())
+        {
+            record_implicit_reasoning_provenance(self, source);
+            return true;
+        }
+        false
     }
 
     /// Exact membership in the explicitly assumed fact set, without builtin
@@ -8246,9 +8271,9 @@ impl PureFactContext {
     /// Whether `proposition` is an exact proposition fact of this context.
     pub fn contains_proposition_fact(&self, proposition: &Proposition) -> bool {
         self.prop_facts.contains(proposition)
-            || (!self.comparison_counts.is_empty()
+            || (!self.comparison_views.is_empty()
                 && self
-                    .comparison_counts
+                    .comparison_views
                     .get(&observation_comparisons::PropositionKey::new(proposition))
                     .is_some())
             || matches!(proposition,
@@ -10976,44 +11001,32 @@ fn aliased_operands(
 /// constant, such as a type-range bound, keeps its Integer form. The walk
 /// visits each connective once.
 pub(crate) fn canonical_observation_form(proposition: &Proposition) -> Proposition {
-    observation_comparison_form(proposition, false)
+    observation_comparison_form(proposition)
 }
 
-/// [`canonical_observation_form`] with each observation also read through
-/// its value relations (rule W) and literal arithmetic evaluated, as
-/// checking reads a comparison: `to_integer(d as int128) == -1` is `d == -1`.
-/// A lookup form only; nothing is built or printed from it.
-pub(crate) fn read_observation_form(proposition: &Proposition) -> Proposition {
-    observation_comparison_form(proposition, true)
-}
-
-fn observation_comparison_form(proposition: &Proposition, evaluate: bool) -> Proposition {
+fn observation_comparison_form(proposition: &Proposition) -> Proposition {
     crate::instrumentation::record_deterministic_work(1);
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            match if evaluate {
-                native_comparison_of_integer_observation(condition, *value)
-            } else {
-                super::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition, *value)
-            } {
+            match super::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition, *value) {
                 Some((ConditionTerm::Constant(_), _)) | None => proposition.clone(),
                 Some((native, truth)) => Proposition::ConditionIs(native, truth),
             }
         }
         Proposition::Not(inner) => {
-            Proposition::Not(Box::new(observation_comparison_form(inner, evaluate)))
+            Proposition::Not(Box::new(observation_comparison_form(inner)))
         }
         Proposition::And(left, right) => Proposition::And(
-            Box::new(observation_comparison_form(left, evaluate)),
-            Box::new(observation_comparison_form(right, evaluate)),
+            Box::new(observation_comparison_form(left)),
+            Box::new(observation_comparison_form(right)),
         ),
         Proposition::Or(left, right) => Proposition::Or(
-            Box::new(observation_comparison_form(left, evaluate)),
-            Box::new(observation_comparison_form(right, evaluate)),
+            Box::new(observation_comparison_form(left)),
+            Box::new(observation_comparison_form(right)),
         ),
         Proposition::Implies(left, right) => Proposition::Implies(
-            Box::new(observation_comparison_form(left, evaluate)),
-            Box::new(observation_comparison_form(right, evaluate)),
+            Box::new(observation_comparison_form(left)),
+            Box::new(observation_comparison_form(right)),
         ),
         other => other.clone(),
     }
@@ -11137,7 +11150,22 @@ mod integer_observation_tests {
         };
         let first = make(0);
         let second = make(1);
-        let view = observation_comparison_form(&first, true);
+        let view = Proposition::Or(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(850)),
+                    Bitvector32Term::constant(i32::MIN as u32),
+                ),
+                false,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(851)),
+                    Bitvector32Term::constant(u32::MAX),
+                ),
+                false,
+            )),
+        );
         assert_ne!(first, view);
         let mut context = PureFactContext::new();
         context.insert_proposition_fact(first.clone());
@@ -12640,23 +12668,18 @@ impl OrderFactsByLower {
     /// The order facts at `format`, one of
     /// [`condition_reasoning::WIDE_ORDER_FORMATS`], whose lower end has
     /// canonical form `lower`.
-    pub(crate) fn wide_from<'a>(
+    pub(in crate::kernel) fn wide_from<'a>(
         &'a self,
         format: MachineIntegerType,
-        lower: &Bitvector32Term,
+        lower: &checked_scalar_facts::ScalarOperandKey,
     ) -> impl Iterator<Item = &'a ConditionTerm> + 'a {
         let kind = condition_reasoning::WIDE_ORDER_FORMATS
             .iter()
             .position(|wide| *wide == format);
-        kind.and_then(|kind| {
-            self.wide[kind].get(&checked_scalar_facts::ScalarOperandKey::for_format(
-                format,
-                crate::kernel::MachineOperandView::Legacy(lower),
-            ))
-        })
-        .into_iter()
-        .flat_map(crate::persistent::PersistentSet::iter)
-        .inspect(|_| crate::instrumentation::record_deterministic_work(1))
+        kind.and_then(|kind| self.wide[kind].get(lower))
+            .into_iter()
+            .flat_map(crate::persistent::PersistentSet::iter)
+            .inspect(|_| crate::instrumentation::record_deterministic_work(1))
     }
 }
 

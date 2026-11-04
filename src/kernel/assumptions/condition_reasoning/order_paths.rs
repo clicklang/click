@@ -1172,16 +1172,18 @@ impl PureFactContext {
     /// left to other rules, since `solve` writes no lemma for it.
     pub(in crate::kernel) fn exact_wide_order_path_evidence(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: crate::kernel::MachineOperandView<'_>,
+        right: crate::kernel::MachineOperandView<'_>,
         require_strict: bool,
         format: MachineIntegerType,
-    ) -> Option<Vec<SignedOrderDerivationStep>> {
-        let canonical = crate::kernel::eval::canonical_term;
-        // The facts of this kind filed under the node's canonical form, the
-        // only edges the walk matches (`OrderFactsByLower`), visited in the
-        // reverse of the facts' own order as before.
-        let edges_from = |current: &Bitvector32Term| {
+    ) -> Option<Vec<WideOrderDerivationStep>> {
+        use super::super::checked_scalar_facts::ScalarOperandKey as Key;
+        use crate::kernel::machine_integer::Relation;
+        let canonical = |term: crate::kernel::MachineOperandView<'_>| Key::canonical(format, term);
+        // Read only the edges indexed at this endpoint, in the same reverse
+        // source order as the native walk. Canonical load identities still
+        // connect a written load and its registered variable.
+        let edges_from = |current: &Key| {
             self.order_facts_by_lower
                 .wide_from(format, current)
                 .collect::<BTreeSet<_>>()
@@ -1189,14 +1191,15 @@ impl PureFactContext {
                 .rev()
                 .filter_map(|condition| {
                     let value = *self.condition_facts.get(condition)?;
-                    wide_order_fact(condition, value, format).map(|(lower, upper, strict)| {
-                        SignedOrderDerivationStep {
-                            lower,
-                            upper,
-                            strict,
+                    let view = wide_order_view(condition, value, format)?;
+                    debug_assert_eq!(canonical(view.operands[0].operand_view()), *current);
+                    Some((
+                        canonical(view.operands[1].operand_view()),
+                        view.relation == Relation::Less,
+                        WideOrderDerivationStep {
                             premise: Proposition::ConditionIs(condition.clone(), value),
-                        }
-                    })
+                        },
+                    ))
                 })
                 .collect::<Vec<_>>()
         };
@@ -1210,15 +1213,10 @@ impl PureFactContext {
             if current == target && (!require_strict || strict_so_far) && !path.is_empty() {
                 return Some(path);
             }
-            for edge in edges_from(&current) {
-                debug_assert_eq!(canonical(&edge.lower), current);
+            for (upper, strict, edge) in edges_from(&current) {
                 let mut extended = path.clone();
-                extended.push(edge.clone());
-                stack.push((
-                    canonical(&edge.upper),
-                    strict_so_far || edge.strict,
-                    extended,
-                ));
+                extended.push(edge);
+                stack.push((upper, strict_so_far || strict, extended));
             }
         }
         None
@@ -2237,26 +2235,14 @@ pub(in crate::kernel) const WIDE_ORDER_FORMATS: [MachineIntegerType; 3] = [
     MachineIntegerType::UInt32,
 ];
 
-/// An order fact at `format`, one of [`WIDE_ORDER_FORMATS`], as `(lower,
-/// upper, strict)`.
-pub(in crate::kernel) fn wide_order_fact(
+/// An order fact at `format`, retaining its written operand views.
+pub(in crate::kernel) fn wide_order_view(
     condition: &ConditionTerm,
     value: bool,
     format: MachineIntegerType,
-) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
+) -> Option<crate::kernel::machine_integer::comparison::NativeComparisonView<'_>> {
     let view = super::super::retained_order_bounds::order_view(condition, value)?;
-    if view.format != format {
-        return None;
-    }
-    let [lower, upper] = view
-        .operands
-        .each_ref()
-        .map(|operand| operand.operand_view().retain(format).value().clone());
-    Some((
-        lower,
-        upper,
-        view.relation == crate::kernel::machine_integer::Relation::Less,
-    ))
+    (view.format == format).then_some(view)
 }
 
 impl PureFactContext {

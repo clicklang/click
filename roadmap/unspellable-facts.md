@@ -196,12 +196,16 @@ Remaining groups to audit and migrate:
   and bounded certificate conclusion identity already read views.
   `interval_query_form` remains in Surface search/output adapters and test
   references, not kernel atomic derivation.
-  Order-path evidence is a separate remaining consumer: `wide_order_fact`
-  exports endpoints in the atomic builder, `WideOrderPath` checker and exact
-  path collector. Migrate the retained source steps and endpoint comparisons
-  together; preserving only the ordinary order decision does not cover this.
+  Wide-order evidence now retains the original source propositions. Its
+  builder, indexed path collector and checker read endpoint views directly,
+  including polarity and canonical load/name connections, without exporting
+  shared arithmetic. Signed-order evidence remains a separate boxed consumer;
+  migrate its endpoint comparisons and constant connections together.
   Integer certificate premise availability (`proof/object.rs`) must retain the
   checked across-effect bridge when replacing its native/overflow queries.
+  `condition_as_order_fact` also exports in constant-bound evidence,
+  memory-order checking and quantified/derived order collectors; those are live
+  checker routes, not output adapters.
 - [ ] Remaining difference-graph comparison/admission and interval-query
   adapters. Wide constant evaluation and the wide interval entry points already
   read views; preserve width and source evidence in the remaining consumers.
@@ -213,10 +217,11 @@ Remaining groups to audit and migrate:
   matches direct path facts by shared comparison identity. Its 32-bit guards
   have no-export coverage; unresolved 64-bit guards still reach the general
   wide-equality exporter through intrinsic checking.
-  `eval/operators.rs`'s `read_observation_form` remains a live checking lookup.
-  `canonical_observation_form` also constructs verification conditions, while
-  `native_reading_of_integer_observation_fact` is used by Surface planning;
-  classify those producer/output uses separately rather than deleting them.
+  Signed 128-bit division guard lookup now uses shared proposition keys for
+  both native and observed compound premises. The boxed `read_observation_form`
+  adapter is removed; structural `canonical_observation_form` remains an
+  explicit producer boundary. `native_reading_of_integer_observation_fact`
+  remains a Surface planning/output adapter.
 - [ ] Remove redundant checker exports and enforce the boundary with tests.
 
 **Completion criteria:**
