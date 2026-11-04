@@ -1924,10 +1924,7 @@ impl EqualityGraph {
 
     /// The recorded 64-bit equality endpoints the graph proves equal to
     /// `term`: one class lookup, no scan of the recorded facts.
-    pub(in crate::kernel) fn wide_equation_endpoints_equal_to(
-        &self,
-        term: &MachineTerm,
-    ) -> Vec<MachineTerm> {
+    fn wide_equation_endpoints_equal_to_written(&self, term: &MachineTerm) -> Vec<MachineTerm> {
         let term = crate::kernel::canonical_term(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
@@ -1937,6 +1934,33 @@ impl EqualityGraph {
             .iter()
             .cloned()
             .collect()
+    }
+
+    /// Shared query operands retain their syntax; only the explicitly
+    /// recorded source endpoints are returned for citation.
+    pub(in crate::kernel) fn wide_equation_endpoints_equal_to(
+        &self,
+        term: crate::kernel::MachineOperandView<'_>,
+    ) -> Vec<MachineTerm> {
+        use crate::kernel::MachineOperandView as V;
+        match term {
+            V::Legacy(term) => self.wide_equation_endpoints_equal_to_written(term),
+            V::Shared(root) => {
+                let observation = crate::kernel::IntegerTerm::Machine(
+                    term.retain(crate::kernel::MachineIntegerType::UInt64),
+                );
+                let mut state = self.state.lock().expect("equality graph");
+                self.register_expression_operands(&mut state, [], [], [&observation]);
+                let id = state.terms.shared_uint64_class(root);
+                state.close(Vec::new());
+                state
+                    .terms
+                    .wide_equation_endpoints_of_class(id)
+                    .iter()
+                    .cloned()
+                    .collect()
+            }
+        }
     }
 
     pub(in crate::kernel) fn uint64_constant(&self, term: &MachineTerm) -> Option<u64> {

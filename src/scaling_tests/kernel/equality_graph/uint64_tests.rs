@@ -235,7 +235,7 @@ fn a_recorded_address_fact_is_found_through_its_word_class_without_scanning() {
         let (endpoints, work) = crate::instrumentation::measure_deterministic_work(|| {
             context
                 .equality_graph
-                .wide_equation_endpoints_equal_to(&read)
+                .wide_equation_endpoints_equal_to(crate::kernel::MachineOperandView::Legacy(&read))
         });
         assert!(endpoints.contains(&recorded), "{endpoints:?}");
         if let Some(previous) = previous {
@@ -246,4 +246,53 @@ fn a_recorded_address_fact_is_found_through_its_word_class_without_scanning() {
         }
         previous = Some(work);
     }
+}
+
+#[test]
+fn shared_wide_endpoint_queries_reuse_growing_prefixes() {
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelTermExport, KernelTermImport, MachineOperandView as V,
+        SharedMachineIntegerTerm,
+    };
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let name = MachineTerm::Variable(Variable(984101));
+        let mut root = KernelTermImport::default()
+            .machine_arithmetic(ty, &name)
+            .unwrap();
+        let base = root.clone();
+        let one = KernelTermImport::default()
+            .machine_arithmetic(ty, &MachineTerm::uint64_constant(1))
+            .unwrap();
+        let observe =
+            |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
+        let address = MachineTerm::pointer_address(Pointer::symbolic(Variable(984102)));
+        let mut context = PureFactContext::new().assume_proposition(fact(name.clone(), address));
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Multiply,
+                    [root, one.clone()],
+                );
+                context = context.assume_condition(
+                    ConditionTerm::integer_equal(observe(root.clone()), observe(base.clone())),
+                    true,
+                );
+                let endpoints = context
+                    .equality_graph
+                    .wide_equation_endpoints_equal_to(V::Shared(&root));
+                assert_eq!(endpoints, vec![name.clone()]);
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|p| p[1] <= p[0] * 5 + 100),
+        "{samples:?}"
+    );
 }
