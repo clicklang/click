@@ -4510,6 +4510,9 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
                 ensures result == 0 implies owner->data == old(owner->data);
             } by {
                 unfold(allocated_cell(owner));
+                // Declare both pointers, save the old cell, and allocate its replacement.
+                step(); step(); step(); step();
+                branch { step(); } else { }
                 step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
@@ -12888,8 +12891,8 @@ fn snapshot_and_post_call_transport_fixtures_have_no_outcome_fallbacks() {
             "separate_symbolic_unwritten_read.md",
             "write_i_read_j",
             CProofClaim::Ensure(0),
-            "normalize();",
-            "normalize() using { 0u32 == 1u32; };",
+            "have result == old(p[j])",
+            "have result != old(p[j])",
         ),
     ] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
