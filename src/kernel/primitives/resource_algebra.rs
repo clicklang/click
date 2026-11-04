@@ -4857,6 +4857,11 @@ impl ResourceContext {
         let Some(variable) = memory_base_variable(at) else {
             return full_block();
         };
+        // Any scalar condition already makes this candidate set conservative.
+        // Read the maintained existence witness, without enumerating its facts.
+        if assumptions.has_condition_variable(variable) {
+            return full_block();
+        }
         let key = AtomicConnectionKey::Variable(variable);
         let (mut facts, _) = assumptions.atomic_facts_connected_to(&key, true);
         // Authority, read permissions, and subobject coverage do not equate

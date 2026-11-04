@@ -1024,7 +1024,7 @@ impl PureFactContext {
         )
     }
 
-    pub(super) fn difference_graph_proves_order_views(
+    pub(in crate::kernel) fn difference_graph_proves_order_views(
         &self,
         left: MachineOperandView<'_>,
         right: MachineOperandView<'_>,

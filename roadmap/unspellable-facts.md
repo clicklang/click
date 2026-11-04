@@ -211,6 +211,23 @@ Remaining groups to audit and migrate:
   nonnegative induction-domain admission read indexed endpoint views directly;
   the native bound-entry exporter remains for the other evidence and output
   callers.
+  Singleton constant evidence now retains the original bound propositions and
+  their selected constant equalities, reading endpoints directly from views.
+  Range-bound path evidence, including its strict-successor route, also retains
+  source propositions and checks each edge and constant connection without
+  exporting arithmetic. Growing-prefix admission uses an indexed execution-id
+  ceiling lookup; named loads still resolve their live snapshot dependencies. Its old boxed path interface remains for the other
+  atomic/domain consumers. The graph-only derived-order query and order-shape
+  classification read views; admitting shared facts to the difference graph is
+  still a separate remaining task, not an implicit proving fallback here.
+  Shared scalar dependency admission now stores syntax edges and attaches facts
+  at their roots, instead of filing every prefix under every variable. Each
+  node propagates at most two distinct witnesses along a monotone branch;
+  singleton and existence queries read those witnesses. Complete selection
+  follows the reverse edges once and preserves source ordering. Native and
+  registered-load dependencies retain their existing indexing. The original
+  distinct-variable growing-prefix regression now passes without exports;
+  candidate parity, branch isolation and withdrawal are checked separately.
   Integer certificate native premise availability now uses ordinary shared
   lookup, including mirrored native sources across a checked memory frame.
   Both certificate-local boxed retries are removed. Nonoverflow source lookup

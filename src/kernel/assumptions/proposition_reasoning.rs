@@ -2874,6 +2874,79 @@ impl PureFactContext {
             .collect()
     }
 
+    /// An original direct source, selected without exporting shared endpoints.
+    pub(in crate::kernel) fn exact_direct_order_source_step(
+        &self,
+        lower: MachineOperandView<'_>,
+        upper: MachineOperandView<'_>,
+        strict: bool,
+    ) -> Option<OrderDerivationStep> {
+        if let Some(source) = self.signed_order_bounds.exact_source(lower, upper, strict) {
+            return Some(OrderDerivationStep {
+                premise: source.clone(),
+            });
+        }
+        // Already-native callers retain the historical direct-condition
+        // constructor spellings. This boundary never exports a shared query.
+        match (lower, upper) {
+            (MachineOperandView::Legacy(lower), MachineOperandView::Legacy(upper)) => self
+                .exact_direct_order_step(lower, upper, strict)
+                .map(|step| OrderDerivationStep {
+                    premise: step.premise,
+                }),
+            _ => None,
+        }
+    }
+
+    pub(in crate::kernel) fn checks_exact_signed_order_source_path(
+        &self,
+        path: &[OrderDerivationStep],
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        require_strict: bool,
+    ) -> bool {
+        use super::checked_scalar_facts::ScalarOperandKey as Key;
+        use crate::kernel::machine_integer::Relation;
+        if path.is_empty() {
+            return false;
+        }
+        let key = Key::new;
+        let connection = |a: MachineOperandView<'_>, b: MachineOperandView<'_>| {
+            a.word32_constant()
+                .zip(b.word32_constant())
+                .and_then(|(a, b)| ((a as i32) <= b as i32).then_some((a as i32) < b as i32))
+        };
+        let mut current = key(left);
+        let mut strict = false;
+        for step in path {
+            let Proposition::ConditionIs(condition, truth) = &step.premise else {
+                return false;
+            };
+            if self.exact_condition_value(condition) != Some(*truth) {
+                return false;
+            }
+            let Some(view) = order_view_at_format(condition, *truth, MachineIntegerType::Int32)
+            else {
+                return false;
+            };
+            let [lower, upper] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            if current != key(lower) {
+                let Some(join) = connection(current.operand_view(), lower) else {
+                    return false;
+                };
+                strict |= join;
+            }
+            current = key(upper);
+            strict |= view.relation == Relation::Less;
+        }
+        let tail = connection(current.operand_view(), right);
+        (current == key(right) || tail.is_some())
+            && (!require_strict || strict || tail == Some(true))
+    }
+
     pub(in crate::kernel) fn exact_direct_order_step(
         &self,
         lower: &MachineTerm,
@@ -3218,16 +3291,21 @@ impl PureFactContext {
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
-        let Some((left, right, strict)) = condition_as_order_fact(condition, value) else {
+        let Some(view) = order_view_at_format(condition, value, MachineIntegerType::Int32) else {
             return false;
         };
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let strict = view.relation == crate::kernel::machine_integer::Relation::Less;
         // Order facts come from `condition_facts` only. A bound that lives
         // inside a guarded implication or a finite universal reaches this
         // theory through an explicit `intro`, `extract`, or `enumerate` step,
         // or through the exact conjunction split `assume_proposition`
         // performs; deriving it here meant discharging antecedents with the
         // general prover and instantiating quantifiers inside a theory query.
-        self.difference_graph_proves_order(&left, &right, strict)
+        self.difference_graph_proves_order_views(left, right, strict)
     }
 }
 

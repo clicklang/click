@@ -45,6 +45,7 @@ pub(super) mod contradiction_endpoints;
 pub(in crate::kernel) mod contradictions;
 pub(in crate::kernel) mod observation_comparisons;
 pub(in crate::kernel) mod retained_order_bounds;
+pub(in crate::kernel) mod shared_condition_variables;
 pub(in crate::kernel) mod variable_chains;
 use super::equality_graph::EqualityGraph;
 use super::machine_integer::comparison::native_comparison_of_integer_observation;
@@ -59,6 +60,7 @@ use super::machine_integer::modular::wrapped_equality_of_integer_equality;
 pub(in crate::kernel) use condition_reasoning::cancel_common_offset_addends;
 pub(in crate::kernel) use condition_reasoning::held_order_at;
 pub(in crate::kernel) use condition_reasoning::narrowed_cast_identity;
+pub(in crate::kernel) use condition_reasoning::order_view_at_format;
 
 #[cfg(test)]
 #[derive(Clone, Debug)]
@@ -1218,6 +1220,7 @@ fn assumptions_memo_id(assumptions: &PureFactContext) -> u64 {
         key.atomic_ground_facts = crate::kernel::fact_collections::ScanSet::default();
         key.atomic_quantified_facts = crate::kernel::fact_collections::ScanSet::default();
         key.universals_by_conclusion = crate::persistent::PersistentMap::default();
+        key.shared_condition_variables = Default::default();
         key.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         key.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
@@ -4594,6 +4597,7 @@ impl PureFactContext {
         self.condition_facts_by_sides = crate::persistent::PersistentMap::default();
         self.bool_equation_partners = crate::persistent::PersistentMap::default();
         self.pointer_offset_equalities_by_shape = crate::persistent::PersistentMap::default();
+        self.shared_condition_variables = Default::default();
         self.condition_facts_by_variable = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_base = crate::persistent::PersistentMap::default();
         self.snapshot_condition_variable_changes = crate::persistent::PersistentMap::default();
@@ -4757,6 +4761,12 @@ impl PureFactContext {
         // wide condition remains charged in proportion to its syntax.
         if !entry_charged {
             crate::instrumentation::record_deterministic_work(1);
+        }
+        if self
+            .shared_condition_variables
+            .adjust(condition, value, insert)
+        {
+            return;
         }
         let mut variables = BTreeSet::new();
         let deferred = super::reasoning::variable_collection::collect_condition_index_variables(
@@ -7964,6 +7974,13 @@ impl PureFactContext {
     }
 
     fn adjust_atomic_connection_fact(&mut self, proposition: &Proposition, insert: bool) {
+        // These scalar dependencies already live in the shared syntax index;
+        // this fragment has no snapshot, block, or algebraic dependencies.
+        if let Proposition::ConditionIs(condition, _) = proposition
+            && self.shared_condition_variables.contains(condition)
+        {
+            return;
+        }
         let _timing =
             crate::instrumentation::OperationTiming::new("", "", "atomic dependency indexing");
         let all_keys =
@@ -8110,22 +8127,74 @@ impl PureFactContext {
         }
     }
 
+    fn condition_variable_facts(
+        &self,
+        variable: Variable,
+    ) -> impl Iterator<Item = (&ConditionTerm, bool)> {
+        let mut shared = self
+            .shared_condition_variables
+            .facts(variable)
+            .into_iter()
+            .peekable();
+        let mut native = self
+            .condition_facts_by_variable
+            .get(&variable)
+            .into_iter()
+            .flat_map(|facts| facts.iter())
+            .map(|(fact, value)| (fact.as_ref(), *value))
+            .peekable();
+        // Preserve source order without materializing the ordinary native bucket.
+        std::iter::from_fn(
+            move || match (native.peek().copied(), shared.peek().copied()) {
+                (Some((a, _)), Some((b, _))) if a <= b => {
+                    if a == b {
+                        shared.next();
+                    }
+                    native.next()
+                }
+                (Some(_), Some(_)) | (None, Some(_)) => shared.next(),
+                (Some(_), None) => native.next(),
+                (None, None) => None,
+            },
+        )
+    }
+
+    pub(in crate::kernel) fn has_condition_variable(&self, variable: Variable) -> bool {
+        self.condition_facts_by_variable
+            .get(&variable)
+            .is_some_and(|facts| !facts.is_empty())
+            || self
+                .shared_condition_variables
+                .witnesses(variable)
+                .next()
+                .is_some()
+    }
+
+    fn singleton_condition_variable(&self, variable: Variable) -> Option<(&ConditionTerm, bool)> {
+        let mut witnesses = self
+            .condition_facts_by_variable
+            .get(&variable)
+            .into_iter()
+            .flat_map(|facts| facts.iter().take(2))
+            .map(|(fact, value)| (fact.as_ref(), *value))
+            .chain(self.shared_condition_variables.witnesses(variable));
+        let first = witnesses.next()?;
+        witnesses.all(|next| next == first).then_some(first)
+    }
+
     pub(crate) fn atomic_facts_connected_to(
         &self,
         key: &AtomicConnectionKey,
         include_propositions: bool,
     ) -> (impl Iterator<Item = AtomicConnectedFact<'_>>, bool) {
-        let scalar = match key {
-            AtomicConnectionKey::Variable(variable) => {
-                self.condition_facts_by_variable.get(variable)
-            }
+        let variable = match key {
+            AtomicConnectionKey::Variable(variable) => Some(*variable),
             AtomicConnectionKey::Block(_) => None,
         };
-        let scalar = scalar.into_iter().flat_map(|facts| {
-            facts.iter().map(|(condition, value)| {
-                AtomicConnectedFact::Condition(condition.as_ref(), *value)
-            })
-        });
+        let scalar = variable
+            .into_iter()
+            .flat_map(|variable| self.condition_variable_facts(variable))
+            .map(|(condition, value)| AtomicConnectedFact::Condition(condition, value));
         let bucket = self.atomic_connection_facts.get(key);
         let has_propositions = bucket.is_some_and(|bucket| !bucket.propositions.is_empty());
         let conditions = bucket.map(|bucket| &bucket.conditions);
@@ -8235,17 +8304,13 @@ impl PureFactContext {
             self.snapshot_condition_variables.get()?
         };
         Some(
-            self.condition_facts_by_variable
-                .get(&variable)
-                .into_iter()
-                .flat_map(|facts| facts.iter())
-                .chain(
-                    snapshot_index
-                        .get(&variable)
-                        .into_iter()
-                        .flat_map(|facts| facts.iter()),
-                )
-                .map(|(condition, value)| (condition.as_ref(), *value)),
+            self.condition_variable_facts(variable).chain(
+                snapshot_index
+                    .get(&variable)
+                    .into_iter()
+                    .flat_map(|facts| facts.iter())
+                    .map(|(condition, value)| (condition.as_ref(), *value)),
+            ),
         )
     }
 
@@ -12531,6 +12596,49 @@ mod execution_variable_ceiling_tests {
                 true,
             ));
         assert!(context.execution_variable_ceiling() >= Some(execution_variable(7)));
+    }
+
+    #[test]
+    fn shared_ceiling_keeps_live_load_dependencies_and_execution_id_limits() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory_ref(&CMemory::new().with_block("a", 8).store(
+            word(0),
+            CValue::Int32(MachineTerm::Variable(execution_variable(71))),
+        ));
+        let load = crate::kernel::eval::load_variable_for_exact_cell(
+            &memory,
+            &word(4),
+            LoadKind::Int32,
+            4,
+        );
+        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), load);
+        for variable in [execution_variable(3), Variable(7), Variable(u64::MAX)] {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Multiply,
+                [
+                    root,
+                    KernelTerm::variable(KernelType::C(CType::Int32), variable),
+                ],
+            );
+        }
+        let observation =
+            SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap();
+        let condition = ConditionTerm::integer_less_equal(
+            IntegerTerm::Machine(observation.clone()),
+            IntegerTerm::constant_i64(7),
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let (syntax, deferred) = crate::kernel::reasoning::variable_collection::condition_syntax_execution_variable_ceiling(&condition);
+        assert_eq!(syntax, Some(execution_variable(3)));
+        assert!(deferred);
+        let facts = PureFactContext::new().assume_condition(condition, true);
+        assert_eq!(
+            facts.execution_variable_ceiling(),
+            Some(execution_variable(71))
+        );
+        assert!(!observation.has_boxed_operand());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 
     /// A composition fact's syntax ceiling is read from its context's cached

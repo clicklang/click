@@ -1025,59 +1025,50 @@ impl DirectBitvectorEqualityEvidence {
                     } => {
                         let bound = |evidence: &IndexedSignedOrderBoundEvidence,
                                      lower_bound: bool| {
-                            let normalized = if evidence.forward {
-                                (
-                                    evidence.endpoint.clone(),
-                                    evidence.other.clone(),
-                                    evidence.strict,
-                                )
+                            use crate::kernel::MachineOperandView as V;
+                            use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+                            let Proposition::ConditionIs(condition, truth) =
+                                evidence.source.as_ref()
+                            else {
+                                return None;
+                            };
+                            let view = crate::kernel::assumptions::order_view_at_format(
+                                condition,
+                                *truth,
+                                MachineIntegerType::Int32,
+                            )?;
+                            let strict =
+                                view.relation == crate::kernel::machine_integer::Relation::Less;
+                            let [left, right] = view
+                                .operands
+                                .each_ref()
+                                .map(|operand| operand.operand_view());
+                            let (endpoint, other) = if evidence.forward {
+                                (left, right)
                             } else {
-                                (
-                                    evidence.other.clone(),
-                                    evidence.endpoint.clone(),
-                                    evidence.strict,
-                                )
+                                (right, left)
                             };
-                            let source_matches = match evidence.source.as_ref() {
-                                Proposition::ConditionIs(condition, value) => {
-                                    crate::kernel::reasoning::condition_as_order_fact(
-                                        condition, *value,
-                                    ) == Some(normalized)
-                                        && assumptions.contains_assumed_exact(&evidence.source)
-                                }
-                                _ => false,
-                            };
-                            let recorded =
-                                assumptions.signed_order_bound_entries(term).any(|entry| {
-                                    entry
-                                        == (
-                                            evidence.endpoint.clone(),
-                                            evidence.other.clone(),
-                                            evidence.strict,
-                                            evidence.forward,
-                                        )
-                                });
-                            if !source_matches || !recorded || lower_bound == evidence.forward {
+                            if !assumptions.contains_assumed_exact(&evidence.source)
+                                || Key::new(endpoint) != Key::new(V::Legacy(term))
+                                || lower_bound == evidence.forward
+                            {
                                 return None;
                             }
                             let bound = if let Some(source) = &evidence.other_equality {
                                 if !assumptions.contains_assumed_exact(source) {
                                     return None;
                                 }
-                                SignedConstantEvidence::exact_equality_value(
-                                    &evidence.other,
-                                    source,
-                                )?
+                                SignedConstantEvidence::exact_equality_value_view(other, source)?
                             } else {
-                                signed_bitvector_constant(&evidence.other)?
+                                other.word32_constant().map(|bits| i64::from(bits as i32))?
                             };
                             if lower_bound {
-                                if evidence.strict {
+                                if strict {
                                     bound.checked_add(1)
                                 } else {
                                     Some(bound)
                                 }
-                            } else if evidence.strict {
+                            } else if strict {
                                 bound.checked_sub(1)
                             } else {
                                 Some(bound)

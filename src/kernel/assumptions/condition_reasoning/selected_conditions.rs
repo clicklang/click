@@ -663,7 +663,7 @@ impl SelectedFacts<'_> {
                 {
                     return Some(false);
                 }
-                if condition_as_order_fact(condition, true).is_some() {
+                if order_view_at_format(condition, true, MachineIntegerType::Int32).is_some() {
                     PureFactContext::decide_intrinsically(condition)
                 } else {
                     self.decide(condition)

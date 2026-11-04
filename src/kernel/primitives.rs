@@ -13193,12 +13193,11 @@ pub(crate) enum SignedConstantEvidence {
     },
 }
 
+/// One selected source and its optional exact constant equality. Endpoints
+/// and strictness are read from the source, rather than copied into trees.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct IndexedSignedOrderBoundEvidence {
     pub(in crate::kernel) other_equality: Option<Box<Proposition>>,
-    pub(in crate::kernel) endpoint: MachineTerm,
-    pub(in crate::kernel) other: MachineTerm,
-    pub(in crate::kernel) strict: bool,
     pub(in crate::kernel) forward: bool,
     pub(in crate::kernel) source: Box<Proposition>,
 }
@@ -13595,6 +13594,7 @@ pub struct PureFactContext {
     pub(super) signed_variable_chains: super::assumptions::variable_chains::VariableChains,
     /// Incremental adjacency for conditions whose variables can be read
     /// without inspecting a snapshot.
+    pub(super) shared_condition_variables: super::assumptions::shared_condition_variables::Index,
     pub(super) condition_facts_by_variable: crate::persistent::PersistentMap<
         Variable,
         crate::persistent::PersistentMap<SharedIndexFact<ConditionTerm>, bool>,
