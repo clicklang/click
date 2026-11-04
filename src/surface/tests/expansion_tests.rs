@@ -14315,20 +14315,18 @@ fn source_expander_derives_separation_from_call_postconditions() {
         .expect("bounded call ranges should verify before expansion");
     let expanded = expand_c0_tactic_source_at(click_source, &c_sources, line, column)
         .expect("call postconditions should expand into an explicit separation derivation");
-    // The call postconditions are written against the snapshots where they were read:
-    // anchored rewrites, not unanchored equalities that would re-read the
-    // fields in the proof's current state.
+    // Reuse the separation fact at the call snapshot instead of requiring
+    // the expander to rediscover it through individual field rewrites.
+    let separation = "separate(memory(*right), memory(left->data[0..left->len]))";
+    let anchored = format!("at(region(2).entry, {separation})");
+    let compact = expanded.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        expanded
-            .contains("rewrite(at(region(2).entry, left->len) == at(region(2).entry, length));"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("rewrite(at(region(2).entry, left->data) == at(region(2).entry, data));"),
-        "{expanded}"
+        compact.contains(&format!(
+            "transport({anchored}, {separation}) using {{ {anchored}; }};"
+        )),
+        "the separation transport must cite its call-snapshot premise: {expanded}"
     );
     assert!(!expanded.contains("load_int32_pointer"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &c_sources)
         .expect("the expanded separation derivation should check");
