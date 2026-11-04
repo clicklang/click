@@ -307,10 +307,16 @@ Remaining groups to audit and migrate:
   into a list; constant accumulation retains its existing wrapping semantics.
   `condition_as_order_fact` occurrences in `order_paths.rs` and the
   proposition-reasoning regression are test-only reference walkers.
-  `signed_order_bound_entries` still supplies memory-equality candidate
-  construction; its proof/facts occurrence is test-only. Kernel uses of
-  `interval_query_form` are also test references; its live callers are Surface
-  planning/output adapters.
+  Memory-equality candidate construction now reads retained bound operands
+  and registers their indexed addresses directly in the equality graph.
+  Internal affine address normalization also registers retained atoms directly,
+  without exporting them for sorting or reconstruction. Query registration
+  preserves current block aliases and adds no storage or permission evidence;
+  the existing coverage check still validates the selected supplier.
+  `signed_order_bound_entries` remains a Surface planning adapter; its
+  proof/facts occurrence is test-only. Kernel uses of `interval_query_form`
+  are also test references; its live callers are Surface planning/output
+  adapters.
 - [ ] Remaining difference-graph comparison/admission and interval-query
   adapters. Wide constant evaluation and the wide interval entry points already
   read views; preserve width and source evidence in the remaining consumers.
@@ -318,6 +324,10 @@ Remaining groups to audit and migrate:
   condition-identity adapters, including observation lookup forms. Distinguish
   live checker consumers from test-only reference exports and explicit legacy
   producer/output boundaries.
+  `TermRewrite::integer_shared` now retains comparison and machine-variable
+  substitutions, but other rewrite modes still cross its boxed machine
+  observation bridge. Exact Integer congruence and compound machine-source
+  rewrites need their own parity/no-export audit before this group is complete.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
   matches direct path facts by shared comparison identity. Its 32-bit guards
   have no-export coverage; unresolved 64-bit guards still reach the general

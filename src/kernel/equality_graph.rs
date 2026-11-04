@@ -98,6 +98,8 @@ mod pointer_facts;
 mod separation;
 #[cfg(test)]
 mod separation_tests;
+#[cfg(test)]
+mod shared_index_tests;
 mod terms;
 pub(in crate::kernel) use terms::constants::fold_arithmetic;
 
@@ -990,6 +992,55 @@ impl EqualityGraph {
         // changes must not strand a resource payload on an older projection.
         let id = state.register_pointer_address(pointer);
         Some(state.terms.class_root(id))
+    }
+
+    /// Address lookup for one retained order-bound operand. Candidate discovery
+    /// does not manufacture a native pointer or any ownership evidence.
+    pub(in crate::kernel) fn indexed_address_class(
+        &self,
+        base: &Pointer,
+        index: crate::kernel::MachineOperandView<'_>,
+        successor: bool,
+        width: u32,
+    ) -> Option<u64> {
+        use crate::kernel::{
+            KernelTerm, KernelTermImport, MachineBinaryOp, MachineOperandView as V,
+        };
+        if let V::Legacy(index) = index {
+            let index = if successor {
+                MachineTerm::add(index.clone(), 1u32.into())
+            } else {
+                index.clone()
+            };
+            return self.address_class(&base.offset_by_elements(index, width));
+        }
+        let V::Shared(index) = index else {
+            unreachable!()
+        };
+        let root = if successor {
+            let one = KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, &1u32.into())?;
+            KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [index.clone(), one],
+            )
+        } else {
+            index.clone()
+        };
+        let observation =
+            crate::kernel::IntegerTerm::Machine(V::Shared(&root).retain(MachineIntegerType::Int32));
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_expression_operands(&mut state, [], [], [&observation]);
+        self.register_logical_read_values(&mut state, [base]);
+        state.register_blocks([base.block.clone()]);
+        state.register_pointer_address(base);
+        let (representative, delta) = state.find(&base.block);
+        Some(
+            state
+                .terms
+                .index_address_query(base, &root, width, representative, &delta),
+        )
     }
 
     /// An explicit additive address already registered in this address's
