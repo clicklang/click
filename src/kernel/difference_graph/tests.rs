@@ -2024,3 +2024,68 @@ fn excluding_one_masked_wide_table_slot_selects_the_other() {
         );
     }
 }
+
+#[test]
+fn cached_context_graph_tracks_shared_order_addition_and_withdrawal() {
+    use crate::kernel::machine_integer::comparison::{
+        comparison_view, condition_for_operand_views,
+    };
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let ty = KernelType::C(format.c_type());
+        let a = KernelTerm::variable(ty.clone(), Variable(993221));
+        let b = KernelTerm::variable(ty, Variable(993222));
+        let a =
+            KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [a.clone(), a]);
+        for relation in [
+            CompareRelation::LessThan,
+            CompareRelation::LessEqual,
+            CompareRelation::GreaterThan,
+            CompareRelation::GreaterEqual,
+        ] {
+            let source =
+                condition_for_operand_views(format, relation, [V::Shared(&a), V::Shared(&b)]);
+            let view = comparison_view(&source, true).unwrap();
+            let native = ConditionTerm::machine_compare(
+                format,
+                relation,
+                MachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::Multiply,
+                    left: Box::new(MachineTerm::Variable(Variable(993221))),
+                    right: Box::new(MachineTerm::Variable(Variable(993221))),
+                },
+                MachineTerm::Variable(Variable(993222)),
+            );
+
+            for truth in [false, true] {
+                let parent = ContextDifferenceGraph::default();
+                assert_eq!(parent.graph(Vec::new).decide_shared_order(&view), None);
+                let exports = KernelTermExport::machine_export_count();
+                let mut child = parent.clone();
+                child.assume(&source, truth);
+                assert_eq!(
+                    child.built().unwrap().decide(&native),
+                    Some(truth),
+                    "native {format:?} {relation:?} {truth}"
+                );
+                assert_eq!(
+                    child.built().unwrap().decide_shared_order(&view),
+                    Some(truth),
+                    "{format:?} {relation:?} {truth}"
+                );
+                assert_eq!(parent.built().unwrap().decide_shared_order(&view), None);
+                child.withdraw(&source);
+                assert!(child.built().is_none());
+                assert_eq!(child.graph(Vec::new).decide_shared_order(&view), None);
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
+}

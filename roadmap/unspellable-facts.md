@@ -244,28 +244,45 @@ Remaining groups to audit and migrate:
   The common arithmetic-comparison rewrite now reconstructs the shared machine
   fragment directly, with memoized syntax work and the existing checking-only
   simplifications. Scope-dependent rewrites keep local memos. A registered-read
-  rewrite exposing an Integer-to-machine conversion is being migrated: that
-  existing typed conversion node can remain inside the shared machine DAG when
+  rewrite exposing an Integer-to-machine conversion now retains that
+  existing typed conversion node inside the shared machine DAG when
   its payload has a structural identity, retaining its scoped Integer payload
   and ordinary stored-value reasoning. Payloads containing producer-local
   legacy identities remain outside this fragment.
-  The reproduction expands five DAG nodes into 31 boxed nodes on master.
+  The original reproduction expanded five DAG nodes into 31 boxed nodes; the
+  shared conversion path avoids those exports.
   Keeping only the canonical read name was tried and rejected: it lost premise
   matching between a read of stored `7` at `p[i + 0]` and the corresponding
   claim about `7`. Preserve that positive matching control alongside no-export
   and growing-prefix checks. Other opaque read values and explicit native
   rewrites remain compatibility boundaries to audit; they must not silently
   export surrounding shared arithmetic before part 1 is declared complete.
-  `condition_as_order_fact` also exports in constant-bound evidence,
-  memory-order checking and quantified/derived order collectors; those are live
-  checker routes, not output adapters.
+  Memory-order checking now reads endpoint views, retaining its
+  equality simplification, extreme bounds, successor rules and unsigned-domain
+  guards. Native/shared decision parity and changing-context growing prefixes
+  have no-export coverage. Its changing-context test also caught the cached
+  difference graph ignoring shared order additions and withdrawals: the source
+  filter now recognizes the same order views as graph admission. Explicit native
+  arithmetic queries reuse a retained import to read the shared graph coordinate;
+  native-only graphs keep their existing lookup path. Opposite unsigned bounds
+  now prove equality through either representation, while either bound alone
+  leaves equality unknown. Sibling-branch
+  admission also exposed repeated syntax installation for growing expressions
+  with only one or two variables. Those bounded dependency sets now attach
+  directly to variable nodes; larger sets retain adjacency indexing. Equality
+  registration also uses the cached syntax summary to skip pointer discovery
+  for plain arithmetic without load names, retaining scoped inspection for
+  conversion payloads and load-bearing expressions.
+  `condition_as_order_fact` still exports in constant-bound evidence and
+  quantified/derived order collectors; those are live checker routes, not
+  output adapters.
 - [ ] Remaining difference-graph comparison/admission and interval-query
   adapters. Wide constant evaluation and the wide interval entry points already
   read views; preserve width and source evidence in the remaining consumers.
 - [ ] Remaining conversion, inverse-operation, modular and
-  condition-identity adapters, including memory-order checking and observation
-  lookup forms. Distinguish live checker consumers from test-only reference
-  exports and explicit legacy producer/output boundaries.
+  condition-identity adapters, including observation lookup forms. Distinguish
+  live checker consumers from test-only reference exports and explicit legacy
+  producer/output boundaries.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
   matches direct path facts by shared comparison identity. Its 32-bit guards
   have no-export coverage; unresolved 64-bit guards still reach the general

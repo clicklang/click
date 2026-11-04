@@ -2040,6 +2040,16 @@ impl PureFactContext {
         })
     }
 
+    pub(super) fn checking_word32_shared_root(
+        &self,
+        root: &crate::kernel::KernelTerm,
+    ) -> crate::kernel::KernelTerm {
+        self.equality_graph.checking_word32_root(root, |child| {
+            self.indexed_exact_int32_constant_view(MachineOperandView::Shared(child))
+                .map(|(value, _)| value as u32)
+        })
+    }
+
     fn shared_word_checking_form(&self, condition: &ConditionTerm) -> Option<ConditionTerm> {
         // Preserve written cast roots here, as the native simplifier does.
         // Reading sigma away before substituting a child constant would enable
@@ -2064,12 +2074,7 @@ impl PureFactContext {
                 .each_ref()
                 .map(|operand| match operand.operand_view() {
                     MachineOperandView::Shared(root) => {
-                        Some(self.equality_graph.checking_word32_root(root, |child| {
-                            self.indexed_exact_int32_constant_view(MachineOperandView::Shared(
-                                child,
-                            ))
-                            .map(|(value, _)| value as u32)
-                        }))
+                        Some(self.checking_word32_shared_root(root))
                     }
                     MachineOperandView::Legacy(_) => None,
                 });
@@ -3057,7 +3062,7 @@ mod shared_equality_dispatch_tests {
     fn fresh_word_equalities_match_native_proofs_refutations_and_unknowns() {
         let mut leaked = Vec::new();
         for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
-            for case in 0..14 {
+            for case in 0..16 {
                 let _session = crate::kernel::VerificationSession::enter();
                 let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
                 let x = variable(981001);
@@ -3155,7 +3160,7 @@ mod shared_equality_dispatch_tests {
                         ));
                         (product.clone(), z.clone(), Some(case != 10))
                     }
-                    _ => {
+                    13 => {
                         sources.push(Proposition::ConditionIs(
                             ConditionTerm::signed_greater_equal(
                                 MachineTerm::Variable(Variable(981001)),
@@ -3181,12 +3186,20 @@ mod shared_equality_dispatch_tests {
                         }
                         (x.clone(), literal(5), Some(true))
                     }
+                    14 | 15 => {
+                        let bound = if case == 14 {
+                            ConditionTerm::integer_less_equal(observe(&product), observe(&z))
+                        } else {
+                            ConditionTerm::integer_greater_equal(observe(&product), observe(&z))
+                        };
+                        sources.push(Proposition::ConditionIs(bound, true));
+                        (product.clone(), z.clone(), None)
+                    }
+                    _ => unreachable!(),
                 };
-                let expected = if ty == MachineIntegerType::UInt32 && matches!(case, 6 | 7 | 9) {
-                    None // Preserve the native dispatcher's signed-bound admission.
-                } else {
-                    expected
-                };
+                // Both signedness readings retain observed order sources in
+                // the cached graph. Opposite bounds imply equality; a strict
+                // bound refutes it. One non-strict bound alone stays unknown.
                 let goal = ConditionTerm::integer_equal(observe(&left), observe(&right));
                 let exports = KernelTermExport::machine_export_count();
                 let context = sources

@@ -575,19 +575,43 @@ impl SharedMachineIntegerTerm {
         };
         if let Some(term) = KernelTermImport::default().machine_arithmetic(ty, value) {
             let shared = Self::from_shared(ty, term).expect("arithmetic storage fragment");
-            let MachineIntegerOperand::Shared { boxed, .. } = &shared.0.operand else {
-                unreachable!()
-            };
-            let _ = boxed.set(value.clone());
-            interner
-                .lock()
-                .expect("machine Integer interner lock poisoned")
-                .remember(key, &shared);
-            MACHINE_OBSERVATION_IMPORTS
-                .with(|seen| seen.borrow_mut().insert(shared.id(), shared.clone()));
+            shared.remember_explicit_import(key);
             return shared;
         }
         Self::intern_key(key)
+    }
+
+    /// Import an explicitly supplied native arithmetic operand once per
+    /// verification. Unlike `intern`, a non-arithmetic payload is refused
+    /// without placing its memory snapshots in the global interner.
+    pub(crate) fn import_arithmetic(ty: MachineIntegerType, value: &MachineTerm) -> Option<Self> {
+        if let Some(found) = Self::retained_import(ty, value) {
+            return Some(found);
+        }
+        let root = KernelTermImport::default().machine_arithmetic(ty, value)?;
+        let shared = Self::from_shared(ty, root)?;
+        shared.remember_explicit_import(MachineIntegerKey::Legacy {
+            ty,
+            value: value.clone(),
+        });
+        Some(shared)
+    }
+
+    fn remember_explicit_import(&self, key: MachineIntegerKey) {
+        let MachineIntegerKey::Legacy { value, .. } = &key else {
+            unreachable!()
+        };
+        let MachineIntegerOperand::Shared { boxed, .. } = &self.0.operand else {
+            unreachable!()
+        };
+        let _ = boxed.set(value.clone());
+        MACHINE_INTEGER_INTERNER
+            .get()
+            .expect("shared machine interner")
+            .lock()
+            .expect("machine Integer interner lock poisoned")
+            .remember(key, self);
+        MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow_mut().insert(self.id(), self.clone()));
     }
 
     /// Observe shared arithmetic and typed Integer conversions without
