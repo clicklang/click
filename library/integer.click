@@ -195,22 +195,22 @@ theorem uint64_remainder_to_integer(left: uint64, right: uint64) {
 
 theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right);
+    ensures to_integer(left) <= to_integer(right) by assumption();
 }
 
 theorem uint64_to_integer_less_equal_implies_less_equal(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right;
+    ensures left <= right by assumption();
 }
 
 theorem uint64_less_than_to_integer(left: uint64, right: uint64) {
     requires left < right;
-    ensures to_integer(left) < to_integer(right);
+    ensures to_integer(left) < to_integer(right) by assumption();
 }
 
 theorem uint64_to_integer_less_than_implies_less_than(left: uint64, right: uint64) {
     requires to_integer(left) < to_integer(right);
-    ensures left < right;
+    ensures left < right by assumption();
 }
 
 theorem uint32_pack_uint16_to_integer(low: uint32, high: uint32) {
@@ -259,12 +259,12 @@ theorem uint64_unpack_uint16_high(low: uint64, high: uint64) {
 
 theorem uint64_less_than_implies_not_greater_equal(left: uint64, right: uint64) {
     requires left < right;
-    ensures not (left >= right);
+    ensures not (left >= right) by assumption();
 }
 
 theorem uint64_to_integer_equal_implies_equal(left: uint64, right: uint64) {
     requires to_integer(left) == to_integer(right);
-    ensures left == right;
+    ensures left == right by assumption();
 }
 
 // Exact observations of unsigned division require both evaluation domains.
@@ -292,17 +292,17 @@ theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
 
 theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right);
+    ensures to_integer(left) <= to_integer(right) by assumption();
 }
 
 theorem uint32_to_integer_less_equal_implies_less_equal(left: uint32, right: uint32) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right;
+    ensures left <= right by assumption();
 }
 
 theorem uint32_to_integer_equal_implies_equal(left: uint32, right: uint32) {
     requires to_integer(left) == to_integer(right);
-    ensures left == right;
+    ensures left == right by assumption();
 }
 
 theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
@@ -344,37 +344,37 @@ theorem int32_add_to_integer(left: int32, right: int32) {
 
 theorem int32_less_equal_to_integer(left: int32, right: int32) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right);
+    ensures to_integer(left) <= to_integer(right) by assumption();
 }
 
 theorem int32_to_integer_less_equal_implies_less_equal(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right;
+    ensures left <= right by assumption();
 }
 
 theorem int64_less_equal_to_integer(left: int64, right: int64) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right);
+    ensures to_integer(left) <= to_integer(right) by assumption();
 }
 
 theorem int64_less_than_to_integer(left: int64, right: int64) {
     requires left < right;
-    ensures to_integer(left) < to_integer(right);
+    ensures to_integer(left) < to_integer(right) by assumption();
 }
 
 theorem int64_greater_equal_to_integer(left: int64, right: int64) {
     requires left >= right;
-    ensures to_integer(left) >= to_integer(right);
+    ensures to_integer(left) >= to_integer(right) by assumption();
 }
 
 theorem int64_to_integer_less_equal_implies_less_equal(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right;
+    ensures left <= right by assumption();
 }
 
 theorem int64_to_integer_equal_implies_equal(left: int64, right: int64) {
     requires to_integer(left) == to_integer(right);
-    ensures left == right;
+    ensures left == right by assumption();
 }
 
 theorem int32_subtract_to_integer(left: int32, right: int32) {

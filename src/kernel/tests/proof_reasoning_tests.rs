@@ -6254,123 +6254,6 @@ fn integer_machine_operation_axioms_agree_with_boundary_models() {
 }
 
 #[test]
-fn int32_order_observation_axiom_agrees_with_boundary_model() {
-    fn bits(term: &MachineTerm, left: i32, right: i32) -> i32 {
-        match term {
-            MachineTerm::Variable(variable) if *variable == Variable(920) => left,
-            MachineTerm::Variable(variable) if *variable == Variable(921) => right,
-            int32_constant!(value) => constant_u32(*value) as i32,
-            _ => panic!("unexpected machine term: {term:?}"),
-        }
-    }
-
-    fn integer(term: &IntegerTerm, left: i32, right: i32) -> i64 {
-        match term {
-            IntegerTerm::Machine(value) => {
-                assert_eq!(value.ty(), MachineIntegerType::Int32);
-                i64::from(bits(value.value(), left, right))
-            }
-            _ => panic!("unexpected Integer term: {term:?}"),
-        }
-    }
-
-    let theorem = prove_int32_less_equal_to_integer(
-        MachineTerm::Variable(Variable(920)),
-        MachineTerm::Variable(Variable(921)),
-    );
-    let Proposition::Implies(guard, conclusion) = theorem.proposition() else {
-        panic!("missing order premise")
-    };
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        },
-        true,
-    ) = guard.as_ref()
-    else {
-        panic!("wrong C order premise")
-    };
-    let Proposition::ConditionIs(
-        ConditionTerm::IntegerLessEqual(left_integer, right_integer),
-        true,
-    ) = conclusion.as_ref()
-    else {
-        panic!("wrong Integer order conclusion")
-    };
-
-    for left_value in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
-        for right_value in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
-            let c_order =
-                bits(left, left_value, right_value) <= bits(right, left_value, right_value);
-            let integer_order = integer(left_integer, left_value, right_value)
-                <= integer(right_integer, left_value, right_value);
-            assert_eq!(c_order, integer_order, "{left_value} <= {right_value}");
-        }
-    }
-}
-
-#[test]
-fn uint32_integer_equality_bridge_matches_independent_unsigned_boundary_values() {
-    let theorem = prove_uint32_equal_of_to_integer(
-        MachineTerm::Variable(Variable(924)),
-        MachineTerm::Variable(Variable(925)),
-    );
-    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-        panic!("equality needs its Integer premise");
-    };
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = premise.as_ref() else {
-        panic!("expected exact Integer equality");
-    };
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: x,
-            right: y,
-        },
-        true,
-    ) = conclusion.as_ref()
-    else {
-        panic!("expected exact machine equality");
-    };
-    let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (a.as_ref(), b.as_ref()) else {
-        panic!("expected machine observations");
-    };
-    assert_eq!(a.ty(), MachineIntegerType::UInt32);
-    assert_eq!(b.ty(), MachineIntegerType::UInt32);
-    assert_eq!(a.value(), x.as_ref());
-    assert_eq!(b.value(), y.as_ref());
-    for left in [
-        0,
-        1,
-        0x7fff_ffff,
-        0x8000_0000,
-        0x8000_0001,
-        u32::MAX - 1,
-        u32::MAX,
-    ] {
-        for right in [
-            0,
-            1,
-            0x7fff_ffff,
-            0x8000_0000,
-            0x8000_0001,
-            u32::MAX - 1,
-            u32::MAX,
-        ] {
-            // The unsigned observation and the bit pattern agree, including
-            // patterns above the signed sign bit.
-            let observed_equal = u64::from(left) == u64::from(right);
-            let bits_equal = left == right;
-            assert_eq!(observed_equal, bits_equal, "{left}, {right}");
-        }
-    }
-}
-
-#[test]
 fn integer_machine_round_trip_axioms_hold_in_independent_boundary_models() {
     use num_bigint::BigInt;
     use num_traits::One;
@@ -7406,150 +7289,6 @@ fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
 }
 
 #[test]
-fn signed_integer_order_bridges_match_independent_full_width_boundary_models() {
-    use num_bigint::BigInt;
-    let left = MachineTerm::Variable(Variable(185001));
-    let right = MachineTerm::Variable(Variable(185002));
-    for (ty, width) in [
-        (MachineIntegerType::Int32, 32u32),
-        (MachineIntegerType::Int64, 64),
-    ] {
-        for reverse in [false, true] {
-            let theorem = match (width, reverse) {
-                (32, false) => prove_int32_less_equal_to_integer(left.clone(), right.clone()),
-                (32, true) => prove_int32_less_equal_of_to_integer(left.clone(), right.clone()),
-                (64, false) => prove_int64_less_equal_to_integer(left.clone(), right.clone()),
-                (64, true) => prove_int64_less_equal_of_to_integer(left.clone(), right.clone()),
-                _ => unreachable!(),
-            };
-            let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-                panic!("missing exact guard");
-            };
-            let (native, integer) = if reverse {
-                (conclusion, premise)
-            } else {
-                (premise, conclusion)
-            };
-            match (width, native.as_ref()) {
-                (
-                    32,
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32,
-                            relation: CompareRelation::LessEqual,
-                            left: a,
-                            right: b,
-                        },
-                        true,
-                    ),
-                )
-                | (
-                    64,
-                    Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int64,
-                            relation: CompareRelation::LessEqual,
-                            left: a,
-                            right: b,
-                        },
-                        true,
-                    ),
-                ) => {
-                    assert_eq!(a.as_ref(), &left);
-                    assert_eq!(b.as_ref(), &right);
-                }
-                _ => panic!("wrong native width or order"),
-            }
-            let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(a, b), true) =
-                integer.as_ref()
-            else {
-                panic!("wrong mathematical relation");
-            };
-            let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (a.as_ref(), b.as_ref())
-            else {
-                panic!("expected exact observers");
-            };
-            assert_eq!(a.ty(), ty);
-            assert_eq!(b.ty(), ty);
-            assert_eq!(a.value(), &left);
-            assert_eq!(b.value(), &right);
-        }
-        let maximum = if width == 32 {
-            u64::from(u32::MAX)
-        } else {
-            u64::MAX
-        };
-        let sign = 1u64 << (width - 1);
-        let integer = |bits: u64| {
-            if bits & sign == 0 {
-                BigInt::from(bits)
-            } else {
-                BigInt::from(bits) - (BigInt::from(1) << width)
-            }
-        };
-        let native = |bits: u64| {
-            if width == 32 {
-                i64::from(bits as u32 as i32)
-            } else {
-                bits as i64
-            }
-        };
-        for a in [
-            0,
-            1,
-            2,
-            sign - 2,
-            sign - 1,
-            sign,
-            sign + 1,
-            maximum - 1,
-            maximum,
-        ] {
-            for b in [
-                0,
-                1,
-                2,
-                sign - 2,
-                sign - 1,
-                sign,
-                sign + 1,
-                maximum - 1,
-                maximum,
-            ] {
-                assert_eq!(integer(a) <= integer(b), native(a) <= native(b));
-                assert_eq!(integer(a) == integer(b), a == b);
-            }
-        }
-    }
-    let theorem = prove_int64_equal_of_to_integer(left.clone(), right.clone());
-    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-        panic!("missing equality guard");
-    };
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(a, b), true) = premise.as_ref() else {
-        panic!("wrong observation equality");
-    };
-    let (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) = (a.as_ref(), b.as_ref()) else {
-        panic!("expected observers");
-    };
-    assert_eq!(a.ty(), MachineIntegerType::Int64);
-    assert_eq!(b.ty(), MachineIntegerType::Int64);
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left: a,
-            right: b,
-        },
-        true,
-    ) = conclusion.as_ref()
-    else {
-        panic!("wrong native equality width");
-    };
-    assert_eq!(a.as_ref(), &left);
-    assert_eq!(b.as_ref(), &right);
-}
-
-#[test]
 fn int64_subtract_bridge_matches_independent_overflow_boundary_model() {
     use num_bigint::BigInt;
     let left = MachineTerm::Variable(Variable(186001));
@@ -7976,81 +7715,6 @@ fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
 }
 
 #[test]
-fn uint32_integer_order_bridges_agree_with_unsigned_boundary_models() {
-    fn machine(term: &MachineTerm, a: u32, b: u32) -> u32 {
-        match term {
-            MachineTerm::Variable(v) if *v == Variable(910) => a,
-            MachineTerm::Variable(v) if *v == Variable(911) => b,
-            int32_constant!(v) => constant_u32(*v),
-            binary_term!(Int32, BitwiseXor, left, right) => {
-                machine(left, a, b) ^ machine(right, a, b)
-            }
-            _ => panic!("unexpected unsigned-order encoding {term:?}"),
-        }
-    }
-    fn holds(p: &Proposition, a: u32, b: u32) -> bool {
-        match p {
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt32,
-                    relation: CompareRelation::LessEqual,
-                    left,
-                    right,
-                },
-                true,
-            ) => machine(left, a, b) <= machine(right, a, b),
-            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
-                let observe = |term: &IntegerTerm| {
-                    let IntegerTerm::Machine(value) = term else {
-                        panic!("expected exact observation")
-                    };
-                    assert_eq!(value.ty(), MachineIntegerType::UInt32);
-                    num_bigint::BigInt::from(machine(value.value(), a, b))
-                };
-                observe(left) <= observe(right)
-            }
-            _ => panic!("unexpected bridge proposition {p:?}"),
-        }
-    }
-    let left = MachineTerm::Variable(Variable(910));
-    let right = MachineTerm::Variable(Variable(911));
-    for theorem in [
-        prove_uint32_less_equal_to_integer(left.clone(), right.clone()),
-        prove_uint32_less_equal_of_to_integer(left.clone(), right.clone()),
-    ] {
-        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-            panic!("missing guard")
-        };
-        for a in [
-            0,
-            1,
-            255,
-            65520,
-            0x7fff_ffff,
-            0x8000_0000,
-            0x8000_0001,
-            u32::MAX - 1,
-            u32::MAX,
-        ] {
-            for b in [
-                0,
-                1,
-                255,
-                65520,
-                0x7fff_ffff,
-                0x8000_0000,
-                0x8000_0001,
-                u32::MAX - 1,
-                u32::MAX,
-            ] {
-                assert_eq!(holds(premise, a, b), a <= b);
-                assert_eq!(holds(conclusion, a, b), a <= b);
-            }
-        }
-    }
-}
-
-#[test]
 fn uint32_small_remainder_agrees_with_full_width_models() {
     let value = MachineTerm::Variable(Variable(920));
     let divisor = MachineTerm::Variable(Variable(921));
@@ -8278,30 +7942,6 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
             ConditionTerm::IntegerLessEqual(a, b) => integer(a) <= integer(b),
             ConditionTerm::IntegerLessThan(a, b) => integer(a) < integer(b),
             ConditionTerm::IntegerEqual(a, b) => integer(a) == integer(b),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            } => a.uint64_as_const() == b.uint64_as_const(),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessEqual,
-                left: a,
-                right: b,
-            } => a.uint64_as_const() <= b.uint64_as_const(),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessThan,
-                left: a,
-                right: b,
-            } => a.uint64_as_const() < b.uint64_as_const(),
-            ConditionTerm::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterEqual,
-                left: a,
-                right: b,
-            } => a.uint64_as_const() >= b.uint64_as_const(),
             _ => panic!("unexpected guard or equality"),
         };
         actual == *expected
@@ -8312,10 +7952,6 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
         "click::integer::uint64_multiply_to_integer",
         "click::integer::uint64_divide_to_integer",
         "click::integer::uint64_remainder_to_integer",
-        "click::integer::uint64_less_than_to_integer",
-        "click::integer::uint64_less_than_implies_not_greater_equal",
-        "click::integer::uint64_less_equal_to_integer",
-        "click::integer::uint64_to_integer_less_equal_implies_less_equal",
     ] {
         for a in [
             0,
@@ -8352,9 +7988,7 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
                     "click::integer::uint64_multiply_to_integer" => a.checked_mul(b).is_some(),
                     "click::integer::uint64_divide_to_integer"
                     | "click::integer::uint64_remainder_to_integer" => b != 0,
-                    "click::integer::uint64_less_than_to_integer"
-                    | "click::integer::uint64_less_than_implies_not_greater_equal" => a < b,
-                    _ => a <= b,
+                    _ => unreachable!(),
                 };
                 assert_eq!(truth(guard), allowed, "{name}/{a}/{b}");
                 let conclusion =
@@ -8539,57 +8173,6 @@ fn mirrored_order_spellings_are_one_order_claim_in_every_order_family() {
     assert!(condition_polarity_equivalent(&below, &above_mirrored));
     assert!(order_claim_equivalent(&below, &above_mirrored));
     assert_eq!(condition_polarity_forms(&below), order_claim_forms(&below));
-}
-
-#[test]
-fn signed_64_branch_observation_bridges_match_boundary_models() {
-    let left = MachineTerm::Variable(Variable(185101));
-    let right = MachineTerm::Variable(Variable(185102));
-    for strict in [false, true] {
-        let theorem = if strict {
-            prove_int64_less_than_to_integer(left.clone(), right.clone())
-        } else {
-            prove_int64_greater_equal_to_integer(left.clone(), right.clone())
-        };
-        let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-            panic!("missing comparison premise");
-        };
-        let expected_native = if strict {
-            ConditionTerm::int64_signed_less_than(left.clone(), right.clone())
-        } else {
-            ConditionTerm::int64_signed_greater_equal(left.clone(), right.clone())
-        };
-        assert_eq!(
-            premise.as_ref(),
-            &Proposition::ConditionIs(expected_native, true)
-        );
-        let observe = |v| IntegerTerm::from_machine(MachineIntegerType::Int64, v).unwrap();
-        let expected_integer = if strict {
-            ConditionTerm::IntegerLessThan(
-                observe(left.clone()).into(),
-                observe(right.clone()).into(),
-            )
-        } else {
-            ConditionTerm::IntegerGreaterEqual(
-                observe(left.clone()).into(),
-                observe(right.clone()).into(),
-            )
-        };
-        assert_eq!(
-            conclusion.as_ref(),
-            &Proposition::ConditionIs(expected_integer, true)
-        );
-        let values = [i64::MIN, -1, 0, 1, 8589934591, 8589934592, i64::MAX];
-        for a in values {
-            for b in values {
-                let native = if strict { a < b } else { a >= b };
-                let a = num_bigint::BigInt::from(a);
-                let b = num_bigint::BigInt::from(b);
-                let mathematical = if strict { a < b } else { b <= a };
-                assert_eq!(native, mathematical);
-            }
-        }
-    }
 }
 
 #[test]

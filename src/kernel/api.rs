@@ -9274,17 +9274,6 @@ pub fn prove_uint32_remainder_of_lt(value: MachineTerm, divisor: MachineTerm) ->
     )
 }
 
-/// Preserve native unsigned u32 order in exact mathematical observations.
-/// The unsigned interpretation includes values above the signed sign bit.
-pub fn prove_uint32_less_equal_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_machine_integer_order_bridge(MachineIntegerType::UInt32, left, right, false)
-}
-
-/// Reflect mathematical order into native unsigned u32 order.
-pub fn prove_uint32_less_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_machine_integer_order_bridge(MachineIntegerType::UInt32, left, right, true)
-}
-
 /// Exact mathematical observation of a defined signed 32-bit addition.
 /// The overflow premise is essential: the machine term alone is modular.
 pub fn prove_int32_add_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
@@ -9492,27 +9481,6 @@ pub fn prove_uint64_integer_bridge(
     left: MachineTerm,
     right: MachineTerm,
 ) -> Option<Theorem> {
-    if matches!(
-        name,
-        "click::integer::uint64_less_equal_to_integer"
-            | "click::integer::uint64_to_integer_less_equal_implies_less_equal"
-    ) {
-        return Some(prove_machine_integer_order_bridge(
-            MachineIntegerType::UInt64,
-            left,
-            right,
-            name == "click::integer::uint64_to_integer_less_equal_implies_less_equal",
-        ));
-    }
-    // The unsigned observation is injective: equal observations are the
-    // same 64-bit pattern.
-    if name == "click::integer::uint64_to_integer_equal_implies_equal" {
-        return Some(prove_integer_equality_bridge(
-            MachineIntegerType::UInt64,
-            left,
-            right,
-        ));
-    }
     if name == "click::integer::uint64_pack_uint16_to_integer" {
         return prove_unsigned_pack_u16_to_integer(MachineIntegerType::UInt64, left, right);
     }
@@ -9532,43 +9500,6 @@ pub fn prove_uint64_integer_bridge(
     };
     let a = observe(left.clone());
     let b = observe(right.clone());
-    // Strict order, in both directions: the unsigned observation is
-    // injective and monotone over every 64-bit pattern.
-    if matches!(
-        name,
-        "click::integer::uint64_less_than_to_integer"
-            | "click::integer::uint64_to_integer_less_than_implies_less_than"
-    ) {
-        let native = Proposition::ConditionIs(ConditionTerm::uint64_less_than(left, right), true);
-        let integer =
-            Proposition::ConditionIs(ConditionTerm::IntegerLessThan(a.into(), b.into()), true);
-        let (premise, conclusion) =
-            if name == "click::integer::uint64_to_integer_less_than_implies_less_than" {
-                (integer, native)
-            } else {
-                (native, integer)
-            };
-        return Some(implication([premise], conclusion));
-    }
-    // Unsigned total order: strict less and greater-or-equal are
-    // complementary evaluations of the same two 64-bit patterns.
-    if name == "click::integer::uint64_less_than_implies_not_greater_equal" {
-        return Some(implication(
-            [Proposition::ConditionIs(
-                ConditionTerm::uint64_less_than(left.clone(), right.clone()),
-                true,
-            )],
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt64,
-                    relation: CompareRelation::GreaterEqual,
-                    left: left.into(),
-                    right: right.into(),
-                },
-                false,
-            ),
-        ));
-    }
     let maximum = IntegerTerm::constant(num_bigint::BigInt::from(u64::MAX));
     let (machine, exact, guard) = match name {
         "click::integer::uint64_add_to_integer" => {
@@ -9667,136 +9598,6 @@ pub fn prove_uint64_integer_bridge(
             true,
         ),
     ))
-}
-
-/// Signed int32 order is preserved by its exact mathematical observation.
-/// Every int32 bit pattern has an Integer interpretation, so this law needs
-/// only the corresponding C order premise and no definedness side condition.
-pub fn prove_int32_less_equal_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_machine_integer_order_bridge(MachineIntegerType::Int32, left, right, false)
-}
-
-/// Reflect mathematical order into native signed int32 order.
-pub fn prove_int32_less_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_machine_integer_order_bridge(MachineIntegerType::Int32, left, right, true)
-}
-
-/// Preserve native signed int64 order in its mathematical observation.
-pub fn prove_int64_less_equal_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_machine_integer_order_bridge(MachineIntegerType::Int64, left, right, false)
-}
-
-/// Preserve a strict native signed int64 comparison in Integer arithmetic.
-pub fn prove_int64_less_than_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let integer = ConditionTerm::IntegerLessThan(
-        IntegerTerm::from_machine(MachineIntegerType::Int64, left.clone())
-            .unwrap()
-            .into(),
-        IntegerTerm::from_machine(MachineIntegerType::Int64, right.clone())
-            .unwrap()
-            .into(),
-    );
-    implication(
-        [Proposition::ConditionIs(
-            ConditionTerm::int64_signed_less_than(left, right),
-            true,
-        )],
-        Proposition::ConditionIs(integer, true),
-    )
-}
-
-/// Preserve the source's signed greater-or-equal comparison without changing its operands.
-pub fn prove_int64_greater_equal_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let integer = ConditionTerm::IntegerGreaterEqual(
-        IntegerTerm::from_machine(MachineIntegerType::Int64, left.clone())
-            .unwrap()
-            .into(),
-        IntegerTerm::from_machine(MachineIntegerType::Int64, right.clone())
-            .unwrap()
-            .into(),
-    );
-    implication(
-        [Proposition::ConditionIs(
-            ConditionTerm::int64_signed_greater_equal(left, right),
-            true,
-        )],
-        Proposition::ConditionIs(integer, true),
-    )
-}
-
-/// Reflect mathematical order into native signed int64 order.
-pub fn prove_int64_less_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_machine_integer_order_bridge(MachineIntegerType::Int64, left, right, true)
-}
-
-fn prove_machine_integer_order_bridge(
-    ty: MachineIntegerType,
-    left: MachineTerm,
-    right: MachineTerm,
-    reverse: bool,
-) -> Theorem {
-    let observe = |value| {
-        IntegerTerm::from_machine(ty, value)
-            .expect("typed machine operands have exact Integer interpretations")
-    };
-    let native = match ty {
-        MachineIntegerType::UInt32 => {
-            ConditionTerm::unsigned_less_equal(left.clone(), right.clone())
-        }
-        MachineIntegerType::Int32 => ConditionTerm::signed_less_equal(left.clone(), right.clone()),
-        MachineIntegerType::Int64 => {
-            ConditionTerm::int64_signed_less_equal(left.clone(), right.clone())
-        }
-        MachineIntegerType::UInt64 => ConditionTerm::uint64_less_equal(left.clone(), right.clone()),
-        _ => unreachable!("order bridges admit only uint32/uint64/int32/int64"),
-    };
-    let native = Proposition::ConditionIs(native, true);
-    let integer = Proposition::ConditionIs(
-        ConditionTerm::IntegerLessEqual(observe(left).into(), observe(right).into()),
-        true,
-    );
-    let (premise, conclusion) = if reverse {
-        (integer, native)
-    } else {
-        (native, integer)
-    };
-    implication([premise], conclusion)
-}
-
-/// Signed int64 observation is injective, including the full 64-bit extrema.
-pub fn prove_int64_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_integer_equality_bridge(MachineIntegerType::Int64, left, right)
-}
-
-/// Unsigned uint32 observation is injective: every 32-bit pattern has one
-/// exact Integer value in `0..=4294967295`, including the patterns above the
-/// signed sign bit, so equal observations have the same pattern.
-pub fn prove_uint32_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_integer_equality_bridge(MachineIntegerType::UInt32, left, right)
-}
-
-fn prove_integer_equality_bridge(
-    ty: MachineIntegerType,
-    left: MachineTerm,
-    right: MachineTerm,
-) -> Theorem {
-    let observe = |value| {
-        IntegerTerm::from_machine(ty, value)
-            .expect("typed operands have exact Integer interpretations")
-    };
-    let integer = Proposition::ConditionIs(
-        ConditionTerm::IntegerEqual(observe(left.clone()).into(), observe(right.clone()).into()),
-        true,
-    );
-    let native = match ty {
-        MachineIntegerType::Int32 => ConditionTerm::equal(left, right),
-        MachineIntegerType::Int64 => ConditionTerm::int64_equal(left, right),
-        // Equality of the 32-bit pattern does not depend on its signedness.
-        MachineIntegerType::UInt32 => ConditionTerm::equal(left, right),
-        MachineIntegerType::UInt64 => ConditionTerm::uint64_equal(left, right),
-        _ => unreachable!("integer equality bridges admit only int32/int64/uint32/uint64"),
-    };
-    implication([integer], Proposition::ConditionIs(native, true))
 }
 
 /// Exact mathematical observation of a defined signed 32-bit subtraction.

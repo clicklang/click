@@ -1124,8 +1124,11 @@ cannot exclude unsigned wrapping.
 | `integer::uint64_to_integer_less_equal_implies_less_equal` | `A <= B` | `a <= b` |
 
 Here `A = to_integer(a)`, `B = to_integer(b)` and
-`UINT64_MAX = 18446744073709551615`. Each is a kernel standard theorem with
-checked parameter types, declaration shape, exact premise and conclusion.
+`UINT64_MAX = 18446744073709551615`. The five operation laws are kernel
+standard theorems with checked parameter types, declaration shape, exact
+premise and conclusion. The two order laws are proved by `assumption()`: a
+machine comparison and the Integer comparison of its operands' observations
+lower to one fact, so each conclusion is its premise.
 These laws use the same observation model and theorem application path as the
 existing uint32 and signed bridges, without changing source-language arithmetic. Division states both the native
 and observed nonzero facts so the machine operation and mathematical
@@ -1153,18 +1156,18 @@ existing int32 injectivity bridge to the full signed 64-bit carrier.
 32-bit carrier: equal pattern bits do not depend on signedness, and every
 pattern has one unsigned Integer value.
 
-These are width-specific kernel standard theorems with checked declaration
-shape, parameter types, premise and conclusion. They require no overflow fact
-because an already-existing signed bit pattern has one exact Integer value.
+These are width-specific library theorems proved by `assumption()`: the
+native comparison and the Integer comparison of the observations lower to one
+fact. They require no overflow fact because an already-existing bit pattern
+has one exact Integer value.
 They infer neither implicit ranges nor narrowing identities. Prove the cast
 identity and transport its Integer bounds before applying the reverse order
 bridge to the narrowed native result. The C++ regression uses a range strictly
 smaller than either native carrier, retains expansion/reverification and audit,
 and frames unrelated memory through a modular caller.
 
-Boundary models include both signs and full-width extrema; forged declarations,
-missing/reversed premises, wrong carriers, false native bounds, and incorrect
-certificate references are refused. See the checked
+Regressions refuse missing or reversed premises, wrong carriers, false native
+bounds, and incorrect certificate references. See the checked
 [signed bridge fixture](https://github.com/clicklang/click/blob/master/mdtests/signed_integer_order_bridges.md).
 
 
