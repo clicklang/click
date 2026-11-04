@@ -827,6 +827,9 @@ fn explicit_call_partition_if_stays_on_one_proof_after_scoped_open() {
                 ensures result == 0 implies owner->data == old(owner->data);
             } by {
                 unfold(allocated_cell(owner));
+                // Declare both pointers, save the old cell, and allocate its replacement.
+                step(); step(); step(); step();
+                branch { step(); } else { }
                 step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
@@ -919,6 +922,9 @@ pub(super) fn result_case_split_sources() -> (&'static str, &'static str, &'stat
                 ensures result == 1 implies not owner->data == old(owner->data);
             } by {
                 unfold(allocated_cell(owner));
+                // Declare both pointers, save the old cell, and allocate its replacement.
+                step(); step(); step(); step();
+                branch { step(); } else { }
                 step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
