@@ -287,10 +287,16 @@ fn boxed_machine_operation_of_integer_value(
         match side.value_read() {
             IntegerTerm::Machine(machine) => {
                 let word = machine.value().clone();
-                let widened = Bitvector32Term::MachineIntegerCast {
-                    value: Box::new(word.clone()),
-                    source: machine.ty(),
-                    destination: ty,
+                // A 32-to-64-bit extension is its typed node, its one
+                // spelling; every other widening is a generic node.
+                let widened = if super::conversion::extension_encoding(machine.ty(), ty).is_some() {
+                    super::conversion::convert_term(machine.ty(), ty, word.clone())
+                } else {
+                    Bitvector32Term::MachineIntegerCast {
+                        value: Box::new(word.clone()),
+                        source: machine.ty(),
+                        destination: ty,
+                    }
                 };
                 // A value of another width is never `ty`'s word as written:
                 // its word in `ty` is its widening, a node of its own.

@@ -724,6 +724,18 @@ impl Bitvector32Term {
                 .constant_term(constant.convert_modulo(destination.format()))
                 .expect("matching destination format");
         }
+        // A 32-to-64-bit extension has one spelling, the typed extension
+        // node lowering builds; a generic node would be a second term for
+        // the same conversion.
+        if crate::kernel::machine_integer::conversion::extension_encoding(source, destination)
+            .is_some()
+        {
+            return crate::kernel::machine_integer::conversion::convert_term(
+                source,
+                destination,
+                value,
+            );
+        }
         // The established 32-bit word rules identify chains of narrow
         // conversions. Keep that representation convention local to the
         // word carrier; it must not erase a wide intermediate cast. σ of σ
@@ -753,10 +765,8 @@ impl Bitvector32Term {
                 destination,
             };
         }
-        // Keep symbolic cast composition structural. Collapsing a wide
-        // intermediate can manufacture a generic 32-to-64 cast, although
-        // direct surface conversion uses the legacy 32-to-64 node instead.
-        // Retaining both nodes lets their ordinary cast spelling round-trip.
+        // Keep symbolic cast composition structural; a 32-to-64-bit
+        // extension was given its typed node above.
         Self::MachineIntegerCast {
             value: Box::new(value),
             source,
@@ -793,6 +803,50 @@ pub(crate) fn is_sign_cast32(source: MachineIntegerType, destination: MachineInt
 mod tests {
 
     use super::*;
+
+    /// A 32-to-64-bit extension is built as the typed node C lowering
+    /// builds, whichever constructor builds it, and rule W reads the
+    /// value-preserving ones as their operand; `UInt64FromInt32` keeps no
+    /// value of a negative operand and is not read through.
+    #[test]
+    fn a_32_to_64_bit_extension_has_one_spelling_and_its_value_reading() {
+        use crate::kernel::{IntegerTerm, Variable};
+        use MachineIntegerType as M;
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = Bitvector32Term::Variable(Variable(149_101));
+        for (source, destination, preserving) in [
+            (M::Int32, M::Int64, true),
+            (M::UInt32, M::Int64, true),
+            (M::UInt32, M::UInt64, true),
+            (M::Int32, M::UInt64, false),
+        ] {
+            let lowered = crate::kernel::machine_integer::conversion::convert_term(
+                source,
+                destination,
+                x.clone(),
+            );
+            assert!(!matches!(
+                lowered,
+                Bitvector32Term::MachineIntegerCast { .. }
+            ));
+            assert_eq!(
+                Bitvector32Term::machine_integer_cast(source, destination, x.clone()),
+                lowered
+            );
+            let operand = IntegerTerm::from_machine(source, x.clone()).unwrap();
+            let IntegerTerm::Machine(machine) = &operand else {
+                unreachable!()
+            };
+            let widened = machine.cast_operand(destination);
+            assert_eq!(widened.value(), &lowered);
+            let observed = IntegerTerm::from_machine(destination, lowered).unwrap();
+            assert_eq!(
+                observed.value_read() == operand.value_read(),
+                preserving,
+                "{source:?} -> {destination:?}"
+            );
+        }
+    }
 
     /// A constant is one node at every format (decision G9) and debug-prints
     /// as the per-format variant it replaced, so diagnostics that print a
@@ -985,8 +1039,15 @@ mod tests {
                     );
                     let term =
                         Bitvector32Term::machine_integer_cast(intermediate, destination, inner);
+                    let extension = |from, to| {
+                        crate::kernel::machine_integer::conversion::extension_encoding(from, to)
+                            .is_some()
+                    };
+                    // A 32-to-64-bit extension is its typed node instead.
                     if source != intermediate
                         && intermediate != destination
+                        && !extension(source, intermediate)
+                        && !extension(intermediate, destination)
                         && (source.carrier_bytes() > 4
                             || intermediate.carrier_bytes() > 4
                             || destination.carrier_bytes() > 4)

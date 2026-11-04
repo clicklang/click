@@ -155,6 +155,50 @@ pub(crate) fn usual_arithmetic_format(
     })
 }
 
+/// The typed extension node of a 32-to-64-bit conversion from `source` to
+/// `destination`, if it is one ([`ConversionLowering::Extend64`]). Such a
+/// conversion has this one spelling: lowering builds it, and so does every
+/// kernel query that widens a 32-bit operand to 64 bits. Width and
+/// signedness checks only.
+pub(crate) fn extension_encoding(
+    source: MachineIntegerType,
+    destination: MachineIntegerType,
+) -> Option<crate::kernel::KernelMachineCastEncoding> {
+    use crate::kernel::KernelMachineCastEncoding as E;
+    if lower(source, destination, ConversionPolicy::Modular).lowering
+        != ConversionLowering::Extend64
+    {
+        return None;
+    }
+    Some(
+        match (
+            source.format().is_signed(),
+            destination.format().is_signed(),
+        ) {
+            (true, true) => E::Int64From32,
+            (false, true) => E::Int64FromUInt32,
+            (true, false) => E::UInt64FromInt32,
+            (false, false) => E::UInt64From32,
+        },
+    )
+}
+
+/// Whether rule W reads a typed extension node with `encoding`, from
+/// `source` to `destination`, as its operand: the extension keeps every
+/// value of its source. `UInt64FromInt32` does not, and neither does a
+/// generic node, which the readings handle on their own.
+pub(crate) fn reads_as_operand(
+    encoding: crate::kernel::KernelMachineCastEncoding,
+    source: MachineIntegerType,
+    destination: MachineIntegerType,
+) -> bool {
+    use crate::kernel::KernelMachineCastEncoding as E;
+    matches!(
+        encoding,
+        E::Int64From32 | E::Int64FromUInt32 | E::UInt64From32
+    ) && destination.format().contains(source.format())
+}
+
 /// The term of the conversion of `value`, a term of `source`, to
 /// `destination`, as [`lower`] says. A constant operand folds (the
 /// constructors fold a root constant); nothing else is inspected, so the
