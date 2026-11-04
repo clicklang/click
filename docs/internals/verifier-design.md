@@ -518,6 +518,19 @@ for complete fragment coverage or enumerate views to establish absence. This
 is conservative refusal, not new alias or ownership evidence. The complete-call
 control also bounds completion beside unrelated constant owners.
 
+The constant-range neighbour index stores exact signed `i128` byte coordinates:
+this covers signed narrow bounds and every unsigned native endpoint multiplied
+by its `u32` element width. Large same-base native coordinates use the same
+predecessor/successor validity checks as small ones, without a block scan or
+machine-integer narrowing. Known-empty intervals count as represented but do
+not enter neighbour ordering, where they could hide a containing owner.
+The pair overlap predicate and incremental insertion agree that a constant
+empty interval has no overlap obligation. Index removal uses the same rule
+and preserves branch isolation. Scaling controls
+hold an insertion fixed beside growing owners above the old signed limit;
+semantic controls retain overlap rejection, mixed widths, maximal endpoints,
+empty/reversed intervals and persistent removal.
+
 Call completion inserts returned outputs and recovered escrows into the valid
 persistent frame using incremental conflict checks. It never normalizes a whole
 memory block or revalidates old-old ownership pairs. Returned-view authority is

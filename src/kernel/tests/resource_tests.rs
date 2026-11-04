@@ -6782,3 +6782,129 @@ fn comparing_equal_resource_contexts_walks_no_facts() {
         );
     }
 }
+
+#[test]
+fn constant_owner_neighbors_ignore_empty_ranges_and_preserve_branches() {
+    for origin in [None, Some(0), Some(1u64 << 63)] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let base = Pointer::symbolic(Variable(995_200));
+        let range = |start: u64, end: u64| match origin {
+            Some(origin) => CMemoryRange::new_wide(
+                base.clone(),
+                MachineTerm::uint64_constant(origin + start),
+                MachineTerm::uint64_constant(origin + end),
+                4,
+            ),
+            None => CMemoryRange::new(base.clone(), (start as u32).into(), (end as u32).into()),
+        };
+        let owner = CResourceFact::own_memory(range(0, 10));
+        let empty = CResourceFact::own_memory(range(5, 5));
+        let reversed = CResourceFact::own_memory(range(8, 7));
+        let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+            owner.clone(),
+            empty.clone(),
+            reversed,
+        ]);
+        assert!(context.is_valid(&assumptions));
+        let overlap = CResourceFact::own_memory(range(6, 9));
+        assert!(
+            !context
+                .clone()
+                .unchecked_with_fact(overlap.clone())
+                .is_valid(&assumptions)
+        );
+        assert!(
+            context
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [overlap.clone()],
+                    &assumptions
+                )
+                .is_err()
+        );
+        let child = context
+            .clone()
+            .without_exact_representation(&owner)
+            .unwrap()
+            .without_exact_representation(&empty)
+            .unwrap();
+        assert!(
+            child
+                .try_compose_into_valid_context_delaying_normalization(
+                    [overlap.clone()],
+                    &assumptions
+                )
+                .is_ok()
+        );
+        assert!(
+            context
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization([overlap], &assumptions)
+                .is_err()
+        );
+        assert!(
+            context
+                .try_compose_into_valid_context_delaying_normalization(
+                    [CResourceFact::own_memory(range(6, 6))],
+                    &assumptions
+                )
+                .is_ok()
+        );
+    }
+}
+
+#[test]
+fn native_owner_neighbors_compare_exact_mixed_width_bytes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let base = Pointer::symbolic(Variable(995_201));
+    let owned = |start, end, width| {
+        CResourceFact::own_memory(CMemoryRange::new_wide(
+            base.clone(),
+            MachineTerm::uint64_constant(start),
+            MachineTerm::uint64_constant(end),
+            width,
+        ))
+    };
+    // These byte coordinates exceed u64::MAX, but the range terms themselves
+    // retain their unsigned element indices and must not be narrowed or wrapped.
+    let start = 1u64 << 62;
+    let owner = owned(start, start + 4, 4);
+    let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owner);
+    let overlap = owned(start * 2 + 2, start * 2 + 3, 2);
+    assert!(
+        context
+            .clone()
+            .unchecked_with_fact(overlap.clone())
+            .validity_error(&assumptions)
+            .is_some()
+    );
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization([overlap], &assumptions)
+            .is_err()
+    );
+    assert!(
+        context
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(start * 2 + 8, start * 2 + 9, 2)],
+                &assumptions
+            )
+            .is_ok()
+    );
+    let limit = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owned(
+        u64::MAX - 4,
+        u64::MAX - 2,
+        u32::MAX,
+    ));
+    assert!(
+        limit
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(u64::MAX - 3, u64::MAX, u32::MAX)],
+                &assumptions
+            )
+            .is_err()
+    );
+}
