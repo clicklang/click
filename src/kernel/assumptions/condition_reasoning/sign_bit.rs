@@ -31,6 +31,14 @@
 use super::*;
 use crate::kernel::CompareRelation as R;
 use crate::kernel::MachineIntegerType as Ty;
+use crate::kernel::machine_integer::{
+    Relation,
+    comparison::{
+        ComparisonOperand, NativeComparisonView, comparison_view, condition_for_operand_views,
+        structural_native_comparison_view,
+    },
+};
+use crate::kernel::{KernelMachineCastEncoding as Encoding, MachineOperandView as View};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
@@ -60,56 +68,132 @@ fn signed_maximum(bits: u32) -> i64 {
     i64::MAX >> (64 - bits)
 }
 
-/// `term` as the constant it is at an `int32` or a 64-bit comparison.
-fn constant(term: &Bitvector32Term) -> Option<i64> {
-    match term {
-        bits32_constant!(value) => Some(i64::from(constant_u32(*value))),
-        int64_constant!(value) => Some(constant_i64(*value)),
-        uint64_constant!(value) => i64::try_from(constant_u64(*value)).ok(),
+fn comparison(condition: &ConditionTerm) -> Option<NativeComparisonView<'_>> {
+    if matches!(condition, ConditionTerm::Compare { .. }) {
+        comparison_view(condition, true)
+    } else {
+        structural_native_comparison_view(condition, true)
+    }
+}
+
+fn retain(format: Ty, operand: View<'_>) -> ComparisonOperand<'static> {
+    match operand {
+        View::Legacy(value) => ComparisonOperand::Constant(value.clone()),
+        View::Shared(_) => ComparisonOperand::Observation(operand.retain(format)),
+    }
+}
+
+/// Read only a literal root, preserving the native rule's carrier convention.
+fn constant(term: View<'_>) -> Option<i64> {
+    match term.literal()? {
+        bits32_constant!(value) => Some(i64::from(constant_u32(value))),
+        int64_constant!(value) => Some(constant_i64(value)),
+        uint64_constant!(value) => i64::try_from(constant_u64(value)).ok(),
         _ => None,
     }
 }
 
-/// σ of `operand` as the rule reads it: a constant in the destination's
-/// spelling, σ of a σ as that σ's operand (the bijection R0 states; the
-/// constructor `Bitvector32Term::sign_cast32` keeps σ of σ as written),
-/// otherwise σ of `operand`. Read off the root with no charge: the rule's
-/// equivalent is a reading of the condition, and a decision memoized after
-/// its first use must cost the same as before it.
-fn sign_cast(source: Ty, destination: Ty, operand: Bitvector32Term) -> Bitvector32Term {
+/// The rule reads one inverse sign pair; it does not rewrite stored terms.
+fn sign_cast(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperand<'static> {
+    if let Some(bits32_constant!(bits)) = operand.literal() {
+        return ComparisonOperand::Constant(Bitvector32Term::constant_at32(
+            destination,
+            constant_u32(bits),
+        ));
+    }
+    if let Some((Encoding::Generic, inner_source, inner_destination, value)) = operand.cast()
+        && inner_source == destination
+        && inner_destination == source
+    {
+        return retain(destination, value);
+    }
     match operand {
-        bits32_constant!(bits) => Bitvector32Term::constant_at32(destination, constant_u32(bits)),
-        Bitvector32Term::MachineIntegerCast {
-            value,
-            source: inner_source,
-            destination: inner_destination,
-        } if inner_source == destination && inner_destination == source => *value,
-        operand => Bitvector32Term::MachineIntegerCast {
-            value: Box::new(operand),
+        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::MachineIntegerCast {
+            value: Box::new(value.clone()),
             source,
             destination,
-        },
+        }),
+        View::Shared(_) => {
+            ComparisonOperand::Observation(operand.retain(source).cast_operand(destination))
+        }
     }
 }
 
-/// The comparison with its constant on the right: `0 > w` is `w < 0`.
-fn constant_on_the_right(
-    relation: R,
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
-) -> Option<(R, Bitvector32Term, i64)> {
+fn converted(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperand<'static> {
+    match operand {
+        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::machine_integer_cast(
+            source,
+            destination,
+            value.clone(),
+        )),
+        View::Shared(_) => ComparisonOperand::Observation(
+            operand.retain(source).checking_cast_operand(destination),
+        ),
+    }
+}
+
+fn unsigned64_wrapper(operand: View<'_>) -> ComparisonOperand<'static> {
+    match operand {
+        View::Legacy(value) => {
+            ComparisonOperand::Constant(Bitvector32Term::UInt64FromInt64(Box::new(value.clone())))
+        }
+        View::Shared(root) => ComparisonOperand::Observation(
+            crate::kernel::SharedMachineIntegerTerm::from_shared(
+                Ty::UInt64,
+                crate::kernel::KernelTerm::machine_cast_shared(
+                    Encoding::UInt64FromInt64,
+                    Ty::Int64,
+                    Ty::UInt64,
+                    root.with_machine_observation_type(Ty::Int64),
+                ),
+            )
+            .expect("shared unsigned reading"),
+        ),
+    }
+}
+
+fn constant_on_the_right<'a>(view: &'a NativeComparisonView<'_>) -> Option<(R, View<'a>, i64)> {
+    let relation = match view.relation {
+        Relation::Equal => R::Equal,
+        Relation::Less => R::LessThan,
+        Relation::LessEqual => R::LessEqual,
+        Relation::NotEqual => return None,
+    };
+    let [left, right] = view
+        .operands
+        .each_ref()
+        .map(ComparisonOperand::operand_view);
     if let Some(value) = constant(right) {
-        return Some((relation, left.clone(), value));
+        return Some((relation, left, value));
     }
     let value = constant(left)?;
     let mirrored = match relation {
         R::LessThan => R::GreaterThan,
         R::LessEqual => R::GreaterEqual,
-        R::GreaterThan => R::LessThan,
-        R::GreaterEqual => R::LessEqual,
-        R::Equal => return None,
+        _ => return None,
     };
-    Some((mirrored, right.clone(), value))
+    Some((mirrored, right, value))
+}
+
+fn bound(format: Ty, relation: R, operand: View<'_>, value: i64) -> ConditionTerm {
+    let value = match format {
+        Ty::Int64 => Bitvector32Term::int64_constant(value),
+        Ty::UInt64 => Bitvector32Term::uint64_constant(value as u64),
+        _ => Bitvector32Term::constant(value as u32),
+    };
+    condition_for_operand_views(format, relation, [operand, View::Legacy(&value)])
+}
+
+fn sign_condition(format: Ty, operand: View<'_>, negative: bool) -> ConditionTerm {
+    if negative {
+        return bound(format, R::LessThan, operand, 0);
+    }
+    let zero = if format == Ty::Int64 {
+        Bitvector32Term::int64_constant(0)
+    } else {
+        Bitvector32Term::constant(0)
+    };
+    condition_for_operand_views(format, R::LessEqual, [View::Legacy(&zero), operand])
 }
 
 /// A sign test `negative` (`< 0`, or `>= 0` when false) or a half-range
@@ -180,174 +264,135 @@ impl PureFactContext {
     }
 
     fn sign_bit_equivalents(&self, condition: &ConditionTerm) -> Option<Vec<ConditionTerm>> {
-        // A native 8- or 16-bit comparison is read as the `int32`
-        // comparison of its operands' widenings, the same fact (rule K8).
-        let widened =
-            crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition);
-        let condition = widened.as_ref().unwrap_or(condition);
-        let ConditionTerm::Compare {
-            format,
-            relation,
-            left,
-            right,
-        } = condition
-        else {
-            return None;
-        };
-        let (relation, operand, value) = constant_on_the_right(*relation, left, right)?;
-        let format = *format;
-        let in_range = |term: &Bitvector32Term, lower: i64, upper: i64| {
-            self.decide(&ConditionTerm::signed_less_equal(
-                Bitvector32Term::constant(lower as u32),
-                term.clone(),
+        let view = comparison(condition)?;
+        let widened = view.widened();
+        let view = widened.as_ref().unwrap_or(&view);
+        let (relation, operand, value) = constant_on_the_right(view)?;
+        let format = view.format;
+        let in_range = |term: View<'_>, lower: i64, upper: i64| {
+            let lower = Bitvector32Term::constant(lower as u32);
+            self.decide(&condition_for_operand_views(
+                Ty::Int32,
+                R::LessEqual,
+                [View::Legacy(&lower), term],
             )) == Some(true)
-                && self.decide(&ConditionTerm::signed_less_equal(
-                    term.clone(),
-                    Bitvector32Term::constant(upper as u32),
-                )) == Some(true)
+                && self.decide(&bound(Ty::Int32, R::LessEqual, term, upper)) == Some(true)
         };
-        let constant = |value: i64| Bitvector32Term::constant(value as u32);
-        // An 8- or 16-bit conversion between the two signednesses of one
-        // width, read in an `int32` comparison through its widening. Its
-        // operand is a native value of its format, in that format's range,
-        // and is read through its own widening.
+        // A narrow signedness conversion read through its int32 widening.
         if format == Ty::Int32
-            && let Bitvector32Term::MachineIntegerCast {
-                value: converted,
-                source: widened_from,
-                destination: Ty::Int32,
-            } = &operand
-            && let Bitvector32Term::MachineIntegerCast {
-                value: inner,
-                source,
-                destination,
-            } = converted.as_ref()
+            && let Some((Encoding::Generic, widened_from, Ty::Int32, converted_operand)) =
+                operand.cast()
+            && let Some((Encoding::Generic, source, destination, inner)) = converted_operand.cast()
             && widened_from == destination
             && source.format().bits() == destination.format().bits()
             && source.format().bits() < 32
             && source.format().is_signed() != destination.format().is_signed()
         {
             let maximum = signed_maximum(source.format().bits());
-            let inner =
-                Bitvector32Term::machine_integer_cast(*source, Ty::Int32, inner.as_ref().clone());
+            let inner = converted(source, Ty::Int32, inner);
+            let inner = inner.operand_view();
             return Some(match test(relation, value, maximum)? {
                 Test::Sign { negative } if destination.format().is_signed() => {
-                    vec![if negative {
-                        ConditionTerm::signed_greater_than(inner, constant(maximum))
-                    } else {
-                        ConditionTerm::signed_less_equal(inner, constant(maximum))
-                    }]
+                    vec![bound(
+                        Ty::Int32,
+                        if negative {
+                            R::GreaterThan
+                        } else {
+                            R::LessEqual
+                        },
+                        inner,
+                        maximum,
+                    )]
                 }
                 Test::Half { above } if !destination.format().is_signed() => {
-                    vec![if above {
-                        ConditionTerm::signed_less_than(inner, constant(0))
-                    } else {
-                        ConditionTerm::signed_less_equal(constant(0), inner)
-                    }]
+                    vec![sign_condition(Ty::Int32, inner, above)]
                 }
                 _ => return None,
             });
         }
-        // The same conversion of a 32-bit carrier, read in an `int32`
-        // comparison directly.
+        // A narrow conversion of a 32-bit carrier needs its original range guards.
         if format == Ty::Int32
-            && let Bitvector32Term::MachineIntegerCast {
-                value: inner,
-                source,
-                destination,
-            } = &operand
+            && let Some((Encoding::Generic, source, destination, inner)) = operand.cast()
             && source.format().bits() == destination.format().bits()
             && source.format().bits() < 32
             && source.format().is_signed() != destination.format().is_signed()
         {
             let maximum = signed_maximum(source.format().bits());
-            let inner = inner.as_ref().clone();
             return Some(match test(relation, value, maximum)? {
-                // `(intN)u`'s sign is `u`'s half-range test.
                 Test::Sign { negative } if destination.format().is_signed() => {
-                    // An unsigned word at most `2^N - 1` is in `[0, 2^N - 1]`.
-                    let unsigned_bound = self.decide(&ConditionTerm::unsigned_less_equal(
-                        inner.clone(),
-                        constant(2 * maximum + 1),
-                    )) == Some(true);
-                    if !unsigned_bound && !in_range(&inner, 0, 2 * maximum + 1) {
+                    let unsigned_bound =
+                        self.decide(&bound(Ty::UInt32, R::LessEqual, inner, 2 * maximum + 1))
+                            == Some(true);
+                    if !unsigned_bound && !in_range(inner, 0, 2 * maximum + 1) {
                         return None;
                     }
-                    vec![if negative {
-                        ConditionTerm::signed_greater_than(inner, constant(maximum))
-                    } else {
-                        ConditionTerm::signed_less_equal(inner, constant(maximum))
-                    }]
+                    vec![bound(
+                        Ty::Int32,
+                        if negative {
+                            R::GreaterThan
+                        } else {
+                            R::LessEqual
+                        },
+                        inner,
+                        maximum,
+                    )]
                 }
-                // `(uintN)x`'s half-range test is `x`'s sign.
                 Test::Half { above } if !destination.format().is_signed() => {
-                    if !in_range(&inner, -maximum - 1, maximum) {
+                    if !in_range(inner, -maximum - 1, maximum) {
                         return None;
                     }
-                    vec![if above {
-                        ConditionTerm::signed_less_than(inner, constant(0))
-                    } else {
-                        ConditionTerm::signed_less_equal(constant(0), inner)
-                    }]
+                    vec![sign_condition(Ty::Int32, inner, above)]
                 }
                 _ => return None,
             });
         }
-        // A 32- or 64-bit word read at both signednesses.
         let wide = match format {
             Ty::Int32 | Ty::UInt32 => false,
             Ty::Int64 | Ty::UInt64 => true,
             _ => return None,
         };
-        let bits = format.format().bits();
         match (
             format.format().is_signed(),
-            test(relation, value, signed_maximum(bits))?,
+            test(relation, value, signed_maximum(format.format().bits()))?,
         ) {
             (true, Test::Sign { negative }) => Some(if wide {
-                let maximum = Bitvector32Term::uint64_constant(i64::MAX as u64);
-                let unsigned = |word: Bitvector32Term| {
-                    if negative {
-                        ConditionTerm::uint64_greater_than(word, maximum.clone())
-                    } else {
-                        ConditionTerm::uint64_less_equal(word, maximum.clone())
-                    }
-                };
-                vec![
-                    unsigned(operand.clone()),
-                    unsigned(Bitvector32Term::UInt64FromInt64(Box::new(operand))),
-                ]
+                let wrapped = unsigned64_wrapper(operand);
+                [operand, wrapped.operand_view()]
+                    .map(|word| {
+                        bound(
+                            Ty::UInt64,
+                            if negative {
+                                R::GreaterThan
+                            } else {
+                                R::LessEqual
+                            },
+                            word,
+                            i64::MAX,
+                        )
+                    })
+                    .to_vec()
             } else {
-                // The word read unsigned is σ of the operand, which undoes a
-                // σ the operand is (`u as int32 < 0` is `u > 2^31 - 1`).
-                let maximum = constant(i64::from(i32::MAX));
                 let word = sign_cast(Ty::Int32, Ty::UInt32, operand);
-                vec![if negative {
-                    ConditionTerm::unsigned_greater_than(word, maximum)
-                } else {
-                    ConditionTerm::unsigned_less_equal(word, maximum)
-                }]
+                vec![bound(
+                    Ty::UInt32,
+                    if negative {
+                        R::GreaterThan
+                    } else {
+                        R::LessEqual
+                    },
+                    word.operand_view(),
+                    i64::from(i32::MAX),
+                )]
             }),
             (false, Test::Half { above }) => Some(if wide {
-                let operand = match operand {
-                    Bitvector32Term::UInt64FromInt64(inner) => *inner,
-                    operand => operand,
+                let operand = match operand.cast() {
+                    Some((Encoding::UInt64FromInt64, _, _, inner)) => inner,
+                    _ => operand,
                 };
-                let zero = Bitvector32Term::int64_constant(0);
-                vec![if above {
-                    ConditionTerm::int64_signed_less_than(operand, zero)
-                } else {
-                    ConditionTerm::int64_signed_less_equal(zero, operand)
-                }]
+                vec![sign_condition(Ty::Int64, operand, above)]
             } else {
-                // The word read signed is σ of the operand, which undoes a
-                // σ the operand is (`x as uint32 > 2^31 - 1` is `x < 0`).
                 let word = sign_cast(Ty::UInt32, Ty::Int32, operand);
-                vec![if above {
-                    ConditionTerm::signed_less_than(word, constant(0))
-                } else {
-                    ConditionTerm::signed_less_equal(constant(0), word)
-                }]
+                vec![sign_condition(Ty::Int32, word.operand_view(), above)]
             }),
             _ => None,
         }
@@ -355,61 +400,271 @@ impl PureFactContext {
 }
 
 impl ConditionTerm {
-    /// Whether this is a 32-bit comparison with a side that is σ, the
-    /// 32-bit sign cast: its sign or half-range test names a node no
-    /// comparison of σ's operand does, as a narrow conversion's does. One
-    /// match on the root and each side.
+    /// Root-only probes used when admitting signedness comparisons.
     pub(crate) fn names_sign_cast32(&self) -> bool {
-        let ConditionTerm::Compare {
-            format: Ty::Int32 | Ty::UInt32,
-            left,
-            right,
-            ..
-        } = self
-        else {
+        let Some(view) = comparison(self) else {
             return false;
         };
-        [left, right]
-            .into_iter()
-            .any(|side| side.sign_cast32_operand().is_some())
+        matches!(view.format, Ty::Int32 | Ty::UInt32)
+            && view.operands.iter().any(|operand| matches!(operand.operand_view().cast(),
+                Some((Encoding::Generic, source, destination, _)) if crate::kernel::is_sign_cast32(source, destination)))
     }
 
-    /// Whether this is an `int32` comparison of an 8- or 16-bit conversion
-    /// between the two signednesses of one width. One match on the root.
     pub(crate) fn names_narrow_signedness_cast(&self) -> bool {
-        // A native 8- or 16-bit comparison names the cast at its own format.
-        let ConditionTerm::Compare {
-            format,
-            left,
-            right,
-            ..
-        } = self
-        else {
+        let Some(view) = comparison(self) else {
             return false;
         };
-        if *format != Ty::Int32 && format.format().bits() >= 32 {
+        if view.format != Ty::Int32 && view.format.format().bits() >= 32 {
             return false;
         }
-        let sign_cast = |term: &Bitvector32Term| {
-            matches!(
-                term,
-                Bitvector32Term::MachineIntegerCast { source, destination, .. }
-                    if source.format().bits() == destination.format().bits()
-                        && source.format().bits() < 32
-                        && source.format().is_signed() != destination.format().is_signed()
-            )
+        let sign_cast = |term: View<'_>| {
+            matches!(term.cast(),
+            Some((Encoding::Generic, source, destination, _))
+                if source.format().bits() == destination.format().bits()
+                    && source.format().bits() < 32
+                    && source.format().is_signed() != destination.format().is_signed())
         };
-        // The cast itself, or its `int32` widening.
-        [left, right].into_iter().any(|side| {
-            sign_cast(side)
-                || matches!(
-                    side.as_ref(),
-                    Bitvector32Term::MachineIntegerCast {
-                        value,
-                        destination: Ty::Int32,
-                        ..
-                    } if sign_cast(value)
-                )
+        view.operands.iter().any(|side| {
+            let side = side.operand_view();
+            sign_cast(side) || matches!(side.cast(), Some((Encoding::Generic, _, Ty::Int32, value)) if sign_cast(value))
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kernel::{KernelTermExport, KernelTermImport, MachineBinaryOp as Op, Variable};
+
+    fn variable(n: u64) -> Bitvector32Term {
+        Bitvector32Term::Variable(Variable(n))
+    }
+    fn sum(format: Ty) -> Bitvector32Term {
+        Bitvector32Term::Binary {
+            format,
+            op: Op::Add,
+            left: Box::new(variable(189201)),
+            right: Box::new(variable(189202)),
+        }
+    }
+    fn shape(condition: ConditionTerm) -> (Ty, Relation, [Bitvector32Term; 2]) {
+        let view = comparison(&condition).unwrap();
+        (
+            view.format,
+            view.relation,
+            view.operands.each_ref().map(|operand| {
+                operand
+                    .operand_view()
+                    .retain(view.format)
+                    .value()
+                    .clone()
+                    .constant_in32(view.format)
+            }),
+        )
+    }
+    fn shared_equivalents(
+        context: &PureFactContext,
+        native: &ConditionTerm,
+    ) -> Option<Vec<ConditionTerm>> {
+        let ConditionTerm::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } = native
+        else {
+            panic!("comparison")
+        };
+        let expected = context
+            .sign_bit_equivalents(native)
+            .map(|conditions| conditions.into_iter().map(shape).collect::<Vec<_>>());
+        let roots = [left, right].map(|term| {
+            KernelTermImport::default()
+                .machine_arithmetic(*format, term)
+                .unwrap()
+        });
+        let shared =
+            condition_for_operand_views(*format, *relation, roots.each_ref().map(View::Shared));
+        assert_eq!(shared.names_sign_cast32(), native.names_sign_cast32());
+        assert_eq!(
+            shared.names_narrow_signedness_cast(),
+            native.names_narrow_signedness_cast()
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let actual = context.sign_bit_equivalents(&shared);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_eq!(
+            actual
+                .clone()
+                .map(|conditions| conditions.into_iter().map(shape).collect::<Vec<_>>()),
+            expected,
+            "{native:?}"
+        );
+        actual
+    }
+
+    #[test]
+    fn shared_sign_bit_readings_keep_width_directions_and_written_casts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let context = PureFactContext::new();
+        for format in [Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64] {
+            let mut operands = vec![sum(format)];
+            if format.format().bits() == 32 {
+                let other = if format == Ty::Int32 {
+                    Ty::UInt32
+                } else {
+                    Ty::Int32
+                };
+                operands.push(Bitvector32Term::sign_cast32(other, format, sum(other)));
+                operands.push(Bitvector32Term::sign_cast32(
+                    other,
+                    format,
+                    Bitvector32Term::sign_cast32(format, other, sum(format)),
+                ));
+            } else if format == Ty::UInt64 {
+                operands.push(Bitvector32Term::UInt64FromInt64(Box::new(sum(Ty::Int64))));
+            }
+            let (relations, threshold) = if format.format().is_signed() {
+                ([R::LessThan, R::GreaterEqual], 0)
+            } else {
+                (
+                    [R::GreaterThan, R::LessEqual],
+                    signed_maximum(format.format().bits()),
+                )
+            };
+            for operand in operands {
+                for relation in relations {
+                    let native = bound(format, relation, View::Legacy(&operand), threshold);
+                    let result = shared_equivalents(&context, &native).unwrap();
+                    assert_eq!(result.len(), if format == Ty::Int64 { 2 } else { 1 });
+                    let ConditionTerm::Compare { left, right, .. } = native else {
+                        unreachable!()
+                    };
+                    let mirrored = match relation {
+                        R::LessThan => R::GreaterThan,
+                        R::LessEqual => R::GreaterEqual,
+                        R::GreaterThan => R::LessThan,
+                        R::GreaterEqual => R::LessEqual,
+                        _ => unreachable!(),
+                    };
+                    shared_equivalents(
+                        &context,
+                        &ConditionTerm::machine_compare(format, mirrored, *right, *left),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fresh_shared_sign_bit_decisions_do_not_export_arithmetic() {
+        use crate::kernel::{KernelTerm, KernelType};
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = KernelTerm::variable(KernelType::C(Ty::UInt32.c_type()), Variable(189211));
+        let prefix =
+            KernelTerm::machine_binary_shared(Ty::UInt32, Op::Add, [variable.clone(), variable]);
+        let mask = KernelTermImport::default()
+            .machine_arithmetic(Ty::UInt32, &Bitvector32Term::uint32_constant(255))
+            .unwrap();
+        let masked = KernelTerm::machine_binary_shared(Ty::UInt32, Op::BitwiseAnd, [prefix, mask]);
+        let cast =
+            KernelTerm::machine_cast_shared(Encoding::Generic, Ty::UInt32, Ty::Int32, masked);
+        let zero = Bitvector32Term::constant(0);
+        let context = PureFactContext::new();
+        for (relation, expected) in [(R::LessThan, false), (R::GreaterEqual, true)] {
+            let query = condition_for_operand_views(
+                Ty::Int32,
+                relation,
+                [View::Shared(&cast), View::Legacy(&zero)],
+            );
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(context.decide_by_sign_bit(&query), Some(expected));
+            assert_eq!(context.decide(&query), Some(expected));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+        let unsupported = bound(Ty::Int32, R::LessEqual, View::Shared(&cast), 42);
+        let exports = KernelTermExport::machine_export_count();
+        assert!(context.sign_bit_equivalents(&unsupported).is_none());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_signed_narrow_half_range_requires_both_carrier_bounds() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for (source, destination, maximum) in [
+            (Ty::Int8, Ty::UInt8, 127i32),
+            (Ty::Int16, Ty::UInt16, 32767i32),
+        ] {
+            let operand = sum(Ty::Int32);
+            let cast = Bitvector32Term::MachineIntegerCast {
+                source,
+                destination,
+                value: Box::new(operand.clone()),
+            };
+            let query =
+                ConditionTerm::signed_greater_than(cast, Bitvector32Term::constant(maximum as u32));
+            let lower = ConditionTerm::signed_less_equal(
+                Bitvector32Term::constant((-maximum - 1) as u32),
+                operand.clone(),
+            );
+            let upper = ConditionTerm::signed_less_equal(
+                operand,
+                Bitvector32Term::constant(maximum as u32),
+            );
+            for (has_lower, has_upper) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let mut context = PureFactContext::new();
+                if has_lower {
+                    context = context.assume_condition(lower.clone(), true);
+                }
+                if has_upper {
+                    context = context.assume_condition(upper.clone(), true);
+                }
+                assert_eq!(
+                    shared_equivalents(&context, &query).is_some(),
+                    has_lower && has_upper
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shared_narrow_sign_bit_readings_require_carrier_bounds() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for (source, destination, max) in
+            [(Ty::UInt8, Ty::Int8, 255), (Ty::UInt16, Ty::Int16, 65535)]
+        {
+            let operand = sum(Ty::Int32);
+            let converted = Bitvector32Term::MachineIntegerCast {
+                source,
+                destination,
+                value: Box::new(operand.clone()),
+            };
+            let query = ConditionTerm::signed_less_than(converted, Bitvector32Term::constant(0));
+            assert!(shared_equivalents(&PureFactContext::new(), &query).is_none());
+            let source = Proposition::ConditionIs(
+                ConditionTerm::unsigned_less_equal(operand, Bitvector32Term::constant(max)),
+                true,
+            );
+            let facts = PureFactContext::new().assume_proposition(source.clone());
+            assert!(shared_equivalents(&facts, &query).is_some());
+            // Admission derives signed bounds from the unsigned source, so
+            // withdrawing just that source does not remove its consequences.
+            // Use an independently weaker context for the missing-bound control.
+            let weak = PureFactContext::new().assume_condition(
+                ConditionTerm::unsigned_less_equal(
+                    sum(Ty::Int32),
+                    Bitvector32Term::constant(max + 1),
+                ),
+                true,
+            );
+            assert!(shared_equivalents(&weak, &query).is_none());
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "../../../scaling_tests/kernel/assumptions/condition_reasoning/sign_bit/tests.rs"]
+mod scaling_tests;

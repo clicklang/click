@@ -1571,6 +1571,9 @@ impl TermClasses {
                 Some(Application::Int64Scaled(*value, *width, *unsigned))
             }
             Node::Int32(value) => {
+                if let Some(variable) = value.operand_view().variable() {
+                    self.register_scalar_variable(id, *variable);
+                }
                 if let Some(value) = value.operand_view().word32_constant() {
                     self.int32_constants.insert(id, value as i32);
                 }
@@ -2309,6 +2312,18 @@ impl TermClasses {
         left != right && self.close(vec![(left, right)])
     }
 
+    /// Retain a root-local word identity established by the comparison form.
+    /// Keeping its result makes a later shared prefix reuse the earlier step.
+    pub(super) fn add_shared_word_identity(
+        &mut self,
+        left: &crate::kernel::KernelTerm,
+        right: &crate::kernel::KernelTerm,
+    ) {
+        let left = self.shared_int32_class(left);
+        let right = self.shared_int32_class(right);
+        self.close(vec![(left, right)]);
+    }
+
     fn root(&self, mut id: u64) -> u64 {
         let original = id;
         let epoch = self.history.as_ref().map_or(0, |history| history.depth);
@@ -2741,6 +2756,15 @@ impl TermClasses {
                 pending.push_definition((id, left));
             }
         }
+        // The checking constructor removes a zero addend. Keep that same
+        // equality on shared word nodes, including when an operand learns zero.
+        if let Application::Int32Add(left, right) = signature {
+            if self.int32_constants.get(&left) == Some(&0) {
+                pending.push((id, right));
+            } else if self.int32_constants.get(&right) == Some(&0) {
+                pending.push((id, left));
+            }
+        }
         // Kernel int32 values are bitvectors. Folding their sum wraps at 32
         // bits, just like Bitvector32Term::as_const; C signed definedness is a
         // separate obligation and is not established by equality congruence.
@@ -2755,6 +2779,47 @@ impl TermClasses {
                 crate::kernel::Bitvector32Term::constant(value),
             )));
             pending.push((id, constant));
+        }
+        // Root-local identities formerly supplied by the boxed checking
+        // constructors. Each firing reads the two selected operand summaries;
+        // class merges revisit only indexed parent applications.
+        if let Application::Int32Binary(op, left, right) = signature {
+            use crate::kernel::{BitvectorBinaryOp as B, MachineBinaryOp as M};
+            let operation = match op {
+                Int32Binary::UnsignedDivide => Some(M::Divide),
+                Int32Binary::BitwiseXor => Some(M::BitwiseXor),
+                Int32Binary::Other(B::Machine(format, op)) if format.format().bits() == 32 => {
+                    Some(op)
+                }
+                _ => None,
+            };
+            let a = self.int32_constants.get(&left).copied().map(|v| v as u32);
+            let b = self.int32_constants.get(&right).copied().map(|v| v as u32);
+            let identity = match operation {
+                Some(M::Subtract) if b == Some(0) => Some(left),
+                Some(M::Multiply) if a == Some(1) => Some(right),
+                Some(M::Multiply | M::Divide) if b == Some(1) => Some(left),
+                Some(M::BitwiseAnd) if a == Some(u32::MAX) => Some(right),
+                Some(M::BitwiseAnd) if b == Some(u32::MAX) => Some(left),
+                Some(M::BitwiseOr | M::BitwiseXor) if a == Some(0) => Some(right),
+                Some(M::BitwiseOr | M::BitwiseXor | M::ShiftRight) if b == Some(0) => Some(left),
+                Some(M::BitwiseAnd | M::BitwiseOr) if left == right => Some(left),
+                _ => None,
+            };
+            let constant = match operation {
+                Some(M::Subtract | M::BitwiseXor) if left == right => Some(0),
+                Some(M::Multiply | M::BitwiseAnd) if a == Some(0) || b == Some(0) => Some(0),
+                Some(M::BitwiseOr) if a == Some(u32::MAX) || b == Some(u32::MAX) => Some(u32::MAX),
+                _ => None,
+            };
+            if let Some(other) = identity {
+                pending.push((id, other));
+            } else if let Some(value) = constant {
+                let other = self.intern_node(Node::Int32(MachineAtom::int32(
+                    crate::kernel::Bitvector32Term::constant(value),
+                )));
+                pending.push((id, other));
+            }
         }
         if let Application::Int32Binary(op, left, right) = signature
             && let (Some(a), Some(b)) = (

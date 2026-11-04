@@ -151,6 +151,15 @@ impl TermClasses {
                             .unwrap()
                             .1
                     };
+                    // Reuse the selected operands' current classes. Keeping
+                    // old alias IDs here would create a fresh congruent node
+                    // for every `(x + 0) + 0` prefix and repeatedly merge the
+                    // growing class's parent uses.
+                    let (a, b) = if width == W::Bits32 {
+                        (self.root(a), self.root(b))
+                    } else {
+                        (a, b)
+                    };
                     let node = if width == W::Bits32 {
                         match (*format, *operator) {
                             (_, MachineBinaryOp::Add) => Node::Int32Add(a, b),

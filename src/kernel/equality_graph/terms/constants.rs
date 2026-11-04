@@ -6,12 +6,33 @@ use crate::kernel::unary_term;
 
 #[derive(Clone, Default)]
 pub(super) struct ScalarWitnesses {
+    variables: crate::persistent::PersistentMap<u64, Variable>,
     conditionals:
         crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<MachineAtom>>,
     inverse_bytes: crate::persistent::PersistentMap<u64, crate::persistent::PersistentSet<u64>>,
 }
 
 impl TermClasses {
+    pub(super) fn register_scalar_variable(&mut self, id: u64, variable: Variable) {
+        self.scalar_witnesses.variables.insert(id, variable);
+    }
+
+    pub(in crate::kernel::equality_graph) fn scalar_leaf_of_class(
+        &self,
+        id: u64,
+    ) -> Option<Bitvector32Term> {
+        match self.scalar_constant_of_class(id) {
+            SignedConstantResolution::Known(value) => Some(Bitvector32Term::constant(value as u32)),
+            SignedConstantResolution::Ambiguous => None,
+            SignedConstantResolution::Unknown => self
+                .scalar_witnesses
+                .variables
+                .get(&self.root(id))
+                .copied()
+                .map(Bitvector32Term::Variable),
+        }
+    }
+
     pub(super) fn register_scalar_witness(&mut self, term: &Bitvector32Term, node: u64) {
         let root = self.root(node);
         let key = MachineAtom::int32(term.clone());
@@ -93,6 +114,16 @@ impl TermClasses {
         kept_was_settled: bool,
         pending: &mut PendingUnions,
     ) {
+        if let Some(variable) = self.scalar_witnesses.variables.get(&moved).copied() {
+            self.scalar_witnesses.variables.remove(&moved);
+            let variable = self
+                .scalar_witnesses
+                .variables
+                .get(&kept)
+                .copied()
+                .map_or(variable, |prior| prior.min(variable));
+            self.scalar_witnesses.variables.insert(kept, variable);
+        }
         if self.scalar_conflicts.contains(&moved) {
             self.scalar_conflicts = self.scalar_conflicts.without_value(&moved);
             self.mark_scalar_conflict(kept);

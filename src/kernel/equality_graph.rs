@@ -2885,26 +2885,119 @@ impl EqualityGraph {
             state.terms.scalar_constant_of_class(node),
         ))
     }
-    pub(in crate::kernel) fn scalar_constant_class_view(
+    /// A bounded checking reading: consult the root's word class and at most
+    /// two levels of selected operands. Registration retains shared prefixes; leaf
+    /// witnesses follow class unions and branch cloning, never a fact-set scan.
+    /// This constructs a comparison form, not a replacement for the stored term.
+    pub(in crate::kernel) fn checking_word32_root(
         &self,
-        term: crate::kernel::MachineOperandView<'_>,
-    ) -> Option<(u64, crate::kernel::assumptions::SignedConstantResolution)> {
-        let crate::kernel::MachineOperandView::Shared(term) = term else {
-            let crate::kernel::MachineOperandView::Legacy(term) = term else {
-                unreachable!()
-            };
-            return self.scalar_constant_class(term);
-        };
+        term: &crate::kernel::KernelTerm,
+        direct_constant: impl Fn(&crate::kernel::KernelTerm) -> Option<u32>,
+    ) -> crate::kernel::KernelTerm {
+        use crate::kernel::{KernelTermImport, KernelTermNode};
         let mut state = self.state.lock().expect("equality graph");
-        if !state.has_scalar_inputs {
-            return None;
-        }
         let node = state.terms.shared_int32_class(term);
         state.close(Vec::new());
-        Some((
-            state.terms.scalar_class_root(node),
-            state.terms.scalar_constant_of_class(node),
-        ))
+        let leaf = |state: &mut EqualityGraphState,
+                    term: &crate::kernel::KernelTerm,
+                    child: bool| {
+            let ty = MachineIntegerType::from_c_type(match term.ty() {
+                crate::kernel::KernelType::C(ty) => *ty,
+                _ => return None,
+            })?;
+            if ty.format().bits() != 32 {
+                return None;
+            }
+            let node = state.terms.shared_int32_class(term);
+            state.close(Vec::new());
+            let value = state.terms.scalar_leaf_of_class(node)?;
+            // Child substitution uses the written equality policy of the
+            // native simplifier, not an arbitrary transitive class constant.
+            if child
+                && let Some(bits) = value.as_const()
+                && crate::kernel::MachineOperandView::Shared(term).word32_constant() != Some(bits)
+                && direct_constant(term) != Some(bits)
+            {
+                return None;
+            }
+            KernelTermImport::default().machine_arithmetic(ty, &value)
+        };
+        if state.terms.scalar_leaf_of_class(node).is_some() {
+            return leaf(&mut state, term, false).unwrap_or_else(|| term.clone());
+        }
+        let KernelTermNode::MachineBinary {
+            format,
+            operator,
+            arguments,
+        } = term.node()
+        else {
+            return term.clone();
+        };
+        if format.format().bits() != 32 {
+            return term.clone();
+        }
+        // Read the written child operation, not the representative of its
+        // equality class: which term was queried first must not select whether
+        // a two-level cancellation is available.
+        use crate::kernel::MachineBinaryOp as Op;
+        let same = |state: &mut EqualityGraphState,
+                    a: &crate::kernel::KernelTerm,
+                    b: &crate::kernel::KernelTerm| {
+            let a = state.terms.shared_int32_class(a);
+            let b = state.terms.shared_int32_class(b);
+            state.close(Vec::new());
+            state.terms.scalar_class_root(a) == state.terms.scalar_class_root(b)
+        };
+        let cancellation = |state: &mut EqualityGraphState,
+                            inner: &crate::kernel::KernelTerm,
+                            other: &crate::kernel::KernelTerm| {
+            let KernelTermNode::MachineBinary {
+                format,
+                operator: inner_op,
+                arguments: pair,
+            } = inner.node()
+            else {
+                return None;
+            };
+            if format.format().bits() != 32 {
+                return None;
+            }
+            match (*operator, *inner_op) {
+                (Op::Add, Op::Subtract) if same(state, &pair[1], other) => Some(pair[0].clone()),
+                (Op::Subtract, Op::Add) | (Op::BitwiseXor, Op::BitwiseXor) => {
+                    if same(state, &pair[0], other) {
+                        Some(pair[1].clone())
+                    } else if same(state, &pair[1], other) {
+                        Some(pair[0].clone())
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        };
+        let cancelled = cancellation(&mut state, &arguments[0], &arguments[1]).or_else(|| {
+            matches!(operator, Op::Add | Op::BitwiseXor)
+                .then(|| cancellation(&mut state, &arguments[1], &arguments[0]))
+                .flatten()
+        });
+        if let Some(cancelled) = cancelled {
+            state.terms.add_shared_word_identity(term, &cancelled);
+            state.close(Vec::new());
+            return leaf(&mut state, &cancelled, false).unwrap_or(cancelled);
+        }
+        let updated = arguments
+            .each_ref()
+            .map(|child| leaf(&mut state, child, true).unwrap_or_else(|| child.clone()));
+        if &updated == arguments {
+            return term.clone();
+        }
+        let result = MachineIntegerType::from_c_type(match term.ty() {
+            crate::kernel::KernelType::C(ty) => *ty,
+            _ => return term.clone(),
+        })
+        .expect("machine operand");
+        crate::kernel::KernelTerm::machine_binary_shared_as(result, *format, *operator, updated)
     }
 
     pub(in crate::kernel) fn scalar_normalization_class_view(

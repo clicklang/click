@@ -472,6 +472,10 @@ impl PureFactContext {
             _ => {
                 Key::for_format(MachineIntegerType::Int32, left)
                     == Key::for_format(MachineIntegerType::Int32, right)
+                    || self.equality_graph.are_integer_equal(
+                        &IntegerTerm::Machine(left.retain(MachineIntegerType::Int32)),
+                        &IntegerTerm::Machine(right.retain(MachineIntegerType::Int32)),
+                    )
             }
         };
         if same {
@@ -695,7 +699,13 @@ impl PureFactContext {
             (MachineOperandView::Legacy(lower), MachineOperandView::Legacy(upper)) => {
                 lower == upper
             }
-            _ => Key::for_format(format, lower) == Key::for_format(format, upper),
+            _ => {
+                Key::for_format(format, lower) == Key::for_format(format, upper)
+                    || self.equality_graph.are_integer_equal(
+                        &IntegerTerm::Machine(lower.retain(format)),
+                        &IntegerTerm::Machine(upper.retain(format)),
+                    )
+            }
         };
         if same {
             return Some(!strict);
